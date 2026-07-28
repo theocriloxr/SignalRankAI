@@ -687,6 +687,30 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         return False
 
 
+async def _claim_pulse_slot(interval_seconds: int) -> bool:
+    """Allow only one replica to emit an hourly pulse for the current interval."""
+    if str(os.getenv("ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED", "1") or "1").strip().lower() not in {"1", "true", "yes", "on"}:
+        return True
+
+    ttl = max(60, int(os.getenv("ENGINE_PULSE_LOCK_TTL_SECONDS", str(max(60, interval_seconds - 30))) or max(60, interval_seconds - 30)))
+    key = str(os.getenv("ENGINE_PULSE_LOCK_KEY", "signalrank:admin_pulse:hourly") or "signalrank:admin_pulse:hourly")
+
+    def _claim() -> bool:
+        try:
+            from core.redis_state import state
+            client = state._get_redis_sync()
+            if client is None:
+                logger.warning("[admin_pulse] distributed lock unavailable; sending from this instance")
+                return True
+            token = f"{os.getpid()}:{datetime.now(timezone.utc).isoformat()}"
+            return bool(client.set(key, token, nx=True, ex=ttl))
+        except Exception as exc:
+            logger.warning("[admin_pulse] distributed lock error; sending from this instance: %s", exc)
+            return True
+
+    return await asyncio.to_thread(_claim)
+
+
 async def start_pulse_loop(interval_seconds: int = None) -> None:
     interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
     initial_delay = int(os.getenv("ENGINE_PULSE_INITIAL_DELAY_SECONDS", "300") or 300)
@@ -694,7 +718,10 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
         await asyncio.sleep(min(initial_delay, max(60, int(interval))))
     while True:
         try:
-            await send_admin_pulse_via_telegram(window_hours=1)
+            if await _claim_pulse_slot(interval):
+                await send_admin_pulse_via_telegram(window_hours=1)
+            else:
+                logger.info("[admin_pulse] duplicate replica pulse skipped")
         except Exception:
             logger.exception("[admin_pulse] loop send failed")
         # Weekly filter-efficacy report: run once per configured weekday/hour

@@ -89,7 +89,11 @@ def resend_unsent_signals_job():
                 return
         except Exception:
             pass
-        run_sync(_resend_unsent_signals_async())
+        import asyncio
+        job_timeout = max(15.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "90") or 90))
+        run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
+    except TimeoutError:
+        logger.warning("[resend] job timed out; remaining work deferred to next run")
     except Exception:
         logger.exception("[resend] resend_unsent_signals_job failed")
     finally:
@@ -106,7 +110,6 @@ async def _resend_unsent_signals_async():
         from db.session import get_session
         from db.pg_features import (
             list_active_signals,
-            get_signal_outcome_status,
             record_signal_delivery,
             mark_signal_delivery_result,
         )
@@ -127,8 +130,9 @@ async def _resend_unsent_signals_async():
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
         from sqlalchemy import select
-        from db.models import SignalDelivery
+        from db.models import Outcome, SignalDelivery
         formatter_failed_signal_ids: set[str] = set()
+        terminal_signal_ids: set[str] = set()
         try:
             async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
                 user_ids = await list_all_user_telegram_ids(_bootstrap_session)
@@ -141,6 +145,23 @@ async def _resend_unsent_signals_async():
                 formatter_failed_signal_ids = {
                     str(value) for value in (failed_rows.scalars().all() or []) if value
                 }
+                _signal_ids = [
+                    str(getattr(signal, "signal_id", "") or "")
+                    for signal in (raw_signals or [])
+                    if getattr(signal, "signal_id", None)
+                ]
+                if _signal_ids:
+                    terminal_rows = await _bootstrap_session.execute(
+                        select(Outcome.signal_id, Outcome.status).where(
+                            Outcome.signal_id.in_(_signal_ids)
+                        )
+                    )
+                    _terminal_statuses = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "time_stop"}
+                    terminal_signal_ids = {
+                        str(signal_id)
+                        for signal_id, status in (terminal_rows.all() or [])
+                        if str(status or "").strip().lower() in _terminal_statuses
+                    }
                 await _bootstrap_session.commit()
         except Exception as bootstrap_err:
             if type(bootstrap_err).__name__ == "NoncriticalWriteDropped":
@@ -162,8 +183,46 @@ async def _resend_unsent_signals_async():
         except Exception:
             user_ids = list(user_ids or [])
 
+        allowlist_raw = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", "") or "").strip()
+        allowlist_ids: set[int] = set()
+        if allowlist_raw:
+            for token in allowlist_raw.replace(";", ",").split(","):
+                try:
+                    allowlist_ids.add(int(token.strip()))
+                except (TypeError, ValueError):
+                    continue
+            before_count = len(user_ids)
+            user_ids = [uid for uid in user_ids if int(uid) in allowlist_ids]
+            logger.info(
+                "[resend] delivery audience allowlist active requested=%s matched=%s before=%s",
+                len(allowlist_ids),
+                len(user_ids),
+                before_count,
+            )
+        elif _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
+            logger.warning("[resend] skipped: RESEND_AUDIENCE_ALLOWLIST_ONLY=1 but DELIVERY_AUDIENCE_ALLOWLIST is empty")
+            return
+
+        # Put the primary owner first, then cap work per run. This prevents a
+        # stale backlog for secondary admins from starving live callbacks/outcomes.
+        primary_owner = None
+        try:
+            primary_owner_raw = str(os.getenv("TELEGRAM_OWNER_ID", "") or "").strip()
+            if primary_owner_raw:
+                primary_owner = int(primary_owner_raw)
+            elif OWNER_IDS:
+                primary_owner = sorted(int(x) for x in OWNER_IDS)[0]
+        except Exception:
+            primary_owner = None
+        if primary_owner in user_ids:
+            user_ids = [primary_owner] + [uid for uid in user_ids if uid != primary_owner]
+        max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "25") or 25))
+        if len(user_ids) > max_users:
+            logger.info("[resend] audience capped users=%s->%s", len(user_ids), max_users)
+            user_ids = user_ids[:max_users]
+
         if not user_ids:
-            logger.warning("[resend] audience empty: no user IDs found (DB + OWNER_IDS/ADMIN_IDS)")
+            logger.warning("[resend] audience empty after DB, owner/admin, and allowlist filtering")
             return
 
         # Cache user tiers once per run for consistent routing and diagnostics.
@@ -222,36 +281,59 @@ async def _resend_unsent_signals_async():
 
         signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
         try:
-            from engine.delivery_freshness import evaluate_signal_age
+            from engine.delivery_freshness import evaluate_signal_age, evaluate_time_to_telegraph
 
             fresh_ranked = []
-            for s in signals:
-                payload = {c.key: getattr(s, c.key, None) for c in s.__table__.columns} if hasattr(s, "__table__") else dict(getattr(s, "__dict__", {}) or {})
-                age_result = evaluate_signal_age(payload)
-                if age_result.ok:
-                    fresh_ranked.append(s)
-                    continue
-                sid = str(getattr(s, "signal_id", "") or "")
-                logger.info(
-                    "[resend] skipped stale signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
-                    sid,
-                    getattr(s, "asset", ""),
-                    getattr(s, "timeframe", ""),
-                    age_result.reason,
-                    float(age_result.age_minutes or 0.0),
-                    float(age_result.max_age_minutes or 0.0),
-                    float(age_result.opportunity_remaining_pct or 0.0),
+            for signal_row in signals:
+                payload = (
+                    {column.key: getattr(signal_row, column.key, None) for column in signal_row.__table__.columns}
+                    if hasattr(signal_row, "__table__")
+                    else dict(getattr(signal_row, "__dict__", {}) or {})
                 )
-                try:
-                    async with get_session() as _exp_s:
-                        from db.pg_features import expire_signal as _expire
-                        await _expire(_exp_s, sid)
-                        await _exp_s.commit()
-                except Exception:
-                    pass
+                sid = str(getattr(signal_row, "signal_id", "") or "")
+                age_result = evaluate_signal_age(payload)
+                if not age_result.ok:
+                    logger.info(
+                        "[resend] skipped stale signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                        sid,
+                        getattr(signal_row, "asset", ""),
+                        getattr(signal_row, "timeframe", ""),
+                        age_result.reason,
+                        float(age_result.age_minutes or 0.0),
+                        float(age_result.max_age_minutes or 0.0),
+                        float(age_result.opportunity_remaining_pct or 0.0),
+                    )
+                    try:
+                        async with get_session(
+                            priority="background",
+                            label="resend.expire_analytically_stale",
+                            timeout_seconds=2.0,
+                        ) as expire_session:
+                            from db.pg_features import expire_signal as _expire
+                            await _expire(expire_session, sid)
+                            await expire_session.commit()
+                    except Exception:
+                        pass
+                    continue
+
+                queue_result = evaluate_time_to_telegraph(payload)
+                if not queue_result.ok:
+                    logger.info(
+                        "[resend] skipped queue-stale signal=%s asset=%s tf=%s reason=%s queue_age=%.1fs max=%.1fs",
+                        sid,
+                        getattr(signal_row, "asset", ""),
+                        getattr(signal_row, "timeframe", ""),
+                        queue_result.reason,
+                        float(queue_result.queue_age_seconds or 0.0),
+                        float(queue_result.max_queue_age_seconds or 0.0),
+                    )
+                    # Queue staleness blocks this resend attempt but does not mutate
+                    # analytical lifecycle state used by monitoring/outcome tracking.
+                    continue
+                fresh_ranked.append(signal_row)
             signals = fresh_ranked
         except Exception as _fresh_err:
-            logger.warning("[resend] freshness age gate failed; no stale signals delivered: %s", _fresh_err)
+            logger.warning("[resend] freshness prefilter failed closed: %s", _fresh_err)
             signals = []
 
         if not signals:
@@ -296,7 +378,9 @@ async def _resend_unsent_signals_async():
                 try:
                     from sqlalchemy import select
                     from db.models import SignalDelivery, User
-                    async with get_session() as _deliv_s:
+                    async with get_session(
+                        priority="background", label="resend.prefetch_delivered", timeout_seconds=2.0
+                    ) as _deliv_s:
                         _q = (
                             select(User.telegram_user_id)
                             .join(SignalDelivery, SignalDelivery.user_id == User.id)
@@ -336,13 +420,11 @@ async def _resend_unsent_signals_async():
                 except Exception as _age_err:
                     logger.debug(f"[resend] age-check failed for {signal_id}: {_age_err}")
 
-                # Skip signals whose outcome (TP / SL) has already been reached
-                try:
-                    outcome_status = get_signal_outcome_status(signal_id)
-                    if outcome_status and outcome_status.get('reached'):
-                        continue
-                except Exception:
-                    pass
+                # Skip signals whose terminal outcome was snapshotted during the
+                # bootstrap query. Never run a nested event loop from this async job.
+                if signal_id in terminal_signal_ids:
+                    logger.info("[resend] skipped terminal signal=%s", signal_id)
+                    continue
 
                 # Build a plain dict from the ORM row for the formatter
                 try:
@@ -370,7 +452,9 @@ async def _resend_unsent_signals_async():
                         try:
                             prefs = user_prefs_cache.get(int(user_id))
                             if prefs is None:
-                                async with get_session() as _pref_session:
+                                async with get_session(
+                                    priority="background", label="resend.user_preferences", timeout_seconds=2.0
+                                ) as _pref_session:
                                     prefs = await get_user_trading_preferences(
                                         _pref_session,
                                         int(user_id),
@@ -452,7 +536,9 @@ async def _resend_unsent_signals_async():
                         # Pre-send reservation in DB (attempt tracked even if network fails).
                         reserved = False
                         try:
-                            async with get_session() as db_session:
+                            async with get_session(
+                                priority="critical", label="resend.reserve_delivery", timeout_seconds=5.0
+                            ) as db_session:
                                 reserved = await record_signal_delivery(
                                     db_session,
                                     telegram_user_id=int(user_id),
@@ -1033,27 +1119,30 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                         bool(send_kwargs.get("allow_paid_broadcast")), bool(send_kwargs.get("reply_markup")),
                     )
                 try:
-                    if rich_message is not None and _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False):
+                    if rich_message is not None:
                         try:
-                            from signalrank_telegram.rich_messages import send_rich_message_raw
-                            msg = await asyncio.wait_for(
-                                send_rich_message_raw(
-                                    bot,
-                                    chat_id=int(chat_id),
-                                    rich_html=str(rich_message),
-                                    timeout=send_timeout,
-                                    **send_kwargs,
-                                ),
-                                timeout=send_timeout + 1.0,
-                            )
-                            if _delivery_success_trace_enabled():
-                                logger.info(
-                                    "[telegram_rich_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
-                                    chat_id, getattr(msg, "message_id", None), attempt,
-                                    int((time.perf_counter() - send_started) * 1000),
-                                    bool(send_kwargs.get("allow_paid_broadcast")),
+                            from signalrank_telegram.rich_messages import rich_messages_enabled, send_rich_message_raw
+                            if not rich_messages_enabled():
+                                rich_message = None
+                            else:
+                                msg = await asyncio.wait_for(
+                                    send_rich_message_raw(
+                                        bot,
+                                        chat_id=int(chat_id),
+                                        rich_html=str(rich_message),
+                                        timeout=send_timeout,
+                                        **send_kwargs,
+                                    ),
+                                    timeout=send_timeout + 1.0,
                                 )
-                            return msg
+                                if _delivery_success_trace_enabled():
+                                    logger.info(
+                                        "[telegram_rich_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
+                                        chat_id, getattr(msg, "message_id", None), attempt,
+                                        int((time.perf_counter() - send_started) * 1000),
+                                        bool(send_kwargs.get("allow_paid_broadcast")),
+                                    )
+                                return msg
                         except Exception as rich_err:
                             from delivery.service import (
                                 TelegramDeliveryAmbiguous,
@@ -2721,9 +2810,10 @@ async def _send_signal_with_engagement_async(
         _dispatch_started = time.perf_counter()
         rich_html = None
         try:
-            if _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False) and signal:
-                from signalrank_telegram.rich_messages import build_signal_rich_html
-                rich_html = build_signal_rich_html(signal, fallback_text=text)
+            if signal:
+                from signalrank_telegram.rich_messages import build_signal_rich_html, rich_messages_enabled
+                if rich_messages_enabled():
+                    rich_html = build_signal_rich_html(signal, fallback_text=text)
         except Exception as _rich_build_err:
             logger.debug("[telegram_rich_build_failed] signal=%s err=%s", signal_id, _rich_build_err)
             rich_html = None
@@ -5943,8 +6033,43 @@ def run_bot() -> None:
                     pass
             else:
                 reason = str(routed.error or routed.message or "unknown")
+                reason_key = reason.strip().lower()
+                friendly_reasons = {
+                    "broker_account_not_ready": (
+                        "Your broker account is not connected and verified yet. "
+                        "Open /settings → Broker & Execution, connect an account, "
+                        "complete the execution preflight, then try again."
+                    ),
+                    "user_execution_not_enabled": (
+                        "Trade execution is disabled for your account. Enable it in "
+                        "/settings only after reviewing the risk and consent controls."
+                    ),
+                    "user_consent_required": (
+                        "Execution consent is still required. Review and accept the "
+                        "execution terms in /settings before placing a trade."
+                    ),
+                    "encrypted_credentials_required": (
+                        "Broker credentials are missing or not securely stored. "
+                        "Reconnect the broker account from /settings."
+                    ),
+                    "auto_execution_limit_disabled": (
+                        "Your execution risk limit is disabled. Configure a maximum "
+                        "risk and daily loss limit in /settings."
+                    ),
+                    "auto_trade_disabled": (
+                        "Automatic execution is disabled. The signal remains available "
+                        "for manual review and monitoring."
+                    ),
+                }
+                friendly = friendly_reasons.get(
+                    reason_key,
+                    "The broker rejected or could not complete this request. "
+                    "No trade was opened. Check /execution_status for the exact preflight result.",
+                )
                 await query.edit_message_text(
-                    f"❌ <b>Trade not executed</b>\n\n<code>{reason}</code>",
+                    "❌ <b>Trade not executed</b>\n\n"
+                    f"{friendly}\n\n"
+                    f"Reference: <code>{reason_key[:80]}</code>",
                     parse_mode="HTML",
                 )
         except Exception as exc:
@@ -8009,53 +8134,154 @@ def run_bot() -> None:
             logger.debug(f"[expiry] expire_old_signals_job failed: {exc}")
 
     def refresh_monitor_snapshots_job():
-        """Refresh open monitor sub-pages every 5 minutes."""
-        try:
-            async def _refresh() -> None:
-                from db.session import get_session as _gs_mon
-                from db.models import RuntimeState
-                from sqlalchemy import select
+        """Refresh tracked monitor messages without holding DB lanes during network I/O."""
+        if not _env_bool("MONITOR_REFRESH_ENABLED", True):
+            logger.info("[monitor_refresh] disabled")
+            return
 
-                bot = Bot(token=_require_telegram_token())
-                async with _gs_mon() as session:
+        async def _refresh() -> None:
+            import asyncio
+            from db.session import get_session as _gs_mon
+            from db.models import RuntimeState
+            from sqlalchemy import delete, select, update
+
+            limit = max(1, int(os.getenv("MONITOR_REFRESH_LIMIT", "100") or 100))
+            concurrency = max(1, int(os.getenv("MONITOR_REFRESH_CONCURRENCY", "4") or 4))
+            db_timeout = max(0.5, float(os.getenv("MONITOR_REFRESH_DB_TIMEOUT_SECONDS", "2") or 2))
+            snapshot_timeout = max(1.0, float(os.getenv("MONITOR_REFRESH_SNAPSHOT_TIMEOUT_SECONDS", "8") or 8))
+            telegram_timeout = max(1.0, float(os.getenv("MONITOR_REFRESH_TELEGRAM_TIMEOUT_SECONDS", "10") or 10))
+
+            # Phase 1: copy only primitive row data, then release the DB session.
+            try:
+                async with _gs_mon(
+                    priority="background",
+                    label="monitor_refresh.snapshot",
+                    timeout_seconds=db_timeout,
+                ) as session:
                     rows = (
                         await session.execute(
-                            select(RuntimeState).where(RuntimeState.key.like("monitor:%"))
+                            select(RuntimeState.key, RuntimeState.value)
+                            .where(RuntimeState.key.like("monitor:%"))
+                            .order_by(RuntimeState.updated_at.asc())
+                            .limit(limit)
                         )
-                    ).scalars().all()
+                    ).all()
+                    snapshots = [(str(key), dict(value or {})) for key, value in rows]
+            except Exception as exc:
+                if type(exc).__name__ in {"NoncriticalWriteDropped", "AnalyticsWorkDeferred"}:
+                    logger.info("[monitor_refresh] snapshot deferred: %s", exc)
+                    return
+                raise
 
-                    async with bot:
-                        for row in rows:
-                            payload = dict(row.value or {})
-                            signal_id = str(payload.get("signal_id") or "")
-                            chat_id = payload.get("chat_id")
-                            message_id = payload.get("message_id")
-                            if not signal_id or not chat_id or not message_id:
-                                await session.delete(row)
-                                continue
-                            text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
+            if not snapshots:
+                logger.debug("[monitor_refresh] no tracked messages")
+                return
+
+            sem = asyncio.Semaphore(concurrency)
+            mutations: list[tuple[str, bool, object | None]] = []
+            refreshed = 0
+            deleted = 0
+            failed = 0
+
+            bot = Bot(token=_require_telegram_token())
+            async with bot:
+                async def _process(runtime_key: str, payload: dict) -> None:
+                    nonlocal refreshed, deleted, failed
+                    signal_id = str(payload.get("signal_id") or "")
+                    chat_id = payload.get("chat_id")
+                    message_id = payload.get("message_id")
+                    if not signal_id or not chat_id or not message_id:
+                        mutations.append((runtime_key, True, None))
+                        deleted += 1
+                        return
+
+                    async with sem:
+                        try:
+                            text, is_active, expires_at = await asyncio.wait_for(
+                                _build_monitor_snapshot(signal_id), timeout=snapshot_timeout
+                            )
                             try:
-                                await bot.edit_message_text(
-                                    chat_id=int(chat_id),
-                                    message_id=int(message_id),
-                                    text=text,
-                                    parse_mode="HTML",
-                                    reply_markup=_build_monitor_keyboard(signal_id),
+                                await asyncio.wait_for(
+                                    bot.edit_message_text(
+                                        chat_id=int(chat_id),
+                                        message_id=int(message_id),
+                                        text=text,
+                                        parse_mode="HTML",
+                                        reply_markup=_build_monitor_keyboard(signal_id),
+                                    ),
+                                    timeout=telegram_timeout,
                                 )
-                            except Exception as exc:
-                                if "message is not modified" not in str(exc).lower():
-                                    logger.debug(f"[monitor] refresh edit failed for {signal_id}: {exc}")
-                            row.updated_at = now_utc_naive()
-                            row.expires_at = expires_at
-                            if not is_active:
-                                await session.delete(row)
-                    await session.commit()
+                            except Exception as edit_exc:
+                                edit_text = str(edit_exc).lower()
+                                if "message is not modified" not in edit_text:
+                                    if any(token in edit_text for token in (
+                                        "message to edit not found",
+                                        "chat not found",
+                                        "bot was blocked",
+                                        "message can't be edited",
+                                    )):
+                                        mutations.append((runtime_key, True, None))
+                                        deleted += 1
+                                        return
+                                    logger.debug("[monitor_refresh] edit failed key=%s err=%s", runtime_key, edit_exc)
+                                    failed += 1
+                                    return
+                            mutations.append((runtime_key, not is_active, expires_at))
+                            refreshed += 1
+                        except asyncio.TimeoutError:
+                            logger.info("[monitor_refresh] item timeout key=%s", runtime_key)
+                            failed += 1
+                        except Exception as item_exc:
+                            logger.debug("[monitor_refresh] item failed key=%s err=%s", runtime_key, item_exc)
+                            failed += 1
 
-            run_sync(_refresh())
+                await asyncio.gather(
+                    *(_process(runtime_key, payload) for runtime_key, payload in snapshots),
+                    return_exceptions=True,
+                )
+
+            # Phase 3: persist state after all Telegram/price I/O has completed.
+            if mutations:
+                try:
+                    async with _gs_mon(
+                        priority="background",
+                        label="monitor_refresh.persist",
+                        timeout_seconds=db_timeout,
+                    ) as session:
+                        now_value = now_utc_naive()
+                        for runtime_key, should_delete, expires_at in mutations:
+                            if should_delete:
+                                await session.execute(
+                                    delete(RuntimeState).where(RuntimeState.key == runtime_key)
+                                )
+                            else:
+                                await session.execute(
+                                    update(RuntimeState)
+                                    .where(RuntimeState.key == runtime_key)
+                                    .values(updated_at=now_value, expires_at=expires_at)
+                                )
+                        await session.commit()
+                except Exception as persist_exc:
+                    if type(persist_exc).__name__ in {"NoncriticalWriteDropped", "AnalyticsWorkDeferred"}:
+                        logger.info("[monitor_refresh] persist deferred: %s", persist_exc)
+                    else:
+                        raise
+
+            logger.info(
+                "[monitor_refresh] completed rows=%s refreshed=%s deleted=%s failed=%s concurrency=%s",
+                len(snapshots), refreshed, deleted, failed, concurrency,
+            )
+
+        try:
+            import asyncio
+            job_timeout = max(10.0, float(os.getenv("MONITOR_REFRESH_JOB_TIMEOUT_SECONDS", "45") or 45))
+            run_sync(asyncio.wait_for(_refresh(), timeout=job_timeout))
+        except TimeoutError:
+            logger.warning("[monitor_refresh] job timeout; remaining rows deferred")
         except Exception as exc:
-            logger.debug(f"[monitor] refresh job failed: {exc}")
+            logger.warning("[monitor_refresh] job failed: %s", exc)
 
-    # \u2500\u2500 ML market analysis scan \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # ── ML market analysis scan ────────────────────────────────────────────
     def ml_market_analysis_job():
         """Every 15 min: run the ML filter over recent unscored signals.
 

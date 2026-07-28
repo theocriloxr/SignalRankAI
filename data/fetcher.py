@@ -72,6 +72,8 @@ _PROVIDER_OUTAGE_ALERTED: dict[str, bool] = {}
 _PROVIDER_OUTAGE_LAST_ALERT: dict[str, float] = {}
 _PROVIDER_OUTAGE_ALERT_STAGE: dict[str, float] = {}
 _PROVIDER_OUTAGE_RECOVERY_ALERTS: dict[str, dict] = {}
+_PROVIDER_RECOVERY_SUCCESS_STREAK: dict[str, int] = {}
+_PROVIDER_RECOVERY_FIRST_SUCCESS: dict[str, float] = {}
 _PROVIDER_OUTAGE_MINUTES = 10  # Default alert threshold (minutes)
 _PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Default repeat interval after final stage
 
@@ -79,6 +81,21 @@ _PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Default repeat interval after fi
 def _provider_key(provider_name: str) -> str:
     return str(provider_name or "").strip().lower()
 
+
+
+
+def _provider_recovery_required_successes() -> int:
+    try:
+        return max(1, int(os.getenv("PROVIDER_RECOVERY_REQUIRED_SUCCESSES", "3") or 3))
+    except Exception:
+        return 3
+
+
+def _provider_recovery_stable_seconds() -> float:
+    try:
+        return max(0.0, float(os.getenv("PROVIDER_RECOVERY_STABLE_SECONDS", "120") or 120))
+    except Exception:
+        return 120.0
 
 def _provider_alias(provider_name: str) -> str:
     name = _provider_key(provider_name)
@@ -115,23 +132,43 @@ def mark_provider_result(provider_name, ok, latency_ms: int | None = None):
             entry["success_count"] = int(entry.get("success_count") or 0) + 1
             entry["last_success"] = now
             entry["failures"] = []
-            if (
+            was_alerted = bool(
                 _PROVIDER_OUTAGE_ALERTED.get(provider_key)
                 or _PROVIDER_OUTAGE_ALERTED.get(alias_key)
                 or provider_key in _PROVIDER_OUTAGE_ALERT_STAGE
                 or alias_key in _PROVIDER_OUTAGE_ALERT_STAGE
-            ):
-                _PROVIDER_OUTAGE_RECOVERY_ALERTS[provider_key] = {
-                    "provider": str(provider_name or provider_key),
-                    "recovered_at": now,
-                }
-            _PROVIDER_OUTAGE_ALERTED[provider_key] = False
-            _PROVIDER_OUTAGE_ALERTED[alias_key] = False
-            _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_key, None)
-            _PROVIDER_OUTAGE_LAST_ALERT.pop(alias_key, None)
-            _PROVIDER_OUTAGE_ALERT_STAGE.pop(provider_key, None)
-            _PROVIDER_OUTAGE_ALERT_STAGE.pop(alias_key, None)
+            )
+            if was_alerted:
+                recovery_key = alias_key or provider_key
+                first_success = _PROVIDER_RECOVERY_FIRST_SUCCESS.setdefault(recovery_key, now)
+                streak = int(_PROVIDER_RECOVERY_SUCCESS_STREAK.get(recovery_key) or 0) + 1
+                _PROVIDER_RECOVERY_SUCCESS_STREAK[recovery_key] = streak
+                stable_for = max(0.0, now - float(first_success or now))
+                if (
+                    streak >= _provider_recovery_required_successes()
+                    and stable_for >= _provider_recovery_stable_seconds()
+                ):
+                    _PROVIDER_OUTAGE_RECOVERY_ALERTS[recovery_key] = {
+                        "provider": str(provider_name or provider_key),
+                        "recovered_at": now,
+                        "stable_seconds": stable_for,
+                        "success_streak": streak,
+                    }
+                    _PROVIDER_OUTAGE_ALERTED[provider_key] = False
+                    _PROVIDER_OUTAGE_ALERTED[alias_key] = False
+                    _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_key, None)
+                    _PROVIDER_OUTAGE_LAST_ALERT.pop(alias_key, None)
+                    _PROVIDER_OUTAGE_ALERT_STAGE.pop(provider_key, None)
+                    _PROVIDER_OUTAGE_ALERT_STAGE.pop(alias_key, None)
+                    _PROVIDER_RECOVERY_SUCCESS_STREAK.pop(recovery_key, None)
+                    _PROVIDER_RECOVERY_FIRST_SUCCESS.pop(recovery_key, None)
+            else:
+                _PROVIDER_RECOVERY_SUCCESS_STREAK.pop(alias_key or provider_key, None)
+                _PROVIDER_RECOVERY_FIRST_SUCCESS.pop(alias_key or provider_key, None)
         else:
+            recovery_key = alias_key or provider_key
+            _PROVIDER_RECOVERY_SUCCESS_STREAK.pop(recovery_key, None)
+            _PROVIDER_RECOVERY_FIRST_SUCCESS.pop(recovery_key, None)
             entry["failure_count"] = int(entry.get("failure_count") or 0) + 1
             entry["failures"].append(now)
             # Keep only recent failures

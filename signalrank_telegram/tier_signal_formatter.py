@@ -418,10 +418,19 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
 
 
 def _execution_mode(signal: DictType[str, Any]) -> str:
+    """Return the execution mode proven for this specific signal/user context.
+
+    A platform-wide feature flag does not prove that the recipient has a ready
+    broker account, consent, encrypted credentials, or an enabled execution
+    limit.  Signal copy must therefore claim automatic management only when the
+    routed payload explicitly says this delivery is auto-managed.
+    """
     mode = str(signal.get("execution_mode") or signal.get("trade_execution_mode") or "manual").strip().lower()
-    if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"}:
-        return "auto"
-    if str(os.getenv("AUTO_TRADE_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+    ready = signal.get("execution_ready")
+    if ready is None:
+        ready = signal.get("broker_account_ready")
+    ready_bool = str(ready).strip().lower() in {"1", "true", "yes", "on"} if ready is not None else False
+    if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"} and ready_bool:
         return "auto"
     return "manual"
 
@@ -782,7 +791,13 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
                 line += f" {note}"
             lines.append(line)
 
-    if rr:
+    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None)
+    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
+    if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
+        lines.append(
+            f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
+        )
+    elif rr:
         try:
             rr_val = float(rr)
             if rr_val > 0:

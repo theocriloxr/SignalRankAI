@@ -4046,33 +4046,31 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			"display_telegram_user_id": int(user_id),
 		}
 		
-		# Enrich signal with live price and freshness info
+		# Enrich signal with live price and apply the same timeframe/profile-aware
+		# age policy used by final Telegram delivery. The older asset-class-only
+		# check incorrectly marked 1d crypto signals stale after five minutes.
 		staleness_warning = None
 		try:
-			from engine.price_validator import (
-				enrich_signal_with_live_price, 
-				is_signal_fresh, 
-				get_asset_type
-			)
-			from core.tier_constants import MAX_SIGNAL_AGE_SECONDS
+			from engine.price_validator import enrich_signal_with_live_price
+			from engine.delivery_freshness import evaluate_signal_age
 			
 			sig_dict = enrich_signal_with_live_price(sig_dict)
-			
-			# Check if signal is stale
-			is_fresh, fresh_reason = is_signal_fresh(sig_dict)
-			if not is_fresh:
-				staleness_warning = f"⚠️ Warning: Signal is stale ({fresh_reason})"
-			else:
-				# Check age against threshold
-				age_seconds = sig_dict.get('signal_age_seconds')
-				if age_seconds:
-					asset = sig_dict.get('asset', '')
-					asset_type = get_asset_type(asset)
-					max_age = MAX_SIGNAL_AGE_SECONDS.get(asset_type, 300)
-					# Warning if over 50% of max age
-					if age_seconds > (max_age * 0.5):
-						age_minutes = int(age_seconds / 60)
-						staleness_warning = f"⏰ Signal is {age_minutes} minutes old"
+			age_result = evaluate_signal_age(sig_dict)
+			if not age_result.ok:
+				age_minutes = float(age_result.age_minutes or 0.0)
+				max_minutes = float(age_result.max_age_minutes or 0.0)
+				staleness_warning = (
+					"⚠️ Warning: Signal is outside its active opportunity window "
+					f"({age_minutes:.0f}m > {max_minutes:.0f}m)"
+				)
+			elif (
+				age_result.opportunity_remaining_pct is not None
+				and age_result.opportunity_remaining_pct < 50.0
+			):
+				staleness_warning = (
+					f"⏰ Signal age: {float(age_result.age_minutes or 0.0):.0f}m "
+					f"({float(age_result.opportunity_remaining_pct):.0f}% of opportunity window remains)"
+				)
 		except Exception as e:
 			import logging
 			logging.getLogger(__name__).debug(f"Failed to check signal freshness: {e}")

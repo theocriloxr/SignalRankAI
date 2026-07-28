@@ -17,7 +17,20 @@ logger = logging.getLogger(__name__)
 
 
 def rich_messages_enabled() -> bool:
-    return str(os.getenv("TELEGRAM_RICH_MESSAGES_ENABLED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    """Return whether experimental rich messages are explicitly certified.
+
+    ``sendRichMessage`` is not treated as a normal feature toggle because some
+    Telegram clients/export paths flatten structural tags into labels such as
+    ``Table`` and hide the actual signal values. Operators must therefore set
+    both flags after verifying the exact deployed bot/client combination.
+    """
+    enabled = str(os.getenv("TELEGRAM_RICH_MESSAGES_ENABLED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    certified = str(os.getenv("TELEGRAM_RICH_MESSAGES_CERTIFIED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    if enabled and not certified:
+        logger.warning(
+            "[rich_messages] requested but not certified; using canonical HTML signal cards"
+        )
+    return bool(enabled and certified)
 
 
 def _fmt(value: Any, digits: int = 4) -> str:

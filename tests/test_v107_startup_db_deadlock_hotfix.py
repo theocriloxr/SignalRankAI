@@ -22,8 +22,8 @@ def _function_source(path: str, name: str) -> str:
     return "\n".join(lines[node.lineno - 1 : node.end_lineno])
 
 
-def test_v107_is_the_declared_default_version() -> None:
-    assert 'default="1.0.7"' in _source("core/version.py")
+def test_v107_hotfix_is_carried_forward_by_v108() -> None:
+    assert 'default="1.0.8"' in _source("core/version.py")
 
 
 def test_keyboard_refresh_is_disabled_by_default_and_not_inline() -> None:

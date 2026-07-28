@@ -1,5 +1,5 @@
 {
-  "count": 100,
+  "count": 102,
   "flags": [
     {
       "dangerous": false,
@@ -235,6 +235,14 @@
     },
     {
       "dangerous": false,
+      "name": "ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "EXECUTION_ELIGIBILITY_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -404,6 +412,14 @@
     {
       "dangerous": false,
       "name": "ML_WEEKLY_RETRAIN_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "MONITOR_REFRESH_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

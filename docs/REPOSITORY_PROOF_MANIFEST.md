@@ -1,7 +1,7 @@
 # Repository Proof Manifest
 
-Generated: 2026-07-28T09:13:48.378685+00:00
-Files inventoried: **944**
+Generated: 2026-07-28T19:05:33.270157+00:00
+Files inventoried: **945**
 
 ## Categories
 
@@ -11,7 +11,7 @@ Files inventoried: **944**
 - `production_runtime`: 461
 - `project_asset`: 141
 - `script`: 39
-- `test`: 161
+- `test`: 162
 
 ## Static traceability observations
 
