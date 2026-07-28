@@ -453,12 +453,18 @@ async def validate_signal_freshness(
                     logger.warning(f"[stale_validator] Signal INVALIDATED for {symbol}: {reason}")
                     return False, reason, live
 
-    # Calculate threshold (dynamic ATR-based or static)
-    # CRITICAL FIX: Ensure threshold is in percentage form to match drift_pct
-    threshold = get_dynamic_threshold(symbol, atr_value, live)
-    
-    # If threshold is < 1.0, assume it's in decimal form (0.01 = 1%) and convert to percentage
-    if threshold < 1.0:
+    # Use the canonical final-delivery threshold when the caller supplies it.
+    # This prevents one validator accepting a signal that the next validator
+    # rejects using a different hard-coded percentage.
+    threshold_override = signal.get("_canonical_drift_threshold_pct")
+    try:
+        threshold = float(threshold_override) if threshold_override not in (None, "") else get_dynamic_threshold(symbol, atr_value, live)
+    except Exception:
+        threshold = get_dynamic_threshold(symbol, atr_value, live)
+
+    # Dynamic helpers may return decimal form (0.01 = 1%). Explicit canonical
+    # overrides are already expressed as percentage points.
+    if threshold_override in (None, "") and threshold < 1.0:
         threshold = threshold * 100.0
 
 # Check drift percentage

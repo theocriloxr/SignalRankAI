@@ -10,7 +10,7 @@ def _source(path: str) -> str:
 
 
 def test_v108_is_default_version() -> None:
-    assert 'default="1.1.0"' in _source("core/version.py")
+    assert 'default="1.1.1"' in _source("core/version.py")
 
 
 def test_resend_obeys_delivery_allowlist_and_prefilters_queue_staleness() -> None:

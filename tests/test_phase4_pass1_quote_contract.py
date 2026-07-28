@@ -285,10 +285,10 @@ def test_versioned_default_drift_limits_are_always_active(monkeypatch):
         "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT",
     ):
         monkeypatch.delenv(env_name, raising=False)
-    assert _max_entry_drift_pct("BTCUSDT") == 0.20
-    assert _max_entry_drift_pct("EURUSD") == 0.08
+    assert _max_entry_drift_pct("BTCUSDT") == 0.50
+    assert _max_entry_drift_pct("EURUSD") == 0.12
     assert _max_entry_drift_pct("META") == 0.35
-    assert _max_entry_drift_pct("XAUUSD") == 0.20
+    assert _max_entry_drift_pct("XAUUSD") == 0.30
     assert _max_entry_drift_pct("US500") == 0.25
 
 

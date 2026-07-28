@@ -273,7 +273,10 @@ async def _handle_monitor_signal(
         # Build monitor snapshot
         from signalrank_telegram.bot import _build_monitor_snapshot
         
-        text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
+        text, is_active, expires_at = await _build_monitor_snapshot(
+            signal_id,
+            telegram_user_id=int(update.effective_user.id) if update.effective_user else None,
+        )
         
         # Send new message or edit existing
         try:

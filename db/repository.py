@@ -7,6 +7,7 @@ import hmac
 import hashlib
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from collections import deque
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from db.models import Subscription, User, Signal, Outcome, DecisionLog, Processe
 from db.session import get_session
 
 ACTIVE_PARTIAL_OUTCOME_STATUSES = ("tp1", "tp2")
+_DECISION_LOG_RETRY_QUEUE: deque[dict[str, Any]] = deque(maxlen=5000)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -245,9 +247,38 @@ async def persist_decision_log(
     except Exception as e:
         import logging
         if type(e).__name__ == "NoncriticalWriteDropped":
-            logging.getLogger(__name__).warning("Decision log dropped because DB gate is busy")
+            _DECISION_LOG_RETRY_QUEUE.append({
+                "signal_id": signal_id,
+                "asset": asset,
+                "timeframe": timeframe,
+                "decision": decision,
+                "reason": reason,
+                "meta": dict(meta or {}),
+            })
+            logging.getLogger(__name__).info(
+                "Decision log queued because DB gate is busy pending=%s",
+                len(_DECISION_LOG_RETRY_QUEUE),
+            )
         else:
             logging.exception(f"Failed to persist decision log: {e}")
+        return 0
+
+
+async def flush_decision_log_retry_queue(limit: int = 100) -> int:
+    """Best-effort bounded flush for decision annotations deferred by DB admission."""
+    if not _DECISION_LOG_RETRY_QUEUE:
+        return 0
+    batch: list[dict[str, Any]] = []
+    for _ in range(min(max(1, int(limit)), len(_DECISION_LOG_RETRY_QUEUE))):
+        batch.append(_DECISION_LOG_RETRY_QUEUE.popleft())
+    try:
+        async with get_session(priority="background", label="decision_log_retry", timeout_seconds=2.0) as session:
+            session.add_all([DecisionLog(**item) for item in batch])
+            await session.commit()
+        return len(batch)
+    except Exception:
+        for item in reversed(batch):
+            _DECISION_LOG_RETRY_QUEUE.appendleft(item)
         return 0
 
 

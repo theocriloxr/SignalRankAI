@@ -152,6 +152,8 @@ class Worker:
                 logger.error("[worker] failed to start task %s: %s", name, exc, exc_info=True)
 
         _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
+        if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
+            _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
@@ -352,6 +354,23 @@ class Worker:
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")
             await asyncio.sleep(3600)
+
+    async def _decision_log_retry_loop(self) -> None:
+        """Flush annotations deferred while the foreground DB lane was reserved."""
+        interval = max(5.0, _env_float("DECISION_LOG_RETRY_INTERVAL_SECONDS", 30.0, minimum=5.0))
+        batch_size = max(1, int(os.getenv("DECISION_LOG_RETRY_BATCH_SIZE", "100") or 100))
+        while not self._stop.is_set():
+            try:
+                from db.repository import flush_decision_log_retry_queue
+                flushed = await flush_decision_log_retry_queue(batch_size)
+                if flushed:
+                    logger.info("[worker] decision log retry flushed=%s", flushed)
+            except Exception as exc:
+                logger.debug("[worker] decision log retry deferred: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
 
     async def _adaptive_learning_loop(self) -> None:
         """Publish approved profiles and build bounded SHADOW challengers."""

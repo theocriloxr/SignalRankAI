@@ -538,8 +538,8 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
             )
             try:
                 await asyncio.wait_for(
-                    asyncio.sleep(min(cool_down, max_backoff_s)),
-                    timeout=max_backoff_s + 1.0,
+                    asyncio.sleep(cool_down),
+                    timeout=cool_down + 1.0,
                 )
             except asyncio.TimeoutError:
                 pass

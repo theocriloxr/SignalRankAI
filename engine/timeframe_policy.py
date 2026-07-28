@@ -42,6 +42,16 @@ _DEFAULT_REQUIREMENTS: dict[tuple[str, str], tuple[list[str], list[str]]] = {
     ("commodity", "position"): (["4h", "1d"], ["1h"]),
     ("index", "swing"): (["1h", "4h", "1d"], ["15m"]),
     ("index", "position"): (["4h", "1d"], ["1h"]),
+    # Macro/yield instruments are context inputs. Daily data is authoritative;
+    # intraday rates data is optional and must not invalidate otherwise usable context.
+    ("macro", "scalp"): (["1d"], ["1h", "4h"]),
+    ("macro", "day"): (["1d"], ["1h", "4h"]),
+    ("macro", "swing"): (["1d"], ["4h", "1h"]),
+    ("macro", "position"): (["1d"], ["4h"]),
+    ("volatility", "scalp"): (["1d"], ["1h", "4h"]),
+    ("volatility", "day"): (["1d"], ["1h", "4h"]),
+    ("volatility", "swing"): (["1d"], ["4h", "1h"]),
+    ("volatility", "position"): (["1d"], ["4h"]),
 }
 
 
@@ -52,7 +62,7 @@ _KNOWN_TIMEFRAMES = frozenset({
 
 
 # Policy version: bump when the resolution logic changes
-_POLICY_VERSION = "phase4-pass8-v1"
+_POLICY_VERSION = "adaptive-v1.1.1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,8 +96,17 @@ def _classify_asset_for_timeframes(asset_class: str | None) -> str:
         "metals": "commodity",
         "crypto": "crypto",
         "cryptocurrency": "crypto",
+        "macro": "macro",
+        "rate": "macro",
+        "rates": "macro",
+        "yield": "macro",
+        "volatility": "volatility",
+        "volatility_index": "volatility",
+        "stock": "stock",
+        "fx": "fx",
+        "commodity": "commodity",
     }
-    return aliases.get(ac, "stock")
+    return aliases.get(ac, "crypto" if not ac else "stock")
 
 
 def _resolve_trading_style(

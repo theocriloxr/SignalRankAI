@@ -218,8 +218,23 @@ async def _resend_unsent_signals_async():
             user_ids = [primary_owner] + [uid for uid in user_ids if uid != primary_owner]
         max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "25") or 25))
         if len(user_ids) > max_users:
-            logger.info("[resend] audience capped users=%s->%s", len(user_ids), max_users)
-            user_ids = user_ids[:max_users]
+            # Keep the primary owner in every proof run, but rotate the remaining
+            # audience deterministically so users beyond the first page are not starved.
+            ordered_others = [uid for uid in user_ids if uid != primary_owner]
+            owner_slots = 1 if primary_owner in user_ids else 0
+            rotating_slots = max(1, max_users - owner_slots)
+            interval_seconds = max(60, int(os.getenv("RESEND_INTERVAL_SECONDS", "300") or 300))
+            bucket = int(time.time() // interval_seconds)
+            start = (bucket * rotating_slots) % max(1, len(ordered_others))
+            rotated = (ordered_others[start:] + ordered_others[:start])[:rotating_slots]
+            user_ids = ([primary_owner] if owner_slots else []) + rotated
+            logger.info(
+                "[resend] audience round_robin total=%s selected=%s start=%s owner_included=%s",
+                len(ordered_others) + owner_slots,
+                len(user_ids),
+                start,
+                bool(owner_slots),
+            )
 
         if not user_ids:
             logger.warning("[resend] audience empty after DB, owner/admin, and allowlist filtering")
@@ -1546,23 +1561,90 @@ async def _is_asset_delivery_locked(
         return False
 
 
-async def _load_signal_payload(signal_id: str) -> dict | None:
+async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = None) -> dict | None:
+    """Resolve a full or shortened signal reference and return its canonical payload.
+
+    Non-owner users may only resolve signals with a Telegram-confirmed delivery
+    to their own account. This makes monitoring safe for multiple users while
+    allowing old buttons that contain shortened references to continue working.
+    """
     try:
         import json
         from db.session import get_session
-        from db.models import Signal
+        from db.models import Signal, SignalDelivery, User
         from sqlalchemy import select
 
-        async with get_session() as session:
+        ref = str(signal_id or "").strip()
+        if not ref:
+            return None
+
+        async with get_session(priority="interactive", label="signal_payload_lookup") as session:
             signal_row = (
                 await session.execute(
-                    select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
+                    select(Signal).where(Signal.signal_id == ref).limit(1)
                 )
             ).scalar_one_or_none()
-            await session.commit()
 
-        if signal_row is None:
-            return None
+            if signal_row is None:
+                matches = (
+                    await session.execute(
+                        select(Signal)
+                        .where(Signal.signal_id.like(f"{ref}%"))
+                        .order_by(Signal.created_at.desc())
+                        .limit(2)
+                    )
+                ).scalars().all()
+                if matches:
+                    signal_row = matches[0]
+                    if len(matches) > 1:
+                        logger.warning(
+                            "[signal_payload] ambiguous short ref=%s matches=%s selected=%s",
+                            ref,
+                            len(matches),
+                            getattr(signal_row, "signal_id", ""),
+                        )
+
+            if signal_row is None:
+                await session.commit()
+                return None
+
+            canonical_id = str(getattr(signal_row, "signal_id", ref))
+            if telegram_user_id is not None:
+                privileged = False
+                try:
+                    from config import OWNER_IDS, ADMIN_IDS
+                    privileged = int(telegram_user_id) in {
+                        *(int(value) for value in (OWNER_IDS or set())),
+                        *(int(value) for value in (ADMIN_IDS or set())),
+                    }
+                except Exception:
+                    privileged = False
+
+                if not privileged:
+                    delivery_id = (
+                        await session.execute(
+                            select(SignalDelivery.id)
+                            .join(User, User.id == SignalDelivery.user_id)
+                            .where(
+                                User.telegram_user_id == int(telegram_user_id),
+                                SignalDelivery.signal_id == canonical_id,
+                                SignalDelivery.sent_ok.is_(True),
+                                SignalDelivery.telegram_chat_id.is_not(None),
+                                SignalDelivery.telegram_message_id.is_not(None),
+                            )
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if delivery_id is None:
+                        logger.info(
+                            "[signal_payload] denied undelivered signal user=%s ref=%s canonical=%s",
+                            telegram_user_id,
+                            ref,
+                            canonical_id,
+                        )
+                        await session.commit()
+                        return None
+            await session.commit()
 
         take_profit = getattr(signal_row, "take_profit", None)
         if isinstance(take_profit, str):
@@ -1572,7 +1654,7 @@ async def _load_signal_payload(signal_id: str) -> dict | None:
                 pass
 
         return {
-            "signal_id": str(getattr(signal_row, "signal_id", signal_id)),
+            "signal_id": canonical_id,
             "asset": getattr(signal_row, "asset", ""),
             "timeframe": getattr(signal_row, "timeframe", ""),
             "direction": getattr(signal_row, "direction", ""),
@@ -1640,7 +1722,7 @@ def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: d
     counts = counts or {}
     taking_it = int(counts.get("taking_it", 0) or 0)
     watching = int(counts.get("watching", 0) or 0)
-    callback_signal_id = _compact_signal_callback_id(signal_id)
+    callback_signal_id = _compact_signal_callback_id((signal or {}).get("signal_id") or signal_id)
     rows = [[
         InlineKeyboardButton(
             f"\U0001F525 Taking It ({taking_it})",
@@ -2439,11 +2521,11 @@ def _auto_execute_signal_if_enabled(
         logger.debug(f"[autoexec] failed user={telegram_user_id}: {exc}")
 
 
-async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | None]:
+async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None = None) -> tuple[str, bool, object | None]:
     import json
     from datetime import datetime, timezone
 
-    payload = await _load_signal_payload(signal_id)
+    payload = await _load_signal_payload(signal_id, telegram_user_id=telegram_user_id)
     if not payload:
         return "\u274C <b>Monitor unavailable</b>\nSignal not found.", False, None
 
@@ -5841,13 +5923,23 @@ def run_bot() -> None:
             logger.debug("[monitor] tier check failed closed: %s", tier_exc)
             await query.answer("Unable to verify monitor access right now.", show_alert=True)
             return
-        signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
-        if not signal_id:
+        signal_ref = (query.data or "").replace("monitor_signal_", "", 1).strip()
+        if not signal_ref:
             await query.answer("No signal selected.", show_alert=True)
             return
         await query.answer("Refreshing monitor\u2026", show_alert=False)
         try:
-            text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
+            resolved_payload = await _load_signal_payload(signal_ref, telegram_user_id=int(user_id))
+            if not resolved_payload:
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text="❌ Monitor unavailable. This signal was not found in your confirmed deliveries.",
+                )
+                return
+            signal_id = str(resolved_payload.get("signal_id") or signal_ref)
+            text, is_active, expires_at = await _build_monitor_snapshot(
+                signal_id, telegram_user_id=int(user_id)
+            )
             from db.session import get_session as _gs_mon
             from db.models import RuntimeState
             from sqlalchemy import select
@@ -6173,19 +6265,32 @@ def run_bot() -> None:
                 read_cached_outcome_snapshot as _read_cached_outcome_snapshot,
             )
 
+            # Resolve compact references to the canonical UUID and enforce that
+            # non-privileged users may inspect only Telegram-confirmed deliveries
+            # belonging to their own account.
+            _resolved = await _load_signal_payload(raw, telegram_user_id=uid)
+            if _resolved is None:
+                await query.message.reply_text(
+                    f"❌ Signal <code>{html.escape(raw)}</code> was not found in your confirmed deliveries. "
+                    "Use /signals to open a current signal.",
+                    parse_mode="HTML",
+                )
+                return
+            _canonical_ref = str(_resolved.get("signal_id") or raw).strip()
+
             _snapshot_timeout = max(
                 0.1,
                 float(os.getenv("CHECK_OUTCOME_SNAPSHOT_TIMEOUT_SECONDS", "0.75") or 0.75),
             )
             try:
                 _snapshot = await _asyncio.wait_for(
-                    _read_cached_outcome_snapshot(raw),
+                    _read_cached_outcome_snapshot(_canonical_ref),
                     timeout=_snapshot_timeout,
                 )
             except Exception:
                 _snapshot = None
             if _snapshot is not None:
-                logger.info("[check_outcome] user=%s ref=%s snapshot_hit=true", uid, raw[:16])
+                logger.info("[check_outcome] user=%s ref=%s snapshot_hit=true", uid, _canonical_ref[:16])
                 await query.message.reply_text(
                     _format_outcome_snapshot(_snapshot),
                     parse_mode="HTML",
@@ -6197,13 +6302,10 @@ def run_bot() -> None:
             from sqlalchemy import select as _sel_oc
 
             async def _load_outcome():
-                async with _gs_oc(interactive=True) as _s:
-                    _ref = str(raw).strip()
-                    sig_stmt = _sel_oc(_Sig)
-                    if len(_ref) >= 36:
-                        sig_stmt = sig_stmt.where(_Sig.signal_id == _ref)
-                    else:
-                        sig_stmt = sig_stmt.where(_Sig.signal_id.ilike(f"{_ref}%"))
+                from db.session import DBPriority as _DBP_OC
+                async with _gs_oc(priority=_DBP_OC.INTERACTIVE, label="telegram.check_outcome", timeout=timeout_s) as _s:
+                    _ref = _canonical_ref
+                    sig_stmt = _sel_oc(_Sig).where(_Sig.signal_id == _ref)
                     sig_row = (await _s.execute(sig_stmt.order_by(_Sig.created_at.desc()).limit(1))).scalar_one_or_none()
                     out_row = None
                     life_row = None
@@ -8204,6 +8306,7 @@ def run_bot() -> None:
                 async def _process(runtime_key: str, payload: dict) -> None:
                     nonlocal refreshed, deleted, failed
                     signal_id = str(payload.get("signal_id") or "")
+                    telegram_user_id = payload.get("telegram_user_id")
                     chat_id = payload.get("chat_id")
                     message_id = payload.get("message_id")
                     if not signal_id or not chat_id or not message_id:
@@ -8214,7 +8317,7 @@ def run_bot() -> None:
                     async with sem:
                         try:
                             text, is_active, expires_at = await asyncio.wait_for(
-                                _build_monitor_snapshot(signal_id), timeout=snapshot_timeout
+                                _build_monitor_snapshot(signal_id, telegram_user_id=int(telegram_user_id) if telegram_user_id else None), timeout=snapshot_timeout
                             )
                             try:
                                 await asyncio.wait_for(

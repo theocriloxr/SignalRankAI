@@ -132,7 +132,7 @@ async def test_delivery_freshness_rejects_excess_entry_drift(monkeypatch):
     result = await validate_delivery_freshness(signal, cached_live_price=101.6)
 
     assert result.ok is False
-    assert result.reason.startswith("entry_drift_exceeded")
+    assert result.reason.startswith("final_entry_drift")
 
 
 @pytest.mark.asyncio
@@ -145,6 +145,7 @@ async def test_delivery_freshness_rejects_current_rr_that_decayed(monkeypatch):
 
     monkeypatch.setattr(stale, "validate_signal_freshness", fake_validate)
     monkeypatch.setenv("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", "5")
+    monkeypatch.setenv("FINAL_SEND_ABSOLUTE_MAX_DRIFT_CRYPTO_PCT", "10")
     monkeypatch.setenv("DELIVERY_MIN_CURRENT_RR", "1.0")
     signal = {
         "asset": "BTCUSDT",

@@ -1,5 +1,5 @@
 {
-  "count": 109,
+  "count": 110,
   "flags": [
     {
       "dangerous": false,
@@ -208,6 +208,14 @@
       "required_safe_default": "0",
       "rollback": "set CRYPTO_WS_ENABLED=0 and redeploy",
       "safe_default_satisfied": true
+    },
+    {
+      "dangerous": false,
+      "name": "DECISION_LOG_RETRY_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
     },
     {
       "dangerous": false,

@@ -851,7 +851,26 @@ def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
 
 
 def _asset_class_key(asset: str) -> str:
+    """Return one canonical runtime asset class for every pipeline stage."""
     sym = str(asset or "").upper().strip()
+    try:
+        from services.asset_mapper import classify_asset
+
+        mapped = str(classify_asset(sym) or "").strip().lower()
+        aliases = {
+            "forex": "fx",
+            "equity": "stock",
+            "equities": "stock",
+            "indices": "index",
+            "commodities": "commodity",
+            "rates": "macro",
+            "yield": "macro",
+        }
+        mapped = aliases.get(mapped, mapped)
+        if mapped in {"crypto", "fx", "index", "commodity", "stock", "macro", "volatility"}:
+            return mapped
+    except Exception:
+        pass
     if is_crypto(sym):
         return "crypto"
     if is_fx(sym):
@@ -860,6 +879,12 @@ def _asset_class_key(asset: str) -> str:
         return "index"
     if is_commodity(sym):
         return "commodity"
+    try:
+        from data.fetcher import is_macro_yield
+        if is_macro_yield(sym):
+            return "macro"
+    except Exception:
+        pass
     if is_stock(sym):
         return "stock"
     return "other"

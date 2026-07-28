@@ -172,11 +172,12 @@ def _asset_class(symbol: str) -> str:
 def _max_entry_drift_pct(symbol: str) -> float:
     cls = _asset_class(symbol)
     defaults = {
-        "crypto": 0.20,
-        "fx": 0.08,
+        "crypto": 0.50,
+        "fx": 0.12,
         "stock": 0.35,
-        "commodity": 0.20,
+        "commodity": 0.30,
         "index": 0.25,
+        "macro": 0.10,
     }
     env_by_cls = {
         "crypto": "FINAL_SEND_MAX_DRIFT_CRYPTO_PCT",
@@ -187,6 +188,41 @@ def _max_entry_drift_pct(symbol: str) -> float:
     }
     env_name = env_by_cls.get(cls, "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT")
     return _env_float(env_name, defaults.get(cls, _env_float("FINAL_SEND_MAX_DRIFT_DEFAULT_PCT", 0.20)))
+
+
+def _canonical_entry_drift_pct(signal: dict[str, Any], symbol: str) -> float:
+    """Return the single volatility/risk-aware entry-drift limit used at delivery."""
+    entry = _to_float(signal.get("entry"))
+    if entry is None or entry <= 0:
+        return _max_entry_drift_pct(symbol)
+
+    baseline = _max_entry_drift_pct(symbol)
+    candidates = [baseline]
+
+    stop = _to_float(signal.get("stop_loss") or signal.get("sl"))
+    if stop is not None and stop != entry:
+        stop_fraction = max(0.0, _env_float("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", 0.75))
+        candidates.append(abs(entry - stop) / entry * 100.0 * stop_fraction)
+
+    atr = _to_float(signal.get("atr"))
+    if atr is not None and atr > 0:
+        atr_multiplier = max(0.0, _env_float("DELIVERY_ENTRY_DRIFT_ATR_MULTIPLIER", 0.50))
+        candidates.append(atr / entry * 100.0 * atr_multiplier)
+
+    zone_low = _to_float(signal.get("entry_zone_low"))
+    zone_high = _to_float(signal.get("entry_zone_high"))
+    if zone_low is not None:
+        candidates.append(abs(entry - zone_low) / entry * 100.0)
+    if zone_high is not None:
+        candidates.append(abs(zone_high - entry) / entry * 100.0)
+
+    asset_class = _asset_class(symbol)
+    hard_defaults = {"crypto": 1.50, "fx": 0.40, "stock": 1.00, "commodity": 1.00, "index": 0.75, "macro": 0.25}
+    hard_cap = _env_float(
+        f"FINAL_SEND_ABSOLUTE_MAX_DRIFT_{asset_class.upper()}_PCT",
+        hard_defaults.get(asset_class, _env_float("FINAL_SEND_ABSOLUTE_MAX_DRIFT_DEFAULT_PCT", 1.0)),
+    )
+    return max(0.01, min(max(candidates), max(0.01, hard_cap)))
 
 
 def _time_to_telegraph_budget_seconds(signal: dict[str, Any], symbol: str) -> float:
@@ -404,11 +440,6 @@ def _current_reward_risk(signal: dict[str, Any], live_price: float) -> tuple[boo
     stop_distance = abs(entry - stop)
     if stop_distance <= 0:
         return False, "invalid_stop_distance", None
-
-    max_drift = _env_float("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", 0.75)
-    drift_fraction = abs(float(live_price) - entry) / stop_distance
-    if drift_fraction > max_drift:
-        return False, f"entry_drift_exceeded:{drift_fraction:.2f}>{max_drift:.2f}", None
 
     targets = _target_prices(signal)
     if not targets:
@@ -658,6 +689,8 @@ async def validate_delivery_freshness(
         from engine.stale_signal_validator import validate_signal_freshness
 
         validation_signal = dict(sig)
+        canonical_drift_pct = _canonical_entry_drift_pct(validation_signal, symbol)
+        validation_signal["_canonical_drift_threshold_pct"] = canonical_drift_pct
         if final_send:
             validation_signal["_trusted_live_quote"] = True
         ok, reason, fetched_live = await validate_signal_freshness(validation_signal, cached_live_price=live_price)
@@ -707,6 +740,31 @@ async def validate_delivery_freshness(
         logger.debug("[delivery_freshness] price revalidation skipped after error: %s", exc)
 
     if live_price is not None:
+        # One canonical percentage gate is authoritative for final entry drift.
+        # The stale validator receives this same threshold, avoiding conflicting
+        # "accepted" then "blocked" decisions from independent constants.
+        entry = _to_float(sig.get("entry"))
+        drift_pct = None
+        if entry is not None:
+            drift_pct = abs(float(live_price) - entry) / entry * 100.0
+            max_drift_pct = _canonical_entry_drift_pct(sig, symbol)
+            if drift_pct > max_drift_pct + 1e-9:
+                return DeliveryFreshnessResult(
+                    False,
+                    f"final_entry_drift:{drift_pct:.2f}%>{max_drift_pct:.2f}%",
+                    age_result.age_minutes,
+                    age_result.max_age_minutes,
+                    age_result.opportunity_remaining_pct,
+                    float(live_price),
+                    state="MISSED_ENTRY" if final_send else "MISSED_ENTRY_DRIFT",
+                    entry_drift_pct=drift_pct,
+                    queue_age_seconds=queue_result.queue_age_seconds,
+                    max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                    rule_results=tuple(rule_results) + ("canonical_drift_failed",),
+                    **quote_meta,
+                )
+        rule_results.append("canonical_drift_passed")
+
         if _env_bool("REJECT_IF_TP1_ALREADY_HIT", True) and _first_target_hit(sig, float(live_price)):
             return DeliveryFreshnessResult(
                 False,
@@ -742,34 +800,13 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 float(live_price),
-                state="MISSED_ENTRY" if "drift" in rr_reason and final_send else ("BLOCKED_RISK_INVALID" if final_send else None),
+                state="BLOCKED_RISK_INVALID" if final_send else None,
                 current_rr=current_rr,
                 rule_results=tuple(rule_results) + ("reward_risk_failed",),
                 **quote_meta,
             )
         rule_results.append("reward_risk_passed")
 
-        entry = _to_float(sig.get("entry"))
-        drift_pct = None
-        if entry is not None:
-            drift_pct = abs(float(live_price) - entry) / entry * 100.0
-            max_drift_pct = _max_entry_drift_pct(symbol)
-            if drift_pct > max_drift_pct + 1e-9:
-                return DeliveryFreshnessResult(
-                    False,
-                    f"final_entry_drift:{drift_pct:.2f}%>{max_drift_pct:.2f}%",
-                    age_result.age_minutes,
-                    age_result.max_age_minutes,
-                    age_result.opportunity_remaining_pct,
-                    float(live_price),
-                    state="MISSED_ENTRY" if final_send else "MISSED_ENTRY_DRIFT",
-                    entry_drift_pct=drift_pct,
-                    queue_age_seconds=queue_result.queue_age_seconds,
-                    max_queue_age_seconds=queue_result.max_queue_age_seconds,
-                    rule_results=tuple(rule_results) + ("class_drift_failed",),
-                    **quote_meta,
-                )
-        rule_results.append("class_drift_passed")
         try:
             from engine.price_validator import check_sl_tp_hit
 

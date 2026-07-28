@@ -18,11 +18,18 @@ def _env_bool(name:str,default:bool=False)->bool:
     return default if raw is None else raw.strip().lower() in {"1","true","yes","on","y"}
 
 def _asset_class(asset:str)->str:
-    if is_crypto(asset):return "crypto"
-    if is_fx(asset):return "fx"
-    if is_commodity(asset):return "commodity"
-    if is_index(asset):return "index"
-    if is_stock(asset):return "stock"
+    symbol=str(asset or "").upper().strip()
+    try:
+        from services.asset_mapper import classify_asset
+        value=str(classify_asset(symbol) or "").lower().strip()
+        value={"forex":"fx","equity":"stock","equities":"stock","indices":"index","commodities":"commodity","rates":"macro","yield":"macro"}.get(value,value)
+        if value in {"crypto","fx","commodity","index","stock","macro","volatility"}:return value
+    except Exception:pass
+    if is_crypto(symbol):return "crypto"
+    if is_fx(symbol):return "fx"
+    if is_commodity(symbol):return "commodity"
+    if is_index(symbol):return "index"
+    if is_stock(symbol):return "stock"
     return "unknown"
 
 def _session(asset_class:str)->str:
