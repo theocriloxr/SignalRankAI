@@ -1,14 +1,14 @@
 {
   "categories": {
     "deployment_configuration": 28,
-    "documentation": 86,
+    "documentation": 89,
     "migration": 24,
-    "production_runtime": 459,
+    "production_runtime": 460,
     "project_asset": 141,
     "script": 39,
-    "test": 154
+    "test": 159
   },
-  "file_count": 931,
+  "file_count": 940,
   "files": [
     {
       "category": "project_asset",
@@ -24,12 +24,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 173,
+      "line_count": 175,
       "parse_status": "not_applicable",
       "path": ".env.example",
       "public_symbols": [],
-      "sha256": "b268258e7890fa0366a1a5962e973769b84928a9f83555285e383d9952753581",
-      "size_bytes": 5048,
+      "sha256": "381eaef59842f0a997a43ae735552f77bd42f9ebd97eb8c572ea545d191d92f8",
+      "size_bytes": 5080,
       "test_references": [
         "tests/test_broker_execution_p0.py",
         "tests/test_canonical_broker_entrypoints.py",
@@ -46,6 +46,7 @@
         "tests/test_paystack_webhook.py",
         "tests/test_production_endgame_20260725.py",
         "tests/test_production_operations_package.py",
+        "tests/test_provider_certification_entrypoint.py",
         "tests/test_railway_lifecycle.py",
         "tests/test_realtime_outcome_tracker_user_perf_ids.py",
         "tests/test_runtime_config_snapshot.py",
@@ -55,7 +56,9 @@
         "tests/test_single_service_defaults.py",
         "tests/test_stale_learning_multiservice.py",
         "tests/test_trade_tracker.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -92,6 +95,7 @@
         "tests/test_free_provider_microstructure.py",
         "tests/test_governance_docs.py",
         "tests/test_market_data_routing.py",
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_migration_database_url_normalization.py",
         "tests/test_mt5_signal_router_queue.py",
         "tests/test_native_mt5_bridge_hardening.py",
@@ -142,6 +146,8 @@
         "tests/test_time_stop_outcome_persistence.py",
         "tests/test_trade_manager_breakeven_persistence.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -625,12 +631,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 13,
+      "line_count": 15,
       "parse_status": "not_applicable",
       "path": "PACKAGE_MANIFEST.txt",
       "public_symbols": [],
-      "sha256": "23fddc3e625a140800b540a50be5a5a7c854ea8e698fcd44250e0bc361706e8c",
-      "size_bytes": 735,
+      "sha256": "2892c396ac1ca88964e9c1d25cd2736ecf798e3b9505c39bd841a9bb36fbc307",
+      "size_bytes": 819,
       "test_references": []
     },
     {
@@ -1714,7 +1720,8 @@
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_migration_revision_ids.py",
         "tests/test_production_endgame_20260725.py",
-        "tests/test_railway_runtime_incident_fixes.py"
+        "tests/test_railway_runtime_incident_fixes.py",
+        "tests/test_v104_runtime_schema_hotfix.py"
       ]
     },
     {
@@ -1845,6 +1852,8 @@
         "tests/test_stale_learning_multiservice.py",
         "tests/test_telegram_webhook_registration_contract.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -1864,12 +1873,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 143,
+      "line_count": 145,
       "parse_status": "not_applicable",
       "path": "configs/env/production.env.example",
       "public_symbols": [],
-      "sha256": "f10771466873d91c15ccc69eebaa83acab73784515cf5b05a79663c6a1974983",
-      "size_bytes": 4344,
+      "sha256": "42c7455cefc3178950c28d50896ad6665decc35a1e2c37c713b3ace2890c8c10",
+      "size_bytes": 4376,
       "test_references": [
         "tests/test_runtime_hardening_contract.py"
       ]
@@ -1877,12 +1886,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 170,
+      "line_count": 171,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-hobby-full-advisory.env.example",
       "public_symbols": [],
-      "sha256": "5826af1445b0a53d2d8015c6fab89465f41ae525e0db7148e3b5bff8ad923db5",
-      "size_bytes": 5084,
+      "sha256": "92f292bb19e15760559ef995e0cca56bc8f2b6ee0cbd4e2fb5155b2f8f296c59",
+      "size_bytes": 5115,
       "test_references": [
         "tests/test_production_operations_package.py"
       ]
@@ -1890,12 +1899,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 166,
+      "line_count": 167,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-hobby-owner-beta.env.example",
       "public_symbols": [],
-      "sha256": "3d3c8cae02592c252b172b76df2fad20844fb3546a525ddbcd7b9cb6e7bcf8e4",
-      "size_bytes": 4773,
+      "sha256": "0cb227a0a64b693925b51d72a5fcb3fdb656e5dd7404875e15768ac7152b3840",
+      "size_bytes": 4804,
       "test_references": [
         "tests/test_complete_system_orchestrator_contract.py",
         "tests/test_production_operations_package.py",
@@ -1905,12 +1914,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 153,
+      "line_count": 154,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-hobby-paper-demo.env.example",
       "public_symbols": [],
-      "sha256": "810136d71890b7ee46c92757e782c82559204b6777625afa4fa7009adf39d003",
-      "size_bytes": 4266,
+      "sha256": "4fd7bb951254ae3f3308e0765c88de281d66243ce13671464bfa477baa5e11c2",
+      "size_bytes": 4297,
       "test_references": [
         "tests/test_production_operations_package.py"
       ]
@@ -1918,12 +1927,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 159,
+      "line_count": 160,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-hobby-real-execution-gated.env.example",
       "public_symbols": [],
-      "sha256": "5d6492ae2e9d26f00184f052b3179342da23579719968db1a7b12908dabb0ee9",
-      "size_bytes": 4588,
+      "sha256": "c92dbd62e784f49c759192c9228dde5e23f9b96f0859df94a8a750ea5b76bc41",
+      "size_bytes": 4619,
       "test_references": [
         "tests/test_production_operations_package.py"
       ]
@@ -1931,12 +1940,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 175,
+      "line_count": 176,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-staging.env.example",
       "public_symbols": [],
-      "sha256": "a76312fd5a42be16acb9ac83bacda8d61f89f39df7275857a478b74cf9494ce4",
-      "size_bytes": 5207,
+      "sha256": "68f85d1d27092d293111c06f1826320e28ec6b85ada8f9ae353e052872428e4c",
+      "size_bytes": 5238,
       "test_references": [
         "tests/test_runtime_hardening_contract.py"
       ]
@@ -2225,6 +2234,7 @@
         "tests/test_production_quality_guard.py",
         "tests/test_provider_and_asset_registry_hardening.py",
         "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_certification_entrypoint.py",
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_providers_proxy.py",
         "tests/test_proxy_manager.py",
@@ -2252,6 +2262,8 @@
         "tests/test_trade_tracker.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -2376,7 +2388,9 @@
         "tests/test_realtime_outcome_tracker_user_perf_ids.py",
         "tests/test_runtime_hardening_contract.py",
         "tests/test_stale_learning_multiservice.py",
-        "tests/test_timezone_and_performance_v2.py"
+        "tests/test_timezone_and_performance_v2.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -2784,9 +2798,10 @@
       "public_symbols": [
         "get_version_banner"
       ],
-      "sha256": "2cc5ec4f6bb8e779cc53fafe661d6c902231241f04102e8d606e177f43e443cc",
+      "sha256": "cb84b0af0251659f9b24a400e0bc480bb40b89e5600c0d407f9a732b0d913c16",
       "size_bytes": 918,
       "test_references": [
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_migration_revision_ids.py",
         "tests/test_ml_registry.py",
         "tests/test_ml_schema_evolution.py",
@@ -2799,6 +2814,8 @@
         "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_staged_release_contracts.py",
         "tests/test_timezone_and_performance_v2.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_yfinance_integration.py"
       ]
@@ -2966,6 +2983,7 @@
         "tests/test_runtime_p0_cache_worker_scheduler.py",
         "tests/test_signal_fingerprint.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -3799,6 +3817,7 @@
         "tests/test_phase4_pass1_live_validation.py",
         "tests/test_phase4_pass1_quote_contract.py",
         "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_certification_entrypoint.py",
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_providers_proxy.py",
         "tests/test_railway_runtime_incident_fixes.py",
@@ -3936,7 +3955,8 @@
         "tests/test_phase4_pass4_outcome_tracker_redesign.py",
         "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_runtime_p0_cache_worker_scheduler.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -4007,7 +4027,9 @@
         "tests/test_realtime_outcome_tracker_user_perf_ids.py",
         "tests/test_runtime_hardening_contract.py",
         "tests/test_stale_learning_multiservice.py",
-        "tests/test_timezone_and_performance_v2.py"
+        "tests/test_timezone_and_performance_v2.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -4099,6 +4121,7 @@
         "tests/test_production_quality_guard.py",
         "tests/test_provider_and_asset_registry_hardening.py",
         "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_certification_entrypoint.py",
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_providers_proxy.py",
         "tests/test_proxy_manager.py",
@@ -4126,6 +4149,8 @@
         "tests/test_trade_tracker.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -4339,16 +4364,17 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 195,
+      "line_count": 244,
       "parse_status": "ok",
       "path": "db/migrations/versions/0015_active_signal_guard.py",
       "public_symbols": [
         "downgrade",
         "upgrade"
       ],
-      "sha256": "7bc0e38e1c1e0b9a774c6466f32cd2612ff52be1f74fa6a3334b675266a1a298",
-      "size_bytes": 6000,
+      "sha256": "59aced565b2b172dc0967f3c125638a95dacecb3a3323061cbc213f247fdf5a1",
+      "size_bytes": 7718,
       "test_references": [
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_railway_runtime_incident_fixes.py"
       ]
     },
@@ -4459,8 +4485,25 @@
       "sha256": "e9d260e1c7ba15b1cab58d3ff9571ea24031d3146c3ab54296c875c7c9f0bae4",
       "size_bytes": 5365,
       "test_references": [
-        "tests/test_production_endgame_20260725.py",
         "tests/test_railway_runtime_incident_fixes.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 127,
+      "parse_status": "ok",
+      "path": "db/migrations/versions/0023_signal_runtime_schema.py",
+      "public_symbols": [
+        "downgrade",
+        "upgrade"
+      ],
+      "sha256": "334cd0299811be583a3bc1d410f9f2c03db13ce8c995d1136df2bef600994b1a",
+      "size_bytes": 4108,
+      "test_references": [
+        "tests/test_production_endgame_20260725.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -4693,7 +4736,8 @@
         "tests/test_phase4_pass2_db_priority_and_command_speed.py",
         "tests/test_runtime_hotfix_20260725.py",
         "tests/test_storage_priority_hardening.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -4831,6 +4875,7 @@
         "tests/test_time_stop_outcome_persistence.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -5272,7 +5317,9 @@
         "tests/test_runtime_hotfix_20260725.py",
         "tests/test_secret_scan_documents.py",
         "tests/test_single_service_defaults.py",
-        "tests/test_stale_learning_multiservice.py"
+        "tests/test_stale_learning_multiservice.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -5299,7 +5346,9 @@
         "tests/test_runtime_hotfix_20260725.py",
         "tests/test_secret_scan_documents.py",
         "tests/test_single_service_defaults.py",
-        "tests/test_stale_learning_multiservice.py"
+        "tests/test_stale_learning_multiservice.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -5338,12 +5387,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 245,
+      "line_count": 246,
       "parse_status": "not_applicable",
       "path": "deployment_package/SignalRankAI_Railway_Owner_Beta.env",
       "public_symbols": [],
-      "sha256": "9167abfefe4994108c3057d7e2308c6b643d3733a2d62e9af3e4a0f362b3cca0",
-      "size_bytes": 8080,
+      "sha256": "4b16fd65e01d309babf917e4aa3d41dd1faf563087cde5899ea0e34abae24239",
+      "size_bytes": 8111,
       "test_references": []
     },
     {
@@ -6105,6 +6154,17 @@
     {
       "category": "documentation",
       "env_variables": [],
+      "line_count": 36,
+      "parse_status": "not_applicable",
+      "path": "docs/RAILWAY_CLEAN_DATABASE_MIGRATION_HOTFIX_2026-07-27.md",
+      "public_symbols": [],
+      "sha256": "bd2b71c47236bfe2d467d7b6d379d8388c6b342196e0b30ce127529e3c301e7a",
+      "size_bytes": 1308,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
       "line_count": 915,
       "parse_status": "not_applicable",
       "path": "docs/RAILWAY_MONOLITH_PRODUCTION_PASS_2026-06-29.md",
@@ -6138,12 +6198,34 @@
     {
       "category": "documentation",
       "env_variables": [],
+      "line_count": 21,
+      "parse_status": "not_applicable",
+      "path": "docs/RAILWAY_READINESS_TIMEOUT_HOTFIX_2026-07-27.md",
+      "public_symbols": [],
+      "sha256": "3252f52266a90eaa9e77ce57d916956be8f72d5208003b2cfa964e54d8ddda1a",
+      "size_bytes": 958,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
       "line_count": 168,
       "parse_status": "not_applicable",
       "path": "docs/RAILWAY_RUNTIME_INCIDENT_FIXES_2026-07-26.md",
       "public_symbols": [],
       "sha256": "0e29b252212c4cff849864954da0aa7dd98bdf4711f345bfa0bfda46c8420817",
       "size_bytes": 5020,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 11,
+      "parse_status": "not_applicable",
+      "path": "docs/RAILWAY_RUNTIME_SCHEMA_HOTFIX_2026-07-27.md",
+      "public_symbols": [],
+      "sha256": "eb2a3d1afb581e8f66031cfffc8d45d90b445d752e34c560b90b5ec61b45c1e6",
+      "size_bytes": 652,
       "test_references": []
     },
     {
@@ -6599,7 +6681,8 @@
         "tests/test_telemetry.py",
         "tests/test_trade_tracker.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -7664,6 +7747,7 @@
         "tests/test_macro_flow.py",
         "tests/test_market_monitor_regressions.py",
         "tests/test_market_state.py",
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_monolith_hardening_defaults.py",
         "tests/test_mt5_signal_router_queue.py",
         "tests/test_native_mt5_bridge_hardening.py",
@@ -7719,6 +7803,8 @@
         "tests/test_trade_tracker.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
@@ -7953,7 +8039,8 @@
       "sha256": "060f31fbb965a5013c107bccc48ead9021db33c2a874b00b46430a3e2af0fb51",
       "size_bytes": 5872,
       "test_references": [
-        "tests/test_score_calibration.py"
+        "tests/test_score_calibration.py",
+        "tests/test_v104_runtime_schema_hotfix.py"
       ]
     },
     {
@@ -8168,6 +8255,7 @@
         "tests/test_runtime_p0_cache_worker_scheduler.py",
         "tests/test_signal_fingerprint.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -9010,6 +9098,8 @@
         "tests/test_strategy_runner_async.py",
         "tests/test_timeutils.py",
         "tests/test_trade_tracker.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_yfinance_integration.py"
       ]
     },
@@ -9693,6 +9783,7 @@
         "tests/test_expectancy_gate.py",
         "tests/test_formatter_delivery_pressure.py",
         "tests/test_free_provider_microstructure.py",
+        "tests/test_governance_runtime_exclusions.py",
         "tests/test_market_data_routing.py",
         "tests/test_mt5_signal_router_queue.py",
         "tests/test_native_mt5_bridge_hardening.py",
@@ -9716,7 +9807,8 @@
         "tests/test_tiered_execution_canonical_routing.py",
         "tests/test_time_stop_outcome_persistence.py",
         "tests/test_trade_manager_breakeven_persistence.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -9752,7 +9844,9 @@
         "tests/test_runtime_hotfix_20260725.py",
         "tests/test_single_service_defaults.py",
         "tests/test_stale_learning_multiservice.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -9764,6 +9858,7 @@
         "BOT_APP_DISCOVERY_TIMEOUT_SECONDS",
         "BOT_START_ATTEMPT_TIMEOUT_SECONDS",
         "DATABASE_URL",
+        "DB_READINESS_TIMEOUT_SECONDS",
         "DELIVERY_REDIS_URL",
         "DEPLOYMENT_DIAGNOSTICS_KEY",
         "DEPLOYMENT_DIAGNOSTICS_REPORT_PATH",
@@ -9812,7 +9907,7 @@
         "WEBHOOK_URL",
         "WORKER_OUTCOME_TRACKER_ENABLED"
       ],
-      "line_count": 2607,
+      "line_count": 2698,
       "parse_status": "ok",
       "path": "railway_main.py",
       "public_symbols": [
@@ -9820,8 +9915,8 @@
         "tradingview_webhook",
         "tradingview_webhook_status"
       ],
-      "sha256": "804b3ff24534c9e50e5a0f038bab6fe4f48b834d374d0a3bbd56a3ff1191f6db",
-      "size_bytes": 108870,
+      "sha256": "7ad11df874ac1f641f04b73f8655278848c3f24f3478f089c86bc0b705da3c44",
+      "size_bytes": 113433,
       "test_references": [
         "tests/test_production_endgame_20260725.py",
         "tests/test_railway_lifecycle.py",
@@ -9831,7 +9926,9 @@
         "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_railway_simulation_contract.py",
         "tests/test_railway_staging_activation_hotfix_20260727.py",
-        "tests/test_runtime_hotfix_20260725.py"
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py"
       ]
     },
     {
@@ -10046,12 +10143,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 9748,
+      "line_count": 9766,
       "parse_status": "not_applicable",
       "path": "requirements/environment_registry.yaml",
       "public_symbols": [],
-      "sha256": "05fe1f3383a90572ba1d98ec753854f416cd390c5587200ce4c79a77147a8b39",
-      "size_bytes": 294944,
+      "sha256": "c258f5ed6c1127343dc909456fc6bcef460bd5fb0179ac4cca88f804f31ad848",
+      "size_bytes": 295613,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10098,12 +10195,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 7485,
+      "line_count": 7548,
       "parse_status": "not_applicable",
       "path": "requirements/legacy_disposition.json",
       "public_symbols": [],
-      "sha256": "896695162a6d9a75f166c64c8435e139e7ee915cbf1ac33242c8fd09f266d844",
-      "size_bytes": 264679,
+      "sha256": "f44df0ff35765848793233cd3689ab81b0b453e3464d615cb6bf514be0a1fffa",
+      "size_bytes": 266988,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10748,7 +10845,7 @@
     {
       "category": "script",
       "env_variables": [],
-      "line_count": 629,
+      "line_count": 631,
       "parse_status": "ok",
       "path": "scripts/build_v7_governance.py",
       "public_symbols": [
@@ -10764,16 +10861,17 @@
         "generate",
         "main"
       ],
-      "sha256": "a99e056ecd1127275b4d0e97703904b2a49901ed5cfeba1ae88dcd0856718849",
-      "size_bytes": 44439,
+      "sha256": "a854a96e541b877d107bce88d4e3b4975a404697a73ca95ba57187993644bc25",
+      "size_bytes": 44478,
       "test_references": [
+        "tests/test_governance_runtime_exclusions.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
     {
       "category": "script",
       "env_variables": [],
-      "line_count": 250,
+      "line_count": 254,
       "parse_status": "ok",
       "path": "scripts/certify_providers.py",
       "public_symbols": [
@@ -10782,10 +10880,11 @@
         "certify_one",
         "main"
       ],
-      "sha256": "330bfdd0eed747171be1ca9b56cd827d8dc12a9428cc8c2e91cd533413a791f9",
-      "size_bytes": 9388,
+      "sha256": "ebd2fcf5f3c213adc370f548098bdb4891670e7a80dd49e2422d4556fbc1a3fa",
+      "size_bytes": 9496,
       "test_references": [
-        "tests/test_provider_catalog_and_certification.py"
+        "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_certification_entrypoint.py"
       ]
     },
     {
@@ -10815,7 +10914,7 @@
         "DEPLOYMENT_SCANNER_TIMEOUT_SECONDS",
         "DEPLOYMENT_SIGNAL_DISPATCH_MAX_DEPTH"
       ],
-      "line_count": 1181,
+      "line_count": 1203,
       "parse_status": "ok",
       "path": "scripts/deployment_diagnostics.py",
       "public_symbols": [
@@ -10837,12 +10936,13 @@
         "static_checks",
         "telegram_check"
       ],
-      "sha256": "669685e1aba54a1bf27c44c98b80382d33fcb038b0484be4e69c26b3cfb0df95",
-      "size_bytes": 49367,
+      "sha256": "a94e35cf4a5832a4ef09fbe7a6627e850a9b390fc9e5d295b8e8c0aa16fba4bf",
+      "size_bytes": 50504,
       "test_references": [
         "tests/test_deployment_diagnostics_entrypoint.py",
         "tests/test_diagnostics_source_scope.py",
-        "tests/test_railway_runtime_incident_fixes.py"
+        "tests/test_railway_runtime_incident_fixes.py",
+        "tests/test_v104_runtime_schema_hotfix.py"
       ]
     },
     {
@@ -11195,18 +11295,20 @@
     {
       "category": "script",
       "env_variables": [],
-      "line_count": 48,
+      "line_count": 112,
       "parse_status": "ok",
       "path": "scripts/schema_audit.py",
       "public_symbols": [
+        "audit_signal_runtime_contract",
         "audit_versions",
         "main"
       ],
-      "sha256": "d925ed53b28bc08e392ebdbedeb2711fada796dcacfcbc7ef0fdfd0d63388cff",
-      "size_bytes": 1999,
+      "sha256": "f2a155bad8d1f83f713a75cec5dd1116e8bfd97e9cce9aa037eb308485afe722",
+      "size_bytes": 4159,
       "test_references": [
         "tests/test_complete_system_orchestrator_contract.py",
-        "tests/test_runtime_hotfix_20260725.py"
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_v104_runtime_schema_hotfix.py"
       ]
     },
     {
@@ -13253,6 +13355,7 @@
         "tests/test_deploy_log_regressions.py",
         "tests/test_enterprise_features.py",
         "tests/test_formatter_delivery_pressure.py",
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_migration_database_url_normalization.py",
         "tests/test_migration_revision_ids.py",
         "tests/test_monolith_hardening_defaults.py",
@@ -13280,6 +13383,7 @@
         "tests/test_time_stop_outcome_persistence.py",
         "tests/test_timezone_and_performance_v2.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -13297,9 +13401,12 @@
         "tests/test_deploy_log_regressions.py",
         "tests/test_governance_docs.py",
         "tests/test_ml_schema_evolution.py",
+        "tests/test_production_endgame_20260725.py",
         "tests/test_railway_activation_contract.py",
         "tests/test_runtime_hotfix_20260725.py",
         "tests/test_runtime_log_regressions.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -13381,6 +13488,7 @@
         "tests/test_runtime_p0_cache_worker_scheduler.py",
         "tests/test_signal_fingerprint.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -13609,6 +13717,7 @@
         "tests/test_formatter_delivery_pressure.py",
         "tests/test_free_provider_microstructure.py",
         "tests/test_governance_docs.py",
+        "tests/test_governance_runtime_exclusions.py",
         "tests/test_help_menu_cache.py",
         "tests/test_imp_strategy.py",
         "tests/test_indices_asset_support.py",
@@ -13617,6 +13726,7 @@
         "tests/test_market_data_routing.py",
         "tests/test_market_monitor_regressions.py",
         "tests/test_market_state.py",
+        "tests/test_migration_0015_clean_schema.py",
         "tests/test_migration_database_url_normalization.py",
         "tests/test_migration_revision_ids.py",
         "tests/test_ml_registry.py",
@@ -13654,6 +13764,7 @@
         "tests/test_production_readiness_check.py",
         "tests/test_provider_and_asset_registry_hardening.py",
         "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_certification_entrypoint.py",
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_providers_proxy.py",
         "tests/test_proxy_manager.py",
@@ -13661,10 +13772,7 @@
         "tests/test_railway_lifecycle.py",
         "tests/test_railway_monolith_contract.py",
         "tests/test_railway_no_redis.py",
-        "tests/test_railway_redis_queue.py",
-        "tests/test_railway_runtime_incident_fixes.py",
-        "tests/test_railway_simulation_contract.py",
-        "tests/test_railway_staging_activation_hotfix_20260727.py"
+        "tests/test_railway_redis_queue.py"
       ]
     },
     {
@@ -13991,7 +14099,8 @@
       "sha256": "fcbf73aad3a7fd885039ce6600b055d0debc62fc59744f9be07d6fe84a1e27f7",
       "size_bytes": 944,
       "test_references": [
-        "tests/test_railway_runtime_incident_fixes.py"
+        "tests/test_railway_runtime_incident_fixes.py",
+        "tests/test_v104_runtime_schema_hotfix.py"
       ]
     },
     {
@@ -15111,6 +15220,19 @@
     {
       "category": "test",
       "env_variables": [],
+      "line_count": 9,
+      "parse_status": "ok",
+      "path": "tests/test_governance_runtime_exclusions.py",
+      "public_symbols": [
+        "test_governance_ignores_runtime_only_output_directories"
+      ],
+      "sha256": "5ceda78414e545181f2d2502b0dbdd741b89ab10958916f83993bba6a0846118",
+      "size_bytes": 304,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
       "line_count": 24,
       "parse_status": "ok",
       "path": "tests/test_help_menu_cache.py",
@@ -15231,6 +15353,20 @@
       ],
       "sha256": "2a3b647b388c440701e7d009737acca931d477958aa4fa4cbdb6ba0df7d344a4",
       "size_bytes": 1998,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 26,
+      "parse_status": "ok",
+      "path": "tests/test_migration_0015_clean_schema.py",
+      "public_symbols": [
+        "test_0015_creates_signal_status_before_using_it",
+        "test_0015_preserves_existing_status_values"
+      ],
+      "sha256": "e3c1d5154440c7faf622407fc05e0ec14714cd329b833dd6fce5669239cad7e3",
+      "size_bytes": 957,
       "test_references": []
     },
     {
@@ -15787,8 +15923,8 @@
         "test_segment_quarantine_uses_delivery_proof",
         "test_worker_does_not_own_analytics_in_monolith"
       ],
-      "sha256": "1b8359cfa6ea6a211ef20a263da618bda1ab596b06fa4a999e2b30937b1dacac",
-      "size_bytes": 6403,
+      "sha256": "6c6e1e864610d5a1db11178af0fcd3879e2e4a25cd97f4ee3456502aa44fb176",
+      "size_bytes": 6402,
       "test_references": []
     },
     {
@@ -15879,6 +16015,19 @@
       ],
       "sha256": "eb5defb0d0223b1dac40524d587c391b9e581f164201132d41a6e7022881d948",
       "size_bytes": 2469,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 33,
+      "parse_status": "ok",
+      "path": "tests/test_provider_certification_entrypoint.py",
+      "public_symbols": [
+        "test_provider_certification_runs_as_direct_script"
+      ],
+      "sha256": "a3292845683fed2e30756e4a9ca951fab2b1981cfba5cc4408980809f210d004",
+      "size_bytes": 827,
       "test_references": []
     },
     {
@@ -16779,6 +16928,40 @@
     {
       "category": "test",
       "env_variables": [],
+      "line_count": 64,
+      "parse_status": "ok",
+      "path": "tests/test_v104_runtime_schema_hotfix.py",
+      "public_symbols": [
+        "test_clean_upgrade_contains_all_signal_runtime_columns_before_head",
+        "test_diagnostics_uses_catalog_semantics_not_fragile_index_text",
+        "test_readiness_requires_signal_metrics_and_active_guard",
+        "test_schema_audit_checks_signal_orm_contract",
+        "test_v104_is_the_sole_migration_head"
+      ],
+      "sha256": "184ccc9a0c37cf2f951954b8ded8e995397cf725e92e368815994280cdff053d",
+      "size_bytes": 2257,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 111,
+      "parse_status": "ok",
+      "path": "tests/test_v105_railway_readiness_hotfix.py",
+      "public_symbols": [
+        "test_database_readiness_returns_ready_from_consolidated_row",
+        "test_database_readiness_uses_bounded_railway_safe_timeout",
+        "test_database_readiness_uses_critical_lane_and_one_round_trip",
+        "test_railway_profiles_publish_readiness_timeout",
+        "test_release_version_is_105"
+      ],
+      "sha256": "bf2bfd8a50924e8476a0ef67ea41eb805eee7a10344955c1afcb2f8ea38a474f",
+      "size_bytes": 3665,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
       "line_count": 116,
       "parse_status": "ok",
       "path": "tests/test_v7_governance_contract.py",
@@ -17329,6 +17512,7 @@
         "tests/test_telemetry.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -17415,6 +17599,7 @@
         "tests/test_telemetry.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -17583,6 +17768,6 @@
       ]
     }
   ],
-  "generated_at": "2026-07-27T13:47:03.258343+00:00",
-  "root": "/mnt/data/sra_hotfix/SignalRankAI_Final_Release_Candidate_v1.0.1_Railway_Hotfix_2026-07-27"
+  "generated_at": "2026-07-27T22:11:38.179458+00:00",
+  "root": "/mnt/data/sra_v105_work/repo"
 }

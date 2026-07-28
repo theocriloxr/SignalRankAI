@@ -1,13 +1,15 @@
-SignalRankAI final release candidate — Railway pre-deploy hotfix
+SignalRankAI final release candidate — Railway readiness hotfix
 Date: 2026-07-27
-Version: 1.0.1
-Base release: SignalRankAI_Final_Release_Candidate_2026-07-27
-Hotfix 1: normalise Railway postgres:// migration URLs to postgresql+psycopg2://
-Hotfix 2: compile diagnostics work with or without .git metadata
+Version: 1.0.5
+Base release: SignalRankAI_Final_Release_Candidate_v1.0.4_Runtime_Schema_Hotfix_2026-07-27
+Hotfix: replace the 1.5-second multi-roundtrip database readiness probe with one consolidated schema query
+Readiness admission: reserved DBPriority.CRITICAL lane
+Readiness timeout: DB_READINESS_TIMEOUT_SECONDS=8 by default, bounded to 2–30 seconds
 Alembic head: 0023_signal_runtime_schema
-Focused hotfix verification: 15 passed, 0 failed
-Tracked Python compilation: 673 files, 0 failures, with Git and without Git
-Alembic offline full-chain generation with Railway-style URL: PASS
+Focused Railway/readiness/session verification: 90 passed, 0 failed
+Governance validation: PASS
+Environment contracts: PASS
+Schema audit: PASS
 Repository secret scan: PASS, 0 findings
 Safety: no secrets included; payments and real execution remain feature-gated
-Live status: redeploy required for Railway pre-deploy and runtime evidence
+Live status: Railway redeploy required for final staging activation evidence

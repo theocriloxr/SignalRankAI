@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
-  "variable_count": 812,
+  "variable_count": 813,
   "variables": [
     {
       "declared_defaults": {},
@@ -443,7 +443,7 @@
       "production_example_default": "production",
       "read_locations": [
         "core/env.py:47",
-        "railway_main.py:2106",
+        "railway_main.py:2142",
         "railway_main.py:413"
       ],
       "required_by_code": true,
@@ -2215,6 +2215,24 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "8",
+        "configs/env/production.env.example": "8",
+        "configs/env/railway-hobby-full-advisory.env.example": "8",
+        "configs/env/railway-hobby-owner-beta.env.example": "8",
+        "configs/env/railway-hobby-paper-demo.env.example": "8",
+        "configs/env/railway-hobby-real-execution-gated.env.example": "8",
+        "configs/env/railway-staging.env.example": "8"
+      },
+      "name": "DB_READINESS_TIMEOUT_SECONDS",
+      "production_example_default": "8",
+      "read_locations": [
+        "railway_main.py:1961"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "3"
       },
       "name": "DB_RETRY_ATTEMPTS",
@@ -2520,7 +2538,7 @@
         "core/redis_state.py:85",
         "core/redis_streams.py:32",
         "railway_main.py:190",
-        "railway_main.py:2124",
+        "railway_main.py:2160",
         "railway_main.py:353"
       ],
       "required_by_code": true,
@@ -3171,7 +3189,7 @@
       "production_example_default": null,
       "read_locations": [
         "core/env.py:47",
-        "railway_main.py:2107",
+        "railway_main.py:2143",
         "railway_main.py:414"
       ],
       "required_by_code": true,
@@ -6557,7 +6575,7 @@
       "name": "RAILWAY_ENVIRONMENT_NAME",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:2108",
+        "railway_main.py:2144",
         "railway_main.py:411"
       ],
       "required_by_code": true,
@@ -6757,7 +6775,7 @@
       "production_example_default": null,
       "read_locations": [
         "core/redis_state.py:46",
-        "railway_main.py:2083",
+        "railway_main.py:2119",
         "services/provider_registry.py:154"
       ],
       "required_by_code": true,
@@ -6796,7 +6814,7 @@
         "core/redis_global_stats.py:45",
         "core/redis_state.py:84",
         "core/trade_tracker.py:279",
-        "railway_main.py:2121",
+        "railway_main.py:2157",
         "railway_main.py:350",
         "railway_main.py:69",
         "services/dead_letter_queue.py:58",
@@ -6819,8 +6837,8 @@
       "read_locations": [
         "core/redis_state.py:875",
         "railway_main.py:1382",
-        "railway_main.py:2286",
-        "railway_main.py:2465"
+        "railway_main.py:2322",
+        "railway_main.py:2501"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7944,7 +7962,7 @@
       "name": "SIGNALRANK_STATE_REDIS_URL",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:2120",
+        "railway_main.py:2156",
         "railway_main.py:349"
       ],
       "required_by_code": true,
@@ -8327,7 +8345,7 @@
       "production_example_default": null,
       "read_locations": [
         "core/redis_state.py:86",
-        "railway_main.py:2119",
+        "railway_main.py:2155",
         "railway_main.py:348"
       ],
       "required_by_code": true,
@@ -8522,7 +8540,7 @@
         "engine/admin_pulse.py:602",
         "engine/core.py:1331",
         "engine/signal_deduplicator.py:1017",
-        "railway_main.py:2148",
+        "railway_main.py:2184",
         "railway_main.py:440",
         "railway_main.py:720",
         "services/dead_letter_queue.py:316",
@@ -8764,8 +8782,8 @@
       "production_example_default": "<GENERATE_RANDOM_SECRET>",
       "read_locations": [
         "core/telegram_webhook_config.py:33",
-        "railway_main.py:2153",
-        "railway_main.py:2379",
+        "railway_main.py:2189",
+        "railway_main.py:2415",
         "railway_main.py:354"
       ],
       "required_by_code": true,
@@ -9162,8 +9180,8 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:76",
-        "railway_main.py:2553",
-        "railway_main.py:2652"
+        "railway_main.py:2589",
+        "railway_main.py:2688"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -9458,7 +9476,7 @@
       "name": "WEBHOOK_MAX_BODY_BYTES",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:2401"
+        "railway_main.py:2437"
       ],
       "required_by_code": true,
       "sensitive": false

@@ -1,5 +1,5 @@
 {
-  "file_count": 939,
+  "file_count": 941,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11,11 +11,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 173,
+      "line_count": 175,
       "path": ".env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b268258e7890fa0366a1a5962e973769b84928a9f83555285e383d9952753581",
-      "size_bytes": 5048
+      "sha256": "381eaef59842f0a997a43ae735552f77bd42f9ebd97eb8c572ea545d191d92f8",
+      "size_bytes": 5080
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -371,11 +371,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 13,
+      "line_count": 15,
       "path": "PACKAGE_MANIFEST.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b5a34c63726e0cc800528b799a5e6b1be0a9a5c5bf4f2b5801ca25d792ea2cee",
-      "size_bytes": 734
+      "sha256": "2892c396ac1ca88964e9c1d25cd2736ecf798e3b9505c39bd841a9bb36fbc307",
+      "size_bytes": 819
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -1123,51 +1123,51 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 143,
+      "line_count": 145,
       "path": "configs/env/production.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f10771466873d91c15ccc69eebaa83acab73784515cf5b05a79663c6a1974983",
-      "size_bytes": 4344
+      "sha256": "42c7455cefc3178950c28d50896ad6665decc35a1e2c37c713b3ace2890c8c10",
+      "size_bytes": 4376
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 170,
+      "line_count": 171,
       "path": "configs/env/railway-hobby-full-advisory.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5826af1445b0a53d2d8015c6fab89465f41ae525e0db7148e3b5bff8ad923db5",
-      "size_bytes": 5084
+      "sha256": "92f292bb19e15760559ef995e0cca56bc8f2b6ee0cbd4e2fb5155b2f8f296c59",
+      "size_bytes": 5115
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 166,
+      "line_count": 167,
       "path": "configs/env/railway-hobby-owner-beta.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3d3c8cae02592c252b172b76df2fad20844fb3546a525ddbcd7b9cb6e7bcf8e4",
-      "size_bytes": 4773
+      "sha256": "0cb227a0a64b693925b51d72a5fcb3fdb656e5dd7404875e15768ac7152b3840",
+      "size_bytes": 4804
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 153,
+      "line_count": 154,
       "path": "configs/env/railway-hobby-paper-demo.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "810136d71890b7ee46c92757e782c82559204b6777625afa4fa7009adf39d003",
-      "size_bytes": 4266
+      "sha256": "4fd7bb951254ae3f3308e0765c88de281d66243ce13671464bfa477baa5e11c2",
+      "size_bytes": 4297
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 159,
+      "line_count": 160,
       "path": "configs/env/railway-hobby-real-execution-gated.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5d6492ae2e9d26f00184f052b3179342da23579719968db1a7b12908dabb0ee9",
-      "size_bytes": 4588
+      "sha256": "c92dbd62e784f49c759192c9228dde5e23f9b96f0859df94a8a750ea5b76bc41",
+      "size_bytes": 4619
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 175,
+      "line_count": 176,
       "path": "configs/env/railway-staging.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a76312fd5a42be16acb9ac83bacda8d61f89f39df7275857a478b74cf9494ce4",
-      "size_bytes": 5207
+      "sha256": "68f85d1d27092d293111c06f1826320e28ec6b85ada8f9ae353e052872428e4c",
+      "size_bytes": 5238
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1486,7 +1486,7 @@
       "line_count": 32,
       "path": "core/version.py",
       "reason": "production/build source",
-      "sha256": "d9bcdc200a061a8181225ad9625cd76942c934379b26f37234adff69584fa5ab",
+      "sha256": "cb84b0af0251659f9b24a400e0bc480bb40b89e5600c0d407f9a732b0d913c16",
       "size_bytes": 918
     },
     {
@@ -2323,11 +2323,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 245,
+      "line_count": 246,
       "path": "deployment_package/SignalRankAI_Railway_Owner_Beta.env",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9167abfefe4994108c3057d7e2308c6b643d3733a2d62e9af3e4a0f362b3cca0",
-      "size_bytes": 8080
+      "sha256": "4b16fd65e01d309babf917e4aa3d41dd1faf563087cde5899ea0e34abae24239",
+      "size_bytes": 8111
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2907,6 +2907,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 21,
+      "path": "docs/RAILWAY_READINESS_TIMEOUT_HOTFIX_2026-07-27.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "3252f52266a90eaa9e77ce57d916956be8f72d5208003b2cfa964e54d8ddda1a",
+      "size_bytes": 958
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 168,
       "path": "docs/RAILWAY_RUNTIME_INCIDENT_FIXES_2026-07-26.md",
       "reason": "documentation/specification/evidence",
@@ -2939,18 +2947,18 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 17588,
+      "line_count": 17773,
       "path": "docs/REPOSITORY_PROOF_MANIFEST.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "bcba4fc7e84a2cbb5aa8566a07de9c7fb777cdb7657b66425f1c879a0260625d",
-      "size_bytes": 591932
+      "sha256": "456371da59c902998e6c15431c7890447d868ea20365b84faa13ad16de3b6047",
+      "size_bytes": 599413
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 21,
       "path": "docs/REPOSITORY_PROOF_MANIFEST.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "1f041a5392c712bb81326ee40d24830fd0783439b96282b292e8591547d82af9",
+      "sha256": "b0224bb3ff2e2b8fd9a501b754c469c6f7ddb498231c2850c83739123b223727",
       "size_bytes": 662
     },
     {
@@ -4299,11 +4307,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2662,
+      "line_count": 2698,
       "path": "railway_main.py",
       "reason": "production/build source",
-      "sha256": "6100a123db4a2f6412153e8fc7495b037ec55fb41e3059b19b2139734ae99903",
-      "size_bytes": 111394
+      "sha256": "7ad11df874ac1f641f04b73f8655278848c3f24f3478f089c86bc0b705da3c44",
+      "size_bytes": 113433
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4451,11 +4459,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 9748,
+      "line_count": 9766,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "60da1cf57097c3e1c8b147a50fc8655210c842e94194fbf7de3b28d6ef6a9216",
-      "size_bytes": 294944
+      "sha256": "c258f5ed6c1127343dc909456fc6bcef460bd5fb0179ac4cca88f804f31ad848",
+      "size_bytes": 295613
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7235,6 +7243,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 111,
+      "path": "tests/test_v105_railway_readiness_hotfix.py",
+      "reason": "automated test evidence",
+      "sha256": "bf2bfd8a50924e8476a0ef67ea41eb805eee7a10344955c1afcb2f8ea38a474f",
+      "size_bytes": 3665
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 116,
       "path": "tests/test_v7_governance_contract.py",
       "reason": "automated test evidence",
@@ -7525,8 +7541,8 @@
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
   "summary": {
-    "DOCUMENTATION_ONLY": 188,
+    "DOCUMENTATION_ONLY": 189,
     "PRESERVE_BEHAVIOUR": 593,
-    "TEST_ONLY": 158
+    "TEST_ONLY": 159
   }
 }
