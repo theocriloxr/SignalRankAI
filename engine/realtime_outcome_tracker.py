@@ -67,6 +67,19 @@ def _session_scope(get_session: Any, **kwargs: Any) -> Any:
         return get_session()
 
 
+def _outcome_db_priority() -> str:
+    """Outcome state and user notifications are operational, never best-effort."""
+    raw = str(os.getenv("OUTCOME_TRACKER_DB_PRIORITY", "critical") or "critical").strip().lower()
+    return raw if raw in {"interactive", "critical"} else "critical"
+
+
+def _outcome_db_timeout() -> float:
+    try:
+        return max(1.0, float(os.getenv("OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "12") or 12))
+    except (TypeError, ValueError):
+        return 12.0
+
+
 def _database_tp_progress(lifecycle: Any, outcome: Any) -> int:
     """Derive authoritative target progress from durable lifecycle/outcome data."""
     from core.signal_lifecycle import (
@@ -422,9 +435,9 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with _session_scope(
             get_session,
-            priority=DBPriority.BACKGROUND,
+            priority=_outcome_db_priority(),
             label="outcome_tracker.fetch_active_signals",
-            timeout_seconds=float(os.getenv("OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "1.0") or 1.0),
+            timeout_seconds=_outcome_db_timeout(),
         ) as session:
             stmt = (
                 select(Signal, Outcome, SignalLifecycle)
@@ -525,7 +538,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
             return []
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             stmt = (
                 select(Signal)
                 .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
@@ -1025,7 +1038,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1216,7 +1229,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             stale_claim_seconds = max(
                 60,
                 int(os.getenv("OUTCOME_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
@@ -1363,7 +1376,7 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1405,7 +1418,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.session import get_session
         from db.models import Trade
         from sqlalchemy import update as sa_update
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             await session.execute(
                 sa_update(Trade)
                 .where(Trade.signal_id == signal_id)
@@ -1423,7 +1436,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.models import Trade, User
         from sqlalchemy import select, join
         from services.mt5_client import update_stop_loss, get_user_mt5_account_id
-        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
+        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             stmt = (
                 select(Trade, User)
                 .join(User, Trade.symbol == User.telegram_user_id.cast(str))
@@ -1494,11 +1507,13 @@ class RealtimeOutcomeTracker:
 
     async def _check_all(self) -> None:
         signals = await _fetch_active_signals()
+        logger.info("[outcome_tracker] active_scan fetched=%d", len(signals))
         # Backfill previously delivered-but-untracked signals so every delivered
         # signal eventually receives an outcome state for analytics/training.
         backfill_limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "100") or 100))
         backfill = await _fetch_delivered_untracked_signals(limit=backfill_limit)
         if backfill:
+            logger.info("[outcome_tracker] reconciliation_backfill fetched=%d", len(backfill))
             known = {str(s.get("signal_id") or "") for s in signals}
             for item in backfill:
                 sid = str(item.get("signal_id") or "")

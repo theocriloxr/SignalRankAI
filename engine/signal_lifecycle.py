@@ -147,7 +147,7 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
     from db.models import SignalLifecycle, SignalTrackingEvent
     from db.priority import DBPriority
     from db.session import get_session
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     signal_id = str(signal.get("signal_id") or "")
     now = _utc_now_naive()
@@ -324,7 +324,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             .where(
                 SignalDelivery.signal_id == signal_id,
                 SignalDelivery.sent_ok.is_(True),
-                SignalDelivery.delivery_state.in_(("confirmed", "CONFIRMED", "RECONCILED")),
+                func.lower(SignalDelivery.delivery_state).in_(("confirmed", "delivered", "reconciled")),
             )
             )).all()
         for delivery, user in deliveries:
@@ -367,7 +367,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     token = str(config.TELEGRAM_BOT_TOKEN or "").strip()
     if not token:
         return
-    async with get_session() as session:
+    async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
         event = await session.get(SignalTrackingEvent, event_id)
         event_price = float(getattr(event, "price", 0) or signal.get("entry") or 0)
         rows = (await session.execute(
@@ -386,7 +386,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     bot = Bot(token=token)
     for notification, user, preference in rows:
         if preference is not None and not bool(preference.tp_sl_enabled):
-            async with get_session() as session:
+            async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
                 suppressed = await session.get(SignalEventNotification, notification.id)
                 if suppressed is not None:
                     suppressed.delivery_state = "suppressed"
@@ -439,7 +439,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:1000]
 
-        async with get_session() as session:
+        async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
             row = await session.get(SignalEventNotification, notification.id)
             if row is None:
                 continue
@@ -467,7 +467,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                         fallback.delivered_at = _utc_now_naive()
             await session.commit()
 
-    async with get_session() as session:
+    async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
         remaining = (await session.execute(
             select(SignalEventNotification.id).where(
                 SignalEventNotification.event_id == event_id,
@@ -489,7 +489,7 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
     from db.session import get_session
     from sqlalchemy import select
 
-    async with get_session() as session:
+    async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
         rows = (await session.execute(
             select(SignalEventNotification.event_id, Signal)
             .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)

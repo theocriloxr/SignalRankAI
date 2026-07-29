@@ -336,22 +336,23 @@ async def _safe_get_webhook_info() -> dict | None:
 
 
 def _app_has_registered_handlers(app_obj: object) -> bool:
-    """Best-effort readiness check for PTB Application handler registration."""
+    """Return True only when the complete Telegram handler contract is present."""
     if app_obj is None:
         return False
     try:
         handlers_map = getattr(app_obj, "handlers", None)
         if not isinstance(handlers_map, dict):
             return False
+        total_handlers = 0
         for _group, handler_list in handlers_map.items():
             try:
-                if handler_list and len(handler_list) > 0:
-                    return True
+                total_handlers += len(handler_list or [])
             except Exception:
                 continue
+        minimum = max(1, int(os.getenv("BOT_WEBHOOK_READY_MIN_HANDLERS", "60") or 60))
+        return total_handlers >= minimum
     except Exception:
         return False
-    return False
 
 
 async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
@@ -847,7 +848,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             app_obj = getattr(_bot_module, "_webhook_application", None)
             handlers_flag = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
             handlers_detected = _app_has_registered_handlers(app_obj)
-            handlers_ready = handlers_flag or handlers_detected
+            handlers_ready = handlers_flag and handlers_detected
         except Exception:
             app_obj = None
             handlers_flag = False
@@ -876,14 +877,8 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         if setup_error:
             logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
 
-    # Fallback: if an application object exists and handlers are attached,
-    # proceed even if the explicit readiness flag never flipped.
-    if app_obj is not None and not handlers_ready:
-        handlers_ready = _app_has_registered_handlers(app_obj)
-        if handlers_ready:
-            logger.warning(
-                "[bot] readiness flag missing but handlers detected; proceeding with webhook startup"
-            )
+    # Never proceed with a partially initialised PTB application. The explicit
+    # readiness flag is set only after commands and callback routes exist.
 
     if app_obj is None or not handlers_ready:
         print("[bot] webhook setup failed: handlers not ready", flush=True)

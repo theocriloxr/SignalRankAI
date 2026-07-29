@@ -5376,18 +5376,18 @@ def run_bot() -> None:
         .build()
     )
 
-    # In webhook mode, expose the Application immediately so railway_main can
-    # retrieve it even if later optional setup steps fail (scheduler/jobstore,
-    # ancillary jobs, etc.). Handlers are registered on the same object below.
+    # Webhook startup is transactional. Do not expose a partially configured
+    # Application: Railway must never process updates against an app that has
+    # only a subset of commands/callbacks because a later import failed.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
         _webhook_handlers_ready = False
-        _webhook_application = application
+        _webhook_application = None
 
     _webhook_mode = bool(os.getenv("TELEGRAM_USE_WEBHOOK"))
 
     def _refresh_webhook_handlers_ready(stage: str) -> None:
-        """Mark webhook handler readiness only when a sufficient handler set is present."""
-        global _webhook_handlers_ready
+        """Expose the webhook app only after the complete handler contract exists."""
+        global _webhook_handlers_ready, _webhook_application
         if not _webhook_mode:
             return
         try:
@@ -5401,6 +5401,10 @@ def run_bot() -> None:
                         continue
             min_handlers = max(1, int(os.getenv("BOT_WEBHOOK_READY_MIN_HANDLERS", "60") or 60))
             _webhook_handlers_ready = total_handlers >= min_handlers
+            if _webhook_handlers_ready:
+                _webhook_application = application
+            else:
+                _webhook_application = None
             logger.info(
                 "[bot] webhook handler readiness check: stage=%s total=%s min=%s ready=%s",
                 stage,
@@ -5748,21 +5752,28 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
     # Backward compatible alias
 
-    # Adaptive strategy intelligence owner controls (silent for non-owners)
-    from .adaptive_commands import (
-        adaptive_status_command,
-        adaptive_pause_command,
-        adaptive_resume_command,
-        adaptive_promote_command,
-        adaptive_suspend_command,
-        adaptive_rollback_command,
-    )
-    application.add_handler(CommandHandler("adaptive_status", _audit_handler("adaptive_status", adaptive_status_command)))
-    application.add_handler(CommandHandler("adaptive_pause", _audit_handler("adaptive_pause", adaptive_pause_command)))
-    application.add_handler(CommandHandler("adaptive_resume", _audit_handler("adaptive_resume", adaptive_resume_command)))
-    application.add_handler(CommandHandler("adaptive_promote", _audit_handler("adaptive_promote", adaptive_promote_command)))
-    application.add_handler(CommandHandler("adaptive_suspend", _audit_handler("adaptive_suspend", adaptive_suspend_command)))
-    application.add_handler(CommandHandler("adaptive_rollback", _audit_handler("adaptive_rollback", adaptive_rollback_command)))
+    # Adaptive owner controls are optional to Telegram core readiness. A broken
+    # adaptive import must not remove callback handlers or every other command.
+    try:
+        from .adaptive_commands import (
+            adaptive_status_command,
+            adaptive_pause_command,
+            adaptive_resume_command,
+            adaptive_promote_command,
+            adaptive_suspend_command,
+            adaptive_rollback_command,
+        )
+        application.add_handler(CommandHandler("adaptive_status", _audit_handler("adaptive_status", adaptive_status_command)))
+        application.add_handler(CommandHandler("adaptive_pause", _audit_handler("adaptive_pause", adaptive_pause_command)))
+        application.add_handler(CommandHandler("adaptive_resume", _audit_handler("adaptive_resume", adaptive_resume_command)))
+        application.add_handler(CommandHandler("adaptive_promote", _audit_handler("adaptive_promote", adaptive_promote_command)))
+        application.add_handler(CommandHandler("adaptive_suspend", _audit_handler("adaptive_suspend", adaptive_suspend_command)))
+        application.add_handler(CommandHandler("adaptive_rollback", _audit_handler("adaptive_rollback", adaptive_rollback_command)))
+    except Exception as adaptive_command_error:
+        logger.exception(
+            "[bot] adaptive owner commands unavailable; continuing with core callbacks: %s",
+            adaptive_command_error,
+        )
 
     # Hidden owner-only commands (silent for non-owners)
     application.add_handler(CommandHandler("unlock", _audit_handler("unlock", unlock)))
@@ -9082,9 +9093,10 @@ def run_bot() -> None:
     # route.  Store the configured application and scheduler so they survive
     # this function's scope, then return without starting long-polling.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        _webhook_application = application
         _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
         _refresh_webhook_handlers_ready("webhook_return")
+        if not _webhook_handlers_ready or _webhook_application is None:
+            raise RuntimeError("Telegram webhook handler contract incomplete; refusing partial startup")
         if scheduler is None:
             print("[bot] webhook mode: application ready, scheduler disabled on this instance", flush=True)
         else:
