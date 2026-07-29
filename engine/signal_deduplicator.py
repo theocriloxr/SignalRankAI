@@ -30,6 +30,27 @@ _REJECTION_LAST_DEFER_LOG_MONO = 0.0
 _REJECTION_FLUSH_TASK: asyncio.Task[None] | None = None
 _REJECTION_FLUSH_TASK_LOCK = threading.Lock()
 
+def _json_safe(value: Any) -> Any:
+    """Recursively convert telemetry values into JSON-compatible structures."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (list, tuple, set, deque)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    try:
+        isoformat = getattr(value, "isoformat", None)
+        if callable(isoformat):
+            return isoformat()
+    except Exception:
+        pass
+    return str(value)
+
+
 _DEFAULT_DEDUP_WINDOW_SECONDS = 4 * 60 * 60
 
 
@@ -685,7 +706,7 @@ class MLRejectionTracker:
         if tp_value <= 0:
             tp_value = entry_price * 1.05 if entry_price else 0.0
         safe_ml_prob = float(ml_probability or 0.0)
-        safe_features = dict(features or {})
+        safe_features = _json_safe(dict(features or {}))
         if rejection_type:
             safe_features.setdefault("rejection_type", rejection_type)
         if signal_id:
@@ -1241,3 +1262,14 @@ class MLRejectionTracker:
         except Exception as e:
             logger.error(f"Failed to track rejection outcomes: {e}")
             return 0
+
+
+_ml_rejection_tracker: MLRejectionTracker | None = None
+
+
+def get_ml_rejection_tracker() -> MLRejectionTracker:
+    """Return the module-level ML rejection tracker singleton."""
+    global _ml_rejection_tracker
+    if _ml_rejection_tracker is None:
+        _ml_rejection_tracker = MLRejectionTracker()
+    return _ml_rejection_tracker

@@ -12,7 +12,9 @@ from typing import MutableMapping
 
 _TRUTHY = {"1", "true", "yes", "on", "enabled"}
 _TEST_ACK = "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
+_PAYSTACK_LIVE_ACK = "I_UNDERSTAND_PAYSTACK_LIVE_KEYS_MOVE_REAL_MONEY"
 FULL_SYSTEM_STAGING_TEST_ACK_VALUE = _TEST_ACK
+PAYSTACK_LIVE_STAGING_ACK_VALUE = _PAYSTACK_LIVE_ACK
 
 # These capabilities are enabled together only in the explicit staging test
 # profile. External integrations must still use sandbox/demo credentials.
@@ -26,7 +28,6 @@ _FULL_SYSTEM_FLAGS = (
     "BYBIT_EXECUTION_ENABLED",
     "PAYMENTS_ENABLED",
     "PAYMENTS_PUBLIC_ENABLED",
-    "PAYMENTS_PUBLIC_TEST_MODE",
     "REAL_PAYOUTS_ENABLED",
     "FREE_SIGNAL_DISTRIBUTION_ENABLED",
     "FREE_RANDOM_DISTRIBUTION_ENABLED",
@@ -39,11 +40,11 @@ _FULL_SYSTEM_FLAGS = (
 )
 
 # Non-production runs may exercise the whole execution pipeline, but they may
-# never cross into a live MT5 account. Bybit and Paystack must remain test-mode.
+# never cross into a live MT5 account and Bybit remains testnet. Paystack
+# may use guarded live mode only after a second explicit acknowledgement.
 _NONPRODUCTION_HARD_BOUNDARIES = {
     "MT5_ALLOW_LIVE_ACCOUNTS": "0",
     "BYBIT_TESTNET": "1",
-    "PAYMENTS_PUBLIC_TEST_MODE": "1",
 }
 
 # Operational settings required for an end-to-end staging proof. These are not
@@ -59,6 +60,8 @@ _FULL_SYSTEM_OPERATIONAL_SETTINGS = {
     "DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT": "0",
     "DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE": "0",
     "STAGING_QUALITY_GATES_ADVISORY": "1",
+    "STAGING_DELIVERY_FRESHNESS_ADVISORY": "1",
+    "STAGING_TEST_DELIVERY_LIVE_EXECUTION_BLOCK": "1",
     "DIAGNOSTIC_HEATMAP_EMPTY_CYCLES": "1",
 }
 
@@ -170,16 +173,44 @@ def apply_runtime_safety_environment(
                 boundaries.append(name)
             env[name] = value
 
-        # A stale live Paystack key must never survive into staging. Missing keys
-        # are left enabled so diagnostics expose the configuration gap; an
-        # explicitly live key fails the money-moving paths closed.
+        # Paystack may be tested with normal test keys or, when explicitly
+        # acknowledged, with guarded live keys for allowlisted users under a
+        # transaction cap. Live mode never silently activates from key presence.
         paystack_key = str(env.get("PAYSTACK_SECRET_KEY") or "").strip()
-        if paystack_key and not paystack_key.startswith("sk_test_"):
-            for name in ("PAYMENTS_ENABLED", "PAYMENTS_PUBLIC_ENABLED", "REAL_PAYOUTS_ENABLED"):
-                if _truthy(env.get(name)):
-                    forced_off.append(name)
-                env[name] = "0"
-            boundaries.append("PAYSTACK_LIVE_KEY_REJECTED")
+        paystack_public = str(env.get("PAYSTACK_PUBLIC_KEY") or "").strip()
+        live_requested = _truthy(env.get("PAYSTACK_LIVE_STAGING_ENABLED"))
+        live_ack_valid = _normalise_ack(env.get("PAYSTACK_LIVE_STAGING_ACK")) == _PAYSTACK_LIVE_ACK
+        live_key_pair = paystack_key.startswith("sk_live_") and paystack_public.startswith("pk_live_")
+        test_users = str(
+            env.get("PAYSTACK_LIVE_STAGING_ALLOWED_USER_IDS")
+            or env.get("FULL_SYSTEM_TEST_USER_IDS")
+            or env.get("DELIVERY_AUDIENCE_ALLOWLIST")
+            or env.get("OWNER_TELEGRAM_ID")
+            or env.get("TELEGRAM_OWNER_ID")
+            or ""
+        ).strip()
+        live_staging_active = bool(live_requested and live_ack_valid and live_key_pair and test_users)
+        env["PAYSTACK_LIVE_STAGING_ACTIVE"] = "1" if live_staging_active else "0"
+
+        if live_staging_active:
+            env["PAYMENTS_PUBLIC_TEST_MODE"] = "0"
+            boundaries.append("PAYSTACK_LIVE_STAGING_GUARDED")
+        else:
+            env["PAYMENTS_PUBLIC_TEST_MODE"] = "1"
+            if paystack_key.startswith("sk_live_"):
+                boundaries.append("PAYSTACK_LIVE_KEY_REJECTED")
+                for name in ("PAYMENTS_ENABLED", "PAYMENTS_PUBLIC_ENABLED", "REAL_PAYOUTS_ENABLED"):
+                    if _truthy(env.get(name)):
+                        forced_off.append(name)
+                    env[name] = "0"
+                if not live_requested:
+                    boundaries.append("PAYSTACK_LIVE_STAGING_NOT_ENABLED")
+                elif not live_ack_valid:
+                    boundaries.append("PAYSTACK_LIVE_STAGING_ACK_INVALID")
+                elif not live_key_pair:
+                    boundaries.append("PAYSTACK_LIVE_KEY_PAIR_INVALID")
+                elif not test_users:
+                    boundaries.append("PAYSTACK_LIVE_STAGING_ALLOWLIST_MISSING")
 
         # Restrict all generated/resend traffic to explicit test users. This
         # still exercises free-tier and multi-user paths without broadcasting to
@@ -220,4 +251,4 @@ def apply_runtime_safety_environment(
     )
 
 
-__all__ = ["RuntimeSafetyResult", "FULL_SYSTEM_STAGING_TEST_ACK_VALUE", "apply_runtime_safety_environment", "is_full_system_ack_valid"]
+__all__ = ["RuntimeSafetyResult", "FULL_SYSTEM_STAGING_TEST_ACK_VALUE", "PAYSTACK_LIVE_STAGING_ACK_VALUE", "apply_runtime_safety_environment", "is_full_system_ack_valid"]

@@ -248,12 +248,14 @@ def check_environment(report: Report) -> None:
         )
 
     paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
-    paystack_key_safe = (not paystack_secret) or paystack_secret.startswith("sk_test_")
+    from payments.paystack_policy import live_staging_mode_valid
+    paystack_test_mode = paystack_secret.startswith("sk_test_") and _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
+    paystack_live_guarded = live_staging_mode_valid(os.environ)
+    paystack_key_safe = (not paystack_secret) or paystack_test_mode or paystack_live_guarded
     sandbox_ok = (
         (not full_test_mode)
         or (
-            _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
-            and paystack_key_safe
+            paystack_key_safe
             and _truthy("BYBIT_TESTNET", False)
             and not _truthy("MT5_ALLOW_LIVE_ACCOUNTS", False)
         )
@@ -265,12 +267,16 @@ def check_environment(report: Report) -> None:
             status=PASS if sandbox_ok else FAIL,
             severity="critical",
             detail=(
-                f"paystack_test={int(_truthy('PAYMENTS_PUBLIC_TEST_MODE', False))} "
+                f"paystack_test={int(paystack_test_mode)} "
+                f"paystack_live_guarded={int(paystack_live_guarded)} "
                 f"paystack_key_safe={int(paystack_key_safe)} "
                 f"bybit_testnet={int(_truthy('BYBIT_TESTNET', False))} "
                 f"mt5_live_allowed={int(_truthy('MT5_ALLOW_LIVE_ACCOUNTS', False))}"
             ),
-            remediation=None if sandbox_ok else "Use a Paystack sk_test_ key, BYBIT_TESTNET=1, and MT5_ALLOW_LIVE_ACCOUNTS=0.",
+            remediation=None if sandbox_ok else (
+                "Use Paystack test keys, or enable guarded live staging with the exact second acknowledgement, "
+                "an allowlisted user set and an amount cap; keep BYBIT_TESTNET=1 and MT5_ALLOW_LIVE_ACCOUNTS=0."
+            ),
         )
     )
 
@@ -395,7 +401,16 @@ def static_checks(report: Report) -> None:
         ("governance_validation", [python, "scripts/validate_governance_docs.py"], "high"),
         (
             "environment_contracts",
-            [python, "scripts/validate_env_contract.py", ".env.example", "RAILWAY_ENV_UPDATED.env.example", "deploy/railway_roles/monolith_safe.env", *env_profiles],
+            [
+                python,
+                "scripts/validate_env_contract.py",
+                ".env.example",
+                "RAILWAY_ENV_UPDATED.env.example",
+                "deploy/railway_roles/monolith_safe.env",
+                "SignalRankAI_v1.2.5_Railway_Full_System_Live_Paystack_Staging.env.example",
+                "SignalRankAI_v1.2.5_Railway_Production_Launch.env.example",
+                *env_profiles,
+            ],
             "critical",
         ),
         (

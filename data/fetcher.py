@@ -1634,6 +1634,27 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
         logger.warning(f"[price_validator] Invalid price for {asset}: {price}")
         return False
     
+    # Symbol-specific broad bounds prevent a provider from returning a
+    # different instrument with a superficially valid positive price. These
+    # ranges are deliberately wide and are a final identity sanity check, not a
+    # trading forecast.
+    symbol = str(asset or "").upper().strip().split(":")[-1].replace("/", "")
+    special_bounds = {
+        "WTI": (10.0, 300.0), "WTIUSD": (10.0, 300.0), "USOIL": (10.0, 300.0),
+        "CL": (10.0, 300.0), "CL=F": (10.0, 300.0),
+        "BRENT": (10.0, 300.0), "UKOIL": (10.0, 300.0), "BZ": (10.0, 300.0), "BZ=F": (10.0, 300.0),
+        "XAUUSD": (500.0, 10000.0), "GOLD": (500.0, 10000.0), "GC=F": (500.0, 10000.0),
+        "XAGUSD": (5.0, 500.0), "SILVER": (5.0, 500.0), "SI=F": (5.0, 500.0),
+        "NATURALGAS": (0.25, 100.0), "NATGAS": (0.25, 100.0), "NG=F": (0.25, 100.0),
+    }
+    bounds = special_bounds.get(symbol)
+    if bounds is not None and not (bounds[0] <= price <= bounds[1]):
+        logger.warning(
+            "[price_validator] GHOST INSTRUMENT price for %s: %.6f outside %.2f..%.2f",
+            asset, price, bounds[0], bounds[1],
+        )
+        return False
+
     # Get asset type to set reasonable bounds
     asset_type = get_asset_type(asset)
     

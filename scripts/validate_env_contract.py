@@ -77,20 +77,42 @@ def validate(path: Path) -> list[str]:
     owner_id = values.get("OWNER_TELEGRAM_ID", "").strip().strip('\"')
     if "," in owner_id:
         errors.append("OWNER_TELEGRAM_ID must contain exactly one numeric ID; use OWNER_IDS for a list")
-    if is_true(values, "AUTO_EXECUTION_ENABLED"):
-        errors.append("unsafe release flag enabled: AUTO_EXECUTION_ENABLED")
-    if is_true(values, "BYBIT_EXECUTION_ENABLED"):
-        errors.append("unsafe release flag enabled: BYBIT_EXECUTION_ENABLED")
+
+    environment = values.get("APP_ENV", values.get("ENVIRONMENT", "")).strip().strip('\"').lower()
+    full_test_profile = bool(
+        environment not in {"production", "prod"}
+        and is_true(values, "FULL_SYSTEM_STAGING_TEST_MODE")
+        and values.get("FULL_SYSTEM_STAGING_TEST_ACK", "").strip().strip('\"').strip("'")
+        == "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
+        and bool(
+            values.get("FULL_SYSTEM_TEST_USER_IDS", "").strip()
+            or values.get("DELIVERY_AUDIENCE_ALLOWLIST", "").strip()
+        )
+    )
 
     for key in (
+        "AUTO_EXECUTION_ENABLED",
+        "BYBIT_EXECUTION_ENABLED",
         "AUTO_TRADE_ENABLED",
         "COPY_TRADE_ENABLED",
         "REAL_EXECUTION_ENABLED",
-        "MT5_ALLOW_LIVE_ACCOUNTS",
         "REAL_PAYOUTS_ENABLED",
     ):
-        if is_true(values, key):
+        if is_true(values, key) and not full_test_profile:
             errors.append(f"unsafe release flag enabled: {key}")
+
+    # Live MT5 accounts are never permitted by the staging integration profile.
+    if is_true(values, "MT5_ALLOW_LIVE_ACCOUNTS"):
+        errors.append("unsafe release flag enabled: MT5_ALLOW_LIVE_ACCOUNTS")
+
+    if full_test_profile and is_true(values, "PAYSTACK_LIVE_STAGING_ENABLED"):
+        live_ack = values.get("PAYSTACK_LIVE_STAGING_ACK", "").strip().strip('\"').strip("'")
+        if live_ack != "I_UNDERSTAND_PAYSTACK_LIVE_KEYS_MOVE_REAL_MONEY":
+            errors.append("PAYSTACK_LIVE_STAGING_ACK is invalid")
+        if not values.get("PAYSTACK_LIVE_STAGING_ALLOWED_USER_IDS", "").strip():
+            errors.append("PAYSTACK_LIVE_STAGING_ALLOWED_USER_IDS is required")
+        if as_float(values, "PAYSTACK_LIVE_STAGING_MAX_AMOUNT_NGN", 0.0) <= 0:
+            errors.append("PAYSTACK_LIVE_STAGING_MAX_AMOUNT_NGN must be positive")
 
     for key in (
         "DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN",

@@ -1072,6 +1072,43 @@ def _env_true_local(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _staging_freshness_advisory_allowed(telegram_user_id: int) -> bool:
+    if not _env_true_local("FULL_SYSTEM_STAGING_TEST_ACTIVE", False):
+        return False
+    if not _env_true_local("STAGING_DELIVERY_FRESHNESS_ADVISORY", False):
+        return False
+    raw = (
+        os.getenv("FULL_SYSTEM_TEST_USER_IDS")
+        or os.getenv("DELIVERY_AUDIENCE_ALLOWLIST")
+        or ""
+    )
+    allowed: set[int] = set()
+    for token in str(raw).replace(";", ",").split(","):
+        try:
+            allowed.add(int(token.strip()))
+        except (TypeError, ValueError):
+            continue
+    return int(telegram_user_id) in allowed
+
+
+def _mark_staging_freshness_advisory(signal: dict, reason: str, freshness=None) -> dict:
+    signal["staging_test_only"] = True
+    signal["staging_freshness_advisory"] = True
+    signal["staging_freshness_reason"] = str(reason or "freshness_gate_failed")[:240]
+    signal["live_execution_blocked"] = True
+    signal["execution_eligible"] = False
+    signal["exclude_from_production_performance"] = True
+    if freshness is not None:
+        live_price = getattr(freshness, "live_price", None)
+        if live_price is not None:
+            try:
+                signal["current_price"] = float(live_price)
+            except Exception:
+                pass
+        signal["opportunity_remaining_pct"] = getattr(freshness, "opportunity_remaining_pct", None)
+    return signal
+
+
 async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, **kwargs):
     """Send one Telegram message with per-chat serialization and RetryAfter backoff."""
     import asyncio
@@ -2054,40 +2091,56 @@ async def _deliver_or_update_signal_async(
                 timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 6.0)),
             )
         except asyncio.TimeoutError:
-            logger.info(
-                "[delivery] blocked final validation timeout user=%s signal=%s asset=%s tier=%s",
-                telegram_user_id,
-                signal_id or signal.get("id"),
-                signal.get("asset") or signal.get("symbol"),
-                display_tier,
-            )
-            await _persist_delivery_phase(
-                telegram_user_id=int(telegram_user_id),
-                signal_id=signal_id,
-                delivery_state="BLOCKED",
-                error="final_validation_timeout",
-            )
-            return None
-        if freshness is not None:
-            if not freshness.ok:
+            if _staging_freshness_advisory_allowed(int(telegram_user_id)):
+                freshness = None
+                _mark_staging_freshness_advisory(signal, "final_validation_timeout")
+                logger.warning(
+                    "[delivery] staging final freshness timeout retained user=%s signal=%s asset=%s live_execution_blocked=1",
+                    telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+                )
+            else:
                 logger.info(
-                    "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    "[delivery] blocked final validation timeout user=%s signal=%s asset=%s tier=%s",
                     telegram_user_id,
                     signal_id or signal.get("id"),
                     signal.get("asset") or signal.get("symbol"),
-                    signal.get("timeframe"),
-                    freshness.reason,
-                    float(freshness.age_minutes or 0.0),
-                    float(freshness.max_age_minutes or 0.0),
-                    float(freshness.opportunity_remaining_pct or 0.0),
+                    display_tier,
                 )
                 await _persist_delivery_phase(
                     telegram_user_id=int(telegram_user_id),
                     signal_id=signal_id,
                     delivery_state="BLOCKED",
-                    error=str(getattr(freshness, "reason", None) or "final_validation_blocked"),
+                    error="final_validation_timeout",
                 )
                 return None
+        if freshness is not None:
+            if not freshness.ok:
+                if _staging_freshness_advisory_allowed(int(telegram_user_id)):
+                    _mark_staging_freshness_advisory(signal, freshness.reason, freshness)
+                    logger.warning(
+                        "[delivery] staging freshness advisory retained user=%s signal=%s asset=%s tf=%s reason=%s live_execution_blocked=1",
+                        telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+                        signal.get("timeframe"), freshness.reason,
+                    )
+                else:
+                    logger.info(
+                        "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                        telegram_user_id,
+                        signal_id or signal.get("id"),
+                        signal.get("asset") or signal.get("symbol"),
+                        signal.get("timeframe"),
+                        freshness.reason,
+                        float(freshness.age_minutes or 0.0),
+                        float(freshness.max_age_minutes or 0.0),
+                        float(freshness.opportunity_remaining_pct or 0.0),
+                    )
+                    await _persist_delivery_phase(
+                        telegram_user_id=int(telegram_user_id),
+                        signal_id=signal_id,
+                        delivery_state="BLOCKED",
+                        error=str(getattr(freshness, "reason", None) or "final_validation_blocked"),
+                    )
+                    return None
             if freshness.live_price is not None:
                 signal["current_price"] = float(freshness.live_price)
                 signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
@@ -2102,22 +2155,38 @@ async def _deliver_or_update_signal_async(
                 "rules": list(getattr(freshness, "rule_results", ()) or ()),
             }
     except Exception as exc:
-        logger.warning(
-            "[delivery] blocked final validation error user=%s signal=%s tier=%s err=%s",
-            telegram_user_id,
-            signal_id,
-            display_tier,
-            exc,
-        )
-        await _persist_delivery_phase(
-            telegram_user_id=int(telegram_user_id),
-            signal_id=signal_id,
-            delivery_state="BLOCKED",
-            error=f"final_validation_error:{type(exc).__name__}",
-        )
-        return None
+        if _staging_freshness_advisory_allowed(int(telegram_user_id)):
+            _mark_staging_freshness_advisory(signal, f"final_validation_error:{type(exc).__name__}")
+            logger.warning(
+                "[delivery] staging final validation error retained user=%s signal=%s tier=%s err=%s live_execution_blocked=1",
+                telegram_user_id, signal_id, display_tier, exc,
+            )
+        else:
+            logger.warning(
+                "[delivery] blocked final validation error user=%s signal=%s tier=%s err=%s",
+                telegram_user_id,
+                signal_id,
+                display_tier,
+                exc,
+            )
+            await _persist_delivery_phase(
+                telegram_user_id=int(telegram_user_id),
+                signal_id=signal_id,
+                delivery_state="BLOCKED",
+                error=f"final_validation_error:{type(exc).__name__}",
+            )
+            return None
 
     text = format_signal(signal, display_tier=display_tier)
+    if signal.get("staging_test_only"):
+        import html as _html
+        reason = _html.escape(str(signal.get("staging_freshness_reason") or "freshness advisory"))
+        text = (
+            "⚠️ <b>TEST ONLY — NOT EXECUTION ELIGIBLE</b>\n"
+            f"Freshness advisory: <code>{reason}</code>\n"
+            "Live broker execution is blocked for this message.\n\n"
+            + str(text or "")
+        )
     if not text or not str(text).strip():
         logger.warning(
             "[delivery_format_empty] user=%s signal=%s asset=%s tf=%s display_tier=%s",
@@ -2451,6 +2520,13 @@ def _auto_execute_signal_if_enabled(
     try:
         sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
         tier = str(routing_tier or "").lower()
+        if signal.get("staging_test_only") or signal.get("live_execution_blocked") or signal.get("execution_eligible") is False:
+            logger.warning(
+                "[autoexec] blocked staging/test-only signal user=%s signal=%s asset=%s reason=%s",
+                telegram_user_id, sig_id, signal.get("asset") or signal.get("symbol"),
+                signal.get("staging_freshness_reason") or "execution_not_eligible",
+            )
+            return
         if not sig_id or tier not in {"premium", "vip"}:
             return
 
@@ -3990,17 +4066,25 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             if not freshness.ok:
                 sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
                 asset = sig.get('asset', 'unknown')
-                logger.info(
-                    "[dispatch] filtered stale signal=%s user=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
-                    sig_id,
-                    user_id,
-                    asset,
-                    sig.get("timeframe"),
-                    freshness.reason,
-                    float(freshness.age_minutes or 0.0),
-                    float(freshness.max_age_minutes or 0.0),
-                    float(freshness.opportunity_remaining_pct or 0.0),
-                )
+                if _staging_freshness_advisory_allowed(int(user_id)):
+                    _mark_staging_freshness_advisory(sig, freshness.reason, freshness)
+                    fresh_signals.append(sig)
+                    logger.warning(
+                        "[dispatch] staging freshness advisory retained signal=%s user=%s asset=%s tf=%s reason=%s live_execution_blocked=1",
+                        sig_id, user_id, asset, sig.get("timeframe"), freshness.reason,
+                    )
+                else:
+                    logger.info(
+                        "[dispatch] filtered stale signal=%s user=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                        sig_id,
+                        user_id,
+                        asset,
+                        sig.get("timeframe"),
+                        freshness.reason,
+                        float(freshness.age_minutes or 0.0),
+                        float(freshness.max_age_minutes or 0.0),
+                        float(freshness.opportunity_remaining_pct or 0.0),
+                    )
             else:
                 if freshness.live_price is not None:
                     sig["current_price"] = float(freshness.live_price)

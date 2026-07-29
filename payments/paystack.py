@@ -35,17 +35,8 @@ _PLAN_AMOUNTS_NGN = {
 }
 
 def verify_signature(payload, signature):
-    secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
-    if not secret or not signature:
-        return False
-    if isinstance(payload, str):
-        payload = payload.encode("utf-8")
-    computed = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha512
-    ).hexdigest()
-    return hmac.compare_digest(computed, str(signature).strip())
+    from payments.paystack_policy import verify_paystack_event_signature
+    return verify_paystack_event_signature(payload, signature)
 
 
 def verify_webhook_signature(payload: bytes | str, signature: str | None) -> bool:
@@ -108,6 +99,17 @@ async def process_event(event):
         return {"processed": False, "reason": "Invalid payment amount"}
     if amount <= 0:
         return {"processed": False, "reason": "Invalid payment amount"}
+
+    from payments.paystack_policy import evaluate_paystack_operation
+    paystack_policy = evaluate_paystack_operation(
+        telegram_user_id=int(telegram_user_id),
+        amount_ngn=float(amount),
+    )
+    if not paystack_policy.allowed:
+        return {
+            "processed": False,
+            "reason": f"Paystack runtime policy blocked event: {paystack_policy.reason}",
+        }
 
     # Validate catalog-backed metadata when a product duration is supplied.
     # Unknown/legacy plans remain processable only when they carry an explicit
@@ -275,6 +277,10 @@ async def process_subscription_disable(data: dict) -> bool:
         metadata = dict((data or {}).get("metadata") or {})
         telegram_user_id = metadata.get("telegram_user_id")
         if not telegram_user_id:
+            return False
+        from payments.paystack_policy import evaluate_paystack_operation
+        policy = evaluate_paystack_operation(telegram_user_id=int(telegram_user_id))
+        if not policy.allowed:
             return False
         from db.session import get_session
         from db.models import User

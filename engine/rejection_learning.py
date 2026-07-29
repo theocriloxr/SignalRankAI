@@ -38,7 +38,7 @@ async def persist_rejected_signal_learning(
     to obtain background DB capacity never blocks live delivery.
     """
     try:
-        from engine.signal_deduplicator import get_deduplicator
+        from engine.signal_deduplicator import get_ml_rejection_tracker
 
         sig = dict(signal or {})
         entry = float(sig.get("entry") or 0.0)
@@ -68,7 +68,7 @@ async def persist_rejected_signal_learning(
         if extra_features:
             features.update(dict(extra_features))
 
-        await get_deduplicator().persist_rejection(
+        await get_ml_rejection_tracker().persist_rejection(
             asset=str(sig.get("asset") or sig.get("symbol") or "").upper(),
             timeframe=str(sig.get("timeframe") or "1h").lower(),
             direction=str(sig.get("direction") or "long").lower(),

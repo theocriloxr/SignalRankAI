@@ -117,20 +117,9 @@ def match_amount_to_tier(amount) -> str | None:
     return None
 
 # --- Webhook signature verification ---
-def verify_webhook_signature(request_body, signature) -> bool:
-    secret: str = (
-        os.getenv("PAYSTACK_WEBHOOK_SECRET")
-        or os.getenv("PAYSTACK_SECRET_KEY")
-        or PAYSTACK_WEBHOOK_SECRET
-        or PAYSTACK_SECRET_KEY
-        or ""
-    )
-    if not secret or not signature:
-        return False
-    if isinstance(request_body, str):
-        request_body = request_body.encode("utf-8")
-    computed: str = hmac.new(secret.encode(), request_body, hashlib.sha512).hexdigest()
-    return hmac.compare_digest(computed, str(signature).strip())
+def verify_webhook_signature(request_body: bytes | str, signature: str | None) -> bool:
+    from payments.paystack_policy import verify_paystack_event_signature
+    return verify_paystack_event_signature(request_body, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
 def generate_paystack_link(
@@ -155,10 +144,24 @@ def generate_paystack_link(
         return "PAYSTACK_SECRET_KEY is not configured."
 
     amount_ngn = int(price)
+    from payments.paystack_policy import evaluate_paystack_operation
+    policy = evaluate_paystack_operation(
+        telegram_user_id=int(user_id),
+        amount_ngn=amount_ngn,
+    )
+    if not policy.allowed:
+        logging.warning(
+            "Paystack checkout blocked user=%s amount_ngn=%s mode=%s reason=%s",
+            user_id, amount_ngn, policy.mode, policy.reason,
+        )
+        return f"Paystack checkout blocked: {policy.reason}."
     amount_kobo: int = max(100, amount_ngn) * 100
 
     metadata: dict[str, int] = {
         "telegram_user_id": int(user_id),
+        "amount_ngn": int(amount_ngn),
+        "paystack_mode": policy.mode,
+        "guarded_staging_live": policy.reason == "guarded_live_staging",
     }
     if plan_code:
         metadata["plan_code"] = str(plan_code)

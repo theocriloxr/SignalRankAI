@@ -21,7 +21,7 @@ except Exception:  # Optional provider; other market-data routes remain usable.
 
     yf = _UnavailableYFinance()
 
-from data.fetcher import async_get_candles, get_asset_type, _get_last_provider_used
+from data.fetcher import async_get_candles, get_asset_type, _get_last_provider_used, validate_price_sanity
 from db.market_cache import get_recent_candles
 from db.session import get_session
 import requests
@@ -1234,6 +1234,25 @@ async def fetch_market_data_cached(
                     out[tf] = payload
     except Exception:
         pass
+
+    # Final cross-path identity sanity check. yfinance and cache paths do not
+    # necessarily pass through data.fetcher.fetch_multi_timeframe_data, so apply
+    # the same ghost-instrument guard before diagnostics and engine use.
+    for tf in list(out.keys()):
+        payload = out.get(tf)
+        if not isinstance(payload, dict) or not payload.get("candles"):
+            continue
+        try:
+            latest_close = float((payload.get("candles") or [])[-1].get("close"))
+        except Exception:
+            out.pop(tf, None)
+            continue
+        if not validate_price_sanity(asset, latest_close):
+            logger.error(
+                "[market_data] GHOST PRICE PAYLOAD REMOVED asset=%s tf=%s close=%s source=%s",
+                asset, tf, latest_close, payload.get("source"),
+            )
+            out.pop(tf, None)
 
     # TradingView enrichment (indicator-only overlay).
     try:
