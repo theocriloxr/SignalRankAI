@@ -26,6 +26,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return default if raw is None else raw.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _capture_db_priority() -> str:
+    if str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1":
+        return "interactive"
+    value = str(os.getenv("ADAPTIVE_CANDLE_DB_PRIORITY") or "background").strip().lower()
+    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+
+
 def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     """Queue new candle suffixes without blocking strategy evaluation on PostgreSQL."""
     if not _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
@@ -106,7 +113,7 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
         return {"snapshots": len(batch), "candles": 0}
     inserted = 0
     try:
-        async with get_session(priority="background", label="adaptive.candle_capture", timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "4") or 4)) as session:
+        async with get_session(priority=_capture_db_priority(), label="adaptive.candle_capture", timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "4") or 4)) as session:
             # One analytics owner plus NOT EXISTS avoids repeated inserts without adding a
             # blocking unique-index migration to a potentially large legacy candle table.
             result = await session.execute(text("""

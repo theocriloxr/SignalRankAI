@@ -73,6 +73,12 @@ def _env_int(name: str, default: int, minimum: int | None = None, maximum: int |
 
 
 def _paper_worker_priority() -> str:
+    # Full-system staging tests must exercise the paper workflow rather than
+    # repeatedly deferring it behind the foreground reservation. Runtime safety
+    # sets the ACTIVE marker only after validating the exact acknowledgement and
+    # confirming that the Railway environment is non-production.
+    if str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1":
+        return "interactive"
     value = str(os.getenv("PAPER_WORKER_DB_PRIORITY") or "background").strip().lower()
     return value if value in {"interactive", "critical", "background", "analytics"} else "background"
 

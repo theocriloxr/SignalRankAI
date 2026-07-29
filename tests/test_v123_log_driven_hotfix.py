@@ -41,9 +41,9 @@ def test_runtime_version_identifies_code_not_stale_env(monkeypatch: pytest.Monke
     import core.version as version
 
     version = importlib.reload(version)
-    assert version.APP_VERSION == "1.2.3"
+    assert version.APP_VERSION == "1.2.4"
     assert version.CONFIGURED_APP_VERSION == "1.2.0"
-    assert "v1.2.3-adaptive-paper-signal-pipeline-20260729" in version.get_version_banner()
+    assert "v1.2.4-runtime-admission-advisory-pipeline-20260729" in version.get_version_banner()
     assert "configured_version=1.2.0" in version.get_version_banner()
 
 
@@ -102,7 +102,7 @@ def test_paper_worker_handles_admission_deferrals_without_cycle_crash() -> None:
 
 
 def test_staging_profile_keeps_features_on_inside_sandbox() -> None:
-    profile = (ROOT / "SignalRankAI_v1.2.3_Railway_Full_System_Staging_Test.env.example")
+    profile = (ROOT / "SignalRankAI_v1.2.4_Railway_Full_System_Staging_Test.env.example")
     assert profile.exists()
     text = profile.read_text(encoding="utf-8")
     for expected in (

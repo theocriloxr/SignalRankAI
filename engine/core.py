@@ -333,7 +333,8 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         return
     empty_cycles = int(_diagnostic_state.empty_cycles.get(asset_key, 0) + 1)
     _diagnostic_state.empty_cycles[asset_key] = empty_cycles
-    if empty_cycles < 3:
+    threshold = max(1, _env_int("DIAGNOSTIC_HEATMAP_EMPTY_CYCLES", 3))
+    if empty_cycles < threshold:
         return
     gates = _diagnostic_state.gate_counts.get(asset_key) or Counter()
     heatmap = {gate: count for gate, count in gates.most_common(12)}
@@ -917,6 +918,25 @@ def _signal_adx_value(signal: Dict[str, Any]) -> float:
     if "weak" in trend_text:
         return 15.0
     return 0.0
+
+
+def _staging_quality_advisory_enabled() -> bool:
+    return bool(
+        _env_bool("STAGING_QUALITY_GATES_ADVISORY", False)
+        and str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1"
+    )
+
+
+def _append_staging_advisory(signal: Dict[str, Any], gate: str, reason: Any) -> None:
+    advisories = signal.setdefault("staging_quality_advisories", [])
+    if not isinstance(advisories, list):
+        advisories = []
+        signal["staging_quality_advisories"] = advisories
+    item = {"gate": str(gate), "reason": _compact_reason(reason, 160)}
+    if item not in advisories:
+        advisories.append(item)
+    signal["staging_test_only"] = True
+    signal["exclude_from_production_performance"] = True
 
 
 def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
@@ -3110,22 +3130,44 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to update max candidate score: {e}")
                                 pass
 
-                            # advanced filters
+                            # Advanced filters need complete indicator context. The old
+                            # call omitted ATR%, EMA values and the trading session, which
+                            # made the chop filter treat every candidate as zero-volatility.
+                            sig.setdefault('symbol', sig.get('asset') or asset)
+                            _filter_price = _safe_float(sig.get('entry') or sig.get('close_price'), 0.0)
+                            _filter_atr = _safe_float(sig.get('atr'), 0.0)
+                            _filter_atr_pct = (_filter_atr / _filter_price * 100.0) if _filter_price > 0 else 0.0
+                            try:
+                                _filter_session = str(
+                                    sig.get('session')
+                                    or sig.get('market_session')
+                                    or signal_context.detect_trading_session()
+                                    or 'UNKNOWN'
+                                ).upper()
+                            except Exception:
+                                _filter_session = 'UNKNOWN'
                             market_filter_data = {
-                                'price': sig.get('entry', sig.get('close_price', 0)),
-                                'atr': sig.get('atr', 0),
+                                'price': _filter_price,
+                                'atr': _filter_atr,
+                                'atr_pct': _filter_atr_pct,
+                                'ema_20': _safe_float(ind.get('ema_20') or ind.get('ema20'), 0.0),
+                                'ema_50': _safe_float(ind.get('ema_50') or ind.get('ema50'), 0.0),
                                 'candles': candles,
-                                'adx': ind.get('adx', 30),
+                                'adx': _safe_float(ind.get('adx'), 30.0),
                             }
-                            passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, None)
+                            passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, _filter_session)
                             if not passed_filters:
                                 sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
                                 pipeline_stats["advanced_filter_failed"] += 1
                                 _bump_cycle_reason(pipeline_stats, "advanced_filter_reasons", sig['rejection_reason'])
-                                _increment_engine_veto("microstructure")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
-                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
-                                continue
+                                if _staging_quality_advisory_enabled():
+                                    _append_staging_advisory(sig, "advanced_filters", sig['rejection_reason'])
+                                    _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", f"advanced:{sig['rejection_reason']}")
+                                else:
+                                    _increment_engine_veto("microstructure")
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
+                                    continue
 
                             # calculate stops / tps if missing (ATR-based fallback)
                             entry = sig.get('entry', sig.get('close_price', 0))
@@ -3308,10 +3350,14 @@ def main_loop(DRY_RUN: bool = False):
                                     sig['rejection_reason'] = f'ultra:{rejection}'
                                     pipeline_stats["quality_rejected"] += 1
                                     _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
-                                    _increment_engine_veto("other")
                                     _record_gate_failure(asset, "ultra", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'])
-                                    continue
+                                    if _staging_quality_advisory_enabled():
+                                        _append_staging_advisory(sig, "ultra", sig['rejection_reason'])
+                                        _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
+                                    else:
+                                        _increment_engine_veto("other")
+                                        _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                                        continue
 
                             # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
@@ -3343,16 +3389,20 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats[f"quality_rejected_{_quality_cls}"] = int(
                                     pipeline_stats.get(f"quality_rejected_{_quality_cls}", 0) or 0
                                 ) + 1
-                                _rejection_bucket = _increment_quality_rejection_stat(quality_reason)
                                 _record_gate_failure(asset, "quality", quality_reason)
-                                _log_decision("skipped", sig, reason=quality_reason, meta={
-                                    "score": _signal_display_score(sig),
-                                    "rr": _signal_roi_score(sig),
-                                    "ml_probability": sig.get("ml_probability"),
-                                    "asset_class": _asset_class_key(str(sig.get("asset") or asset)),
-                                    "rejection_bucket": _rejection_bucket,
-                                })
-                                continue
+                                if _staging_quality_advisory_enabled():
+                                    _append_staging_advisory(sig, "production_quality", quality_reason)
+                                    _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", f"quality:{quality_reason}")
+                                else:
+                                    _rejection_bucket = _increment_quality_rejection_stat(quality_reason)
+                                    _log_decision("skipped", sig, reason=quality_reason, meta={
+                                        "score": _signal_display_score(sig),
+                                        "rr": _signal_roi_score(sig),
+                                        "ml_probability": sig.get("ml_probability"),
+                                        "asset_class": _asset_class_key(str(sig.get("asset") or asset)),
+                                        "rejection_bucket": _rejection_bucket,
+                                    })
+                                    continue
 
                             # Final gates: score + expectancy
                             live_exp = float(sig.get('live_expectancy', 0.0) or 0.0)
@@ -3460,30 +3510,34 @@ def main_loop(DRY_RUN: bool = False):
                                 sig['gemini_review_reason'] = gemini_reason
                                 if not gemini_ok:
                                     sig['rejection_reason'] = f"gemini:{gemini_reason}"
-                                    _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
                                     _record_gate_failure(asset, "gemini", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
-                                        "gemini_score": gemini_score,
-                                        "rejection_bucket": _rejection_bucket,
-                                    })
-                                    try:
-                                        run_sync(
-                                            _ml_rejection_tracker.persist_rejection(
-                                                asset=str(sig.get("asset") or ""),
-                                                timeframe=str(sig.get("timeframe") or ""),
-                                                direction=str(sig.get("direction") or ""),
-                                                entry_price=float(sig.get("entry") or 0),
-                                                stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
-                                                take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
-                                                ml_probability=float(sig.get("ml_probability") or 0.0),
-                                                rejection_reason=str(sig['rejection_reason']),
-                                                features=dict(sig),
-                                                rejection_type="gemini_gate",
+                                    if _staging_quality_advisory_enabled():
+                                        _append_staging_advisory(sig, "gemini", sig['rejection_reason'])
+                                        _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
+                                    else:
+                                        _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
+                                        _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                            "gemini_score": gemini_score,
+                                            "rejection_bucket": _rejection_bucket,
+                                        })
+                                        try:
+                                            run_sync(
+                                                _ml_rejection_tracker.persist_rejection(
+                                                    asset=str(sig.get("asset") or ""),
+                                                    timeframe=str(sig.get("timeframe") or ""),
+                                                    direction=str(sig.get("direction") or ""),
+                                                    entry_price=float(sig.get("entry") or 0),
+                                                    stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
+                                                    take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
+                                                    ml_probability=float(sig.get("ml_probability") or 0.0),
+                                                    rejection_reason=str(sig['rejection_reason']),
+                                                    features=dict(sig),
+                                                    rejection_type="gemini_gate",
+                                                )
                                             )
-                                        )
-                                    except Exception as e:
-                                        logger.debug(f"[engine] Failed to record gemini rejection: {e}")
-                                    continue
+                                        except Exception as e:
+                                            logger.debug(f"[engine] Failed to record gemini rejection: {e}")
+                                        continue
                             except Exception:
                                 pass
 
@@ -3845,10 +3899,11 @@ def main_loop(DRY_RUN: bool = False):
                                 str(e),
                             )
 
-                            if not final_signals:
-                                _maybe_log_heatmap(asset, cycle_no, 0)
-                            else:
-                                _maybe_log_heatmap(asset, cycle_no, len(final_signals))
+
+                    # Always emit gate telemetry after each asset. Previously this
+                    # call lived inside the storage-exception branch, so a clean
+                    # zero-candidate run produced no explanation at all.
+                    _maybe_log_heatmap(asset, cycle_no, len(final_signals))
 
                     # Legacy in-memory trade tracking used to mark a signal as
                     # "open" immediately after storage.  That polluted portfolio

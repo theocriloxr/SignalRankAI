@@ -46,6 +46,22 @@ _NONPRODUCTION_HARD_BOUNDARIES = {
     "PAYMENTS_PUBLIC_TEST_MODE": "1",
 }
 
+# Operational settings required for an end-to-end staging proof. These are not
+# live-money permissions; they ensure the enabled workers are actually admitted
+# to the small Railway database pool and that rejected quality decisions remain
+# observable while allowlisted test delivery continues.
+_FULL_SYSTEM_OPERATIONAL_SETTINGS = {
+    "PAPER_WORKER_DB_PRIORITY": "interactive",
+    "PAPER_DB_TIMEOUT_SECONDS": "12",
+    "ADAPTIVE_CANDLE_DB_PRIORITY": "interactive",
+    "ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS": "12",
+    "DB_BACKGROUND_DROP_WHEN_BUSY": "0",
+    "DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT": "0",
+    "DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE": "0",
+    "STAGING_QUALITY_GATES_ADVISORY": "1",
+    "DIAGNOSTIC_HEATMAP_EMPTY_CYCLES": "1",
+}
+
 # Default fail-closed behaviour when full-system testing has not been explicitly
 # acknowledged.
 _NONPRODUCTION_FORCE_OFF = (
@@ -90,10 +106,18 @@ def is_full_system_ack_valid(value: object) -> bool:
 
 
 def _environment_name(env: MutableMapping[str, str]) -> str:
+    """Resolve the actual deployment environment consistently.
+
+    Railway's environment identity is authoritative when present.  A stale
+    application-level ``APP_ENV=production`` must not make a Railway staging
+    deployment behave like production while the version banner correctly says
+    staging.
+    """
     return str(
-        env.get("APP_ENV")
-        or env.get("RAILWAY_ENVIRONMENT_NAME")
+        env.get("RAILWAY_ENVIRONMENT_NAME")
         or env.get("RAILWAY_ENVIRONMENT")
+        or env.get("APP_ENV")
+        or env.get("ENVIRONMENT")
         or "dev"
     ).strip().lower()
 
@@ -110,11 +134,19 @@ def apply_runtime_safety_environment(
 
     env = environ if environ is not None else os.environ
     environment = _environment_name(env)
-    if environment in {"production", "prod"}:
-        return RuntimeSafetyResult(environment, False, False, (), (), (), str(env.get("DELIVERY_AUDIENCE_ALLOWLIST") or ""))
-
     requested = _truthy(env.get("FULL_SYSTEM_STAGING_TEST_MODE"))
     ack_valid = is_full_system_ack_valid(env.get("FULL_SYSTEM_STAGING_TEST_ACK"))
+
+    # Production never permits the staging integration mode, but report the
+    # acknowledgement truthfully so diagnostics do not mislabel an environment
+    # mismatch as an invalid token.
+    if environment in {"production", "prod"}:
+        env["FULL_SYSTEM_STAGING_TEST_ACTIVE"] = "0"
+        return RuntimeSafetyResult(
+            environment, False, ack_valid, (), (), (),
+            str(env.get("DELIVERY_AUDIENCE_ALLOWLIST") or ""),
+        )
+
     enabled = bool(requested and ack_valid)
     forced_on: list[str] = []
     forced_off: list[str] = []
@@ -126,7 +158,14 @@ def apply_runtime_safety_environment(
                 forced_on.append(name)
             env[name] = "1"
 
+        env["FULL_SYSTEM_STAGING_TEST_ACTIVE"] = "1"
+
         for name, value in _NONPRODUCTION_HARD_BOUNDARIES.items():
+            if str(env.get(name) or "").strip() != value:
+                boundaries.append(name)
+            env[name] = value
+
+        for name, value in _FULL_SYSTEM_OPERATIONAL_SETTINGS.items():
             if str(env.get(name) or "").strip() != value:
                 boundaries.append(name)
             env[name] = value
@@ -164,6 +203,7 @@ def apply_runtime_safety_environment(
         )
         env["PROXY_VALIDATION_ENABLED"] = "1" if proxy_configured else "0"
     else:
+        env["FULL_SYSTEM_STAGING_TEST_ACTIVE"] = "0"
         for name in _NONPRODUCTION_FORCE_OFF:
             if _truthy(env.get(name)):
                 forced_off.append(name)

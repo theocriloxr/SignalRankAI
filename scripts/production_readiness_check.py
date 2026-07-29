@@ -60,9 +60,9 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
 )
 
 REQUIRED_WEB_MARKERS = (
-    '@app.get("/health"',
-    '@app.get("/healthz"',
-    '@app.get("/metrics/prometheus"',
+    '"/health"',
+    '"/healthz"',
+    '"/metrics/prometheus"',
 )
 
 REQUIRED_TELEMETRY_MARKERS = (
@@ -122,7 +122,10 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
     add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")
 
-    web_text = _read(root, "web/app.py")
+    # The Railway monolith owns the externally probed health endpoints while
+    # ``web/app.py`` retains the standalone web-service routes. Check both and
+    # match route paths rather than one exact decorator spelling.
+    web_text = _read(root, "web/app.py") + "\n" + _read(root, "railway_main.py")
     missing_web = [marker for marker in REQUIRED_WEB_MARKERS if marker not in web_text]
     add("web_health_routes", not missing_web, "missing=" + ",".join(missing_web) if missing_web else "health and metrics routes present")
 

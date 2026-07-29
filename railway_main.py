@@ -136,10 +136,21 @@ elif _NONPRODUCTION_SAFETY_OVERRIDES:
         ",".join(_NONPRODUCTION_SAFETY_OVERRIDES),
     )
 elif str(os.getenv("FULL_SYSTEM_STAGING_TEST_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}:
-    logger.error(
-        "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE requested but acknowledgement is invalid; "
-        "live-risk flags remain fail-closed"
-    )
+    if not _RUNTIME_SAFETY.acknowledgement_valid:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE requested but acknowledgement is invalid; "
+            "live-risk flags remain fail-closed"
+        )
+    elif _RUNTIME_SAFETY.environment in {"production", "prod"}:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE is not permitted in production; "
+            "live-risk flags remain fail-closed"
+        )
+    else:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE could not be activated; "
+            "live-risk flags remain fail-closed"
+        )
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.

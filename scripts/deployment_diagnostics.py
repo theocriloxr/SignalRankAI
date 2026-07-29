@@ -37,6 +37,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Use the same normalized environment and sandbox boundaries as the main
+# Railway process. This prevents the diagnostics subprocess from reporting a
+# different full-system mode than the running application.
+try:
+    from runtime_safety import apply_runtime_safety_environment
+    _DIAGNOSTIC_RUNTIME_SAFETY = apply_runtime_safety_environment()
+except Exception:
+    _DIAGNOSTIC_RUNTIME_SAFETY = None
+
 # Telegram's HTTP transport embeds the bot token in the request URL. Keep
 # third-party transport logs below INFO so deployment evidence cannot disclose
 # credentials even when the root logger is verbose.
