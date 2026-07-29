@@ -199,11 +199,10 @@ def check_environment(report: Report) -> None:
         )
     )
 
+    from runtime_safety import is_full_system_ack_valid
+
     full_test_requested = _truthy("FULL_SYSTEM_STAGING_TEST_MODE", False)
-    full_test_ack = (
-        str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACK") or "").strip()
-        == "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
-    )
+    full_test_ack = is_full_system_ack_valid(os.getenv("FULL_SYSTEM_STAGING_TEST_ACK"))
     full_test_mode = bool(full_test_requested and full_test_ack)
     report.add(
         Check(
@@ -212,7 +211,7 @@ def check_environment(report: Report) -> None:
             status=PASS if (not full_test_requested or full_test_ack) else FAIL,
             severity="critical",
             detail=f"requested={int(full_test_requested)} acknowledgement_valid={int(full_test_ack)}",
-            remediation=None if (not full_test_requested or full_test_ack) else "Set the exact FULL_SYSTEM_STAGING_TEST_ACK value from the v1.2.2 profile.",
+            remediation=None if (not full_test_requested or full_test_ack) else "Set the exact FULL_SYSTEM_STAGING_TEST_ACK value from the v1.2.3 profile.",
         )
     )
 
@@ -235,7 +234,7 @@ def check_environment(report: Report) -> None:
                 status=PASS if ok else FAIL,
                 severity="critical",
                 detail=f"actual={int(actual)} expected={int(expected)} full_test_mode={int(full_test_mode)}",
-                remediation=None if ok else f"Apply the v1.2.2 full-system staging profile for {name}.",
+                remediation=None if ok else f"Apply the v1.2.3 full-system staging profile for {name}.",
             )
         )
 

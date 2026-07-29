@@ -46,7 +46,7 @@ _RUNTIME_SAFETY_RELEVANT_FLAGS = (
 
 
 def _enforce_nonproduction_safety_environment():
-    """Backward-compatible wrapper around the v1.2.2 runtime policy."""
+    """Backward-compatible wrapper around the v1.2.3 runtime policy."""
     return apply_runtime_safety_environment()
 
 
@@ -112,6 +112,14 @@ if _startup_redis_url:
     logger.info("[startup] Redis URL detected; durable webhook queue is available")
 else:
     logger.warning("[startup] Redis URL not configured; webhook dispatcher will use the bounded in-process queue")
+
+logger.info(
+    "[startup_safety] requested=%s acknowledgement_valid=%s full_system_test_enabled=%s environment=%s",
+    int(str(os.getenv("FULL_SYSTEM_STAGING_TEST_MODE") or "").strip().lower() in {"1", "true", "yes", "on", "enabled"}),
+    int(bool(_RUNTIME_SAFETY.acknowledgement_valid)),
+    int(bool(_RUNTIME_SAFETY.full_system_test_enabled)),
+    _RUNTIME_SAFETY.environment,
+)
 
 if _RUNTIME_SAFETY.full_system_test_enabled:
     logger.warning(

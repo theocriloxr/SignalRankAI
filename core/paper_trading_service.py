@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import time
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from typing import Any, Iterable, Optional
@@ -28,7 +29,7 @@ from db.models import (
     SignalDelivery,
     User,
 )
-from db.session import get_session
+from db.session import NoncriticalWriteDropped, get_session
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,15 @@ def _env_int(name: str, default: int, minimum: int | None = None, maximum: int |
     if maximum is not None:
         value = min(int(maximum), value)
     return value
+
+
+def _paper_worker_priority() -> str:
+    value = str(os.getenv("PAPER_WORKER_DB_PRIORITY") or "background").strip().lower()
+    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+
+
+def _paper_db_timeout(default: float = 8.0) -> float:
+    return _env_float("PAPER_DB_TIMEOUT_SECONDS", default, 0.5, 60.0)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -495,7 +505,7 @@ class PaperTradingService:
     async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
         max_age_s = _env_int("PAPER_AUTO_ENTRY_MAX_AGE_SECONDS", 900, 30, 86400)
         cutoff = now_utc_naive() - timedelta(seconds=max_age_s)
-        async with get_session(priority="background", label="paper.delivery_candidates", timeout_seconds=3) as session:
+        async with get_session(priority=_paper_worker_priority(), label="paper.delivery_candidates", timeout_seconds=_paper_db_timeout(8.0)) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, Signal, User, PaperAccount, PaperPosition.position_id)
@@ -564,7 +574,7 @@ class PaperTradingService:
         return result
 
     async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
-        async with get_session(priority="background", label="paper.open_candidate", timeout_seconds=5) as session:
+        async with get_session(priority=_paper_worker_priority(), label="paper.open_candidate", timeout_seconds=_paper_db_timeout(10.0)) as session:
             user = (
                 await session.execute(
                     select(User).where(User.id == int(candidate["user_id"])).limit(1)
@@ -757,7 +767,7 @@ class PaperTradingService:
         ))
 
     async def _open_position_snapshots(self, limit: int) -> list[dict[str, Any]]:
-        async with get_session(priority="background", label="paper.open_snapshots", timeout_seconds=3) as session:
+        async with get_session(priority=_paper_worker_priority(), label="paper.open_snapshots", timeout_seconds=_paper_db_timeout(8.0)) as session:
             rows = (
                 await session.execute(
                     select(PaperPosition.position_id, PaperPosition.asset)
@@ -793,7 +803,7 @@ class PaperTradingService:
         return result
 
     async def _mark_one(self, position_id: str, current_price: float) -> bool:
-        async with get_session(priority="background", label="paper.mark_one", timeout_seconds=5) as session:
+        async with get_session(priority=_paper_worker_priority(), label="paper.mark_one", timeout_seconds=_paper_db_timeout(10.0)) as session:
             position = (
                 await session.execute(
                     select(PaperPosition).where(PaperPosition.position_id == str(position_id)).with_for_update()
@@ -871,14 +881,35 @@ class PaperTradingService:
             "[paper_worker] started interval=%.1fs auto_default=%s delivery_batch=%s mark_batch=%s",
             interval, self._default_auto_enabled(), delivery_limit, mark_limit,
         )
+        last_deferred_log = 0.0
         while not stop_event.is_set():
+            opened = {"candidates": 0, "opened": 0, "skipped": 0, "deferred": 0, "failed": 0}
+            marked = {"positions": 0, "updated": 0, "closed": 0, "failed": 0}
+
+            # Delivery processing and mark-to-market are isolated so DB pressure
+            # in one phase cannot suppress the other phase for the whole cycle.
             try:
                 opened = await self.process_new_deliveries(limit=delivery_limit)
-                marked = await self.mark_to_market(limit=mark_limit)
-                if opened.get("opened") or marked.get("closed"):
-                    logger.info("[paper_worker] cycle openings=%s marking=%s", opened, marked)
+            except NoncriticalWriteDropped as exc:
+                now_mono = time.monotonic()
+                if now_mono - last_deferred_log >= 60.0:
+                    logger.info("[paper_worker] delivery phase deferred by DB admission: %s", exc)
+                    last_deferred_log = now_mono
             except Exception as exc:
-                logger.exception("[paper_worker] cycle failed: %s", exc)
+                logger.exception("[paper_worker] delivery phase failed: %s", exc)
+
+            try:
+                marked = await self.mark_to_market(limit=mark_limit)
+            except NoncriticalWriteDropped as exc:
+                now_mono = time.monotonic()
+                if now_mono - last_deferred_log >= 60.0:
+                    logger.info("[paper_worker] mark phase deferred by DB admission: %s", exc)
+                    last_deferred_log = now_mono
+            except Exception as exc:
+                logger.exception("[paper_worker] mark phase failed: %s", exc)
+
+            if opened.get("opened") or marked.get("closed"):
+                logger.info("[paper_worker] cycle openings=%s marking=%s", opened, marked)
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=interval)
             except asyncio.TimeoutError:

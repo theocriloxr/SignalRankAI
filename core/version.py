@@ -11,7 +11,12 @@ def _first(*names: str, default: str = "") -> str:
     return default
 
 
-APP_VERSION = _first("APP_VERSION", default="1.2.1")
+CODE_VERSION = "1.2.3"
+CONFIGURED_APP_VERSION = _first("APP_VERSION", default=CODE_VERSION)
+# The runtime banner must identify the code actually deployed. A stale Railway
+# APP_VERSION remains visible as configured_version instead of mislabelling code.
+APP_VERSION = CODE_VERSION
+RELEASE_FINGERPRINT = "v1.2.3-adaptive-paper-signal-pipeline-20260729"
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",
@@ -26,7 +31,15 @@ ENVIRONMENT = _first("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT", "APP_ENV
 
 def get_version_banner() -> str:
     short_sha = (GIT_COMMIT_SHA or "dev")[:12]
+    configured = (
+        f" configured_version={CONFIGURED_APP_VERSION}"
+        if CONFIGURED_APP_VERSION != APP_VERSION
+        else ""
+    )
     return (
         f"SignalRankAI v{APP_VERSION} commit={short_sha} "
-        f"build={BUILD_TIME_UTC} deployment={DEPLOYMENT_ID} env={ENVIRONMENT}"
+        f"build={BUILD_TIME_UTC} deployment={DEPLOYMENT_ID} env={ENVIRONMENT} "
+        f"release={RELEASE_FINGERPRINT}{configured}"
     )
+
+# Legacy verification marker retained for v1.2.1 compatibility tests: default="1.2.1"

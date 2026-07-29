@@ -12,6 +12,7 @@ from typing import MutableMapping
 
 _TRUTHY = {"1", "true", "yes", "on", "enabled"}
 _TEST_ACK = "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
+FULL_SYSTEM_STAGING_TEST_ACK_VALUE = _TEST_ACK
 
 # These capabilities are enabled together only in the explicit staging test
 # profile. External integrations must still use sandbox/demo credentials.
@@ -76,6 +77,18 @@ def _truthy(value: object) -> bool:
     return str(value or "").strip().lower() in _TRUTHY
 
 
+def _normalise_ack(value: object) -> str:
+    """Normalise Railway/UI copy-paste variants without weakening the exact token."""
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text
+
+
+def is_full_system_ack_valid(value: object) -> bool:
+    return _normalise_ack(value) == _TEST_ACK
+
+
 def _environment_name(env: MutableMapping[str, str]) -> str:
     return str(
         env.get("APP_ENV")
@@ -101,7 +114,7 @@ def apply_runtime_safety_environment(
         return RuntimeSafetyResult(environment, False, False, (), (), (), str(env.get("DELIVERY_AUDIENCE_ALLOWLIST") or ""))
 
     requested = _truthy(env.get("FULL_SYSTEM_STAGING_TEST_MODE"))
-    ack_valid = str(env.get("FULL_SYSTEM_STAGING_TEST_ACK") or "").strip() == _TEST_ACK
+    ack_valid = is_full_system_ack_valid(env.get("FULL_SYSTEM_STAGING_TEST_ACK"))
     enabled = bool(requested and ack_valid)
     forced_on: list[str] = []
     forced_off: list[str] = []
@@ -167,4 +180,4 @@ def apply_runtime_safety_environment(
     )
 
 
-__all__ = ["RuntimeSafetyResult", "apply_runtime_safety_environment"]
+__all__ = ["RuntimeSafetyResult", "FULL_SYSTEM_STAGING_TEST_ACK_VALUE", "apply_runtime_safety_environment", "is_full_system_ack_valid"]

@@ -17,7 +17,7 @@ from sqlalchemy import select
 from db.models import User, VIPWaitlist
 from db.priority import DBPriority
 from db.repository import count_active_vip_users
-from db.session import get_session
+from db.session import NoncriticalWriteDropped, get_session
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,8 @@ async def check_waitlist_capacity_job() -> None:
             "You've been invited to SignalRankAI VIP!\nThe invitation expires in 24 hours.",
         )
         logger.info("[waitlist] invited user %s", telegram_user_id)
+    except NoncriticalWriteDropped as exc:
+        logger.info("[waitlist] capacity check deferred by DB admission: %s", exc)
     except Exception as exc:
         logger.error(
             "[waitlist] capacity check failed err_type=%s err=%s",
@@ -138,6 +140,8 @@ async def monitor_expired_invites_job() -> None:
             )
         if recipients:
             logger.info("[waitlist] expired invitations reset count=%s", len(recipients))
+    except NoncriticalWriteDropped as exc:
+        logger.info("[waitlist] expiry monitor deferred by DB admission: %s", exc)
     except Exception as exc:
         logger.error(
             "[waitlist] expiry monitor failed err_type=%s err=%s",

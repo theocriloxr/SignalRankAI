@@ -2647,15 +2647,31 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         pass
 
-    # Detect regime
+                    # Detect regime from an actual candle sequence, not the multi-timeframe
+                    # container. Passing the dict itself made len(market_data) < 30
+                    # and forced every asset into UNKNOWN.
+                    _regime_candles = []
+                    _regime_timeframe = ""
                     try:
-                        regime = detect_market_regime(market_data)
-                    except Exception:
-                        regime = None
+                        for _candidate_tf in ("1h", "4h", "15m", "1d", "5m", "1m"):
+                            _candidate_block = market_data.get(_candidate_tf, {}) if isinstance(market_data, dict) else {}
+                            _candidate_candles = _candidate_block.get("candles", []) if isinstance(_candidate_block, dict) else []
+                            if isinstance(_candidate_candles, list) and len(_candidate_candles) >= 30:
+                                _regime_candles = _candidate_candles
+                                _regime_timeframe = _candidate_tf
+                                break
+                        regime = detect_market_regime(
+                            _regime_candles,
+                            asset=str(asset),
+                            timeframe=_regime_timeframe,
+                        )
+                    except Exception as _regime_error:
+                        logger.debug("[engine] regime detection failed asset=%s error=%s", asset, _regime_error)
+                        regime = "UNKNOWN"
 
                     # Scan attempts are counted once per batch before early gates,
                     # including no-candle/provider-timeout assets.
-                    if regime is None or regime == "neutral" or regime == "unknown":
+                    if str(regime or "").strip().upper() in {"", "NEUTRAL", "UNKNOWN"}:
                         _increment_engine_veto("regime")
                         
                     # News sentiment (non-critical)
@@ -2665,7 +2681,7 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         market_data['news_sentiment'] = None
 
-    # Run strategies -> returns list of signals (each is a dict)
+                    # Run strategies -> returns list of signals (each is a dict)
                     try:
                         strategy_signals = run_all_strategies(asset, market_data, regime) or []
                         if not strategy_signals:
@@ -3111,16 +3127,6 @@ def main_loop(DRY_RUN: bool = False):
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
                                 continue
 
-                            # ultra quality (optional)
-                            if _env_bool('ULTRA_QUALITY_ENABLED', False):
-                                should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
-                                if not should_trade:
-                                    sig['rejection_reason'] = f'ultra:{rejection}'
-                                    _increment_engine_veto("other")
-                                    _record_gate_failure(asset, "ultra", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'])
-                                    continue
-
                             # calculate stops / tps if missing (ATR-based fallback)
                             entry = sig.get('entry', sig.get('close_price', 0))
                             sl = sig.get('stop_loss') or sig.get('stop')
@@ -3276,6 +3282,36 @@ def main_loop(DRY_RUN: bool = False):
                                     continue
                             except Exception as _intel_err:
                                 logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
+
+                            # Ultra quality must run only after executable levels and
+                            # regime/session metadata exist. The previous order ran it
+                            # before ATR stop/target construction, producing artificial
+                            # R:R=0.00 rejections for otherwise high-scoring candidates.
+                            sig.setdefault('entry', entry_f)
+                            sig.setdefault('stop', sl)
+                            sig.setdefault('targets', tp)
+                            sig['regime'] = str(regime or "UNKNOWN")
+                            sig.setdefault('adx_trend', ind.get('adx', market_filter_data.get('adx', 0)))
+                            sig.setdefault('volume_ratio', sig.get('relative_volume') or ind.get('volume_ratio') or 0.0)
+                            sig.setdefault('volatility', abs(_safe_float(sig.get('atr_rel'), 0.0)))
+                            try:
+                                sig.setdefault(
+                                    'session',
+                                    sig.get('market_session') or signal_context.detect_trading_session(),
+                                )
+                            except Exception:
+                                sig.setdefault('session', 'UNKNOWN')
+
+                            if _env_bool('ULTRA_QUALITY_ENABLED', False):
+                                should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
+                                if not should_trade:
+                                    sig['rejection_reason'] = f'ultra:{rejection}'
+                                    pipeline_stats["quality_rejected"] += 1
+                                    _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
+                                    _increment_engine_veto("other")
+                                    _record_gate_failure(asset, "ultra", sig['rejection_reason'])
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                                    continue
 
                             # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
