@@ -23,7 +23,7 @@ def _function_source(path: str, name: str) -> str:
 
 
 def test_v107_hotfix_is_carried_forward_by_v108() -> None:
-    assert 'default="1.2.0"' in _source("core/version.py")
+    assert 'default="1.2.1"' in _source("core/version.py")
 
 
 def test_keyboard_refresh_is_disabled_by_default_and_not_inline() -> None:

@@ -38,6 +38,10 @@ _REASON_MESSAGES = {
         "Live broker execution is currently disabled by the platform safety "
         "gate. No order was placed."
     ),
+    "MT5_LIVE_ACCOUNTS_DISABLED": (
+        "Live MT5 accounts are blocked in this deployment. Use a verified demo "
+        "account for full-system staging tests."
+    ),
     "mt5_allow_live_accounts_disabled": (
         "Live MT5 accounts are not enabled for this deployment. Connect a demo "
         "account or continue with paper trading."

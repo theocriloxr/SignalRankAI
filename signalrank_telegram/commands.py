@@ -2776,7 +2776,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		if redis_url:
 			try:
 				import redis as _redis
-				_rc = _redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+				_rc = _redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3, socket_timeout_seconds=3)
 				_rc.ping()
 				redis_status = "✅ connected"
 			except Exception as _re:
@@ -5442,7 +5442,7 @@ async def about_command(update, context) -> None:
 	try:
 		from sqlalchemy import func, select
 		from db.models import Outcome, Signal, SignalDelivery, User
-		async with get_session(priority="interactive", label="about.metrics", timeout=5) as session:
+		async with get_session(priority="interactive", label="about.metrics", timeout_seconds=5) as session:
 			user = (
 				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
 			).scalar_one_or_none()

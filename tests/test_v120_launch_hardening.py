@@ -12,7 +12,7 @@ def source(path: str) -> str:
 
 
 def test_release_version_and_migration_head():
-    assert 'default="1.2.0"' in source("core/version.py")
+    assert 'default="1.2.1"' in source("core/version.py")
     migration = source("db/migrations/versions/0027_launch_paper_trading.py")
     assert 'revision = "0027_launch_paper_trading"' in migration
     assert 'down_revision = "0026_adaptive_operational_hotfix"' in migration

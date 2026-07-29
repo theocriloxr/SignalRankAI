@@ -822,6 +822,7 @@ async def get_session(
     priority: DBPriority | str | None = None,
     label: str | None = None,
     timeout_seconds: float | None = None,
+    timeout: float | None = None,
     noncritical: bool = False,
     critical: bool = False,
     interactive: bool = False,
@@ -838,8 +839,11 @@ async def get_session(
     holder registry never records an ``unlabelled`` session.
 
     ``timeout_seconds`` optionally narrows or extends the admission timeout for
-    one operation. The value is clamped to a safe non-negative duration and does
-    not alter the global priority policy.
+    one operation. ``timeout`` is a deprecated compatibility alias retained for
+    stale extensions and deployment overlays; new code must use
+    ``timeout_seconds``. Supplying conflicting values fails closed. The value is
+    clamped to a safe non-negative duration and does not alter the global
+    priority policy.
     """
     _safe_label = re.sub(
         r"[^a-zA-Z0-9_.-]+",
@@ -853,6 +857,14 @@ async def get_session(
         interactive=interactive,
     )
     default_timeout_s = priority_timeout_seconds(resolved)
+    if timeout_seconds is not None and timeout is not None:
+        try:
+            if float(timeout_seconds) != float(timeout):
+                raise ValueError("timeout and timeout_seconds cannot disagree")
+        except (TypeError, ValueError):
+            raise ValueError("timeout and timeout_seconds must be matching non-negative numbers") from None
+    if timeout_seconds is None:
+        timeout_seconds = timeout
     try:
         timeout_s = default_timeout_s if timeout_seconds is None else max(0.0, float(timeout_seconds))
     except (TypeError, ValueError):

@@ -495,7 +495,7 @@ class PaperTradingService:
     async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
         max_age_s = _env_int("PAPER_AUTO_ENTRY_MAX_AGE_SECONDS", 900, 30, 86400)
         cutoff = now_utc_naive() - timedelta(seconds=max_age_s)
-        async with get_session(priority="background", label="paper.delivery_candidates", timeout=3) as session:
+        async with get_session(priority="background", label="paper.delivery_candidates", timeout_seconds=3) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, Signal, User, PaperAccount, PaperPosition.position_id)
@@ -564,7 +564,7 @@ class PaperTradingService:
         return result
 
     async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
-        async with get_session(priority="background", label="paper.open_candidate", timeout=5) as session:
+        async with get_session(priority="background", label="paper.open_candidate", timeout_seconds=5) as session:
             user = (
                 await session.execute(
                     select(User).where(User.id == int(candidate["user_id"])).limit(1)
@@ -757,7 +757,7 @@ class PaperTradingService:
         ))
 
     async def _open_position_snapshots(self, limit: int) -> list[dict[str, Any]]:
-        async with get_session(priority="background", label="paper.open_snapshots", timeout=3) as session:
+        async with get_session(priority="background", label="paper.open_snapshots", timeout_seconds=3) as session:
             rows = (
                 await session.execute(
                     select(PaperPosition.position_id, PaperPosition.asset)
@@ -793,7 +793,7 @@ class PaperTradingService:
         return result
 
     async def _mark_one(self, position_id: str, current_price: float) -> bool:
-        async with get_session(priority="background", label="paper.mark_one", timeout=5) as session:
+        async with get_session(priority="background", label="paper.mark_one", timeout_seconds=5) as session:
             position = (
                 await session.execute(
                     select(PaperPosition).where(PaperPosition.position_id == str(position_id)).with_for_update()

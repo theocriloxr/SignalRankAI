@@ -28,6 +28,32 @@ except Exception:
     pass
 
 import os
+
+
+from runtime_safety import apply_runtime_safety_environment
+
+# Compatibility inventory retained for v1.2.1 source-level deployment checks.
+_RUNTIME_SAFETY_RELEVANT_FLAGS = (
+    "REAL_EXECUTION_ENABLED",
+    "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED",
+    "REAL_PAYOUTS_ENABLED",
+    "PAYMENTS_PUBLIC_ENABLED",
+    "FREE_SIGNAL_DISTRIBUTION_ENABLED",
+    "FREE_RANDOM_DISTRIBUTION_ENABLED",
+)
+
+
+def _enforce_nonproduction_safety_environment():
+    """Backward-compatible wrapper around the v1.2.2 runtime policy."""
+    return apply_runtime_safety_environment()
+
+
+_RUNTIME_SAFETY = _enforce_nonproduction_safety_environment()
+_NONPRODUCTION_SAFETY_OVERRIDES = _RUNTIME_SAFETY.forced_off
+
+
 import asyncio
 import hmac
 import json
@@ -86,6 +112,26 @@ if _startup_redis_url:
     logger.info("[startup] Redis URL detected; durable webhook queue is available")
 else:
     logger.warning("[startup] Redis URL not configured; webhook dispatcher will use the bounded in-process queue")
+
+if _RUNTIME_SAFETY.full_system_test_enabled:
+    logger.warning(
+        "[startup_safety] FULL SYSTEM STAGING TEST MODE active environment=%s "
+        "forced_on=%s sandbox_boundaries=%s audience=%s",
+        _RUNTIME_SAFETY.environment,
+        ",".join(_RUNTIME_SAFETY.forced_on) or "already_enabled",
+        ",".join(_RUNTIME_SAFETY.hard_boundaries) or "already_enforced",
+        _RUNTIME_SAFETY.audience_allowlist or "EMPTY",
+    )
+elif _NONPRODUCTION_SAFETY_OVERRIDES:
+    logger.warning(
+        "[startup_safety] non-production environment forced live-risk flags off: %s",
+        ",".join(_NONPRODUCTION_SAFETY_OVERRIDES),
+    )
+elif str(os.getenv("FULL_SYSTEM_STAGING_TEST_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}:
+    logger.error(
+        "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE requested but acknowledgement is invalid; "
+        "live-risk flags remain fail-closed"
+    )
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.

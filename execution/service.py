@@ -127,8 +127,11 @@ class ExecutionGate:
         elif request.account_is_demo:
             if not _env_enabled("DEMO_EXECUTION_ENABLED", True):
                 reasons.append("DEMO_EXECUTION_DISABLED")
-        elif not _env_enabled("REAL_EXECUTION_ENABLED", False):
-            reasons.append("REAL_EXECUTION_DISABLED")
+        else:
+            if not _env_enabled("REAL_EXECUTION_ENABLED", False):
+                reasons.append("REAL_EXECUTION_DISABLED")
+            if not _env_enabled("MT5_ALLOW_LIVE_ACCOUNTS", False):
+                reasons.append("MT5_LIVE_ACCOUNTS_DISABLED")
         if not request.quote_trusted:
             reasons.append("trusted_quote_required")
         try:

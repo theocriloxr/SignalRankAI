@@ -75,7 +75,7 @@ def test_bollinger_width_is_derived_from_nested_bands():
 
 
 def test_version_bumped():
-    assert 'default="1.2.0"' in source("core/version.py")
+    assert 'default="1.2.1"' in source("core/version.py")
 
 def test_delivery_freshness_has_one_canonical_entry_drift_gate():
     source = Path("engine/delivery_freshness.py").read_text()

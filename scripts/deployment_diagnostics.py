@@ -199,12 +199,30 @@ def check_environment(report: Report) -> None:
         )
     )
 
+    full_test_requested = _truthy("FULL_SYSTEM_STAGING_TEST_MODE", False)
+    full_test_ack = (
+        str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACK") or "").strip()
+        == "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
+    )
+    full_test_mode = bool(full_test_requested and full_test_ack)
+    report.add(
+        Check(
+            name="full_system_staging_test_ack",
+            category="safety_flags",
+            status=PASS if (not full_test_requested or full_test_ack) else FAIL,
+            severity="critical",
+            detail=f"requested={int(full_test_requested)} acknowledgement_valid={int(full_test_ack)}",
+            remediation=None if (not full_test_requested or full_test_ack) else "Set the exact FULL_SYSTEM_STAGING_TEST_ACK value from the v1.2.2 profile.",
+        )
+    )
+
     safety_flags = {
-        "REAL_EXECUTION_ENABLED": False,
-        "AUTO_TRADE_ENABLED": False,
-        "COPY_TRADE_ENABLED": False,
-        "REAL_PAYOUTS_ENABLED": False,
-        "PAYMENTS_PUBLIC_ENABLED": False,
+        "REAL_EXECUTION_ENABLED": full_test_mode,
+        "AUTO_TRADE_ENABLED": full_test_mode,
+        "COPY_TRADE_ENABLED": full_test_mode,
+        "REAL_PAYOUTS_ENABLED": full_test_mode,
+        "PAYMENTS_PUBLIC_ENABLED": full_test_mode,
+        # Live MT5 accounts remain blocked even while the execution workflow is enabled.
         "MT5_ALLOW_LIVE_ACCOUNTS": False,
     }
     for name, expected in safety_flags.items():
@@ -216,35 +234,65 @@ def check_environment(report: Report) -> None:
                 category="safety_flags",
                 status=PASS if ok else FAIL,
                 severity="critical",
-                detail=f"actual={int(actual)} expected={int(expected)}",
-                remediation=None if ok else f"Set {name}=0 during staging certification.",
+                detail=f"actual={int(actual)} expected={int(expected)} full_test_mode={int(full_test_mode)}",
+                remediation=None if ok else f"Apply the v1.2.2 full-system staging profile for {name}.",
             )
         )
+
+    paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    paystack_key_safe = (not paystack_secret) or paystack_secret.startswith("sk_test_")
+    sandbox_ok = (
+        (not full_test_mode)
+        or (
+            _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
+            and paystack_key_safe
+            and _truthy("BYBIT_TESTNET", False)
+            and not _truthy("MT5_ALLOW_LIVE_ACCOUNTS", False)
+        )
+    )
+    report.add(
+        Check(
+            name="external_sandbox_boundaries",
+            category="safety_flags",
+            status=PASS if sandbox_ok else FAIL,
+            severity="critical",
+            detail=(
+                f"paystack_test={int(_truthy('PAYMENTS_PUBLIC_TEST_MODE', False))} "
+                f"paystack_key_safe={int(paystack_key_safe)} "
+                f"bybit_testnet={int(_truthy('BYBIT_TESTNET', False))} "
+                f"mt5_live_allowed={int(_truthy('MT5_ALLOW_LIVE_ACCOUNTS', False))}"
+            ),
+            remediation=None if sandbox_ok else "Use a Paystack sk_test_ key, BYBIT_TESTNET=1, and MT5_ALLOW_LIVE_ACCOUNTS=0.",
+        )
+    )
 
     free_enabled = _truthy("FREE_RANDOM_DISTRIBUTION_ENABLED", False) or _truthy(
         "FREE_SIGNAL_DISTRIBUTION_ENABLED", False
     )
+    allowlist = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip()
+    free_ok = (free_enabled and bool(allowlist)) if full_test_mode else not free_enabled
     report.add(
         Check(
-            name="free_distribution_owner_test",
+            name="free_distribution_test_audience",
             category="safety_flags",
-            status=FAIL if free_enabled else PASS,
+            status=PASS if free_ok else FAIL,
             severity="critical",
-            detail=f"enabled={free_enabled}",
-            remediation="Set FREE_RANDOM_DISTRIBUTION_ENABLED=0 during owner/staging tests.",
+            detail=f"enabled={free_enabled} allowlist_configured={bool(allowlist)} full_test_mode={full_test_mode}",
+            remediation=None if free_ok else "Enable free distribution only with DELIVERY_AUDIENCE_ALLOWLIST in full-system staging mode.",
         )
     )
 
     ws_master = _truthy("WS_INGEST_ENABLED", False)
     ws_crypto = _truthy("CRYPTO_WS_ENABLED", ws_master)
+    ws_ok = (ws_master and ws_crypto) if full_test_mode else not (ws_master and ws_crypto)
     report.add(
         Check(
             name="websocket_mode",
             category="market_data",
-            status=WARN if ws_master and ws_crypto else PASS,
+            status=PASS if ws_ok else WARN,
             severity="medium",
-            detail=f"master={ws_master} crypto={ws_crypto}; REST is authoritative during initial proof",
-            remediation="Keep both flags 0 until REST lifecycle proof and soak pass." if ws_master and ws_crypto else None,
+            detail=f"master={ws_master} crypto={ws_crypto} full_test_mode={full_test_mode}",
+            remediation=None if ws_ok else "Apply the matching safe or full-system staging profile.",
         )
     )
 
