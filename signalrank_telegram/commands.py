@@ -3018,37 +3018,20 @@ async def _public_guard(update: Update) -> bool:
 
 
 def _help_page_definitions() -> dict[int, dict[str, object]]:
-	from .command_access import COMMAND_TIERS, COMMAND_HELP
-
-	# Build description lookup from tier help data (single source of truth).
-	desc_lookup: dict[str, str] = {}
-	for _tier, _info in (COMMAND_HELP or {}).items():
-		for _cmd, _desc in (_info.get("commands") or []):
-			_c = str(_cmd or "").strip().lstrip("/").lower()
-			if _c and _c not in desc_lookup:
-				desc_lookup[_c] = str(_desc or "").strip()
+	from signalrank_telegram.command_catalog import COMMANDS
 
 	pages: dict[int, dict[str, object]] = {
-		1: {"title": "🟢 Basics & Free", "required_tier": "FREE", "commands": [], "footer": "Tip: start with /proof, /signals, /status, and /upgrade if you want more access."},
-		2: {"title": "⭐️ Premium Analytics", "required_tier": "PREMIUM", "commands": [], "footer": "⭐️ Upgrade to unlock these features."},
-		3: {"title": "💎 VIP Exclusive", "required_tier": "VIP", "commands": [], "footer": "💎 VIP includes all Free and Premium commands plus these exclusives."},
-		4: {"title": "👑 Admin Operations", "required_tier": "ADMIN", "commands": [], "footer": "Restricted, audited admin surface."},
-		5: {"title": "👑 Owner Controls", "required_tier": "OWNER", "commands": [], "footer": "Restricted owner-only surface."},
+		1: {"title": "🟢 Commands available now", "required_tier": "FREE", "commands": [], "footer": "Only functional launch commands are listed."},
+		2: {"title": "⭐ Premium commands", "required_tier": "PREMIUM", "commands": [], "footer": "Premium includes Free commands plus detailed analytics and broker setup."},
+		3: {"title": "💎 VIP commands", "required_tier": "VIP", "commands": [], "footer": "VIP includes evidence-based simulation and priority features."},
+		4: {"title": "🛡 Admin operations", "required_tier": "ADMIN", "commands": [], "footer": "Restricted and audited. Never displayed to ordinary users."},
+		5: {"title": "👑 Owner controls", "required_tier": "OWNER", "commands": [], "footer": "Restricted to configured owner identities."},
 	}
-
-	hidden = {"unlock", "broadcast", "dev_invalidate", "dev_force_signal"}
 	page_by_tier = {"FREE": 1, "PREMIUM": 2, "VIP": 3, "ADMIN": 4, "OWNER": 5}
-
-	for cmd, required_tier in sorted((COMMAND_TIERS or {}).items(), key=lambda kv: (str(kv[1]), str(kv[0]))):
-		cmd_l = str(cmd or "").strip().lower()
-		if not cmd_l or cmd_l in hidden:
-			continue
-		page = page_by_tier.get(str(required_tier or "FREE").upper(), 1)
-		desc = desc_lookup.get(cmd_l) or "Command"
-		pages[page]["commands"].append((f"/{cmd_l}", desc))
-
+	for spec in COMMANDS:
+		page = page_by_tier.get(str(spec.tier).upper(), 1)
+		pages[page]["commands"].append((f"/{spec.name}", spec.description))
 	return pages
-
 
 def _help_authorized_pages(user_id: int) -> list[int]:
 	pages = [1, 2, 3]
@@ -4761,6 +4744,11 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 			await session.commit()
 	except Exception:
 		pass
+	try:
+		from core.paper_trading_service import paper_trading_service
+		await paper_trading_service.ensure_account(int(user_id))
+	except Exception as exc:
+		logger.warning("[terms] paper account initialization deferred user=%s err=%s", user_id, exc)
 	welcome = (
 		"✅ <b>Welcome to SignalRankAI!</b>\n\n"
 		"You're all set. Here's what you get:\n"
@@ -5436,31 +5424,100 @@ async def start_command(update, context):
 	_tier = _effective_tier(int(user_id))
 	_kbd_start = _build_dynamic_menu(user_id=int(user_id), tier=_tier)
 	await update.message.reply_text(msg, reply_markup=_kbd_start)
+	try:
+		from core.paper_trading_service import paper_trading_service
+		await paper_trading_service.ensure_account(int(user_id))
+	except Exception as exc:
+		logger.warning("[/start] paper account initialization deferred user=%s err=%s", user_id, exc)
 	await maybe_prompt_timezone(update.message, int(user_id))
 
 # /about message
 async def about_command(update, context) -> None:
+	"""Show platform capabilities plus this user's verified delivery totals."""
+	if update.message is None or update.effective_user is None:
+		return
+	uid = int(update.effective_user.id)
+	tier = _effective_tier(uid)
+	delivered = active = completed = 0
+	try:
+		from sqlalchemy import func, select
+		from db.models import Outcome, Signal, SignalDelivery, User
+		async with get_session(priority="interactive", label="about.metrics", timeout=5) as session:
+			user = (
+				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
+			).scalar_one_or_none()
+			if user is not None:
+				delivered = int((await session.execute(
+					select(func.count(func.distinct(SignalDelivery.signal_id))).where(
+						SignalDelivery.user_id == int(user.id),
+						SignalDelivery.sent_ok.is_(True),
+						func.upper(SignalDelivery.delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"]),
+					)
+				)).scalar() or 0)
+				active = int((await session.execute(
+					select(func.count(func.distinct(SignalDelivery.signal_id)))
+					.join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+					.where(
+						SignalDelivery.user_id == int(user.id),
+						SignalDelivery.sent_ok.is_(True),
+						func.upper(SignalDelivery.delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"]),
+						Signal.expired.is_(False),
+						Signal.status.in_(["issued", "active", "open"]),
+					)
+				)).scalar() or 0)
+				completed = int((await session.execute(
+					select(func.count(func.distinct(Outcome.signal_id)))
+					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
+					.where(
+						SignalDelivery.user_id == int(user.id),
+						SignalDelivery.sent_ok.is_(True),
+						func.upper(SignalDelivery.delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"]),
+					)
+				)).scalar() or 0)
+	except Exception:
+		logger.exception("[/about] metric query failed user=%s", uid)
+
+	paper_line = "Paper account: unavailable"
+	try:
+		from core.paper_trading_service import paper_trading_service
+		paper = await paper_trading_service.snapshot(uid)
+		if paper is not None:
+			paper_line = (
+				f"Paper equity: <b>${paper.equity:,.2f}</b> • "
+				f"open: <b>{paper.open_positions}</b> • auto: <b>{'ON' if paper.auto_trade_enabled else 'OFF'}</b>"
+			)
+	except Exception:
+		logger.exception("[/about] paper snapshot failed user=%s", uid)
+
+	try:
+		from core.version import APP_VERSION
+		version = APP_VERSION
+	except Exception:
+		version = str(os.getenv("APP_VERSION") or "current")
+
 	msg = (
-		"\U0001F4CA About SignalRankAI\n\n"
-		"SignalRankAI is a rule-based trading signal platform designed to deliver high-quality, risk-aware trade ideas.\n\n"
-		"The system:\n"
-		"• Uses multiple market strategies\n"
-		"• Applies ML-assisted quality filters\n"
-		"• Filters out weak or risky setups\n"
-		"• Ranks signals by quality\n"
-		"• Limits signal frequency to avoid noise\n\n"
-		"Markets:\n"
-		"• Crypto (BTC, ETH, SOL, and more)\n"
-		"• Forex (EUR/USD, GBP/USD, USD/JPY, and more)\n"
-		"• Stocks (AAPL, TSLA, MSFT, and more)\n"
-		"• Commodities (Gold, Silver, Oil, Natural Gas)\n\n"
-		"SignalRankAI does not execute trades and does not guarantee profits.\n"
-		"All signals are for educational and informational purposes only.\n\n"
-		"Trade responsibly.\n\n"
-		"Support: @theocrilox"
+		"📊 <b>About SignalRankAI</b>\n\n"
+		"SignalRankAI is a Telegram-first, multi-user trading-intelligence ecosystem. "
+		"It combines multi-provider market data, multiple existing strategy families, "
+		"asset-specific adaptive evidence, ML/AI review, news and regime filters, risk controls, "
+		"verified Telegram delivery, lifecycle monitoring, and isolated paper trading.\n\n"
+		"<b>Your account</b>\n"
+		f"Tier: <b>{tier}</b>\n"
+		f"Signals confirmed delivered to you: <b>{delivered}</b>\n"
+		f"Currently active delivered signals: <b>{active}</b>\n"
+		f"Completed delivered-signal outcomes: <b>{completed}</b>\n"
+		f"{paper_line}\n\n"
+		"<b>Markets</b>\n"
+		"Crypto • Forex • Stocks • Indices • Commodities\n\n"
+		"<b>Execution</b>\n"
+		"Signals can be monitored or paper-traded without a broker. Optional MT5/MetaApi execution "
+		"requires a linked, verified account, explicit consent, tier access, and a successful risk preflight. "
+		"Use /mt5_status before pressing a trade button.\n\n"
+		f"Build: <code>{version}</code>\n"
+		"Support: @theocrilox\n\n"
+		"Educational information only. Trading involves risk and profits are never guaranteed."
 	)
-	if update.message is not None:
-		await update.message.reply_text(msg)
+	await update.message.reply_text(msg, parse_mode="HTML")
 
 # /faq message
 async def faq_command(update, context) -> None:
@@ -6243,7 +6300,7 @@ async def history_command(update, context):
 
 @require_tier("VIP")
 async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Run a Monte Carlo projection using user's historical outcomes.
+	"""Project outcomes using only signals confirmed as delivered to this user.
 
 	Usage:
 	  /simulate
@@ -6255,92 +6312,91 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 	uid = int(update.effective_user.id)
 	args = [str(a).strip() for a in (context.args or []) if str(a).strip()]
-
-	capital = float(getattr(config, "PAPER_TRADING_START_BALANCE_USD", 1000.0) or 1000.0)
-	risk_pct = 1.0
-	if len(args) >= 1:
-		try:
-			capital = max(50.0, float(args[0]))
-		except Exception:
-			await update.message.reply_text("❌ Invalid capital. Example: /simulate 1000 1.5")
-			return
-	if len(args) >= 2:
-		try:
-			risk_pct = max(0.1, min(10.0, float(args[1])))
-		except Exception:
-			await update.message.reply_text("❌ Invalid risk %. Example: /simulate 1000 1.5")
-			return
-
 	try:
-		from db.session import get_session
-		from db.models import User, SignalDelivery, Outcome
-		from sqlalchemy import select
+		from core.paper_trading_service import paper_trading_service
 		from engine.risk_analytics import monte_carlo_monthly_projection
 
-		r_values: list[float] = []
-		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-			user_row = (
-				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
-			).scalar_one_or_none()
-			if user_row is None:
-				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+		snapshot = await paper_trading_service.snapshot(uid)
+		if snapshot is None:
+			await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+			return
+		capital = float(snapshot.equity)
+		risk_pct = float(snapshot.risk_pct)
+		if len(args) >= 1:
+			try:
+				capital = max(50.0, float(args[0]))
+			except Exception:
+				await update.message.reply_text("❌ Invalid capital. Example: /simulate 10000 1")
+				return
+		if len(args) >= 2:
+			try:
+				risk_pct = max(0.1, min(10.0, float(args[1])))
+			except Exception:
+				await update.message.reply_text("❌ Invalid risk %. Example: /simulate 10000 1")
 				return
 
-			if len(args) < 2:
-				risk_pct = float(getattr(user_row, "max_risk_percentage", 1.0) or 1.0)
+		evidence = await paper_trading_service.delivered_r_samples(uid)
+		r_values = [float(v) for v in (evidence.get("r_values") or [])]
+		minimum = max(5, int(os.getenv("SIMULATION_MIN_CONFIRMED_OUTCOMES", "10") or 10))
+		if len(r_values) < minimum:
+			await update.message.reply_text(
+				"🧪 <b>Simulation evidence is not sufficient yet</b>\n\n"
+				f"Confirmed delivered outcomes available: <b>{len(r_values)}</b>\n"
+				f"Minimum required: <b>{minimum}</b>\n"
+				f"Current paper equity: <b>${snapshot.equity:,.2f}</b>\n"
+				f"Open paper positions: <b>{snapshot.open_positions}</b>\n\n"
+				"No default win rate or invented reward assumption was used. "
+				"The projection will become available as your delivered signals complete.",
+				parse_mode="HTML",
+			)
+			return
 
-			rows = (
-				await session.execute(
-					select(Outcome.r_multiple)
-					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
-					.where(SignalDelivery.user_id == int(getattr(user_row, "id", 0) or 0))
-				)
-			).all()
-			await session.commit()
-
-		for row in rows or []:
-			try:
-				v = row[0]
-				if v is not None:
-					r_values.append(float(v))
-			except Exception:
-				continue
-
-		if len(r_values) >= 10:
-			wins = [r for r in r_values if r > 0]
-			losses = [r for r in r_values if r <= 0]
-			win_rate = len(wins) / len(r_values)
-			avg_win_r = sum(wins) / max(1, len(wins))
-			avg_loss_r = abs(sum(losses) / max(1, len(losses))) if losses else 1.0
-		else:
-			win_rate = 0.55
-			avg_win_r = 1.8
-			avg_loss_r = 1.0
-
+		wins = [r for r in r_values if r > 0]
+		losses = [r for r in r_values if r <= 0]
+		win_rate = len(wins) / len(r_values)
+		avg_win_r = sum(wins) / max(1, len(wins))
+		avg_loss_r = abs(sum(losses) / max(1, len(losses))) if losses else 1.0
+		first = evidence.get("first")
+		last = evidence.get("last")
+		days = 30.0
+		try:
+			if first is not None and last is not None:
+				days = max(1.0, (last - first).total_seconds() / 86400.0)
+		except Exception:
+			days = 30.0
+		trades_per_month = max(1, min(300, int(round(len(r_values) / days * 30.0))))
+		runs = max(500, min(10000, int(os.getenv("SIMULATION_RUNS", "2000") or 2000)))
 		result = monte_carlo_monthly_projection(
 			starting_capital=capital,
 			risk_pct_per_trade=risk_pct,
 			win_rate=win_rate,
 			avg_win_r=avg_win_r,
 			avg_loss_r=avg_loss_r,
-			trades_per_month=30,
-			runs=1000,
+			trades_per_month=trades_per_month,
+			runs=runs,
 		)
 
 		msg = (
-			"🧪 <b>Monte Carlo Forecast (VIP)</b>\n\n"
-			f"Start Capital: <b>${result['start']:.2f}</b>\n"
+			"🧪 <b>Delivered-Signal Simulation</b>\n\n"
+			f"Evidence: <b>{len(r_values)} confirmed outcomes</b>\n"
+			f"Observed win rate: <b>{win_rate * 100.0:.1f}%</b>\n"
+			f"Observed average win/loss: <b>{avg_win_r:.2f}R / {avg_loss_r:.2f}R</b>\n"
+			f"Observed delivery pace: <b>{trades_per_month} trades/month</b>\n"
+			f"Starting capital: <b>${result['start']:.2f}</b>\n"
 			f"Risk per trade: <b>{risk_pct:.2f}%</b>\n"
 			f"Simulations: <b>{result['runs']}</b>\n\n"
 			"Projected month-end range:\n"
 			f"• 5th percentile: <b>${result['p05']:.2f}</b>\n"
 			f"• Median: <b>${result['p50']:.2f}</b>\n"
 			f"• 95th percentile: <b>${result['p95']:.2f}</b>\n\n"
-			f"Ruin probability: <b>{result['ruin_probability_pct']:.2f}%</b>"
+			f"Ruin probability: <b>{result['ruin_probability_pct']:.2f}%</b>\n"
+			f"Current paper equity/open positions: <b>${snapshot.equity:,.2f} / {snapshot.open_positions}</b>\n\n"
+			"This is a statistical scenario based only on your confirmed delivered-signal history, not a profit forecast."
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Simulation failed: {exc}")
+		logger.exception("[/simulate] failed user=%s", uid)
+		await update.message.reply_text("❌ Simulation is temporarily unavailable. Your paper account and live broker state were not changed.")
 
 
 @require_tier("PREMIUM")

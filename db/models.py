@@ -547,6 +547,84 @@ class RuntimeState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PaperAccount(Base):
+    __tablename__ = "paper_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    starting_balance: Mapped[float] = mapped_column(Float, default=10000.0, nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Float, default=10000.0, nullable=False)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    auto_trade_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    risk_pct: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    max_open_positions: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    min_signal_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    spread_bps: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    slippage_bps: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    fee_bps: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
+    target_mode: Mapped[str] = mapped_column(String(8), default="TP1", nullable=False)
+    allowed_directions: Mapped[str] = mapped_column(String(16), default="both", nullable=False)
+    allowed_asset_classes: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PaperPosition(Base):
+    __tablename__ = "paper_positions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_paper_position_user_signal"),
+    )
+
+    position_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[Optional[int]] = mapped_column(ForeignKey("signal_deliveries.id"), index=True)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    timeframe: Mapped[Optional[str]] = mapped_column(String(8), index=True)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True, nullable=False)
+    signal_entry: Mapped[float] = mapped_column(Float, nullable=False)
+    fill_entry: Mapped[float] = mapped_column(Float, nullable=False)
+    current_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profits: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    target_price: Mapped[Optional[float]] = mapped_column(Float)
+    quantity: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    notional: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    reserved_cash: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    entry_fee: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    exit_fee: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    r_multiple: Mapped[Optional[float]] = mapped_column(Float)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(32), default="delivered_signal", nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PaperLedgerEntry(Base):
+    __tablename__ = "paper_ledger_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    position_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    entry_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    balance_after: Mapped[float] = mapped_column(Float, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+
+
 class MarketTick(Base):
     __tablename__ = "market_ticks"
 

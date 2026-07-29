@@ -1,14 +1,14 @@
 {
   "categories": {
     "deployment_configuration": 28,
-    "documentation": 90,
+    "documentation": 97,
     "migration": 24,
-    "production_runtime": 461,
-    "project_asset": 141,
+    "production_runtime": 492,
+    "project_asset": 146,
     "script": 39,
-    "test": 162
+    "test": 168
   },
-  "file_count": 945,
+  "file_count": 994,
   "files": [
     {
       "category": "project_asset",
@@ -26,12 +26,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 218,
+      "line_count": 294,
       "parse_status": "not_applicable",
       "path": ".env.example",
       "public_symbols": [],
-      "sha256": "dc6d2ea7d0b6e7292abc7836ab1227ba6bc628e553e95217d2de41d0b5f03955",
-      "size_bytes": 6835,
+      "sha256": "31fb3c52c50bc52f4a08ee2d693ae59a42a2840c29de8c4014cd99e169eaca9e",
+      "size_bytes": 9459,
       "test_references": [
         "tests/test_broker_execution_p0.py",
         "tests/test_canonical_broker_entrypoints.py",
@@ -76,6 +76,7 @@
       "size_bytes": 1977,
       "test_references": [
         "tests/test_access_tier_cache.py",
+        "tests/test_adaptive_dataset_and_wfo.py",
         "tests/test_broker_execution_p0.py",
         "tests/test_callback_feature_completion.py",
         "tests/test_callback_handler.py",
@@ -153,6 +154,8 @@
         "tests/test_v104_runtime_schema_hotfix.py",
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -750,12 +753,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 184,
+      "line_count": 260,
       "parse_status": "not_applicable",
       "path": "RAILWAY_ENV_UPDATED.env.example",
       "public_symbols": [],
-      "sha256": "dff3d724cb3db923a20e73a21873c07342dc6971d61efe8e8c24a8b8f742e16c",
-      "size_bytes": 5443,
+      "sha256": "06b5ce53e1cbc593449e0265f29dd5a98da2096697d81563e7eac4a7e7f6ed5f",
+      "size_bytes": 8067,
       "test_references": [
         "tests/test_env_examples_no_duplicates.py"
       ]
@@ -772,6 +775,28 @@
       "test_references": [
         "tests/test_secret_scan_documents.py"
       ]
+    },
+    {
+      "category": "project_asset",
+      "env_variables": [],
+      "line_count": 46,
+      "parse_status": "not_applicable",
+      "path": "RELEASE_NOTES_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "6b0b1d09b9eb8e203215368b81415cd9ff1c3725f0fa23507713c94773fdba3c",
+      "size_bytes": 2900,
+      "test_references": []
+    },
+    {
+      "category": "project_asset",
+      "env_variables": [],
+      "line_count": 24,
+      "parse_status": "not_applicable",
+      "path": "RELEASE_NOTES_v1.1.1.md",
+      "public_symbols": [],
+      "sha256": "fef19bba31330eb386d19ca7828aac635d239d40f0ebb2e23dfb51e017890d03",
+      "size_bytes": 1290,
+      "test_references": []
     },
     {
       "category": "project_asset",
@@ -966,6 +991,39 @@
       ],
       "sha256": "27dbc697b71bf5b187e1ff67edb35262b44f9e77abd5360523e33623c6a2a3a3",
       "size_bytes": 8160,
+      "test_references": []
+    },
+    {
+      "category": "project_asset",
+      "env_variables": [],
+      "line_count": 42,
+      "parse_status": "not_applicable",
+      "path": "SignalRankAI_v1.1.0_Railway_Adaptive_Enabled.env.example",
+      "public_symbols": [],
+      "sha256": "222f488078e2c63ac2b0234ddc97224dd3fa6c436a423ae40052497023126231",
+      "size_bytes": 1568,
+      "test_references": []
+    },
+    {
+      "category": "project_asset",
+      "env_variables": [],
+      "line_count": 69,
+      "parse_status": "not_applicable",
+      "path": "SignalRankAI_v1.1.1_Railway_Multi_User_Adaptive_Test.env.example",
+      "public_symbols": [],
+      "sha256": "0c2fd86076e5cddc84478bc3f4620a2243c5e090acfba40e6aa7e4fc873b478a",
+      "size_bytes": 2301,
+      "test_references": []
+    },
+    {
+      "category": "project_asset",
+      "env_variables": [],
+      "line_count": 94,
+      "parse_status": "not_applicable",
+      "path": "SignalRankAI_v1.2.0_Railway_Production_Launch.env.example",
+      "public_symbols": [],
+      "sha256": "33da1f368a0248144d12ab10a0a96c43d4c3f60d0c0fc8d076b5a27c57a0a57e",
+      "size_bytes": 3007,
       "test_references": []
     },
     {
@@ -1883,12 +1941,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 145,
+      "line_count": 167,
       "parse_status": "not_applicable",
       "path": "configs/env/production.env.example",
       "public_symbols": [],
-      "sha256": "42c7455cefc3178950c28d50896ad6665decc35a1e2c37c713b3ace2890c8c10",
-      "size_bytes": 4376,
+      "sha256": "44cccc27534da8188d710a664d53f4b1e61de60bf33b0a047e1f13d41a13a93f",
+      "size_bytes": 5049,
       "test_references": [
         "tests/test_runtime_hardening_contract.py"
       ]
@@ -1909,12 +1967,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 210,
+      "line_count": 265,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-hobby-owner-beta.env.example",
       "public_symbols": [],
-      "sha256": "de7caf41f5e4ee3ce586cdc1bb060c756cd06c4e67e7510440c423bda4e33c00",
-      "size_bytes": 6559,
+      "sha256": "9881237651ebacd422201eee7d3b24147aedf4c50c7ecfda621da76af914c345",
+      "size_bytes": 8511,
       "test_references": [
         "tests/test_complete_system_orchestrator_contract.py",
         "tests/test_production_operations_package.py",
@@ -1952,12 +2010,12 @@
     {
       "category": "deployment_configuration",
       "env_variables": [],
-      "line_count": 219,
+      "line_count": 274,
       "parse_status": "not_applicable",
       "path": "configs/env/railway-staging.env.example",
       "public_symbols": [],
-      "sha256": "a5c3288435e902e9af00337fb5be71d5e0fa758edffef3e04f984beb2faf27d4",
-      "size_bytes": 6993,
+      "sha256": "0d0a2c87f257d40d639a1b58438ac23c3789f032e02494e45dc0c3377d5cd9dc",
+      "size_bytes": 8945,
       "test_references": [
         "tests/test_runtime_hardening_contract.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
@@ -2205,6 +2263,8 @@
       "sha256": "d95b8a17ffb161f63f3df462e8a05b1ea05b63d3def68d220f1e9f67d90f4557",
       "size_bytes": 3463,
       "test_references": [
+        "tests/test_adaptive_candle_store.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_asset_repeat_policy.py",
         "tests/test_broker_execution_p0.py",
@@ -2280,6 +2340,7 @@
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -2367,7 +2428,29 @@
       "size_bytes": 21252,
       "test_references": [
         "tests/test_canonical_broker_entrypoints.py",
-        "tests/test_paper_ledger_exits.py"
+        "tests/test_paper_ledger_exits.py",
+        "tests/test_v120_launch_hardening.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [
+        "PAPER_DEFAULT_TARGET_MODE"
+      ],
+      "line_count": 894,
+      "parse_status": "ok",
+      "path": "core/paper_trading_service.py",
+      "public_symbols": [
+        "PaperSnapshot",
+        "PaperTradingService",
+        "canonical_asset_class",
+        "canonical_direction",
+        "parse_targets"
+      ],
+      "sha256": "871002df2a1195ef452c87aea6afcd8d05123546d3c8c5da6d77ad3895c36eae",
+      "size_bytes": 41612,
+      "test_references": [
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -2609,7 +2692,8 @@
       "test_references": [
         "tests/test_container_startup_cmd.py",
         "tests/test_phase4_pass2_db_priority_and_command_speed.py",
-        "tests/test_timezone_and_performance_v2.py"
+        "tests/test_timezone_and_performance_v2.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -2745,7 +2829,7 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 535,
+      "line_count": 538,
       "parse_status": "ok",
       "path": "core/tier_policy.py",
       "public_symbols": [
@@ -2761,11 +2845,12 @@
         "policy_snapshot",
         "tier_rank"
       ],
-      "sha256": "5d37b7bdd8014cb4c1d278db604f7e179b05b82c5e1c958bc6a5cd7a991d5553",
-      "size_bytes": 19423,
+      "sha256": "d893d0237b7d6b4bc9bc58323f481b6b43f0f449ba2eb3dead01e035912cd6c0",
+      "size_bytes": 19637,
       "test_references": [
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -2815,9 +2900,11 @@
       "public_symbols": [
         "get_version_banner"
       ],
-      "sha256": "47f6d4b2ef64faef492a2689b0c71416a9f647851fe6db4a08cc92a03974da22",
+      "sha256": "a89eee66965145f394e594feb4bbeaacc04517b94036bcdd59e73a186691a421",
       "size_bytes": 918,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_migration_0015_clean_schema.py",
         "tests/test_migration_revision_ids.py",
         "tests/test_ml_registry.py",
@@ -2836,6 +2923,8 @@
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_yfinance_integration.py"
       ]
@@ -2927,7 +3016,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -2975,6 +3065,8 @@
       "sha256": "d041377942a7591e0bf02d87918068d35ace15cd23f673072c9b042ce6738365",
       "size_bytes": 309,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_connectors.py",
         "tests/test_enterprise_features.py",
         "tests/test_fetcher_async.py",
@@ -3493,7 +3585,8 @@
         "tests/test_stale_learning_multiservice.py",
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -3537,23 +3630,25 @@
         "tests/test_phase4_pass1_live_validation.py",
         "tests/test_phase4_pass1_quote_contract.py",
         "tests/test_phase4_pass4_outcome_tracker_redesign.py",
-        "tests/test_stale_learning_multiservice.py"
+        "tests/test_stale_learning_multiservice.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 48,
+      "line_count": 66,
       "parse_status": "ok",
       "path": "data/indicator_schema.py",
       "public_symbols": [
         "missing_indicators",
         "normalize_indicator_schema"
       ],
-      "sha256": "ad3a14ba5ef38d38666825cbb64f318da99d5d3de4d401d704e3121f0d12e530",
-      "size_bytes": 1991,
+      "sha256": "db582a82812f4bee648b3c576afa4dce79982cdb77ce3e0c99bd2ed447af9a2d",
+      "size_bytes": 3380,
       "test_references": [
-        "tests/test_deploy_log_regressions.py"
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -3589,11 +3684,14 @@
       "sha256": "120a06268cbaffd26bc56eaa2ec9c7e1fa0b1ce9d824d4a31dfac310259d924a",
       "size_bytes": 16014,
       "test_references": [
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_deploy_log_regressions.py",
         "tests/test_engine_loop.py",
         "tests/test_fetcher_async.py",
         "tests/test_imp_strategy.py",
-        "tests/test_market_state.py"
+        "tests/test_market_state.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -3905,10 +4003,11 @@
       "public_symbols": [
         "run_ws_ingestor"
       ],
-      "sha256": "98e57db589441349d9eef57c8ffa5d00565fdb44378985611ca092f56d8ab2ec",
-      "size_bytes": 21048,
+      "sha256": "3e7469ce0718de09299e25df7e57ac767113e43a6f1a4f6802c222d733356fcb",
+      "size_bytes": 21024,
       "test_references": [
-        "tests/test_runtime_hotfix_20260725.py"
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -3935,7 +4034,8 @@
         "tests/test_help_menu_cache.py",
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -4032,7 +4132,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -4103,6 +4204,8 @@
       "sha256": "5749708614d1fbc4233f9ef17b2972ded03b4b2950bebb146916e0a68c8f715f",
       "size_bytes": 2440,
       "test_references": [
+        "tests/test_adaptive_candle_store.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_asset_repeat_policy.py",
         "tests/test_broker_execution_p0.py",
@@ -4178,6 +4281,7 @@
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -4552,11 +4656,70 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 739,
+      "line_count": 32,
+      "parse_status": "ok",
+      "path": "db/migrations/versions/0025_adaptive_strategy.py",
+      "public_symbols": [
+        "downgrade",
+        "upgrade"
+      ],
+      "sha256": "ccb9f2830d2da7af78da8f80a0f87cc520ac500e0368cb25385fa0285116a326",
+      "size_bytes": 7532,
+      "test_references": [
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 51,
+      "parse_status": "ok",
+      "path": "db/migrations/versions/0026_adaptive_operational_hotfix.py",
+      "public_symbols": [
+        "downgrade",
+        "upgrade"
+      ],
+      "sha256": "b23a57589c62f9da4e233fea2dfc42cc2c1a90f2c9df90350c5e269532ebe9d7",
+      "size_bytes": 1783,
+      "test_references": [
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 118,
+      "parse_status": "ok",
+      "path": "db/migrations/versions/0027_launch_paper_trading.py",
+      "public_symbols": [
+        "downgrade",
+        "upgrade"
+      ],
+      "sha256": "08e131d78c054330ca9425096fe8f8fbc874af7b662d9889db11eb6e03746c6f",
+      "size_bytes": 6962,
+      "test_references": [
+        "tests/test_production_endgame_20260725.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v106_delivery_db_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 955,
       "parse_status": "ok",
       "path": "db/models.py",
       "public_symbols": [
         "ActiveSignalMessage",
+        "AdaptiveAssetProfile",
+        "AdaptiveDatasetVersion",
+        "AdaptiveFeatureVersion",
+        "AdaptiveSignalEvidence",
+        "AdaptiveSignalSequence",
+        "AdaptiveStrategySpec",
+        "AdaptiveWalkForwardRun",
         "AdminEvent",
         "AlertPreference",
         "ApiToken",
@@ -4576,6 +4739,9 @@
         "MarketTick",
         "Outcome",
         "OutcomeNotification",
+        "PaperAccount",
+        "PaperLedgerEntry",
+        "PaperPosition",
         "PaymentEvent",
         "PaymentReceipt",
         "ProcessedWebhookEvent",
@@ -4600,8 +4766,8 @@
         "VIPWaitlist",
         "utcnow"
       ],
-      "sha256": "894544abd5a46241638c20bb3115124757dbe956c5758d1296107dc4c5ba9354",
-      "size_bytes": 38204,
+      "sha256": "870c674061ade9aa2a177df083bfd52d543a9d6f9b0af8b6ebc53bcdd3397d86",
+      "size_bytes": 52235,
       "test_references": [
         "tests/test_enterprise_features.py",
         "tests/test_phase4_pass3_delivery_reliability.py",
@@ -4790,7 +4956,7 @@
       "env_variables": [
         "DECISION_LOG_WRITE_ENABLED"
       ],
-      "line_count": 491,
+      "line_count": 535,
       "parse_status": "ok",
       "path": "db/repository.py",
       "public_symbols": [
@@ -4799,6 +4965,7 @@
         "count_active_vip_users",
         "create_api_token",
         "expire_subscriptions",
+        "flush_decision_log_retry_queue",
         "get_active_subscription",
         "get_api_token_owner",
         "get_economic_events",
@@ -4813,8 +4980,8 @@
         "revoke_api_token",
         "token_prefix"
       ],
-      "sha256": "69125128373d4d1de2c5b20638f2f7e164f26a2ef2918256f4f2dfb94f6d49f6",
-      "size_bytes": 16211,
+      "sha256": "813dbf4652b4f8415f4f9042ba8f1e9fd7b6828ef673a9f755172d81e24f90a2",
+      "size_bytes": 18254,
       "test_references": [
         "tests/test_decision_intelligence.py",
         "tests/test_deployment_diagnostics_entrypoint.py",
@@ -4892,6 +5059,7 @@
       "sha256": "b3247276fb9d05946b69a454d0974b62b0f4ae8450251eb2435bb52781f5edfe",
       "size_bytes": 47677,
       "test_references": [
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_broker_permission_validation.py",
         "tests/test_command_contracts.py",
         "tests/test_db_session_labels.py",
@@ -4978,7 +5146,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -5073,6 +5242,8 @@
         "tests/test_tiered_execution_canonical_routing.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -5175,9 +5346,10 @@
         "tests/test_stale_learning_multiservice.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
-        "tests/test_v104_runtime_schema_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -5190,6 +5362,10 @@
       "sha256": "a325a88d4a17fcd7c66966f5d624ac8503b6d1f7d586f612ab414478fff03987",
       "size_bytes": 280,
       "test_references": [
+        "tests/test_adaptive_candle_store.py",
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_admin_pulse_delivery_count.py",
         "tests/test_backtest_wfo.py",
         "tests/test_codex_governance_and_asset_locks.py",
@@ -5257,6 +5433,8 @@
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_volume_delta.py",
         "tests/test_wfo_train.py"
       ]
@@ -5322,7 +5500,8 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -5466,6 +5645,17 @@
       ],
       "sha256": "d40817146e91df655fe9b5b7eae8aa061ebabe94475c446769f2432b4ef6663f",
       "size_bytes": 2225,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 23,
+      "parse_status": "not_applicable",
+      "path": "docs/ADAPTIVE_STRATEGY_INTELLIGENCE_ENGINE_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "14fc35146479d17f7f2f26137f3e2daeafa1112e4d5925018c422c3e72ee894c",
+      "size_bytes": 1702,
       "test_references": []
     },
     {
@@ -6445,12 +6635,78 @@
     {
       "category": "documentation",
       "env_variables": [],
+      "line_count": 125,
+      "parse_status": "not_applicable",
+      "path": "docs/adaptive/ADAPTIVE_ARCHITECTURE_AND_GAP_ANALYSIS_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "674c850ec8882e9f372a8545c57f53b7bae844fe7ef1c128b040a876e3528075",
+      "size_bytes": 8195,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 43,
+      "parse_status": "not_applicable",
+      "path": "docs/adaptive/ADAPTIVE_DATA_DICTIONARY_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "bf5cdfe2bf264176598ca6f4943e05d3c38d026d30385774a7ecb3fa73680afa",
+      "size_bytes": 2775,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 20,
+      "parse_status": "not_applicable",
+      "path": "docs/adaptive/ADAPTIVE_THREAT_AND_FAILURE_ANALYSIS_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "6d96156d1a0c2189008766a7f733312bfe75eafb2fb311de4959b0f09f846d27",
+      "size_bytes": 1823,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 68,
+      "parse_status": "not_applicable",
+      "path": "docs/runbooks/ADAPTIVE_STRATEGY_OPERATIONS_v1.1.0.md",
+      "public_symbols": [],
+      "sha256": "4effa4f851030e48c7bd46ce8ac5f2e449a702592e2e6a81aceee0e1e8795c07",
+      "size_bytes": 3130,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 40,
+      "parse_status": "not_applicable",
+      "path": "docs/runbooks/PRODUCTION_LAUNCH_v1.2.0.md",
+      "public_symbols": [],
+      "sha256": "0262e606d13b1bc7e98f9a87f83e93a4837256ce7f77c6ab2c8ff5b8902be69e",
+      "size_bytes": 2001,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
       "line_count": 718,
       "parse_status": "not_applicable",
       "path": "docs/runbooks/RAILWAY_DEPLOYMENT_AND_TELEGRAM_RECOVERY.md",
       "public_symbols": [],
       "sha256": "1481026cb8d3758bdea4f928defa40061fc7914ab47e5031b143703d20555b6b",
       "size_bytes": 18084,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
+      "line_count": 2025,
+      "parse_status": "not_applicable",
+      "path": "docs/specs/SIGNALRANKAI_ADAPTIVE_STRATEGY_INTELLIGENCE_ENGINE_SPEC.md",
+      "public_symbols": [],
+      "sha256": "c0fc79df21e5766829c4b6bae71ed2d807cb104ef57ec55f7835f76a5ff9c2b5",
+      "size_bytes": 49875,
       "test_references": []
     },
     {
@@ -6464,6 +6720,573 @@
       "size_bytes": 405369,
       "test_references": [
         "tests/test_v7_governance_contract.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 16,
+      "parse_status": "ok",
+      "path": "engine/adaptive/__init__.py",
+      "public_symbols": [],
+      "sha256": "bd0429ec328ed5f03fcfa3842ce275aecc7bbdb592dbb8a0bc334eb8071ff7f0",
+      "size_bytes": 599,
+      "test_references": [
+        "tests/test_broker_permission_validation.py",
+        "tests/test_callback_handler.py",
+        "tests/test_codex_governance_and_asset_locks.py",
+        "tests/test_command_contracts.py",
+        "tests/test_connectors_providers.py",
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_extended_provider_adapters.py",
+        "tests/test_free_provider_microstructure.py",
+        "tests/test_news_x_sentiment.py",
+        "tests/test_phase4_pass3_delivery_reliability.py",
+        "tests/test_provider_registry_fail_closed.py",
+        "tests/test_providers_proxy.py",
+        "tests/test_railway_lifecycle.py",
+        "tests/test_realtime_outcome_tracker_user_perf_ids.py",
+        "tests/test_redis_webhook_queue.py",
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_runtime_p0_cache_worker_scheduler.py",
+        "tests/test_signal_dedup_rules.py",
+        "tests/test_smart_dca_hardening.py",
+        "tests/test_stale_learning_multiservice.py",
+        "tests/test_strategy_runner.py",
+        "tests/test_strategy_runner_async.py",
+        "tests/test_telemetry.py",
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [
+        "ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE",
+        "ADAPTIVE_CANDLE_CAPTURE_INTERVAL_SECONDS",
+        "ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME",
+        "ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS",
+        "ADAPTIVE_CANDLE_QUEUE_MAX"
+      ],
+      "line_count": 151,
+      "parse_status": "ok",
+      "path": "engine/adaptive/candle_store.py",
+      "public_symbols": [
+        "candle_capture_loop",
+        "enqueue_market_snapshot",
+        "persist_queued_snapshots",
+        "queue_depth"
+      ],
+      "sha256": "69dd7b5cd553bb3ec40860df8721baac95b7ab40e788f3781d63db7562ce280d",
+      "size_bytes": 6166,
+      "test_references": [
+        "tests/test_adaptive_candle_store.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 15,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/__init__.py",
+      "public_symbols": [],
+      "sha256": "0d22d91f10dff6838027c9ca19c2fecadfb1b004cfa69c9304e6cc46e28d515d",
+      "size_bytes": 632,
+      "test_references": [
+        "tests/test_broker_permission_validation.py",
+        "tests/test_callback_handler.py",
+        "tests/test_codex_governance_and_asset_locks.py",
+        "tests/test_command_contracts.py",
+        "tests/test_connectors_providers.py",
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_extended_provider_adapters.py",
+        "tests/test_free_provider_microstructure.py",
+        "tests/test_news_x_sentiment.py",
+        "tests/test_phase4_pass3_delivery_reliability.py",
+        "tests/test_provider_registry_fail_closed.py",
+        "tests/test_providers_proxy.py",
+        "tests/test_railway_lifecycle.py",
+        "tests/test_realtime_outcome_tracker_user_perf_ids.py",
+        "tests/test_redis_webhook_queue.py",
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_runtime_p0_cache_worker_scheduler.py",
+        "tests/test_signal_dedup_rules.py",
+        "tests/test_smart_dca_hardening.py",
+        "tests/test_stale_learning_multiservice.py",
+        "tests/test_strategy_runner.py",
+        "tests/test_strategy_runner_async.py",
+        "tests/test_telemetry.py",
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 12,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/base.py",
+      "public_symbols": [
+        "StrategyComponent"
+      ],
+      "sha256": "33e36372e56b329dd0ec734c8a8a7585ea7816ee1929e481f48a9eaaf2724090",
+      "size_bytes": 306,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_connectors.py",
+        "tests/test_enterprise_features.py",
+        "tests/test_fetcher_async.py",
+        "tests/test_formatter_delivery_pressure.py",
+        "tests/test_migration_database_url_normalization.py",
+        "tests/test_ml_schema_evolution.py",
+        "tests/test_monolith_hardening_defaults.py",
+        "tests/test_paystack_webhook.py",
+        "tests/test_phase4_pass1_live_validation.py",
+        "tests/test_phase4_pass3_delivery_reliability.py",
+        "tests/test_phase4_pass4_outcome_tracker_redesign.py",
+        "tests/test_price_validator.py",
+        "tests/test_production_operations_package.py",
+        "tests/test_production_quality_guard.py",
+        "tests/test_provider_and_asset_registry_hardening.py",
+        "tests/test_provider_catalog_and_certification.py",
+        "tests/test_provider_registry_fail_closed.py",
+        "tests/test_railway_lifecycle.py",
+        "tests/test_railway_monolith_contract.py",
+        "tests/test_railway_no_redis.py",
+        "tests/test_railway_redis_queue.py",
+        "tests/test_railway_runtime_incident_fixes.py",
+        "tests/test_railway_simulation_contract.py",
+        "tests/test_railway_staging_activation_hotfix_20260727.py",
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_runtime_p0_cache_worker_scheduler.py",
+        "tests/test_signal_fingerprint.py",
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
+        "tests/test_v107_startup_db_deadlock_hotfix.py",
+        "tests/test_web_api_tokens.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 23,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/elliott.py",
+      "public_symbols": [
+        "ElliottWaveComponent"
+      ],
+      "sha256": "66711fa65be226199519e5868415e5d9a00c6db4eb1be3bf938a6720683d8809",
+      "size_bytes": 2076,
+      "test_references": []
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 26,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/fibonacci.py",
+      "public_symbols": [
+        "FibonacciComponent"
+      ],
+      "sha256": "fbb642cfad1e609cbcdc5c11bc63957758a366e5f87763fd4cad0d5110c3fe8b",
+      "size_bytes": 2058,
+      "test_references": [
+        "tests/test_fibonacci_helpers.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 45,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/harmonic.py",
+      "public_symbols": [
+        "HarmonicComponent"
+      ],
+      "sha256": "b5bf440226fe266b5515b5dcc058c0fa9d5acd5c8717cade11dc6ec47dfcacf0",
+      "size_bytes": 3212,
+      "test_references": []
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 54,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/helpers.py",
+      "public_symbols": [
+        "atr",
+        "confirmed_pivots",
+        "fingerprint",
+        "ohlcv",
+        "targets"
+      ],
+      "sha256": "8f27cc747cb9369c898a34df36f7f593769bbe64fcd076eba36e1160a4868fe6",
+      "size_bytes": 2071,
+      "test_references": [
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_fibonacci_helpers.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 76,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/ict_smc.py",
+      "public_symbols": [
+        "ICTSmartMoneyComponent"
+      ],
+      "sha256": "4a4fdc10d8e6bcaf57227c8cdeb9099b677329dccb46f739b70dd6b9b9bf3ec0",
+      "size_bytes": 3964,
+      "test_references": [
+        "tests/test_adaptive_strategy_intelligence.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 17,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/indicators.py",
+      "public_symbols": [
+        "IndicatorComponent"
+      ],
+      "sha256": "7bf3d187620725ced7db265d0c39db9f5a7443855e07f4f3eba13cf56c18c4c1",
+      "size_bytes": 2062,
+      "test_references": [
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_engine_loop.py",
+        "tests/test_fetcher_async.py",
+        "tests/test_imp_strategy.py",
+        "tests/test_market_state.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 28,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/order_flow.py",
+      "public_symbols": [
+        "OrderFlowComponent"
+      ],
+      "sha256": "72e253066cca964c7acd66e3b046b7e928ca0a7ff6da9e80a9dcbc3ea336799e",
+      "size_bytes": 2801,
+      "test_references": [
+        "tests/test_adaptive_strategy_intelligence.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 54,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/price_action.py",
+      "public_symbols": [
+        "PriceActionComponent"
+      ],
+      "sha256": "507aefee3a6390d06da834cfcc3c5edc79b31645d2a886e7398764d04ab099c4",
+      "size_bytes": 3410,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 42,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/supply_demand.py",
+      "public_symbols": [
+        "SupplyDemandComponent"
+      ],
+      "sha256": "8967c2d493a71723592fc3c09f4f86aa466d9423f77b781012badfcd4283dd1c",
+      "size_bytes": 2831,
+      "test_references": []
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 21,
+      "parse_status": "ok",
+      "path": "engine/adaptive/components/wyckoff.py",
+      "public_symbols": [
+        "WyckoffComponent"
+      ],
+      "sha256": "1be6935f3550bf8d10ac7bd57f15d21dbb46aeb68529e21f7db8f04c1118fac0",
+      "size_bytes": 2066,
+      "test_references": []
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 124,
+      "parse_status": "ok",
+      "path": "engine/adaptive/data_quality.py",
+      "public_symbols": [
+        "assess_candle_quality",
+        "candle_timestamp",
+        "normalise_candles"
+      ],
+      "sha256": "b7c2458ffa6ce4c8e663c6f4aad95a6c8d64bcb076ac6e688e82c0c8e5b34aaa",
+      "size_bytes": 4720,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 133,
+      "parse_status": "ok",
+      "path": "engine/adaptive/dataset.py",
+      "public_symbols": [
+        "AdaptiveDatasetRow",
+        "DatasetManifest",
+        "build_dataset",
+        "dataset_payload",
+        "normalise_evidence_category"
+      ],
+      "sha256": "882b734a903f72aee35fd73e247ff6d1b8d528922b13fe5d81cc0953cf755ee3",
+      "size_bytes": 5138,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_extended_provider_adapters.py",
+        "tests/test_staged_release_contracts.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [
+        "ADAPTIVE_DB_TIMEOUT_SECONDS",
+        "ADAPTIVE_DRIFT_MAX_BRIER",
+        "ADAPTIVE_DRIFT_MAX_DRAWDOWN_R",
+        "ADAPTIVE_DRIFT_MIN_EXPECTANCY_R",
+        "ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES",
+        "ADAPTIVE_LOOKBACK_DAYS",
+        "ADAPTIVE_MIN_OUTCOME_SAMPLES",
+        "ADAPTIVE_OPTIMISATION_ENABLED",
+        "ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R",
+        "ADAPTIVE_WFO_COST_R",
+        "ADAPTIVE_WFO_EMBARGO_SECONDS",
+        "ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS",
+        "ADAPTIVE_WFO_VALIDATION_ROWS"
+      ],
+      "line_count": 565,
+      "parse_status": "ok",
+      "path": "engine/adaptive/learning.py",
+      "public_symbols": [
+        "AdaptiveLearningWorker"
+      ],
+      "sha256": "d697f441ffc997a78b9dafede0ce90506f1ba6e48825fcf50c4103c4e02776d2",
+      "size_bytes": 26303,
+      "test_references": [
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_stale_learning_multiservice.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 33,
+      "parse_status": "ok",
+      "path": "engine/adaptive/profiles.py",
+      "public_symbols": [
+        "ProfileResolver"
+      ],
+      "sha256": "be1aebafdd152a1915741be5a7ddbfb084c7c17564009953370a2de665d40f60",
+      "size_bytes": 2850,
+      "test_references": [
+        "tests/test_adaptive_strategy_intelligence.py",
+        "tests/test_complete_system_orchestrator_contract.py",
+        "tests/test_env_examples_no_duplicates.py",
+        "tests/test_production_operations_package.py",
+        "tests/test_runtime_hardening_contract.py",
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
+        "tests/test_v107_startup_db_deadlock_hotfix.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 59,
+      "parse_status": "ok",
+      "path": "engine/adaptive/promotion.py",
+      "public_symbols": [
+        "PromotionGateResult",
+        "evaluate_profile_promotion"
+      ],
+      "sha256": "f0b66319604c4d3b08f5cb6a980ae12c9bd0fea5afae98662e299d29bb131a8a",
+      "size_bytes": 2150,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py",
+        "tests/test_staged_release_contracts.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [
+        "ADAPTIVE_DB_TIMEOUT_SECONDS"
+      ],
+      "line_count": 38,
+      "parse_status": "ok",
+      "path": "engine/adaptive/repository.py",
+      "public_symbols": [
+        "invalidate_profile_cache",
+        "persist_signal_adaptive_evidence",
+        "publish_approved_profiles"
+      ],
+      "sha256": "ed7199b091c94f74c113a7374021c1110a7802b71edbe3edb861c5a4fc3dadda",
+      "size_bytes": 4633,
+      "test_references": [
+        "tests/test_decision_intelligence.py",
+        "tests/test_deployment_diagnostics_entrypoint.py",
+        "tests/test_diagnostics_source_scope.py",
+        "tests/test_enterprise_features.py",
+        "tests/test_formatter_delivery_pressure.py",
+        "tests/test_phase4_pass2_db_priority_and_command_speed.py",
+        "tests/test_repository_proof_manifest_contract.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [
+        "ADAPTIVE_CANDIDATE_MIN_CONFIDENCE",
+        "ADAPTIVE_EVALUATION_TIMEFRAMES",
+        "ADAPTIVE_MAX_CANDIDATES_PER_ASSET",
+        "ADAPTIVE_MIN_CANDLES_PER_TIMEFRAME",
+        "ADAPTIVE_PRE_SIGNAL_CANDLES"
+      ],
+      "line_count": 109,
+      "parse_status": "ok",
+      "path": "engine/adaptive/runtime.py",
+      "public_symbols": [
+        "AdaptiveStrategyService",
+        "get_adaptive_strategy_service"
+      ],
+      "sha256": "f970952ef4e6218ccc3b33806321ccac01183503ffb0b03422e9b49d3e61b01f",
+      "size_bytes": 8460,
+      "test_references": [
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
+        "tests/test_codex_governance_and_asset_locks.py",
+        "tests/test_complete_system_orchestrator_contract.py",
+        "tests/test_container_startup_cmd.py",
+        "tests/test_delivery_outcome_news_hardening.py",
+        "tests/test_diagnostics_source_scope.py",
+        "tests/test_dispatch_update_smoke.py",
+        "tests/test_governance_runtime_exclusions.py",
+        "tests/test_market_data_routing.py",
+        "tests/test_migration_database_url_normalization.py",
+        "tests/test_phase4_pass6_security_api_payments.py",
+        "tests/test_phase4_pass7_runtime_roles.py",
+        "tests/test_production_endgame_20260725.py",
+        "tests/test_railway_activation_contract.py",
+        "tests/test_railway_runtime_incident_fixes.py",
+        "tests/test_railway_staging_activation_hotfix_20260727.py",
+        "tests/test_repository_proof_manifest_contract.py",
+        "tests/test_resource_governor.py",
+        "tests/test_runtime_config_snapshot.py",
+        "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_runtime_p0_cache_worker_scheduler.py",
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v104_runtime_schema_hotfix.py",
+        "tests/test_v105_railway_readiness_hotfix.py",
+        "tests/test_v106_delivery_db_hotfix.py",
+        "tests/test_v107_startup_db_deadlock_hotfix.py",
+        "tests/test_v108_operational_gaps.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 15,
+      "parse_status": "ok",
+      "path": "engine/adaptive/sequence.py",
+      "public_symbols": [
+        "sequence_reference"
+      ],
+      "sha256": "12274d20832be663c976d9a72c07195f283d0d1ecc1956ed7ec3b3ea88ea7c47",
+      "size_bytes": 1360,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 208,
+      "parse_status": "ok",
+      "path": "engine/adaptive/types.py",
+      "public_symbols": [
+        "AdaptiveAssessment",
+        "AssetStrategyProfile",
+        "DataQualityReport",
+        "Direction",
+        "EvidenceQuality",
+        "MarketContext",
+        "PriceZone",
+        "ProfileState",
+        "StrategyEvidence",
+        "clamp",
+        "safe_float"
+      ],
+      "sha256": "145301b1c5242f8e15be9a4e86a4a28c4e196826db734660d58e7837fc637995",
+      "size_bytes": 6602,
+      "test_references": [
+        "tests/test_adaptive_strategy_intelligence.py",
+        "tests/test_broker_execution_p0.py",
+        "tests/test_callback_feature_completion.py",
+        "tests/test_callback_handler.py",
+        "tests/test_canonical_broker_entrypoints.py",
+        "tests/test_deploy_log_regressions.py",
+        "tests/test_formatter_delivery_pressure.py",
+        "tests/test_native_mt5_bridge_hardening.py",
+        "tests/test_outcome_provenance_hardening.py",
+        "tests/test_phase4_pass1_quote_contract.py",
+        "tests/test_phase4_pass2_db_priority_and_command_speed.py",
+        "tests/test_phase4_pass3_delivery_reliability.py",
+        "tests/test_phase4_pass4_outcome_tracker_redesign.py",
+        "tests/test_providers_proxy.py",
+        "tests/test_runtime_p0_cache_worker_scheduler.py",
+        "tests/test_signal_delivery_ack.py",
+        "tests/test_signal_lock_contract.py",
+        "tests/test_single_service_defaults.py",
+        "tests/test_smart_dca_hardening.py",
+        "tests/test_tiered_execution_canonical_routing.py",
+        "tests/test_timezone_and_performance_v2.py",
+        "tests/test_web_api_tokens.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 153,
+      "parse_status": "ok",
+      "path": "engine/adaptive/walk_forward.py",
+      "public_symbols": [
+        "WalkForwardFold",
+        "WalkForwardResult",
+        "walk_forward_evaluate"
+      ],
+      "sha256": "d962a7698beae019f6ba2b461f6cea227578af552d0643b6bb24b2bb8135460e",
+      "size_bytes": 6202,
+      "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_staged_release_contracts.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -6688,7 +7511,7 @@
         "VOLATILITY_WIDEN_SL_MULT",
         "VOLATILITY_WIDEN_TP_MULT"
       ],
-      "line_count": 4817,
+      "line_count": 4848,
       "parse_status": "ok",
       "path": "engine/core.py",
       "public_symbols": [
@@ -6696,9 +7519,12 @@
         "main_loop",
         "start_outage_alert_job"
       ],
-      "sha256": "047fbd8cd39e301e94904c0d97316597fc893e81621b813dfb1d2c5c833e82ac",
-      "size_bytes": 255515,
+      "sha256": "9df2016e32de0158ab237b55d3d3191cd5710e6138264c3b580d91fe037173eb",
+      "size_bytes": 256875,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_asset_repeat_policy.py",
         "tests/test_broker_execution_p0.py",
         "tests/test_bypass_rotation.py",
@@ -6762,7 +7588,9 @@
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -6866,7 +7694,7 @@
       "env_variables": [
         "PUBLIC_TESTING_MODE"
       ],
-      "line_count": 817,
+      "line_count": 854,
       "parse_status": "ok",
       "path": "engine/delivery_freshness.py",
       "public_symbols": [
@@ -6877,15 +7705,16 @@
         "max_delivery_age_minutes",
         "validate_delivery_freshness"
       ],
-      "sha256": "846035729621311305ad610187823be42358403b2c83957a588ddbc88e50de1a",
-      "size_bytes": 32650,
+      "sha256": "7c59c1f84d75d969ba5d25f26a883ab7c09fe0e4b39039ca5978391ae23a794a",
+      "size_bytes": 34361,
       "test_references": [
         "tests/test_delivery_freshness.py",
         "tests/test_phase4_pass1_live_validation.py",
         "tests/test_phase4_pass1_quote_contract.py",
         "tests/test_phase4_pass3_delivery_reliability.py",
         "tests/test_signal_delivery_ack.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -7214,9 +8043,9 @@
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
         "tests/test_trading_ecosystem_intelligence.py",
-        "tests/test_v104_runtime_schema_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -7406,7 +8235,7 @@
       "env_variables": [
         "CRYPTOCOMPARE_API_KEY"
       ],
-      "line_count": 508,
+      "line_count": 511,
       "parse_status": "ok",
       "path": "engine/price_fetcher.py",
       "public_symbols": [
@@ -7419,9 +8248,11 @@
         "get_routing_providers",
         "reset_price_breakers"
       ],
-      "sha256": "3eb80f7cb04f505eef91778fc3c9c3c1f28d2ba5d3de25a030a1439a462c5b8f",
-      "size_bytes": 16567,
-      "test_references": []
+      "sha256": "24fb85ff40ddd42ee67d8914a114a3f58786cb40017e25dd9de0f595730a1532",
+      "size_bytes": 16720,
+      "test_references": [
+        "tests/test_v120_launch_hardening.py"
+      ]
     },
     {
       "category": "production_runtime",
@@ -7574,6 +8405,8 @@
       "sha256": "ba42764aad8badf56e2db973ca24a7ec532e496f2d0cedd6a69f6784d952f13b",
       "size_bytes": 14546,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_callback_feature_completion.py",
         "tests/test_codex_governance_and_asset_locks.py",
         "tests/test_decision_intelligence.py",
@@ -7806,6 +8639,8 @@
       "size_bytes": 391,
       "test_references": [
         "tests/test_access_tier_cache.py",
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_admin_pulse_delivery_count.py",
         "tests/test_asset_repeat_policy.py",
         "tests/test_backtest_wfo.py",
@@ -7896,6 +8731,8 @@
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
@@ -8234,7 +9071,7 @@
         "STALE_PRICE_FETCH_TIMEOUT",
         "STALE_PRICE_THRESHOLD_PCT"
       ],
-      "line_count": 549,
+      "line_count": 555,
       "parse_status": "ok",
       "path": "engine/stale_signal_validator.py",
       "public_symbols": [
@@ -8248,8 +9085,8 @@
         "validate_signal_freshness",
         "validate_signal_freshness_sync"
       ],
-      "sha256": "fd4d5554ce9b7b8266531e45c65aecc1093c198014a51cc80b29072c48949c61",
-      "size_bytes": 21011,
+      "sha256": "8cbe54841c01865616769e3a6aa0b3bc93f9b27a835e1f21ebe3afc2f7118e62",
+      "size_bytes": 21406,
       "test_references": [
         "tests/test_delivery_freshness.py",
         "tests/test_phase4_pass1_quote_contract.py"
@@ -8303,7 +9140,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -8318,6 +9156,8 @@
       "sha256": "4ffe40de482e4ba52333a8be4a869994b6259933edc63238eb55ab660375b5cd",
       "size_bytes": 378,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_connectors.py",
         "tests/test_enterprise_features.py",
         "tests/test_fetcher_async.py",
@@ -8530,7 +9370,7 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 216,
+      "line_count": 235,
       "parse_status": "ok",
       "path": "engine/timeframe_policy.py",
       "public_symbols": [
@@ -8539,9 +9379,11 @@
         "resolve_required_timeframes",
         "validate_timeframe_requirement"
       ],
-      "sha256": "44f4e2f2d40171a1b7b2f610c5608f9811c51f10d39138f986cca5600c4bdd0e",
-      "size_bytes": 7323,
-      "test_references": []
+      "sha256": "959255dc76851ce91992cef282f5952f4a1419cb51af696f3c151b331117eff1",
+      "size_bytes": 8169,
+      "test_references": [
+        "tests/test_v111_adaptive_operational_hotfix.py"
+      ]
     },
     {
       "category": "production_runtime",
@@ -8623,6 +9465,8 @@
       "sha256": "5e4e9c46024db32fb9de54c0b6ad5686e883301d6e786fee68beada5f8f0e72b",
       "size_bytes": 23944,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_backtest_wfo.py",
         "tests/test_orderbook_fills.py",
         "tests/test_orderbook_loader.py",
@@ -8674,7 +9518,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -8727,6 +9572,8 @@
         "tests/test_tiered_execution_canonical_routing.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -9005,7 +9852,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -9027,7 +9875,8 @@
         "tests/test_help_menu_cache.py",
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -9077,7 +9926,9 @@
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -9115,6 +9966,7 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -9199,6 +10051,7 @@
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
         "tests/test_yfinance_integration.py"
       ]
     },
@@ -9315,7 +10168,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -9378,6 +10232,9 @@
       "sha256": "45a94d990fda8febdaf7842d6848331cc2d2d391396dcf8d57e8abd086192ec7",
       "size_bytes": 9304,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_broker_execution_p0.py",
         "tests/test_canonical_broker_entrypoints.py",
         "tests/test_deploy_log_regressions.py",
@@ -9389,6 +10246,7 @@
         "tests/test_runtime_hardening_contract.py",
         "tests/test_smart_dca_hardening.py",
         "tests/test_staged_release_contracts.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -10197,7 +11055,7 @@
       "parse_status": "not_applicable",
       "path": "requirements/callback_registry.yaml",
       "public_symbols": [],
-      "sha256": "e98f66e59c4ec1ba87273eb9f3e9ff24c9b7f14528eff62f3829055c13a92c23",
+      "sha256": "48b2c0841ce847e3e41104287490192d9303e3d3226d7af08523131dd431699d",
       "size_bytes": 9574,
       "test_references": [
         "tests/test_v7_governance_contract.py"
@@ -10206,12 +11064,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 2356,
+      "line_count": 2468,
       "parse_status": "not_applicable",
       "path": "requirements/command_registry.yaml",
       "public_symbols": [],
-      "sha256": "ffd4092ff38de914332e8743ddb0d2ae76c0a9cd106310839bae35bef7e398b1",
-      "size_bytes": 71799,
+      "sha256": "a9611f897e128f5b8bee7c58f0cc981c97fe204a69c3424574b6eedf7efb25f2",
+      "size_bytes": 75289,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10246,12 +11104,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 10225,
+      "line_count": 11147,
       "parse_status": "not_applicable",
       "path": "requirements/environment_registry.yaml",
       "public_symbols": [],
-      "sha256": "60aa9724c35ef91e1dc0525583596cb26e559b2c2bd9580edf212c9971b913a4",
-      "size_bytes": 310261,
+      "sha256": "354aeee2638dc318e61c0608990cf2878d2e1c2347f5564b67bb7df2828804c4",
+      "size_bytes": 339386,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10272,12 +11130,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 830,
+      "line_count": 910,
       "parse_status": "not_applicable",
       "path": "requirements/feature_flags.yaml",
       "public_symbols": [],
-      "sha256": "04f567c8ccca696052af5ad8b8bd714fd22565937344fd926b88297613628ae0",
-      "size_bytes": 27614,
+      "sha256": "6fc8cf13984d02aa531cdc095c33195b8d0a571016b8c77797b1cd989bf31673",
+      "size_bytes": 30355,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10298,12 +11156,12 @@
     {
       "category": "project_asset",
       "env_variables": [],
-      "line_count": 7588,
+      "line_count": 7980,
       "parse_status": "not_applicable",
       "path": "requirements/legacy_disposition.json",
       "public_symbols": [],
-      "sha256": "9a3e176f8359da02db657c35602b0c071c5adf088885d3f5a1f8bade8f8128ef",
-      "size_bytes": 268448,
+      "sha256": "c07363f5186210d53e6a412c27fdff4b17ff81e6be0c59975248f9f1314aa4cd",
+      "size_bytes": 282806,
       "test_references": [
         "tests/test_v7_governance_contract.py"
       ]
@@ -10447,7 +11305,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -10541,7 +11400,9 @@
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -10592,9 +11453,10 @@
         "tests/test_stale_learning_multiservice.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
-        "tests/test_v104_runtime_schema_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -10625,6 +11487,10 @@
       "sha256": "05d70dca771f37a6a7d970e5c03255ffc58fbb4b9a7407fedea2cae8a4d3ed3d",
       "size_bytes": 300,
       "test_references": [
+        "tests/test_adaptive_candle_store.py",
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_admin_pulse_delivery_count.py",
         "tests/test_backtest_wfo.py",
         "tests/test_codex_governance_and_asset_locks.py",
@@ -10692,6 +11558,8 @@
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_volume_delta.py",
         "tests/test_wfo_train.py"
       ]
@@ -10772,7 +11640,8 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -10870,6 +11739,7 @@
         "tests/test_telegram_webhook_registration_contract.py",
         "tests/test_telemetry.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
       ]
@@ -11653,7 +12523,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -12275,7 +13146,8 @@
       "size_bytes": 2638,
       "test_references": [
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -12450,7 +13322,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -12512,7 +13385,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -12538,7 +13412,8 @@
         "tests/test_help_menu_cache.py",
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -12554,6 +13429,24 @@
       ],
       "sha256": "17b8c59d97c595d50e54ec759b07b5878d4bb5f7a8212ae9f8ec65d9ed19333f",
       "size_bytes": 9927,
+      "test_references": []
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 354,
+      "parse_status": "ok",
+      "path": "signalrank_telegram/adaptive_commands.py",
+      "public_symbols": [
+        "adaptive_pause_command",
+        "adaptive_promote_command",
+        "adaptive_resume_command",
+        "adaptive_rollback_command",
+        "adaptive_status_command",
+        "adaptive_suspend_command"
+      ],
+      "sha256": "82e398ec7cbf4a50c02487dc5a276f0452d8ef4eb1adb52bb13001c60ede2942",
+      "size_bytes": 15976,
       "test_references": []
     },
     {
@@ -12582,7 +13475,9 @@
       ],
       "sha256": "b2d5a51489350f48292842ccf12dd90cd2eee26c3be8d5a5c589f67ef1746821",
       "size_bytes": 16182,
-      "test_references": []
+      "test_references": [
+        "tests/test_v120_launch_hardening.py"
+      ]
     },
     {
       "category": "production_runtime",
@@ -12594,6 +13489,8 @@
         "ACTIVE_SIGNAL_KEYBOARD_REFRESH_TELEGRAM_TIMEOUT_SECONDS",
         "ASSET_REPEAT_LOCK_HOURS",
         "BOT_COMMAND_AUDIT_TIMEOUT_SECONDS",
+        "BOT_COMMAND_SCOPE_BATCH_SIZE",
+        "BOT_COMMAND_SCOPE_CONCURRENCY",
         "BOT_INIT_STALE_SECONDS",
         "BOT_MINIMAL_SCHEDULER_MODE",
         "BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED",
@@ -12631,6 +13528,7 @@
         "RAILWAY_SERVICE_NAME",
         "REFRESH_ACTIVE_SIGNAL_LIMIT",
         "RESEND_INCLUDE_FREE",
+        "RESEND_INTERVAL_SECONDS",
         "RESEND_JOB_LOCK_ID",
         "RESEND_JOB_TIMEOUT_SECONDS",
         "RESEND_MAX_SIGNALS",
@@ -12656,7 +13554,7 @@
         "TERMS_BLAST_ON_DEPLOY",
         "VIP_SEAT_LIMIT"
       ],
-      "line_count": 8958,
+      "line_count": 9025,
       "parse_status": "ok",
       "path": "signalrank_telegram/bot.py",
       "public_symbols": [
@@ -12675,8 +13573,8 @@
         "run_bot",
         "send_performance_summary"
       ],
-      "sha256": "aff1d9c17d6b0f41f0028bf7eb97bc298c54470516fa8c7c0db22e4745b4b732",
-      "size_bytes": 422315,
+      "sha256": "667393d69d93ad154b029605a19fa1ca0c6807cb6a14d41efeeaa44af0aca8cb",
+      "size_bytes": 427168,
       "test_references": [
         "tests/test_callback_feature_completion.py",
         "tests/test_callback_handler.py",
@@ -12713,21 +13611,23 @@
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 645,
+      "line_count": 648,
       "parse_status": "ok",
       "path": "signalrank_telegram/callback_handlers.py",
       "public_symbols": [
         "callback_router",
         "create_global_callback_handler"
       ],
-      "sha256": "284d6dd7db88cad78888c624b7493b5cef06ef3be7ce75f6b7e462a6c3ab633d",
-      "size_bytes": 20792,
+      "sha256": "916707e02569c9486b3e710d46b03dc94e717cb2a672854750874afa0d937c08",
+      "size_bytes": 20910,
       "test_references": [
         "tests/test_callback_feature_completion.py",
         "tests/test_callback_handler.py",
@@ -12758,7 +13658,28 @@
         "tests/test_help_menu_cache.py",
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
         "tests/test_trader_profiles_and_platform_reliability.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v120_launch_hardening.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 164,
+      "parse_status": "ok",
+      "path": "signalrank_telegram/command_catalog.py",
+      "public_symbols": [
+        "CommandSpec",
+        "botfather_commands",
+        "command_description",
+        "grouped_help",
+        "normalized_tier",
+        "visible_commands"
+      ],
+      "sha256": "bfedb7d2960477fa99a26d08c2c6b1a34bebf7fc8f181a2c1e02a510ccf19e5d",
+      "size_bytes": 10268,
+      "test_references": [
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -12783,6 +13704,7 @@
       "category": "production_runtime",
       "env_variables": [
         "ADMIN_ID",
+        "APP_VERSION",
         "AUTO_MAX_RISK_CAP_PCT",
         "BOT_USERNAME",
         "DASHBOARD_URL",
@@ -12815,6 +13737,8 @@
         "REDIS_URL",
         "REFERRAL_BONUS_DAYS",
         "SIGNALS_COMMAND_DB_TIMEOUT_SECONDS",
+        "SIMULATION_MIN_CONFIRMED_OUTCOMES",
+        "SIMULATION_RUNS",
         "TRADINGVIEW_BROKER",
         "TRADINGVIEW_FX_PREFIX",
         "TRADINGVIEW_INDEX_PREFIX",
@@ -12823,7 +13747,7 @@
         "VIP_PRICE_NGN",
         "VIP_SEAT_LIMIT"
       ],
-      "line_count": 8240,
+      "line_count": 8296,
       "parse_status": "ok",
       "path": "signalrank_telegram/commands.py",
       "public_symbols": [
@@ -12938,8 +13862,8 @@
         "vip_waitlist_join_callback",
         "why_no_signal_command"
       ],
-      "sha256": "7091b4cd3db029fd96b1cd85fa2180d6e35cee6bd3f11a09733a38a51d299b96",
-      "size_bytes": 309288,
+      "sha256": "519c0b61c8bc3840a2cddf7c696b35366f6030b548abb9785479bbfff4f0013b",
+      "size_bytes": 312931,
       "test_references": [
         "tests/test_callback_handler.py",
         "tests/test_codex_governance_and_asset_locks.py",
@@ -12958,6 +13882,7 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
@@ -12985,7 +13910,25 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 124,
+      "line_count": 88,
+      "parse_status": "ok",
+      "path": "signalrank_telegram/execution_messages.py",
+      "public_symbols": [
+        "execution_failure_html",
+        "friendly_execution_reason",
+        "normalize_execution_reason"
+      ],
+      "sha256": "dccd7188957222de54340af89846759e5598240a30330e529adfb1dd916dd78a",
+      "size_bytes": 3367,
+      "test_references": [
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 334,
       "parse_status": "ok",
       "path": "signalrank_telegram/extended_commands.py",
       "public_symbols": [
@@ -13013,8 +13956,8 @@
         "report_issue_command",
         "tester_feedback_command"
       ],
-      "sha256": "11e094402a5df4432f27d0d4a4cf39d44769d4455471d0571220f17068391819",
-      "size_bytes": 6337,
+      "sha256": "4846ca440b81a9619c2e203bb881ff1c6f9d688a5ef38f1a283b0d9851d358f8",
+      "size_bytes": 15961,
       "test_references": []
     },
     {
@@ -13191,6 +14134,7 @@
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_railway_no_redis.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -13198,9 +14142,10 @@
       "category": "production_runtime",
       "env_variables": [
         "TELEGRAM_RICH_MESSAGES_CERTIFIED",
-        "TELEGRAM_RICH_MESSAGES_ENABLED"
+        "TELEGRAM_RICH_MESSAGES_ENABLED",
+        "TELEGRAM_RICH_MESSAGES_MODE"
       ],
-      "line_count": 162,
+      "line_count": 171,
       "parse_status": "ok",
       "path": "signalrank_telegram/rich_messages.py",
       "public_symbols": [
@@ -13208,13 +14153,14 @@
         "rich_messages_enabled",
         "send_rich_message_raw"
       ],
-      "sha256": "893db7473d65a7f02ecf360a7d4c87b20c48511dd3ba28feaf7a1d21725453ea",
-      "size_bytes": 6483,
+      "sha256": "9840b4474b5596ec29a75f1656bdbf116fd647286f83ed54f3614ac01e6d86a2",
+      "size_bytes": 7038,
       "test_references": [
         "tests/test_broker_execution_p0.py",
         "tests/test_canonical_broker_entrypoints.py",
         "tests/test_phase4_pass1_live_validation.py",
-        "tests/test_v108_operational_gaps.py"
+        "tests/test_v108_operational_gaps.py",
+        "tests/test_v120_launch_hardening.py"
       ]
     },
     {
@@ -13426,6 +14372,8 @@
       "sha256": "3dbea5bf1ddb9e5214df48c80df876af9ec4c9c99078301044e5e730c27bf668",
       "size_bytes": 2657,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_backtest_wfo.py",
         "tests/test_callback_handler.py",
         "tests/test_complete_system_orchestrator_contract.py",
@@ -13459,6 +14407,8 @@
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_web_api_tokens.py",
         "tests/test_wfo_train.py",
@@ -13530,6 +14480,8 @@
         "tests/test_v106_delivery_db_hotfix.py",
         "tests/test_v107_startup_db_deadlock_hotfix.py",
         "tests/test_v108_operational_gaps.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_web_api_tokens.py"
       ]
     },
@@ -13553,20 +14505,21 @@
         "tests/test_v104_runtime_schema_hotfix.py",
         "tests/test_v105_railway_readiness_hotfix.py",
         "tests/test_v106_delivery_db_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
         "tests/test_v7_governance_contract.py"
       ]
     },
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 195,
+      "line_count": 235,
       "parse_status": "ok",
       "path": "strategies/__init__.py",
       "public_symbols": [
         "run_all_strategies"
       ],
-      "sha256": "cfd4f3b25a3492dde5d3da7b60fa4a4d95bbb88a780a37befa272a9fa0671e65",
-      "size_bytes": 8431,
+      "sha256": "e35ffa12cc896953c0b7543781619e60d9d1493c36b9e46cc757bc2e1141effc",
+      "size_bytes": 10750,
       "test_references": [
         "tests/test_broker_permission_validation.py",
         "tests/test_callback_handler.py",
@@ -13591,7 +14544,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -13606,6 +14560,8 @@
       "sha256": "1079c3473ea447eea02ef147d86b77fc8b7779d75ce0d8cdd575301f67d44a51",
       "size_bytes": 857,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
         "tests/test_connectors.py",
         "tests/test_enterprise_features.py",
         "tests/test_fetcher_async.py",
@@ -13674,6 +14630,8 @@
       "sha256": "9724a70e3bc845c176ae7795cb45f0c81658bb7e244d0520ccb86c90534d5c46",
       "size_bytes": 514,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_codex_governance_and_asset_locks.py",
         "tests/test_engine_reconciliation.py",
         "tests/test_extended_provider_adapters.py",
@@ -13748,6 +14706,7 @@
         "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_resource_governor.py",
         "tests/test_runtime_hotfix_20260725.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_v7_governance_contract.py",
         "tests/test_yfinance_integration.py"
       ]
@@ -13822,6 +14781,10 @@
       "size_bytes": 15035,
       "test_references": [
         "tests/test_access_tier_cache.py",
+        "tests/test_adaptive_candle_store.py",
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_admin_pulse_delivery_count.py",
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_asset_repeat_policy.py",
@@ -13916,11 +14879,7 @@
         "tests/test_provider_registry_fail_closed.py",
         "tests/test_providers_proxy.py",
         "tests/test_proxy_manager.py",
-        "tests/test_railway_activation_contract.py",
-        "tests/test_railway_lifecycle.py",
-        "tests/test_railway_monolith_contract.py",
-        "tests/test_railway_no_redis.py",
-        "tests/test_railway_redis_queue.py"
+        "tests/test_railway_activation_contract.py"
       ]
     },
     {
@@ -13957,7 +14916,8 @@
         "tests/test_imp_strategy.py",
         "tests/test_news_x_sentiment.py",
         "tests/test_signal_dedup_rules.py",
-        "tests/test_signal_fingerprint.py"
+        "tests/test_signal_fingerprint.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -14011,24 +14971,26 @@
         "tests/test_phase4_pass1_quote_contract.py",
         "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_signal_explainability.py",
-        "tests/test_single_service_defaults.py"
+        "tests/test_single_service_defaults.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 397,
+      "line_count": 441,
       "parse_status": "ok",
       "path": "strategies/tradingview.py",
       "public_symbols": [
         "get_tradingview_signals",
         "tradingview_strategies"
       ],
-      "sha256": "b8e9d511cdab967d030cf32ea720b032c06ff7417aeda7754ea63ddc8d658d62",
-      "size_bytes": 14390,
+      "sha256": "fb6d18b00803c6d319801d87ff074364b72e08e2a470e3594ce2c835e4d3f8d1",
+      "size_bytes": 16280,
       "test_references": [
         "tests/test_deploy_log_regressions.py",
-        "tests/test_indices_asset_support.py"
+        "tests/test_indices_asset_support.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -14046,6 +15008,9 @@
       "sha256": "dda6601cd03af5e1294f0a8e604a4438b297ffedaf6246f8933d3dfeb26bf84e",
       "size_bytes": 8036,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_codex_governance_and_asset_locks.py",
         "tests/test_decision_intelligence.py",
         "tests/test_delivery_outcome_news_hardening.py",
@@ -14058,7 +15023,8 @@
         "tests/test_signal_dedup_rules.py",
         "tests/test_signal_explainability.py",
         "tests/test_telemetry.py",
-        "tests/test_trading_ecosystem_intelligence.py"
+        "tests/test_trading_ecosystem_intelligence.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -14079,7 +15045,8 @@
         "tests/test_decision_intelligence.py",
         "tests/test_deploy_log_regressions.py",
         "tests/test_risk_dynamic.py",
-        "tests/test_score_calibration.py"
+        "tests/test_score_calibration.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -14632,6 +15599,67 @@
     {
       "category": "test",
       "env_variables": [],
+      "line_count": 9,
+      "parse_status": "ok",
+      "path": "tests/test_adaptive_candle_store.py",
+      "public_symbols": [
+        "test_candle_capture_enqueues_only_changed_snapshot"
+      ],
+      "sha256": "dfd70e4d45215c8636d6eb6a6720516293c7f68c056d34411b7f858abb9c0936",
+      "size_bytes": 545,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 111,
+      "parse_status": "ok",
+      "path": "tests/test_adaptive_dataset_and_wfo.py",
+      "public_symbols": [
+        "test_dataset_manifest_is_chronological_and_reproducible",
+        "test_future_rows_do_not_change_first_fold_training_weights",
+        "test_promotion_requires_next_state_transition",
+        "test_walk_forward_uses_only_earlier_training_rows"
+      ],
+      "sha256": "143c921530cd422f1389869237a684b16932ab7c114cef58b66ef7359344e1d1",
+      "size_bytes": 3502,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 19,
+      "parse_status": "ok",
+      "path": "tests/test_adaptive_runtime_integration.py",
+      "public_symbols": [
+        "test_runtime_attaches_profile_evidence_and_sequence_refs"
+      ],
+      "sha256": "4853931461e70e0d4a1051c9b6cd692e95814fb4b3e375f22d7fd648d9a9d318",
+      "size_bytes": 1058,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 47,
+      "parse_status": "ok",
+      "path": "tests/test_adaptive_strategy_intelligence.py",
+      "public_symbols": [
+        "candles",
+        "context",
+        "test_confirmed_pattern_is_deterministic_for_same_cutoff",
+        "test_order_flow_never_fabricates_delta_from_volume",
+        "test_profile_multiplier_is_bounded_and_requires_runtime_state",
+        "test_promotion_cannot_skip_human_approval_or_jump_to_approved",
+        "test_quality_rejects_impossible_ohlc"
+      ],
+      "sha256": "459cbbe353040758679eaa7c524e37a158f9a3932a5a002b3df738ae7443a351",
+      "size_bytes": 2922,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
       "line_count": 7,
       "parse_status": "ok",
       "path": "tests/test_admin_pulse_delivery_count.py",
@@ -14959,7 +15987,7 @@
     {
       "category": "test",
       "env_variables": [],
-      "line_count": 162,
+      "line_count": 163,
       "parse_status": "ok",
       "path": "tests/test_delivery_freshness.py",
       "public_symbols": [
@@ -14971,10 +15999,11 @@
         "test_five_minute_signal_nearly_five_hours_old_is_rejected",
         "test_opportunity_decay_blocks_late_short_timeframe_signal"
       ],
-      "sha256": "05b66655e41d71cd08a12f96876af549774f77963f2099e5ab77bc0a4f902bd6",
-      "size_bytes": 5218,
+      "sha256": "69b4b80baca5f15314c072211c8ea807e50ef61f6ba232539077f4aa9634eda9",
+      "size_bytes": 5288,
       "test_references": [
-        "tests/test_delivery_freshness.py"
+        "tests/test_delivery_freshness.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -15019,7 +16048,7 @@
     {
       "category": "test",
       "env_variables": [],
-      "line_count": 472,
+      "line_count": 498,
       "parse_status": "ok",
       "path": "tests/test_deploy_log_regressions.py",
       "public_symbols": [
@@ -15035,6 +16064,7 @@
         "test_outcome_notifications_are_claimed_before_send",
         "test_provider_failure_reasons_are_recorded_for_engine_audit",
         "test_provider_outage_alerts_are_staged_and_emit_recovery",
+        "test_provider_recovery_hysteresis_requires_configured_success_streak",
         "test_quality_rejection_reasons_map_to_admin_pulse_buckets",
         "test_risk_free_recipient_throttle_is_asset_direction_timeframe_scoped",
         "test_similarity_module_imports_and_sync_wrapper_runs",
@@ -15045,8 +16075,8 @@
         "test_volatility_strategy_missing_atr_does_not_raise",
         "test_weekly_admin_report_includes_real_shadow_counters"
       ],
-      "sha256": "e25de1d57a0a5c29c4ea7dc9abc3e95e4ec9aa26be05e69347af3f0013f76103",
-      "size_bytes": 16491,
+      "sha256": "f30d084465cbbdadfa1853f8391c1a761cbd9c7f55cc76b63df45a40cdd4e48f",
+      "size_bytes": 17786,
       "test_references": []
     },
     {
@@ -15869,7 +16899,7 @@
         "test_versioned_default_drift_limits_are_always_active",
         "test_yahoo_previous_close_payload_is_typed_as_analysis_only"
       ],
-      "sha256": "4dff95ffb9f38c8838544f873e3fe617586d06a5eb177707a33594f5e5aebdd5",
+      "sha256": "d7d69b10f79475f4762889a0acf09e1a39b03d8765d3050275646359cd236c94",
       "size_bytes": 12270,
       "test_references": []
     },
@@ -16073,7 +17103,7 @@
         "test_segment_quarantine_uses_delivery_proof",
         "test_worker_does_not_own_analytics_in_monolith"
       ],
-      "sha256": "2b06587a2712c222613be5ca12e47f910aa61c56f0d2d3bb019c6e9bcda61e36",
+      "sha256": "66907b375653c19c654a8d520a0d8cf077614a7c10089eea56f167b8c016c39f",
       "size_bytes": 6401,
       "test_references": []
     },
@@ -17088,7 +18118,7 @@
         "test_schema_audit_checks_signal_orm_contract",
         "test_v104_is_the_sole_migration_head"
       ],
-      "sha256": "977ab650b5fe053848bd1554ac41969f148191021b5a2cedaee78a4c8a311350",
+      "sha256": "43c3f95bad9096e414747ed9a4030f1980407ee7e59d12b65d2afdc824866f32",
       "size_bytes": 2256,
       "test_references": []
     },
@@ -17105,7 +18135,7 @@
         "test_railway_profiles_publish_readiness_timeout",
         "test_release_version_is_current"
       ],
-      "sha256": "7cdcc89ebc81721422fb67e94f51b6b4885b92147a25e43de73b72b32c66933e",
+      "sha256": "29cd1299be7f861dcce63012525372a3669230d2afcc5a2c2db73981105f6e36",
       "size_bytes": 3669,
       "test_references": []
     },
@@ -17127,7 +18157,7 @@
         "test_resend_yields_to_active_engine_fanout",
         "test_v106_is_the_declared_default_version"
       ],
-      "sha256": "348ed24acf18ccbc59e699a6876e01a9fa6cdfccdde9ca04db810b98c22a7fec",
+      "sha256": "3413d20cedabcfb24b32e04a4d15c7bd02bd90f30decd8648e557351b250c7c3",
       "size_bytes": 3551,
       "test_references": []
     },
@@ -17147,14 +18177,14 @@
         "test_v107_hotfix_is_carried_forward_by_v108",
         "test_webhook_registration_is_idempotent_and_rate_limit_aware"
       ],
-      "sha256": "f0512607cbfca2909fe4d48d924ffc2b013c2cbb459c170d183477c839cd7e64",
+      "sha256": "197d958d2bb13ea48580bdc13e4b5c3da762f302a3acbbe7a662ce405b4f1356",
       "size_bytes": 3316,
       "test_references": []
     },
     {
       "category": "test",
       "env_variables": [],
-      "line_count": 99,
+      "line_count": 100,
       "parse_status": "ok",
       "path": "tests/test_v108_operational_gaps.py",
       "public_symbols": [
@@ -17169,8 +18199,56 @@
         "test_v108_is_default_version",
         "test_v108_safe_defaults_are_declared"
       ],
-      "sha256": "e4f506292e72a4a42a47ff214039b9b6895d594692575537bf4520731e5ea504",
-      "size_bytes": 4256,
+      "sha256": "356235741b865d697d5de2103f323f8c865065a4c5b7267181d2ae3c5289f43f",
+      "size_bytes": 4335,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 92,
+      "parse_status": "ok",
+      "path": "tests/test_v111_adaptive_operational_hotfix.py",
+      "public_symbols": [
+        "source",
+        "test_0026_repairs_operational_schema_and_prefix_lookup",
+        "test_adaptive_remains_additive_to_legacy_strategy_groups",
+        "test_bollinger_width_is_derived_from_nested_bands",
+        "test_delivery_freshness_has_one_canonical_entry_drift_gate",
+        "test_macro_policy_requires_daily_context_only",
+        "test_migration_0025_indexes_started_at_not_missing_created_at",
+        "test_monitor_resolves_short_ids_and_is_user_scoped",
+        "test_outcome_lookup_is_user_scoped_and_canonicalised",
+        "test_resend_uses_round_robin_for_multi_user_batches",
+        "test_tradingview_has_cache_and_rate_limit_circuit",
+        "test_version_bumped",
+        "test_websocket_circuit_uses_full_cooldown"
+      ],
+      "sha256": "c048a9f8c6dd01295f5e1269b56f963c6591d4ed5137707f223551841de4b4cc",
+      "size_bytes": 3560,
+      "test_references": []
+    },
+    {
+      "category": "test",
+      "env_variables": [],
+      "line_count": 121,
+      "parse_status": "ok",
+      "path": "tests/test_v120_launch_hardening.py",
+      "public_symbols": [
+        "source",
+        "test_about_counts_canonical_delivery_states_and_no_static_zero_path",
+        "test_canonical_policy_protects_admin_commands",
+        "test_command_catalog_hides_admin_from_free_and_has_clear_descriptions",
+        "test_execution_codes_are_never_primary_user_message",
+        "test_launch_catalog_commands_are_registered",
+        "test_paper_target_parser_and_accounting_contract",
+        "test_price_batch_ignores_individual_failures",
+        "test_release_version_and_migration_head",
+        "test_rich_cards_require_explicit_canary_mode",
+        "test_simulation_has_no_invented_win_rate_fallback"
+      ],
+      "sha256": "6046b70090ca3eb3de345f5a35f8a94364322d05aa2db64ffe91e04a780b2dee",
+      "size_bytes": 5024,
       "test_references": []
     },
     {
@@ -17352,7 +18430,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -17591,7 +18670,8 @@
         "tests/test_strategy_runner.py",
         "tests/test_strategy_runner_async.py",
         "tests/test_telemetry.py",
-        "tests/test_trader_profiles_and_platform_reliability.py"
+        "tests/test_trader_profiles_and_platform_reliability.py",
+        "tests/test_v111_adaptive_operational_hotfix.py"
       ]
     },
     {
@@ -17673,6 +18753,9 @@
       "sha256": "a2aca54db8c95cd55dd3bbb42ad880cceae3be8ef6bdc5843f1c5f961f95b891",
       "size_bytes": 36484,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_broker_permission_validation.py",
         "tests/test_callback_handler.py",
@@ -17727,6 +18810,8 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v105_railway_readiness_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -17760,6 +18845,9 @@
       "sha256": "8be5f2035228da75154c234596a2a5bb33d58d87092659de5923754f0e235eda",
       "size_bytes": 2032,
       "test_references": [
+        "tests/test_adaptive_dataset_and_wfo.py",
+        "tests/test_adaptive_runtime_integration.py",
+        "tests/test_adaptive_strategy_intelligence.py",
         "tests/test_alembic_migration_url_contract.py",
         "tests/test_broker_permission_validation.py",
         "tests/test_callback_handler.py",
@@ -17814,6 +18902,8 @@
         "tests/test_trader_profiles_and_platform_reliability.py",
         "tests/test_trading_ecosystem_intelligence.py",
         "tests/test_v105_railway_readiness_hotfix.py",
+        "tests/test_v111_adaptive_operational_hotfix.py",
+        "tests/test_v120_launch_hardening.py",
         "tests/test_volume_delta.py",
         "tests/test_web_api_tokens.py",
         "tests/test_web_app_regression_guard.py"
@@ -17945,6 +19035,8 @@
     {
       "category": "production_runtime",
       "env_variables": [
+        "ADAPTIVE_LEARNING_INTERVAL_SECONDS",
+        "DECISION_LOG_RETRY_BATCH_SIZE",
         "ML_BASELINE_FEATURE_STATS_PATH",
         "ML_DRIFT_CHECK_INTERVAL_SECONDS",
         "ML_DRIFT_MONITOR_ENABLED",
@@ -17956,15 +19048,15 @@
         "WORKER_ENGINE_PULSE_ENABLED",
         "WORKER_HEARTBEAT_INTERVAL_SECONDS"
       ],
-      "line_count": 569,
+      "line_count": 650,
       "parse_status": "ok",
       "path": "worker/worker.py",
       "public_symbols": [
         "Worker",
         "main"
       ],
-      "sha256": "5f3c984926cc0a470a526c442f65df0fd8ad7af47d02461b91912fca0a2209aa",
-      "size_bytes": 25434,
+      "sha256": "60a50cc33363a6e1db1b6eacfbd97ae62b8c888bcf1fc8ade096274b195acdb4",
+      "size_bytes": 29580,
       "test_references": [
         "tests/test_mt5_signal_router_queue.py",
         "tests/test_phase4_pass2_db_priority_and_command_speed.py",
@@ -17983,6 +19075,6 @@
       ]
     }
   ],
-  "generated_at": "2026-07-28T19:05:33.270157+00:00",
-  "root": "/mnt/data/signalrank_v108_work/SignalRankAI_Final_Release_Candidate_v1.0.7_Startup_DB_Deadlock_Hotfix_2026-07-28"
+  "generated_at": "2026-07-28T23:43:42.934073+00:00",
+  "root": "/mnt/data/signalrank_v112_work/SignalRankAI_Final_Release_Candidate_v1.1.1_Adaptive_Operational_Hotfix_2026-07-28"
 }

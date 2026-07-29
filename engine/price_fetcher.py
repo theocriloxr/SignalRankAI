@@ -465,11 +465,14 @@ async def get_live_price_batch(
     tasks = [fetch_one(a) for a in assets]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    return {
-        asset: price 
-        for asset, price in results 
-        if not isinstance(price, Exception)
-    }
+    output: Dict[str, Optional[float]] = {}
+    for item in results:
+        if isinstance(item, Exception):
+            logger.debug("[price_batch] item failed: %s", item)
+            continue
+        asset, price = item
+        output[str(asset)] = price
+    return output
 
 
 # =============================================================================

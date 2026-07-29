@@ -30,8 +30,21 @@ async def release_guard_command(update, context) -> None:
 
 
 async def automaton_status_command(update, context) -> None:
-    value = automaton_status()
-    await _reply(update, f"Automaton mode: {value['state']}\nVirtual balance: {value['starting_balance']:.2f}\nReal-money execution: disabled")
+    """Compatibility alias for the per-user automatic paper-trading status."""
+    from core.paper_trading_service import paper_trading_service
+    uid = _telegram_user_id(update)
+    snapshot = await paper_trading_service.snapshot(uid)
+    if snapshot is None:
+        await _reply(update, "Send /start first so your paper account can be created.")
+        return
+    await _reply(
+        update,
+        "Automatic Paper Trading\n"
+        f"State: {'RUNNING' if snapshot.auto_trade_enabled else 'PAUSED'}\n"
+        f"Equity: {_money(snapshot.equity)}\n"
+        f"Open positions: {snapshot.open_positions}\n"
+        "Broker execution is separate and never triggered by this command.",
+    )
 
 
 async def automaton_report_command(update, context) -> None:
@@ -40,28 +53,219 @@ async def automaton_report_command(update, context) -> None:
     await _reply(update, f"Automaton report\nState: {value['state']}\nRecommendations: " + "; ".join(decision["recommendations"]))
 
 
+def _telegram_user_id(update: Any) -> int:
+    return int(getattr(getattr(update, "effective_user", None), "id", 0) or 0)
+
+
+def _money(value: Any) -> str:
+    try:
+        return f"${float(value):,.2f}"
+    except Exception:
+        return "$0.00"
+
+
 async def paper_balance_command(update, context) -> None:
-    await _reply(update, "Paper balance is virtual only. Use /paper_positions and /paper_performance for the current ledger.")
+    """Show the virtual account or initialize a new balance."""
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    if not uid:
+        return
+    args = list(getattr(context, "args", []) or [])
+    snapshot = await paper_trading_service.snapshot(uid)
+    if snapshot is None:
+        await _reply(update, "Send /start first so your paper account can be created.")
+        return
+    if args:
+        try:
+            requested = float(args[0])
+        except Exception:
+            await _reply(update, "Usage: /paper_balance or /paper_balance 10000")
+            return
+        if snapshot.open_positions:
+            await _reply(update, "Close or wait for your open paper positions before changing the starting balance.")
+            return
+        if snapshot.closed_positions:
+            await _reply(update, f"This account already has history. Use /paper_reset {requested:g} CONFIRM to reset it safely.")
+            return
+        snapshot = await paper_trading_service.reset_account(uid, requested)
+        if snapshot is None:
+            await _reply(update, "Paper account could not be initialized.")
+            return
+    await _reply(
+        update,
+        "📄 Paper Account\n\n"
+        f"Starting balance: {_money(snapshot.starting_balance)}\n"
+        f"Cash available: {_money(snapshot.cash_balance)}\n"
+        f"Reserved in positions: {_money(snapshot.reserved_cash)}\n"
+        f"Unrealized P&L: {_money(snapshot.unrealized_pnl)}\n"
+        f"Realized P&L: {_money(snapshot.realized_pnl)}\n"
+        f"Current equity: {_money(snapshot.equity)}\n"
+        f"Open positions: {snapshot.open_positions}\n"
+        f"Automatic paper trading: {'ON' if snapshot.auto_trade_enabled else 'OFF'}\n\n"
+        "Virtual funds only. No broker order is submitted.",
+    )
 
 
 async def paper_positions_command(update, context) -> None:
-    await _reply(update, "Paper positions are isolated from live funds. No broker order is submitted by this command.")
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    rows = await paper_trading_service.list_positions(uid, status="open", limit=20)
+    if not rows:
+        await _reply(update, "No open paper positions. Turn automatic entries on with /paper_settings auto on.")
+        return
+    lines = ["📈 Open Paper Positions", ""]
+    for row in rows:
+        pnl = float(row.get("unrealized_pnl") or 0.0)
+        lines.extend([
+            f"{row['asset']} {str(row['direction']).upper()} • {row.get('timeframe') or '—'}",
+            f"Entry {row['fill_entry']:.6g} • Live {row['current_price']:.6g}",
+            f"SL {row['stop_loss']:.6g} • Target {float(row.get('target_price') or 0):.6g}",
+            f"Unrealized: {pnl:+.2f} • Signal {str(row['signal_id'])[:12]}",
+            "",
+        ])
+    await _reply(update, "\n".join(lines).strip())
 
 
 async def paper_performance_command(update, context) -> None:
-    await _reply(update, "Paper performance is reported separately from backtest, shadow, manual, and live outcomes. Sample size is required before claims.")
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    result = await paper_trading_service.performance(uid)
+    if not result:
+        await _reply(update, "Paper performance is unavailable. Send /start first.")
+        return
+    snap = result["snapshot"]
+    pf = result.get("profit_factor", 0.0)
+    pf_text = "∞" if pf == float("inf") else f"{float(pf):.2f}"
+    await _reply(
+        update,
+        "📊 Paper Performance\n\n"
+        f"Closed trades: {result['sample_size']}\n"
+        f"Wins / losses / flat: {result['wins']} / {result['losses']} / {result['flat']}\n"
+        f"Win rate: {result['win_rate_pct']:.1f}%\n"
+        f"Net P&L: {result['net_pnl']:+.2f}\n"
+        f"Return: {result['return_pct']:+.2f}%\n"
+        f"Average R: {result['avg_r']:+.2f}R\n"
+        f"Profit factor: {pf_text}\n"
+        f"Current equity: {_money(snap['equity'])}\n\n"
+        "Paper results are reported separately from delivered-signal, shadow, backtest, demo, and live execution results.",
+    )
 
 
 async def paper_history_command(update, context) -> None:
-    await _reply(update, "Paper history is virtual-only and provenance-separated. No live broker orders are included in this ledger.")
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    args = list(getattr(context, "args", []) or [])
+    try:
+        limit = max(1, min(50, int(args[0]))) if args else 10
+    except Exception:
+        limit = 10
+    rows = await paper_trading_service.list_positions(uid, status="closed", limit=limit)
+    skipped = await paper_trading_service.list_positions(uid, status="skipped", limit=min(limit, 10))
+    if not rows and not skipped:
+        await _reply(update, "No paper history yet.")
+        return
+    lines = ["🧾 Paper Trade History", ""]
+    for row in rows:
+        lines.append(
+            f"{row['asset']} {str(row['direction']).upper()} • {row.get('exit_reason') or 'CLOSED'} • "
+            f"P&L {float(row.get('realized_pnl') or 0):+.2f} • "
+            f"{float(row.get('r_multiple') or 0):+.2f}R"
+        )
+    if skipped:
+        lines.extend(["", "Recent skipped delivered signals:"])
+        for row in skipped[:5]:
+            lines.append(f"• {row['asset']} — {row.get('exit_reason') or 'not eligible'}")
+    await _reply(update, "\n".join(lines))
 
 
 async def paper_reset_command(update, context) -> None:
-    await _reply(update, "Paper reset requires an audited owner action; this public command does not mutate balances.")
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    args = list(getattr(context, "args", []) or [])
+    if len(args) < 2 or str(args[-1]).strip().upper() != "CONFIRM":
+        await _reply(update, "Reset deletes paper positions and history. Usage: /paper_reset 10000 CONFIRM")
+        return
+    try:
+        balance = float(args[0])
+        snapshot = await paper_trading_service.reset_account(uid, balance)
+    except ValueError as exc:
+        await _reply(update, f"Paper reset blocked: {exc}")
+        return
+    except Exception:
+        await _reply(update, "Paper reset failed. No live funds or broker positions were affected.")
+        return
+    await _reply(update, f"✅ Paper account reset to {_money(snapshot.starting_balance if snapshot else balance)}.")
 
 
 async def paper_settings_command(update, context) -> None:
-    await _reply(update, "Paper settings are isolated from live risk. Configure only virtual balance, fill assumptions, spread, and slippage in the paper environment.")
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    args = [str(x).strip() for x in (getattr(context, "args", []) or []) if str(x).strip()]
+    if args:
+        key = args[0].lower()
+        try:
+            if key == "auto" and len(args) >= 2:
+                value = args[1].lower() in {"on", "1", "true", "yes"}
+                await paper_trading_service.update_settings(uid, auto_trade_enabled=value)
+            elif key == "risk" and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, risk_pct=float(args[1]))
+            elif key in {"max", "max_positions"} and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, max_open_positions=int(args[1]))
+            elif key in {"min_score", "score"} and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, min_signal_score=float(args[1]))
+            elif key in {"spread", "slippage", "fee"} and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, **{f"{key}_bps": float(args[1])})
+            elif key == "target" and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, target_mode=args[1])
+            elif key in {"direction", "directions"} and len(args) >= 2:
+                await paper_trading_service.update_settings(uid, allowed_directions=args[1])
+            elif key in {"assets", "asset_classes"} and len(args) >= 2:
+                raw = ",".join(args[1:])
+                classes = [] if raw.lower() in {"all", "any", "*"} else [x.strip() for x in raw.split(",") if x.strip()]
+                await paper_trading_service.update_settings(uid, allowed_asset_classes=classes)
+            else:
+                await _reply(
+                    update,
+                    "Paper settings usage:\n"
+                    "/paper_settings auto on|off\n"
+                    "/paper_settings risk 1\n"
+                    "/paper_settings max_positions 5\n"
+                    "/paper_settings min_score 80\n"
+                    "/paper_settings target tp1|tp2|tp3\n"
+                    "/paper_settings direction both|long|short\n"
+                    "/paper_settings asset_classes crypto,fx,stock,index,commodity\n"
+                    "/paper_settings spread 2\n"
+                    "/paper_settings slippage 2\n"
+                    "/paper_settings fee 5",
+                )
+                return
+        except (ValueError, TypeError) as exc:
+            await _reply(update, f"Invalid paper setting: {exc}")
+            return
+    snapshot = await paper_trading_service.snapshot(uid)
+    if snapshot is None:
+        await _reply(update, "Send /start first so your paper account can be created.")
+        return
+    classes = ", ".join(snapshot.allowed_asset_classes) if snapshot.allowed_asset_classes else "all"
+    await _reply(
+        update,
+        "⚙️ Paper Trading Settings\n\n"
+        f"Automatic entries: {'ON' if snapshot.auto_trade_enabled else 'OFF'}\n"
+        f"Risk per signal: {snapshot.risk_pct:.2f}%\n"
+        f"Maximum open positions: {snapshot.max_open_positions}\n"
+        f"Minimum signal score: {snapshot.min_signal_score:.1f}\n"
+        f"Exit target: {snapshot.target_mode}\n"
+        f"Directions: {snapshot.allowed_directions}\n"
+        f"Asset classes: {classes}\n"
+        f"Spread / slippage / fee: {snapshot.spread_bps:.1f} / {snapshot.slippage_bps:.1f} / {snapshot.fee_bps:.1f} bps\n\n"
+        "Automatic paper entries use only signals confirmed as delivered to your Telegram account.",
+    )
 
 
 async def receipt_command(update, context) -> None:
@@ -97,15 +301,21 @@ async def tester_feedback_command(update, context) -> None:
 
 
 async def automaton_pause_command(update, context) -> None:
-    await _reply(update, "Automaton pause is a safe recommendation surface; no real-money execution is enabled. Use owner controls to change operational state.")
+    from core.paper_trading_service import paper_trading_service
+    uid = _telegram_user_id(update)
+    await paper_trading_service.update_settings(uid, auto_trade_enabled=False)
+    await _reply(update, "⏸ Automatic paper entries paused. Existing paper positions will continue to be marked and closed at their configured exits.")
 
 
 async def automaton_resume_command(update, context) -> None:
-    await _reply(update, "Automaton resume requires owner approval and remains simulation/paper-only. Real trading and copy trading stay disabled.")
+    from core.paper_trading_service import paper_trading_service
+    uid = _telegram_user_id(update)
+    await paper_trading_service.update_settings(uid, auto_trade_enabled=True)
+    await _reply(update, "▶️ Automatic paper entries resumed for future Telegram-confirmed signals.")
 
 
 async def automaton_reset_paper_command(update, context) -> None:
-    await _reply(update, "Paper reset is not performed by a public command. Paper balances are virtual and isolated from live funds; contact an owner for an audited reset.")
+    await _reply(update, "Use /paper_reset <balance> CONFIRM. This deletes user-visible paper positions and starts a new virtual account history without touching any broker.")
 
 
 async def codexops_command(update, context) -> None:

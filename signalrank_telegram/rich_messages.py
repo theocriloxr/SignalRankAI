@@ -26,11 +26,14 @@ def rich_messages_enabled() -> bool:
     """
     enabled = str(os.getenv("TELEGRAM_RICH_MESSAGES_ENABLED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
     certified = str(os.getenv("TELEGRAM_RICH_MESSAGES_CERTIFIED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
-    if enabled and not certified:
+    mode = str(os.getenv("TELEGRAM_RICH_MESSAGES_MODE", "off") or "off").strip().lower()
+    allowed = bool(enabled and certified and mode == "canary")
+    if enabled and not allowed:
         logger.warning(
-            "[rich_messages] requested but not certified; using canonical HTML signal cards"
+            "[rich_messages] structural rich cards blocked mode=%s certified=%s; using canonical HTML signal cards",
+            mode, certified,
         )
-    return bool(enabled and certified)
+    return allowed
 
 
 def _fmt(value: Any, digits: int = 4) -> str:
@@ -99,7 +102,13 @@ def build_signal_rich_html(signal: dict[str, Any], fallback_text: str = "") -> s
     table_rows = "".join(
         f"<tr><td>{html.escape(label)}</td><td>{html.escape(value)}</td></tr>" for label, value in rows
     )
-    details_text = html.escape("\n".join(part for part in [str(why or ""), str(ai or "")] if part).strip() or "No extra analysis available.")
+    details_source = "\n".join(part for part in [str(why or ""), str(ai or "")] if part).strip()
+    if not details_source and fallback_text:
+        # Preserve useful canonical-card context rather than displaying an empty placeholder.
+        import re
+        details_source = re.sub(r"<[^>]+>", " ", str(fallback_text))
+        details_source = " ".join(details_source.split())[:1200]
+    details_text = html.escape(details_source or "The canonical signal card contains the verified trade levels and context.")
     return (
         f"<h3>🚨 VIP SIGNAL — {asset} {direction}</h3>"
         f"<p><b>Timeframe:</b> {tf} • <b>Score:</b> {score} • <b>ID:</b> {sid}</p>"

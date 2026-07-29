@@ -2487,36 +2487,23 @@ def _auto_execute_signal_if_enabled(
             )
             return
 
-        setup_tokens = {
-            "broker_account_not_ready",
-            "user_execution_not_enabled",
-            "user_consent_required",
-            "encrypted_credentials_required",
-            "auto_execution_limit_disabled",
-            "auto_trade_disabled",
-        }
-        if any(token in detail.lower() for token in setup_tokens):
-            setup_key = f"autoexec:setup_missing:{int(telegram_user_id)}"
-            should_warn = True
-            try:
-                if state.get_sync(setup_key):
-                    should_warn = False
-                else:
-                    state.set_sync(setup_key, "1", ex=21600)
-            except Exception:
-                pass
-            if should_warn:
-                _send_message_with_retry_sync(
-                    bot,
-                    chat_id=int(telegram_user_id),
-                    text=(
-                        "⚠️ <b>AUTO execution needs setup</b>\n\n"
-                        f"Asset: <b>{asset}</b>\n"
-                        f"Reason: {detail}\n\n"
-                        "Complete the missing setup and AUTO execution will resume."
-                    ),
-                    parse_mode="HTML",
-                )
+        from signalrank_telegram.execution_messages import execution_failure_html
+        setup_key = f"autoexec:setup_missing:{int(telegram_user_id)}"
+        should_warn = True
+        try:
+            if state.get_sync(setup_key):
+                should_warn = False
+            else:
+                state.set_sync(setup_key, "1", ex=21600)
+        except Exception:
+            pass
+        if should_warn:
+            _send_message_with_retry_sync(
+                bot,
+                chat_id=int(telegram_user_id),
+                text=execution_failure_html(detail, asset=asset, mode="auto"),
+                parse_mode="HTML",
+            )
     except Exception as exc:
         logger.debug(f"[autoexec] failed user={telegram_user_id}: {exc}")
 
@@ -3143,6 +3130,35 @@ def _audit_handler(command_name: str, handler):
                 except Exception:
                     pass
                 return
+
+        # Canonical server-side command authorization. Telegram command scopes are
+        # presentation only; direct command text must be protected independently.
+        try:
+            if getattr(update, "effective_user", None) is not None:
+                from signalrank_telegram.access import resolve_user_tier
+                from core.tier_policy import evaluate_command_access, tier_rank
+                _uid = int(update.effective_user.id)
+                _tier = str(resolve_user_tier(_uid) or "FREE").upper()
+                _decision = evaluate_command_access(str(command_name), _tier)
+                if not _decision.allowed:
+                    if getattr(update, "message", None) is not None:
+                        if tier_rank(_decision.required_tier) >= tier_rank("ADMIN"):
+                            await update.message.reply_text("This command is not available for your account.")
+                        else:
+                            await update.message.reply_text(_decision.reason or "Use /upgrade to access this command.")
+                    logger.warning(
+                        "[command_access] denied command=%s user=%s tier=%s required=%s",
+                        command_name, _uid, _tier, _decision.required_tier,
+                    )
+                    return
+        except Exception as _access_exc:
+            logger.exception("[command_access] fail-closed command=%s err=%s", command_name, _access_exc)
+            try:
+                if getattr(update, "message", None) is not None:
+                    await update.message.reply_text("This command could not be authorized right now.")
+            except Exception:
+                pass
+            return
 
         try:
             from db.priority import DBPriority
@@ -5344,98 +5360,63 @@ def run_bot() -> None:
     application.add_error_handler(_on_error)
 
     async def _post_init(app):
-        # BotFather-visible commands must remain concise.
-        _global_cmds = [            ("start", "Start"),
-            ("pricing", "Pricing"),
-            ("upgrade", "Upgrade / subscribe"),
-            ("help", "Commands"),
-            ("status", "Subscription status"),
-            ("signals", "Latest signals"),
-            ("signal", "Signal by reference"),
-            ("performance", "Performance"),
-            ("profile", "Trading profile"),
-            ("mission", "Signal Mission Control"),
-            ("invite", "Invite"),
-            ("support", "Support"),
-        ]
-        _premium_cmds = _global_cmds + [
-            ("dashboard", "Dashboard"),
-            ("history", "Trade history"),
-            ("risk", "Risk settings"),
-            ("alerts", "Alerts"),
-            ("tiers", "Tier comparison"),
-            ("mystats", "My P&L stats"),
-            ("referral", "Referral link"),
-            ("setlot", "Set lot size"),
-            ("execution", "Execution mode"),
-            ("connect_broker", "Connect MT5 broker"),
-            ("mt5_link", "Link MT5 account"),
-            ("mt5_status", "MT5 account status"),
-        ]
-        _vip_cmds = _premium_cmds + [
-            ("setrisk", "Set risk %"),
-            ("elite", "Elite signals"),
-            ("early", "Early access"),
-            ("report", "Full report"),
-        ]
-        _owner_cmds = _vip_cmds + [
-            ("unlock", "Owner: unlock tier"),
-            ("dev_pause", "Owner: pause engine"),
-            ("dev_resume", "Owner: resume engine"),
-            ("gemini", "Admin: run Gemini+ML"),
-            ("gemini_review", "Admin: Gemini rundown"),
-            ("owner_users", "Owner: user list"),
-            ("owner_revenue", "Owner: revenue"),
-            ("provider_status", "Owner: provider health"),
-            ("system", "Owner: system health"),
-            ("db_health", "Owner: database health"),
-            ("engine_debug", "Owner: engine diagnostics"),
-            ("qa_report", "Owner: QA report"),
-        ]
+        """Publish role-correct Telegram command scopes without blocking startup."""
         try:
-            from telegram import BotCommandScopeChat
-            from signalrank_telegram.access import resolve_user_tier
-            from db.pg_compat import get_all_user_ids_compat
+            from telegram import (
+                BotCommand,
+                BotCommandScopeAllPrivateChats,
+                BotCommandScopeChat,
+                BotCommandScopeDefault,
+            )
+            from signalrank_telegram.command_catalog import botfather_commands
+
+            def _commands_for(tier: str):
+                return [BotCommand(name, description) for name, description in botfather_commands(tier)]
+
+            # Reset stale global scopes first so old admin/placeholder menus cannot leak.
+            for _scope in (BotCommandScopeDefault(), BotCommandScopeAllPrivateChats()):
+                try:
+                    await app.bot.delete_my_commands(scope=_scope)
+                except Exception as _scope_err:
+                    logger.debug("[bot_commands] scope clear skipped scope=%s err=%s", type(_scope).__name__, _scope_err)
+            await app.bot.set_my_commands(_commands_for("FREE"), scope=BotCommandScopeDefault())
+            await app.bot.set_my_commands(_commands_for("FREE"), scope=BotCommandScopeAllPrivateChats())
+            logger.info("[bot_commands] global launch catalogue published commands=%d", len(_commands_for("FREE")))
 
             async def _set_per_user_commands() -> None:
-                """Set per-user BotCommand scopes respecting the tier hierarchy.
+                from signalrank_telegram.access import resolve_user_tier
+                from db.pg_compat import get_all_user_ids_compat
 
-                Runs in a background task so it never blocks _post_init /
-                app.initialize() \u2014 on large user bases this loop can take
-                tens of seconds and would time out the Railway startup
-                healthcheck otherwise.
-                """
-                try:
-                    user_ids = get_all_user_ids_compat()
-                    for _uid in (user_ids or []):
+                user_ids = list(get_all_user_ids_compat() or [])
+                updated = failed = 0
+                concurrency = max(1, min(10, int(os.getenv("BOT_COMMAND_SCOPE_CONCURRENCY", "4") or 4)))
+                semaphore = asyncio.Semaphore(concurrency)
+
+                async def _one(_uid):
+                    nonlocal updated, failed
+                    async with semaphore:
                         try:
-                            _t = (resolve_user_tier(int(_uid)) or "free").lower()
-                            if _t in ("owner", "admin"):
-                                _cmds = _owner_cmds
-                            elif _t == "vip":
-                                _cmds = _vip_cmds
-                            elif _t == "premium":
-                                _cmds = _premium_cmds
-                            else:
-                                _cmds = _global_cmds
-                            await app.bot.set_my_commands(
-                                _cmds, scope=BotCommandScopeChat(chat_id=int(_uid))
-                            )
-                        except Exception:
-                            pass
-                    logger.info("[bot] per-user command scopes updated for %d users", len(user_ids or []))
-                except Exception as _e:
-                    logger.warning("[bot] per-user command scope update failed: %s", _e)
+                            tier = str(resolve_user_tier(int(_uid)) or "FREE").upper()
+                            scope = BotCommandScopeChat(chat_id=int(_uid))
+                            try:
+                                await app.bot.delete_my_commands(scope=scope)
+                            except Exception:
+                                pass
+                            await app.bot.set_my_commands(_commands_for(tier), scope=scope)
+                            updated += 1
+                        except Exception as exc:
+                            failed += 1
+                            logger.warning("[bot_commands] user scope failed user=%s err=%s", _uid, exc)
 
-            # Schedule as a fire-and-forget background task \u2014 does NOT block _post_init
+                batch = max(1, min(100, int(os.getenv("BOT_COMMAND_SCOPE_BATCH_SIZE", "25") or 25)))
+                for index in range(0, len(user_ids), batch):
+                    await asyncio.gather(*(_one(uid) for uid in user_ids[index:index + batch]))
+                    await asyncio.sleep(0)
+                logger.info("[bot_commands] per-user scopes complete users=%d updated=%d failed=%d", len(user_ids), updated, failed)
+
             asyncio.create_task(_set_per_user_commands())
-        except Exception as e:
-            logger.warning(f"[bot] BotCommandScopeChat update skipped: {e}")
-        try:
-            await app.bot.set_my_commands(_global_cmds)
-        except Exception as e:
-            logger.warning(f"[bot] Failed to set bot commands: {e}")
-            pass
+        except Exception as exc:
+            logger.warning("[bot_commands] launch catalogue setup failed: %s", exc)
 
         try:
             from delivery.worker import start_delivery_receipt_reconciler
@@ -5723,6 +5704,7 @@ def run_bot() -> None:
         cancel_command,
     )
     application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
+    application.add_handler(CommandHandler("connect_broker", _audit_handler("connect_broker", mt5_link_command)))
     # Aliases for users who type "/mt5link" or "/mt5 ..." by habit
     application.add_handler(CommandHandler("mt5link", _audit_handler("mt5link", mt5_link_command)))
     application.add_handler(CommandHandler("mt5", _audit_handler("mt5", mt5_link_command)))
@@ -6141,43 +6123,9 @@ def run_bot() -> None:
                     pass
             else:
                 reason = str(routed.error or routed.message or "unknown")
-                reason_key = reason.strip().lower()
-                friendly_reasons = {
-                    "broker_account_not_ready": (
-                        "Your broker account is not connected and verified yet. "
-                        "Open /settings → Broker & Execution, connect an account, "
-                        "complete the execution preflight, then try again."
-                    ),
-                    "user_execution_not_enabled": (
-                        "Trade execution is disabled for your account. Enable it in "
-                        "/settings only after reviewing the risk and consent controls."
-                    ),
-                    "user_consent_required": (
-                        "Execution consent is still required. Review and accept the "
-                        "execution terms in /settings before placing a trade."
-                    ),
-                    "encrypted_credentials_required": (
-                        "Broker credentials are missing or not securely stored. "
-                        "Reconnect the broker account from /settings."
-                    ),
-                    "auto_execution_limit_disabled": (
-                        "Your execution risk limit is disabled. Configure a maximum "
-                        "risk and daily loss limit in /settings."
-                    ),
-                    "auto_trade_disabled": (
-                        "Automatic execution is disabled. The signal remains available "
-                        "for manual review and monitoring."
-                    ),
-                }
-                friendly = friendly_reasons.get(
-                    reason_key,
-                    "The broker rejected or could not complete this request. "
-                    "No trade was opened. Check /execution_status for the exact preflight result.",
-                )
+                from signalrank_telegram.execution_messages import execution_failure_html
                 await query.edit_message_text(
-                    "❌ <b>Trade not executed</b>\n\n"
-                    f"{friendly}\n\n"
-                    f"Reference: <code>{reason_key[:80]}</code>",
+                    execution_failure_html(reason, asset=asset, mode="manual"),
                     parse_mode="HTML",
                 )
         except Exception as exc:

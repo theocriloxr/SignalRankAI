@@ -10,7 +10,7 @@ def _source(path: str) -> str:
 
 
 def test_v108_is_default_version() -> None:
-    assert 'default="1.1.1"' in _source("core/version.py")
+    assert 'default="1.2.0"' in _source("core/version.py")
 
 
 def test_resend_obeys_delivery_allowlist_and_prefilters_queue_staleness() -> None:
@@ -42,18 +42,19 @@ def test_rich_messages_require_explicit_runtime_certification() -> None:
     rich = _source("signalrank_telegram/rich_messages.py")
     bot = _source("signalrank_telegram/bot.py")
     assert 'TELEGRAM_RICH_MESSAGES_CERTIFIED' in rich
-    assert 'return bool(enabled and certified)' in rich
+    assert 'mode == "canary"' in rich
     assert 'rich_messages_enabled()' in bot
 
 
 def test_execution_copy_is_signal_specific_and_broker_error_is_friendly() -> None:
     formatter = _source("signalrank_telegram/tier_signal_formatter.py")
     bot = _source("signalrank_telegram/bot.py")
+    execution_messages = _source("signalrank_telegram/execution_messages.py")
     assert 'broker_account_ready' in formatter
     assert 'execution_ready' in formatter
     assert 'AUTO_TRADE_ENABLED' not in formatter[formatter.index("def _execution_mode"):formatter.index("def _tp_notes_for_execution", formatter.index("def _execution_mode"))]
-    assert 'Your broker account is not connected and verified yet' in bot
-    assert 'Reference: <code>{reason_key[:80]}' in bot
+    assert 'Your broker account is not connected and verified' in execution_messages
+    assert 'Readiness reference: <code>' in execution_messages
 
 
 def test_signal_command_uses_canonical_freshness_policy() -> None:

@@ -237,6 +237,20 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start adaptive candle capture: %s", e)
 
+        # Per-user paper trading consumes Telegram-confirmed deliveries only.
+        # It never routes to a broker and remains isolated from real execution state.
+        if _env_bool("PAPER_TRADING_ENABLED", True):
+            try:
+                from core.paper_trading_service import paper_trading_service
+                _register_task(
+                    "paper_trading",
+                    lambda: paper_trading_service.loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] PaperTradingWorker started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start paper trading worker: %s", e)
+
         # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
         if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:

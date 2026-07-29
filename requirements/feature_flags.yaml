@@ -1,5 +1,5 @@
 {
-  "count": 110,
+  "count": 112,
   "flags": [
     {
       "dangerous": false,
@@ -573,6 +573,22 @@
       "dangerous": false,
       "name": "PAPER_AUTO_EXECUTION_ENABLED",
       "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "PAPER_AUTO_TRADE_DEFAULT_ENABLED",
+      "production_example_default": "1",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "PAPER_TRADING_ENABLED",
+      "production_example_default": "1",
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null

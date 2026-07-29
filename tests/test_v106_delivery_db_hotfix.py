@@ -14,13 +14,13 @@ def _source(path: str) -> str:
 
 
 def test_v106_is_the_declared_default_version() -> None:
-    assert 'default="1.1.1"' in _source("core/version.py")
+    assert 'default="1.2.0"' in _source("core/version.py")
 
 
 def test_rejection_schema_repair_is_the_sole_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0025_adaptive_strategy"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0027_launch_paper_trading"]
     migration = _source("db/migrations/versions/0024_ml_rejected_delivery_runtime.py")
     assert 'ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)' in migration
     assert 'ix_ml_rejected_signals_signal_id' in migration
