@@ -1050,6 +1050,44 @@ async def _notify_admin_bot_ready() -> None:
 
         if not OWNER_IDS:
             return
+
+        # Railway rolling deploys can briefly run the retiring and replacement
+        # containers together. Claim a shared short-lived notification key so
+        # owners receive one ready message instead of one from each container.
+        try:
+            ttl_seconds = max(30, int(os.getenv("BOT_READY_NOTIFICATION_DEDUPE_SECONDS", "180") or 180))
+        except (TypeError, ValueError):
+            ttl_seconds = 180
+        dedupe_key = f"startup:bot_ready:{str(ENVIRONMENT or 'unknown').lower()}"
+
+        async def _claim_ready_notification() -> bool:
+            try:
+                from core.redis_state import state
+
+                def _claim() -> bool:
+                    redis_client = state._get_redis_sync()  # shared state Redis; atomic SET NX
+                    if redis_client is not None:
+                        return bool(redis_client.set(
+                            dedupe_key,
+                            str(DEPLOYMENT_ID or "unknown"),
+                            ex=ttl_seconds,
+                            nx=True,
+                        ))
+                    # Best-effort fallback for local development without Redis.
+                    if state.get_sync(dedupe_key):
+                        return False
+                    state.set_sync(dedupe_key, str(DEPLOYMENT_ID or "unknown"), ex=ttl_seconds)
+                    return True
+
+                return bool(await asyncio.to_thread(_claim))
+            except Exception as exc:
+                logger.warning("[bot_ready_notification] dedupe unavailable error=%s", type(exc).__name__)
+                return True
+
+        if not await _claim_ready_notification():
+            logger.info("[bot_ready_notification] duplicate suppressed key=%s ttl=%ss", dedupe_key, ttl_seconds)
+            return
+
         msg = "✅ SignalRankAI bot is alive, webhook-ready, and core functions are running."
         for owner_id in OWNER_IDS:
             try:

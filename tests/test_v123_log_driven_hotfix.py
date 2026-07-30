@@ -41,9 +41,9 @@ def test_runtime_version_identifies_code_not_stale_env(monkeypatch: pytest.Monke
     import core.version as version
 
     version = importlib.reload(version)
-    assert version.APP_VERSION == "1.2.8"
+    assert version.APP_VERSION == "1.2.9"
     assert version.CONFIGURED_APP_VERSION == "1.2.0"
-    assert "v1.2.8-outcome-perf-readiness-hotfix-20260730" in version.get_version_banner()
+    assert "v1.2.9-lifecycle-profile-observability-hotfix-20260730" in version.get_version_banner()
     assert "configured_version=1.2.0" in version.get_version_banner()
 
 

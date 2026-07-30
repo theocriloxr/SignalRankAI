@@ -204,7 +204,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
     )
     from db.priority import DBPriority
     from db.session import get_session
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     signal_id = str(signal.get("signal_id") or "")
     if not signal_id:

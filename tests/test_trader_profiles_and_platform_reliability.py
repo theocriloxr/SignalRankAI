@@ -104,7 +104,9 @@ def test_command_wrapper_has_timeout_reference_and_db_pressure_handling():
     assert "COMMAND_HANDLER_TIMEOUT_SECONDS" in source
     assert "ERR-" in source
     assert "asyncio.wait_for(handler(update, context)" in source
-    assert "too many clients already" in source
+    classifier = (ROOT / "signalrank_telegram" / "error_classification.py").read_text(encoding="utf-8")
+    assert "too many clients already" in classifier
+    assert "classify_command_exception" in source
     assert "Database connection pressure detected" in source
 
 

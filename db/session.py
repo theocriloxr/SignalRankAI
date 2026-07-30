@@ -630,7 +630,7 @@ async def collect_database_health() -> dict[str, Any]:
     try:
         from sqlalchemy import text
 
-        async with get_session(priority="interactive", label="db_session") as session:
+        async with get_session(priority="interactive", label="db.health", timeout_seconds=3) as session:
             activity = await session.execute(
                 text(
                     """

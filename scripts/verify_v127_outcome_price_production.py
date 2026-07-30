@@ -18,9 +18,9 @@ def require(condition: bool, label: str) -> None:
 def main() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    require(APP_VERSION == "1.2.8", "runtime version")
+    require(APP_VERSION == "1.2.9", "runtime version")
     require(
-        RELEASE_FINGERPRINT == "v1.2.8-outcome-perf-readiness-hotfix-20260730",
+        RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730",
         "release fingerprint",
     )
 
@@ -63,8 +63,8 @@ def main() -> None:
     readiness = (ROOT / "scripts/production_readiness_check.py").read_text(encoding="utf-8")
     require('"/metrics/prometheus"' in readiness, "metrics readiness route marker")
 
-    production = ROOT / "SignalRankAI_v1.2.8_Railway_Production_Launch.env.example"
-    staging = ROOT / "SignalRankAI_v1.2.8_Railway_Full_System_Live_Paystack_Staging.env.example"
+    production = ROOT / "SignalRankAI_v1.2.9_Railway_Production_Launch.env.example"
+    staging = ROOT / "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example"
     require(production.exists(), "production environment profile")
     require(staging.exists(), "staging environment profile")
     profile = production.read_text(encoding="utf-8")

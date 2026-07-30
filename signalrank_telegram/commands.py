@@ -1837,75 +1837,109 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if args and args[0] == "timezone":
 		await _send_timezone_panel(update.message, user_id)
 		return
+
+	is_read = not args
+	response_text = ""
+	response_markup = None
+	timezone_user = None
 	try:
-		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
+		# Keep the DB foreground lane limited to DB work. Telegram network I/O and
+		# timezone prompting happen only after this session has been released.
+		async with get_session(
+			priority="interactive",
+			label="profile.read" if is_read else "profile.write",
+			timeout_seconds=5,
+		) as session:
 			current = await get_user_trading_preferences(session, user_id)
-			if not args:
+			if is_read:
 				from db.models import User
 				from sqlalchemy import select
 				from signalrank_telegram.timezones import effective_user_timezone
 				from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-				user_row = (await session.execute(
+
+				timezone_user = (await session.execute(
 					select(User).where(User.telegram_user_id == user_id)
 				)).scalar_one_or_none()
 				timezone_name = effective_user_timezone(
-					getattr(user_row, "timezone", None), user_id
+					getattr(timezone_user, "timezone", None), user_id
 				)
-				await update.message.reply_text(
-					format_preferences(current) + f"\nTimezone: {timezone_name}",
-					reply_markup=InlineKeyboardMarkup([[
-						InlineKeyboardButton("Timezone", callback_data="nav_timezone")
-					]]),
-				)
-				await maybe_prompt_timezone(update.message, user_id)
-				return
-			cmd = args[0]
-			next_prefs = UserTradingPreferences(
-				trade_profile=current.trade_profile,
-				risk_profile=current.risk_profile,
-				asset_classes=current.asset_classes,
-				preferred_assets=current.preferred_assets,
-				blocked_assets=current.blocked_assets,
-				sessions=current.sessions,
-				notification_style=current.notification_style,
-				execution_mode=current.execution_mode,
-				max_signals_per_day=current.max_signals_per_day,
-				auto_trade_brokers=current.auto_trade_brokers,
-				learned_preferences=current.learned_preferences,
-			)
-			if cmd in {"scalp", "scalper", "day", "swing", "position", "all"}:
-				next_prefs.trade_profile = normalize_trade_profile(cmd, default="all")
-			elif cmd == "risk" and len(args) >= 2:
-				next_prefs.risk_profile = normalize_risk_profile(args[1])
-			elif cmd == "assets" and len(args) >= 2:
-				classes = []
-				for item in args[1:]:
-					item = item.replace("forex", "fx").replace("indices", "index")
-					if item in {"crypto", "fx", "commodity", "index", "stock", "all"}:
-						classes.append(item)
-				next_prefs.asset_classes = ("crypto", "fx", "commodity", "index", "stock") if "all" in classes else tuple(classes or current.asset_classes)
-			elif cmd == "sessions" and len(args) >= 2:
-				next_prefs.sessions = tuple(args[1:]) or ("auto",)
-			elif cmd == "notify" and len(args) >= 2:
-				next_prefs.notification_style = args[1]
-			elif cmd == "execution" and len(args) >= 2:
-				mode = args[1]
-				next_prefs.execution_mode = mode if mode in {"manual", "semi", "semi_auto", "auto", "mt5", "bybit", "binance"} else "manual"
-			elif cmd == "block" and len(args) >= 2:
-				next_prefs.blocked_assets = tuple(sorted(set(current.blocked_assets + tuple(a.upper() for a in args[1:]))))
-			elif cmd == "prefer" and len(args) >= 2:
-				next_prefs.preferred_assets = tuple(sorted(set(current.preferred_assets + tuple(a.upper() for a in args[1:]))))
+				response_text = format_preferences(current) + f"\nTimezone: {timezone_name}"
+				response_markup = InlineKeyboardMarkup([[
+					InlineKeyboardButton("Timezone", callback_data="nav_timezone")
+				]])
 			else:
-				await update.message.reply_text(format_preferences(current))
-				return
-			selected = await set_user_trading_preferences(session, user_id, next_prefs)
-			await session.commit()
+				cmd = args[0]
+				next_prefs = UserTradingPreferences(
+					trade_profile=current.trade_profile,
+					risk_profile=current.risk_profile,
+					asset_classes=current.asset_classes,
+					preferred_assets=current.preferred_assets,
+					blocked_assets=current.blocked_assets,
+					sessions=current.sessions,
+					notification_style=current.notification_style,
+					execution_mode=current.execution_mode,
+					max_signals_per_day=current.max_signals_per_day,
+					auto_trade_brokers=current.auto_trade_brokers,
+					learned_preferences=current.learned_preferences,
+				)
+				valid_update = True
+				if cmd in {"scalp", "scalper", "day", "swing", "position", "all"}:
+					next_prefs.trade_profile = normalize_trade_profile(cmd, default="all")
+				elif cmd == "risk" and len(args) >= 2:
+					next_prefs.risk_profile = normalize_risk_profile(args[1])
+				elif cmd == "assets" and len(args) >= 2:
+					classes = []
+					for item in args[1:]:
+						item = item.replace("forex", "fx").replace("indices", "index")
+						if item in {"crypto", "fx", "commodity", "index", "stock", "all"}:
+							classes.append(item)
+					next_prefs.asset_classes = (
+						("crypto", "fx", "commodity", "index", "stock")
+						if "all" in classes else tuple(classes or current.asset_classes)
+					)
+				elif cmd == "sessions" and len(args) >= 2:
+					next_prefs.sessions = tuple(args[1:]) or ("auto",)
+				elif cmd == "notify" and len(args) >= 2:
+					next_prefs.notification_style = args[1]
+				elif cmd == "execution" and len(args) >= 2:
+					mode = args[1]
+					next_prefs.execution_mode = (
+						mode if mode in {"manual", "semi", "semi_auto", "auto", "mt5", "bybit", "binance"}
+						else "manual"
+					)
+				elif cmd == "block" and len(args) >= 2:
+					next_prefs.blocked_assets = tuple(sorted(set(
+						current.blocked_assets + tuple(a.upper() for a in args[1:])
+					)))
+				elif cmd == "prefer" and len(args) >= 2:
+					next_prefs.preferred_assets = tuple(sorted(set(
+						current.preferred_assets + tuple(a.upper() for a in args[1:])
+					)))
+				else:
+					valid_update = False
+
+				if valid_update:
+					selected = await set_user_trading_preferences(session, user_id, next_prefs)
+					await session.commit()
+					response_text = "AI trading profile updated.\n\n" + format_preferences(selected)
+				else:
+					response_text = format_preferences(current)
+
+		await update.message.reply_text(response_text, reply_markup=response_markup)
+		if is_read:
+			await maybe_prompt_timezone(update.message, user_id, user=timezone_user)
+	except TimeoutError:
+		logger.warning("[profile] DB admission timeout user=%s args=%s", user_id, args)
+		action = "load" if is_read else "update"
 		await update.message.reply_text(
-			"AI trading profile updated.\n\n"
-			+ format_preferences(selected)
+			f"Trading profile is temporarily busy and could not {action}. Please retry /profile."
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"Could not update trading profile: {type(exc).__name__}")
+		logger.exception("[profile] command failed user=%s args=%s", user_id, args)
+		action = "load" if is_read else "update"
+		await update.message.reply_text(
+			f"Could not {action} trading profile: {type(exc).__name__}"
+		)
 
 
 async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2212,8 +2246,9 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	)
 
 
-async def maybe_prompt_timezone(message, telegram_user_id: int) -> bool:
-	user = await _get_timezone_user(telegram_user_id)
+async def maybe_prompt_timezone(message, telegram_user_id: int, *, user=None) -> bool:
+	if user is None:
+		user = await _get_timezone_user(telegram_user_id)
 	if user is None or user.timezone:
 		return False
 	try:
@@ -2870,6 +2905,18 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		admission = dict(pool.get("priority_admission") or {})
 		pool_size = int(pool.get("size") or pool.get("effective_pool_size") or 0)
 		checked_out = int(pool.get("checkedout") or pool.get("checked_out") or 0)
+		# Webhook handlers can run on an auxiliary event loop backed by NullPool.
+		# Report the main pooled engine when available instead of claiming that
+		# database pool metrics are unavailable.
+		if pool_size <= 0:
+			inventory = [
+				item for item in (pool.get("engine_inventory") or [])
+				if isinstance(item, dict) and not item.get("nullpool")
+			]
+			if inventory:
+				primary_pool = max(inventory, key=lambda item: int(item.get("pool_size") or 0))
+				pool_size = int(primary_pool.get("pool_size") or 0)
+				checked_out = int(primary_pool.get("checked_out") or 0)
 		max_connections = str(postgres.get("max_connections") or "unknown")
 		db_pressure = (
 			f"pool {checked_out}/{pool_size}" if pool_size > 0 else "pool metrics unavailable"

@@ -19,9 +19,9 @@ def main() -> int:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
     from scripts.production_readiness_check import run_readiness_checks
 
-    require(APP_VERSION == "1.2.8", "runtime version")
+    require(APP_VERSION == "1.2.9", "runtime version")
     require(
-        RELEASE_FINGERPRINT == "v1.2.8-outcome-perf-readiness-hotfix-20260730",
+        RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730",
         "release fingerprint",
     )
 
@@ -42,8 +42,8 @@ def main() -> int:
     checks = {item["name"]: item for item in readiness.get("checks", [])}
     require(checks.get("railway_direct_observability_routes", {}).get("ok") is True, "Railway direct observability routes")
 
-    require((ROOT / "SignalRankAI_v1.2.8_Railway_Production_Launch.env.example").exists(), "production profile")
-    require((ROOT / "SignalRankAI_v1.2.8_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile")
+    require((ROOT / "SignalRankAI_v1.2.9_Railway_Production_Launch.env.example").exists(), "production profile")
+    require((ROOT / "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile")
     print("PASS v1.2.8 outcome/performance/readiness verification")
     return 0
 
