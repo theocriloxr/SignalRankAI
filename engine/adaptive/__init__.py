@@ -1,15 +1,16 @@
-from .elliott import ElliottWaveComponent
-from .fibonacci import FibonacciComponent
-from .harmonic import HarmonicComponent
-from .ict_smc import ICTSmartMoneyComponent
-from .indicators import IndicatorComponent
-from .order_flow import OrderFlowComponent
-from .price_action import PriceActionComponent
-from .supply_demand import SupplyDemandComponent
-from .wyckoff import WyckoffComponent
+"""Adaptive asset-specific strategy intelligence for SignalRankAI.
 
-DEFAULT_COMPONENTS = (
-    ICTSmartMoneyComponent(), PriceActionComponent(), SupplyDemandComponent(),
-    FibonacciComponent(), HarmonicComponent(), ElliottWaveComponent(),
-    OrderFlowComponent(), WyckoffComponent(), IndicatorComponent(),
-)
+The package is deliberately additive: deterministic strategy and risk gates remain
+canonical, while approved adaptive profiles can apply bounded weighting and all
+candidate evidence is retained for shadow/learning review.
+"""
+from .runtime import AdaptiveStrategyService, get_adaptive_strategy_service
+from .types import AssetStrategyProfile, MarketContext, StrategyEvidence
+
+__all__ = [
+    "AdaptiveStrategyService",
+    "AssetStrategyProfile",
+    "MarketContext",
+    "StrategyEvidence",
+    "get_adaptive_strategy_service",
+]

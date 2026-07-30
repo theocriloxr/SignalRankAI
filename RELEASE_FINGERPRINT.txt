@@ -1,1 +1,1 @@
-v1.2.7-outcome-price-production-gate-20260730
+v1.2.8-outcome-perf-readiness-hotfix-20260730

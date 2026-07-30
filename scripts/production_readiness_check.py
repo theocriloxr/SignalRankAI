@@ -65,6 +65,11 @@ REQUIRED_WEB_MARKERS = (
     "/metrics/prometheus",
 )
 
+REQUIRED_RAILWAY_DIRECT_MARKERS = (
+    '@app.get("/healthz"',
+    '@app.get("/metrics/prometheus"',
+)
+
 REQUIRED_TELEMETRY_MARKERS = (
     "signalrank_service_up",
     "signalrank_http_request_seconds",
@@ -125,9 +130,21 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     # The Railway monolith owns the externally probed health endpoints while
     # ``web/app.py`` retains the standalone web-service routes. Check both and
     # match route paths rather than one exact decorator spelling.
-    web_text = _read(root, "web/app.py") + "\n" + _read(root, "railway_main.py")
+    railway_text = _read(root, "railway_main.py")
+    web_text = _read(root, "web/app.py") + "\n" + railway_text
     missing_web = [marker for marker in REQUIRED_WEB_MARKERS if marker not in web_text]
     add("web_health_routes", not missing_web, "missing=" + ",".join(missing_web) if missing_web else "health and metrics routes present")
+
+    missing_direct = [
+        marker for marker in REQUIRED_RAILWAY_DIRECT_MARKERS if marker not in railway_text
+    ]
+    add(
+        "railway_direct_observability_routes",
+        not missing_direct,
+        "missing=" + ",".join(missing_direct)
+        if missing_direct
+        else "Railway owns direct healthz and Prometheus routes",
+    )
 
     telemetry_text = _read(root, "core/telemetry.py")
     missing_telemetry = [marker for marker in REQUIRED_TELEMETRY_MARKERS if marker not in telemetry_text]

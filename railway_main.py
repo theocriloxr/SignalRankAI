@@ -2038,6 +2038,21 @@ class _HealthResponse(BaseModel):
     resource_state: str = "OPTIMAL"
 
 
+@app.get("/metrics/prometheus", include_in_schema=False)
+async def _metrics_prometheus_endpoint() -> Response:
+    """Expose Prometheus metrics directly on the Railway monolith.
+
+    The compatibility web app is mounted later, but this direct route keeps the
+    scrape/readiness contract available even if that mount changes or fails.
+    """
+    from core.telemetry import prometheus_content_type, prometheus_metrics_text
+
+    return Response(
+        content=prometheus_metrics_text(),
+        media_type=prometheus_content_type(),
+    )
+
+
 @app.get("/health", response_model=_HealthResponse)
 @app.get("/healthz", response_model=_HealthResponse)
 @app.get("/livez", response_model=_HealthResponse)

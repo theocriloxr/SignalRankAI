@@ -116,11 +116,11 @@ def test_adaptive_candle_persistence_uses_bulk_upsert_and_delta_queue() -> None:
 
 
 def test_production_profile_has_no_duplicates_and_freshness_guards() -> None:
-    path = ROOT / "SignalRankAI_v1.2.7_Railway_Production_Launch.env.example"
+    path = ROOT / "SignalRankAI_v1.2.8_Railway_Production_Launch.env.example"
     lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
     keys = [line.split("=", 1)[0] for line in lines if line and not line.startswith("#") and "=" in line]
     assert len(keys) == len(set(keys))
-    assert "APP_VERSION=1.2.7" in lines
+    assert "APP_VERSION=1.2.8" in lines
     assert "OUTCOME_TRACKER_DB_PRIORITY=critical" in lines
     assert "OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS=12" in lines
     assert "TRADE_TRACKER_LATEST_TICK_MAX_AGE_SECONDS=15" in lines
@@ -166,7 +166,7 @@ def test_simulation_uses_terminal_outcomes_and_reports_backlog() -> None:
 
 
 def test_production_profile_uses_one_primary_with_reviewed_pool_headroom() -> None:
-    lines = (ROOT / "SignalRankAI_v1.2.7_Railway_Production_Launch.env.example").read_text(encoding="utf-8")
+    lines = (ROOT / "SignalRankAI_v1.2.8_Railway_Production_Launch.env.example").read_text(encoding="utf-8")
     assert "DB_POOL_SIZE=4" in lines
     assert "DB_MAX_OVERFLOW=2" in lines
     assert "DB_POOL_RAILWAY_ABSOLUTE_CAP=4" in lines
@@ -190,5 +190,5 @@ def test_webhook_timeout_is_retryable_without_dual_queue_fallback() -> None:
 def test_version_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.2.7"
-    assert RELEASE_FINGERPRINT == "v1.2.7-outcome-price-production-gate-20260730"
+    assert APP_VERSION == "1.2.8"
+    assert RELEASE_FINGERPRINT == "v1.2.8-outcome-perf-readiness-hotfix-20260730"

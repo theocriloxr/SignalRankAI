@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import func, select
+
 logger = logging.getLogger(__name__)
 
 ENTRY_ZONE_PCT = float(os.getenv("ENTRY_ZONE_PCT", "0.003"))
@@ -1623,25 +1625,52 @@ class RealtimeOutcomeTracker:
 
         async def wrapped_check_signal(sig):
             async with signal_semaphore:
+                signal_id = str(sig.get("signal_id") or "")
+                asset = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
                 try:
-                    asset = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
                     await self._check_signal(sig, observation=quotes.get(asset))
-                    if not update_user_perf:
-                        return
-                    # Find all telegram_user_id recipients who received this signal
+                except Exception as exc:
+                    logger.exception(
+                        "[outcome_tracker] signal_check_failed signal=%s asset=%s error=%s",
+                        signal_id,
+                        asset,
+                        exc,
+                    )
+                    return
+
+                if not update_user_perf:
+                    return
+
+                # Update performance only for recipients with durable Telegram
+                # delivery proof. Keep this lookup isolated from lifecycle work so
+                # an analytics failure cannot mask a successful outcome transition.
+                try:
                     from db.session import get_session
                     from db.models import SignalDelivery, User
-                    from sqlalchemy import select
+
                     async with _session_scope(get_session, noncritical=True) as session:
                         rows = await session.execute(
                             select(User.telegram_user_id)
                             .join(SignalDelivery, SignalDelivery.user_id == User.id)
-                            .where(SignalDelivery.signal_id == sig["signal_id"])
+                            .where(SignalDelivery.signal_id == signal_id)
+                            .where(SignalDelivery.sent_ok.is_(True))
+                            .where(SignalDelivery.telegram_chat_id.is_not(None))
+                            .where(SignalDelivery.telegram_message_id.is_not(None))
+                            .where(
+                                func.lower(SignalDelivery.delivery_state).in_(
+                                    _DELIVERY_PROOF_STATES
+                                )
+                            )
                         )
                         for (telegram_user_id,) in rows.all():
-                            updated_users.add(int(telegram_user_id))
+                            if telegram_user_id is not None:
+                                updated_users.add(int(telegram_user_id))
                 except Exception as exc:
-                    logger.warning(f"[outcome_tracker] Error updating user performance for signal {sig.get('signal_id')}: {exc}")
+                    logger.exception(
+                        "[outcome_tracker] recipient_lookup_failed signal=%s error=%s",
+                        signal_id,
+                        exc,
+                    )
 
         tasks = [wrapped_check_signal(sig) for sig in signals]
         await asyncio.gather(*tasks, return_exceptions=True)
