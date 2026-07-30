@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_v129_version_and_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.2.9"
-    assert RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730"
+    assert APP_VERSION == "1.3.0"
+    assert RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730"
 
 
 def test_lifecycle_event_imports_func_in_its_own_scope() -> None:
@@ -58,11 +58,11 @@ def test_ops_health_uses_main_pool_inventory_fallback() -> None:
 
 def test_v129_profiles_exist_and_raise_interactive_gate_timeout() -> None:
     for name in (
-        "SignalRankAI_v1.2.9_Railway_Production_Launch.env.example",
-        "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example",
+        "SignalRankAI_v1.3.0_Railway_Production_Launch.env.example",
+        "SignalRankAI_v1.3.0_Railway_Full_System_Live_Paystack_Staging.env.example",
     ):
         text = (ROOT / name).read_text(encoding="utf-8")
-        assert "APP_VERSION=1.2.9" in text
+        assert "APP_VERSION=1.3.0" in text
         assert "DB_INTERACTIVE_SESSION_GATE_TIMEOUT_SECONDS=3" in text
 
 

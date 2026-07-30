@@ -19,8 +19,8 @@ def main() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
     from engine.realtime_outcome_tracker import _outcome_db_priority, _outcome_db_timeout
 
-    require(APP_VERSION == "1.2.9", "runtime code version")
-    require(RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730", "release fingerprint")
+    require(APP_VERSION == "1.3.0", "runtime code version")
+    require(RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730", "release fingerprint")
     require(_outcome_db_priority() in {"critical", "interactive"}, "outcome DB foreground lane")
     require(_outcome_db_timeout() >= 1.0, "outcome DB admission timeout")
 
@@ -32,7 +32,7 @@ def main() -> None:
     require("active_scan fetched=%d" in outcome_source, "outcome scan evidence")
     require("reconciliation_backfill fetched=%d" in outcome_source, "outcome reconciliation evidence")
 
-    profile = ROOT / "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example"
+    profile = ROOT / "SignalRankAI_v1.3.0_Railway_Full_System_Live_Paystack_Staging.env.example"
     require(profile.exists(), "v1.2.7 Railway staging profile")
     print("v1.2.7 verification complete")
 

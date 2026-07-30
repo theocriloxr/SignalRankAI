@@ -621,8 +621,28 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
             symbol = "GC=F"
         elif s in {"XAGUSD", "SILVER"}:
             symbol = "SI=F"
-        elif s in {"WTI", "WTIUSD", "CRUDEOIL", "USOIL"}:
+        elif s in {"WTI", "WTIUSD", "CRUDEOIL", "USOIL", "OIL"}:
             symbol = "CL=F"
+        elif s in {"BRENT", "BRENTUSD", "UKOIL"}:
+            symbol = "BZ=F"
+        elif s in {"US500", "SPX500"}:
+            symbol = "^GSPC"
+        elif s in {"NAS100", "US100"}:
+            symbol = "^NDX"
+        elif s == "US30":
+            symbol = "^DJI"
+        elif s in {"GER40", "DE40"}:
+            symbol = "^GDAXI"
+        elif s == "UK100":
+            symbol = "^FTSE"
+        elif s == "FRA40":
+            symbol = "^FCHI"
+        elif s in {"JP225", "JPN225"}:
+            symbol = "^N225"
+        elif s == "HK50":
+            symbol = "^HSI"
+        elif s == "AUS200":
+            symbol = "^AXJO"
         elif s.endswith("USDT") and len(s) > 4:
             symbol = f"{s[:-4]}-USD"
         elif len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():

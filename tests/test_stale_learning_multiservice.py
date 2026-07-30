@@ -45,7 +45,7 @@ def test_rejection_learning_persists_shadow_only_provenance():
     }
 
     async def run():
-        with patch("engine.signal_deduplicator.get_deduplicator", return_value=deduplicator):
+        with patch("engine.signal_deduplicator.get_ml_rejection_tracker", return_value=deduplicator):
             assert await persist_rejected_signal_learning(
                 signal,
                 reason="price drift",

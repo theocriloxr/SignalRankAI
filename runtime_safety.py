@@ -163,10 +163,30 @@ def apply_runtime_safety_environment(
     # acknowledgement truthfully so diagnostics do not mislabel an environment
     # mismatch as an invalid token.
     if environment in {"production", "prod"}:
-        env["FULL_SYSTEM_STAGING_TEST_ACTIVE"] = "0"
+        # Production is public by default and must never inherit a Railway
+        # staging allowlist or testing override from an earlier environment.
+        forced_off: list[str] = []
+        for name in (
+            "PUBLIC_TESTING_MODE",
+            "FULL_SYSTEM_STAGING_TEST_MODE",
+            "FULL_SYSTEM_STAGING_TEST_ACTIVE",
+            "STAGING_QUALITY_GATES_ADVISORY",
+            "STAGING_DELIVERY_FRESHNESS_ADVISORY",
+            "STAGING_TEST_DELIVERY_LIVE_EXECUTION_BLOCK",
+            "FREE_RANDOM_DISTRIBUTION_ENABLED",
+        ):
+            if _truthy(env.get(name)):
+                forced_off.append(name)
+            env[name] = "0"
+        if str(env.get("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip():
+            forced_off.append("DELIVERY_AUDIENCE_ALLOWLIST")
+        if _truthy(env.get("RESEND_AUDIENCE_ALLOWLIST_ONLY")):
+            forced_off.append("RESEND_AUDIENCE_ALLOWLIST_ONLY")
+        env["DELIVERY_AUDIENCE_ALLOWLIST"] = ""
+        env["RESEND_AUDIENCE_ALLOWLIST_ONLY"] = "0"
+        env["PAYMENTS_PUBLIC_TEST_MODE"] = "0"
         return RuntimeSafetyResult(
-            environment, False, ack_valid, (), (), (),
-            str(env.get("DELIVERY_AUDIENCE_ALLOWLIST") or ""),
+            environment, False, ack_valid, (), tuple(forced_off), (), "",
         )
 
     enabled = bool(requested and ack_valid)

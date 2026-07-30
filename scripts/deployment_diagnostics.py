@@ -424,8 +424,8 @@ def static_checks(report: Report) -> None:
                 ".env.example",
                 "RAILWAY_ENV_UPDATED.env.example",
                 "deploy/railway_roles/monolith_safe.env",
-                "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example",
-                "SignalRankAI_v1.2.9_Railway_Production_Launch.env.example",
+                "SignalRankAI_v1.3.0_Railway_Full_System_Live_Paystack_Staging.env.example",
+                "SignalRankAI_v1.3.0_Railway_Production_Launch.env.example",
                 *env_profiles,
             ],
             "critical",
@@ -665,6 +665,38 @@ async def database_check(report: Report) -> None:
                     )
                 )
             ).scalar_one()
+            outcome_duplicate_groups = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT signal_id
+                            FROM outcomes
+                            GROUP BY signal_id
+                            HAVING COUNT(*) > 1
+                        ) duplicate_outcomes
+                        """
+                    )
+                )
+            ).scalar_one()
+            outcome_guard_index = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM pg_index AS i
+                        JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                        JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                        JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                        WHERE ns.nspname = current_schema()
+                          AND tbl.relname = 'outcomes'
+                          AND idx.relname = 'uq_outcomes_signal_id'
+                          AND i.indisunique IS TRUE
+                        """
+                    )
+                )
+            ).scalar_one()
             max_connections = int((await session.execute(text("SHOW max_connections"))).scalar_one() or 0)
             current_connections = int((
                 await session.execute(
@@ -697,6 +729,8 @@ async def database_check(report: Report) -> None:
             and int(active_duplicate_groups or 0) == 0
             and int(signal_runtime_columns or 0) == 3
             and int(active_guard_index or 0) == 1
+            and int(outcome_duplicate_groups or 0) == 0
+            and int(outcome_guard_index or 0) == 1
             and (not expected or str(revision) == expected)
         )
         report.add(
@@ -710,7 +744,9 @@ async def database_check(report: Report) -> None:
                     f"decision_log.created_at={column} "
                     f"active_duplicate_groups={active_duplicate_groups} "
                     f"signal_runtime_columns={signal_runtime_columns}/3 "
-                    f"active_guard_unique_index={active_guard_index}"
+                    f"active_guard_unique_index={active_guard_index} "
+                    f"outcome_duplicate_groups={outcome_duplicate_groups} "
+                    f"outcome_guard_unique_index={outcome_guard_index}"
                 ),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 evidence={
@@ -718,6 +754,8 @@ async def database_check(report: Report) -> None:
                     "active_duplicate_groups": int(active_duplicate_groups or 0),
                     "signal_runtime_columns": int(signal_runtime_columns or 0),
                     "active_guard_unique_index": bool(active_guard_index),
+                    "outcome_duplicate_groups": int(outcome_duplicate_groups or 0),
+                    "outcome_guard_unique_index": bool(outcome_guard_index),
                 },
                 remediation=(
                     None
@@ -725,8 +763,9 @@ async def database_check(report: Report) -> None:
                     else (
                         "Run the sole Alembic head, confirm decision_log.created_at and "
                         "signals performance columns, reconcile duplicate active theses, "
-                        "verify ix_signals_active_thesis, "
-                        "and inspect DB admission holders. The fallback command is: "
+                        "verify ix_signals_active_thesis and uq_outcomes_signal_id, "
+                        "reconcile duplicate outcome projections, and inspect DB admission holders. "
+                        "The fallback command is: "
                         "python scripts/repair_active_signal_duplicates.py --apply"
                     )
                 ),

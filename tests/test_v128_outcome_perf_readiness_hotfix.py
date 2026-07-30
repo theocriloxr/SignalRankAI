@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_version_and_release_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.2.9"
-    assert RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730"
+    assert APP_VERSION == "1.3.0"
+    assert RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730"
 
 
 def test_outcome_tracker_has_sql_func_and_separate_failure_boundaries() -> None:
@@ -41,5 +41,5 @@ def test_readiness_requires_direct_railway_observability_routes() -> None:
 
 
 def test_current_environment_profiles_are_present() -> None:
-    assert (ROOT / "SignalRankAI_v1.2.9_Railway_Production_Launch.env.example").exists()
-    assert (ROOT / "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example").exists()
+    assert (ROOT / "SignalRankAI_v1.3.0_Railway_Production_Launch.env.example").exists()
+    assert (ROOT / "SignalRankAI_v1.3.0_Railway_Full_System_Live_Paystack_Staging.env.example").exists()

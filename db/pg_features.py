@@ -14,7 +14,6 @@ def to_naive_utc(dt: datetime) -> datetime:
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case, or_, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -1623,60 +1622,75 @@ async def upsert_outcome(
     sentiment_outcome: str | None = None,
     queue_notifications: bool = True,
 ) -> Outcome:
+    """Persist the latest outcome projection without relying on ON CONFLICT.
+
+    A per-signal PostgreSQL advisory lock serializes the no-row-yet insert case.
+    The row lock serializes updates. This remains functional during recovery even
+    before the uniqueness migration is applied, while the unique index provides
+    the permanent database invariant after migration 0028.
+    """
     signal_id_str = str(signal_id)
     now = _utcnow()
     status_l = str(status).lower()[:16]
 
-    stmt = pg_insert(Outcome).values(
-        signal_id=signal_id_str,
-        status=status_l,
-        r_multiple=float(r_multiple) if r_multiple is not None else None,
-        percent=float(percent) if percent is not None else None,
-        opened_at=opened_at,
-        closed_at=closed_at or now,
-        canonical_outcome=str(canonical_outcome).lower()[:16] if canonical_outcome is not None else None,
-        vip_fill_outcome=str(vip_fill_outcome).lower()[:16] if vip_fill_outcome is not None else None,
-        sentiment_outcome=str(sentiment_outcome).lower()[:16] if sentiment_outcome is not None else None,
-        meta=dict(meta or {}),
+    try:
+        bind = session.get_bind()
+        if getattr(getattr(bind, "dialect", None), "name", "") == "postgresql":
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                {"lock_key": f"signalrank:outcome:{signal_id_str}"},
+            )
+    except Exception as exc:
+        # A lock failure is not safe to ignore on PostgreSQL because it reopens
+        # the insert race. Other dialects intentionally skip advisory locking.
+        bind = session.get_bind()
+        if getattr(getattr(bind, "dialect", None), "name", "") == "postgresql":
+            raise RuntimeError("outcome advisory lock failed") from exc
+
+    result: Result[Tuple[Outcome]] = await session.execute(
+        select(Outcome)
+        .where(Outcome.signal_id == signal_id_str)
+        .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
+        .limit(1)
+        .with_for_update()
     )
-
-    update_values: dict[str, Any] = {
-        "status": status_l,
-        "closed_at": closed_at or now,
-    }
-    if opened_at is not None:
-        update_values["opened_at"] = opened_at
-    if r_multiple is not None:
-        update_values["r_multiple"] = float(r_multiple)
-    if percent is not None:
-        update_values["percent"] = float(percent)
-    if canonical_outcome is not None:
-        update_values["canonical_outcome"] = str(canonical_outcome).lower()[:16]
-    if vip_fill_outcome is not None:
-        update_values["vip_fill_outcome"] = str(vip_fill_outcome).lower()[:16]
-    if sentiment_outcome is not None:
-        update_values["sentiment_outcome"] = str(sentiment_outcome).lower()[:16]
-    upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=[Outcome.signal_id],
-        set_=update_values,
-    ).returning(Outcome)
-
-    result = await session.execute(upsert_stmt)
     oc = result.scalars().first()
+
     if oc is None:
-        # Fallback: select row if RETURNING is unavailable in current driver/path.
-        res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.signal_id == signal_id_str))
-        oc = res.scalars().first()
-        if oc is None:
-            raise RuntimeError("upsert_outcome failed to return row")
+        oc = Outcome(
+            signal_id=signal_id_str,
+            status=status_l,
+            r_multiple=float(r_multiple) if r_multiple is not None else None,
+            percent=float(percent) if percent is not None else None,
+            opened_at=opened_at,
+            closed_at=closed_at or now,
+            canonical_outcome=str(canonical_outcome).lower()[:16] if canonical_outcome is not None else None,
+            vip_fill_outcome=str(vip_fill_outcome).lower()[:16] if vip_fill_outcome is not None else None,
+            sentiment_outcome=str(sentiment_outcome).lower()[:16] if sentiment_outcome is not None else None,
+            meta=dict(meta or {}),
+        )
+        session.add(oc)
+        await session.flush()
+    else:
+        oc.status = status_l
+        oc.closed_at = closed_at or now
+        if opened_at is not None:
+            oc.opened_at = opened_at
+        if r_multiple is not None:
+            oc.r_multiple = float(r_multiple)
+        if percent is not None:
+            oc.percent = float(percent)
+        if canonical_outcome is not None:
+            oc.canonical_outcome = str(canonical_outcome).lower()[:16]
+        if vip_fill_outcome is not None:
+            oc.vip_fill_outcome = str(vip_fill_outcome).lower()[:16]
+        if sentiment_outcome is not None:
+            oc.sentiment_outcome = str(sentiment_outcome).lower()[:16]
 
     if meta:
-        try:
-            merged: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
-            merged.update(dict(meta))
-            oc.meta = merged
-        except Exception:
-            pass
+        merged: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
+        merged.update(dict(meta))
+        oc.meta = merged
 
     try:
         if oc.opened_at is not None and oc.closed_at is not None:
@@ -1687,8 +1701,6 @@ async def upsert_outcome(
     # Re-enable notification when outcome progresses (TP1→TP2→TP3, etc.).
     try:
         new_status = str(getattr(oc, "status", "") or "").lower()
-        new_tp_idx = int((getattr(oc, "meta", {}) or {}).get("tp_hit_index") or 0)
-        progressed = True
         _meta = dict(getattr(oc, "meta", {}) or {})
         _meta.pop("notified", None)
         _meta.pop("notified_at", None)

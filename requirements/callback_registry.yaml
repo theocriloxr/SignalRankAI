@@ -57,7 +57,7 @@
       "pattern": "^check_outcome_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6616",
+      "source": "signalrank_telegram/bot.py:6633",
       "status": "IMPLEMENTED"
     },
     {
@@ -107,7 +107,7 @@
       "pattern": "^monitor_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6272",
+      "source": "signalrank_telegram/bot.py:6289",
       "status": "IMPLEMENTED"
     },
     {
@@ -157,7 +157,7 @@
       "pattern": "^mt5_trade_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6403",
+      "source": "signalrank_telegram/bot.py:6420",
       "status": "IMPLEMENTED"
     },
     {
@@ -187,7 +187,7 @@
       "pattern": "^open_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6458",
+      "source": "signalrank_telegram/bot.py:6475",
       "status": "IMPLEMENTED"
     },
     {
@@ -217,7 +217,7 @@
       "pattern": "^signal_reaction_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6120",
+      "source": "signalrank_telegram/bot.py:6137",
       "status": "IMPLEMENTED"
     },
     {

@@ -295,9 +295,30 @@ _YFINANCE_OVERRIDES: dict[str, str] = {
     "USB02Y": "2YY=F",
     "XAUUSD": "GC=F",
     "XAGUSD": "SI=F",
+    "WTI": "CL=F",
     "WTIUSD": "CL=F",
+    "USOIL": "CL=F",
+    "OIL": "CL=F",
     "CRUDEOIL": "CL=F",
+    "BRENT": "BZ=F",
+    "BRENTUSD": "BZ=F",
+    "UKOIL": "BZ=F",
     "NATGAS": "NG=F",
+    # Broker/CFD index aliases. Without these Yahoo interprets some symbols as
+    # unrelated equities or returns no data.
+    "US500": "^GSPC",
+    "SPX500": "^GSPC",
+    "NAS100": "^NDX",
+    "US100": "^NDX",
+    "US30": "^DJI",
+    "GER40": "^GDAXI",
+    "DE40": "^GDAXI",
+    "UK100": "^FTSE",
+    "FRA40": "^FCHI",
+    "JP225": "^N225",
+    "JPN225": "^N225",
+    "HK50": "^HSI",
+    "AUS200": "^AXJO",
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
     "BNBUSD": "BNB-USD",
@@ -535,7 +556,7 @@ def _get_yfinance_symbol_variants(symbol: str) -> list:
         variants = [f"{base}-USD", f"{base}=X", base]
     # For standard 6-char FX pairs like EURUSD
     elif len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
-        variants = [f"{s[:3]}{s[3:]}X", f"{s[:3]}-{s[3:]}", s]
+        variants = [f"{s}=X", f"{s[:3]}-{s[3:]}", s]
     else:
         # For everything else, start with format_ticker result then try original
         variants = [format_ticker(symbol, "yfinance"), s]

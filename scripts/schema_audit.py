@@ -129,13 +129,49 @@ def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
     return {"ok": not missing, "missing_columns": missing}
 
 
+
+def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
+    """Ensure one mutable Outcome projection is enforced per signal."""
+    env = os.environ.copy()
+    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
+    )
+    if proc.returncode != 0:
+        return {"ok": False, "error": f"alembic_offline_exit={proc.returncode}"}
+    rendered = proc.stdout
+    unique_sql = bool(
+        re.search(
+            r"CREATE UNIQUE INDEX(?: IF NOT EXISTS)? uq_outcomes_signal_id\s+ON outcomes \(signal_id\)",
+            rendered, re.I,
+        )
+    )
+    from db.models import Outcome
+    model_unique = any(
+        getattr(constraint, "name", None) == "uq_outcomes_signal_id"
+        for constraint in Outcome.__table__.constraints
+    )
+    return {
+        "ok": bool(unique_sql and model_unique),
+        "unique_guard_sql": unique_sql,
+        "model_unique_constraint": model_unique,
+    }
+
 def main() -> int:
     result = audit_versions()
     signal_contract = audit_signal_runtime_contract()
     rejected_contract = audit_ml_rejected_runtime_contract()
+    outcome_contract = audit_outcome_projection_contract()
     result["signal_runtime_contract"] = signal_contract
     result["ml_rejected_runtime_contract"] = rejected_contract
-    result["ok"] = bool(result["ok"] and signal_contract["ok"] and rejected_contract["ok"])
+    result["outcome_projection_contract"] = outcome_contract
+    result["ok"] = bool(
+        result["ok"]
+        and signal_contract["ok"]
+        and rejected_contract["ok"]
+        and outcome_contract["ok"]
+    )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1
 

@@ -19,8 +19,8 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
-    require(APP_VERSION == "1.2.9", "runtime code version retains v1.2.5 fixes")
-    require(RELEASE_FINGERPRINT == "v1.2.9-lifecycle-profile-observability-hotfix-20260730", "release fingerprint")
+    require(APP_VERSION == "1.3.0", "runtime code version retains v1.2.5 fixes")
+    require(RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730", "release fingerprint")
 
     helpers = importlib.import_module("engine.adaptive.helpers")
     for name in ("atr", "confirmed_pivots", "fingerprint", "ohlcv", "targets"):
@@ -62,7 +62,7 @@ def main() -> int:
     require("TEST ONLY — NOT EXECUTION ELIGIBLE" in bot_source, "staging freshness advisory label")
     require("[autoexec] blocked staging/test-only signal" in bot_source, "live execution blocked for advisory messages")
 
-    profile = ROOT / "SignalRankAI_v1.2.9_Railway_Full_System_Live_Paystack_Staging.env.example"
+    profile = ROOT / "SignalRankAI_v1.3.0_Railway_Full_System_Live_Paystack_Staging.env.example"
     require(profile.exists(), "current Railway staging profile retains v1.2.5 controls")
     print("v1.2.5 compatibility verification complete")
     return 0

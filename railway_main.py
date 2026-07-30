@@ -2210,7 +2210,27 @@ async def _database_readiness_check() -> dict[str, object]:
                                   AND i.indisunique IS TRUE
                                   AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%status%'
                                   AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%active%'
-                            ) AS active_guard_present
+                            ) AS active_guard_present,
+                            (
+                                SELECT COUNT(*)
+                                FROM (
+                                    SELECT signal_id
+                                    FROM outcomes
+                                    GROUP BY signal_id
+                                    HAVING COUNT(*) > 1
+                                ) AS duplicate_outcomes
+                            ) AS outcome_duplicate_groups,
+                            EXISTS (
+                                SELECT 1
+                                FROM pg_index AS i
+                                JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                                JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                                JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                                WHERE ns.nspname = current_schema()
+                                  AND tbl.relname = 'outcomes'
+                                  AND idx.relname = 'uq_outcomes_signal_id'
+                                  AND i.indisunique IS TRUE
+                            ) AS outcome_guard_present
                         """
                     )
                 ),
@@ -2251,12 +2271,30 @@ async def _database_readiness_check() -> dict[str, object]:
                 "revision": deployed,
             }
 
+        outcome_duplicate_groups = int(row.get("outcome_duplicate_groups") or 0)
+        if outcome_duplicate_groups:
+            return {
+                "ok": False,
+                "detail": "duplicate_outcome_projections",
+                "duplicate_groups": outcome_duplicate_groups,
+                "revision": deployed,
+            }
+        if not bool(row.get("outcome_guard_present")):
+            return {
+                "ok": False,
+                "detail": "outcome_projection_guard_missing",
+                "index": "uq_outcomes_signal_id",
+                "revision": deployed,
+            }
+
         return {
             "ok": True,
             "detail": "reachable",
             "revision": deployed,
             "critical_schema": column_flags,
             "active_signal_guard": True,
+            "outcome_projection_guard": True,
+            "outcome_duplicate_groups": 0,
             "probe_timeout_seconds": timeout_s,
         }
     except TimeoutError:
@@ -2304,6 +2342,102 @@ async def _redis_url_readiness_check(url: str, *, label: str) -> dict[str, objec
                 logger.debug("[readyz] redis client close failed", exc_info=True)
 
 
+def _is_unconfigured_runtime_value(value: object) -> bool:
+    """Return True for empty/example values that must never pass production readiness."""
+    raw = str(value or "").strip().strip('"').strip("'")
+    if not raw:
+        return True
+    lowered = raw.lower()
+    if raw.startswith("<") and raw.endswith(">"):
+        return True
+    return lowered in {
+        "changeme",
+        "change-me",
+        "replace-me",
+        "placeholder",
+        "todo",
+        "none",
+        "null",
+    }
+
+
+def _production_cutover_check() -> dict[str, object]:
+    """Reject accidental staging, placeholder, or restricted production deployments."""
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    violations: list[str] = []
+    if environment not in {"production", "prod"}:
+        violations.append("environment_not_production")
+    if _env_bool("PUBLIC_TESTING_MODE", False):
+        violations.append("public_testing_enabled")
+    if _env_bool("FULL_SYSTEM_STAGING_TEST_MODE", False) or _env_bool(
+        "FULL_SYSTEM_STAGING_TEST_ACTIVE", False
+    ):
+        violations.append("staging_test_mode_enabled")
+    if str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip():
+        violations.append("delivery_allowlist_not_empty")
+    if _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
+        violations.append("resend_allowlist_only")
+    if not _env_bool("FREE_SIGNAL_DISTRIBUTION_ENABLED", True):
+        violations.append("free_distribution_disabled")
+    if not _env_bool("RUN_ENGINE_LOOP", True):
+        violations.append("engine_loop_disabled")
+    if not _env_bool("RUN_WORKER_LOOP", True):
+        violations.append("worker_loop_disabled")
+
+    required_values = {
+        "DATABASE_URL": os.getenv("DATABASE_URL"),
+        "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN"),
+        "TELEGRAM_WEBHOOK_SECRET": os.getenv("TELEGRAM_WEBHOOK_SECRET"),
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+        "ENCRYPTION_KEY": os.getenv("ENCRYPTION_KEY"),
+        "STATE_REDIS_URL": os.getenv("STATE_REDIS_URL") or os.getenv("REDIS_URL"),
+        "DELIVERY_REDIS_URL": os.getenv("DELIVERY_REDIS_URL"),
+    }
+    for name, value in required_values.items():
+        if _is_unconfigured_runtime_value(value):
+            violations.append(f"missing_or_placeholder:{name}")
+
+    owner_value = (
+        os.getenv("OWNER_IDS")
+        or os.getenv("OWNER_TELEGRAM_IDS")
+        or os.getenv("OWNER_TELEGRAM_ID")
+        or os.getenv("TELEGRAM_OWNER_ID")
+    )
+    if _is_unconfigured_runtime_value(owner_value):
+        violations.append("missing_or_placeholder:OWNER_TELEGRAM_ID")
+
+    state_url = str(required_values["STATE_REDIS_URL"] or "").strip()
+    delivery_url = str(required_values["DELIVERY_REDIS_URL"] or "").strip()
+    if state_url and delivery_url and state_url == delivery_url:
+        violations.append("state_and_delivery_redis_not_distinct")
+
+    if _env_bool("DEMO_EXECUTION_ENABLED", False) and _is_unconfigured_runtime_value(
+        os.getenv("META_API_TOKEN")
+    ):
+        violations.append("missing_or_placeholder:META_API_TOKEN")
+
+    if _env_bool("PAYMENTS_ENABLED", False) or _env_bool("PAYMENTS_PUBLIC_ENABLED", False):
+        paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
+        paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
+        if _is_unconfigured_runtime_value(paystack_secret) or not paystack_secret.startswith("sk_live_"):
+            violations.append("paystack_live_secret_invalid")
+        if _is_unconfigured_runtime_value(paystack_public) or not paystack_public.startswith("pk_live_"):
+            violations.append("paystack_live_public_invalid")
+
+    return {
+        "ok": not violations,
+        "detail": "public_production" if not violations else ",".join(violations),
+        "environment": environment or "unknown",
+        "audience": "global" if not str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip() else "restricted",
+    }
+
+
 def _production_readiness_required() -> bool:
     environment = str(
         os.getenv("APP_ENV")
@@ -2336,6 +2470,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "database": database,
         "state_redis": state_redis,
         "delivery_redis": delivery_redis,
+        "production_cutover": _production_cutover_check(),
     }
 
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
