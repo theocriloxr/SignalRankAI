@@ -1,12 +1,11 @@
 from pathlib import Path
 
 
-def test_updated_signal_jump_button_uses_url_not_callback():
+def test_updated_signal_jump_button_uses_durable_open_signal_callback():
     source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
-    snippet = source.split('InlineKeyboardButton(\n                        "Go to signal"', 1)[1].split(")]]", 1)[0]
-
-    assert "url=_build_signal_message_link" in snippet
-    assert "callback_data" not in snippet
+    assert '"Open updated signal"' in source
+    assert 'callback_data=_signal_callback_data("open_signal_", signal_id)' in source
+    assert '"Go to signal"' not in source
 
 
 def test_tp_notification_formatter_has_asset_and_ref_fallbacks():

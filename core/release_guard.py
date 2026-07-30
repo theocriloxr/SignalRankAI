@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
 from core.env import SafetyFlags, env_bool, env_int
+from core.financial_activation import evaluate_financial_activation
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,10 +135,12 @@ def evaluate_release(
 ) -> ReleaseReport:
     flags = safety_flags or SafetyFlags.from_env()
     supplied = dict(evidence or {})
+    financial = evaluate_financial_activation()
     checks = [
-        GuardCheck("auto_trading_disabled", not flags.auto_trade_enabled, "AUTO_TRADE_ENABLED is off"),
-        GuardCheck("copy_trading_disabled", not flags.copy_trade_enabled, "COPY_TRADE_ENABLED is off"),
-        GuardCheck("real_payouts_disabled", not _flag("REAL_PAYOUTS_ENABLED"), "real payouts are disabled"),
+        GuardCheck("auto_trading_safe", not flags.auto_trade_enabled or financial.ok, "AUTO trading is off or its full live-financial contract passes"),
+        GuardCheck("copy_trading_safe", not flags.copy_trade_enabled or financial.ok, "COPY trading is off or its full live-financial contract passes"),
+        GuardCheck("real_payouts_safe", not flags.real_payouts_enabled or financial.ok, "real payouts are off or their manual-approval contract passes"),
+        GuardCheck("financial_activation_contract", financial.ok, "live-money dependency graph is valid"),
         GuardCheck(
             "stale_blocking_enabled",
             supplied.get("stale_blocking_enabled", False) is True,
@@ -159,11 +162,13 @@ def evaluate_release(
             "provenance-separated metrics require explicit verification evidence",
         ),
         GuardCheck(
-            "payments_limited",
+            "payments_configured",
             not flags.payments_enabled
             or _flag("PAYMENTS_PUBLIC_TEST_MODE", False)
-            or not _flag("PAYMENTS_PUBLIC_ENABLED", False),
-            "payments disabled, private, or explicit test mode",
+            or not _flag("PAYMENTS_PUBLIC_ENABLED", False)
+            or (str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().startswith("sk_live_")
+                and str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().startswith("pk_live_")),
+            "public payments require a live Paystack key pair",
         ),
         GuardCheck(
             "no_secret_leakage",
@@ -205,8 +210,9 @@ def public_test_status(*, evidence: Mapping[str, Any] | None = None) -> dict[str
     return {
         "public_testing_mode": _flag("PUBLIC_TESTING_MODE", False),
         "verdict": report.verdict,
-        "auto_trading_disabled": not flags.auto_trade_enabled,
-        "copy_trading_disabled": not flags.copy_trade_enabled,
+        "auto_trading_enabled": flags.auto_trade_enabled,
+        "copy_trading_enabled": flags.copy_trade_enabled,
+        "financial_activation": evaluate_financial_activation().as_dict(),
         "payments_enabled": flags.payments_enabled,
         "real_payouts_enabled": _flag("REAL_PAYOUTS_ENABLED", False),
         "checks": [asdict(check) for check in report.checks],

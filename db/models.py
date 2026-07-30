@@ -427,6 +427,80 @@ class MT5Execution(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class BrokerExecution(Base):
+    """Provider-neutral, idempotent execution ledger."""
+
+    __tablename__ = "broker_executions"
+    __table_args__ = (
+        UniqueConstraint("provider", "idempotency_key", name="uq_broker_execution_provider_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    provider: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    account_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_order_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    provider_client_order_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="reserved", index=True, nullable=False)
+    error_code: Mapped[Optional[str]] = mapped_column(String(128))
+    realized_pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    tier_at_execution: Mapped[str] = mapped_column(String(16), default="vip", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PayoutAccountRecord(Base):
+    __tablename__ = "payout_accounts"
+    __table_args__ = (UniqueConstraint("user_id", "currency", name="uq_payout_account_user_currency"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN", nullable=False)
+    bank_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    account_number_encrypted: Mapped[str] = mapped_column(String(512), nullable=False)
+    account_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    account_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    recipient_code_encrypted: Mapped[Optional[str]] = mapped_column(String(512))
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PayoutRequestRecord(Base):
+    __tablename__ = "payout_requests"
+    __table_args__ = (UniqueConstraint("reference", name="uq_payout_request_reference"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    payout_account_id: Mapped[int] = mapped_column(ForeignKey("payout_accounts.id"), nullable=False)
+    amount_kobo: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="requested", index=True, nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(String(256))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    approved_by_telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    provider_transfer_code: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    failure_code: Mapped[Optional[str]] = mapped_column(String(128))
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class VIPWaitlist(Base):
     __tablename__ = "vip_waitlist"
 
@@ -486,7 +560,12 @@ class ProcessedWebhookEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64))
     reference: Mapped[Optional[str]] = mapped_column(String(128))
     payload_hash: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(String(512))
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 

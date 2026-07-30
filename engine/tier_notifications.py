@@ -8,6 +8,8 @@ from utils.timeutils import now_utc_naive
 import os
 import logging
 from typing import Dict, List, Optional
+
+from utils.trade_levels import format_price_level, parse_price_levels
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -208,57 +210,64 @@ class TierNotificationManager:
         current_profit_pct: float,
         current_market_price: float = None
     ) -> str:
-        """
-        Enhanced TP hit notification: includes full signal data, which TP was hit, current market price, and partial profit advice.
-        """
-        is_premium = user_tier in ['premium', 'vip', 'admin', 'owner']
-        symbol = signal.get('symbol') or signal.get('asset') or signal.get('pair') or 'UNKNOWN'
-        direction = signal.get('direction', '').upper()
-        entry = signal.get('entry')
-        stop = signal.get('stop') or signal.get('stop_loss') or signal.get('sl')
-        tps = signal.get('targets') or signal.get('tp_levels') or signal.get('take_profit') or []
-        if isinstance(tps, (float, int)):
-            tps = [tps]
-        timeframe = signal.get('timeframe', '')
-        msg = f"🎯 TP{tp_level} HIT: {symbol} ({timeframe})\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        msg += f"Direction: {direction}\nEntry: {entry}\nStop Loss: {stop}\n"
-        if tps:
-            for i, tp in enumerate(tps, 1):
-                if isinstance(tp, dict):
-                    price = tp.get('price', tp.get('tp', ''))
-                else:
-                    price = tp
-                msg += f"TP{i}: {price}\n"
-        msg += f"\nTP HIT: TP{tp_level}\n"
+        """Format one deterministic TP alert from any legacy target payload."""
+        is_premium = str(user_tier or "free").lower() in {
+            "premium", "vip", "admin", "owner"
+        }
+        symbol = signal.get("symbol") or signal.get("asset") or signal.get("pair") or "UNKNOWN"
+        direction = str(signal.get("direction") or "").upper()
+        timeframe = str(signal.get("timeframe") or "").strip()
+        entry = signal.get("entry") or signal.get("entry_price")
+        stop = signal.get("stop") or signal.get("stop_loss") or signal.get("sl")
+        targets = parse_price_levels(
+            signal.get("targets") or signal.get("tp_levels") or signal.get("take_profit"),
+            max_levels=10,
+        )
+        level = max(1, int(tp_level or 1))
+        profit = float(current_profit_pct or 0.0)
+        profit_text = f"{profit:+.2f}%"
+        ref = str(signal.get("id") or signal.get("signal_id") or signal.get("ref") or "N/A")
+
+        header_tf = f" • {timeframe}" if timeframe else ""
+        lines = [
+            f"🎯 TP{level} HIT — {symbol} {direction}{header_tf}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"Entry: {format_price_level(entry)}",
+            f"Stop Loss: {format_price_level(stop)}",
+        ]
+        if targets:
+            lines.append("")
+            lines.append("Targets")
+            for index, target in enumerate(targets, 1):
+                marker = "✅" if index <= level else "⏳"
+                lines.append(f"{marker} TP{index}: {format_price_level(target)}")
+
+        lines.append("")
         if current_market_price is not None:
-            msg += f"Current Market Price: {current_market_price}\n"
-        msg += f"Profit: +{current_profit_pct:.2f}%\n"
-        # Partial profit advice
+            lines.append(f"Current price: {format_price_level(current_market_price)}")
+        lines.append(f"Signal P/L: {profit_text}")
+
         if is_premium:
-            percent = 33 if tp_level == 1 else 50 if tp_level == 2 else 100
-            msg += f"\n💡 Suggestion: Take {percent}% partial profit at TP{tp_level}."
-            if tp_level == 1:
-                msg += " Move SL to break-even."
-            elif tp_level == 2:
-                msg += " Tighten SL to TP1 level."
-            elif tp_level == 3:
-                msg += " Consider closing the rest of your position."
+            if level == 1:
+                advice = "Consider securing the planned TP1 portion and moving protection to break-even."
+            elif level == 2:
+                advice = "Consider securing the planned TP2 portion and protecting the remainder above TP1."
+            else:
+                advice = "The final planned target has been reached; consider closing the remaining position."
+            lines.extend(["", f"💡 {advice}"])
         else:
-            msg += "\nUpgrade to Premium for detailed advice."
-        # Remaining TPs
-        if tps and tp_level < len(tps):
-            remaining_tps = []
-            for i, tp in enumerate(tps, 1):
-                if i > tp_level:
-                    price = tp.get('price', tp.get('tp', '')) if isinstance(tp, dict) else tp
-                    remaining_tps.append(f"TP{i} {price}")
-            if remaining_tps:
-                msg += f"\n📊 Remaining TPs: {' | '.join(remaining_tps)}"
-        ref = str(signal.get('id') or signal.get('signal_id') or signal.get('ref') or 'N/A')
-        msg += f"\n\n📋 Ref: {ref[:8]}"
-        return msg
-    
+            lines.extend(["", "Upgrade to Premium for position-management guidance."])
+
+        remaining = [
+            f"TP{index} {format_price_level(target)}"
+            for index, target in enumerate(targets, 1)
+            if index > level
+        ]
+        if remaining:
+            lines.append(f"📊 Remaining: {' | '.join(remaining)}")
+        lines.extend(["", f"📋 Ref: {ref[:12]}"])
+        return "\n".join(lines)
+
     def format_sl_hit_notification(
         self,
         signal: Dict,

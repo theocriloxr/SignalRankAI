@@ -81,7 +81,7 @@ async def test_dca_routes_through_canonical_gate_with_original_delivery_evidence
     route = AsyncMock(
         return_value=SimpleNamespace(success=True, order_id="order-dca", error=None)
     )
-    monkeypatch.setattr("services.mt5_signal_router.route_signal_to_mt5", route)
+    monkeypatch.setattr("services.broker_signal_router.route_signal_to_broker", route)
 
     ok = await manager.execute_dca(
         "sig-dca", 7, "dca1", 96.0, signal=_signal()

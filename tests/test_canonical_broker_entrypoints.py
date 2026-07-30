@@ -103,7 +103,8 @@ def test_telegram_bot_has_no_direct_broker_adapter_call_or_micro_lot_fallback() 
     assert "_exec_vol = 0.01" not in source
     assert "equity) or 100.0" not in source
     assert 'execution_mode="manual_confirmed"' in source
-    assert 'execution_mode="auto"' in source
+    assert 'from services.broker_signal_router import route_signal_to_broker' in source
+    assert 'execution_mode=mode' in source
 
 @pytest.mark.asyncio
 async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypatch) -> None:

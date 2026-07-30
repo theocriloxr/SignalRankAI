@@ -37,6 +37,13 @@ REQUIRED_FILES = (
     "core/automaton.py",
     "ml/evidence.py",
     "payments/receipt_service.py",
+    "payments/payout_service.py",
+    "services/bybit_client.py",
+    "services/bybit_signal_router.py",
+    "services/broker_signal_router.py",
+    "core/financial_activation.py",
+    "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
+    "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example",
     "configs/env/railway-hobby-full-advisory.env.example",
     "configs/env/railway-hobby-owner-beta.env.example",
     "configs/env/railway-hobby-paper-demo.env.example",
@@ -55,6 +62,15 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
     "STATE_REDIS_URL",
     "DELIVERY_REDIS_URL",
     "RESOURCE_GUARD_ENABLED",
+    "LIVE_FINANCIAL_FEATURES_ENABLED",
+    "REAL_EXECUTION_ENABLED",
+    "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED",
+    "MT5_ALLOW_LIVE_ACCOUNTS",
+    "BYBIT_EXECUTION_ENABLED",
+    "REAL_PAYOUTS_ENABLED",
+    "PAYOUT_MANUAL_APPROVAL_REQUIRED",
     "APP_MEMORY_SOFT_RATIO",
     "APP_MEMORY_HARD_RATIO",
 )
@@ -123,6 +139,10 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
         + _read(root, "config.py")
         + "\n"
         + _read(root, "configs/env/railway-hobby-full-advisory.env.example")
+        + "\n"
+        + _read(root, "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example")
+        + "\n"
+        + _read(root, "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example")
     )
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
     add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")

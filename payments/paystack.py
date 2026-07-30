@@ -20,19 +20,29 @@ _DEFAULT_DURATIONS = {
     "PREMIUM_WEEKLY": 7,
     "PREMIUM_MONTHLY": 30,
     "PREMIUM_QUARTERLY": 90,
+    "PREMIUM_YEARLY": 365,
     "VIP_WEEKLY": 7,
     "VIP_MONTHLY": 30,
     "WEEKLY_PLAN": 7,
 }
 
 _PLAN_AMOUNTS_NGN = {
-    "PREMIUM_WEEKLY": 8000,
-    "PREMIUM_MONTHLY": 24000,
-    "PREMIUM_QUARTERLY": 56000,
-    "VIP_WEEKLY": 16000,
-    "VIP_MONTHLY": 40000,
-    "WEEKLY_PLAN": 5000,
+    "PREMIUM_WEEKLY": int(os.getenv("PREMIUM_WEEKLY_PRICE_NGN", "8000") or 8000),
+    "PREMIUM_MONTHLY": int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000") or 24000),
+    "PREMIUM_QUARTERLY": int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000") or 56000),
+    "PREMIUM_YEARLY": int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000") or 192000),
+    "VIP_WEEKLY": int(os.getenv("VIP_WEEKLY_PRICE_NGN", "16000") or 16000),
+    "VIP_MONTHLY": int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")) or 40000),
+    "WEEKLY_PLAN": int(os.getenv("WEEKLY_PLAN_PRICE_NGN", "5000") or 5000),
 }
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
 
 def verify_signature(payload, signature):
     from payments.paystack_policy import verify_paystack_event_signature
@@ -56,10 +66,28 @@ async def process_event(event):
     if not isinstance(event, dict):
         return {"processed": False, "reason": "Invalid payment event"}
     event_type = event.get("event", "")
-    if event_type != "charge.success":
-        return {"processed": False, "reason": f"Unhandled event type: {event_type}"}
-    
     data = event.get("data", {})
+    if event_type in {"transfer.success", "transfer.failed", "transfer.reversed"}:
+        if not isinstance(data, dict):
+            return {"processed": False, "reason": "Invalid transfer data"}
+        from payments.payout_service import apply_transfer_event
+        applied = await apply_transfer_event(str(event_type), data)
+        return {"processed": bool(applied), "type": "payout_transfer", "event": event_type}
+    if event_type == "subscription.disable":
+        applied = await process_subscription_disable(dict(data or {}))
+        return {"processed": bool(applied), "type": "subscription_disable"}
+    if event_type in {
+        "subscription.create",
+        "subscription.not_renew",
+        "invoice.payment_failed",
+        "customeridentification.success",
+    }:
+        # These lifecycle notices do not grant entitlements. They are terminal
+        # acknowledgements so the durable inbox does not retry them forever.
+        return {"processed": False, "ignored": True, "reason": f"No entitlement mutation for {event_type}"}
+    if event_type != "charge.success":
+        return {"processed": False, "ignored": True, "reason": f"Unhandled event type: {event_type}"}
+    
     if not isinstance(data, dict):
         return {"processed": False, "reason": "Invalid payment data"}
     metadata = data.get("metadata", {})
@@ -99,6 +127,10 @@ async def process_event(event):
         return {"processed": False, "reason": "Invalid payment amount"}
     if amount <= 0:
         return {"processed": False, "reason": "Invalid payment amount"}
+
+    if _env_bool("PAYSTACK_VERIFY_TRANSACTION_ON_WEBHOOK", False):
+        if not await verify_payment(reference, float(amount)):
+            return {"processed": False, "reason": "Provider transaction verification failed"}
 
     from payments.paystack_policy import evaluate_paystack_operation
     paystack_policy = evaluate_paystack_operation(
@@ -145,26 +177,81 @@ async def process_event(event):
                 "reason": "Payment amount does not match extra-signal catalog",
             }
         try:
+            from db.models import PaymentEvent
+            from db.pg_features import record_payment_event
+            from db.session import get_session
+            from sqlalchemy import select
+            async with get_session(label="payment.extra_signals", timeout_seconds=10.0) as session:
+                existing_event = (await session.execute(
+                    select(PaymentEvent).where(PaymentEvent.paystack_reference == reference)
+                )).scalar_one_or_none()
+                if existing_event is None:
+                    existing_event = await record_payment_event(
+                        session,
+                        telegram_user_id=int(telegram_user_id),
+                        paystack_reference=reference,
+                        amount_ngn=amount,
+                        currency=currency,
+                        kind="extra_signals",
+                        duration_days=1,
+                        meta={"extra_count": extra_count, "verified_provider": True, "credit_applied": False},
+                    )
+                    await session.commit()
             from core.redis_state import state
-            state.add_extra_signals_sync(int(telegram_user_id), int(extra_count), ttl_seconds=86400)
-        except Exception:
-            pass
+            credited = state.add_extra_signals_once_sync(
+                int(telegram_user_id), int(extra_count), reference, ttl_seconds=86400
+            )
+            if credited is None:
+                return {"processed": False, "reason": "Extra-signal credit storage unavailable"}
+            async with get_session(label="payment.extra_signals.complete", timeout_seconds=10.0) as session:
+                row = (await session.execute(
+                    select(PaymentEvent).where(PaymentEvent.paystack_reference == reference).with_for_update()
+                )).scalar_one()
+                row.meta = {**dict(row.meta or {}), "credit_applied": True, "credited_total": int(credited)}
+                await session.commit()
+        except Exception as exc:
+            return {"processed": False, "reason": f"Extra-signal credit failed: {type(exc).__name__}"}
         return {"processed": True, "type": "extra_signals", "count": extra_count}
     
     # Activate subscription
     try:
+        from db.models import PaymentEvent
+        from db.pg_features import record_payment_event
         from db.session import get_session
+        from sqlalchemy import select
         # Use the repository primitive as the single entitlement authority.
         # The Telegram helper historically exposed an incompatible signature
         # and is not present in minimal web deployments.
         from db.repository import activate_subscription
-        async with get_session() as session:
+        async with get_session(label="payment.subscription", timeout_seconds=10.0) as session:
+            existing_event = (await session.execute(
+                select(PaymentEvent).where(PaymentEvent.paystack_reference == reference)
+            )).scalar_one_or_none()
+            if existing_event is not None:
+                return {
+                    "processed": True,
+                    "idempotent": True,
+                    "tier": existing_event.tier or str(tier).lower(),
+                    "days": existing_event.duration_days or int(duration_days),
+                }
+            await record_payment_event(
+                session,
+                telegram_user_id=int(telegram_user_id),
+                paystack_reference=reference,
+                amount_ngn=amount,
+                currency=currency,
+                kind="subscription",
+                tier=str(tier).lower(),
+                duration_days=int(duration_days),
+                plan_code=str(data.get("plan", {}).get("plan_code") or metadata.get("plan_code") or "") or None,
+                meta={"event": event_type, "verified_provider": True},
+            )
             await activate_subscription(
                 session,
                 telegram_user_id=int(telegram_user_id),
                 tier=tier,
                 duration_days=int(duration_days),
-                paystack_reference=str(data.get("reference") or "") or None,
+                paystack_reference=reference,
                 meta={
                     "provider": "paystack",
                     "amount_ngn": amount,
@@ -174,6 +261,10 @@ async def process_event(event):
             )
             await session.commit()
     except Exception as e:
+        # The payment_events unique reference is the authoritative concurrency
+        # guard. A concurrent duplicate cannot partially extend entitlement.
+        if type(e).__name__ == "IntegrityError":
+            return {"processed": True, "idempotent": True, "tier": str(tier).lower(), "days": int(duration_days)}
         return {"processed": False, "reason": str(e)}
     
     # Send Telegram confirmation (MarkdownV2 escaped)
@@ -268,7 +359,7 @@ async def process_subscription_create(data: dict) -> bool:
     Subscription lifecycle notices are acknowledged for idempotent delivery;
     they cannot activate a plan on their own.
     """
-    return False
+    return True
 
 
 async def process_subscription_disable(data: dict) -> bool:

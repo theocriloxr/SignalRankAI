@@ -107,6 +107,10 @@ def test_exchange_link_stores_masked_encrypted_credentials() -> None:
             patch("web.app.get_session", return_value=session),
             patch("services.security.is_encryption_available", return_value=True),
             patch("services.security.encrypt_secret", side_effect=lambda value: f"enc:{value}"),
+            patch("services.bybit_client.BybitV5Client.verify_trade_only_key", return_value={
+                "read": True, "trade": True, "withdraw": False,
+                "internal_transfer": False, "ip_bound": True, "permissions": ["order", "position"],
+            }),
         ):
             res = client.post(
                 "/broker/exchange/link",

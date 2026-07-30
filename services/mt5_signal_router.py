@@ -413,106 +413,20 @@ class MT5SignalRouter:
         tier: str,
         execution_mode: str,
     ) -> tuple[bool, str, int | None]:
-        """Atomically reserve one user execution slot before broker I/O."""
-        try:
-            from db.models import MT5Execution, User
-            from db.session import get_session
-            from sqlalchemy import func, select
+        """Delegate MT5 and Bybit to one shared quota/drawdown ledger."""
+        from services.execution_quota import reserve_user_execution_quota
 
-            now = self._utc_now_naive()
-            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            async with get_session() as session:
-                user = (
-                    await session.execute(
-                        select(User)
-                        .where(User.telegram_user_id == int(user_id))
-                        .with_for_update()
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                if user is None:
-                    await session.rollback()
-                    return False, "user_profile_missing", None
-
-                reset_at = getattr(user, "daily_executions_reset_at", None)
-                if reset_at is None or reset_at.date() < now.date():
-                    user.daily_executions_today = 0
-                    user.daily_executions_reset_at = now
-
-                realized = await session.execute(
-                    select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0))
-                    .where(
-                        MT5Execution.user_id == int(user.id),
-                        MT5Execution.executed_at >= day_start,
-                    )
-                )
-                pnl_today = float(realized.scalar_one_or_none() or 0.0)
-                drawdown_cap = float(
-                    getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0
-                )
-                if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
-                    await session.rollback()
-                    return False, "daily_drawdown_guard", int(user.id)
-
-                current = int(getattr(user, "daily_executions_today", 0) or 0)
-                tier_upper = str(tier or "FREE").upper()
-                if tier_upper == "PREMIUM":
-                    limit = max(
-                        0, int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3)
-                    )
-                    if limit == 0 or current >= limit:
-                        await session.rollback()
-                        return False, "premium_daily_execution_limit", int(user.id)
-
-                if str(execution_mode).lower() in {ExecutionMode.AUTO, "live"}:
-                    auto_limit = int(
-                        getattr(user, "auto_signals_daily_limit", 0) or 0
-                    )
-                    if auto_limit == 0:
-                        await session.rollback()
-                        return False, "auto_execution_limit_disabled", int(user.id)
-                    if auto_limit > 0 and current >= auto_limit:
-                        await session.rollback()
-                        return False, "auto_daily_execution_limit", int(user.id)
-
-                user.daily_executions_today = current + 1
-                user.daily_executions_reset_at = now
-                await session.commit()
-                return True, "", int(user.id)
-        except Exception:
-            logger.warning(
-                "[SignalRouter] execution quota reservation unavailable; blocking",
-                exc_info=True,
-            )
-            return False, "execution_quota_unavailable", None
+        return await reserve_user_execution_quota(
+            int(user_id),
+            tier=tier,
+            execution_mode=execution_mode,
+        )
 
     async def _release_user_execution_quota(self, user_db_id: int | None) -> None:
-        if not user_db_id:
-            return
-        try:
-            from db.models import User
-            from db.session import get_session
-            from sqlalchemy import select
+        """Release only a definite pre-order rejection through the shared ledger."""
+        from services.execution_quota import release_user_execution_quota
 
-            async with get_session() as session:
-                user = (
-                    await session.execute(
-                        select(User)
-                        .where(User.id == int(user_db_id))
-                        .with_for_update()
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                if user is not None:
-                    user.daily_executions_today = max(
-                        0, int(getattr(user, "daily_executions_today", 0) or 0) - 1
-                    )
-                await session.commit()
-        except Exception:
-            logger.warning(
-                "[SignalRouter] failed to release execution quota; reconciliation required",
-                exc_info=True,
-            )
+        await release_user_execution_quota(user_db_id)
 
     async def _record_execution_ledger(
         self,
@@ -876,6 +790,7 @@ class MT5SignalRouter:
                 resources_available=self._resource_pressure_clear(),
                 reconciliation_ready=bool(reconciliation.get("ready")),
                 kill_switch=kill_switch,
+                broker_provider="mt5",
             )
             idempotency_key = gate_request.key()
 

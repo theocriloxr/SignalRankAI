@@ -198,4 +198,4 @@ def test_canonical_migration_head_is_active_guard_reconcile():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["0028_outcome_projection_guard"]
+    assert script.get_heads() == ["0029_live_financial_ledger"]

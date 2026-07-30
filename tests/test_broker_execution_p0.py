@@ -13,6 +13,7 @@ from execution.service import ExecutionGate, ExecutionRequest
 
 def _enabled_safety_flags() -> SafetyFlags:
     return SafetyFlags(
+        auto_execution_enabled=True,
         auto_trade_enabled=True,
         copy_trade_enabled=True,
         payments_enabled=False,

@@ -61,7 +61,16 @@ def approve_payout(request: PayoutRequest, *, approver_id: int, owner_id: int) -
 
 
 def payout_readiness_status() -> dict[str, Any]:
-    return {"real_payouts_enabled": False, "manual_approval_required": True, "trading_capital_separated": True, "paper_pnl_is_not_cash": True}
+    from core.financial_activation import evaluate_financial_activation
+    report = evaluate_financial_activation()
+    return {
+        "real_payouts_enabled": bool(report.payouts_requested and report.ok),
+        "manual_approval_required": True,
+        "automatic_payouts_supported": False,
+        "trading_capital_separated": True,
+        "paper_pnl_is_not_cash": True,
+        "activation": report.as_dict(),
+    }
 
 
 __all__ = ["PayoutAccount", "PayoutRequest", "PayoutStatus", "approve_payout", "create_payout_request", "payout_readiness_status"]

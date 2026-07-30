@@ -158,19 +158,45 @@ def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
         "model_unique_constraint": model_unique,
     }
 
+def audit_live_financial_contract(root: Path = ROOT) -> dict[str, object]:
+    """Verify execution/payout tables and idempotency constraints exist in head."""
+    migration = (root / "db/migrations/versions/0029_live_financial_ledger.py").read_text(encoding="utf-8", errors="replace")
+    required_markers = (
+        '"broker_executions"',
+        '"payout_accounts"',
+        '"payout_requests"',
+        'uq_broker_execution_provider_key',
+        'uq_payout_account_user_currency',
+        'uq_payout_request_reference',
+    )
+    missing = [marker for marker in required_markers if marker not in migration]
+    try:
+        from db.models import BrokerExecution, PayoutAccountRecord, PayoutRequestRecord
+        model_tables = {BrokerExecution.__tablename__, PayoutAccountRecord.__tablename__, PayoutRequestRecord.__tablename__}
+    except Exception as exc:
+        return {"ok": False, "missing": missing, "error": f"model_import:{type(exc).__name__}"}
+    expected_tables = {"broker_executions", "payout_accounts", "payout_requests"}
+    if model_tables != expected_tables:
+        missing.extend(sorted(expected_tables - model_tables))
+    return {"ok": not missing, "missing": missing}
+
+
 def main() -> int:
     result = audit_versions()
     signal_contract = audit_signal_runtime_contract()
     rejected_contract = audit_ml_rejected_runtime_contract()
     outcome_contract = audit_outcome_projection_contract()
+    financial_contract = audit_live_financial_contract()
     result["signal_runtime_contract"] = signal_contract
     result["ml_rejected_runtime_contract"] = rejected_contract
     result["outcome_projection_contract"] = outcome_contract
+    result["live_financial_contract"] = financial_contract
     result["ok"] = bool(
         result["ok"]
         and signal_contract["ok"]
         and rejected_contract["ok"]
         and outcome_contract["ok"]
+        and financial_contract["ok"]
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1

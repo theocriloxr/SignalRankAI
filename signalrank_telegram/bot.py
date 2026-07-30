@@ -75,7 +75,7 @@ def resend_unsent_signals_job():
 
     try:
         try:
-            if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", True):
+            if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False):
                 fanout_lock = state.cache_get_sync("engine_delivery_fanout:active")
                 if fanout_lock:
                     logger.info("[resend] skipped: engine delivery fanout active")
@@ -223,7 +223,7 @@ async def _resend_unsent_signals_async():
             ordered_others = [uid for uid in user_ids if uid != primary_owner]
             owner_slots = 1 if primary_owner in user_ids else 0
             rotating_slots = max(1, max_users - owner_slots)
-            interval_seconds = max(60, int(os.getenv("RESEND_INTERVAL_SECONDS", "300") or 300))
+            interval_seconds = max(15, int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "30")) or 30))
             bucket = int(time.time() // interval_seconds)
             start = (bucket * rotating_slots) % max(1, len(ordered_others))
             rotated = (ordered_others[start:] + ordered_others[:start])[:rotating_slots]
@@ -1712,6 +1712,85 @@ async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = No
         return None
 
 
+async def _render_signal_card_for_user(
+    signal_ref: str,
+    *,
+    telegram_user_id: int,
+) -> tuple[dict, str, object] | None:
+    """Build a fresh authorized signal card for inline-button navigation.
+
+    Do not depend on the original Telegram message remaining editable or even
+    existing.  The database delivery proof authorizes the lookup, while the
+    latest formatter and keyboard are rebuilt for the current release.
+    """
+    payload = await _load_signal_payload(
+        str(signal_ref),
+        telegram_user_id=int(telegram_user_id),
+    )
+    if not payload:
+        return None
+
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier = str(resolve_user_tier(int(telegram_user_id)) or "free").lower()
+    except Exception:
+        tier = "free"
+
+    from signalrank_telegram.formatter import format_signal, format_signal_free_limited
+
+    display_tier = _display_tier_for_delivery(tier)
+    text = format_signal(payload, user_tier=tier, display_tier=display_tier)
+    if not text or not str(text).strip():
+        text = format_signal_free_limited(payload)
+    counts = await _load_signal_engagement_counts(str(payload.get("signal_id") or signal_ref))
+    keyboard = _build_signal_keyboard(
+        str(payload.get("signal_id") or signal_ref),
+        signal=payload,
+        counts=counts,
+    )
+    return payload, str(text), keyboard
+
+
+async def _send_signal_card_for_user(
+    bot: Bot,
+    *,
+    chat_id: int,
+    telegram_user_id: int,
+    signal_ref: str,
+    reply_to_message_id: int | None = None,
+) -> object | None:
+    """Send a new, fully interactive signal card for a confirmed recipient."""
+    rendered = await _render_signal_card_for_user(
+        str(signal_ref),
+        telegram_user_id=int(telegram_user_id),
+    )
+    if rendered is None:
+        return None
+    payload, text, keyboard = rendered
+    kwargs: dict = {
+        "parse_mode": "HTML",
+        "reply_markup": keyboard,
+        "disable_notification": False,
+    }
+    if reply_to_message_id:
+        kwargs["reply_to_message_id"] = int(reply_to_message_id)
+        kwargs["allow_sending_without_reply"] = True
+    message = await _telegram_send_message_guarded(
+        bot,
+        chat_id=int(chat_id),
+        text=str(text),
+        **kwargs,
+    )
+    logger.info(
+        "[open_signal_send_ok] user=%s signal=%s chat_id=%s message_id=%s",
+        telegram_user_id,
+        str(payload.get("signal_id") or signal_ref),
+        chat_id,
+        getattr(message, "message_id", None),
+    )
+    return message
+
+
 async def _load_signal_engagement_counts(signal_id: str) -> dict[str, int]:
     counts = {"taking_it": 0, "watching": 0}
     try:
@@ -1782,6 +1861,9 @@ def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: d
         InlineKeyboardButton("\U0001F4C8 Monitor", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
         InlineKeyboardButton("\U0001F50D Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ])
+    rows.append([
+        InlineKeyboardButton("\U0001F4CB Open Signal", callback_data=_signal_callback_data("open_signal_", callback_signal_id)),
+    ])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1789,10 +1871,15 @@ def _build_monitor_keyboard(signal_id: str):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     callback_signal_id = _compact_signal_callback_id(signal_id)
 
-    return InlineKeyboardMarkup([[ 
-        InlineKeyboardButton("\U0001F504 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
-        InlineKeyboardButton("\U0001F50D Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
-    ]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("\U0001F504 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+            InlineKeyboardButton("\U0001F50D Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
+        ],
+        [
+            InlineKeyboardButton("\U0001F4CB Open Signal", callback_data=_signal_callback_data("open_signal_", callback_signal_id)),
+        ],
+    ])
 
 
 def _build_signal_message_link(chat_id: int, message_id: int) -> str:
@@ -2236,8 +2323,8 @@ async def _deliver_or_update_signal_async(
 
                 jump_keyboard = InlineKeyboardMarkup(
                     [[InlineKeyboardButton(
-                        "Go to signal",
-                        url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
+                        "Open updated signal",
+                        callback_data=_signal_callback_data("open_signal_", signal_id),
                     )]]
                 )
                 proof = await _stash_telegram_delivery_receipt(
@@ -2531,12 +2618,20 @@ def _auto_execute_signal_if_enabled(
             return
 
         async def _run_auto():
-            from services.mt5_signal_router import route_signal_to_mt5
+            from db.models import User
+            from db.session import get_session
+            from services.broker_signal_router import route_signal_to_broker
+            from sqlalchemy import select
 
-            return await route_signal_to_mt5(
+            async with get_session(label="autoexec.mode", timeout_seconds=5.0) as session:
+                configured = (await session.execute(
+                    select(User.execution_mode).where(User.telegram_user_id == int(telegram_user_id))
+                )).scalar_one_or_none()
+            mode = "copy_trade" if str(configured or "").strip().lower() in {"copy", "copy_trade"} else "auto"
+            return await route_signal_to_broker(
                 dict(signal or {}),
                 int(telegram_user_id),
-                execution_mode="auto",
+                execution_mode=mode,
             )
 
         routed = run_sync(_run_auto())
@@ -2732,8 +2827,12 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
 
     highest_tp_hit = 0
     state_value = ""
+    observed_high = None
+    observed_low = None
     if lifecycle_row is not None:
         state_value = str(getattr(lifecycle_row, "state", "") or "")
+        observed_high = _safe_float(getattr(lifecycle_row, "max_price_seen", None), default=0.0) or None
+        observed_low = _safe_float(getattr(lifecycle_row, "min_price_seen", None), default=0.0) or None
         for index in (1, 2, 3):
             if getattr(lifecycle_row, f"tp{index}_hit_at", None) is not None:
                 highest_tp_hit = max(highest_tp_hit, index)
@@ -2746,6 +2845,48 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
                 pass
         if not state_value:
             state_value = outcome_status
+
+    # The older monitor labelled this field "Highest Target" and printed
+    # "None yet", which users reasonably interpreted as a missing highest
+    # market price.  Track and display the actual best observed price, then
+    # report TP progress as a separate field.  A trusted interactive quote is
+    # also folded into the observation so a delayed lifecycle write cannot make
+    # the card look stale.
+    if current_price is not None and quote_trusted:
+        observed_high = max(float(observed_high or current_price), float(current_price))
+        observed_low = min(float(observed_low or current_price), float(current_price))
+        try:
+            from engine.signal_lifecycle import update_lifecycle_observation
+
+            await asyncio.wait_for(
+                update_lifecycle_observation(payload, float(current_price)),
+                timeout=max(1.0, float(os.getenv("MONITOR_OBSERVATION_WRITE_TIMEOUT_SECONDS", "3") or 3)),
+            )
+        except Exception as observation_exc:
+            logger.debug("[monitor] observation write deferred signal=%s err=%s", signal_id, observation_exc)
+
+    if entry > 0:
+        observed_high = max(float(observed_high or entry), float(entry))
+        observed_low = min(float(observed_low or entry), float(entry))
+
+    best_price_seen = observed_low if direction == "short" else observed_high
+    adverse_price_seen = observed_high if direction == "short" else observed_low
+
+    # Infer reached targets from the best observed price as a defensive read
+    # repair.  The canonical tracker still persists the event, but monitor
+    # refreshes no longer show "None yet" after price has already crossed TP1.
+    if best_price_seen is not None:
+        for index, target in enumerate(tp_levels, start=1):
+            try:
+                reached = (
+                    float(best_price_seen) <= float(target)
+                    if direction == "short"
+                    else float(best_price_seen) >= float(target)
+                )
+            except Exception:
+                reached = False
+            if reached:
+                highest_tp_hit = max(highest_tp_hit, index)
 
     if outcome_row is not None and str(getattr(outcome_row, "status", "") or "").lower() not in {"tp1", "tp2"}:
         status = str(getattr(outcome_row, "status", "unknown")).upper()
@@ -2812,9 +2953,19 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
         f"\u2022 Live P/L: <b>{pnl_pct:+.2f}%</b>" if pnl_pct is not None else "\u2022 Live P/L: <b>N/A</b>",
         f"\u2022 Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "\u2022 Stop Loss: <b>N/A</b>",
         (
-            f"\u2022 Highest Target: <b>TP{highest_tp_hit}</b>"
+            f"\u2022 {'Lowest' if direction == 'short' else 'Highest'} Price Seen: <b>{float(best_price_seen):.5f}</b>"
+            if best_price_seen is not None
+            else f"\u2022 {'Lowest' if direction == 'short' else 'Highest'} Price Seen: <b>N/A</b>"
+        ),
+        (
+            f"\u2022 {'Highest' if direction == 'short' else 'Lowest'} Adverse Price Seen: <b>{float(adverse_price_seen):.5f}</b>"
+            if adverse_price_seen is not None
+            else f"\u2022 {'Highest' if direction == 'short' else 'Lowest'} Adverse Price Seen: <b>N/A</b>"
+        ),
+        (
+            f"\u2022 Highest TP Reached: <b>TP{highest_tp_hit}</b>"
             if highest_tp_hit
-            else "\u2022 Highest Target: <b>None yet</b>"
+            else "\u2022 Highest TP Reached: <b>None yet</b>"
         ),
         (
             f"\u2022 Next Target: <b>{float(next_target):.5f}</b>"
@@ -2822,7 +2973,7 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
             else "\u2022 Next Target: <b>Completed / N/A</b>"
         ),
         f"\u2022 Age: <b>{age_text}</b>",
-        f"\u2022 Updated: <b>{now_utc_naive().strftime('%H:%M UTC')}</b>",
+        f"\u2022 Updated: <b>{now_utc_naive().strftime('%H:%M:%S UTC')}</b>",
     ]
     return "\n".join(lines), is_active, payload.get("expires_at")
 
@@ -3123,6 +3274,7 @@ async def _send_signal_with_engagement_async(
             reply_markup=keyboard,
             parse_mode="HTML",
             rich_message=rich_html,
+            disable_notification=False,
         )
         try:
             from web.app import telegram_dispatch_latency_seconds
@@ -3162,7 +3314,13 @@ async def _send_signal_with_engagement_async(
         except Exception:
             pass
         # Fallback: send without buttons so the signal still reaches the user
-        return await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
+        return await _telegram_send_message_guarded(
+            bot,
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            disable_notification=False,
+        )
 
 
 async def _dispatch_vip_signal_webhook_after_receipt(
@@ -3306,6 +3464,7 @@ async def _send_message_with_retry(
         text=send_text,
         parse_mode=parse_mode,
         reply_markup=reply_markup,
+        disable_notification=False,
     )
 
 
@@ -6168,7 +6327,10 @@ def run_bot() -> None:
         if not signal_ref:
             await query.answer("No signal selected.", show_alert=True)
             return
-        await query.answer("Refreshing monitor\u2026", show_alert=False)
+        try:
+            await query.answer("Refreshing monitor\u2026", show_alert=False)
+        except Exception:
+            pass
         try:
             resolved_payload = await _load_signal_payload(signal_ref, telegram_user_id=int(user_id))
             if not resolved_payload:
@@ -6209,7 +6371,11 @@ def run_bot() -> None:
 
             runtime_key = f"monitor:{int(user_id)}:{signal_id}"
             message_id = None
-            async with _gs_mon() as session:
+            async with _gs_mon(
+                priority="interactive",
+                label="telegram.monitor.runtime_read",
+                timeout_seconds=max(2.0, float(os.getenv("MONITOR_DB_TIMEOUT_SECONDS", "6") or 6)),
+            ) as session:
                 state_row = (
                     await session.execute(
                         select(RuntimeState).where(RuntimeState.key == runtime_key).limit(1)
@@ -6248,9 +6414,12 @@ def run_bot() -> None:
                         # Original monitor message is no longer editable; recreate once.
                         message_id = None
                     else:
-                        # Transient edit failure: keep existing monitor message id to
-                        # avoid spawning duplicate monitor threads/messages.
-                        logger.debug(f"[monitor] edit_message_text transient failure: {exc}")
+                        # A refresh button must always produce visible feedback. If
+                        # Telegram cannot edit the tracked card, create a replacement
+                        # and atomically repoint RuntimeState instead of silently
+                        # leaving the old snapshot on screen.
+                        logger.warning("[monitor] edit failed; recreating signal=%s err=%s", signal_id[:16], exc)
+                        message_id = None
 
             if not message_id:
                 monitor_msg = await context.bot.send_message(
@@ -6258,10 +6427,17 @@ def run_bot() -> None:
                     text=text,
                     parse_mode="HTML",
                     reply_markup=_build_monitor_keyboard(signal_id),
+                    reply_to_message_id=int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None,
+                    allow_sending_without_reply=True,
+                    disable_notification=False,
                 )
                 message_id = int(monitor_msg.message_id)
 
-            async with _gs_mon() as session:
+            async with _gs_mon(
+                priority="interactive",
+                label="telegram.monitor.runtime_write",
+                timeout_seconds=max(2.0, float(os.getenv("MONITOR_DB_TIMEOUT_SECONDS", "6") or 6)),
+            ) as session:
                 state_row = (
                     await session.execute(
                         select(RuntimeState).where(RuntimeState.key == runtime_key).limit(1)
@@ -6280,11 +6456,27 @@ def run_bot() -> None:
                 state_row.updated_at = now_utc_naive()
                 await session.commit()
 
+            logger.info(
+                "[monitor_refresh_ok] user=%s signal=%s chat_id=%s message_id=%s active=%s",
+                user_id, signal_id[:16], chat_id, message_id, is_active,
+            )
+
             if not is_active:
-                await query.answer("Monitor captured final status.", show_alert=False)
+                try:
+                    await query.answer("Monitor captured final status.", show_alert=False)
+                except Exception:
+                    pass
         except Exception as exc:
-            logger.debug(f"[monitor] callback failed: {exc}")
-            await query.answer("\u26A0\uFE0F Could not open monitor right now.", show_alert=True)
+            logger.warning("[monitor] callback failed user=%s ref=%s err=%s", user_id, signal_ref, exc)
+            try:
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text="\u26A0\uFE0F Monitor refresh failed temporarily. The signal is still tracked; tap Refresh again.",
+                    reply_markup=_build_monitor_keyboard(signal_ref),
+                    disable_notification=False,
+                )
+            except Exception:
+                pass
 
     application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
@@ -6423,54 +6615,53 @@ def run_bot() -> None:
     async def _open_signal_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
-        if not raw:
-            await query.answer("Signal reference missing.", show_alert=True)
+        uid = int(getattr(getattr(update, "effective_user", None), "id", 0) or 0)
+        chat_id = int(getattr(getattr(update, "effective_chat", None), "id", 0) or 0)
+        if chat_id <= 0:
+            try:
+                chat_id = int(query.message.chat_id)
+            except Exception:
+                chat_id = uid
+        try:
+            await query.answer("Opening signal…", show_alert=False)
+        except Exception:
+            pass
+        if not raw or uid <= 0 or chat_id <= 0:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id or uid,
+                    text="⚠️ Signal reference missing. Use /signals to open a current signal.",
+                    disable_notification=False,
+                )
+            except Exception:
+                pass
             return
 
         try:
-            from sqlalchemy import select as _sel_os
-            from db.session import get_session as _gs_os
-            from db.models import ActiveSignalMessage as _ASM
-            from db.pg_features import get_or_create_user as _gocu_os
-
-            uid = int(getattr(update.effective_user, "id", 0) or 0)
-            if uid <= 0:
-                await query.answer("Unable to resolve your account.", show_alert=True)
-                return
-
-            await query.answer("Opening signal\u2026")
-
-            async with _gs_os(interactive=True) as _s:
-                _u = await _gocu_os(_s, telegram_user_id=uid)
-                _ref = str(raw).strip()
-                _stmt = (
-                    _sel_os(_ASM)
-                    .where(
-                        _ASM.user_id == int(_u.id),
-                        _ASM.is_active.is_(True),
-                    )
-                    .order_by(_ASM.id.desc())
-                    .limit(1)
-                )
-                if len(_ref) >= 36:
-                    _stmt = _stmt.where(_ASM.signal_id == _ref)
-                else:
-                    _stmt = _stmt.where(_ASM.signal_id.ilike(f"{_ref}%"))
-                _row = (await _s.execute(_stmt)).scalar_one_or_none()
-                await _s.commit()
-
-            if _row is None:
-                await query.answer("Signal message not found. Use /signals for latest.", show_alert=True)
-                return
-
-            await context.bot.copy_message(
-                chat_id=int(uid),
-                from_chat_id=int(_row.chat_id),
-                message_id=int(_row.message_id),
+            reply_to = int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None
+            message = await _send_signal_card_for_user(
+                context.bot,
+                chat_id=int(chat_id),
+                telegram_user_id=int(uid),
+                signal_ref=str(raw),
+                reply_to_message_id=reply_to,
             )
-        except Exception as _open_err:
-            logger.debug("[open_signal] error: %s", _open_err)
-            await query.answer("Could not open signal right now.", show_alert=True)
+            if message is None:
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text="❌ Signal not found in your confirmed deliveries. Use /signals for your latest signals.",
+                    disable_notification=False,
+                )
+        except Exception as open_err:
+            logger.warning("[open_signal] failed user=%s ref=%s err=%s", uid, raw[:16], open_err)
+            try:
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text="⚠️ Could not open that signal right now. Use /signal <reference> or retry the button.",
+                    disable_notification=False,
+                )
+            except Exception:
+                pass
 
     application.add_handler(_CQH(_open_signal_callback, pattern=r"^open_signal_"))
 
@@ -6626,7 +6817,18 @@ def run_bot() -> None:
         except Exception as _oc_err:
             logger.warning("[check_outcome] failed user=%s ref=%s err=%s", uid, raw[:16], _oc_err)
             try:
-                await query.message.reply_text("\u26A0\uFE0F Outcome check is busy right now. Signal delivery/outcome tracking is still running; try again shortly.")
+                cached_snapshot = locals().get("_snapshot")
+                if cached_snapshot is not None:
+                    await query.message.reply_text(
+                        _format_outcome_snapshot(cached_snapshot)
+                        + "\n\n<i>Live refresh is temporarily busy; this is the latest persisted status.</i>",
+                        parse_mode="HTML",
+                    )
+                else:
+                    await query.message.reply_text(
+                        "⚠️ Live refresh is temporarily busy. The signal card remains valid until a "
+                        "TP, SL, expiry, or cancellation alert is confirmed. Tap Monitor again shortly."
+                    )
             except Exception:
                 pass
 
@@ -7058,6 +7260,7 @@ def run_bot() -> None:
                                 chat_id=int(telegram_user_id),
                                 text=msg,
                                 parse_mode="HTML",
+                                reply_markup=_build_monitor_keyboard(str(ref)),
                             )
                             async def _mark_notification_delivered(notification_id: int) -> None:
                                 async with get_session() as session:
@@ -8958,8 +9161,16 @@ def run_bot() -> None:
             )
         ).strip().lower() in {"1", "true", "yes", "on"}
         _outcome_start_delay_seconds = max(
+            10,
+            int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "20")) or 20),
+        )
+        _outcome_notification_interval_seconds = max(
+            15,
+            int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30),
+        )
+        _monitor_refresh_interval_seconds = max(
             30,
-            int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "90")) or 90),
+            int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60),
         )
         _outcome_first_run = now_utc_naive() + timedelta(seconds=_outcome_start_delay_seconds)
         _worker_outcome_owner = _env_bool("WORKER_OUTCOME_TRACKER_ENABLED", True)
@@ -8982,7 +9193,7 @@ def run_bot() -> None:
             scheduler.add_job(
                 send_outcome_notifications,
                 'interval',
-                minutes=3,
+                seconds=_outcome_notification_interval_seconds,
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
@@ -8991,7 +9202,7 @@ def run_bot() -> None:
             scheduler.add_job(
                 refresh_monitor_snapshots_job,
                 'interval',
-                minutes=10,
+                seconds=_monitor_refresh_interval_seconds,
                 id='refresh_monitor_snapshots_job',
                 replace_existing=True,
                 max_instances=1,
@@ -9035,7 +9246,7 @@ def run_bot() -> None:
             scheduler.add_job(
                 refresh_monitor_snapshots_job,
                 'interval',
-                minutes=5,
+                seconds=_monitor_refresh_interval_seconds,
                 id='refresh_monitor_snapshots_job',
                 replace_existing=True,
                 max_instances=1,
@@ -9043,7 +9254,7 @@ def run_bot() -> None:
             scheduler.add_job(
                 send_outcome_notifications,
                 'interval',
-                minutes=2,
+                seconds=_outcome_notification_interval_seconds,
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
@@ -9199,12 +9410,12 @@ def run_bot() -> None:
         except Exception as _proxy_job_err:
             logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err, exc_info=True)
         resend_interval_seconds = max(
-            60,
-            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "180") or 180),
+            15,
+            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30),
         )
         resend_start_delay_seconds = max(
-            _outcome_start_delay_seconds + 30,
-            int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "30")) or 30),
+            10,
+            int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "15")) or 15),
         )
         scheduler.add_job(
             resend_unsent_signals_job,

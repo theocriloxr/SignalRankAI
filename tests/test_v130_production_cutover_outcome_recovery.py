@@ -12,11 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_release_identity_and_single_migration_head() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.0"
-    assert RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730"
+    assert APP_VERSION == "1.3.2"
+    assert RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
-    assert audit["heads"] == ["0028_outcome_projection_guard"]
+    assert audit["heads"] == ["0029_live_financial_ledger"]
 
 
 def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:
@@ -80,7 +80,7 @@ def test_production_runtime_clears_staging_and_allowlist_state() -> None:
 
 
 def test_production_profile_is_global_safe_and_provider_resilient() -> None:
-    path = ROOT / "SignalRankAI_v1.3.0_Railway_Production_Launch.env.example"
+    path = ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example"
     assert validate(path) == []
     values, keys = parse_env(path)
     assert len(keys) == len(set(keys))

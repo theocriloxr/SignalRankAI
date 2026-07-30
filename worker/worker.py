@@ -237,6 +237,30 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start adaptive candle capture: %s", e)
 
+        if _env_bool("BYBIT_EXECUTION_ENABLED", False) and _env_bool("BYBIT_RECONCILIATION_ENABLED", False):
+            try:
+                from services.bybit_reconciler import bybit_reconciliation_loop
+                _register_task(
+                    "bybit_reconciliation",
+                    lambda: bybit_reconciliation_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] BybitExecutionReconciliation started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start Bybit reconciliation: %s", e)
+
+        if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
+            try:
+                from payments.paystack_events import paystack_webhook_recovery_loop
+                _register_task(
+                    "paystack_webhook_recovery",
+                    lambda: paystack_webhook_recovery_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] PaystackWebhookRecovery started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start Paystack webhook recovery: %s", e)
+
         # Per-user paper trading consumes Telegram-confirmed deliveries only.
         # It never routes to a broker and remains isolated from real execution state.
         if _env_bool("PAPER_TRADING_ENABLED", True):

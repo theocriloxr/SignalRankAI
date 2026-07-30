@@ -24,7 +24,7 @@ import hashlib
 import hmac
 import json
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends, Header, Request
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -43,6 +43,7 @@ from db.repository import (
 from db.models import ApiToken, User, Signal, RuntimeState
 from sqlalchemy import select
 from core.redis_state import state
+from core.env import env_bool
 from core.redis_cache import cache_stats
 from core.tier_constants import TIER_SCORE_THRESHOLDS
 from core.telemetry import (
@@ -51,7 +52,7 @@ from core.telemetry import (
     prometheus_content_type,
     prometheus_metrics_text,
 )
-from signalrank_telegram.utils import tier_rank, _effective_tier
+from core.tier_policy import tier_rank
 from payments.paystack import process_event as process_paystack_event
 from utils.timeutils import now_utc_naive
 
@@ -129,6 +130,28 @@ class ExchangeBrokerLinkRequest(BrokerPermissionRequest):
     api_secret: str
     passphrase: Optional[str] = None
     sandbox: bool = False
+
+
+class PayoutAccountLinkRequest(BaseModel):
+    account_number: str
+    bank_code: str
+    bank_name: str
+    currency: str = "NGN"
+
+
+class PayoutCreateRequest(BaseModel):
+    recipient_telegram_user_id: int
+    amount_ngn: float
+    reason: str = "SignalRankAI owner-approved disbursement"
+
+
+class PayoutApproveRequest(BaseModel):
+    reference: str
+
+
+class PayoutFinalizeRequest(BaseModel):
+    reference: str
+    otp: str
 
 
 @app.get("/")
@@ -376,7 +399,12 @@ async def get_signals(
     
     try:
         async with get_session() as session:
-            tier = _effective_tier(user_id)
+            tier = (await session.execute(
+                select(User.tier).where(User.telegram_user_id == int(user_id)).limit(1)
+            )).scalar_one_or_none() or "FREE"
+            if await _is_admin_user(int(user_id)):
+                tier = "ADMIN"
+            tier = str(tier).upper()
             base_query = select(Signal).where(
                 Signal.archived == False,
                 Signal.expired == False
@@ -456,13 +484,32 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
     """Persist encrypted Binance/Bybit API credentials after permission validation."""
     provider = _normalize_exchange_provider(req.provider)
     valid, reason = _broker_permissions_valid(req)
-    if not valid:
+    # Bybit permissions are verified against the provider below. Other
+    # providers retain the caller-declared compatibility policy.
+    if provider != "bybit" and not valid:
         raise HTTPException(400, {"ok": False, "policy": "trade_only_required", "reason": reason})
 
     api_key = str(req.api_key or "").strip()
     api_secret = str(req.api_secret or "").strip()
     if len(api_key) < 8 or len(api_secret) < 8:
         raise HTTPException(400, "API key and secret are required")
+
+    verified_permissions = {
+        "read": True, "trade": True, "withdraw": False, "internal_transfer": False,
+    }
+    if provider == "bybit":
+        from services.bybit_client import (
+            BybitCredentials, BybitError, BybitPermissionError, BybitV5Client,
+        )
+        try:
+            verifier = BybitV5Client(BybitCredentials(api_key, api_secret, bool(req.sandbox)))
+            verified_permissions = await verifier.verify_trade_only_key(
+                require_ip_binding=env_bool("BYBIT_REQUIRE_IP_BINDING", True)
+            )
+        except BybitPermissionError as exc:
+            raise HTTPException(400, {"ok": False, "policy": "trade_only_required", "reason": str(exc)}) from exc
+        except BybitError as exc:
+            raise HTTPException(400, {"ok": False, "policy": "credential_verification_failed", "reason": str(exc)}) from exc
 
     from services.security import encrypt_secret, is_encryption_available
 
@@ -482,12 +529,7 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         "api_secret_enc": enc_secret,
         "passphrase_enc": enc_passphrase,
         "sandbox": bool(req.sandbox),
-        "permissions": {
-            "read": bool(req.read) if req.read is not None else True,
-            "trade": bool(req.trade),
-            "withdraw": False,
-            "internal_transfer": False,
-        },
+        "permissions": verified_permissions,
         "masked_key": masked,
         "linked_at": now_utc_naive().isoformat(),
     }
@@ -508,7 +550,82 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         "masked_key": masked,
         "sandbox": bool(req.sandbox),
         "policy": "trade_only_required",
+        "permissions_verified": provider == "bybit",
+        "ip_bound": bool(verified_permissions.get("ip_bound", False)),
     }
+
+
+@app.post("/payout/account/link")
+async def link_payout_account(req: PayoutAccountLinkRequest, user_id: int = Depends(verify_api_key)):
+    """Resolve a Nigerian bank account and store only encrypted payout details."""
+    from payments.payout_service import PayoutError, verify_and_store_payout_account
+    try:
+        row = await verify_and_store_payout_account(
+            telegram_user_id=int(user_id), account_number=req.account_number,
+            bank_code=req.bank_code, bank_name=req.bank_name, currency=req.currency,
+        )
+    except PayoutError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "verified": bool(row.verified), "account_last4": row.account_last4, "account_name": row.account_name, "currency": row.currency}
+
+
+@app.post("/payout/request")
+async def request_payout(req: PayoutCreateRequest, user_id: int = Depends(verify_api_key)):
+    """Owner/admin creates a pending disbursement for a verified beneficiary."""
+    if not await _is_admin_user(int(user_id)):
+        raise HTTPException(403, "Owner or admin request required")
+    from payments.payout_service import PayoutError, create_payout_request
+    try:
+        row = await create_payout_request(
+            recipient_telegram_user_id=int(req.recipient_telegram_user_id),
+            requested_by_telegram_id=int(user_id),
+            amount_ngn=req.amount_ngn,
+            reason=req.reason,
+        )
+    except PayoutError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "reference": row.reference, "status": row.status, "amount_ngn": row.amount_kobo / 100.0}
+
+
+@app.post("/payout/approve")
+async def approve_payout(req: PayoutApproveRequest, user_id: int = Depends(verify_api_key)):
+    """Owner/admin-only approval and idempotent Paystack submission."""
+    if not await _is_admin_user(int(user_id)):
+        raise HTTPException(403, "Owner or admin approval required")
+    from payments.payout_service import PayoutError, approve_and_submit_payout
+    try:
+        result = await approve_and_submit_payout(reference=req.reference, approver_telegram_id=int(user_id))
+    except PayoutError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "reference": result.reference, "status": result.status, "transfer_code": result.transfer_code}
+
+
+@app.post("/payout/finalize")
+async def finalize_payout_transfer(req: PayoutFinalizeRequest, user_id: int = Depends(verify_api_key)):
+    """Owner/admin finalizes an OTP-gated Paystack transfer."""
+    if not await _is_admin_user(int(user_id)):
+        raise HTTPException(403, "Owner or admin approval required")
+    if not env_bool("PAYSTACK_TRANSFER_OTP_FLOW_ENABLED", False):
+        raise HTTPException(503, "Paystack transfer OTP flow is disabled")
+    from payments.payout_service import PayoutError, finalize_payout
+    try:
+        result = await finalize_payout(reference=req.reference, otp=req.otp, approver_telegram_id=int(user_id))
+    except PayoutError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "reference": result.reference, "status": result.status, "transfer_code": result.transfer_code}
+
+
+@app.get("/payout/verify/{reference}")
+async def verify_payout_transfer(reference: str, user_id: int = Depends(verify_api_key)):
+    """Owner/admin verifies a Paystack transfer by reference."""
+    if not await _is_admin_user(int(user_id)):
+        raise HTTPException(403, "Owner or admin access required")
+    from payments.payout_service import PayoutError, verify_transfer
+    try:
+        data = await verify_transfer(reference)
+    except PayoutError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "reference": reference, "provider": data}
 
 
 @app.get("/broker/exchange/status")
@@ -542,7 +659,7 @@ def _payments_enabled() -> bool:
 
 @app.post("/paystack/webhook")
 @app.post("/webhooks/paystack")
-async def paystack_webhook(request: Request):
+async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     """Paystack webhook handler (supports both legacy and canonical routes)."""
     signature = request.headers.get("x-paystack-signature")
     raw_body = await request.body()
@@ -560,44 +677,26 @@ async def paystack_webhook(request: Request):
         raise HTTPException(400, "Invalid JSON payload")
 
     event = str(payload.get("event") or "").strip()
-    data = payload.get("data") or {}
-    reference = str(data.get("reference") or "").strip()
-
-    # Best-effort idempotency tracking for duplicate webhook deliveries.
-    idempotent = False
-    try:
-        from db.session import is_db_configured
-        if is_db_configured():
-            event_id, payload_hash = paystack_event_identity(payload, raw_body)
-            async with get_session() as session:
-                is_new = await mark_webhook_event_processed(
-                    session,
-                    provider="paystack",
-                    event_id=event_id,
-                    event_type=event or "unknown",
-                    reference=reference or None,
-                    payload_hash=payload_hash,
-                    meta={"route": str(request.url.path)},
-                )
-                await session.commit()
-            if not is_new:
-                return {"received": True, "verified": False, "idempotent": True, "event": event}
-    except Exception as exc:
-        logger.warning("Paystack idempotency tracking failed: %s", exc)
 
     # Support maintenance/test mode without contacting external providers.
     if not _payments_enabled():
-        return {"received": True, "verified": False, "idempotent": idempotent, "event": event}
+        return {"received": True, "verified": False, "idempotent": False, "event": event}
 
-    # Process payment event and trigger auto-upgrade/credits where applicable.
-    result = await process_paystack_event(payload)
-    verified = bool((result or {}).get("processed"))
+    from payments.paystack_events import ingest_paystack_event, process_stored_paystack_event
+    try:
+        inbox = await ingest_paystack_event(payload, raw_body, route=str(request.url.path))
+    except Exception as exc:
+        logger.error("Paystack durable inbox unavailable: %s", type(exc).__name__)
+        raise HTTPException(503, "Webhook persistence unavailable")
+    if not inbox.get("terminal"):
+        background_tasks.add_task(process_stored_paystack_event, str(inbox["event_id"]))
     return {
         "received": True,
-        "verified": verified,
-        "idempotent": idempotent,
+        "verified": bool(inbox.get("terminal") and inbox.get("status") == "succeeded"),
+        "idempotent": bool(inbox.get("idempotent")),
         "event": event,
-        "result": result or {},
+        "event_id": inbox.get("event_id"),
+        "processing_status": inbox.get("status"),
     }
 
 @app.post("/paystack/charge")

@@ -249,9 +249,6 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		return None
 
 
-MAX_VIP_SEATS = 15
-
-
 async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 	vip_used = 0
 	try:
@@ -262,16 +259,23 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 				vip_used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 	except Exception:
 		pass
-	vip_seats_left = max(0, int(MAX_VIP_SEATS) - int(vip_used))
+	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "0") or 0)
+	if vip_limit <= 0:
+		return vip_used, -1, False
+	vip_seats_left = max(0, vip_limit - int(vip_used))
 	return vip_used, vip_seats_left, vip_seats_left <= 0
 
 
 def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
+	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
+	price = f"₦{vip_price:,}"
 	if sold_out:
-		return "💎 VIP Monthly — ₦40,000 \\| 🔴 VIP Sold Out" if MarkdownV2 else "💎 VIP Monthly — ₦40,000 | 🔴 VIP Sold Out"
+		return f"💎 VIP Monthly — {price} \\| 🔴 VIP Sold Out" if MarkdownV2 else f"💎 VIP Monthly — {price} | 🔴 VIP Sold Out"
+	if seats_left < 0:
+		return f"💎 VIP Monthly — {price} \\| 🟢 Open enrollment" if MarkdownV2 else f"💎 VIP Monthly — {price} | 🟢 Open enrollment"
 	if MarkdownV2:
-		return f"💎 VIP Monthly — ₦40,000 \\| 🟢 {seats_left} seats left"
-	return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
+		return f"💎 VIP Monthly — {price} \\| 🟢 {seats_left} seats left"
+	return f"💎 VIP Monthly — {price} | 🟢 {seats_left} seats left"
 
 
 async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
@@ -284,9 +288,11 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			rows.append([InlineKeyboardButton("💎 VIP Sold Out", callback_data="vip_sold_out")])
 			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
 		else:
-			vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
+			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
+			vip_link = generate_paystack_link(user_id=user_id, price=vip_price, tier="VIP", duration="MONTHLY", duration_days=30)
 			if vip_link:
-				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦40,000 ({vip_seats_left} left)", url=vip_link)])
+				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
+				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
 		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
@@ -7426,21 +7432,20 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Configure broker execution mode: none | manual | auto.
+	"""Configure broker execution and provider selection.
 
 	Usage:
-	  /execution                      -> show current mode
-	  /execution manual               -> one-click only
-	  /execution none                 -> disable broker execution
-	  /execution auto 5               -> auto execute up to 5/day
-	  /execution auto all             -> unlimited auto executions
+	  /execution                              -> show current settings
+	  /execution none                         -> disable broker execution
+	  /execution manual [mt5|bybit|auto]       -> confirmed execution only
+	  /execution auto [count|all] [provider]   -> VIP auto-execution
+	  /execution copy [count|all] [provider]   -> VIP copy execution
 	"""
 	if update.effective_user is None or update.message is None:
 		return
 
-	user_id: int = int(update.effective_user.id)
-	tier: str = _effective_tier(user_id)
-
+	user_id = int(update.effective_user.id)
+	tier = _effective_tier(user_id)
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
 			"🔒 /execution is available on <b>PREMIUM</b> and above.",
@@ -7449,17 +7454,22 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		return
 
 	try:
+		import json
 		from db.session import get_session as _gs
-		from db.models import User
-		from sqlalchemy import select
+		from db.models import RuntimeState, User
+		from sqlalchemy import select, text
 
 		args = [str(a).strip().lower() for a in (context.args or []) if str(a).strip()]
+		provider_values = {"auto", "mt5", "bybit"}
 
-		async with _gs() as session:
+		async with _gs(label="execution.command", timeout_seconds=8.0) as session:
 			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
 			if row is None:
 				await update.message.reply_text("❌ User profile not found. Send /start and try again.")
 				return
+			prefs_row = await session.get(RuntimeState, f"user_prefs:{user_id}")
+			prefs = dict(getattr(prefs_row, "value", {}) or {}) if prefs_row else {}
+			provider = str(prefs.get("execution_provider") or "auto").lower()
 
 			if not args:
 				mode = str(getattr(row, "execution_mode", "manual") or "manual").lower()
@@ -7468,71 +7478,79 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				await update.message.reply_text(
 					"⚙️ <b>Execution Settings</b>\n\n"
 					f"Mode: <b>{mode.upper()}</b>\n"
-					f"AUTO daily cap: <b>{cap_txt}</b>\n\n"
-					"Use: <code>/execution none|manual|auto [count|all]</code>",
+					f"Provider: <b>{provider.upper()}</b>\n"
+					f"Daily cap: <b>{cap_txt}</b>\n\n"
+					"Use: <code>/execution none|manual|auto|copy [count|all] [auto|mt5|bybit]</code>",
 					parse_mode="HTML",
 				)
 				return
 
 			mode = args[0]
-			if mode not in {"none", "manual", "auto"}:
+			if mode not in {"none", "manual", "auto", "copy"}:
 				await update.message.reply_text(
-					"❌ Invalid mode. Use <code>none</code>, <code>manual</code> or <code>auto</code>.",
+					"❌ Invalid mode. Use <code>none</code>, <code>manual</code>, <code>auto</code> or <code>copy</code>.",
 					parse_mode="HTML",
 				)
 				return
-
-			if mode == "auto" and tier_rank(tier) < tier_rank("VIP"):
+			if mode in {"auto", "copy"} and tier_rank(tier) < tier_rank("VIP"):
 				await update.message.reply_text(
-					"🔒 AUTO mode requires <b>VIP</b>. PREMIUM supports NONE/MANUAL.",
+					"🔒 AUTO and COPY modes require <b>VIP</b>. PREMIUM supports NONE/MANUAL.",
 					parse_mode="HTML",
 				)
 				return
 
 			cap = int(getattr(row, "auto_signals_daily_limit", -1) or -1)
-			if mode == "auto":
-				if len(args) >= 2:
-					arg2 = args[1]
-					if arg2 == "all":
+			remaining = args[1:]
+			for value in remaining:
+				if value in provider_values:
+					provider = value
+				elif mode in {"auto", "copy"}:
+					if value == "all":
 						cap = -1
 					else:
 						try:
-							cap = max(1, min(int(arg2), 100))
+							cap = max(1, min(int(value), 100))
 						except Exception:
-							await update.message.reply_text("❌ Invalid AUTO cap. Use number or 'all'.")
+							await update.message.reply_text("❌ Invalid cap/provider. Example: /execution auto 5 bybit")
 							return
+				else:
+					await update.message.reply_text("❌ Provider must be auto, mt5 or bybit.")
+					return
 
-			row.execution_mode = mode
+			row.execution_mode = "copy_trade" if mode == "copy" else mode
 			row.auto_signals_daily_limit = int(cap)
-			optin_key = f"autoexec_user_optin:{int(user_id)}"
-			if mode == "auto":
+			prefs.update({"execution_provider": provider, "execution_mode": row.execution_mode, "updated_at": now_utc_naive().isoformat()})
+			if prefs_row is None:
+				session.add(RuntimeState(key=f"user_prefs:{user_id}", value=prefs))
+			else:
+				prefs_row.value = prefs
+				prefs_row.updated_at = now_utc_naive()
+
+			for key_name in (f"autoexec_user_optin:{user_id}", f"copyexec_user_optin:{user_id}"):
+				await session.execute(text("DELETE FROM runtime_state WHERE key = :k"), {"k": key_name})
+			if mode in {"auto", "copy"}:
+				key_name = f"{'copyexec' if mode == 'copy' else 'autoexec'}_user_optin:{user_id}"
 				await session.execute(
-					text(
-						"""
+					text("""
 						INSERT INTO runtime_state(key, value, expires_at, updated_at)
 						VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
-						ON CONFLICT (key) DO UPDATE
-						SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-						"""
-					),
-					{"k": optin_key, "v": '{"enabled": true}'},
-				)
-			else:
-				await session.execute(
-					text("DELETE FROM runtime_state WHERE key = :k"),
-					{"k": optin_key},
+						ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+					"""),
+					{"k": key_name, "v": json.dumps({"enabled": True, "provider": provider})},
 				)
 			await session.commit()
 
 		cap_txt = "all" if int(cap) < 0 else str(int(cap))
 		await update.message.reply_text(
-			"✅ <b>Execution mode updated</b>\n\n"
+			"✅ <b>Execution settings updated</b>\n\n"
 			f"Mode: <b>{mode.upper()}</b>\n"
-			f"AUTO daily cap: <b>{cap_txt}</b>",
+			f"Provider: <b>{provider.upper()}</b>\n"
+			f"Daily cap: <b>{cap_txt}</b>\n\n"
+			"Live execution still requires linked trade-only credentials, accepted terms, risk checks, and global production activation.",
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update execution mode: {exc}")
+		await update.message.reply_text(f"❌ Could not update execution mode: {type(exc).__name__}")
 
 
 async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7624,7 +7642,8 @@ async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 	premium_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
 	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
-	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
+	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "0") or 0)
+	vip_capacity_label = "open enrollment" if vip_limit <= 0 else f"only {vip_limit} seats"
 
 	msg = (
 		"<b>📊 SignalRankAI Subscription Tiers</b>\n\n"
@@ -7639,7 +7658,7 @@ async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		"  • Fixed lot size (set with /setlot)\n"
 		"  • TP2 targeting only\n"
 		"  • Personal win-rate dashboard\n\n"
-		f"<b>👑 VIP — ₦{vip_price:,}/month</b> (only {vip_limit} seats)\n"
+		f"<b>👑 VIP — ₦{vip_price:,}/month</b> ({vip_capacity_label})\n"
 		"  • Everything in PREMIUM, plus:\n"
 		"  • <b>Unlimited</b> automated executions\n"
 		"  • Risk-based lot sizing (/setrisk)\n"

@@ -259,44 +259,38 @@ async def _handle_signal_reaction(
 
 
 async def _handle_monitor_signal(
-    update: Update, 
-    context: ContextTypes.DEFAULT_TYPE, 
-    signal_id: str
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    signal_id: str,
 ) -> None:
-    """Handle monitor signal button."""
+    """Fallback monitor route that never overwrites the original signal card."""
     query = update.callback_query
-    
+    await _safe_answer(query, "Refreshing…", show_alert=False)
+    user_id = _callback_user_id(update)
+    chat_id = int(getattr(getattr(query, "message", None), "chat_id", user_id) or user_id)
     try:
-        # Immediately answer
-        await query.answer("Refreshing...")
-        
-        # Build monitor snapshot
-        from signalrank_telegram.bot import _build_monitor_snapshot
-        
-        text, is_active, expires_at = await _build_monitor_snapshot(
+        from signalrank_telegram.bot import _build_monitor_keyboard, _build_monitor_snapshot
+
+        text, _is_active, _expires_at = await _build_monitor_snapshot(
             signal_id,
-            telegram_user_id=int(update.effective_user.id) if update.effective_user else None,
+            telegram_user_id=user_id,
         )
-        
-        # Send new message or edit existing
-        try:
-            await context.bot.edit_message_text(
-                chat_id=query.message.chat_id,
-                message_id=query.message.message_id,
-                text=text,
-                parse_mode="HTML",
-            )
-        except Exception:
-            # Send new if edit fails
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=text,
-                parse_mode="HTML",
-            )
-        
-    except Exception as e:
-        logger.warning(f"[callback] monitor error: {e}")
-        await query.answer("⚠️ Could not load monitor.", show_alert=True)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=_build_monitor_keyboard(signal_id),
+            reply_to_message_id=int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None,
+            allow_sending_without_reply=True,
+            disable_notification=False,
+        )
+    except Exception as exc:
+        logger.warning("[callback] monitor error user=%s ref=%s err=%s", user_id, str(signal_id)[:16], exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Could not refresh the monitor right now. The signal remains tracked; retry shortly.",
+            disable_notification=False,
+        )
 
 
 async def _handle_check_outcome(
@@ -592,8 +586,35 @@ async def _handle_ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 
 async def _handle_open_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    """Fallback open-signal route; always renders a fresh authorized card."""
     query = update.callback_query
-    await _safe_answer(query, show_alert=False)
+    await _safe_answer(query, "Opening signal…", show_alert=False)
+    user_id = _callback_user_id(update)
+    chat_id = int(getattr(getattr(query, "message", None), "chat_id", user_id) or user_id)
+    try:
+        from signalrank_telegram.bot import _send_signal_card_for_user
+
+        reply_to = int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None
+        message = await _send_signal_card_for_user(
+            context.bot,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            signal_ref=str(signal_id),
+            reply_to_message_id=reply_to,
+        )
+        if message is None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Signal not found in your confirmed deliveries. Use /signals for the latest list.",
+                disable_notification=False,
+            )
+    except Exception as exc:
+        logger.warning("[callback] open signal failed user=%s ref=%s err=%s", user_id, str(signal_id)[:16], exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Could not open that signal right now. Retry the button or use /signal <reference>.",
+            disable_notification=False,
+        )
 
 
 async def _handle_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, feature: str) -> None:

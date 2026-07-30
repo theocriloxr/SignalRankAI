@@ -19,16 +19,16 @@ def main() -> int:
     from scripts.schema_audit import audit_outcome_projection_contract, audit_versions
     from scripts.validate_env_contract import validate
 
-    require(APP_VERSION == "1.3.0", "runtime version")
+    require(APP_VERSION == "1.3.2", "runtime version")
     require(
-        RELEASE_FINGERPRINT == "v1.3.0-production-cutover-outcome-recovery-20260730",
+        RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730",
         "release fingerprint",
     )
     migrations = audit_versions(ROOT)
     require(migrations["ok"] is True, "migration graph")
-    require(migrations["heads"] == ["0028_outcome_projection_guard"], "migration head")
+    require(migrations["heads"] == ["0029_live_financial_ledger"], "migration head")
     require(audit_outcome_projection_contract(ROOT)["ok"] is True, "outcome projection guard")
-    profile = ROOT / "SignalRankAI_v1.3.0_Railway_Production_Launch.env.example"
+    profile = ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example"
     require(profile.exists(), "production profile")
     require(validate(profile) == [], "production environment contract")
     source = (ROOT / "db/pg_features.py").read_text()

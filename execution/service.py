@@ -56,6 +56,7 @@ class ExecutionRequest:
     broker_healthy: bool = False
     resources_available: bool = False
     reconciliation_ready: bool = False
+    broker_provider: str = "mt5"
 
     def key(self) -> str:
         if self.idempotency_key:
@@ -110,6 +111,8 @@ class ExecutionGate:
         # therefore does not depend on AUTO_TRADE_ENABLED. Demo execution still
         # depends on DEMO_EXECUTION_ENABLED and a real account still requires
         # REAL_EXECUTION_ENABLED. ``live`` is a compatibility alias for auto.
+        if mode in {"auto", "live", "copy_trade"} and not self.safety_flags.auto_execution_enabled:
+            reasons.append("AUTO_EXECUTION_DISABLED")
         if mode in {"auto", "live"} and not self.safety_flags.auto_trade_enabled:
             reasons.append("AUTO_TRADE_DISABLED")
         if mode == "copy_trade" and not self.safety_flags.copy_trade_enabled:
@@ -128,10 +131,15 @@ class ExecutionGate:
             if not _env_enabled("DEMO_EXECUTION_ENABLED", True):
                 reasons.append("DEMO_EXECUTION_DISABLED")
         else:
-            if not _env_enabled("REAL_EXECUTION_ENABLED", False):
+            provider = str(request.broker_provider or "mt5").strip().lower()
+            if not self.safety_flags.real_execution_enabled:
                 reasons.append("REAL_EXECUTION_DISABLED")
-            if not _env_enabled("MT5_ALLOW_LIVE_ACCOUNTS", False):
+            if provider == "mt5" and not self.safety_flags.mt5_live_accounts_enabled:
                 reasons.append("MT5_LIVE_ACCOUNTS_DISABLED")
+            if provider == "bybit" and not self.safety_flags.bybit_execution_enabled:
+                reasons.append("BYBIT_EXECUTION_DISABLED")
+            if provider not in {"mt5", "bybit"}:
+                reasons.append("unsupported_broker_provider")
         if not request.quote_trusted:
             reasons.append("trusted_quote_required")
         try:

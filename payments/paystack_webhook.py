@@ -77,39 +77,25 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     event = str(body.get("event") or "")
     data  = body.get("data") or {}
 
-    # Record the provider event before scheduling side effects.  A duplicate
-    # delivery is acknowledged but never enqueued a second time.
+    # Persist the signed payload before acknowledging it.  A process crash
+    # after this point is recovered by the worker-owned inbox loop.
+    from payments.paystack_events import ingest_paystack_event, process_stored_paystack_event
+
     try:
-        from db.session import get_session, is_db_configured
-        from db.repository import paystack_event_identity, mark_webhook_event_processed
-
-        if is_db_configured():
-            event_id, payload_hash = paystack_event_identity(body, raw_body)
-            async with get_session() as session:
-                is_new = await mark_webhook_event_processed(
-                    session,
-                    provider="paystack",
-                    event_id=event_id,
-                    event_type=event or "unknown",
-                    reference=str(data.get("reference") or "") or None,
-                    payload_hash=payload_hash,
-                    meta={"route": "/webhook/paystack"},
-                )
-                await session.commit()
-            if not is_new:
-                return {"status": "ok", "idempotent": True}
+        inbox = await ingest_paystack_event(body, raw_body, route="/webhook/paystack")
     except Exception as exc:
-        # Keep ingress available during a DB outage; the mutation worker will
-        # remain disabled unless payment processing is explicitly enabled.
-        logger.warning("[paystack_webhook] idempotency tracking unavailable: %s", type(exc).__name__)
+        logger.error("[paystack_webhook] durable inbox unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Webhook persistence unavailable")
 
-    logger.info("[paystack_webhook] Received event: %s", event)
+    if not inbox.get("terminal"):
+        background_tasks.add_task(process_stored_paystack_event, str(inbox["event_id"]))
 
-    # ── Dispatch event processing in background ───────────────────────────────
-    # Return 200 immediately — Paystack retries if we don't respond quickly
-    background_tasks.add_task(_process_event, event, data)
-
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "idempotent": bool(inbox.get("idempotent")),
+        "event_id": inbox.get("event_id"),
+        "processing_status": inbox.get("status"),
+    }
 
 
 async def _process_event(event: str, data: dict) -> None:
@@ -153,6 +139,12 @@ async def _process_event(event: str, data: dict) -> None:
         elif event == "subscription.not_renew":
             # Subscription scheduled to not renew — warn user
             await _handle_subscription_not_renew(data)
+
+        elif event in {"transfer.success", "transfer.failed", "transfer.reversed"}:
+            from payments.payout_service import apply_transfer_event
+            applied = await apply_transfer_event(event, data)
+            if not applied:
+                logger.warning("[paystack_webhook] transfer event did not match a payout request")
 
         elif event == "customeridentification.success":
             logger.debug("[paystack_webhook] Customer identified: %s", data.get("customer_id"))

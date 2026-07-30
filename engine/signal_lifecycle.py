@@ -42,6 +42,17 @@ def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _should_queue_event_notification(event_type: str) -> bool:
+    event = str(event_type or "").strip().lower()
+    if event not in NOTIFIABLE_EVENTS:
+        return False
+    if event in {"tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop"}:
+        # The outcome-notification ledger owns TP/SL messages. Running both
+        # dispatchers created duplicate and out-of-order Telegram alerts.
+        return _enabled("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", False)
+    return True
+
+
 def entry_was_touched(
     direction: str,
     entry: float,
@@ -131,11 +142,13 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
         "expired": ("Signal Expired", "This setup is no longer actionable."),
     }
     title, action = labels.get(event_type, (event_type.replace("_", " ").title(), "Lifecycle updated."))
+    ref = html.escape(str(signal.get("signal_id") or signal.get("id") or "")[:12])
+    ref_line = f"\nRef: <code>{ref}</code>" if ref else ""
     return (
         f"<b>{html.escape(title)}</b>\n\n"
         f"<b>{asset}</b> {direction}\n"
         f"Price: <code>{float(price):.6g}</code>\n"
-        f"Time: {html.escape(event_time)}\n\n"
+        f"Time: {html.escape(event_time)}{ref_line}\n\n"
         f"{html.escape(action)}"
     )
 
@@ -317,7 +330,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 lifecycle.closed_at = now
 
         deliveries = []
-        if event_type in NOTIFIABLE_EVENTS:
+        if _should_queue_event_notification(event_type):
             deliveries = (await session.execute(
             select(SignalDelivery, User)
             .join(User, User.id == SignalDelivery.user_id)
@@ -353,6 +366,27 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
     # dispatcher. The critical lifecycle transaction ends before network I/O.
     logger.info("[lifecycle] signal=%s event=%s price=%.6g new=%s", signal_id[:8], event_type, price, was_new)
     return was_new
+
+
+def _lifecycle_notification_keyboard(signal_id: object):
+    """Build durable navigation controls for proactive lifecycle alerts."""
+    try:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        ref = str(signal_id or "").strip()[:36]
+        if not ref:
+            return None
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{ref}"),
+                InlineKeyboardButton("📋 Open Signal", callback_data=f"open_signal_{ref}"),
+            ],
+            [
+                InlineKeyboardButton("🔎 Check Outcome", callback_data=f"check_outcome_{ref}"),
+            ],
+        ])
+    except Exception:
+        return None
 
 
 async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
@@ -415,27 +449,35 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
         sent_message_id = None
         error = None
         try:
-            result = None
+            if not _should_queue_event_notification(notification.event_type):
+                async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
+                    suppressed = await session.get(SignalEventNotification, notification.id)
+                    if suppressed is not None:
+                        suppressed.delivery_state = "suppressed"
+                        suppressed.error = "owned_by_outcome_notification_dispatcher"
+                        await session.commit()
+                continue
+
+            chat_id = int(notification.chat_id or user.telegram_user_id)
+            send_kwargs = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "reply_markup": _lifecycle_notification_keyboard(notification.signal_id),
+                "disable_notification": False,
+            }
             if notification.source_message_id:
-                try:
-                    result = await bot.edit_message_text(
-                        chat_id=int(notification.chat_id or user.telegram_user_id),
-                        message_id=int(notification.source_message_id),
-                        text=text,
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    result = None
-            if result is None:
-                result = await bot.send_message(
-                    chat_id=int(notification.chat_id or user.telegram_user_id),
-                    text=text,
-                    parse_mode="HTML",
-                )
-            if result is True and notification.source_message_id:
-                sent_message_id = int(notification.source_message_id)
-            else:
-                sent_message_id = int(getattr(result, "message_id", 0) or 0) or None
+                send_kwargs.update({
+                    "reply_to_message_id": int(notification.source_message_id),
+                    "allow_sending_without_reply": True,
+                })
+            try:
+                result = await bot.send_message(**send_kwargs)
+            except TypeError:
+                # Compatibility with older python-telegram-bot wrappers.
+                send_kwargs.pop("allow_sending_without_reply", None)
+                result = await bot.send_message(**send_kwargs)
+            sent_message_id = int(getattr(result, "message_id", 0) or 0) or None
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:1000]
 

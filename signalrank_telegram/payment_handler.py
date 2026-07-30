@@ -9,7 +9,8 @@ async def verify_payment_and_upgrade_tier(
     user_id: int,
     tier: str,
     duration_days: int,
-    amount: float
+    amount: float,
+    paystack_reference: str | None = None,
 ) -> Tuple[bool, str]:
     """
     Verify payment was processed for tier upgrade and update user tier in database.
@@ -18,6 +19,12 @@ async def verify_payment_and_upgrade_tier(
         (success: bool, message: str)
     """
     try:
+        reference = str(paystack_reference or "").strip()
+        if not reference:
+            return False, "A verified Paystack reference is required."
+        from payments.paystack import verify_payment
+        if not await verify_payment(reference, float(amount)):
+            return False, "Paystack could not verify this transaction."
         from db.session import get_engine_for_event_loop, get_session
         from db.repository import activate_subscription, get_active_subscription
         engine = get_engine_for_event_loop()
@@ -44,8 +51,8 @@ async def verify_payment_and_upgrade_tier(
                 telegram_user_id=user_id,
                 tier=tier.upper(),
                 duration_days=duration_days,
-                amount_paid=amount,
-                payment_provider="paystack"
+                paystack_reference=reference,
+                meta={"provider": "paystack", "legacy_verified_helper": True, "amount_ngn": float(amount)},
             )
             await session.commit()
         

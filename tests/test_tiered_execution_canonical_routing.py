@@ -33,7 +33,7 @@ async def test_premium_execution_delegates_to_canonical_router(monkeypatch) -> N
             error=None,
         )
     )
-    monkeypatch.setattr("services.mt5_signal_router.route_signal_to_mt5", routed)
+    monkeypatch.setattr("services.broker_signal_router.route_signal_to_broker", routed)
     monkeypatch.setattr(tiered_executor, "_record_execution", AsyncMock())
 
     result = await tiered_executor.execute_premium_signal(user, signal, AsyncMock())
@@ -68,7 +68,7 @@ async def test_vip_execution_does_not_call_adapter_directly(monkeypatch) -> None
             error="AUTO_TRADE_DISABLED",
         )
     )
-    monkeypatch.setattr("services.mt5_signal_router.route_signal_to_mt5", routed)
+    monkeypatch.setattr("services.broker_signal_router.route_signal_to_broker", routed)
 
     result = await tiered_executor.execute_vip_signal(user, signal, AsyncMock(), 10_000)
 

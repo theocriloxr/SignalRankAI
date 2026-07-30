@@ -246,9 +246,9 @@ class SmartDCA:
                 "execution_context": "smart_dca",
                 "dca_level": dca_level,
             }
-            from services.mt5_signal_router import route_signal_to_mt5
+            from services.broker_signal_router import route_signal_to_broker
 
-            result = await route_signal_to_mt5(
+            result = await route_signal_to_broker(
                 routed_signal,
                 int(user_telegram_id),
                 execution_mode="auto",

@@ -2383,12 +2383,47 @@ def _production_cutover_check() -> dict[str, object]:
         violations.append("delivery_allowlist_not_empty")
     if _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
         violations.append("resend_allowlist_only")
+    forced_financial = str(os.getenv("FINANCIAL_ACTIVATION_FORCED_OFF") or "").strip()
+    if forced_financial:
+        violations.append(f"financial_activation_forced_off:{forced_financial}")
     if not _env_bool("FREE_SIGNAL_DISTRIBUTION_ENABLED", True):
         violations.append("free_distribution_disabled")
     if not _env_bool("RUN_ENGINE_LOOP", True):
         violations.append("engine_loop_disabled")
     if not _env_bool("RUN_WORKER_LOOP", True):
         violations.append("worker_loop_disabled")
+    if not _env_bool("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
+        violations.append("lifecycle_notifications_disabled")
+    if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
+        violations.append("outcome_notifications_disabled")
+    if _env_bool("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", False):
+        violations.append("duplicate_tp_sl_notification_dispatchers_enabled")
+    if _env_bool("DELIVERY_SIGNAL_UPDATE_ENABLED", False):
+        violations.append("signal_delivery_edit_mode_enabled")
+    try:
+        if int(os.getenv("TELEGRAM_SEND_MAX_ATTEMPTS", "3") or 3) < 2:
+            violations.append("telegram_send_retries_too_low")
+    except Exception:
+        violations.append("telegram_send_retries_invalid")
+    try:
+        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30) > 60:
+            violations.append("unsent_signal_recovery_interval_too_high")
+    except Exception:
+        violations.append("unsent_signal_recovery_interval_invalid")
+    try:
+        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30) > 60:
+            violations.append("outcome_notification_interval_too_high")
+    except Exception:
+        violations.append("outcome_notification_interval_invalid")
+    try:
+        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60) > 120:
+            violations.append("monitor_refresh_interval_too_high")
+    except Exception:
+        violations.append("monitor_refresh_interval_invalid")
+    if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False):
+        violations.append("resend_recovery_can_be_suppressed_by_fanout")
+    if _env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False):
+        violations.append("uncertified_rich_signal_delivery_enabled")
 
     required_values = {
         "DATABASE_URL": os.getenv("DATABASE_URL"),
@@ -2430,6 +2465,17 @@ def _production_cutover_check() -> dict[str, object]:
         if _is_unconfigured_runtime_value(paystack_public) or not paystack_public.startswith("pk_live_"):
             violations.append("paystack_live_public_invalid")
 
+    try:
+        from core.financial_activation import evaluate_financial_activation
+        financial = evaluate_financial_activation()
+        if not financial.ok:
+            violations.extend(
+                f"financial:{check.name}" for check in financial.checks
+                if check.blocking and not check.ok
+            )
+    except Exception as exc:
+        violations.append(f"financial_activation_check:{type(exc).__name__}")
+
     return {
         "ok": not violations,
         "detail": "public_production" if not violations else ",".join(violations),
@@ -2466,11 +2512,17 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         _redis_url_readiness_check(state_url, label="state"),
         _redis_url_readiness_check(delivery_url, label="delivery"),
     )
+    try:
+        from core.financial_activation import evaluate_financial_activation
+        financial_activation = evaluate_financial_activation().as_dict()
+    except Exception as exc:
+        financial_activation = {"ok": False, "detail": type(exc).__name__}
     checks: dict[str, object] = {
         "database": database,
         "state_redis": state_redis,
         "delivery_redis": delivery_redis,
         "production_cutover": _production_cutover_check(),
+        "financial_activation": financial_activation,
     }
 
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)

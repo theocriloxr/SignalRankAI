@@ -178,10 +178,7 @@ def can_execute_premium(user) -> Tuple[bool, str]:  # type: ignore[valid-type]
 
 
 def can_execute_vip(user) -> Tuple[bool, str]:  # type: ignore[valid-type]
-    """VIP has no hard daily limit — always allowed (if credentials set)."""
-    mt5_id = getattr(user, "metaapi_account_id", None) or getattr(user, "mt5_account_id", None)
-    if not mt5_id:
-        return False, "No MT5 account connected. Use /connect_broker to link your account."
+    """Allow provider-neutral preflight; the canonical router proves account readiness."""
     return True, ""
 
 
@@ -281,10 +278,10 @@ def _execution_signal_payload(signal, *, premium: bool) -> dict:
 
 
 async def _execute_via_canonical_router(user, signal, *, premium: bool) -> dict:
-    from services.mt5_signal_router import route_signal_to_mt5
+    from services.broker_signal_router import route_signal_to_broker
 
     payload = _execution_signal_payload(signal, premium=premium)
-    result = await route_signal_to_mt5(
+    result = await route_signal_to_broker(
         payload,
         int(user.telegram_user_id),
         execution_mode="auto",
@@ -303,7 +300,7 @@ async def execute_premium_signal(
     signal,
     db: AsyncSession,
 ) -> dict:
-    """Route PREMIUM execution through the single canonical ExecutionGate."""
+    """Compatibility entrypoint; the canonical broker route owns all quota and ledger writes."""
     allowed, reason = can_execute_premium(user)
     if not allowed:
         return {"success": False, "order_id": None, "message": reason}
@@ -314,28 +311,10 @@ async def execute_premium_signal(
             "order_id": None,
             "message": routed.get("message") or routed.get("error") or "Execution blocked",
         }
-    user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
-    user.daily_executions_reset_at = datetime.now(tz=timezone.utc)
-    payload = routed["payload"]
-    await _record_execution(
-        db=db,
-        user_id=int(user.id),
-        signal_id=str(payload["signal_id"]),
-        symbol=str(payload["asset"]),
-        direction=str(payload["direction"]),
-        lot_size=0.0,  # canonical broker route records the authoritative fill size
-        entry_price=float(payload["entry"]),
-        stop_loss=float(payload["stop_loss"]),
-        take_profit=float(payload["take_profit"][0]),
-        tier="PREMIUM",
-        order_id=routed["order_id"],
-        account_id=None,
-    )
-    remaining = max(0, PREMIUM_DAILY_LIMIT - int(user.daily_executions_today))
     return {
         "success": True,
         "order_id": routed["order_id"],
-        "message": f"PREMIUM execution submitted through the guarded broker route. Daily remaining: {remaining}.",
+        "message": "PREMIUM execution submitted through the canonical guarded broker route.",
     }
 
 
@@ -345,7 +324,7 @@ async def execute_vip_signal(
     db: AsyncSession,
     account_balance: float = 0.0,
 ) -> dict:
-    """Route VIP execution through the canonical gate; never use caller balance."""
+    """Compatibility entrypoint; the canonical provider route owns durable execution state."""
     allowed, reason = can_execute_vip(user)
     if not allowed:
         return {"success": False, "order_id": None, "message": reason}
@@ -356,25 +335,10 @@ async def execute_vip_signal(
             "order_id": None,
             "message": routed.get("message") or routed.get("error") or "Execution blocked",
         }
-    payload = routed["payload"]
-    await _record_execution(
-        db=db,
-        user_id=int(user.id),
-        signal_id=str(payload["signal_id"]),
-        symbol=str(payload["asset"]),
-        direction=str(payload["direction"]),
-        lot_size=0.0,
-        entry_price=float(payload["entry"]),
-        stop_loss=float(payload["stop_loss"]),
-        take_profit=float(payload["take_profit"][0]),
-        tier="VIP",
-        order_id=routed["order_id"],
-        account_id=None,
-    )
     return {
         "success": True,
         "order_id": routed["order_id"],
-        "message": "VIP execution submitted through the guarded broker route.",
+        "message": "VIP execution submitted through the canonical guarded broker route.",
     }
 
 

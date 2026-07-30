@@ -626,6 +626,59 @@ class RedisState:
             pass
         return int(total)
 
+    def add_extra_signals_once_sync(
+        self,
+        telegram_user_id: int,
+        count: int,
+        payment_reference: str,
+        ttl_seconds: int = 86400,
+    ) -> int | None:
+        """Atomically apply one paid extra-signal credit in Redis.
+
+        Production payment processing requires Redis for this operation. The
+        payment reference is a durable idempotency key, so a webhook retry or
+        crash between provider acknowledgement and DB bookkeeping cannot
+        double-credit the user.
+        """
+        uid = int(telegram_user_id)
+        amount = max(0, int(count))
+        reference = str(payment_reference or "").strip()
+        if amount <= 0 or not reference:
+            return None
+        r = self._get_redis_sync()
+        if r is None:
+            return None
+        extra_key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
+        marker_key = f"signalrankai:payment_credit:{hashlib.sha256(reference.encode()).hexdigest()}"
+        ttl_seconds = max(60, int(ttl_seconds))
+        script = """
+        if redis.call('EXISTS', KEYS[2]) == 1 then
+          local current = redis.call('GET', KEYS[1])
+          if not current then return 0 end
+          local ok, data = pcall(cjson.decode, current)
+          if not ok then return 0 end
+          return tonumber(data['total'] or 0)
+        end
+        local total = 0
+        local used = 0
+        local current = redis.call('GET', KEYS[1])
+        if current then
+          local ok, data = pcall(cjson.decode, current)
+          if ok then
+            total = tonumber(data['total'] or 0)
+            used = tonumber(data['used'] or 0)
+          end
+        end
+        total = total + tonumber(ARGV[1])
+        redis.call('SET', KEYS[1], cjson.encode({total=total, used=used}), 'EX', tonumber(ARGV[2]))
+        redis.call('SET', KEYS[2], '1', 'EX', tonumber(ARGV[2]))
+        return total
+        """
+        try:
+            return int(r.eval(script, 2, extra_key, marker_key, amount, ttl_seconds))
+        except Exception:
+            return None
+
     def get_extra_signals_left_sync(self, telegram_user_id: int) -> int:
         uid = int(telegram_user_id)
         key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"

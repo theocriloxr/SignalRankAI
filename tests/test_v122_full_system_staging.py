@@ -46,13 +46,14 @@ def test_missing_acknowledgement_fails_closed():
     assert env["PAYMENTS_PUBLIC_ENABLED"] == "0"
 
 
-def test_production_environment_is_not_rewritten():
+def test_incomplete_production_financial_activation_fails_closed():
     from runtime_safety import apply_runtime_safety_environment
 
     env = {"APP_ENV": "production", "REAL_EXECUTION_ENABLED": "1"}
     result = apply_runtime_safety_environment(env)
     assert result.environment == "production"
-    assert env["REAL_EXECUTION_ENABLED"] == "1"
+    assert env["REAL_EXECUTION_ENABLED"] == "0"
+    assert "REAL_EXECUTION_ENABLED" in result.forced_off
 
 
 def test_live_mt5_account_requires_separate_permission(monkeypatch):

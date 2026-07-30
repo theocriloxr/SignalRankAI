@@ -185,6 +185,15 @@ def apply_runtime_safety_environment(
         env["DELIVERY_AUDIENCE_ALLOWLIST"] = ""
         env["RESEND_AUDIENCE_ALLOWLIST_ONLY"] = "0"
         env["PAYMENTS_PUBLIC_TEST_MODE"] = "0"
+
+        # Live-money flags are admitted only when their complete production
+        # dependency contract passes. Invalid partial activation is forced off
+        # before any execution-bearing module imports configuration.
+        from core.financial_activation import force_invalid_financial_flags_off
+
+        financial_forced_off = force_invalid_financial_flags_off(env)
+        env["FINANCIAL_ACTIVATION_FORCED_OFF"] = ",".join(financial_forced_off)
+        forced_off.extend(name for name in financial_forced_off if name not in forced_off)
         return RuntimeSafetyResult(
             environment, False, ack_valid, (), tuple(forced_off), (), "",
         )

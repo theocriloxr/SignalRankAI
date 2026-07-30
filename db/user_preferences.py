@@ -53,6 +53,7 @@ class UserTradingPreferences:
     
     # MT5 account (for live trading)
     default_mt5_account_id: Optional[str] = None
+    execution_provider: str = "auto"  # auto, mt5, bybit
     
     # Notifications
     notify_on_entry: bool = True
@@ -116,9 +117,9 @@ class UserPreferencesManager:
                         RuntimeState.key == f"user_prefs:{user_id}"
                     )
                 )
-                state = result.first()
+                state = result.scalar_one_or_none()
                 if state:
-                    data = state.value
+                    data = dict(state.value or {})
                     return UserTradingPreferences(
                         user_id=user_id,
                         trading_mode=data.get("trading_mode", TRADING_MODE_PAPER),
@@ -126,6 +127,7 @@ class UserPreferencesManager:
                         default_position_size=data.get("default_position_size", 0.01),
                         risk_per_trade_pct=data.get("risk_per_trade_pct", 1.0),
                         default_mt5_account_id=data.get("default_mt5_account_id"),
+                        execution_provider=data.get("execution_provider", "auto"),
                         notify_on_entry=data.get("notify_on_entry", True),
                         notify_on_exit=data.get("notify_on_exit", True),
                         notify_on_tp=data.get("notify_on_tp", True),
@@ -172,6 +174,7 @@ class UserPreferencesManager:
                 "default_position_size": prefs.default_position_size,
                 "risk_per_trade_pct": prefs.risk_per_trade_pct,
                 "default_mt5_account_id": prefs.default_mt5_account_id,
+                "execution_provider": prefs.execution_provider,
                 "notify_on_entry": prefs.notify_on_entry,
                 "notify_on_exit": prefs.notify_on_exit,
                 "notify_on_tp": prefs.notify_on_tp,
@@ -195,11 +198,13 @@ class UserPreferencesManager:
             from db.models import RuntimeState
             
             async with get_session() as session:
-                state = RuntimeState(
-                    key=f"user_prefs:{user_id}",
-                    value=prefs_dict,
-                )
-                session.add(state)
+                key = f"user_prefs:{user_id}"
+                state = await session.get(RuntimeState, key)
+                if state is None:
+                    session.add(RuntimeState(key=key, value=prefs_dict))
+                else:
+                    state.value = prefs_dict
+                    state.updated_at = now_utc_naive()
                 await session.commit()
             
             logger.info(f"[UserPreferences] Updated preferences for user {user_id}")
