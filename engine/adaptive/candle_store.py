@@ -8,8 +8,9 @@ import threading
 import time
 from typing import Any, Mapping
 
-from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from core.redis_state import state
+from db.models import MarketCandle
 from db.session import get_session
 from .data_quality import normalise_candles
 
@@ -34,7 +35,14 @@ def _capture_db_priority() -> str:
 
 
 def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
-    """Queue new candle suffixes without blocking strategy evaluation on PostgreSQL."""
+    """Queue only the changed candle suffix without blocking strategy evaluation.
+
+    The former implementation re-enqueued as many as 200 historical candles
+    whenever a new bar appeared. Across several assets and timeframes that
+    created avoidable write pressure and made a second database look necessary.
+    The first observation still backfills the bounded history; later snapshots
+    contain only the previous bar (for finalisation) and the new/open bar.
+    """
     if not _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
         return 0
     queued = 0
@@ -50,14 +58,39 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
         key = (str(asset).upper(), str(timeframe).lower())
         with _LOCK:
             previous = _LAST_SNAPSHOT.get(key)
-            if previous and previous[0] == last_ts and now - previous[1] < 1800:
-                continue
+            rows_to_queue = rows
+            if previous:
+                previous_ts, previous_queued_at = previous
+                if last_ts == previous_ts:
+                    refresh_interval = max(
+                        5.0,
+                        float(
+                            os.getenv(
+                                "ADAPTIVE_CANDLE_OPEN_UPDATE_INTERVAL_SECONDS",
+                                "30",
+                            )
+                            or 30
+                        ),
+                    )
+                    if now - previous_queued_at < refresh_interval:
+                        continue
+                    rows_to_queue = rows[-1:]
+                elif last_ts > previous_ts:
+                    # Include the previous open time so the now-final candle is
+                    # updated, then include the newly opened bar.
+                    rows_to_queue = [
+                        row
+                        for row in rows
+                        if int(row.get("open_time_ms") or 0) >= previous_ts
+                    ]
+                    if not rows_to_queue:
+                        rows_to_queue = rows[-2:]
             _LAST_SNAPSHOT[key] = (last_ts, now)
         payload = {
             "asset": key[0],
             "timeframe": key[1],
             "provider": str(tf_data.get("source") or tf_data.get("provider") or "unknown")[:64],
-            "candles": rows,
+            "candles": rows_to_queue,
         }
         try:
             _QUEUE.put_nowait(payload)
@@ -114,18 +147,35 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
     inserted = 0
     try:
         async with get_session(priority=_capture_db_priority(), label="adaptive.candle_capture", timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "4") or 4)) as session:
-            # One analytics owner plus NOT EXISTS avoids repeated inserts without adding a
-            # blocking unique-index migration to a potentially large legacy candle table.
-            result = await session.execute(text("""
-                INSERT INTO market_candles(symbol,timeframe,open_time_ms,close_time_ms,open,high,low,close,volume,is_final,updated_at)
-                SELECT :symbol,:timeframe,:open_time_ms,:close_time_ms,:open,:high,:low,:close,:volume,:is_final,NOW()
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM market_candles
-                    WHERE symbol=:symbol AND timeframe=:timeframe AND open_time_ms=:open_time_ms
+            # The schema already has uq_market_candles_symbol_tf_open. A true
+            # PostgreSQL bulk upsert both removes asyncpg bind ambiguity and
+            # updates the still-open candle instead of preserving its first tick.
+            chunk_size = max(
+                25,
+                min(
+                    500,
+                    int(os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "200") or 200),
+                ),
+            )
+            for offset in range(0, len(records), chunk_size):
+                chunk = records[offset : offset + chunk_size]
+                stmt = pg_insert(MarketCandle).values(chunk)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_market_candles_symbol_tf_open",
+                    set_={
+                        "close_time_ms": stmt.excluded.close_time_ms,
+                        "open": stmt.excluded.open,
+                        "high": stmt.excluded.high,
+                        "low": stmt.excluded.low,
+                        "close": stmt.excluded.close,
+                        "volume": stmt.excluded.volume,
+                        "is_final": stmt.excluded.is_final,
+                        "updated_at": stmt.excluded.updated_at,
+                    },
                 )
-            """), records)
+                await session.execute(stmt)
+                inserted += len(chunk)
             await session.commit()
-            inserted = max(0, int(getattr(result, "rowcount", 0) or 0))
     except Exception:
         # Requeue a bounded suffix so transient DB pressure does not discard all evidence.
         for item in batch[-max(1, len(batch)//2):]:

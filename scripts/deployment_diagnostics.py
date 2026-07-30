@@ -247,9 +247,24 @@ def check_environment(report: Report) -> None:
             )
         )
 
-    paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    def _clean_paystack_key(value: object) -> str:
+        text = str(value or "").strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            text = text[1:-1].strip()
+        return text
+
+    paystack_secret = _clean_paystack_key(os.getenv("PAYSTACK_SECRET_KEY"))
+    paystack_public = _clean_paystack_key(os.getenv("PAYSTACK_PUBLIC_KEY"))
     from payments.paystack_policy import live_staging_mode_valid
-    paystack_test_mode = paystack_secret.startswith("sk_test_") and _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
+    paystack_test_pair = (
+        paystack_secret.startswith("sk_test_")
+        and paystack_public.startswith("pk_test_")
+    )
+    paystack_test_mode = paystack_test_pair and _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
+    paystack_live_pair = (
+        paystack_secret.startswith("sk_live_")
+        and paystack_public.startswith("pk_live_")
+    )
     paystack_live_guarded = live_staging_mode_valid(os.environ)
     paystack_key_safe = (not paystack_secret) or paystack_test_mode or paystack_live_guarded
     sandbox_ok = (
@@ -268,6 +283,8 @@ def check_environment(report: Report) -> None:
             severity="critical",
             detail=(
                 f"paystack_test={int(paystack_test_mode)} "
+                f"paystack_test_pair={int(paystack_test_pair)} "
+                f"paystack_live_pair={int(paystack_live_pair)} "
                 f"paystack_live_guarded={int(paystack_live_guarded)} "
                 f"paystack_key_safe={int(paystack_key_safe)} "
                 f"bybit_testnet={int(_truthy('BYBIT_TESTNET', False))} "
@@ -407,8 +424,8 @@ def static_checks(report: Report) -> None:
                 ".env.example",
                 "RAILWAY_ENV_UPDATED.env.example",
                 "deploy/railway_roles/monolith_safe.env",
-                "SignalRankAI_v1.2.6_Railway_Full_System_Live_Paystack_Staging.env.example",
-                "SignalRankAI_v1.2.6_Railway_Production_Launch.env.example",
+                "SignalRankAI_v1.2.7_Railway_Full_System_Live_Paystack_Staging.env.example",
+                "SignalRankAI_v1.2.7_Railway_Production_Launch.env.example",
                 *env_profiles,
             ],
             "critical",
@@ -648,6 +665,12 @@ async def database_check(report: Report) -> None:
                     )
                 )
             ).scalar_one()
+            max_connections = int((await session.execute(text("SHOW max_connections"))).scalar_one() or 0)
+            current_connections = int((
+                await session.execute(
+                    text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database()")
+                )
+            ).scalar_one() or 0)
             queued_free = (
                 await session.execute(
                     text("SELECT COUNT(*) FROM free_signal_queue WHERE status='queued'")
@@ -706,6 +729,36 @@ async def database_check(report: Report) -> None:
                         "and inspect DB admission holders. The fallback command is: "
                         "python scripts/repair_active_signal_duplicates.py --apply"
                     )
+                ),
+            )
+        )
+
+        pool_diag = get_pool_diagnostics()
+        local_capacity = int(pool_diag.get("effective_pool_size") or 0) + int(pool_diag.get("effective_max_overflow") or 0)
+        reserve = max(3, int(os.getenv("DB_PRODUCTION_CONNECTION_RESERVE", "5") or 5))
+        available_headroom = max(0, int(max_connections or 0) - int(current_connections or 0))
+        capacity_ok = bool(max_connections) and available_headroom >= max(1, local_capacity + reserve)
+        report.add(
+            Check(
+                name="postgresql_capacity_headroom",
+                category="live_dependencies",
+                status=PASS if capacity_ok else FAIL,
+                severity="high",
+                detail=(
+                    f"max_connections={max_connections} current={current_connections} "
+                    f"available={available_headroom} local_pool_capacity={local_capacity} reserve={reserve}"
+                ),
+                evidence={
+                    "max_connections": int(max_connections or 0),
+                    "current_connections": int(current_connections or 0),
+                    "available_headroom": int(available_headroom),
+                    "local_pool_capacity": int(local_capacity),
+                    "reserve": int(reserve),
+                },
+                remediation=(
+                    None
+                    if capacity_ok
+                    else "Reduce the app pool, reduce concurrent services, add PgBouncer transaction pooling, or upgrade PostgreSQL before public launch. Do not add a second writable primary."
                 ),
             )
         )
@@ -1145,9 +1198,41 @@ def http_check(report: Report, base_url: str) -> None:
 
 
 def integration_inventory(report: Report) -> None:
+    paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
+    paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
+    paystack_mode = (
+        "live"
+        if paystack_secret.startswith("sk_live_") and paystack_public.startswith("pk_live_")
+        else "test"
+        if paystack_secret.startswith("sk_test_") and paystack_public.startswith("pk_test_")
+        else "incomplete"
+        if paystack_secret or paystack_public
+        else "missing"
+    )
+    report.add(
+        Check(
+            name=f"paystack_{paystack_mode}",
+            category="optional_integrations",
+            status=WARN if paystack_mode in {"live", "test"} else FAIL if paystack_mode == "incomplete" else BLOCKED,
+            severity="high" if paystack_mode in {"live", "incomplete"} else "medium",
+            detail=(
+                f"key_pair={paystack_mode}; "
+                "webhook/transaction certification still required"
+                if paystack_mode in {"live", "test"}
+                else "PAYSTACK_SECRET_KEY and PAYSTACK_PUBLIC_KEY must be a matching pair"
+                if paystack_mode == "incomplete"
+                else "Paystack keys are not configured"
+            ),
+            remediation=(
+                None
+                if paystack_mode in {"live", "test"}
+                else "Set PAYSTACK_SECRET_KEY and PAYSTACK_PUBLIC_KEY using matching sk_/pk_ mode prefixes."
+            ),
+        )
+    )
+
     optional = [
         ("gemini", ["GEMINI_API_KEY"], "AI review live call"),
-        ("paystack_test", ["PAYSTACK_SECRET_KEY", "PAYSTACK_PUBLIC_KEY"], "test payment and webhook reconciliation"),
         ("tradingview", ["TV_WEBHOOK_SECRET"], "signed alert ingress"),
         ("metaapi_demo", ["META_API_TOKEN"], "demo account quote/order/reconciliation"),
         ("provider_twelvedata", ["TWELVEDATA_API_KEY"], "forex/equity provider certification"),

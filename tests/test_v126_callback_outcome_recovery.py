@@ -44,10 +44,10 @@ def test_outcome_source_uses_operational_lane_and_scan_evidence():
 
 def test_staging_profile_enables_outcome_notifications():
     profile = Path(
-        "SignalRankAI_v1.2.6_Railway_Full_System_Live_Paystack_Staging.env.example"
+        "SignalRankAI_v1.2.7_Railway_Full_System_Live_Paystack_Staging.env.example"
     ).read_text(encoding="utf-8")
     required = {
-        "APP_VERSION=1.2.6",
+        "APP_VERSION=1.2.7",
         "BOT_WEBHOOK_READY_MIN_HANDLERS=60",
         "OUTCOME_TRACKER_DB_PRIORITY=critical",
         "OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS=12",
@@ -59,4 +59,4 @@ def test_staging_profile_enables_outcome_notifications():
 
 def test_lifecycle_recipient_states_are_normalized():
     source = Path("engine/signal_lifecycle.py").read_text(encoding="utf-8")
-    assert 'func.lower(SignalDelivery.delivery_state).in_(("confirmed", "delivered", "reconciled"))' in source
+    assert 'func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled"))' in source

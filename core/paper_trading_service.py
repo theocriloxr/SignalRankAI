@@ -468,23 +468,40 @@ class PaperTradingService:
         }
 
     async def delivered_r_samples(self, telegram_user_id: int) -> dict[str, Any]:
+        """Return terminal R samples plus transparent evidence backlog counts.
+
+        TP1/TP2 rows are lifecycle milestones, not completed trades. Treating them
+        as final Monte Carlo samples would overstate evidence and bias the model.
+        """
+        terminal_statuses = (
+            "tp", "tp3", "sl", "invalid", "invalidated", "time_stop",
+            "partial_win_be", "missed_entry", "expired",
+        )
+        partial_statuses = ("tp1", "tp2")
+        proof_states = ("CONFIRMED", "RECONCILED", "DELIVERED", "SENT")
         async with get_session(priority="interactive", label="paper.simulation_samples") as session:
             user = await self._user_row(session, int(telegram_user_id))
             if user is None:
-                return {"r_values": [], "first": None, "last": None}
+                return {
+                    "r_values": [], "first": None, "last": None,
+                    "delivered_total": 0, "pending_delivered": 0,
+                    "partial_milestones": 0,
+                }
             rows = (
                 await session.execute(
                     select(
                         Outcome.signal_id,
                         Outcome.r_multiple,
                         Outcome.closed_at,
+                        Outcome.status,
                         SignalDelivery.delivery_confirmed_at,
                     )
                     .join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
                     .where(
                         SignalDelivery.user_id == int(user.id),
                         SignalDelivery.sent_ok.is_(True),
-                        func.upper(SignalDelivery.delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"]),
+                        func.upper(SignalDelivery.delivery_state).in_(proof_states),
+                        func.lower(Outcome.status).in_(terminal_statuses),
                         Outcome.r_multiple.is_not(None),
                     )
                     .order_by(Outcome.closed_at.asc().nulls_last())
@@ -493,7 +510,7 @@ class PaperTradingService:
             seen: set[str] = set()
             r_values: list[float] = []
             times: list[Any] = []
-            for signal_id, r_multiple, closed_at, confirmed_at in rows:
+            for signal_id, r_multiple, closed_at, _status, confirmed_at in rows:
                 sid = str(signal_id or "")
                 if not sid or sid in seen:
                     continue
@@ -502,10 +519,34 @@ class PaperTradingService:
                 when = closed_at or confirmed_at
                 if when is not None:
                     times.append(when)
+
+            delivered_total = int((await session.execute(
+                select(func.count(func.distinct(SignalDelivery.signal_id))).where(
+                    SignalDelivery.user_id == int(user.id),
+                    SignalDelivery.sent_ok.is_(True),
+                    func.upper(SignalDelivery.delivery_state).in_(proof_states),
+                    SignalDelivery.telegram_chat_id.is_not(None),
+                    SignalDelivery.telegram_message_id.is_not(None),
+                )
+            )).scalar() or 0)
+            partial_milestones = int((await session.execute(
+                select(func.count(func.distinct(Outcome.signal_id)))
+                .join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
+                .where(
+                    SignalDelivery.user_id == int(user.id),
+                    SignalDelivery.sent_ok.is_(True),
+                    func.upper(SignalDelivery.delivery_state).in_(proof_states),
+                    func.lower(Outcome.status).in_(partial_statuses),
+                )
+            )).scalar() or 0)
+            terminal_count = len(seen)
             return {
                 "r_values": r_values,
                 "first": min(times) if times else None,
                 "last": max(times) if times else None,
+                "delivered_total": delivered_total,
+                "pending_delivered": max(0, delivered_total - terminal_count),
+                "partial_milestones": partial_milestones,
             }
 
     async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:

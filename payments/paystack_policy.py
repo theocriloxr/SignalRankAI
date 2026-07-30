@@ -29,6 +29,13 @@ def _normalise_ack(value: object) -> str:
     return text
 
 
+def _clean_key(value: object) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text
+
+
 def _environment(env: Mapping[str, str]) -> str:
     return str(
         env.get("RAILWAY_ENVIRONMENT_NAME")
@@ -82,8 +89,8 @@ def live_staging_mode_valid(environ: Mapping[str, str] | None = None) -> bool:
         and _truthy(env.get("FULL_SYSTEM_STAGING_TEST_ACTIVE"))
         and _truthy(env.get("PAYSTACK_LIVE_STAGING_ENABLED"))
         and is_paystack_live_staging_ack_valid(env.get("PAYSTACK_LIVE_STAGING_ACK"))
-        and str(env.get("PAYSTACK_SECRET_KEY") or "").strip().startswith("sk_live_")
-        and str(env.get("PAYSTACK_PUBLIC_KEY") or "").strip().startswith("pk_live_")
+        and _clean_key(env.get("PAYSTACK_SECRET_KEY")).startswith("sk_live_")
+        and _clean_key(env.get("PAYSTACK_PUBLIC_KEY")).startswith("pk_live_")
         and bool(_allowed_ids(env))
     )
 
@@ -109,7 +116,7 @@ def evaluate_paystack_operation(
     at or below the configured cap. Production is not rewritten by this policy.
     """
     env = environ if environ is not None else os.environ
-    secret = str(env.get("PAYSTACK_SECRET_KEY") or "").strip()
+    secret = _clean_key(env.get("PAYSTACK_SECRET_KEY"))
     environment = _environment(env)
     if not secret:
         return PaystackOperationDecision(False, "missing", "paystack_secret_missing")

@@ -133,15 +133,44 @@ def _allow_provider_waterfall() -> bool:
 
 
 def _latest_tick_price(symbol: str):
+    """Return only a recent Redis/WebSocket tick.
+
+    Older releases trusted the last Redis value indefinitely, which made
+    Telegram /monitor lag the venue after a websocket circuit stalled.
+    """
     try:
         payload = state.get_latest_tick_sync(symbol)
-        if isinstance(payload, dict):
-            price = payload.get("price")
-            if price is not None:
-                price = float(price)
-                if price > 0:
-                    _set_price_cache(symbol, price)
-                    return price
+        if not isinstance(payload, dict):
+            return None
+
+        now_ts = datetime.now(timezone.utc).timestamp()
+        max_age = max(
+            1.0,
+            float(_env_get("TRADE_TRACKER_LATEST_TICK_MAX_AGE_SECONDS", 15.0)),
+        )
+        updated_at = float(payload.get("updated_at") or 0.0)
+        event_time_ms = payload.get("event_time_ms")
+        event_ts = 0.0
+        try:
+            event_ts = float(event_time_ms or 0.0) / 1000.0
+        except Exception:
+            event_ts = 0.0
+        source_ts = max(updated_at, event_ts)
+        age = (now_ts - source_ts) if source_ts > 0 else float("inf")
+        if age < -5.0 or age > max_age:
+            logger.debug(
+                "Ignoring stale latest tick for %s source=%s age=%.2fs max=%.2fs",
+                symbol,
+                payload.get("source"),
+                age,
+                max_age,
+            )
+            return None
+
+        price = float(payload.get("price") or 0.0)
+        if price > 0:
+            _set_price_cache(symbol, price)
+            return price
     except Exception:
         pass
     return None

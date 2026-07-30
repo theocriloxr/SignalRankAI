@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import String, bindparam, text
 
 from config import ADMIN_IDS, OWNER_IDS
 from core.redis_state import state
@@ -49,20 +49,21 @@ async def adaptive_status_command(update: Any, context: Any) -> None:
     asset = args[0].upper() if args else None
     paused = str(state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1", "true", "yes", "on"}
     async with get_session(priority="interactive", label="adaptive.command.status", timeout_seconds=4) as session:
+        profile_stmt = text(
+            """
+            SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,
+                   metadata->>'dataset_version' AS dataset_version,
+                   metadata->>'feature_version' AS feature_version,
+                   metadata->'walk_forward' AS walk_forward
+            FROM adaptive_asset_profiles
+            WHERE (:asset IS NULL OR asset=:asset)
+            ORDER BY asset,is_current DESC,version DESC
+            LIMIT 12
+            """
+        ).bindparams(bindparam("asset", type_=String()))
         profile_rows = (
             await session.execute(
-                text(
-                    """
-                    SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,
-                           metadata->>'dataset_version' AS dataset_version,
-                           metadata->>'feature_version' AS feature_version,
-                           metadata->'walk_forward' AS walk_forward
-                    FROM adaptive_asset_profiles
-                    WHERE (:asset IS NULL OR asset=:asset)
-                    ORDER BY asset,is_current DESC,version DESC
-                    LIMIT 12
-                    """
-                ),
+                profile_stmt,
                 {"asset": asset},
             )
         ).mappings().all()

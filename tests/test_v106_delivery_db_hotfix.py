@@ -75,10 +75,11 @@ def test_resend_yields_to_active_engine_fanout() -> None:
     assert 'skipped: engine delivery fanout active' in bot
 
 
-def test_outcome_tracker_no_longer_occupies_critical_delivery_lane() -> None:
+def test_outcome_tracker_uses_durable_operational_lane() -> None:
     source = _source("engine/realtime_outcome_tracker.py")
-    assert "priority=DBPriority.BACKGROUND" in source
-    assert 'OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "1.0"' in source
+    assert "priority=_outcome_db_priority()" in source
+    assert 'OUTCOME_TRACKER_DB_PRIORITY", "critical"' in source
+    assert 'OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "12"' in source
 
 
 def test_all_changed_python_files_compile() -> None:

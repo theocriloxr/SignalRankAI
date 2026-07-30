@@ -2413,6 +2413,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
             }
 
         redis_fallback = False
+        redis_enqueue_indeterminate = False
         if _use_redis_webhook_queue:
             enqueued = False
             duplicate = False
@@ -2439,7 +2440,16 @@ async def _telegram_webhook_route(req: Request) -> dict:
                     )
                     redis_backend = "redis"
             except asyncio.TimeoutError:
-                logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+                # A Redis timeout is indeterminate: the XADD may have committed
+                # after our local wait expired. Falling back immediately to the
+                # in-process queue can therefore process the same Telegram
+                # update twice. Return a retryable 503 instead; Telegram retries
+                # and the stream idempotency key collapses any late success.
+                redis_enqueue_indeterminate = True
+                logger.warning(
+                    "[webhook] redis enqueue timeout update_id=%s action=retry_no_local_fallback",
+                    update_id,
+                )
             except Exception as exc:
                 logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
             if enqueued:
@@ -2451,6 +2461,15 @@ async def _telegram_webhook_route(req: Request) -> dict:
                     "status": "queued",
                     "queue_backend": redis_backend,
                     "duplicate": duplicate,
+                }
+            if redis_enqueue_indeterminate:
+                return {
+                    "ok": False,
+                    "error": "redis_enqueue_indeterminate",
+                    "bot_ready": True,
+                    "status": "retry",
+                    "queue_backend": redis_backend,
+                    "update_id": update_id,
                 }
             logger.warning("[webhook] redis enqueue failed — falling back to in-process queue")
             redis_fallback = True
@@ -2579,7 +2598,7 @@ async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
     result = await _telegram_webhook_route(req)
     error = str(result.get("error") or "")
     status_code = 200
-    if error == "queue_full":
+    if error in {"queue_full", "redis_enqueue_indeterminate"}:
         status_code = 503
     elif error:
         status_code = 400
@@ -2617,8 +2636,11 @@ async def _enqueue_webhook_update_async(data: dict) -> None:
             timeout=0.35,
         )
     except asyncio.TimeoutError:
-        enqueued = False
-        logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+        logger.warning(
+            "[webhook] redis enqueue timeout update_id=%s action=retry_no_local_fallback",
+            update_id,
+        )
+        return
     except Exception as exc:
         enqueued = False
         logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)

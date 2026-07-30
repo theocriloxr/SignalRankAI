@@ -32,6 +32,7 @@ ENTRY_ZONE_PCT = float(os.getenv("ENTRY_ZONE_PCT", "0.003"))
 BE_BUFFER_PCT = float(os.getenv("BE_BUFFER_PCT", "0.001"))
 TICK_INTERVAL = float(os.getenv("TICK_INTERVAL_SECONDS", "30.0"))
 _EXCURSION_CACHE: Dict[str, Dict[str, float]] = {}
+_DELIVERY_PROOF_STATES = ("sent", "delivered", "confirmed", "reconciled")
 
 
 def _record_excursion(signal_id: str, direction: str, entry: float, price: float) -> Dict[str, float]:
@@ -430,7 +431,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         from db.session import get_session
         from db.models import Signal, SignalDelivery, Outcome, SignalLifecycle
         from db.priority import DBPriority
-        from sqlalchemy import select, or_, exists, and_
+        from sqlalchemy import select, or_, exists, and_, func
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with _session_scope(
@@ -453,8 +454,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                                 SignalDelivery.sent_ok.is_(True),
                                 SignalDelivery.telegram_chat_id.is_not(None),
                                 SignalDelivery.telegram_message_id.is_not(None),
-                                SignalDelivery.delivery_confirmed_at.is_not(None),
-                                SignalDelivery.delivery_state.in_(["confirmed", "delivered", "reconciled"]),
+                                func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
                             )
                         )
                     )
@@ -530,7 +530,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
     try:
         from db.session import get_session
         from db.models import Signal, SignalDelivery, Outcome
-        from sqlalchemy import select, or_, and_
+        from sqlalchemy import select, or_, and_, func
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "168") or 168)
         limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
@@ -547,8 +547,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
                 .where(SignalDelivery.sent_ok.is_(True))
                 .where(SignalDelivery.telegram_chat_id.is_not(None))
                 .where(SignalDelivery.telegram_message_id.is_not(None))
-                .where(SignalDelivery.delivery_confirmed_at.is_not(None))
-                .where(SignalDelivery.delivery_state.in_(["confirmed", "delivered", "reconciled"]))
+                .where(func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES))
                 .where(Signal.created_at >= cutoff)
                 .order_by(Signal.created_at.asc())
                 .limit(max(1, int(limit)))
@@ -591,6 +590,94 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
     except Exception as exc:
         logger.debug("[outcome_tracker] fetch_delivered_untracked_signals skipped: %s", exc)
         return []
+
+
+async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str, Any]]:
+    """Load one proof-backed signal regardless of delivery-state casing.
+
+    Telegram delivery rows historically used both upper- and lower-case state
+    values. Successful API sends with a message id are authoritative proof even
+    when ``delivery_confirmed_at`` was not populated by an older release.
+    """
+    ref = str(signal_id or "").strip()
+    if not ref:
+        return None
+    try:
+        from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
+        from db.session import get_session
+        from sqlalchemy import and_, exists, func, select
+
+        async with _session_scope(
+            get_session,
+            priority=_outcome_db_priority(),
+            label="outcome_tracker.reconcile_signal",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
+            stmt = (
+                select(Signal, Outcome, SignalLifecycle)
+                .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+                .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
+                .where(Signal.signal_id == ref)
+                .where(Signal.archived.is_(False))
+                .where(
+                    exists(
+                        select(SignalDelivery.id).where(
+                            and_(
+                                SignalDelivery.signal_id == Signal.signal_id,
+                                SignalDelivery.sent_ok.is_(True),
+                                SignalDelivery.telegram_chat_id.is_not(None),
+                                SignalDelivery.telegram_message_id.is_not(None),
+                                func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
+                            )
+                        )
+                    )
+                )
+                .limit(1)
+            )
+            row = (await session.execute(stmt)).first()
+            await session.commit()
+
+        if row is None:
+            return None
+        signal_row, outcome_row, lifecycle = row
+        return {
+            "signal_id": signal_row.signal_id,
+            "asset": signal_row.asset,
+            "direction": signal_row.direction,
+            "entry": signal_row.entry,
+            "stop_loss": signal_row.stop_loss,
+            "take_profit": signal_row.take_profit,
+            "created_at": signal_row.created_at,
+            "timeframe": signal_row.timeframe,
+            "score": signal_row.score,
+            "ml_probability": getattr(signal_row, "ml_probability", None),
+            "prev_outcome_status": (
+                str(getattr(outcome_row, "status", "") or "").lower()
+                if outcome_row is not None
+                else None
+            ),
+            "prev_outcome_meta": (
+                dict(getattr(outcome_row, "meta", {}) or {})
+                if outcome_row is not None
+                else {}
+            ),
+            "expires_at": signal_row.expires_at,
+            "lifecycle_state": str(
+                getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"
+            ),
+            "highest_tp_hit": _database_tp_progress(lifecycle, outcome_row),
+            "lifecycle_last_price": getattr(lifecycle, "last_price", None),
+            "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
+            "outcome_category": "LIVE_DELIVERED",
+            "outcome_eligibility_reason": "interactive_reconciliation",
+        }
+    except Exception as exc:
+        logger.warning(
+            "[outcome_tracker] reconcile lookup failed signal=%s err=%s",
+            ref[:16],
+            exc,
+        )
+        return None
 
 
 async def _get_live_price(symbol: str) -> Optional[float]:
@@ -1012,7 +1099,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
     try:
         from db.session import get_session
         from db.models import SignalDelivery, User
-        from sqlalchemy import select, or_, and_
+        from sqlalchemy import select, or_, and_, func
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -1203,7 +1290,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             mark_outcome_notification_delivered,
             mark_outcome_notification_failed,
         )
-        from sqlalchemy import select, or_, and_
+        from sqlalchemy import select, or_, and_, func
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -1512,8 +1599,8 @@ class RealtimeOutcomeTracker:
         # signal eventually receives an outcome state for analytics/training.
         backfill_limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "100") or 100))
         backfill = await _fetch_delivered_untracked_signals(limit=backfill_limit)
+        logger.info("[outcome_tracker] reconciliation_backfill fetched=%d", len(backfill))
         if backfill:
-            logger.info("[outcome_tracker] reconciliation_backfill fetched=%d", len(backfill))
             known = {str(s.get("signal_id") or "") for s in signals}
             for item in backfill:
                 sid = str(item.get("signal_id") or "")
@@ -1850,3 +1937,31 @@ class RealtimeOutcomeTracker:
 
 # Singleton instance
 outcome_tracker = RealtimeOutcomeTracker()
+
+
+async def reconcile_signal_now(signal_id: str) -> bool:
+    """Perform an immediate, durable lifecycle reconciliation for one signal.
+
+    Used by interactive Telegram buttons as a read-through repair path. It
+    shares the same trusted quote validation and monotonic lifecycle writer as
+    the background worker, then flushes pending notifications before returning.
+    """
+    signal = await _fetch_signal_for_reconciliation(signal_id)
+    if signal is None:
+        logger.info(
+            "[outcome_tracker] interactive_reconcile signal=%s found=false",
+            str(signal_id or "")[:16],
+        )
+        return False
+
+    observation = await _get_outcome_quote(str(signal.get("asset") or ""))
+    await outcome_tracker._check_signal(signal, observation=observation)
+    await outcome_tracker._dispatch_pending_notifications()
+    logger.info(
+        "[outcome_tracker] interactive_reconcile signal=%s found=true price=%s provider=%s trusted=%s",
+        str(signal.get("signal_id") or "")[:16],
+        observation.price,
+        observation.provider,
+        observation.provider_trusted,
+    )
+    return observation.price is not None and observation.provider_trusted

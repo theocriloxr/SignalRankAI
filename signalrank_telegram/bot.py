@@ -2585,7 +2585,14 @@ def _auto_execute_signal_if_enabled(
 
 
 async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None = None) -> tuple[str, bool, object | None]:
+    """Build a monitor card from a fresh typed quote and durable lifecycle state.
+
+    Do not use ``core.trade_tracker`` here: its legacy cache is suitable for
+    best-effort internal tracking but can lag external venues. Interactive
+    monitor cards require provider attribution and source-age validation.
+    """
     import json
+    import time
     from datetime import datetime, timezone
 
     payload = await _load_signal_payload(signal_id, telegram_user_id=telegram_user_id)
@@ -2593,20 +2600,35 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
         return "\u274C <b>Monitor unavailable</b>\nSignal not found.", False, None
 
     outcome_row = None
+    lifecycle_row = None
     try:
+        from db.models import Outcome, SignalLifecycle
         from db.session import get_session
-        from db.models import Outcome
         from sqlalchemy import select
 
-        async with get_session() as session:
+        async with get_session(
+            priority="interactive",
+            label="telegram.monitor.lifecycle",
+            timeout_seconds=max(
+                2.0,
+                float(os.getenv("MONITOR_DB_TIMEOUT_SECONDS", "6") or 6),
+            ),
+        ) as session:
             outcome_row = (
                 await session.execute(
                     select(Outcome).where(Outcome.signal_id == str(signal_id)).limit(1)
                 )
             ).scalar_one_or_none()
+            lifecycle_row = (
+                await session.execute(
+                    select(SignalLifecycle).where(
+                        SignalLifecycle.signal_id == str(signal_id)
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
             await session.commit()
     except Exception as exc:
-        logger.debug(f"[monitor] outcome load failed for {signal_id}: {exc}")
+        logger.debug("[monitor] lifecycle load failed for %s: %s", signal_id, exc)
 
     asset = str(payload.get("asset") or "?")
     direction = str(payload.get("direction") or "long").lower()
@@ -2618,17 +2640,88 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
             take_profit = json.loads(take_profit)
         except Exception:
             pass
-    tp1 = _first_take_profit({"take_profit": take_profit})
+    tp_levels = _parse_tp_levels_for_outcome(take_profit)
+    tp_levels = sorted(tp_levels, reverse=direction == "short")
 
     current_price = None
+    quote_provider = "unavailable"
+    quote_provider_symbol = asset
+    quote_age_seconds = None
+    quote_trusted = False
+    quote_reason = None
+
+    # Prefer the worker's fresh read projection when available.
     try:
-        from core.trade_tracker import _get_current_price
-        current_price = await asyncio.to_thread(_get_current_price, asset)
+        from engine.outcome_snapshots import read_cached_outcome_snapshot
+
+        snapshot = await read_cached_outcome_snapshot(str(signal_id))
+        if (
+            snapshot is not None
+            and snapshot.price is not None
+            and snapshot.provider_trusted
+            and not snapshot.is_stale(
+                max_age_seconds=max(
+                    5.0,
+                    float(os.getenv("MONITOR_SNAPSHOT_MAX_AGE_SECONDS", "30") or 30),
+                )
+            )
+        ):
+            current_price = float(snapshot.price)
+            quote_provider = str(snapshot.provider or "outcome_worker")
+            quote_provider_symbol = asset
+            quote_trusted = True
+            try:
+                quote_time = datetime.fromisoformat(
+                    str(snapshot.quote_time or snapshot.updated_at).replace("Z", "+00:00")
+                )
+                if quote_time.tzinfo is None:
+                    quote_time = quote_time.replace(tzinfo=timezone.utc)
+                quote_age_seconds = max(
+                    0.0,
+                    (datetime.now(timezone.utc) - quote_time).total_seconds(),
+                )
+            except Exception:
+                quote_age_seconds = None
     except Exception as exc:
-        logger.debug(f"[monitor] live price fetch failed for {signal_id}: {exc}")
+        logger.debug("[monitor] snapshot read failed for %s: %s", signal_id, exc)
+
+    # Read through to a source-timestamped provider quote if the projection is
+    # absent or stale. This is the same typed contract used by final delivery.
+    if current_price is None:
+        try:
+            from data.get_live_price import get_live_price_result
+            from data.provider_types import (
+                LivePriceFailure,
+                LivePriceQuote,
+                validate_quote_for_final_delivery,
+            )
+
+            result = await get_live_price_result(
+                asset,
+                timeout=max(
+                    1.0,
+                    float(os.getenv("MONITOR_LIVE_PRICE_TIMEOUT_SECONDS", "6") or 6),
+                ),
+            )
+            if isinstance(result, LivePriceQuote):
+                trust = validate_quote_for_final_delivery(result, market_open=True)
+                quote_provider = str(result.provider or "unknown")
+                quote_provider_symbol = str(result.provider_symbol or asset)
+                quote_reason = None if trust.ok else str(trust.reason or "quote_untrusted")
+                quote_trusted = bool(trust.ok)
+                if trust.ok:
+                    current_price = float(result.price)
+                    quote_age_seconds = result.source_age_seconds()
+            elif isinstance(result, LivePriceFailure):
+                quote_provider = str(result.provider or "all")
+                quote_provider_symbol = str(result.provider_symbol or asset)
+                quote_reason = str(result.reason or "quote_unavailable")
+        except Exception as exc:
+            quote_reason = f"quote_fetch_error:{type(exc).__name__}"
+            logger.debug("[monitor] typed live quote failed for %s: %s", signal_id, exc)
 
     pnl_pct = None
-    if current_price and entry > 0:
+    if current_price is not None and entry > 0:
         try:
             if direction == "short":
                 pnl_pct = ((entry - float(current_price)) / entry) * 100.0
@@ -2637,36 +2730,97 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
         except Exception:
             pnl_pct = None
 
+    highest_tp_hit = 0
+    state_value = ""
+    if lifecycle_row is not None:
+        state_value = str(getattr(lifecycle_row, "state", "") or "")
+        for index in (1, 2, 3):
+            if getattr(lifecycle_row, f"tp{index}_hit_at", None) is not None:
+                highest_tp_hit = max(highest_tp_hit, index)
     if outcome_row is not None:
+        outcome_status = str(getattr(outcome_row, "status", "") or "").lower()
+        if outcome_status.startswith("tp"):
+            try:
+                highest_tp_hit = max(highest_tp_hit, int(outcome_status[2:]))
+            except Exception:
+                pass
+        if not state_value:
+            state_value = outcome_status
+
+    if outcome_row is not None and str(getattr(outcome_row, "status", "") or "").lower() not in {"tp1", "tp2"}:
         status = str(getattr(outcome_row, "status", "unknown")).upper()
-        status_line = f"\u2705 <b>Outcome:</b> {status}" if status.startswith("TP") else f"\U0001F6D1 <b>Outcome:</b> {status}"
+        status_line = (
+            f"\u2705 <b>Outcome:</b> {status}"
+            if status.startswith("TP")
+            else f"\U0001F6D1 <b>Outcome:</b> {status}"
+        )
         is_active = False
     elif payload.get("expired"):
         status_line = "\u23F0 <b>Status:</b> Expired"
         is_active = False
     else:
-        status_line = "\U0001F7E2 <b>Status:</b> Active"
+        readable_state = (state_value or "active").replace("_", " ").title()
+        status_line = f"\U0001F7E2 <b>Status:</b> {readable_state}"
         is_active = True
+
+    next_target = (
+        tp_levels[highest_tp_hit]
+        if highest_tp_hit < len(tp_levels)
+        else None
+    )
 
     created_at = payload.get("created_at")
     age_text = "N/A"
     if created_at:
         try:
-            created = created_at.replace(tzinfo=timezone.utc) if getattr(created_at, "tzinfo", None) is None else created_at
-            age_minutes = int((datetime.now(timezone.utc) - created).total_seconds() / 60)
+            created = (
+                created_at.replace(tzinfo=timezone.utc)
+                if getattr(created_at, "tzinfo", None) is None
+                else created_at
+            )
+            age_minutes = int(
+                (datetime.now(timezone.utc) - created).total_seconds() / 60
+            )
             age_text = f"{age_minutes}m"
         except Exception:
             pass
 
+    quote_age_text = (
+        f"{float(quote_age_seconds):.1f}s"
+        if quote_age_seconds is not None
+        else "unknown"
+    )
+    feed_identity = quote_provider
+    if quote_provider_symbol and str(quote_provider_symbol).upper() != asset.upper():
+        feed_identity = f"{quote_provider} ({quote_provider_symbol})"
+    feed_text = (
+        f"{feed_identity} • {quote_age_text} old"
+        if quote_trusted
+        else f"{feed_identity} • unavailable ({quote_reason or 'untrusted'})"
+    )
     lines = [
         f"\U0001F4C8 <b>Trade Monitor \u2014 {asset}</b>",
         status_line,
         f"\u2022 Direction: <b>{direction.upper()}</b>",
         f"\u2022 Entry: <b>{entry:.5f}</b>" if entry > 0 else "\u2022 Entry: <b>N/A</b>",
-        f"\u2022 Current: <b>{float(current_price):.5f}</b>" if current_price else "\u2022 Current: <b>Unavailable</b>",
+        (
+            f"\u2022 Current: <b>{float(current_price):.5f}</b>"
+            if current_price is not None
+            else "\u2022 Current: <b>Unavailable</b>"
+        ),
+        f"\u2022 Price feed: <b>{feed_text}</b>",
         f"\u2022 Live P/L: <b>{pnl_pct:+.2f}%</b>" if pnl_pct is not None else "\u2022 Live P/L: <b>N/A</b>",
         f"\u2022 Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "\u2022 Stop Loss: <b>N/A</b>",
-        f"\u2022 Next Target: <b>{float(tp1):.5f}</b>" if tp1 else "\u2022 Next Target: <b>N/A</b>",
+        (
+            f"\u2022 Highest Target: <b>TP{highest_tp_hit}</b>"
+            if highest_tp_hit
+            else "\u2022 Highest Target: <b>None yet</b>"
+        ),
+        (
+            f"\u2022 Next Target: <b>{float(next_target):.5f}</b>"
+            if next_target is not None
+            else "\u2022 Next Target: <b>Completed / N/A</b>"
+        ),
         f"\u2022 Age: <b>{age_text}</b>",
         f"\u2022 Updated: <b>{now_utc_naive().strftime('%H:%M UTC')}</b>",
     ]
@@ -3302,22 +3456,32 @@ def _audit_handler(command_name: str, handler):
                 pass
             return
         except Exception as _cmd_err:
-            # Detect DB/connection errors and give the user actionable feedback
-            # instead of silent failure.
-            _err_lower = str(_cmd_err).lower()
-            _is_db_err = any(kw in _err_lower for kw in (
-                "connection refused", "could not connect", "no route to host",
-                "password authentication failed", "database error",
-                "asyncpg", "operational error", "connection pool",
-                "too many clients already", "toomanyconnectionserror",
-                "ssl", "timeout expired", "could not translate host",
-            ))
-            logger.exception("[cmd:%s] handler failed ref=%s db=%s: %s", command_name, err_ref, _is_db_err, _cmd_err)
-            if _is_db_err:
+            # Do not mislabel deterministic SQL/bind defects as connection
+            # pressure. v1.2.6 did this for /adaptive_status because every
+            # asyncpg ProgrammingError contained the word "asyncpg".
+            from signalrank_telegram.error_classification import classify_command_exception
+
+            _failure_class = classify_command_exception(_cmd_err)
+            logger.exception(
+                "[cmd:%s] handler failed ref=%s class=%s: %s",
+                command_name,
+                err_ref,
+                _failure_class,
+                _cmd_err,
+            )
+            if _failure_class == "db_pressure":
                 try:
                     if getattr(update, "message", None):
                         await update.message.reply_text(
                             f"Database connection pressure detected. Please try again shortly. Ref: {err_ref}"
+                        )
+                except Exception:
+                    pass
+            elif _failure_class == "db_query":
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(
+                            f"A database query failed and has been logged for repair. Reference: {err_ref}"
                         )
                 except Exception:
                     pass
@@ -6014,6 +6178,28 @@ def run_bot() -> None:
                 )
                 return
             signal_id = str(resolved_payload.get("signal_id") or signal_ref)
+            try:
+                from engine.realtime_outcome_tracker import reconcile_signal_now
+
+                reconcile_timeout = max(
+                    2.0,
+                    float(os.getenv("MONITOR_RECONCILE_TIMEOUT_SECONDS", "8") or 8),
+                )
+                reconciled = await asyncio.wait_for(
+                    reconcile_signal_now(signal_id),
+                    timeout=reconcile_timeout,
+                )
+                logger.info(
+                    "[monitor] interactive reconciliation signal=%s trusted_quote=%s",
+                    signal_id[:16],
+                    reconciled,
+                )
+            except Exception as reconcile_exc:
+                logger.info(
+                    "[monitor] interactive reconciliation deferred signal=%s err=%s",
+                    signal_id[:16],
+                    reconcile_exc,
+                )
             text, is_active, expires_at = await _build_monitor_snapshot(
                 signal_id, telegram_user_id=int(user_id)
             )
@@ -6321,6 +6507,29 @@ def run_bot() -> None:
                 return
             _canonical_ref = str(_resolved.get("signal_id") or raw).strip()
 
+            # Read-through reconciliation makes this button authoritative rather
+            # than a passive DB lookup. A missed worker cycle is repaired before
+            # the user is shown an "active / not reached" response.
+            _reconciled = False
+            try:
+                from engine.realtime_outcome_tracker import reconcile_signal_now
+
+                _reconcile_timeout = max(
+                    2.0,
+                    float(os.getenv("CHECK_OUTCOME_RECONCILE_TIMEOUT_SECONDS", "8") or 8),
+                )
+                _reconciled = await _asyncio.wait_for(
+                    reconcile_signal_now(_canonical_ref),
+                    timeout=_reconcile_timeout,
+                )
+            except Exception as _reconcile_err:
+                logger.info(
+                    "[check_outcome] reconcile deferred user=%s ref=%s err=%s",
+                    uid,
+                    _canonical_ref[:16],
+                    _reconcile_err,
+                )
+
             _snapshot_timeout = max(
                 0.1,
                 float(os.getenv("CHECK_OUTCOME_SNAPSHOT_TIMEOUT_SECONDS", "0.75") or 0.75),
@@ -6332,8 +6541,23 @@ def run_bot() -> None:
                 )
             except Exception:
                 _snapshot = None
-            if _snapshot is not None:
-                logger.info("[check_outcome] user=%s ref=%s snapshot_hit=true", uid, _canonical_ref[:16])
+            if _snapshot is not None and (
+                _reconciled
+                or not _snapshot.is_stale(
+                    max_age_seconds=max(
+                        5.0,
+                        float(os.getenv("CHECK_OUTCOME_MAX_SNAPSHOT_AGE_SECONDS", "30") or 30),
+                    )
+                )
+            ):
+                logger.info(
+                    "[check_outcome] user=%s ref=%s snapshot_hit=true reconciled=%s state=%s tp=%s",
+                    uid,
+                    _canonical_ref[:16],
+                    _reconciled,
+                    _snapshot.state,
+                    _snapshot.highest_tp_hit,
+                )
                 await query.message.reply_text(
                     _format_outcome_snapshot(_snapshot),
                     parse_mode="HTML",

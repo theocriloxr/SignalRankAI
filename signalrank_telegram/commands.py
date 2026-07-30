@@ -255,7 +255,7 @@ MAX_VIP_SEATS = 15
 async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 	vip_used = 0
 	try:
-		from db.session import get_engine_for_event_loop, get_session
+		from db.session import collect_database_health, get_engine_for_event_loop, get_session
 		if get_engine_for_event_loop() is not None:
 			from db.repository import count_active_vip_users
 			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
@@ -2762,9 +2762,9 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 	try:
 		from datetime import datetime, timedelta
-		from sqlalchemy import select, func
+		from sqlalchemy import select, func, or_
 		from db.session import get_engine_for_event_loop, get_session
-		from db.models import SignalDelivery, Outcome, MT5Credentials
+		from db.models import Signal, SignalDelivery, Outcome, MT5Credentials
 
 		if get_engine_for_event_loop() is None:
 			await update.message.reply_text("⚠️ Database not configured.")
@@ -2772,12 +2772,21 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 		# Redis connectivity check (real connectivity, not local fallback).
 		redis_status = "❌ disconnected"
-		redis_url = (os.getenv("REDIS_URL") or "").strip()
+		redis_url = (os.getenv("STATE_REDIS_URL") or os.getenv("REDIS_URL") or "").strip()
 		if redis_url:
 			try:
 				import redis as _redis
-				_rc = _redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3, socket_timeout_seconds=3)
-				_rc.ping()
+				_rc = _redis.from_url(
+					redis_url,
+					decode_responses=True,
+					socket_connect_timeout=3,
+					socket_timeout=3,
+				)
+				await asyncio.to_thread(_rc.ping)
+				try:
+					await asyncio.to_thread(_rc.close)
+				except Exception:
+					pass
 				redis_status = "✅ connected"
 			except Exception as _re:
 				redis_status = f"❌ error ({type(_re).__name__})"
@@ -2790,12 +2799,43 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			# 1) Delivered signals without any outcome row.
+			proof_states = ["sent", "confirmed", "delivered", "reconciled"]
 			untracked_q = (
 				select(func.count(func.distinct(SignalDelivery.signal_id)))
+				.join(Signal, Signal.signal_id == SignalDelivery.signal_id)
 				.outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
-				.where(Outcome.id.is_(None))
+				.where(
+					SignalDelivery.sent_ok.is_(True),
+					SignalDelivery.telegram_chat_id.is_not(None),
+					SignalDelivery.telegram_message_id.is_not(None),
+					func.lower(SignalDelivery.delivery_state).in_(proof_states),
+					Signal.archived.is_(False),
+					Outcome.id.is_(None),
+				)
 			)
 			untracked_count = int((await session.execute(untracked_q)).scalar() or 0)
+
+			terminal_statuses = [
+				"tp", "tp3", "sl", "invalid", "invalidated", "time_stop",
+				"partial_win_be", "missed_entry", "expired",
+			]
+			pending_terminal_q = (
+				select(func.count(func.distinct(SignalDelivery.signal_id)))
+				.join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+				.outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+				.where(
+					SignalDelivery.sent_ok.is_(True),
+					SignalDelivery.telegram_chat_id.is_not(None),
+					SignalDelivery.telegram_message_id.is_not(None),
+					func.lower(SignalDelivery.delivery_state).in_(proof_states),
+					Signal.archived.is_(False),
+					or_(
+						Outcome.id.is_(None),
+						func.lower(Outcome.status).notin_(terminal_statuses),
+					),
+				)
+			)
+			pending_terminal_count = int((await session.execute(pending_terminal_q)).scalar() or 0)
 
 			# 2) Stale force-closed outcomes (TIME_STOP policy, with invalid fallback).
 			invalid_q = (
@@ -2820,15 +2860,34 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 		mt5_rate = (float(success_mt5) / float(total_mt5) * 100.0) if total_mt5 > 0 else 0.0
 
+		db_health = {}
+		try:
+			db_health = await collect_database_health()
+		except Exception:
+			db_health = {}
+		pool = dict(db_health.get("pool") or {})
+		postgres = dict(db_health.get("postgres") or {})
+		admission = dict(pool.get("priority_admission") or {})
+		pool_size = int(pool.get("size") or pool.get("effective_pool_size") or 0)
+		checked_out = int(pool.get("checkedout") or pool.get("checked_out") or 0)
+		max_connections = str(postgres.get("max_connections") or "unknown")
+		db_pressure = (
+			f"pool {checked_out}/{pool_size}" if pool_size > 0 else "pool metrics unavailable"
+		)
+		if admission:
+			db_pressure += f" • admission {int(admission.get('active_total') or 0)}/{int(admission.get('capacity') or 0)}"
+
 		msg = (
 			"🛠️ <b>Ops Health</b>\n\n"
 			"<b>Runtime</b>\n"
 			f"• Redis: <b>{redis_status}</b>\n"
-			f"• Delivered signals without outcome: <b>{untracked_count}</b>\n"
+			f"• Database: <b>{db_pressure}</b> • PostgreSQL max: <b>{max_connections}</b>\n"
+			f"• Proof-backed deliveries with no outcome row: <b>{untracked_count}</b>\n"
+			f"• Proof-backed deliveries awaiting terminal outcome: <b>{pending_terminal_count}</b>\n"
 			f"• Time-stop/force-closed outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
 			"<b>Execution</b>\n"
 			f"• MT5 link success (last {window_days}d): <b>{success_mt5}/{total_mt5}</b> (<b>{mt5_rate:.1f}%</b>)\n\n"
-			"<i>Tip: if untracked is high, keep outcome tracker enabled and confirm live price providers are stable.</i>"
+			"<i>High untracked counts indicate lifecycle discovery or price-provider failure; they do not by themselves prove that another database is required.</i>"
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
@@ -6339,14 +6398,20 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		r_values = [float(v) for v in (evidence.get("r_values") or [])]
 		minimum = max(5, int(os.getenv("SIMULATION_MIN_CONFIRMED_OUTCOMES", "10") or 10))
 		if len(r_values) < minimum:
+			pending_delivered = int(evidence.get("pending_delivered") or 0)
+			partial_milestones = int(evidence.get("partial_milestones") or 0)
+			delivered_total = int(evidence.get("delivered_total") or 0)
 			await update.message.reply_text(
 				"🧪 <b>Simulation evidence is not sufficient yet</b>\n\n"
-				f"Confirmed delivered outcomes available: <b>{len(r_values)}</b>\n"
+				f"Completed delivered outcomes available: <b>{len(r_values)}</b>\n"
 				f"Minimum required: <b>{minimum}</b>\n"
+				f"Proof-backed delivered signals: <b>{delivered_total}</b>\n"
+				f"Still awaiting a terminal outcome: <b>{pending_delivered}</b>\n"
+				f"TP1/TP2 milestones recorded: <b>{partial_milestones}</b>\n"
 				f"Current paper equity: <b>${snapshot.equity:,.2f}</b>\n"
 				f"Open paper positions: <b>{snapshot.open_positions}</b>\n\n"
 				"No default win rate or invented reward assumption was used. "
-				"The projection will become available as your delivered signals complete.",
+				"The projection becomes available after enough delivered signals reach a terminal outcome.",
 				parse_mode="HTML",
 			)
 			return

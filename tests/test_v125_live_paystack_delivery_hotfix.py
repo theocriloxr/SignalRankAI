@@ -118,9 +118,9 @@ def test_staging_freshness_advisory_is_visible_and_live_execution_blocked():
 
 def test_v125_profile_contains_guarded_live_paystack_settings():
     root = Path(__file__).resolve().parents[1]
-    profile = (root / "SignalRankAI_v1.2.6_Railway_Full_System_Live_Paystack_Staging.env.example").read_text(encoding="utf-8")
+    profile = (root / "SignalRankAI_v1.2.7_Railway_Full_System_Live_Paystack_Staging.env.example").read_text(encoding="utf-8")
     for line in (
-        "APP_VERSION=1.2.6",
+        "APP_VERSION=1.2.7",
         "PAYMENTS_PUBLIC_TEST_MODE=0",
         "PAYSTACK_LIVE_STAGING_ENABLED=1",
         "PAYSTACK_LIVE_STAGING_ACK=I_UNDERSTAND_PAYSTACK_LIVE_KEYS_MOVE_REAL_MONEY",
@@ -134,5 +134,5 @@ def test_v125_profile_contains_guarded_live_paystack_settings():
 def test_version_fingerprint_is_v125():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.2.6"
-    assert RELEASE_FINGERPRINT == "v1.2.6-callback-outcome-recovery-20260730"
+    assert APP_VERSION == "1.2.7"
+    assert RELEASE_FINGERPRINT == "v1.2.7-outcome-price-production-gate-20260730"

@@ -60,9 +60,9 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
 )
 
 REQUIRED_WEB_MARKERS = (
-    '"/health"',
-    '"/healthz"',
-    '"/metrics/prometheus"',
+    "/health",
+    "/healthz",
+    "/metrics/prometheus",
 )
 
 REQUIRED_TELEMETRY_MARKERS = (

@@ -16,6 +16,14 @@ _PAYSTACK_LIVE_ACK = "I_UNDERSTAND_PAYSTACK_LIVE_KEYS_MOVE_REAL_MONEY"
 FULL_SYSTEM_STAGING_TEST_ACK_VALUE = _TEST_ACK
 PAYSTACK_LIVE_STAGING_ACK_VALUE = _PAYSTACK_LIVE_ACK
 
+
+def _clean_paystack_key(value: object) -> str:
+    """Normalise a Railway secret without ever logging its contents."""
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"\"", "'"}:
+        text = text[1:-1].strip()
+    return text
+
 # These capabilities are enabled together only in the explicit staging test
 # profile. External integrations must still use sandbox/demo credentials.
 _FULL_SYSTEM_FLAGS = (
@@ -136,6 +144,17 @@ def apply_runtime_safety_environment(
     """
 
     env = environ if environ is not None else os.environ
+
+    # Railway values are normally unquoted, but copied dotenv values sometimes
+    # include literal quote characters. Strip only one matching outer pair so
+    # key-prefix detection and the downstream Paystack client see the real key.
+    for key_name in ("PAYSTACK_SECRET_KEY", "PAYSTACK_PUBLIC_KEY"):
+        raw_value = str(env.get(key_name) or "").strip()
+        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {"'", '"'}:
+            raw_value = raw_value[1:-1].strip()
+        if raw_value:
+            env[key_name] = raw_value
+
     environment = _environment_name(env)
     requested = _truthy(env.get("FULL_SYSTEM_STAGING_TEST_MODE"))
     ack_valid = is_full_system_ack_valid(env.get("FULL_SYSTEM_STAGING_TEST_ACK"))
@@ -176,8 +195,8 @@ def apply_runtime_safety_environment(
         # Paystack may be tested with normal test keys or, when explicitly
         # acknowledged, with guarded live keys for allowlisted users under a
         # transaction cap. Live mode never silently activates from key presence.
-        paystack_key = str(env.get("PAYSTACK_SECRET_KEY") or "").strip()
-        paystack_public = str(env.get("PAYSTACK_PUBLIC_KEY") or "").strip()
+        paystack_key = _clean_paystack_key(env.get("PAYSTACK_SECRET_KEY"))
+        paystack_public = _clean_paystack_key(env.get("PAYSTACK_PUBLIC_KEY"))
         live_requested = _truthy(env.get("PAYSTACK_LIVE_STAGING_ENABLED"))
         live_ack_valid = _normalise_ack(env.get("PAYSTACK_LIVE_STAGING_ACK")) == _PAYSTACK_LIVE_ACK
         live_key_pair = paystack_key.startswith("sk_live_") and paystack_public.startswith("pk_live_")

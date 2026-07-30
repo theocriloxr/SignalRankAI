@@ -324,7 +324,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             .where(
                 SignalDelivery.signal_id == signal_id,
                 SignalDelivery.sent_ok.is_(True),
-                func.lower(SignalDelivery.delivery_state).in_(("confirmed", "delivered", "reconciled")),
+                func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
             )
             )).all()
         for delivery, user in deliveries:
