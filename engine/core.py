@@ -4126,6 +4126,16 @@ def main_loop(DRY_RUN: bool = False):
                 return parsed
 
             _allowlist = _parse_delivery_ids(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", ""))
+
+            if (
+                str(os.getenv("APP_ENV", "") or "").strip().lower() == "production"
+                and not _env_bool("DELIVERY_AUDIENCE_RESTRICTION_MODE", False)
+            ):
+                if _allowlist:
+                    logger.info(
+                        "[delivery_audience] production allowlist is diagnostic-only; ordinary recipients remain enabled"
+                    )
+                _allowlist = []
             if _allowlist:
                 _allowed = set(_allowlist)
                 user_ids = [int(uid) for uid in user_ids if int(uid) in _allowed]
@@ -4392,6 +4402,29 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception as e:
                             logger.debug(f"[engine] Failed to resolve user tier for user {user_id}: {e}")
                             user_tier = 'free'
+
+                        # One authoritative account gate is shared with retries
+                        # and notification senders. It never requires owner approval.
+                        from db.session import get_session as _get_auth_session
+                        from services.delivery_authorization import authorize_signal_delivery
+                        async with _get_auth_session(
+                            priority="interactive",
+                            label="delivery_authorization",
+                            timeout_seconds=max(3.0, _env_float("DELIVERY_AUTH_TIMEOUT_SECONDS", 12.0)),
+                        ) as _auth_session:
+                            _authorization = await authorize_signal_delivery(
+                                _auth_session,
+                                telegram_user_id=int(user_id),
+                                enforce_daily_limit=False,
+                            )
+                        if not _authorization.allowed:
+                            logger.info(
+                                "[delivery_authorization_denied] user=%s code=%s",
+                                user_id, _authorization.code,
+                            )
+                            _delivery_skip(f"authorization:{_authorization.code.lower()}")
+                            continue
+                        user_tier = _authorization.tier
 
                         # Check daily limit
                         from core.tier_constants import TIER_DAILY_LIMITS

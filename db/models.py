@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     JSON,
     UniqueConstraint,
+    event,
 )
 # Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
 try:
@@ -57,6 +58,8 @@ class User(Base):
     referral_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     premium_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
     accepted_terms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     execution_mode: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)
     auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
@@ -96,6 +99,7 @@ class Signal(Base):
     __tablename__ = "signals"
 
     signal_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    display_id: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
     asset: Mapped[str] = mapped_column(String(32), index=True)
     timeframe: Mapped[str] = mapped_column(String(8), index=True)
     direction: Mapped[str] = mapped_column(String(16))
@@ -127,6 +131,17 @@ class Signal(Base):
     performance_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
+@event.listens_for(Signal, "before_insert")
+def _assign_signal_identity(_mapper, _connection, target: Signal) -> None:
+    """Generate the UUID and immutable public reference together exactly once."""
+    from core.signal_identity import make_display_signal_id
+
+    if not getattr(target, "signal_id", None):
+        target.signal_id = str(uuid4())
+    if not getattr(target, "display_id", None):
+        target.display_id = make_display_signal_id(target.signal_id)
+
+
 
 
 logger.info("✅ Signal model defined successfully")
@@ -347,7 +362,51 @@ class SignalLifecycle(Base):
     tp2_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     tp3_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reversed_after_tp1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    highest_tp_hit: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    terminal_event_type: Mapped[Optional[str]] = mapped_column(String(32))
+    terminal_event_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    terminal_price: Mapped[Optional[float]] = mapped_column(Float)
+    terminal_evidence: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserSignalMonitoring(Base):
+    """Per-recipient monitoring preference; never mutates global signal truth."""
+
+    __tablename__ = "user_signal_monitoring"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_user_signal_monitoring_user_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="auto_continue", index=True, nullable=False)
+    highest_notified_tp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    stopped_at_stage: Mapped[Optional[int]] = mapped_column(Integer)
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    continued_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    access_revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class UserSignalMonitoringAction(Base):
+    """Idempotency ledger for Continue/Stop callback updates."""
+
+    __tablename__ = "user_signal_monitoring_actions"
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_user_signal_monitoring_action_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    monitoring_id: Mapped[int] = mapped_column(ForeignKey("user_signal_monitoring.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    stage: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class SignalTrackingEvent(Base):
@@ -387,9 +446,12 @@ class SignalEventNotification(Base):
     sent_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     delivery_state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     sent_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     error: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class EconomicEvent(Base):

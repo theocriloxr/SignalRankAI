@@ -35,6 +35,7 @@ EXPIRED = SignalLifecycle.EXPIRED.value
 TERMINAL_SIGNAL_STATES = frozenset(
     {TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED}
 )
+SAME_CANDLE_AMBIGUITY_POLICY = "stop_loss_first_conservative"
 
 _LEGACY_ALIASES = {
     "": WATCHING_FOR_ENTRY,
@@ -96,6 +97,11 @@ def normalize_lifecycle_state(value: SignalLifecycle | str | None) -> str:
     raw = str(value or "").strip().upper()
     return _LEGACY_ALIASES.get(raw, WATCHING_FOR_ENTRY)
 
+
+
+def is_terminal_signal_state(value: SignalLifecycle | str | None) -> bool:
+    """Shared terminal predicate used by trackers, commands, and callbacks."""
+    return normalize_lifecycle_state(value) in TERMINAL_SIGNAL_STATES
 
 def lifecycle_state_for_event(event_type: str | None) -> str:
     return EVENT_TO_STATE.get(str(event_type or "").strip().lower(), WATCHING_FOR_ENTRY)
@@ -166,6 +172,10 @@ _TERMINAL_OUTCOMES = frozenset(
 )
 
 
+def is_terminal_outcome(value: str | None) -> bool:
+    return str(value or "").strip().lower() in _TERMINAL_OUTCOMES
+
+
 def outcome_transition_allowed(current: str | None, target: str | None) -> bool:
     """Prevent outcome replay/reordering from downgrading authoritative truth."""
     current_l = str(current or "").strip().lower()
@@ -188,6 +198,7 @@ __all__ = [
     "MISSED_ENTRY",
     "SignalLifecycle",
     "SL_HIT",
+    "SAME_CANDLE_AMBIGUITY_POLICY",
     "TERMINAL_SIGNAL_STATES",
     "TP1_HIT",
     "TP2_HIT",
@@ -195,6 +206,8 @@ __all__ = [
     "WATCHING_FOR_ENTRY",
     "event_transition_allowed",
     "highest_tp_for_state",
+    "is_terminal_outcome",
+    "is_terminal_signal_state",
     "lifecycle_state_for_event",
     "lifecycle_state_for_outcome",
     "lifecycle_transition_allowed",

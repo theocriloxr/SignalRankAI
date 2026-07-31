@@ -30,6 +30,7 @@ from db.models import (
     Outcome,
     OutcomeNotification,
     User,
+    UserSignalMonitoring,
     StrategyStat,  # <-- Added import for StrategyStat
     Subscription,  # <-- Added import for Subscription
     ManagedAsset,
@@ -1916,6 +1917,11 @@ async def mark_signal_delivery_result(
             active_message.chat_id = int(telegram_chat_id)
             active_message.message_id = int(telegram_message_id)
             active_message.is_active = True
+        # A recipient becomes monitor-eligible only after the Telegram API
+        # acknowledgement has been persisted as delivery proof.
+        from services.user_signal_monitoring import ensure_monitoring_for_delivery
+
+        await ensure_monitoring_for_delivery(session, delivery=row)
     else:
         row.delivery_state = target_state.value
     # Reservation owns the attempt counter. Confirmation must not turn one
@@ -2182,9 +2188,17 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
         select(User.telegram_user_id, SignalDelivery.tier_at_send)
         .select_from(SignalDelivery)
         .join(User, User.id == SignalDelivery.user_id)
+        .outerjoin(
+            UserSignalMonitoring,
+            and_(UserSignalMonitoring.user_id == SignalDelivery.user_id, UserSignalMonitoring.signal_id == SignalDelivery.signal_id),
+        )
         .where(
             SignalDelivery.signal_id == str(signal_id),
             SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
+            or_(UserSignalMonitoring.id.is_(None), UserSignalMonitoring.status.in_(("auto_continue", "continued"))),
         )
         .order_by(User.telegram_user_id.asc())
     )

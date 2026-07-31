@@ -13,6 +13,7 @@ from core.signal_lifecycle import (
     MISSED_ENTRY,
     SL_HIT,
     TERMINAL_SIGNAL_STATES,
+    SAME_CANDLE_AMBIGUITY_POLICY,
     TP1_HIT,
     TP2_HIT,
     TP3_HIT,
@@ -144,6 +145,10 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
     title, action = labels.get(event_type, (event_type.replace("_", " ").title(), "Lifecycle updated."))
     ref = html.escape(str(signal.get("signal_id") or signal.get("id") or "")[:12])
     ref_line = f"\nRef: <code>{ref}</code>" if ref else ""
+    from core.signal_identity import public_signal_id
+
+    ref = html.escape(public_signal_id(signal))
+    ref_line = f"\n\U0001F4CC Signal ID: <code>{ref}</code>" if ref else ""
     return (
         f"<b>{html.escape(title)}</b>\n\n"
         f"<b>{asset}</b> {direction}\n"
@@ -264,6 +269,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 float(price),
             )
             event_meta = dict(meta or {})
+            event_meta.setdefault("same_candle_policy", SAME_CANDLE_AMBIGUITY_POLICY)
             try:
                 import os
                 clip_min = float(os.getenv("TRAINING_R_CLIP_MIN", "-5") or -5)
@@ -295,6 +301,13 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             await session.flush()
 
             lifecycle.state = event_state(event_type)
+            tp_stage = {"tp1_hit": 1, "tp2_hit": 2, "tp3_hit": 3}.get(event_type, 0)
+            lifecycle.highest_tp_hit = max(int(lifecycle.highest_tp_hit or 0), int(tp_stage))
+            if lifecycle.state in TERMINAL_STATES:
+                lifecycle.terminal_event_type = event_type
+                lifecycle.terminal_event_id = int(existing.id)
+                lifecycle.terminal_price = float(price)
+                lifecycle.terminal_evidence = dict(event_meta)
             lifecycle.last_price = float(price)
             lifecycle.last_checked_at = now
             lifecycle.updated_at = now
@@ -340,7 +353,15 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
             )
             )).all()
+        from services.user_signal_monitoring import monitoring_allows_event
         for delivery, user in deliveries:
+            if not await monitoring_allows_event(
+                session,
+                user_id=int(user.id),
+                signal_id=signal_id,
+                event_type=event_type,
+            ):
+                continue
             already = (await session.execute(
                 select(SignalEventNotification.id).where(
                     SignalEventNotification.signal_id == signal_id,

@@ -1186,7 +1186,9 @@ def _build_outcome_message(
     tier = str(tier_at_send or "free").lower()
     is_free = tier == "free"
 
-    ref_short = _h(signal_id[:8])
+    from core.signal_identity import make_display_signal_id
+
+    ref_short = _h(make_display_signal_id(signal_id))
     asset_h = _h(asset)
     dir_h = _h(direction)
 
@@ -1233,6 +1235,7 @@ def _build_outcome_message(
                 f"🎯 <b>TAKE PROFIT HIT</b>\n\n"
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
+                f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
                 f"🏆 {status_u} reached!\n"
                 f"{suggested_sl_line}\n"
                 f"🕐 {_h(now_str)}\n\n"
@@ -1243,6 +1246,7 @@ def _build_outcome_message(
             f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
             f"📊 Ref: <code>{ref_short}</code>\n\n"
+            f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
             f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
@@ -1258,6 +1262,7 @@ def _build_outcome_message(
                 f"🛑 <b>STOP LOSS HIT</b>\n\n"
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
+                f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
                 f"🕐 {_h(now_str)}\n\n"
                 f"<i>Upgrade to Premium for full details &amp; next signals.</i>"
             )
@@ -1265,6 +1270,7 @@ def _build_outcome_message(
             f"🛑 <b>STOP LOSS HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
             f"📊 Ref: <code>{ref_short}</code>\n\n"
+            f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 SL hit: <code>{_h(_fmt_price(price))}</code>\n"
             f"📉 Loss: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
@@ -1277,9 +1283,32 @@ def _build_outcome_message(
     return (
         f"📌 <b>Signal Closed</b>\n\n"
         f"🪙 <b>{asset_h}</b> | Ref: <code>{ref_short}</code>\n"
+        f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
         f"Status: <b>{_h(status_u)}</b> @ <code>{_h(_fmt_price(price))}</code>\n"
         f"🕐 {_h(now_str)}"
     )
+
+
+def _outcome_monitoring_keyboard(signal_id: str, status: str):
+    """Continue/Stop controls appear only for non-terminal TP1 and TP2."""
+    status_l = str(status or "").lower()
+    stage = 1 if status_l in {"tp1", "partial_tp"} else (2 if status_l == "tp2" else 0)
+    if stage == 0:
+        return None
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    ref = str(signal_id or "")[:36]
+    next_label = "Continue to TP2/TP3" if stage == 1 else "Continue to TP3"
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            f"\u25b6\ufe0f {next_label}",
+            callback_data=f"sigmon_continue_{stage}_{ref}",
+        ),
+        InlineKeyboardButton(
+            f"\u23f9 Stop at TP{stage}",
+            callback_data=f"sigmon_stop_{stage}_{ref}",
+        ),
+    ]])
 
 
 async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> None:
@@ -1365,6 +1394,27 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         await session.commit()
                         continue
 
+                    from services.user_signal_monitoring import monitoring_allows_event
+                    recipient_allowed = not (
+                        bool(getattr(user_row, "is_blocked", False))
+                        or bool(getattr(user_row, "is_suspended", False))
+                    ) and await monitoring_allows_event(
+                        session,
+                        user_id=int(user_row.id),
+                        signal_id=signal_id,
+                        event_type=status_l,
+                    )
+                    if not recipient_allowed:
+                        claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                        if not claimed:
+                            continue
+                        row.delivery_state = "suppressed"
+                        row.attempt_count = int(row.attempt_count or 0) + 1
+                        row.last_error = "monitoring_stopped_or_access_revoked"
+                        row.updated_at = _utc_now_naive()
+                        await session.commit()
+                        continue
+
                     tier_at_send = str(getattr(row, "tier_at_send", "free") or "free").lower()
                     tp_level_num = 0
                     if status_l in {"tp1", "partial_tp"}:
@@ -1408,11 +1458,17 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         pnl_pct=pnl_pct,
                         tier_at_send=tier_at_send,
                     )
+                    if status_l in {"tp1", "partial_tp", "tp2"}:
+                        body += (
+                            "\n\nMonitoring will continue automatically unless you choose Stop."
+                        )
+
                     _send_message_sync(
                         bot,
                         chat_id=int(row.telegram_user_id),
                         text=body,
                         parse_mode="HTML",
+                        reply_markup=_outcome_monitoring_keyboard(signal_id, status_l),
                     )
                     await mark_outcome_notification_delivered(session, int(row.id))
                     await session.commit()

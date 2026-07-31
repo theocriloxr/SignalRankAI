@@ -6469,6 +6469,81 @@ def run_bot() -> None:
             except Exception:
                 pass
 
+    async def _signal_monitoring_action_callback(update, context):
+        """Apply one recipient Continue/Stop choice without closing the global signal."""
+        query = update.callback_query
+        await query.answer("Saving monitoring choice...", show_alert=False)
+        data = str(query.data or "")
+        parts = data.split("_", 3)
+        if len(parts) != 4:
+            await query.answer("Invalid monitoring action.", show_alert=True)
+            return
+        _prefix, action, stage_raw, reference = parts
+        user_id = int(update.effective_user.id)
+        try:
+            stage = int(stage_raw)
+            from core.signal_identity import public_signal_id
+            from db.session import get_session
+            from db.signal_reference import resolve_signal_reference
+            from services.user_signal_monitoring import apply_monitoring_action
+
+            async with get_session(
+                priority="interactive",
+                label="monitoring_action",
+                timeout_seconds=12,
+            ) as session:
+                resolved = await resolve_signal_reference(
+                    session,
+                    reference,
+                    telegram_user_id=user_id,
+                    require_delivery_proof=True,
+                )
+                signal_id = str(resolved.signal.signal_id)
+                result = await apply_monitoring_action(
+                    session,
+                    telegram_user_id=user_id,
+                    signal_id=signal_id,
+                    action=action,
+                    stage=stage,
+                    idempotency_key=f"monitor:{user_id}:{signal_id}:{action}:{stage}",
+                )
+                display_id = public_signal_id(resolved.signal)
+                await session.commit()
+
+            messages = {
+                "stopped": f"Monitoring stopped at TP{stage}.",
+                "already_stopped": f"Monitoring was already stopped at TP{stage}.",
+                "continued": "Monitoring will continue automatically.",
+                "already_continuing": "Monitoring is already continuing automatically.",
+                "already_closed": "This signal is already closed; its final outcome is unchanged.",
+            }
+            text = (
+                f"{messages.get(result.result, 'Monitoring preference saved.')}\n"
+                f"\U0001F4CC Signal ID: {display_id}"
+            )
+            await context.bot.send_message(
+                chat_id=int(query.message.chat_id),
+                text=text,
+                reply_to_message_id=int(query.message.message_id),
+                allow_sending_without_reply=True,
+                disable_notification=False,
+            )
+            logger.info(
+                "[monitoring_action] user=%s signal=%s display_id=%s action=%s stage=%s result=%s duplicate=%s",
+                user_id, signal_id, display_id, action, stage, result.result, result.duplicate,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[monitoring_action_failed] user=%s ref=%s action=%s error=%s",
+                user_id, reference, action, type(exc).__name__,
+            )
+            await context.bot.send_message(
+                chat_id=int(query.message.chat_id),
+                text="Could not save that monitoring choice. Use the latest signal message and retry.",
+                disable_notification=False,
+            )
+
+    application.add_handler(_CQH(_signal_monitoring_action_callback, pattern=r"^sigmon_(?:continue|stop)_[12]_"))
     application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
     # Execution preflight is VIP-only. Actual execution remains safety-gated.

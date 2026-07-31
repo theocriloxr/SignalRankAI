@@ -16,9 +16,17 @@ def owner_id() -> int:
     return int(getattr(config, "OWNER_TELEGRAM_ID", 0) or 0)
 
 
+def owner_ids() -> set[int]:
+    try:
+        from config import OWNER_IDS
+        return {int(value) for value in (OWNER_IDS or set()) if int(value) > 0}
+    except Exception:
+        oid = owner_id()
+        return {oid} if oid > 0 else set()
+
+
 def is_owner(telegram_user_id: int) -> bool:
-    oid = owner_id()
-    return bool(oid) and telegram_user_id == oid
+    return int(telegram_user_id) in owner_ids()
 
 
 async def _try_sync_owner_tier(telegram_user_id: int) -> None:
@@ -40,25 +48,26 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
     Falls back to OWNER or FREE when Postgres is not configured.
     """
 
-    if is_owner(telegram_user_id):
-        # Ensure DB reflects owner tier when possible.
-        await _try_sync_owner_tier(telegram_user_id)
-        return "owner"
 
     if not is_db_configured():
-        return "free"
+        return "owner" if is_owner(telegram_user_id) else "free"
 
     now = now_utc_naive()
     async with get_session() as session:
         res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
         user = res_user.scalar_one_or_none()
         if user is None:
-            return "free"
+            return "owner" if is_owner(telegram_user_id) else "free"
 
-        # If user tier was manually elevated (admin/owner), respect it.
+        if bool(getattr(user, "is_blocked", False)) or bool(getattr(user, "is_suspended", False)):
+            return "none"
+        if is_owner(telegram_user_id):
+            return "owner"
+
+        # Owner is derived only from the live owner list; admin remains stored.
         try:
             t = str(getattr(user, "tier", "") or "").strip().lower()
-            if t in {"admin", "owner"}:
+            if t == "admin":
                 return t
         except Exception:
             pass

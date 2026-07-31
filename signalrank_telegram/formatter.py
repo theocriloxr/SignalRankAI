@@ -639,6 +639,14 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	score = resolve_score_percent(signal) or 0.0
 	if not _should_send_signal_for_tier(actual_tier, score):
 		return None
+	from core.signal_identity import SIGNAL_ID_LABEL, signal_id_line
+
+	def _with_signal_id(value):
+		text = str(value or "").strip()
+		if not text or SIGNAL_ID_LABEL in text:
+			return value
+		return f"{text}\n\n{signal_id_line(signal)}"
+
 	try:
 		rendered = _format_signal_primary(
 			signal,
@@ -649,7 +657,7 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 			daily_limit=daily_limit,
 		)
 		if rendered and str(rendered).strip():
-			return rendered
+			return _with_signal_id(rendered)
 	except Exception as exc:
 		logger.exception("[formatter] primary formatter failed: %s", exc)
 	diagnostics = signal_format_diagnostics(signal)
@@ -663,7 +671,7 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	}
 	if fallback:
 		logger.warning("[formatter] using safe fallback card details=%s", log_payload)
-		return fallback
+		return _with_signal_id(fallback)
 	logger.error("[formatter] unable to render signal details=%s", log_payload)
 	return None
 
