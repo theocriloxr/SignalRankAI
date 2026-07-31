@@ -4464,6 +4464,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		# Format and reply outside session where possible
 		if oc is not None:
 			status = str(getattr(oc, "status", "") or "").lower()
+		from core.signal_identity import public_signal_id
+		display_ref = public_signal_id(sig)
+
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
 			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
@@ -4475,7 +4478,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			lines = [
 				"📣 Outcome",
 				"",
-				f"Reference: {sig.signal_id[:8]}",
+				f"U0001F4CC Signal ID: {display_ref}",
 				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
 				f"Entry: {sig.entry}",
 				f"Result: {label} ({status})",
@@ -4518,7 +4521,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			return
 
 		# No outcome yet — show basic in-progress details
-		lines = ["🔄 Signal In Progress", "", f"Reference: {sig.signal_id}"]
+		lines = ["🔄 Signal In Progress", "", f"U0001F4CC Signal ID: {display_ref}"]
 		lines.extend([
 			f"Asset: {sig.asset}",
 			f"Timeframe: {sig.timeframe}",

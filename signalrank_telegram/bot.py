@@ -1616,34 +1616,29 @@ async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = No
             return None
 
         async with get_session(priority="interactive", label="signal_payload_lookup") as session:
-            signal_row = (
-                await session.execute(
-                    select(Signal).where(Signal.signal_id == ref).limit(1)
+            from db.signal_reference import SignalReferenceError, resolve_signal_reference
+
+            privileged = False
+            try:
+                from config import OWNER_IDS, ADMIN_IDS
+                privileged = int(telegram_user_id or 0) in {
+                    *(int(value) for value in (OWNER_IDS or set())),
+                    *(int(value) for value in (ADMIN_IDS or set())),
+                }
+            except Exception:
+                privileged = False
+            try:
+                resolved = await resolve_signal_reference(
+                    session,
+                    ref,
+                    telegram_user_id=telegram_user_id,
+                    require_delivery_proof=bool(telegram_user_id is not None and not privileged),
                 )
-            ).scalar_one_or_none()
-
-            if signal_row is None:
-                matches = (
-                    await session.execute(
-                        select(Signal)
-                        .where(Signal.signal_id.like(f"{ref}%"))
-                        .order_by(Signal.created_at.desc())
-                        .limit(2)
-                    )
-                ).scalars().all()
-                if matches:
-                    signal_row = matches[0]
-                    if len(matches) > 1:
-                        logger.warning(
-                            "[signal_payload] ambiguous short ref=%s matches=%s selected=%s",
-                            ref,
-                            len(matches),
-                            getattr(signal_row, "signal_id", ""),
-                        )
-
-            if signal_row is None:
+            except SignalReferenceError as exc:
+                logger.info("[signal_payload] reference rejected ref=%s error=%s", ref, type(exc).__name__)
                 await session.commit()
                 return None
+            signal_row = resolved.signal
 
             canonical_id = str(getattr(signal_row, "signal_id", ref))
             if telegram_user_id is not None:
@@ -1692,6 +1687,7 @@ async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = No
 
         return {
             "signal_id": canonical_id,
+            "display_id": getattr(signal_row, "display_id", None),
             "asset": getattr(signal_row, "asset", ""),
             "timeframe": getattr(signal_row, "timeframe", ""),
             "direction": getattr(signal_row, "direction", ""),
@@ -2696,8 +2692,9 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
 
     outcome_row = None
     lifecycle_row = None
+    monitoring_row = None
     try:
-        from db.models import Outcome, SignalLifecycle
+        from db.models import Outcome, SignalLifecycle, User, UserSignalMonitoring
         from db.session import get_session
         from sqlalchemy import select
 
@@ -2721,6 +2718,17 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
                     ).limit(1)
                 )
             ).scalar_one_or_none()
+            if telegram_user_id is not None:
+                monitoring_row = (
+                    await session.execute(
+                        select(UserSignalMonitoring)
+                        .join(User, User.id == UserSignalMonitoring.user_id)
+                        .where(
+                            User.telegram_user_id == int(telegram_user_id),
+                            UserSignalMonitoring.signal_id == str(payload["signal_id"]),
+                        ).limit(1)
+                    )
+                ).scalar_one_or_none()
             await session.commit()
     except Exception as exc:
         logger.debug("[monitor] lifecycle load failed for %s: %s", signal_id, exc)
@@ -2930,8 +2938,19 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
         if quote_trusted
         else f"{feed_identity} • unavailable ({quote_reason or 'untrusted'})"
     )
+    from core.signal_identity import public_signal_id
+    display_id = public_signal_id(payload)
+    monitoring_status = str(getattr(monitoring_row, "status", "auto_continue") or "auto_continue")
+    if monitoring_status == "stopped":
+        monitoring_text = f"Stopped at TP{int(getattr(monitoring_row, 'stopped_at_stage', 0) or 0)}"
+    elif monitoring_status == "access_revoked":
+        monitoring_text = "Stopped because access was revoked"
+    else:
+        monitoring_text = "Continuing automatically"
     lines = [
         f"\U0001F4C8 <b>Trade Monitor \u2014 {asset}</b>",
+        f"\U0001F4CC Signal ID: <code>{display_id}</code>",
+        f"\u2022 Your monitoring: <b>{monitoring_text}</b>",
         status_line,
         f"\u2022 Direction: <b>{direction.upper()}</b>",
         f"\u2022 Entry: <b>{entry:.5f}</b>" if entry > 0 else "\u2022 Entry: <b>N/A</b>",

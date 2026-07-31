@@ -1541,33 +1541,18 @@ async def get_delivered_signal_by_ref(
     telegram_user_id: int,
     ref: str,
 ) -> Signal | None:
-    ref = (ref or "").strip()
-    if not ref:
-        return None
+    from db.signal_reference import SignalReferenceError, resolve_signal_reference
 
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
-    user: User | None = res.scalar_one_or_none()
-    if user is None:
-        return None
-
-    q: Select[Tuple[Signal]] = (
-        select(Signal)
-        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .where(
-            SignalDelivery.user_id == user.id,
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
+    try:
+        resolved = await resolve_signal_reference(
+            session,
+            ref,
+            telegram_user_id=int(telegram_user_id),
+            require_delivery_proof=True,
         )
-    )
-    if len(ref) >= 32:
-        q: Select[Tuple[Signal]] = q.where(Signal.signal_id == ref)
-    else:
-        q: Select[Tuple[Signal]] = q.where(Signal.signal_id.like(f"{ref}%"))
-    q: Select[Tuple[Signal]] = q.order_by(Signal.created_at.desc()).limit(1)
-
-    res2: Result[Tuple[Signal]] = await session.execute(q)
-    return res2.scalars().first()
+    except SignalReferenceError:
+        return None
+    return resolved.signal
 
 
 async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -> dict:
