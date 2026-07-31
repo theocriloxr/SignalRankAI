@@ -7488,7 +7488,8 @@
         "payments/paystack_policy.py:92",
         "railway_main.py:2464",
         "signalrank_telegram/commands.py:8293",
-        "web/app.py:761"
+        "web/app.py:732",
+        "web/app.py:769"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -7541,7 +7542,8 @@
       "name": "PAYSTACK_WEBHOOK_SECRET",
       "production_example_default": null,
       "read_locations": [
-        "config.py:61"
+        "config.py:61",
+        "web/app.py:733"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -7697,7 +7699,7 @@
       "name": "PORT",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:1077"
+        "web/app.py:1085"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11243,7 +11245,7 @@
         "signalrank_telegram/commands.py:262",
         "signalrank_telegram/commands.py:4958",
         "signalrank_telegram/commands.py:7645",
-        "web/app.py:965"
+        "web/app.py:973"
       ],
       "required_by_code": true,
       "sensitive": false
