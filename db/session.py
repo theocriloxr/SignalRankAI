@@ -34,6 +34,19 @@ def _database_role() -> str:
     return (role or "app")[:48]
 
 
+def _is_decomposed_database_role() -> bool:
+    """Only dedicated non-monolith services may use reviewed larger pools."""
+    return _database_role() in {
+        "analytics",
+        "bot",
+        "delivery",
+        "engine",
+        "outcome",
+        "scheduler",
+        "worker",
+    }
+
+
 def _database_application_name() -> str:
     explicit = (os.getenv("DB_APP_NAME") or "").strip()
     return explicit or f"signalrankai/{_database_role()}"
@@ -157,11 +170,12 @@ def _effective_pool_settings() -> tuple[int, int]:
         # Fail-safe monolith limits. A stale Railway variable such as
         # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
         # pool. The conservative defaults remain 2/0.
-        # An explicit DB_POOL_RAILWAY_ABSOLUTE_CAP is an operator-reviewed
-        # deployment contract and may be higher (staging/soak tests use 4/2).
-        # It is still a hard upper bound, never exceeding the approved max.
+        # An explicit DB_POOL_RAILWAY_ABSOLUTE_CAP is valid only for a dedicated
+        # decomposed service. The monolith creates auxiliary event-loop engines
+        # and must remain at 2/0 even when stale soak-test variables survive.
         absolute_pool_raw = os.getenv("DB_POOL_RAILWAY_ABSOLUTE_CAP")
         absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
+        decomposed_role = _is_decomposed_database_role()
         
         # In public-testing mode, enforce strictest defaults regardless of overrides.
         if _public_testing:
@@ -172,17 +186,30 @@ def _effective_pool_settings() -> tuple[int, int]:
                 railway_pool_cap,
                 railway_overflow_cap,
             )
-        elif absolute_pool_raw is not None:
+        elif absolute_pool_raw is not None and decomposed_role:
             railway_pool_cap = _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1)
         else:
             railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
         
         if _public_testing:
             railway_overflow_cap = 0
-        elif absolute_overflow_raw is not None:
+        elif absolute_overflow_raw is not None and decomposed_role:
             railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0)
         else:
             railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+
+        if not decomposed_role and (
+            (absolute_pool_raw is not None and _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1) > 2)
+            or (
+                absolute_overflow_raw is not None
+                and _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0) > 0
+            )
+        ):
+            logger.warning(
+                "[db_pool_safe] ignored oversized Railway absolute pool cap for monolith role=%s; "
+                "effective maximum is DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+                _database_role(),
+            )
         
         original_pool_size = pool_size
         original_max_overflow = max_overflow

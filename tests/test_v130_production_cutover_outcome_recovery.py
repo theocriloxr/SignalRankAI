@@ -26,7 +26,7 @@ def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:
         "unique_guard_sql": True,
         "model_unique_constraint": True,
     }
-    migration = (ROOT / "db/migrations/versions/0028_outcome_projection_guard.py").read_text()
+    migration = (ROOT / "db/migrations/versions/0028_outcome_projection_guard.py").read_text(encoding="utf-8")
     assert "UPDATE outcome_notifications" in migration
     assert "DELETE FROM outcomes" in migration
     assert "existing_is_unique IS FALSE" in migration
@@ -44,16 +44,37 @@ def test_runtime_outcome_writer_no_longer_depends_on_on_conflict() -> None:
 
 
 def test_readiness_blocks_schema_drift_and_nonproduction_cutovers() -> None:
-    source = (ROOT / "railway_main.py").read_text()
+    source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     assert "uq_outcomes_signal_id" in source
     assert "duplicate_outcome_projections" in source
-    assert '"production_cutover": _production_cutover_check()' in source
+    assert '"production_cutover": _readiness_cutover_check(production=production)' in source
     assert "environment_not_production" in source
     assert "delivery_allowlist_not_empty" in source
     assert "missing_or_placeholder:TELEGRAM_BOT_TOKEN" not in source  # constructed dynamically
     assert "_is_unconfigured_runtime_value" in source
     assert "paystack_live_secret_invalid" in source
     assert "state_and_delivery_redis_not_distinct" in source
+
+
+def test_staging_dependency_readiness_does_not_require_production_cutover(monkeypatch) -> None:
+    import railway_main
+
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("RAILWAY_SERVICE_NAME", "signalrankai-staging")
+    assert railway_main._production_readiness_required() is False
+
+    check = railway_main._readiness_cutover_check(production=False)
+    assert check["ok"] is True
+    assert check["required"] is False
+    assert check["production_detail"]
+
+
+def test_production_dependency_readiness_keeps_cutover_fail_closed(monkeypatch) -> None:
+    import railway_main
+
+    monkeypatch.setenv("APP_ENV", "production")
+    assert railway_main._production_readiness_required() is True
+    assert railway_main._readiness_cutover_check(production=True)["required"] is True
 
 
 def test_production_runtime_clears_staging_and_allowlist_state() -> None:
@@ -128,7 +149,7 @@ def test_portfolio_classifies_commodities_before_exposure_counting() -> None:
 def test_production_placeholder_detector_rejects_example_values() -> None:
     import ast
 
-    source = (ROOT / "railway_main.py").read_text()
+    source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     helper_node = next(
         node

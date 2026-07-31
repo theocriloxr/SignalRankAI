@@ -113,7 +113,7 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
         self.assertEqual(kwargs.get("pool_size"), 2)
         self.assertEqual(kwargs.get("max_overflow"), 0)
 
-    def test_railway_absolute_pool_cap_overrides_bad_railway_cap_env(self):
+    def test_railway_absolute_pool_cap_is_ignored_for_monolith(self):
         import db.session as dbs
 
         dbs._engines_by_loop.clear()
@@ -127,6 +127,32 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
                     "DB_MAX_OVERFLOW": "6",
                     "DB_POOL_SIZE_RAILWAY": "16",
                     "DB_MAX_OVERFLOW_RAILWAY": "6",
+                    "DB_POOL_RAILWAY_ABSOLUTE_CAP": "8",
+                    "DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP": "2",
+                    "RUN_MODE": "all",
+                },
+                clear=False,
+            ), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            dbs.get_engine_for_event_loop()
+
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
+
+    def test_railway_absolute_pool_cap_is_available_to_decomposed_role(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(
+                 os.environ,
+                 {
+                    "RAILWAY_PROJECT_ID": "project",
+                    "RUN_MODE": "engine",
+                    "DB_POOL_SIZE": "16",
+                    "DB_MAX_OVERFLOW": "6",
                     "DB_POOL_RAILWAY_ABSOLUTE_CAP": "8",
                     "DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP": "2",
                 },

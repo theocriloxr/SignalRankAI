@@ -406,7 +406,10 @@ def _production_webhook_contract_errors() -> list[str]:
     to an older deployment. Doing so causes pending updates to hit the old image
     and appear as repeated 404 responses.
     """
-    if not _production_readiness_required():
+    # Durable webhook dependencies are required on every Railway environment,
+    # including staging. This is intentionally broader than the production-only
+    # public cutover gate used by /readyz.
+    if not (_is_running_on_railway() or _production_readiness_required()):
         return []
 
     errors: list[str] = []
@@ -2484,14 +2487,37 @@ def _production_cutover_check() -> dict[str, object]:
     }
 
 
-def _production_readiness_required() -> bool:
-    environment = str(
+def _runtime_environment_name() -> str:
+    return str(
         os.getenv("APP_ENV")
         or os.getenv("ENVIRONMENT")
         or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
         or ""
     ).strip().lower()
-    return _is_running_on_railway() or environment in {"production", "prod"}
+
+
+def _production_readiness_required() -> bool:
+    """Return whether production-only cutover policy must gate traffic.
+
+    Railway also hosts staging and preview environments. Platform presence by
+    itself must not turn a dependency healthcheck into a production-launch
+    certification check.
+    """
+    return _runtime_environment_name() in {"production", "prod"}
+
+
+def _readiness_cutover_check(*, production: bool) -> dict[str, object]:
+    cutover = _production_cutover_check()
+    if production:
+        return {**cutover, "required": True}
+    return {
+        **cutover,
+        "ok": True,
+        "required": False,
+        "detail": "not_required_for_nonproduction",
+        "production_detail": cutover.get("detail"),
+    }
 
 
 @app.get("/ready")
@@ -2521,7 +2547,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "database": database,
         "state_redis": state_redis,
         "delivery_redis": delivery_redis,
-        "production_cutover": _production_cutover_check(),
+        "production_cutover": _readiness_cutover_check(production=production),
         "financial_activation": financial_activation,
     }
 

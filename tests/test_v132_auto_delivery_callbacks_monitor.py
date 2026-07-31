@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BOT = (ROOT / "signalrank_telegram" / "bot.py").read_text()
-CALLBACKS = (ROOT / "signalrank_telegram" / "callback_handlers.py").read_text()
-LIFECYCLE = (ROOT / "engine" / "signal_lifecycle.py").read_text()
-READINESS = (ROOT / "railway_main.py").read_text()
+BOT = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+CALLBACKS = (ROOT / "signalrank_telegram" / "callback_handlers.py").read_text(encoding="utf-8")
+LIFECYCLE = (ROOT / "engine" / "signal_lifecycle.py").read_text(encoding="utf-8")
+READINESS = (ROOT / "railway_main.py").read_text(encoding="utf-8")
 
 
 def test_v132_release_identity_is_exact():
@@ -54,10 +54,11 @@ def test_monitor_refresh_never_overwrites_signal_card_and_recovers_failed_edits(
 def test_monitor_displays_real_best_price_separately_from_tp_progress():
     assert "max_price_seen" in BOT
     assert "min_price_seen" in BOT
-    assert "update_lifecycle_observation" in BOT
     assert "Highest'} Price Seen" in BOT
     assert "Highest TP Reached" in BOT
     monitor_block = BOT[BOT.index("async def _build_monitor_snapshot"):BOT.index("def _parse_tp_levels_for_outcome")]
+    assert "update_lifecycle_observation" not in monitor_block
+    assert "outcome worker is the sole" in monitor_block.lower()
     assert "\u2022 Highest Target:" not in monitor_block
 
 
@@ -86,7 +87,7 @@ def test_all_production_profiles_enable_global_automatic_delivery_contract():
         "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
         "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example",
     ):
-        profile = (ROOT / filename).read_text()
+        profile = (ROOT / filename).read_text(encoding="utf-8")
         for marker in (
             "APP_ENV=production",
             "PUBLIC_TESTING_MODE=0",

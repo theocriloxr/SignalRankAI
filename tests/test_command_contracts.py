@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_upgrade_message_escapes_markdown_pipe() -> None:
     source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
-    assert ("💎 VIP Monthly — ₦40,000 \\|" in source) or ("💎 VIP Monthly — ₦40,000 \\\\|" in source)
+    from signalrank_telegram.commands import _vip_plan_line
+    assert "\\|" in _vip_plan_line(MarkdownV2=True, seats_left=-1, sold_out=False)
     assert "parse_mode=\"MarkdownV2\"" in source
 
 

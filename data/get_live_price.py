@@ -117,7 +117,7 @@ def _get_providers_for_asset(asset: str) -> List[str]:
     3. Binance - may fail with HTTP 451 in restricted regions
     4. Bybit - may fail with HTTP 403 in some regions
     
-    Stocks, FX, and commodities prefer Yahoo with the canonical mapper.
+    Stocks, FX, and commodities prefer Yahoo with keyed Twelve Data fallback.
     """
     try:
         from services.asset_mapper import classify_asset
@@ -128,7 +128,7 @@ def _get_providers_for_asset(asset: str) -> List[str]:
         # Coinbase and OKX are the most Railway-compatible crypto providers.
         # Binance/Bybit/CryptoCompare are fallbacks that may be region-blocked.
         return ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
-    return ["yahoo", "polygon"]
+    return ["yahoo", "twelvedata", "polygon"]
 
 
 # ============================================================================
@@ -657,6 +657,76 @@ async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+async def _fetch_twelvedata_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch a source-timestamped quote for FX, metals, indices, and stocks."""
+    import requests
+
+    provider = "twelvedata"
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+    api_key = (
+        os.getenv("TWELVEDATA_API_KEY")
+        or os.getenv("TWELVE_DATA_API_KEY")
+        or ""
+    ).strip()
+    if not api_key:
+        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
+    canonical, provider_symbol, _ = _provider_identity(symbol, provider)
+    if not provider_symbol:
+        return _typed_failure(canonical, provider, "unsupported_symbol", retryable=False)
+
+    started = time.perf_counter()
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://api.twelvedata.com/quote",
+            params={"symbol": provider_symbol, "apikey": api_key},
+            timeout=5,
+        )
+        received_at = time.time()
+        payload = response.json() if response.ok else {}
+        if (
+            not response.ok
+            or str(payload.get("status") or "").lower() == "error"
+            or payload.get("code")
+        ):
+            reason = f"invalid_response:{getattr(response, 'status_code', 'unknown')}"
+            if getattr(response, "status_code", None) == 429:
+                reason = "rate_limit:twelvedata"
+            elif payload.get("code"):
+                reason = f"provider_error_code:{payload.get('code')}"
+            breaker.record_failure()
+            return _typed_failure(canonical, provider, reason)
+
+        market_open = payload.get("is_market_open")
+        quote = _typed_quote(
+            symbol=canonical,
+            provider=provider,
+            price=payload.get("price") or payload.get("close"),
+            source_timestamp=payload.get("timestamp"),
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.TICKER.value,
+            market_status=(
+                "open"
+                if market_open is True
+                else "closed"
+                if market_open is False
+                else "unknown"
+            ),
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] Twelve Data typed quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
 async def _fetch_coinbase_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     """Fetch live quote from Coinbase public ticker endpoint.
 
@@ -859,6 +929,7 @@ async def _fetch_structured_quote(
         "bybit": _fetch_bybit_quote,
         "cryptocompare": _fetch_cryptocompare_quote,
         "yahoo": _fetch_yahoo_quote,
+        "twelvedata": _fetch_twelvedata_quote,
         "polygon": _fetch_polygon_quote,
     }.get(provider)
     if adapter is None:

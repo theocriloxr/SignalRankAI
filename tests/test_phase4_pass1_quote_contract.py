@@ -319,6 +319,35 @@ async def test_yahoo_previous_close_payload_is_typed_as_analysis_only(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_twelvedata_metals_quote_preserves_source_time(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    now = int(time.time())
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: {
+            "symbol": "XAG/USD",
+            "close": "38.125",
+            "timestamp": now,
+            "is_market_open": True,
+        },
+    )
+    monkeypatch.setenv("TWELVEDATA_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: response)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_twelvedata_quote("XAGUSD")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.provider == "twelvedata"
+    assert quote.provider_symbol == "XAG/USD"
+    assert quote.price == pytest.approx(38.125)
+    assert quote.source_timestamp == pytest.approx(now)
+    assert quote.market_status == "open"
+
+
+@pytest.mark.asyncio
 async def test_binance_adapter_preserves_source_time_and_bid_ask(monkeypatch):
     import requests
     import data.get_live_price as prices

@@ -1210,30 +1210,67 @@ def http_check(report: Report, base_url: str) -> None:
     base = base_url.rstrip("/")
     for path, critical in (("/healthz", False), ("/livez", True), ("/readyz", True)):
         started = time.monotonic()
-        try:
-            req = request.Request(f"{base}{path}", headers={"Accept": "application/json"})
-            with request.urlopen(req, timeout=15) as response:
-                body = response.read().decode("utf-8", errors="replace")
-                parsed = json.loads(body or "{}")
-                ok = response.status == 200
-                if path == "/readyz":
-                    ok = ok and parsed.get("ready") is True
+        attempts = 1
+        if path == "/readyz":
+            attempts = max(
+                1,
+                int(os.getenv("DEPLOYMENT_READINESS_RETRY_ATTEMPTS", "4") or 4),
+            )
+        retry_delay = max(
+            0.0,
+            float(os.getenv("DEPLOYMENT_READINESS_RETRY_DELAY_SECONDS", "2") or 2),
+        )
+        for attempt in range(1, attempts + 1):
+            try:
+                req = request.Request(f"{base}{path}", headers={"Accept": "application/json"})
+                with request.urlopen(req, timeout=15) as response:
+                    body = response.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(body or "{}")
+                    ok = response.status == 200
+                    if path == "/readyz":
+                        ok = ok and parsed.get("ready") is True
+                    if not ok and attempt < attempts:
+                        time.sleep(retry_delay)
+                        continue
+                    report.add(
+                        Check(
+                            name=f"http_{path.strip('/')}",
+                            category="postdeploy",
+                            status=PASS if ok else FAIL,
+                            severity="critical" if critical else "high",
+                            detail=f"status={response.status} attempts={attempt}",
+                            duration_ms=int((time.monotonic() - started) * 1000),
+                            evidence=parsed,
+                        )
+                    )
+                    break
+            except error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+                if attempt < attempts:
+                    time.sleep(retry_delay)
+                    continue
                 report.add(
                     Check(
-                        name=f"http_{path.strip('/')}",
-                        category="postdeploy",
-                        status=PASS if ok else FAIL,
-                        severity="critical" if critical else "high",
-                        detail=f"status={response.status}",
-                        duration_ms=int((time.monotonic() - started) * 1000),
-                        evidence=parsed,
+                        f"http_{path.strip('/')}",
+                        "postdeploy",
+                        FAIL,
+                        "critical" if critical else "high",
+                        f"HTTP {exc.code} after {attempt} attempts: {body[:1000]}",
                     )
                 )
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            report.add(Check(f"http_{path.strip('/')}", "postdeploy", FAIL, "critical" if critical else "high", f"HTTP {exc.code}: {body[:1000]}"))
-        except Exception as exc:
-            report.add(Check(f"http_{path.strip('/')}", "postdeploy", FAIL, "critical" if critical else "high", f"{type(exc).__name__}: {exc}"))
+            except Exception as exc:
+                if attempt < attempts:
+                    time.sleep(retry_delay)
+                    continue
+                report.add(
+                    Check(
+                        f"http_{path.strip('/')}",
+                        "postdeploy",
+                        FAIL,
+                        "critical" if critical else "high",
+                        f"{type(exc).__name__} after {attempt} attempts: {exc}",
+                    )
+                )
 
 
 def integration_inventory(report: Report) -> None:

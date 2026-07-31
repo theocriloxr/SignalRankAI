@@ -72,6 +72,7 @@ def test_signal_keyboards_use_telegram_safe_callback_data():
         "signal_reaction_",
         "monitor_signal_",
         "check_outcome_",
+        "open_signal_",
     )
     for keyboard in keyboards:
         payloads = _keyboard_callback_payloads(keyboard)

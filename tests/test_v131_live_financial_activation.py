@@ -185,8 +185,8 @@ async def test_bybit_order_ack_is_confirmed_before_success():
 
 
 def test_live_and_public_env_profiles_document_all_flags():
-    public = (ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").read_text()
-    live = (ROOT / "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example").read_text()
+    public = (ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").read_text(encoding="utf-8")
+    live = (ROOT / "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example").read_text(encoding="utf-8")
     for marker in (
         "APP_VERSION=1.3.2",
         "DELIVERY_AUDIENCE_ALLOWLIST=",
@@ -218,7 +218,7 @@ def test_live_and_public_env_profiles_document_all_flags():
 
 
 def test_payout_routes_are_owner_controlled_and_otp_complete():
-    source = (ROOT / "web" / "app.py").read_text()
+    source = (ROOT / "web" / "app.py").read_text(encoding="utf-8")
     assert 'recipient_telegram_user_id: int' in source
     assert '@app.post("/payout/request")' in source
     assert 'if not await _is_admin_user(int(user_id))' in source
@@ -228,28 +228,28 @@ def test_payout_routes_are_owner_controlled_and_otp_complete():
 
 
 def test_vip_enrollment_can_be_unlimited():
-    source = (ROOT / "signalrank_telegram" / "commands.py").read_text()
+    source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
     assert 'VIP_SEAT_LIMIT", "0"' in source
     assert 'Open enrollment' in source
 
 
 def test_bybit_reconciliation_and_shared_quota_are_wired():
-    worker = (ROOT / "worker" / "worker.py").read_text()
-    router = (ROOT / "services" / "bybit_signal_router.py").read_text()
-    reconciler = (ROOT / "services" / "bybit_reconciler.py").read_text()
-    migration = (ROOT / "db" / "migrations" / "versions" / "0029_live_financial_ledger.py").read_text()
+    worker = (ROOT / "worker" / "worker.py").read_text(encoding="utf-8")
+    router = (ROOT / "services" / "bybit_signal_router.py").read_text(encoding="utf-8")
+    reconciler = (ROOT / "services" / "bybit_reconciler.py").read_text(encoding="utf-8")
+    migration = (ROOT / "db" / "migrations" / "versions" / "0029_live_financial_ledger.py").read_text(encoding="utf-8")
     assert 'BYBIT_RECONCILIATION_ENABLED' in worker
     assert 'reserve_user_execution_quota' in router
-    assert '/v5/position/closed-pnl' in (ROOT / "services" / "bybit_client.py").read_text()
+    assert '/v5/position/closed-pnl' in (ROOT / "services" / "bybit_client.py").read_text(encoding="utf-8")
     assert 'realized_pnl_pct' in reconciler
     assert 'sa.Column("realized_pnl_pct"' in migration
     assert 'sa.Column("closed_at"' in migration
 
 
 def test_mt5_and_bybit_use_the_same_execution_quota_ledger():
-    mt5 = (ROOT / "services" / "mt5_signal_router.py").read_text()
-    bybit = (ROOT / "services" / "bybit_signal_router.py").read_text()
-    shared = (ROOT / "services" / "execution_quota.py").read_text()
+    mt5 = (ROOT / "services" / "mt5_signal_router.py").read_text(encoding="utf-8")
+    bybit = (ROOT / "services" / "bybit_signal_router.py").read_text(encoding="utf-8")
+    shared = (ROOT / "services" / "execution_quota.py").read_text(encoding="utf-8")
     assert "from services.execution_quota import reserve_user_execution_quota" in mt5
     assert "reserve_user_execution_quota" in bybit
     assert "MT5Execution.realized_pnl_pct" in shared
@@ -257,7 +257,7 @@ def test_mt5_and_bybit_use_the_same_execution_quota_ledger():
 
 
 def test_legacy_tier_executor_does_not_duplicate_canonical_ledger_writes():
-    source = (ROOT / "engine" / "tiered_executor.py").read_text()
+    source = (ROOT / "engine" / "tiered_executor.py").read_text(encoding="utf-8")
     premium = source[source.index("async def execute_premium_signal"):source.index("async def execute_vip_signal")]
     vip = source[source.index("async def execute_vip_signal"):source.index("async def execute_for_user")]
     assert "_record_execution(" not in premium

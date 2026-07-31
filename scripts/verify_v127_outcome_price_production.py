@@ -71,7 +71,7 @@ def main() -> None:
     require("APP_ENV=production" in profile, "production mode")
     require("REAL_EXECUTION_ENABLED=0" in profile and "COPY_TRADE_ENABLED=0" in profile, "initial live-execution fail-closed")
     require("PAYMENTS_PUBLIC_ENABLED=1" in profile and "REAL_PAYOUTS_ENABLED=0" in profile, "public payments with payouts fail-closed")
-    require("DB_POOL_SIZE=4" in profile and "DB_MAX_OVERFLOW=2" in profile, "reviewed single-primary app pool")
+    require("DB_POOL_SIZE=2" in profile and "DB_MAX_OVERFLOW=0" in profile, "safe Railway monolith app pool")
 
     diagnostics = (ROOT / "scripts/deployment_diagnostics.py").read_text(encoding="utf-8")
     require('name="postgresql_capacity_headroom"' in diagnostics, "PostgreSQL capacity launch gate")

@@ -953,7 +953,7 @@ class TestPlanCodeInjection:
 
         async def _run():
             with patch("httpx.AsyncClient") as mock_client_cls, \
-                 patch.dict(os.environ, {"PAYSTACK_PREMIUM_PLAN_CODE": "PLN_abc", "PAYSTACK_SECRET_KEY": "sk_test"}):
+                 patch.dict(os.environ, {"PAYSTACK_PREMIUM_PLAN_CODE": "PLN_abc", "PAYSTACK_SECRET_KEY": "sk_test_fixture"}):
 
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = self._paystack_init_payload()
@@ -989,7 +989,7 @@ class TestPlanCodeInjection:
         async def _run():
             env = {k: v for k, v in os.environ.items()
                    if not k.startswith("PAYSTACK_PREMIUM_PLAN_CODE")}
-            env["PAYSTACK_SECRET_KEY"] = "sk_test"
+            env["PAYSTACK_SECRET_KEY"] = "sk_test_fixture"
             env.pop("PAYSTACK_PREMIUM_PLAN_CODE", None)
 
             with patch("httpx.AsyncClient") as mock_client_cls, \

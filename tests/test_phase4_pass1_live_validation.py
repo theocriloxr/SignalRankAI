@@ -47,6 +47,13 @@ def test_live_price_provider_routing_stock_not_fx():
     assert "binance" not in providers[:1]
 
 
+def test_live_price_provider_routing_metals_has_keyed_fallback():
+    from data.get_live_price import _get_providers_for_asset
+
+    providers = _get_providers_for_asset("XAGUSD")
+    assert providers == ["yahoo", "twelvedata", "polygon"]
+
+
 def test_rich_message_builder_uses_table_and_details():
     from signalrank_telegram.rich_messages import build_signal_rich_html
 

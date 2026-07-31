@@ -88,7 +88,7 @@ def _base(kind: str) -> dict[str, Any]:
         "generator": "scripts/build_v7_governance.py",
         "repository_identity": "resolved_in_release_manifest",
         "source_prompt": {
-            "path": str(PROMPT_PATH.relative_to(ROOT)),
+            "path": PROMPT_PATH.relative_to(ROOT).as_posix(),
             "sha256": _sha256(PROMPT_PATH) if PROMPT_PATH.exists() else None,
         },
     }
@@ -308,7 +308,7 @@ def _scan_env_reads() -> dict[str, list[str]]:
                 continue
             first = node.args[0]
             if isinstance(first, ast.Constant) and isinstance(first.value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", first.value):
-                reads[first.value].add(f"{path.relative_to(ROOT)}:{node.lineno}")
+                reads[first.value].add(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
     return {name: sorted(locations) for name, locations in reads.items()}
 
 
@@ -316,7 +316,7 @@ def build_environment_and_flags() -> tuple[dict[str, Any], dict[str, Any]]:
     env_paths = [ROOT / ".env.example", ROOT / "RAILWAY_ENV_UPDATED.env.example"]
     env_paths.extend(sorted((ROOT / "configs" / "env").glob("*.env.example")))
     env_paths.extend(sorted((ROOT / "deploy" / "railway_roles").glob("*.env")))
-    files = {str(path.relative_to(ROOT)): _parse_env_file(path) for path in env_paths if path.exists()}
+    files = {path.relative_to(ROOT).as_posix(): _parse_env_file(path) for path in env_paths if path.exists()}
     reads = _scan_env_reads()
     names = sorted(set(reads) | {name for values in files.values() for name in values})
     prod_defaults = files.get("configs/env/production.env.example", {})

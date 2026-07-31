@@ -2848,22 +2848,13 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
 
     # The older monitor labelled this field "Highest Target" and printed
     # "None yet", which users reasonably interpreted as a missing highest
-    # market price.  Track and display the actual best observed price, then
-    # report TP progress as a separate field.  A trusted interactive quote is
-    # also folded into the observation so a delayed lifecycle write cannot make
-    # the card look stale.
+    # market price. Track and display the actual best observed price, then
+    # report TP progress as a separate field. The outcome worker is the sole
+    # owner of durable lifecycle observations; monitor refreshes are a read
+    # projection and must not contend on the same lifecycle rows.
     if current_price is not None and quote_trusted:
         observed_high = max(float(observed_high or current_price), float(current_price))
         observed_low = min(float(observed_low or current_price), float(current_price))
-        try:
-            from engine.signal_lifecycle import update_lifecycle_observation
-
-            await asyncio.wait_for(
-                update_lifecycle_observation(payload, float(current_price)),
-                timeout=max(1.0, float(os.getenv("MONITOR_OBSERVATION_WRITE_TIMEOUT_SECONDS", "3") or 3)),
-            )
-        except Exception as observation_exc:
-            logger.debug("[monitor] observation write deferred signal=%s err=%s", signal_id, observation_exc)
 
     if entry > 0:
         observed_high = max(float(observed_high or entry), float(entry))

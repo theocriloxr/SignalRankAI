@@ -728,6 +728,14 @@ def verify_paystack_signature(body: bytes, signature: Optional[str]) -> None:
     """Verify the Paystack HMAC using the live/test secret and rotation fallback."""
     if not signature:
         raise HTTPException(400, "Missing Paystack signature")
+    if not (
+        str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+        or str(os.getenv("PAYSTACK_WEBHOOK_SECRET") or "").strip()
+    ):
+        logger.error("Paystack signature verification is not configured")
+        raise HTTPException(
+            500, "Paystack signature verification is not configured"
+        )
     from payments.paystack_policy import verify_paystack_event_signature
     if not verify_paystack_event_signature(body, signature):
         logger.warning("Paystack signature mismatch")

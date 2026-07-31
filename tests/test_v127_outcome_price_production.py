@@ -167,9 +167,10 @@ def test_simulation_uses_terminal_outcomes_and_reports_backlog() -> None:
 
 def test_production_profile_uses_one_primary_with_reviewed_pool_headroom() -> None:
     lines = (ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").read_text(encoding="utf-8")
-    assert "DB_POOL_SIZE=4" in lines
-    assert "DB_MAX_OVERFLOW=2" in lines
-    assert "DB_POOL_RAILWAY_ABSOLUTE_CAP=4" in lines
+    assert "DB_POOL_SIZE=2" in lines
+    assert "DB_MAX_OVERFLOW=0" in lines
+    assert "DB_POOL_RAILWAY_ABSOLUTE_CAP=2" in lines
+    assert "DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP=0" in lines
     assert "DB_PRODUCTION_CONNECTION_RESERVE=5" in lines
     diagnostics = (ROOT / "scripts" / "deployment_diagnostics.py").read_text(encoding="utf-8")
     assert 'name="postgresql_capacity_headroom"' in diagnostics

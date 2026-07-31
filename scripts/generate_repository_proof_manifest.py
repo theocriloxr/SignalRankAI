@@ -66,7 +66,7 @@ def _python_metadata(text: str) -> tuple[list[str], list[str], str]:
 def generate(root: Path = ROOT) -> dict[str, Any]:
     tests: dict[str, str] = {}
     for test_path in sorted((root / "tests").glob("test_*.py")):
-        tests[str(test_path.relative_to(root))] = test_path.read_text(encoding="utf-8-sig", errors="replace")
+        tests[test_path.relative_to(root).as_posix()] = test_path.read_text(encoding="utf-8-sig", errors="replace")
 
     records: list[FileProof] = []
     for path in sorted(
@@ -89,7 +89,7 @@ def generate(root: Path = ROOT) -> dict[str, Any]:
         if path.suffix == ".py" and text is not None:
             public, envs, parse_status = _python_metadata(text)
 
-        module_tokens = {path.stem, str(rel.with_suffix("")).replace("/", ".")}
+        module_tokens = {path.stem, rel.with_suffix("").as_posix().replace("/", ".")}
         references = [
             test_name
             for test_name, test_text in tests.items()
@@ -97,7 +97,7 @@ def generate(root: Path = ROOT) -> dict[str, Any]:
         ]
         records.append(
             FileProof(
-                path=str(rel),
+                path=rel.as_posix(),
                 category=_category(rel),
                 size_bytes=len(raw),
                 sha256=hashlib.sha256(raw).hexdigest(),

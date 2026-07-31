@@ -33,7 +33,7 @@ class TestTierHelpContract(unittest.TestCase):
             for page in pages.values()
             for cmd, _desc in page.get("commands", [])
         }
-        intentionally_hidden = {"unlock", "broadcast", "dev_invalidate", "dev_force_signal"}
+        intentionally_hidden = {"unlock", "dev_invalidate", "dev_force_signal"}
         self.assertTrue(intentionally_hidden.isdisjoint(paginated_help_commands))
 
     def test_help_surface_commands_have_bot_handlers(self):

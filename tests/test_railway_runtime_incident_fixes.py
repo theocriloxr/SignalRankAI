@@ -80,6 +80,9 @@ def test_railway_runs_migrations_and_predeploy_diagnostics() -> None:
 
 def test_deployment_diagnostics_and_protected_endpoint_present() -> None:
     assert (ROOT / "scripts" / "deployment_diagnostics.py").exists()
+    diagnostics = (ROOT / "scripts" / "deployment_diagnostics.py").read_text(encoding="utf-8")
+    assert "DEPLOYMENT_READINESS_RETRY_ATTEMPTS" in diagnostics
+    assert "DEPLOYMENT_READINESS_RETRY_DELAY_SECONDS" in diagnostics
     source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     assert '@app.get("/diagnostics/deployment")' in source
     assert "DEPLOYMENT_DIAGNOSTICS_KEY" in source
