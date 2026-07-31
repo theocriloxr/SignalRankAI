@@ -165,3 +165,13 @@ def test_production_placeholder_detector_rejects_example_values() -> None:
     assert helper("<telegram-bot-token>") is True
     assert helper("changeme") is True
     assert helper("123456:real-shaped-token") is False
+
+
+def test_railway_environment_name_overrides_spoofed_app_env(monkeypatch) -> None:
+    import railway_main
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "staging")
+    assert railway_main._runtime_environment_name() == "staging"
+    assert railway_main._production_readiness_required() is False

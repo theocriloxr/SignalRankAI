@@ -388,3 +388,46 @@ async def test_price_result_exposes_typed_terminal_failure(monkeypatch):
     assert isinstance(result, LivePriceFailure)
     assert result.reason.startswith("all_providers_failed:")
     assert "one:fixture_failure" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_oanda_metals_quote_preserves_bid_ask_and_source_time(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    captured = {}
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: {
+            "prices": [{
+                "instrument": "XAG_USD",
+                "status": "tradeable",
+                "time": "2026-07-31T07:32:18.250000Z",
+                "bids": [{"price": "38.120"}],
+                "asks": [{"price": "38.130"}],
+            }]
+        },
+    )
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setenv("OANDA_API_KEY", "test-token")
+    monkeypatch.setenv("OANDA_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("OANDA_PRACTICE", "true")
+    monkeypatch.setattr(requests, "get", fake_get)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_oanda_quote("XAGUSD")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.provider == "oanda"
+    assert quote.provider_symbol == "XAG_USD"
+    assert quote.bid == pytest.approx(38.120)
+    assert quote.ask == pytest.approx(38.130)
+    assert quote.price == pytest.approx(38.125)
+    assert quote.source_timestamp is not None
+    assert "api-fxpractice.oanda.com" in captured["url"]
+    assert captured["params"]["instruments"] == "XAG_USD"

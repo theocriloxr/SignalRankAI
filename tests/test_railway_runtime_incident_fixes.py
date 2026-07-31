@@ -187,3 +187,9 @@ def test_delivery_proof_columns_exist_before_later_proof_indexes() -> None:
     assert "ADD COLUMN IF NOT EXISTS sent_ok" in migration_0017
     assert "ADD COLUMN IF NOT EXISTS attempt_count" in migration_0017
     assert "signal_deliveries(signal_id, sent_ok, delivery_state)" in migration_0021
+
+
+def test_runtime_diagnostics_probe_the_launching_container() -> None:
+    source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
+    assert "DEPLOYMENT_DIAGNOSTICS_BASE_URL" in source
+    assert 'base_url = f"http://127.0.0.1:{port}"' in source

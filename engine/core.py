@@ -2630,13 +2630,15 @@ def main_loop(DRY_RUN: bool = False):
                             tf_interval = _TF_SECONDS.get(tf, 3600)
                             max_age = tf_interval * CANDLE_STALENESS_MULTIPLIER
                             source_name = _provider_source_name(tf_data)
-                            if data_age is not None and data_age > 60 and source_name in {"yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"}:
+                            provider_warn_age = max(60, tf_interval)
+                            if data_age is not None and data_age > provider_warn_age and source_name in {"yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"}:
                                 logger.warning(
-                                    "[engine] latency_warning asset=%s tf=%s source=%s age=%ss threshold=60s action=warn_only",
+                                    "[engine] latency_warning asset=%s tf=%s source=%s age=%ss threshold=%ss action=warn_only",
                                     asset,
                                     tf,
                                     source_name,
                                     data_age,
+                                    provider_warn_age,
                                 )
                                 tf_data["latency_warning"] = True
                             elif data_age is not None and data_age > max_age:

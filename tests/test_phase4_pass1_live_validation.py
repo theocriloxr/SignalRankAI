@@ -51,7 +51,7 @@ def test_live_price_provider_routing_metals_has_keyed_fallback():
     from data.get_live_price import _get_providers_for_asset
 
     providers = _get_providers_for_asset("XAGUSD")
-    assert providers == ["yahoo", "twelvedata", "polygon"]
+    assert providers == ["yahoo", "twelvedata", "oanda", "polygon"]
 
 
 def test_rich_message_builder_uses_table_and_details():

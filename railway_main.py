@@ -1171,12 +1171,18 @@ async def _run_deployment_diagnostics_once() -> None:
     # Always probe the current Railway deployment first. A duplicated staging
     # environment may still contain production APP_BASE_URL/WEBHOOK_DOMAIN values.
     base_url = str(
-        os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_BASE_URL")
+        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
         or os.getenv("WEBHOOK_DOMAIN")
         or os.getenv("WEBHOOK_URL")
         or os.getenv("APP_BASE_URL")
         or ""
     ).strip()
+    # A rolling public domain may still target the previous image. Runtime
+    # diagnostics must validate the container that launched the audit.
+    if _is_running_on_railway() and not str(os.getenv("DEPLOYMENT_DIAGNOSTICS_BASE_URL") or "").strip():
+        port = str(os.getenv("PORT") or "8080").strip()
+        base_url = f"http://127.0.0.1:{port}"
     if base_url:
         if not base_url.startswith(("http://", "https://")):
             base_url = f"https://{base_url}"
@@ -2489,10 +2495,10 @@ def _production_cutover_check() -> dict[str, object]:
 
 def _runtime_environment_name() -> str:
     return str(
-        os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
         or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
         or ""
     ).strip().lower()
 

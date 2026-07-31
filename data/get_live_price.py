@@ -128,6 +128,8 @@ def _get_providers_for_asset(asset: str) -> List[str]:
         # Coinbase and OKX are the most Railway-compatible crypto providers.
         # Binance/Bybit/CryptoCompare are fallbacks that may be region-blocked.
         return ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
+    if cls in {"forex", "commodity"}:
+        return ["yahoo", "twelvedata", "oanda", "polygon"]
     return ["yahoo", "twelvedata", "polygon"]
 
 
@@ -357,7 +359,14 @@ def _epoch_seconds(value: Any) -> float | None:
             timestamp /= 1000.0
         return timestamp
     except (TypeError, ValueError):
-        return None
+        try:
+            normalized = str(value or "").strip().replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except (TypeError, ValueError):
+            return None
 
 
 def _provider_identity(symbol: str, provider: str) -> tuple[str, str, str]:
@@ -727,6 +736,82 @@ async def _fetch_twelvedata_quote(symbol: str) -> LivePriceQuote | LivePriceFail
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+
+async def _fetch_oanda_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch a source-timestamped OANDA account pricing snapshot."""
+    import requests
+
+    provider = "oanda"
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+    api_key = (os.getenv("OANDA_API_KEY") or os.getenv("OANDA_TOKEN") or "").strip()
+    account_id = str(os.getenv("OANDA_ACCOUNT_ID") or "").strip()
+    if not api_key or not account_id:
+        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
+    canonical, provider_symbol, _ = _provider_identity(symbol, provider)
+    if not provider_symbol:
+        return _typed_failure(canonical, provider, "unsupported_symbol", retryable=False)
+
+    practice = str(os.getenv("OANDA_PRACTICE", "true") or "true").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    base_url = "https://api-fxpractice.oanda.com" if practice else "https://api-fxtrade.oanda.com"
+    started = time.perf_counter()
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            f"{base_url}/v3/accounts/{account_id}/pricing",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept-Datetime-Format": "RFC3339",
+            },
+            params={"instruments": provider_symbol, "includeUnitsAvailable": "false"},
+            timeout=5,
+        )
+        received_at = time.time()
+        payload = response.json() if response.ok else {}
+        prices = payload.get("prices") if isinstance(payload, dict) else None
+        if not response.ok or not isinstance(prices, list) or not prices:
+            status = getattr(response, "status_code", "unknown")
+            reason = f"invalid_response:{status}"
+            if status == 429:
+                reason = "rate_limit:oanda"
+            elif status in (401, 403):
+                reason = "auth_or_permission_denied"
+            breaker.record_failure()
+            return _typed_failure(canonical, provider, reason)
+
+        row = prices[0] if isinstance(prices[0], dict) else {}
+        bids = row.get("bids") if isinstance(row.get("bids"), list) else []
+        asks = row.get("asks") if isinstance(row.get("asks"), list) else []
+        bid = bids[0].get("price") if bids and isinstance(bids[0], dict) else row.get("closeoutBid")
+        ask = asks[0].get("price") if asks and isinstance(asks[0], dict) else row.get("closeoutAsk")
+        try:
+            price = (float(bid) + float(ask)) / 2.0
+        except (TypeError, ValueError):
+            price = bid or ask
+        quote = _typed_quote(
+            symbol=canonical,
+            provider=provider,
+            price=price,
+            bid=bid,
+            ask=ask,
+            source_timestamp=row.get("time"),
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.BID_ASK.value if bid and ask else QuoteKind.TICKER.value,
+            market_status="open" if str(row.get("status") or "").lower() == "tradeable" else "closed",
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] OANDA typed quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 async def _fetch_coinbase_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     """Fetch live quote from Coinbase public ticker endpoint.
 
@@ -931,6 +1016,7 @@ async def _fetch_structured_quote(
         "yahoo": _fetch_yahoo_quote,
         "twelvedata": _fetch_twelvedata_quote,
         "polygon": _fetch_polygon_quote,
+        "oanda": _fetch_oanda_quote,
     }.get(provider)
     if adapter is None:
         return _typed_failure(symbol, provider, "adapter_not_registered", retryable=False)

@@ -213,6 +213,17 @@ def test_live_and_public_env_profiles_document_all_flags():
         f"PAYSTACK_TRANSFERS_APPROVED_ACK={PAYSTACK_TRANSFERS_ACK_VALUE}",
         "PAYSTACK_TRANSFER_OTP_FLOW_ENABLED=1",
         "VIP_SEAT_LIMIT=0",
+        "API_TOKEN_PEPPER=<random-long-api-token-pepper>",
+        "DB_MAX_CONCURRENT_SESSIONS=2",
+        "OUTCOME_TRACKER_MAX_CONCURRENCY=1",
+        "BYBIT_API_KEY=<bybit-mainnet-api-key>",
+        "TWELVEDATA_API_KEY=<twelve-data-api-key-with-commodity-access>",
+        "OANDA_API_KEY=<oanda-v20-api-token>",
+        "OANDA_ACCOUNT_ID=<oanda-v20-account-id>",
+        "TV_WEBHOOK_SECRET=<random-long-tradingview-webhook-secret>",
+        "TRADINGVIEW_ENABLED=1",
+        "PAYSTACK_SECRET_KEY=<paystack-live-secret-key>",
+        "PAYSTACK_PUBLIC_KEY=<paystack-live-public-key>",
     ):
         assert marker in live
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections import deque
 import time
 from enum import Enum
 from typing import Any
@@ -49,6 +50,7 @@ class DBAdmissionController:
         }
         self._condition = threading.Condition()
         self._active = {priority: 0 for priority in DBPriority}
+        self._queues = {priority: deque() for priority in DBPriority}
         self._waiting = {priority: 0 for priority in DBPriority}
         self._metrics: dict[DBPriority, dict[str, int | float]] = {
             priority: {
@@ -77,8 +79,12 @@ class DBAdmissionController:
         foreground = (DBPriority.INTERACTIVE, DBPriority.CRITICAL)
         return any(self._active[item] or self._waiting[item] for item in foreground)
 
-    def _can_admit(self, priority: DBPriority) -> bool:
+    def _can_admit(self, priority: DBPriority, token: object) -> bool:
         if priority is DBPriority.ANALYTICS and not self.analytics_enabled:
+            return False
+        # Same-priority work is FIFO. Without this check a task that just
+        # released the lane can repeatedly reacquire it and starve older waits.
+        if not self._queues[priority] or self._queues[priority][0] is not token:
             return False
         total_active = sum(self._active.values())
         if total_active >= self.capacity:
@@ -109,14 +115,16 @@ class DBAdmissionController:
         cancel_event: threading.Event | None = None,
     ) -> bool:
         priority = self.normalize(priority)
+        token = object()
         started = time.monotonic()
         timeout_s = max(0.0, float(timeout_s))
         deadline = started + timeout_s
 
         with self._condition:
+            self._queues[priority].append(token)
             self._waiting[priority] += 1
             try:
-                while not self._can_admit(priority):
+                while not self._can_admit(priority, token):
                     if cancel_event is not None and cancel_event.is_set():
                         self._metrics[priority]["cancelled"] += 1
                         return False
@@ -136,6 +144,7 @@ class DBAdmissionController:
                     return False
                 self._active[priority] += 1
                 self._metrics[priority]["acquired"] += 1
+                self._queues[priority].popleft()
                 self._metrics[priority]["wait_seconds_total"] += max(
                     0.0, time.monotonic() - started
                 )
@@ -143,6 +152,9 @@ class DBAdmissionController:
             finally:
                 self._waiting[priority] = max(0, self._waiting[priority] - 1)
                 self._condition.notify_all()
+                queue = self._queues[priority]
+                if token in queue:
+                    queue.remove(token)
 
     def release(self, priority: DBPriority | str, *, held_seconds: float = 0.0) -> None:
         priority = self.normalize(priority)

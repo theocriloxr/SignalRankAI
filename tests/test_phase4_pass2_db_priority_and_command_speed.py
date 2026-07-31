@@ -369,3 +369,45 @@ async def test_signals_command_returns_cached_response_when_db_is_busy(monkeypat
     assert "Cached signal index" in message.reply_text.await_args.args[0]
     assert "live data is temporarily busy" in message.reply_text.await_args.args[0]
     command_response_cache.clear()
+
+
+def test_same_priority_admission_is_fifo_under_contention() -> None:
+    from db.priority import DBAdmissionController, DBPriority
+
+    controller = DBAdmissionController(1)
+    assert controller.acquire(DBPriority.CRITICAL, timeout_s=0.01)
+    order: list[str] = []
+    release_first = threading.Event()
+
+    def waiter(name: str, hold: bool = False) -> None:
+        assert controller.acquire(DBPriority.CRITICAL, timeout_s=1.0)
+        order.append(name)
+        if hold:
+            release_first.wait(timeout=1.0)
+        controller.release(DBPriority.CRITICAL)
+
+    first = threading.Thread(target=waiter, args=("first", True))
+    second = threading.Thread(target=waiter, args=("second", False))
+    first.start()
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        if controller.snapshot()["classes"]["critical"]["waiting"] == 1:
+            break
+        time.sleep(0.005)
+    second.start()
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        if controller.snapshot()["classes"]["critical"]["waiting"] == 2:
+            break
+        time.sleep(0.005)
+
+    controller.release(DBPriority.CRITICAL)
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline and order != ["first"]:
+        time.sleep(0.005)
+    release_first.set()
+    first.join(timeout=1.0)
+    second.join(timeout=1.0)
+
+    assert order == ["first", "second"]
+    assert controller.snapshot()["active_total"] == 0

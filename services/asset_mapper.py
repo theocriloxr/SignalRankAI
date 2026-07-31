@@ -146,6 +146,7 @@ _COMMODITY_MAP: Dict[str, Dict[str, str]] = {
         "yfinance": "SI=F",
         "polygon": "C:XAGUSD",
         "twelvedata": "XAG/USD",
+        "oanda": "XAG_USD",
         "mt5": "XAGUSD",
     },
     "OIL": {
