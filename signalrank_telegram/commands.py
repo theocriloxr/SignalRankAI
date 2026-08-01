@@ -1207,14 +1207,17 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 			User,
 		)
 		from db.session import get_session
+		from db.signal_reference import resolve_signal_reference
 
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
+			resolved = await resolve_signal_reference(session, ref)
+			signal_uuid = str(resolved.signal.signal_id)
 			query = (
 				select(SignalDelivery, User, Signal, Outcome)
 				.join(User, User.id == SignalDelivery.user_id)
 				.join(Signal, Signal.signal_id == SignalDelivery.signal_id)
 				.outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-				.where(Signal.signal_id.like(f"{ref}%"))
+				.where(Signal.signal_id == signal_uuid)
 				.order_by(SignalDelivery.id.desc())
 				.limit(20)
 			)
@@ -1227,7 +1230,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 					SignalTrackingEvent,
 					SignalTrackingEvent.id == SignalEventNotification.event_id,
 				)
-				.where(SignalEventNotification.signal_id.like(f"{ref}%"))
+				.where(SignalEventNotification.signal_id == signal_uuid)
 				.order_by(SignalTrackingEvent.event_time.desc(), SignalEventNotification.id.desc())
 				.limit(50)
 			)
@@ -4400,25 +4403,26 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 
 			if sig is None:
-				# Try to find the signal globally by reference
-				ref = arg
-				query = select(Signal)
-				if len(ref) >= 32:
-					query = query.where(Signal.signal_id == ref)
-				else:
-					query = query.where(Signal.signal_id.like(f"{ref}%"))
-				query = query.order_by(Signal.created_at.desc()).limit(1)
-				res = await session.execute(query)
-				undelivered_sig: Signal | None = res.scalars().first()
-				if undelivered_sig is not None:
-					# Only admin/owner can view or manually resolve undelivered signals
-					if not _is_admin(user_id):
-						await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
-						return
-					sig = undelivered_sig
-				else:
+				# Admin/owner fallback still uses the canonical ambiguity-safe resolver.
+				from db.signal_reference import (
+					AmbiguousSignalReference,
+					SignalReferenceNotFound,
+					resolve_signal_reference,
+				)
+				try:
+					undelivered_sig = (await resolve_signal_reference(session, arg)).signal
+				except AmbiguousSignalReference:
+					await update.message.reply_text(
+						"That reference is ambiguous. Use the complete Signal ID."
+					)
+					return
+				except SignalReferenceNotFound:
 					await update.message.reply_text("Signal not found.")
 					return
+				if not _is_admin(user_id):
+					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
+					return
+				sig = undelivered_sig
 
 			# Manual resolution (ADMIN/OWNER only)
 			if action:

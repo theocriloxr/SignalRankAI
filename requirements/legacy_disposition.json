@@ -4558,7 +4558,7 @@
       "line_count": 11721,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "1d91a85b20cd382a591f39bf4fd41ea4d0ad687e6ba2836985eef05afac1cbfc",
+      "sha256": "e4156e2e10dbcc828db4ae3a984e1eb4bc6cbcbbefc44e055748e3949a6df223",
       "size_bytes": 367006
     },
     {
@@ -4851,11 +4851,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 65,
+      "line_count": 72,
       "path": "scripts/free_signal_queue_diagnostic.py",
       "reason": "production/build source",
-      "sha256": "573f94ca1fdaa23f47ac125b6735d0f283fc636269ccf69bbf25fec8905af959",
-      "size_bytes": 2286
+      "sha256": "5a0112a419d0d73e3db744576289bd50baa75cf7eceb7871016eb226e3106a79",
+      "size_bytes": 2431
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5142,8 +5142,8 @@
       "line_count": 42,
       "path": "scripts/verify_v130_production_cutover.py",
       "reason": "production/build source",
-      "sha256": "b0c675b7e65f745aa7fef95664f41fa12390c89b982bc8c72b780e1c77b33a2c",
-      "size_bytes": 1647
+      "sha256": "07b77de31b6535062f75e0ec0018140b6071b9df6cebfc52b23818e61a57c914",
+      "size_bytes": 1652
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5531,11 +5531,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 219,
+      "line_count": 225,
       "path": "services/user_signal_monitoring.py",
       "reason": "production/build source",
-      "sha256": "e5a58bec613bc38f96d82e318a09eaa33f37b68d612241f26b26aa0ec2e53c50",
-      "size_bytes": 7467
+      "sha256": "bd77e1a19dc1b801e4485f8d56f9119e4b8c69f70167eda60762cffe51cd3746",
+      "size_bytes": 7819
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5715,11 +5715,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 8437,
+      "line_count": 8425,
       "path": "signalrank_telegram/commands.py",
       "reason": "production/build source",
-      "sha256": "6574d68d1984fedb056cf52be7a719357b505e1ddcc885c31135acbc11ec853c",
-      "size_bytes": 329495
+      "sha256": "362ff816c972f05fb78438baedddb6af107260ee5b5cf437952bad92c2a89379",
+      "size_bytes": 327624
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7686,8 +7686,8 @@
       "line_count": 201,
       "path": "tests/test_production_endgame_20260725.py",
       "reason": "automated test evidence",
-      "sha256": "c402742e4fbdc9d0df4705c37fec91e3375e28109b83da4125f9748be73d49ed",
-      "size_bytes": 6402
+      "sha256": "33ade803e36c6d27650e2f88ad6096d62706d30e3f04d89734179f3921245ab6",
+      "size_bytes": 6407
     },
     {
       "disposition": "TEST_ONLY",
@@ -8182,24 +8182,24 @@
       "line_count": 64,
       "path": "tests/test_v104_runtime_schema_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "e106ade6030aed65f125a07710b52b5b2d8706699ede756163c5a0b8b2ccc9a7",
-      "size_bytes": 2257
+      "sha256": "03c0917da65f929b9246cd5ffa5da55fb09c34baab71e36f45b439eafd6651ba",
+      "size_bytes": 2262
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 113,
       "path": "tests/test_v105_railway_readiness_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "766ddc3b75b62e37533e84ed2b135ce63f3030b31920b3edeed80e70280b67b8",
-      "size_bytes": 3763
+      "sha256": "755b6a37adbccc8c7e083410fcc429ef32d7dc4097e83aad668e50de3388c6df",
+      "size_bytes": 3773
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 99,
       "path": "tests/test_v106_delivery_db_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "a3e49a09295661f303cb5da6371f88eb62b0da26abd346ff13102d8456cd8047",
-      "size_bytes": 3604
+      "sha256": "7c3957901155a9952feb29f1d098fcbd7a9dae002ece70963b0f0bf652dfd415",
+      "size_bytes": 3609
     },
     {
       "disposition": "TEST_ONLY",
@@ -8222,8 +8222,8 @@
       "line_count": 92,
       "path": "tests/test_v111_adaptive_operational_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "7eeb1f65d0b566509bac9fd9fbadaf3ce273d3fcaa9f9a7a54681a3039075ef7",
-      "size_bytes": 3560
+      "sha256": "51c84ec3b063dcd1231325081c1e1e1abe6f5b4ef40477fe41cb6e9209550cdf",
+      "size_bytes": 3553
     },
     {
       "disposition": "TEST_ONLY",
@@ -8318,8 +8318,8 @@
       "line_count": 276,
       "path": "tests/test_v131_live_financial_activation.py",
       "reason": "automated test evidence",
-      "sha256": "cd06830b8126f11cf3c49cc688bab7ba704ea9a383d6834a78e500083e85aff9",
-      "size_bytes": 11952
+      "sha256": "7b57f6a070dc1efb1c0635dc8715c654255b4605232fb4ba7a650e94309477b3",
+      "size_bytes": 11957
     },
     {
       "disposition": "TEST_ONLY",

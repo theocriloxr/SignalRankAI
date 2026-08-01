@@ -71,7 +71,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     class _Mappings:
         def one(self):
             return {
-                "deployed_revision": "0029_live_financial_ledger",
+                "deployed_revision": "0030_signal_monitor_reliability",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -105,7 +105,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     result = await railway_main._database_readiness_check()
 
     assert result["ok"] is True
-    assert result["revision"] == "0029_live_financial_ledger"
+    assert result["revision"] == "0030_signal_monitor_reliability"
     assert result["probe_timeout_seconds"] == 8.0
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"

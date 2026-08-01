@@ -22,7 +22,7 @@ def test_0026_repairs_operational_schema_and_prefix_lookup():
 
 def test_monitor_resolves_short_ids_and_is_user_scoped():
     text = source("signalrank_telegram/bot.py")
-    assert 'Signal.signal_id.like(f"{ref}%")' in text
+    assert "resolve_signal_reference(" in text
     assert "telegram_user_id == int(telegram_user_id)" in text
     assert "SignalDelivery.sent_ok.is_(True)" in text
     assert "resolved_payload = await _load_signal_payload" in text

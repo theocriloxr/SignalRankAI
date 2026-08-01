@@ -62,7 +62,7 @@ def _full_env() -> dict[str, str]:
 def test_version_and_migration_head():
     assert APP_VERSION == "1.3.2"
     assert RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
-    assert audit_versions(ROOT)["heads"] == ["0029_live_financial_ledger"]
+    assert audit_versions(ROOT)["heads"] == ["0030_signal_monitor_reliability"]
 
 
 def test_financial_flags_off_are_safe():
