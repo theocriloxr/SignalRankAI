@@ -499,6 +499,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
         stats = await compute_engine_health(window_hours=window_hours)
         txt = (
             f"Engine Pulse ({window_hours}h)\n\n"
+            f"Scope: global | Window: trailing {window_hours}h | Unit: confirmed recipient deliveries\n\n"
             f"Total Scanned: {stats.get('scanned', 0)}\n"
             f"Delivered: {stats.get('delivered', 0)}\n"
             f"Accounted: {stats.get('accounted', 0)}\n"
@@ -695,18 +696,25 @@ async def _claim_pulse_slot(interval_seconds: int) -> bool:
     ttl = max(60, int(os.getenv("ENGINE_PULSE_LOCK_TTL_SECONDS", str(max(60, interval_seconds - 30))) or max(60, interval_seconds - 30)))
     key = str(os.getenv("ENGINE_PULSE_LOCK_KEY", "signalrank:admin_pulse:hourly") or "signalrank:admin_pulse:hourly")
 
+    require_lock = (
+        str(os.getenv("APP_ENV", "") or "").strip().lower() == "production"
+        or str(os.getenv("ENGINE_PULSE_REQUIRE_DISTRIBUTED_LOCK", "0") or "0").lower()
+        in {"1", "true", "yes", "on"}
+    )
     def _claim() -> bool:
         try:
             from core.redis_state import state
             client = state._get_redis_sync()
             if client is None:
-                logger.warning("[admin_pulse] distributed lock unavailable; sending from this instance")
-                return True
+                logger.warning("[engine_pulse_leadership] acquired=false reason=lock_unavailable required=%s", require_lock)
+                return not require_lock
             token = f"{os.getpid()}:{datetime.now(timezone.utc).isoformat()}"
-            return bool(client.set(key, token, nx=True, ex=ttl))
+            acquired = bool(client.set(key, token, nx=True, ex=ttl))
+            logger.info("[engine_pulse_leadership] acquired=%s key=%s ttl=%s", acquired, key, ttl)
+            return acquired
         except Exception as exc:
-            logger.warning("[admin_pulse] distributed lock error; sending from this instance: %s", exc)
-            return True
+            logger.warning("[engine_pulse_leadership] acquired=false reason=lock_error required=%s error=%s", require_lock, type(exc).__name__)
+            return not require_lock
 
     return await asyncio.to_thread(_claim)
 

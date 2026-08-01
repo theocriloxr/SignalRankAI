@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.signal_lifecycle import TERMINAL_SIGNAL_STATES, normalize_lifecycle_state
 from db.models import (
     SignalDelivery,
+    SignalTrackingEvent,
     SignalLifecycle,
     User,
     UserSignalMonitoring,
@@ -150,6 +151,16 @@ async def apply_monitoring_action(
             monitoring.stopped_at_stage = max(int(stage), int(monitoring.stopped_at_stage or 0))
             monitoring.stopped_at = now
             result = "stopped"
+            stage_event = (
+                await session.execute(
+                    select(SignalTrackingEvent).where(
+                        SignalTrackingEvent.signal_id == str(signal_id),
+                        SignalTrackingEvent.event_type == f"tp{int(stage)}_hit",
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            monitoring.realized_r = getattr(stage_event, "r_multiple", None)
+            monitoring.realized_outcome = f"stopped_tp{int(stage)}"
     else:
         if monitoring.status in ACTIVE_MONITORING_STATES:
             result = "already_continuing"
@@ -158,6 +169,8 @@ async def apply_monitoring_action(
             monitoring.continued_at = now
             monitoring.stopped_at = None
             monitoring.stopped_at_stage = None
+            monitoring.realized_r = None
+            monitoring.realized_outcome = None
             result = "continued"
     monitoring.updated_at = now
     session.add(UserSignalMonitoringAction(

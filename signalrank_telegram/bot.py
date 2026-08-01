@@ -184,8 +184,15 @@ async def _resend_unsent_signals_async():
             user_ids = list(user_ids or [])
 
         allowlist_raw = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", "") or "").strip()
+        app_env = str(os.getenv("APP_ENV", "development") or "development").strip().lower()
+        restriction_mode = _env_bool("DELIVERY_AUDIENCE_RESTRICTION_MODE", False)
+        testing_mode = _env_bool_any(
+            ("PUBLIC_TESTING_MODE", "FULL_SYSTEM_STAGING_TEST_MODE", "FULL_SYSTEM_STAGING_TEST_ACTIVE"),
+            False,
+        )
+        allowlist_enforced = restriction_mode or (app_env != "production" and testing_mode)
         allowlist_ids: set[int] = set()
-        if allowlist_raw:
+        if allowlist_raw and allowlist_enforced:
             for token in allowlist_raw.replace(";", ",").split(","):
                 try:
                     allowlist_ids.add(int(token.strip()))
@@ -199,7 +206,13 @@ async def _resend_unsent_signals_async():
                 len(user_ids),
                 before_count,
             )
-        elif _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
+        elif allowlist_raw:
+            logger.info(
+                "[resend] delivery audience allowlist is diagnostic-only app_env=%s restriction_mode=%s",
+                app_env,
+                restriction_mode,
+            )
+        elif allowlist_enforced and _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
             logger.warning("[resend] skipped: RESEND_AUDIENCE_ALLOWLIST_ONLY=1 but DELIVERY_AUDIENCE_ALLOWLIST is empty")
             return
 
@@ -454,6 +467,31 @@ async def _resend_unsent_signals_async():
                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
                     gate_tier = _normalized_delivery_tier(user_tier)
                     try:
+                        from services.delivery_authorization import authorize_signal_delivery
+
+                        async with get_session(
+                            priority="background",
+                            label="resend.delivery_authorization",
+                            timeout_seconds=5.0,
+                        ) as _auth_session:
+                            authorization = await authorize_signal_delivery(
+                                _auth_session,
+                                telegram_user_id=int(user_id),
+                                signal=sig_dict,
+                                enforce_daily_limit=False,
+                            )
+                        if not authorization.allowed:
+                            skipped_eligibility_count += 1
+                            logger.info(
+                                "[delivery_authorization_denied] path=resend user=%s signal=%s code=%s",
+                                user_id,
+                                signal_id,
+                                authorization.code,
+                            )
+                            continue
+                        user_tier = authorization.tier
+                        gate_tier = _normalized_delivery_tier(user_tier)
+
                         # Free users are random-realtime routed by dispatch_signals();
                         # skip score-ranked resend flow unless explicitly enabled.
                         if gate_tier == "free" and not include_free_in_resend:
@@ -8252,7 +8290,7 @@ def run_bot() -> None:
 
                     now_hour = datetime.now().hour
                     per_user_limit = int(getattr(config, 'FREE_DAILY_LIMIT', 3))
-                    actions: list[tuple[int, list[int], list[str], str]] = []
+                    actions: list[tuple[int, list[int], list[str], str, dict | None]] = []
                     bot = Bot(token=_require_telegram_token())
 
                     async with bot:
@@ -8262,10 +8300,33 @@ def run_bot() -> None:
 
                             logger.info(f"\U0001F4E8 User {uid}: {len(items)} queued signal(s)")
 
+                            from services.delivery_authorization import authorize_signal_delivery
+                            async with get_session(
+                                priority="background",
+                                label="free_summary.delivery_authorization",
+                                timeout_seconds=5.0,
+                            ) as auth_session:
+                                authorization = await authorize_signal_delivery(
+                                    auth_session,
+                                    telegram_user_id=int(uid),
+                                    enforce_daily_limit=False,
+                                )
+                            if not authorization.allowed or authorization.tier != "free":
+                                logger.info(
+                                    "[delivery_authorization_denied] path=free_summary user=%s code=%s tier=%s",
+                                    uid,
+                                    authorization.code,
+                                    authorization.tier,
+                                )
+                                actions.append(
+                                    (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed', None)
+                                )
+                                continue
+
                             if not prefs.get("tp_sl_enabled", True):
                                 logger.info(f"\u23F8\uFE0F User {uid} has alerts disabled, marking as suppressed")
                                 actions.append(
-                                    (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed')
+                                    (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed', None)
                                 )
                                 continue
 

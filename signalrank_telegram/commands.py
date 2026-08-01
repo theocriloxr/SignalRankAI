@@ -1,4 +1,4 @@
-from utils.timeutils import now_utc_naive
+﻿from utils.timeutils import now_utc_naive
 import os
 import asyncio
 
@@ -37,7 +37,7 @@ FREE_PROOF_FEED_LIMIT = 5
 def _railway_env_hint(feature: str, missing: list[str]) -> str:
 	missing_list = ", ".join(missing)
 	return (
-		f"⚠️ {feature} is not configured on this deployment.\n\n"
+		f"âš ï¸ {feature} is not configured on this deployment.\n\n"
 		f"Missing env vars: {missing_list}\n\n"
 		"Railway setup:\n"
 		"1) Open your Railway service\n"
@@ -58,7 +58,7 @@ def require_tier(min_tier):
 			except Exception:
 				ks: KS = type("KS", (), {"enabled": False})()
 			if getattr(ks, "enabled", False):
-				await update.message.reply_text("🚨 Signals are temporarily paused.")
+				await update.message.reply_text("ðŸš¨ Signals are temporarily paused.")
 				return
 
 			# Rate limit (20/min)
@@ -81,7 +81,7 @@ def require_tier(min_tier):
 					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
 					_, reason = check_command_access(cmd_name, tier)
 				except Exception:
-					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+					reason: str = f"ðŸ”’ You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
 				decision = evaluate_command_access(cmd_name, tier)
 				reason = decision.reason
 				try:
@@ -173,28 +173,28 @@ def _build_dynamic_menu(user_id: int, tier: str):
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		rows = []
 		rows.append([
-			InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
-			InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+			InlineKeyboardButton("ðŸ“Š Signals", callback_data="nav_signals"),
+			InlineKeyboardButton("ðŸ† Performance", callback_data="nav_performance"),
 		])
 		if tier_rank(tier) < tier_rank("PREMIUM"):
-			rows.append([InlineKeyboardButton("✅ Proof Feed", callback_data="nav_proof")])
-			rows.append([InlineKeyboardButton("💳 Upgrade to VIP/Premium", callback_data="nav_upgrade")])
-			rows.append([InlineKeyboardButton("🔒 MT5 Auto‑Trading (VIP)", callback_data="locked_mt5")])
+			rows.append([InlineKeyboardButton("âœ… Proof Feed", callback_data="nav_proof")])
+			rows.append([InlineKeyboardButton("ðŸ’³ Upgrade to VIP/Premium", callback_data="nav_upgrade")])
+			rows.append([InlineKeyboardButton("ðŸ”’ MT5 Autoâ€‘Trading (VIP)", callback_data="locked_mt5")])
 		else:
 			rows.append([
-				InlineKeyboardButton("🔗 Link MT5", callback_data="mt5_link_guide"),
-				InlineKeyboardButton("⚙️ MT5 Settings", callback_data="mt5_settings"),
-				InlineKeyboardButton("📊 Advanced Portfolio", callback_data="advanced_portfolio"),
+				InlineKeyboardButton("ðŸ”— Link MT5", callback_data="mt5_link_guide"),
+				InlineKeyboardButton("âš™ï¸ MT5 Settings", callback_data="mt5_settings"),
+				InlineKeyboardButton("ðŸ“Š Advanced Portfolio", callback_data="advanced_portfolio"),
 			])
 		rows.append([
-			InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-			InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+			InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 		])
 		rows.append([InlineKeyboardButton("Settings", callback_data="nav_settings")])
 		# Admin shortcut
 		try:
 			if int(user_id) in ADMIN_IDS:
-				rows.append([InlineKeyboardButton("🛡️ Admin Dashboard", callback_data="admin_dashboard")])
+				rows.append([InlineKeyboardButton("ðŸ›¡ï¸ Admin Dashboard", callback_data="admin_dashboard")])
 		except Exception:
 			pass
 		return InlineKeyboardMarkup(rows)
@@ -231,17 +231,17 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		signal_id = _compact_signal_callback_id((signal or {}).get("signal_id"))
 		trade_cb = _signal_callback_data("mt5_trade_", signal_id) if signal_id else None
 		rows = [[
-			InlineKeyboardButton("📈 View Chart", url=chart_url),
+			InlineKeyboardButton("ðŸ“ˆ View Chart", url=chart_url),
 		]]
 		if signal_id:
-			rows[0].append(InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb))
+			rows[0].append(InlineKeyboardButton("âš¡ Trade Now", callback_data=trade_cb))
 			rows.append([
-				InlineKeyboardButton("🔥 Taking It", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|taking_it")),
-				InlineKeyboardButton("👀 Watching", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|watching")),
+				InlineKeyboardButton("ðŸ”¥ Taking It", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|taking_it")),
+				InlineKeyboardButton("ðŸ‘€ Watching", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|watching")),
 			])
 			rows.append([
-				InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
-				InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
+				InlineKeyboardButton("ðŸ“ˆ Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
+				InlineKeyboardButton("ðŸ” Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
 			])
 		keyboard = InlineKeyboardMarkup(rows)
 		return keyboard
@@ -268,14 +268,14 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 
 def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
 	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
-	price = f"₦{vip_price:,}"
+	price = f"â‚¦{vip_price:,}"
 	if sold_out:
-		return f"💎 VIP Monthly — {price} \\| 🔴 VIP Sold Out" if MarkdownV2 else f"💎 VIP Monthly — {price} | 🔴 VIP Sold Out"
+		return f"ðŸ’Ž VIP Monthly â€” {price} \\| ðŸ”´ VIP Sold Out" if MarkdownV2 else f"ðŸ’Ž VIP Monthly â€” {price} | ðŸ”´ VIP Sold Out"
 	if seats_left < 0:
-		return f"💎 VIP Monthly — {price} \\| 🟢 Open enrollment" if MarkdownV2 else f"💎 VIP Monthly — {price} | 🟢 Open enrollment"
+		return f"ðŸ’Ž VIP Monthly â€” {price} \\| ðŸŸ¢ Open enrollment" if MarkdownV2 else f"ðŸ’Ž VIP Monthly â€” {price} | ðŸŸ¢ Open enrollment"
 	if MarkdownV2:
-		return f"💎 VIP Monthly — {price} \\| 🟢 {seats_left} seats left"
-	return f"💎 VIP Monthly — {price} | 🟢 {seats_left} seats left"
+		return f"ðŸ’Ž VIP Monthly â€” {price} \\| ðŸŸ¢ {seats_left} seats left"
+	return f"ðŸ’Ž VIP Monthly â€” {price} | ðŸŸ¢ {seats_left} seats left"
 
 
 async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
@@ -285,14 +285,14 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 		_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 		rows = []
 		if vip_sold_out:
-			rows.append([InlineKeyboardButton("💎 VIP Sold Out", callback_data="vip_sold_out")])
-			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
+			rows.append([InlineKeyboardButton("ðŸ’Ž VIP Sold Out", callback_data="vip_sold_out")])
+			rows.append([InlineKeyboardButton("ðŸ“‹ Join VIP Waitlist", callback_data="vip_waitlist_join")])
 		else:
 			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
 			vip_link = generate_paystack_link(user_id=user_id, price=vip_price, tier="VIP", duration="MONTHLY", duration_days=30)
 			if vip_link:
 				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
-				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
+				rows.append([InlineKeyboardButton(f"ðŸ’Ž VIP Monthly â€” â‚¦{vip_price:,} ({seat_label})", url=vip_link)])
 		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
@@ -300,16 +300,16 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 		prem_qtr = generate_paystack_link(user_id=user_id, price=prem_qtr_price, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
 		prem_year = generate_paystack_link(user_id=user_id, price=prem_year_price, tier="PREMIUM", duration="YEARLY", duration_days=365)
 		if prem_month:
-			rows.append([InlineKeyboardButton(f"⭐ Premium Monthly — ₦{prem_month_price:,}", url=prem_month)])
+			rows.append([InlineKeyboardButton(f"â­ Premium Monthly â€” â‚¦{prem_month_price:,}", url=prem_month)])
 		if prem_qtr:
-			rows.append([InlineKeyboardButton(f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}", url=prem_qtr)])
+			rows.append([InlineKeyboardButton(f"â­ Premium Quarterly â€” â‚¦{prem_qtr_price:,}", url=prem_qtr)])
 		if prem_year:
-			rows.append([InlineKeyboardButton(f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}", url=prem_year)])
-		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
+			rows.append([InlineKeyboardButton(f"ðŸ”¥ Premium Yearly (Best Value) â€” â‚¦{prem_year_price:,}", url=prem_year)])
+		rows.append([InlineKeyboardButton("ðŸ“ž Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
 			rows.append([
-				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸ“ˆ Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("ðŸ‘¤ Account", callback_data="nav_account"),
 			])
 		return InlineKeyboardMarkup(rows)
 	except Exception:
@@ -328,15 +328,15 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 	premium_limit = get_entitlements("PREMIUM").daily_signal_limit
 	vip_limit = get_entitlements("VIP").daily_signal_limit
 	msg = (
-		"🚀 SignalRankAI — Plans Built Around Trader Value\n\n"
-		"🆓 Free — proof feed + limited educational signals\n"
-		f"• Up to {free_limit}/day, delayed/limited detail, upgrade prompts\n\n"
-		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
-		f"• Up to {premium_limit}/day, real-time Entry/SL/TP, /signals, /outcome, performance stats, multi-asset coverage\n\n"
+		"ðŸš€ SignalRankAI â€” Plans Built Around Trader Value\n\n"
+		"ðŸ†“ Free â€” proof feed + limited educational signals\n"
+		f"â€¢ Up to {free_limit}/day, delayed/limited detail, upgrade prompts\n\n"
+		f"â­ Premium â€” â‚¦{prem_month_price:,}/mo Â· â‚¦{prem_qtr_price:,}/qtr Â· â‚¦{prem_year_price:,}/yr\n"
+		f"â€¢ Up to {premium_limit}/day, real-time Entry/SL/TP, /signals, /outcome, performance stats, multi-asset coverage\n\n"
 		f"{vip_line}\n"
-		f"• Up to {vip_limit}/day, stricter high-conviction stream, priority delivery, TP3 runner, webhook/API, MT5-ready controls, advanced profile filters\n\n"
+		f"â€¢ Up to {vip_limit}/day, stricter high-conviction stream, priority delivery, TP3 runner, webhook/API, MT5-ready controls, advanced profile filters\n\n"
 		"Why upgrade? Paid tiers get cleaner timing, deeper signal context, more markets, tracked outcomes, and priority delivery.\n\n"
-		"⚠️ Educational only. Trading involves risk. No guaranteed returns."
+		"âš ï¸ Educational only. Trading involves risk. No guaranteed returns."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=False)
 	return msg, keyboard
@@ -349,20 +349,20 @@ async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	msg = (
-		"🚀 <b>Upgrade SignalRankAI</b>\n\n"
+		"ðŸš€ <b>Upgrade SignalRankAI</b>\n\n"
 		"The free tier proves the system. Paid tiers are for traders who want cleaner timing, more context, and better workflow.\n\n"
-		f"⭐ <b>Premium</b> — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
-		"• More daily real-time signals\n"
-		"• Full Entry / Stop Loss / TP levels\n"
-		"• /signals, /outcome, /performance, portfolio-style recap\n"
-		"• Multi-asset feed: crypto, FX, stocks, commodities\n\n"
+		f"â­ <b>Premium</b> â€” â‚¦{prem_month_price:,}/mo Â· â‚¦{prem_qtr_price:,}/qtr Â· â‚¦{prem_year_price:,}/yr\n"
+		"â€¢ More daily real-time signals\n"
+		"â€¢ Full Entry / Stop Loss / TP levels\n"
+		"â€¢ /signals, /outcome, /performance, portfolio-style recap\n"
+		"â€¢ Multi-asset feed: crypto, FX, stocks, commodities\n\n"
 		f"{vip_line}\n"
-		"• Priority delivery when the engine finds a setup\n"
-		"• Stricter quality stream and TP3 runner\n"
-		"• Webhook/API and MT5-ready controls\n"
-		"• Advanced profile filters: scalp, day, swing, position\n\n"
+		"â€¢ Priority delivery when the engine finds a setup\n"
+		"â€¢ Stricter quality stream and TP3 runner\n"
+		"â€¢ Webhook/API and MT5-ready controls\n"
+		"â€¢ Advanced profile filters: scalp, day, swing, position\n\n"
 		"Best practice: start Premium, upgrade to VIP when you need faster workflow and automation-grade alerts.\n\n"
-		"⚠️ <i>No guaranteed profits. Educational only. Trade responsibly.</i>\n\n"
+		"âš ï¸ <i>No guaranteed profits. Educational only. Trade responsibly.</i>\n\n"
 		"Tap a plan below to subscribe via Paystack."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
@@ -374,20 +374,20 @@ def _build_main_menu_keyboard(user_id: int):
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		rows = [
 			[
-				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("ðŸ“Š Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("ðŸ† Performance", callback_data="nav_performance"),
 			],
 			[
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
 			],
 			[
-				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+				InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 			],
 		]
 		try:
 			if int(user_id) in ADMIN_IDS:
-				rows.append([InlineKeyboardButton("🛡️ Admin Dashboard", callback_data="admin_dashboard")])
+				rows.append([InlineKeyboardButton("ðŸ›¡ï¸ Admin Dashboard", callback_data="admin_dashboard")])
 		except Exception:
 			pass
 		return InlineKeyboardMarkup(rows)
@@ -397,7 +397,7 @@ def _build_main_menu_keyboard(user_id: int):
 
 async def _compose_main_menu_message(user_id: int) -> tuple[str, object | None]:
 	msg = (
-		"👋 Welcome to SignalRankAI.\n"
+		"ðŸ‘‹ Welcome to SignalRankAI.\n"
 		"Pick a category below to continue."
 	)
 	return msg, _build_main_menu_keyboard(int(user_id))
@@ -408,17 +408,17 @@ def _build_section_back_keyboard(*, include_upgrade: bool = True):
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		rows = [
 			[
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+				InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 			],
 		]
 		if include_upgrade:
 			rows.insert(0, [
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
-				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+				InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("ðŸ  Back to Main Menu", callback_data="nav_home"),
 			])
 		else:
-			rows.insert(0, [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home")])
+			rows.insert(0, [InlineKeyboardButton("ðŸ  Back to Main Menu", callback_data="nav_home")])
 		return InlineKeyboardMarkup(rows)
 	except Exception:
 		return None
@@ -427,10 +427,10 @@ def _build_section_back_keyboard(*, include_upgrade: bool = True):
 async def _compose_signals_menu_message(user_id: int) -> tuple[str, object | None]:
 	tier = _effective_tier(int(user_id))
 	msg = (
-		"📊 Signals Menu\n\n"
-		"• Use /signals to view the latest active trade setups\n"
-		"• Track live opportunities across crypto, forex, stocks, and commodities\n"
-		"• Premium and VIP users receive deeper signal detail and broader coverage\n\n"
+		"ðŸ“Š Signals Menu\n\n"
+		"â€¢ Use /signals to view the latest active trade setups\n"
+		"â€¢ Track live opportunities across crypto, forex, stocks, and commodities\n"
+		"â€¢ Premium and VIP users receive deeper signal detail and broader coverage\n\n"
 		f"Your current tier: {tier}\n"
 		"Tip: send /signals anytime to pull the latest signal feed."
 	)
@@ -438,15 +438,15 @@ async def _compose_signals_menu_message(user_id: int) -> tuple[str, object | Non
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("ðŸ† Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
 			],
 			[
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+				InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 			],
 			[
-				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+				InlineKeyboardButton("ðŸ  Back to Main Menu", callback_data="nav_home"),
 			],
 		])
 	except Exception:
@@ -458,32 +458,32 @@ async def _compose_performance_menu_message(user_id: int) -> tuple[str, object |
 	tier = _effective_tier(int(user_id))
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		msg = (
-			"🏆 Performance Menu\n\n"
+			"ðŸ† Performance Menu\n\n"
 			"Detailed performance analytics are available on Premium and VIP plans.\n"
 			"Upgrade to unlock 30-day stats, tracked outcomes, and win-rate reporting.\n\n"
 			"You can still use /upgrade to unlock analytics instantly."
 		)
 	else:
 		msg = (
-			"🏆 Performance Menu\n\n"
-			"• Use /performance for your 30-day delivery and outcome summary\n"
-			"• Review tracked wins, losses, win rate, and net R performance\n"
-			"• Pair this with /portfolio and /dashboard for a broader view\n\n"
+			"ðŸ† Performance Menu\n\n"
+			"â€¢ Use /performance for your 30-day delivery and outcome summary\n"
+			"â€¢ Review tracked wins, losses, win rate, and net R performance\n"
+			"â€¢ Pair this with /portfolio and /dashboard for a broader view\n\n"
 			f"Your current tier: {tier}"
 		)
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸ“Š Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
 			],
 			[
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
-				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+				InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 			],
 			[
-				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+				InlineKeyboardButton("ðŸ  Back to Main Menu", callback_data="nav_home"),
 			],
 		])
 	except Exception:
@@ -494,26 +494,26 @@ async def _compose_performance_menu_message(user_id: int) -> tuple[str, object |
 async def _compose_support_menu_message(user_id: int) -> tuple[str, object | None]:
 	_ = user_id
 	msg = (
-		"🎧 Support Menu\n\n"
+		"ðŸŽ§ Support Menu\n\n"
 		"Need help with billing, subscriptions, bot access, or trade delivery?\n\n"
 		"Support contact: @theocrilox\n"
 		"Helpful commands:\n"
-		"• /faq\n"
-		"• /policy\n"
-		"• /refunds"
+		"â€¢ /faq\n"
+		"â€¢ /policy\n"
+		"â€¢ /refunds"
 	)
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("💬 Contact Support", url="https://t.me/theocrilox"),
+				InlineKeyboardButton("ðŸ’¬ Contact Support", url="https://t.me/theocrilox"),
 			],
 			[
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
 			],
 			[
-				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+				InlineKeyboardButton("ðŸ  Back to Main Menu", callback_data="nav_home"),
 			],
 		])
 	except Exception:
@@ -550,14 +550,14 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			if signal_id:
 				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 				new_kbd = InlineKeyboardMarkup([
-					[InlineKeyboardButton("⚡ Trade Now", callback_data=_signal_callback_data("mt5_trade_", signal_id))],
+					[InlineKeyboardButton("âš¡ Trade Now", callback_data=_signal_callback_data("mt5_trade_", signal_id))],
 					[
-						InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
-						InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
+						InlineKeyboardButton("ðŸ“ˆ Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
+						InlineKeyboardButton("ðŸ” Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
 					],
 				])
 				await query.edit_message_reply_markup(reply_markup=new_kbd)
-				await query.answer("Buttons updated. Tap ⚡ Trade Now again.", show_alert=False)
+				await query.answer("Buttons updated. Tap âš¡ Trade Now again.", show_alert=False)
 				return
 		except Exception:
 			pass
@@ -578,7 +578,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_home failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -593,7 +593,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_signals failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -611,7 +611,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_proof failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -626,7 +626,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_account failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -641,7 +641,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_performance failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -667,7 +667,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_upgrade failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -682,7 +682,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception as _e:
 			logger.exception("[button_click] nav_support failed: %s", _e)
 			try:
-				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+				await query.answer("âš ï¸ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -699,7 +699,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data.startswith("locked_"):
 		try:
 			await query.answer(
-				"⭐ This feature requires Premium or VIP. Type /upgrade to unlock!",
+				"â­ This feature requires Premium or VIP. Type /upgrade to unlock!",
 				show_alert=True,
 			)
 		except Exception:
@@ -714,31 +714,31 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			tier = _effective_tier(int(uid))
 			if tier_rank(tier) < tier_rank("PREMIUM"):
 				await query.answer(
-					"⭐ This feature requires Premium or VIP. Type /upgrade to unlock!",
+					"â­ This feature requires Premium or VIP. Type /upgrade to unlock!",
 					show_alert=True,
 				)
 				return
 			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 			if data == "mt5_settings":
 				msg = (
-					"⚙️ MT5 Settings\n\n"
+					"âš™ï¸ MT5 Settings\n\n"
 					"Use these commands:\n"
-					"• /mt5_status — connection status\n"
-					"• /setlot — fixed lot size\n"
-					"• /setrisk — max risk %\n"
-					"• /mt5_link — link your MT5 account"
+					"â€¢ /mt5_status â€” connection status\n"
+					"â€¢ /setlot â€” fixed lot size\n"
+					"â€¢ /setrisk â€” max risk %\n"
+					"â€¢ /mt5_link â€” link your MT5 account"
 				)
 			else:
 				msg = (
-					"📊 Advanced Portfolio\n\n"
+					"ðŸ“Š Advanced Portfolio\n\n"
 					"Use these commands:\n"
-					"• /portfolio — active signals P&L\n"
-					"• /risk — risk guidance\n"
-					"• /alerts — TP/SL alerts\n"
-					"• /performance — stats summary"
+					"â€¢ /portfolio â€” active signals P&L\n"
+					"â€¢ /risk â€” risk guidance\n"
+					"â€¢ /alerts â€” TP/SL alerts\n"
+					"â€¢ /performance â€” stats summary"
 				)
 			keyboard = InlineKeyboardMarkup([
-				[InlineKeyboardButton("⬅️ Back", callback_data="nav_account")]
+				[InlineKeyboardButton("â¬…ï¸ Back", callback_data="nav_account")]
 			])
 			await _edit_message_or_reply(query, msg, keyboard)
 			return
@@ -760,16 +760,16 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		try:
 			uid = update.effective_user.id if update.effective_user else None
 			if uid is None or int(uid) not in ADMIN_IDS:
-				await query.answer("⛔ Access Denied", show_alert=True)
+				await query.answer("â›” Access Denied", show_alert=True)
 				return
 			if data == "admin_broadcast":
-				await query.message.reply_text("📢 Broadcast mode: use /admin_broadcast <message>.")
+				await query.message.reply_text("ðŸ“¢ Broadcast mode: use /admin_broadcast <message>.")
 				return
 			if data == "admin_user_stats":
-				await query.message.reply_text("👥 User stats: use /admin or /admin_user_engagement.")
+				await query.message.reply_text("ðŸ‘¥ User stats: use /admin or /admin_user_engagement.")
 				return
 			if data == "admin_revenue":
-				await query.message.reply_text("💸 Revenue analytics: use /owner_revenue.")
+				await query.message.reply_text("ðŸ’¸ Revenue analytics: use /owner_revenue.")
 				return
 			if data == "admin_force_signal":
 				try:
@@ -777,7 +777,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 					
 					uid = update.effective_user.id if update.effective_user else None
 					if uid is None or not await _is_admin_or_owner(uid):
-						await query.answer("⛔ Access Denied.", show_alert=True)
+						await query.answer("â›” Access Denied.", show_alert=True)
 						return
 					
 					# Call the signal generation function directly
@@ -787,10 +787,10 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 					await query.answer("Failed to generate signal. Try /force_signal instead.", show_alert=True)
 				return
 			if data == "admin_toggle_engine":
-				await query.message.reply_text("🛑 Engine: use /dev_pause or /dev_resume.")
+				await query.message.reply_text("ðŸ›‘ Engine: use /dev_pause or /dev_resume.")
 				return
 			if data == "admin_force_market_scan":
-				await query.message.reply_text("🧠 Market scan: use /force_market_scan.")
+				await query.message.reply_text("ðŸ§  Market scan: use /force_market_scan.")
 				return
 		except Exception:
 			return
@@ -804,13 +804,13 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 				signal_id = raw.replace("trade_now_", "", 1)[:36]
 			if signal_id:
 				await query.message.reply_text(
-					"⚡ Updated action button:",
+					"âš¡ Updated action button:",
 					reply_markup=InlineKeyboardMarkup([
-						[InlineKeyboardButton("⚡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", signal_id))]
+						[InlineKeyboardButton("âš¡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", signal_id))]
 					]),
 				)
 				return
-			await query.message.reply_text("⚡ Please open /signals and use the latest Trade button.")
+			await query.message.reply_text("âš¡ Please open /signals and use the latest Trade button.")
 			return
 		except Exception:
 			return
@@ -826,16 +826,16 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("📢 Broadcast to All", callback_data="admin_broadcast"),
-				InlineKeyboardButton("👥 User Stats", callback_data="admin_user_stats"),
+				InlineKeyboardButton("ðŸ“¢ Broadcast to All", callback_data="admin_broadcast"),
+				InlineKeyboardButton("ðŸ‘¥ User Stats", callback_data="admin_user_stats"),
 			],
 			[
-				InlineKeyboardButton("💸 Revenue Analytics", callback_data="admin_revenue"),
-				InlineKeyboardButton("⚡ Force Signal", callback_data="admin_force_signal"),
+				InlineKeyboardButton("ðŸ’¸ Revenue Analytics", callback_data="admin_revenue"),
+				InlineKeyboardButton("âš¡ Force Signal", callback_data="admin_force_signal"),
 			],
 			[
-				InlineKeyboardButton("🛑 Pause/Resume Engine", callback_data="admin_toggle_engine"),
-				InlineKeyboardButton("🧠 Force Market Scan", callback_data="admin_force_market_scan"),
+				InlineKeyboardButton("ðŸ›‘ Pause/Resume Engine", callback_data="admin_toggle_engine"),
+				InlineKeyboardButton("ðŸ§  Force Market Scan", callback_data="admin_force_market_scan"),
 			],
 		])
 	except Exception:
@@ -847,7 +847,7 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			pass
 	if update.message is None:
 		return
-	await update.message.reply_text("🛡️ Admin Dashboard", reply_markup=keyboard)
+	await update.message.reply_text("ðŸ›¡ï¸ Admin Dashboard", reply_markup=keyboard)
 
 
 @require_tier("ADMIN")
@@ -861,12 +861,12 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 		from ml.inference import MLFilter
 		from ml.features import extract_features
 	except Exception:
-		await update.message.reply_text("⚠️ ML module not available. Scan skipped.")
+		await update.message.reply_text("âš ï¸ ML module not available. Scan skipped.")
 		return
 
 	ml_filter = MLFilter()
 	if not getattr(ml_filter, "active", False):
-		await update.message.reply_text("⚠️ ML model not loaded — train first.")
+		await update.message.reply_text("âš ï¸ ML model not loaded â€” train first.")
 		return
 
 	threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
@@ -924,12 +924,12 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 			logger.debug("[force_market_scan] admin event write failed: %s", event_exc)
 
 	except Exception:
-		await update.message.reply_text("⚠️ Scan failed. Check logs for details.")
+		await update.message.reply_text("âš ï¸ Scan failed. Check logs for details.")
 		return
 
 	threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
 	await update.message.reply_text(
-		f"🤖 Market scan complete. Signals={len(signals)} | "
+		f"ðŸ¤– Market scan complete. Signals={len(signals)} | "
 		f"approved={approved} | rejected={rejected} | errors={errors} | "
 		f"threshold={threshold_label}"
 	)
@@ -949,7 +949,7 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	except Exception:
 		tier = "free"
 
-	# Get subscription expiry from Postgres — check premium_until first, then active Subscription
+	# Get subscription expiry from Postgres â€” check premium_until first, then active Subscription
 	try:
 		from db.session import get_session
 		from db.repository import get_or_create_user
@@ -988,15 +988,15 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	except Exception:
 		pass
 
-	limits = {"free": 3, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
+	limits = {"free": 3, "premium": 20, "vip": "âˆž", "owner": "âˆž", "admin": "âˆž"}
 	limit = limits.get(tier, 3)
 
-	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
+	tier_emoji = {"free": "ðŸ†“", "premium": "â­", "vip": "ðŸ‘‘", "owner": "ðŸ”§", "admin": "ðŸ”§"}.get(tier, "ðŸ†“")
 
 	msg = f"{tier_emoji} Status: {tier.upper()}\n\n"
 	if expiry:
-		msg += f"📅 Expires: {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
-	msg += f"📊 Signals today: {signals_today}/{limit}\n"
+		msg += f"ðŸ“… Expires: {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
+	msg += f"ðŸ“Š Signals today: {signals_today}/{limit}\n"
 
 	if tier == "free":
 		msg += "\n/upgrade to unlock more signals"
@@ -1081,17 +1081,17 @@ async def apikey_command(update, context) -> None:
 	args = context.args or []
 	if args and args[0].lower() == "regenerate":
 		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
+		await update.message.reply_text(f"ðŸ”‘ Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
 		return
 	meta = await _get_existing_api_token_meta(int(user_id))
 	if meta is None:
 		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-		await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
+		await update.message.reply_text(f"ðŸ”‘ Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
 		return
 	prefix = str(meta.get("token_prefix") or "")
 	exp = str(meta.get("expires_at") or "unknown")
 	await update.message.reply_text(
-		f"🔑 Active API key exists.\n"
+		f"ðŸ”‘ Active API key exists.\n"
 		f"Prefix: <code>{prefix}</code>\n"
 		f"Expires: <code>{exp}</code>\n\n"
 		f"Use /apikey regenerate to rotate and receive a new full key.",
@@ -1786,7 +1786,7 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
         return
     logger.info("[test_delivery_reserved] user=%s asset=%s", user_id, spec.symbol)
     message = (
-        "TEST — NOT A TRADING SIGNAL\n\n"
+        "TEST â€” NOT A TRADING SIGNAL\n\n"
         f"Asset: {spec.symbol}\n"
         "Purpose: Telegram infrastructure and acknowledgement test only.\n"
         "No trade, signal, subscription, performance or broker record is created."
@@ -2020,8 +2020,8 @@ from .user_prefs import user_prefs_store
 # --------- LANGUAGE SELECTION COMMAND ---------
 LANGUAGES: dict[str, str] = {
 	"en": "English",
-	"es": "Español",
-	"fr": "Français",
+	"es": "EspaÃ±ol",
+	"fr": "FranÃ§ais",
 }
 
 def _get_user_language(user_id):
@@ -2034,7 +2034,7 @@ async def language_command(update, context) -> None:
 	args = context.args or []
 	if not args:
 		current = _get_user_language(user_id)
-		msg: str = "🌐 Select your language:\n" + "\n".join([f"/language {k} - {v}" for k, v in LANGUAGES.items()])
+		msg: str = "ðŸŒ Select your language:\n" + "\n".join([f"/language {k} - {v}" for k, v in LANGUAGES.items()])
 		msg += f"\n\nCurrent: {LANGUAGES.get(current, 'English')}"
 		await update.message.reply_text(msg)
 		return
@@ -2397,7 +2397,7 @@ async def referral_leaderboard_command(update, context) -> None:
 			)
 			users = {int(r[0]): (r[1], r[2]) for r in (res2.all() or [])}
 
-		msg = "🏆 Referral Leaderboard:\n\n"
+		msg = "ðŸ† Referral Leaderboard:\n\n"
 		for i, (uid, cnt) in enumerate(rows, 1):
 			uid = int(uid)
 			telegram_uid, username = users.get(uid, (None, None))
@@ -2449,19 +2449,19 @@ async def referral_rewards_command(update, context) -> None:
 		if not rows:
 			msg = "No rewards earned yet. Refer friends to earn rewards!"
 		else:
-			msg = "🎁 Your Referral Rewards:\n"
+			msg = "ðŸŽ Your Referral Rewards:\n"
 			for rtype, cnt, total in rows:
-				msg += f"• {rtype}: {int(cnt or 0)} time(s), total value: {int(total or 0)}\n"
+				msg += f"â€¢ {rtype}: {int(cnt or 0)} time(s), total value: {int(total or 0)}\n"
 
 		if total_days > 0:
-			msg += f"\n✅ Total premium days earned: +{total_days}"
+			msg += f"\nâœ… Total premium days earned: +{total_days}"
 
-		msg += f"\n\n📊 Progress: {toward_next}/3"
+		msg += f"\n\nðŸ“Š Progress: {toward_next}/3"
 		if needed > 0:
 			msg += f" (invite {needed} more for next +7 days)"
 		else:
 			msg += " (milestone reached on latest referral)"
-		msg += f"\n👥 Total referrals: {total_refs}"
+		msg += f"\nðŸ‘¥ Total referrals: {total_refs}"
 		await session.commit()
 		await update.message.reply_text(msg)
 from engine.signal_analytics import signal_analytics
@@ -2509,14 +2509,14 @@ async def assets_command(update, context) -> None:
 	"""Admin: manage the pinned asset universe.
 
 	Usage:
-	  /assets list            – show all managed assets
-	  /assets add BTCUSDT     – pin an asset
-	  /assets remove BTCUSDT  – unpin an asset
+	  /assets list            â€“ show all managed assets
+	  /assets add BTCUSDT     â€“ pin an asset
+	  /assets remove BTCUSDT  â€“ unpin an asset
 	"""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
-		await update.message.reply_text("⛔ Access Denied.")
+		await update.message.reply_text("â›” Access Denied.")
 		return
 
 	from db.session import get_session
@@ -2611,7 +2611,7 @@ async def assets_command(update, context) -> None:
 			return
 		lines: list[str] = []
 		for r in rows:
-			status = "✅" if r.is_active else "❌"
+			status = "âœ…" if r.is_active else "âŒ"
 			lines.append(f"{status} `{r.symbol}` ({r.asset_type})")
 		await update.message.reply_text(
 			f"*Managed Assets ({len(rows)}):*\n" + "\n".join(lines),
@@ -2631,7 +2631,7 @@ async def assets_command(update, context) -> None:
 				added_by=update.effective_user.id,
 			)
 			await session.commit()
-		await update.message.reply_text(f"✅ `{symbol}` pinned ({atype}).", parse_mode="MarkdownV2")
+		await update.message.reply_text(f"âœ… `{symbol}` pinned ({atype}).", parse_mode="MarkdownV2")
 		return
 
 	if subcmd == "remove":
@@ -2643,7 +2643,7 @@ async def assets_command(update, context) -> None:
 			found = await remove_managed_asset(session, symbol=symbol)
 			await session.commit()
 		if found:
-			await update.message.reply_text(f"❌ `{symbol}` unpinned.", parse_mode="MarkdownV2")
+			await update.message.reply_text(f"âŒ `{symbol}` unpinned.", parse_mode="MarkdownV2")
 		else:
 			await update.message.reply_text(f"`{symbol}` was not in the managed list.", parse_mode="MarkdownV2")
 		return
@@ -2730,44 +2730,44 @@ async def selfcheck_command(update, context) -> None:
 	try:
 		from db.session import get_engine_for_event_loop
 		engine = get_engine_for_event_loop()
-		checks.append("✅ Database: connected" if engine else "❌ Database: not connected")
+		checks.append("âœ… Database: connected" if engine else "âŒ Database: not connected")
 	except Exception:
-		checks.append("❌ Database: error")
+		checks.append("âŒ Database: error")
 	
 	# Redis check
 	try:
 		from core.redis_state import state
 		state.get_sync("health_check")
-		checks.append("✅ Redis: connected")
+		checks.append("âœ… Redis: connected")
 	except Exception:
-		checks.append("❌ Redis: not connected")
+		checks.append("âŒ Redis: not connected")
 
 	# Railway env readiness check
 	if running_on_railway:
-		checks.append("✅ Railway: detected")
-		checks.append("✅ GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "❌ GEMINI_API_KEY: missing")
-		checks.append("✅ META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "❌ META_API_TOKEN: missing")
-		checks.append("✅ ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "❌ ENCRYPTION_KEY: missing")
+		checks.append("âœ… Railway: detected")
+		checks.append("âœ… GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "âŒ GEMINI_API_KEY: missing")
+		checks.append("âœ… META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "âŒ META_API_TOKEN: missing")
+		checks.append("âœ… ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "âŒ ENCRYPTION_KEY: missing")
 		_owner_ids_raw = (os.getenv("OWNER_IDS") or "").strip()
-		checks.append("✅ OWNER_IDS: set" if _owner_ids_raw else "⚠️ OWNER_IDS: missing (owner-only commands disabled)")
+		checks.append("âœ… OWNER_IDS: set" if _owner_ids_raw else "âš ï¸ OWNER_IDS: missing (owner-only commands disabled)")
 	
 	# yfinance check
 	try:
 		import yfinance as yf
 		t = yf.Ticker("AAPL")
 		p = t.fast_info.get('lastPrice')
-		checks.append(f"✅ yfinance: working (AAPL=${p:.2f})" if p else "⚠️ yfinance: no price")
+		checks.append(f"âœ… yfinance: working (AAPL=${p:.2f})" if p else "âš ï¸ yfinance: no price")
 	except Exception:
-		checks.append("❌ yfinance: not available")
+		checks.append("âŒ yfinance: not available")
 	
 	# Bot token check
 	try:
 		from signalrank_telegram.bot import application
 		bot = application.bot
 		me = await bot.get_me()
-		checks.append(f"✅ Bot: @{me.username}")
+		checks.append(f"âœ… Bot: @{me.username}")
 	except Exception:
-		checks.append("❌ Bot: token invalid")
+		checks.append("âŒ Bot: token invalid")
 	
 	# Last signal check
 	try:
@@ -2778,14 +2778,14 @@ async def selfcheck_command(update, context) -> None:
 			res = await session.execute(select(Signal).order_by(desc(Signal.created_at)).limit(1))
 			last = res.scalar_one_or_none()
 			if last:
-				checks.append(f"✅ Last signal: {last.asset} {last.timeframe} at {last.created_at}")
+				checks.append(f"âœ… Last signal: {last.asset} {last.timeframe} at {last.created_at}")
 			else:
-				checks.append("⚠️ Last signal: none found")
+				checks.append("âš ï¸ Last signal: none found")
 	except Exception:
-		checks.append("⚠️ Last signal: check failed")
+		checks.append("âš ï¸ Last signal: check failed")
 	
 	if update.message is not None:
-		await update.message.reply_text("🔍 System Health\n\n" + "\n".join(checks))
+		await update.message.reply_text("ðŸ” System Health\n\n" + "\n".join(checks))
 
 
 @require_tier("ADMIN")
@@ -2808,11 +2808,11 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		from db.models import Signal, SignalDelivery, Outcome, MT5Credentials
 
 		if get_engine_for_event_loop() is None:
-			await update.message.reply_text("⚠️ Database not configured.")
+			await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		# Redis connectivity check (real connectivity, not local fallback).
-		redis_status = "❌ disconnected"
+		redis_status = "âŒ disconnected"
 		redis_url = (os.getenv("STATE_REDIS_URL") or os.getenv("REDIS_URL") or "").strip()
 		if redis_url:
 			try:
@@ -2828,11 +2828,11 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 					await asyncio.to_thread(_rc.close)
 				except Exception:
 					pass
-				redis_status = "✅ connected"
+				redis_status = "âœ… connected"
 			except Exception as _re:
-				redis_status = f"❌ error ({type(_re).__name__})"
+				redis_status = f"âŒ error ({type(_re).__name__})"
 		else:
-			redis_status = "⚠️ REDIS_URL not set"
+			redis_status = "âš ï¸ REDIS_URL not set"
 
 		window_days = 30
 		now = now_utc_naive()
@@ -2928,23 +2928,23 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			f"pool {checked_out}/{pool_size}" if pool_size > 0 else "pool metrics unavailable"
 		)
 		if admission:
-			db_pressure += f" • admission {int(admission.get('active_total') or 0)}/{int(admission.get('capacity') or 0)}"
+			db_pressure += f" â€¢ admission {int(admission.get('active_total') or 0)}/{int(admission.get('capacity') or 0)}"
 
 		msg = (
-			"🛠️ <b>Ops Health</b>\n\n"
+			"ðŸ› ï¸ <b>Ops Health</b>\n\n"
 			"<b>Runtime</b>\n"
-			f"• Redis: <b>{redis_status}</b>\n"
-			f"• Database: <b>{db_pressure}</b> • PostgreSQL max: <b>{max_connections}</b>\n"
-			f"• Proof-backed deliveries with no outcome row: <b>{untracked_count}</b>\n"
-			f"• Proof-backed deliveries awaiting terminal outcome: <b>{pending_terminal_count}</b>\n"
-			f"• Time-stop/force-closed outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
+			f"â€¢ Redis: <b>{redis_status}</b>\n"
+			f"â€¢ Database: <b>{db_pressure}</b> â€¢ PostgreSQL max: <b>{max_connections}</b>\n"
+			f"â€¢ Proof-backed deliveries with no outcome row: <b>{untracked_count}</b>\n"
+			f"â€¢ Proof-backed deliveries awaiting terminal outcome: <b>{pending_terminal_count}</b>\n"
+			f"â€¢ Time-stop/force-closed outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
 			"<b>Execution</b>\n"
-			f"• MT5 link success (last {window_days}d): <b>{success_mt5}/{total_mt5}</b> (<b>{mt5_rate:.1f}%</b>)\n\n"
+			f"â€¢ MT5 link success (last {window_days}d): <b>{success_mt5}/{total_mt5}</b> (<b>{mt5_rate:.1f}%</b>)\n\n"
 			"<i>High untracked counts indicate lifecycle discovery or price-provider failure; they do not by themselves prove that another database is required.</i>"
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ ops health failed: {exc}")
+		await update.message.reply_text(f"âŒ ops health failed: {exc}")
 
 from .user_prefs import user_prefs_store
 from telegram import Update
@@ -2980,7 +2980,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	cmd: str = args[0].lower()
 	if cmd == "clear":
 		user_prefs_store.clear_prefs(user_id)
-		await update.message.reply_text("✅ Notification preferences cleared. You will receive all signals allowed by your tier.")
+		await update.message.reply_text("âœ… Notification preferences cleared. You will receive all signals allowed by your tier.")
 		return
 	if len(args) < 2:
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
@@ -2988,13 +2988,13 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	values: list[str] = [x.strip().upper() for x in " ".join(args[1:]).split(",") if x.strip()]
 	if cmd == "assets":
 		user_prefs_store.set_prefs(user_id, assets=values)
-		await update.message.reply_text(f"✅ Assets updated: {', '.join(values)}")
+		await update.message.reply_text(f"âœ… Assets updated: {', '.join(values)}")
 	elif cmd == "timeframes":
 		user_prefs_store.set_prefs(user_id, timeframes=values)
-		await update.message.reply_text(f"✅ Timeframes updated: {', '.join(values)}")
+		await update.message.reply_text(f"âœ… Timeframes updated: {', '.join(values)}")
 	elif cmd == "strategies":
 		user_prefs_store.set_prefs(user_id, strategies=values)
-		await update.message.reply_text(f"✅ Strategies updated: {', '.join(values)}")
+		await update.message.reply_text(f"âœ… Strategies updated: {', '.join(values)}")
 	else:
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
 # --------- FEEDBACK COMMAND ---------
@@ -3041,7 +3041,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		signal_id: str = signal_ref  # fallback: use as-is
 
 	feedback_store.add_feedback(user_id, signal_id, rating=rating, issue=issue, comment=comment)
-	await update.message.reply_text("✅ Feedback received. Thank you!")
+	await update.message.reply_text("âœ… Feedback received. Thank you!")
 
 	# Optionally flush feedback every 10 submissions
 	if len(feedback_store.get_feedback(signal_id)) % 10 == 0:
@@ -3110,7 +3110,7 @@ async def _public_guard(update: Update) -> bool:
 	# Kill-switch blocks signal-related actions globally
 	try:
 		if state.get_killswitch_sync().enabled:
-			await update.message.reply_text("🚨 Signals are temporarily paused.")
+			await update.message.reply_text("ðŸš¨ Signals are temporarily paused.")
 			return True
 	except Exception:
 		pass
@@ -3133,11 +3133,11 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 	from signalrank_telegram.command_catalog import COMMANDS
 
 	pages: dict[int, dict[str, object]] = {
-		1: {"title": "🟢 Commands available now", "required_tier": "FREE", "commands": [], "footer": "Only functional launch commands are listed."},
-		2: {"title": "⭐ Premium commands", "required_tier": "PREMIUM", "commands": [], "footer": "Premium includes Free commands plus detailed analytics and broker setup."},
-		3: {"title": "💎 VIP commands", "required_tier": "VIP", "commands": [], "footer": "VIP includes evidence-based simulation and priority features."},
-		4: {"title": "🛡 Admin operations", "required_tier": "ADMIN", "commands": [], "footer": "Restricted and audited. Never displayed to ordinary users."},
-		5: {"title": "👑 Owner controls", "required_tier": "OWNER", "commands": [], "footer": "Restricted to configured owner identities."},
+		1: {"title": "ðŸŸ¢ Commands available now", "required_tier": "FREE", "commands": [], "footer": "Only functional launch commands are listed."},
+		2: {"title": "â­ Premium commands", "required_tier": "PREMIUM", "commands": [], "footer": "Premium includes Free commands plus detailed analytics and broker setup."},
+		3: {"title": "ðŸ’Ž VIP commands", "required_tier": "VIP", "commands": [], "footer": "VIP includes evidence-based simulation and priority features."},
+		4: {"title": "ðŸ›¡ Admin operations", "required_tier": "ADMIN", "commands": [], "footer": "Restricted and audited. Never displayed to ordinary users."},
+		5: {"title": "ðŸ‘‘ Owner controls", "required_tier": "OWNER", "commands": [], "footer": "Restricted to configured owner identities."},
 	}
 	page_by_tier = {"FREE": 1, "PREMIUM": 2, "VIP": 3, "ADMIN": 4, "OWNER": 5}
 	for spec in COMMANDS:
@@ -3184,20 +3184,20 @@ def _build_help_pagination_keyboard(user_id: int, page: int):
 		rows = []
 		jump_row = []
 		for allowed_page in authorized_pages:
-			label = f"• {allowed_page} •" if allowed_page == page else str(allowed_page)
+			label = f"â€¢ {allowed_page} â€¢" if allowed_page == page else str(allowed_page)
 			jump_row.append(InlineKeyboardButton(label, callback_data=f"help_page_{allowed_page}"))
 		if jump_row:
 			rows.append(jump_row)
 		nav_row = []
 		if index > 0:
-			nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"help_page_{authorized_pages[index - 1]}"))
+			nav_row.append(InlineKeyboardButton("â¬…ï¸ Previous", callback_data=f"help_page_{authorized_pages[index - 1]}"))
 		if index < len(authorized_pages) - 1:
-			nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"help_page_{authorized_pages[index + 1]}"))
+			nav_row.append(InlineKeyboardButton("Next âž¡ï¸", callback_data=f"help_page_{authorized_pages[index + 1]}"))
 		if nav_row:
 			rows.append(nav_row)
 		rows.append([
-			InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-			InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+			InlineKeyboardButton("âš™ï¸ Account", callback_data="nav_account"),
+			InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
 		])
 		return InlineKeyboardMarkup(rows)
 	except Exception:
@@ -3213,15 +3213,15 @@ async def _compose_help_page(user_id: int, page: int) -> tuple[str, object | Non
 	locked = _help_page_is_locked(int(user_id), int(page))
 	commands = page_info.get("commands") or []
 	lines = [
-		f"{page_info['title']} — Page {page}/{authorized_pages[-1]}",
+		f"{page_info['title']} â€” Page {page}/{authorized_pages[-1]}",
 		"",
 	]
 	for cmd_name, desc in commands:
-		prefix = "🔒 " if locked and int(page) in {2, 3} else "• "
-		lines.append(f"{prefix}{cmd_name} — {desc}")
+		prefix = "ðŸ”’ " if locked and int(page) in {2, 3} else "â€¢ "
+		lines.append(f"{prefix}{cmd_name} â€” {desc}")
 	footer = str(page_info.get("footer") or "")
 	if locked and int(page) == 3 and tier_rank(_effective_tier(int(user_id))) >= tier_rank("PREMIUM"):
-		footer = "💎 Upgrade to VIP to unlock these features."
+		footer = "ðŸ’Ž Upgrade to VIP to unlock these features."
 	if footer:
 		lines.extend(["", footer])
 	keyboard = _build_help_pagination_keyboard(int(user_id), int(page))
@@ -3349,7 +3349,7 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --------- DASHBOARD COMMAND ---------
 @require_tier("PREMIUM")
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Show an inline bot dashboard — stats, execution mode, tier, quick links."""
+	"""Show an inline bot dashboard â€” stats, execution mode, tier, quick links."""
 	if update.effective_user is None or update.message is None:
 		return
 	user_id: int = update.effective_user.id
@@ -3370,13 +3370,13 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			try:
 				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 				kbd = InlineKeyboardMarkup([[
-					InlineKeyboardButton("🌐 Open Dashboard", url=url),
-					InlineKeyboardButton("📊 Portfolio", callback_data="nav_portfolio"),
+					InlineKeyboardButton("ðŸŒ Open Dashboard", url=url),
+					InlineKeyboardButton("ðŸ“Š Portfolio", callback_data="nav_portfolio"),
 				]])
 			except Exception:
 				kbd = None
 			await update.message.reply_text(
-				f"🌐 <b>Your Dashboard</b>\n\n"
+				f"ðŸŒ <b>Your Dashboard</b>\n\n"
 				f"Tier: <b>{tier.upper()}</b>\n"
 				f"Tap the button below to open your full dashboard.",
 				parse_mode="HTML",
@@ -3386,7 +3386,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		if get_engine_for_event_loop() is None:
 			await update.message.reply_text(
-				"📊 <b>Dashboard</b>\n\n"
+				"ðŸ“Š <b>Dashboard</b>\n\n"
 				f"Tier: <b>{tier.upper()}</b>\n\n"
 				"Use /stats, /portfolio, /mystats and /performance for your trading data.",
 				parse_mode="HTML",
@@ -3548,7 +3548,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			if exp:
 				if hasattr(exp, "tzinfo") and exp.tzinfo is None:
 					exp = exp.replace(tzinfo=_tz.utc)
-				expiry_txt = f"\n📅 Sub expires: <b>{exp.strftime('%d %b %Y')}</b>"
+				expiry_txt = f"\nðŸ“… Sub expires: <b>{exp.strftime('%d %b %Y')}</b>"
 
 		msg = (
 			f"<b>Dashboard - {tier.upper()}</b>\n\n"
@@ -3564,23 +3564,23 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			f"Execution mode: <b>{exec_mode}</b>"
 			f"{expiry_txt}\n\n"
 			"<b>Quick commands:</b>\n"
-			"/portfolio — live P&amp;L\n"
-			"/mystats — full stats\n"
-			"/history — signal history\n"
-			"/performance — 30-day review\n"
-			"/tiers — subscription info"
+			"/portfolio â€” live P&amp;L\n"
+			"/mystats â€” full stats\n"
+			"/history â€” signal history\n"
+			"/performance â€” 30-day review\n"
+			"/tiers â€” subscription info"
 		)
 
 		try:
 			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 			kbd = InlineKeyboardMarkup([
 				[
-					InlineKeyboardButton("📊 Portfolio", callback_data="nav_portfolio"),
-					InlineKeyboardButton("📈 Performance", callback_data="nav_performance"),
+					InlineKeyboardButton("ðŸ“Š Portfolio", callback_data="nav_portfolio"),
+					InlineKeyboardButton("ðŸ“ˆ Performance", callback_data="nav_performance"),
 				],
 				[
-					InlineKeyboardButton("⚙️ Execution", callback_data="nav_execution"),
-					InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+					InlineKeyboardButton("âš™ï¸ Execution", callback_data="nav_execution"),
+					InlineKeyboardButton("ðŸš€ Upgrade", callback_data="nav_upgrade"),
 				],
 			])
 		except Exception:
@@ -3590,7 +3590,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 	except Exception as exc:
 		await update.message.reply_text(
-			"📊 <b>Dashboard</b>\n\n"
+			"ðŸ“Š <b>Dashboard</b>\n\n"
 			f"Tier: <b>{tier.upper()}</b>\n\n"
 			"Use /stats, /portfolio, /mystats, /performance for your trading data.",
 			parse_mode="HTML",
@@ -3746,7 +3746,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		button_rows = []
 		button_specs = []
 		lines = [
-			f"📊 Your {status_filter.title()} Signals",
+			f"ðŸ“Š Your {status_filter.title()} Signals",
 			f"{len(rows)} shown from the last {lookback_days} day(s)",
 			"",
 		]
@@ -3769,11 +3769,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except asyncio.TimeoutError:
 		_audit_logger.warning("[signals_command] fast query timed out user=%s timeout_s=%s", user_id, os.getenv("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS"))
 		if not await _reply_with_cached_response():
-			await message.reply_text("⚠️ /signals is busy because delivery/storage is active. Try again in a moment; signal delivery is still running.")
+			await message.reply_text("âš ï¸ /signals is busy because delivery/storage is active. Try again in a moment; signal delivery is still running.")
 	except Exception as exc:
 		_audit_logger.exception("[signals_command] failed user=%s err=%s", user_id, exc)
 		if not await _reply_with_cached_response():
-			await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
+			await message.reply_text(f"âš ï¸ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3835,33 +3835,33 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		total = wins + losses
 		win_rate = (wins / total * 100.0) if total > 0 else 0.0
 		lines = [
-			"✅ <b>Proof Feed</b>",
+			"âœ… <b>Proof Feed</b>",
 			"Recent verified outcomes to show real performance quality.",
 			"",
-			f"📊 Last 30d tracked outcomes: <b>{total}</b>",
-			f"✅ Wins: <b>{wins}</b>   ❌ Losses: <b>{losses}</b>   🎯 Win rate: <b>{win_rate:.1f}%</b>",
+			f"ðŸ“Š Last 30d tracked outcomes: <b>{total}</b>",
+			f"âœ… Wins: <b>{wins}</b>   âŒ Losses: <b>{losses}</b>   ðŸŽ¯ Win rate: <b>{win_rate:.1f}%</b>",
 			"",
-			"🔎 Latest verified outcomes:",
+			"ðŸ”Ž Latest verified outcomes:",
 		]
 		if recent_rows:
 			for asset, timeframe, status in recent_rows:
 				st = str(status or "").upper()
-				tag = "✅" if str(status or "").lower().startswith("tp") else "❌"
-				lines.append(f"{tag} {asset} • {timeframe} • {st}")
+				tag = "âœ…" if str(status or "").lower().startswith("tp") else "âŒ"
+				lines.append(f"{tag} {asset} â€¢ {timeframe} â€¢ {st}")
 		else:
 			lines.append("No verified outcomes yet in this window.")
 		lines.extend([
 			"",
-			"⚠️ Trading risk is real. No guaranteed returns.",
+			"âš ï¸ Trading risk is real. No guaranteed returns.",
 		])
 		keyboard = InlineKeyboardMarkup([
-			[InlineKeyboardButton("📊 View Signals", callback_data="nav_signals")],
-			[InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade")],
+			[InlineKeyboardButton("ðŸ“Š View Signals", callback_data="nav_signals")],
+			[InlineKeyboardButton("ðŸš€ Upgrade", callback_data="nav_upgrade")],
 		])
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
 	except Exception as e:
 		_audit_logger.error(f"Error in proof command: {e}")
-		await update.message.reply_text("⚠️ Proof feed is temporarily unavailable. Please try again shortly.")
+		await update.message.reply_text("âš ï¸ Proof feed is temporarily unavailable. Please try again shortly.")
 
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4035,15 +4035,15 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		metrics.update({"pl_pct": pl_pct, "progress": progress})
 		near_sl: bool = (dist_to_sl / risk) <= 0.2
 		if progress >= 1.0:
-			return ("✅ Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
+			return ("âœ… Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
 		if progress >= 0.75:
-			return ("📌 Close to TP. Consider partial take-profit and move SL to breakeven if your plan allows.", metrics)
+			return ("ðŸ“Œ Close to TP. Consider partial take-profit and move SL to breakeven if your plan allows.", metrics)
 		if progress >= 0.30:
-			return ("⏳ In profit but not near TP yet. Consider waiting for full TP, or take partial if volatility is high.", metrics)
+			return ("â³ In profit but not near TP yet. Consider waiting for full TP, or take partial if volatility is high.", metrics)
 		# Not in meaningful profit
 		if near_sl:
-			return ("⚠️ Price is close to SL zone. Consider reducing exposure or exiting early to avoid a full SL hit.", metrics)
-		return ("⏳ Still developing. Consider waiting; avoid moving SL further away.", metrics)
+			return ("âš ï¸ Price is close to SL zone. Consider reducing exposure or exiting early to avoid a full SL hit.", metrics)
+		return ("â³ Still developing. Consider waiting; avoid moving SL further away.", metrics)
 
 	# Postgres-backed lookup (required for per-user delivery protection)
 	try:
@@ -4063,10 +4063,10 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			if not rows:
 				await update.message.reply_text("No active unresolved signals in the last 24h.")
 				return
-			lines: list[str] = ["📌 Active signals (last 24h):", ""]
+			lines: list[str] = ["ðŸ“Œ Active signals (last 24h):", ""]
 			for s in rows[:20]:
 				ref = str(getattr(s, "signal_id", "") or "")
-				lines.append(f"• {ref} — {s.asset} {s.timeframe} {s.direction}")
+				lines.append(f"â€¢ {ref} â€” {s.asset} {s.timeframe} {s.direction}")
 			await update.message.reply_text("\n".join(lines))
 			return
 
@@ -4155,7 +4155,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				age_minutes = float(age_result.age_minutes or 0.0)
 				max_minutes = float(age_result.max_age_minutes or 0.0)
 				staleness_warning = (
-					"⚠️ Warning: Signal is outside its active opportunity window "
+					"âš ï¸ Warning: Signal is outside its active opportunity window "
 					f"({age_minutes:.0f}m > {max_minutes:.0f}m)"
 				)
 			elif (
@@ -4163,7 +4163,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				and age_result.opportunity_remaining_pct < 50.0
 			):
 				staleness_warning = (
-					f"⏰ Signal age: {float(age_result.age_minutes or 0.0):.0f}m "
+					f"â° Signal age: {float(age_result.age_minutes or 0.0):.0f}m "
 					f"({float(age_result.opportunity_remaining_pct):.0f}% of opportunity window remains)"
 				)
 		except Exception as e:
@@ -4197,21 +4197,21 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			status: str = str(getattr(oc, "status", "") or "").lower()
 			r: os.Any | None = getattr(oc, "r_multiple", None)
 			pct: os.Any | None = getattr(oc, "percent", None)
-			label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			label: str = "PROFIT âœ…" if status.startswith("tp") else ("LOSS âŒ" if status == "sl" else status.upper())
 			
 			# Show entry status with outcome
 			entry_status = sig_dict.get("entry_status", "UNKNOWN")
 			if entry_status == "AT_ENTRY":
-				position_lines.append(f"✅ Entry Status: At entry zone")
+				position_lines.append(f"âœ… Entry Status: At entry zone")
 			elif entry_status == "PENDING_ENTRY":
-				position_lines.append(f"⏳ Entry Status: Was pending when signal sent")
+				position_lines.append(f"â³ Entry Status: Was pending when signal sent")
 			
-			position_lines.append(f"📊 Outcome: {label} ({status})")
+			position_lines.append(f"ðŸ“Š Outcome: {label} ({status})")
 			if r is not None:
-				position_lines.append(f"💰 R-Multiple: {float(r):.2f}R")
+				position_lines.append(f"ðŸ’° R-Multiple: {float(r):.2f}R")
 			if pct is not None:
-				position_lines.append(f"📈 Move: {float(pct):.2f}%")
-			advice_line: str = f"✅ This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
+				position_lines.append(f"ðŸ“ˆ Move: {float(pct):.2f}%")
+			advice_line: str = f"âœ… This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
 		else:
 			# Show entry status for live signals
 			entry_status = sig_dict.get("entry_status", "UNKNOWN")
@@ -4220,11 +4220,11 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			
 			if current_price is not None and distance_pct is not None:
 				if entry_status == "AT_ENTRY":
-					position_lines.append(f"✅ Entry Status: At entry zone ({distance_pct:+.2f}%)")
+					position_lines.append(f"âœ… Entry Status: At entry zone ({distance_pct:+.2f}%)")
 				elif entry_status == "PENDING_ENTRY":
-					position_lines.append(f"⏳ Entry Status: Awaiting entry ({distance_pct:+.2f}%)")
+					position_lines.append(f"â³ Entry Status: Awaiting entry ({distance_pct:+.2f}%)")
 				else:
-					position_lines.append(f"❓ Entry Status: Unknown")
+					position_lines.append(f"â“ Entry Status: Unknown")
 				position_lines.append(f"Current price: {current_price:.6g}")
 			
 			# Live estimate (crypto only)
@@ -4256,9 +4256,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			if staleness_warning:
 				base = f"{staleness_warning}\n\n{base}"
 			if position_lines or advice_line:
-				base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
+				base += "\n\nðŸ“ Position (best-effort)\n" + "\n".join(position_lines)
 				if advice_line:
-					base += "\n\n🧠 Suggestion\n" + str(advice_line)
+					base += "\n\nðŸ§  Suggestion\n" + str(advice_line)
 			await update.message.reply_text(base, reply_markup=_build_signal_action_keyboard(sig_dict))
 			return
 
@@ -4268,9 +4268,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		if staleness_warning:
 			base = f"{staleness_warning}\n\n{base}"
 		if position_lines or advice_line:
-			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
+			base += "\n\nðŸ“ Position (best-effort)\n" + "\n".join(position_lines)
 			if advice_line:
-				base += "\n\n🧠 Suggestion\n" + str(advice_line)
+				base += "\n\nðŸ§  Suggestion\n" + str(advice_line)
 		await update.message.reply_text(base, parse_mode="HTML", reply_markup=_build_signal_action_keyboard(sig_dict))
 		return
 	except Exception as e:
@@ -4326,7 +4326,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					)
 				).scalar_one_or_none()
 				if user_row is None:
-					await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
+					await update.message.reply_text("ðŸ“­ No recorded outcomes for you in the last 24 hours.")
 					return
 				rows = (
 					await session.execute(
@@ -4351,10 +4351,10 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					)
 				).all()
 			if not rows:
-				await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
+				await update.message.reply_text("ðŸ“­ No recorded outcomes for you in the last 24 hours.")
 				return
 			lines = [
-				f"📣 Your outcomes (last 24h • showing {len(rows)} up to {int(outcome_row_limit)})",
+				f"ðŸ“£ Your outcomes (last 24h â€¢ showing {len(rows)} up to {int(outcome_row_limit)})",
 				"",
 			]
 			for signal_id, asset, timeframe, direction, status, r_multiple, percent, recorded_at in rows:
@@ -4364,7 +4364,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				except Exception:
 					ts_txt = "unknown time"
 				status_txt = str(status or "").upper()
-				lines.append(f"• {str(signal_id)[:8]} | {asset} {timeframe} {str(direction).upper()} | {status_txt} | {ts_txt}")
+				lines.append(f"â€¢ {str(signal_id)[:8]} | {asset} {timeframe} {str(direction).upper()} | {status_txt} | {ts_txt}")
 				if r_multiple is not None or percent is not None:
 					try:
 						parts = []
@@ -4373,7 +4373,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						if percent is not None:
 							parts.append(f"{float(percent):.2f}%")
 						if parts:
-							lines.append(f"  ↳ {' | '.join(parts)}")
+							lines.append(f"  â†³ {' | '.join(parts)}")
 					except Exception:
 						pass
 			lines.extend([
@@ -4409,18 +4409,23 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			if sig is None:
 				# Try to find the signal globally by reference
 				ref = arg
-				query = select(Signal)
+				from sqlalchemy import or_
+				query = select(Signal).where(or_(Signal.display_id == ref, Signal.signal_id == ref))
 				if len(ref) >= 32:
 					query = query.where(Signal.signal_id == ref)
 				else:
-					query = query.where(Signal.signal_id.like(f"{ref}%"))
-				query = query.order_by(Signal.created_at.desc()).limit(1)
+					query = select(Signal).where(or_(Signal.display_id == ref, Signal.signal_id.like(f"{ref}%")))
+				query = query.order_by(Signal.created_at.desc()).limit(2)
 				res = await session.execute(query)
-				undelivered_sig: Signal | None = res.scalars().first()
+				matches = list(res.scalars().all())
+				if len(matches) > 1:
+					await update.message.reply_text("Signal reference is ambiguous. Use the full Signal ID.")
+					return
+				undelivered_sig: Signal | None = matches[0] if matches else None
 				if undelivered_sig is not None:
 					# Only admin/owner can view or manually resolve undelivered signals
 					if not _is_admin(user_id):
-						await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
+						await update.message.reply_text("âš ï¸ This is not your signal. You were not sent this trade.")
 						return
 					sig = undelivered_sig
 				else:
@@ -4430,7 +4435,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			# Manual resolution (ADMIN/OWNER only)
 			if action:
 				if not _is_admin(user_id):
-					await update.message.reply_text("⛔ Access Denied.")
+					await update.message.reply_text("â›” Access Denied.")
 					return
 				_map = {
 					"WIN": "tp",
@@ -4454,7 +4459,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				)
 				await session.commit()
 				await update.message.reply_text(
-					f"✅ Outcome updated: {str(sig.signal_id)[:8]} → {status.upper()}"
+					f"âœ… Outcome updated: {str(sig.signal_id)[:8]} â†’ {status.upper()}"
 				)
 				# Continue to display current status below
 
@@ -4462,23 +4467,23 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
 
 		# Format and reply outside session where possible
-		if oc is not None:
-			status = str(getattr(oc, "status", "") or "").lower()
 		from core.signal_identity import public_signal_id
 		display_ref = public_signal_id(sig)
 
+		if oc is not None:
+			status = str(getattr(oc, "status", "") or "").lower()
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
-			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			label = "PROFIT âœ…" if status.startswith("tp") else ("LOSS âŒ" if status == "sl" else status.upper())
 			progress = ""
 			if status in {"tp1", "tp2", "tp3"}:
 				progress = f"TP Progress: {status.upper()}"
 			elif status == "tp":
 				progress = "TP Progress: FULL TP"
 			lines = [
-				"📣 Outcome",
+				"ðŸ“£ Outcome",
 				"",
-				f"U0001F4CC Signal ID: {display_ref}",
+				f"📌 Signal ID: {display_ref}",
 				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
 				f"Entry: {sig.entry}",
 				f"Result: {label} ({status})",
@@ -4507,12 +4512,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 				keyboard = InlineKeyboardMarkup([
 					[
-						InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-						InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+						InlineKeyboardButton("ðŸ“ˆ Signals", callback_data="nav_signals"),
+						InlineKeyboardButton("ðŸ“Š Performance", callback_data="nav_performance"),
 					],
 					[
-						InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-						InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+						InlineKeyboardButton("ðŸš€ Upgrade", callback_data="nav_upgrade"),
+						InlineKeyboardButton("ðŸ†˜ Support", callback_data="nav_support"),
 					],
 				])
 			except Exception:
@@ -4520,8 +4525,8 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			await update.message.reply_text("\n".join(lines), reply_markup=keyboard)
 			return
 
-		# No outcome yet — show basic in-progress details
-		lines = ["🔄 Signal In Progress", "", f"U0001F4CC Signal ID: {display_ref}"]
+		# No outcome yet â€” show basic in-progress details
+		lines = ["ðŸ”„ Signal In Progress", "", f"📌 Signal ID: {display_ref}"]
 		lines.extend([
 			f"Asset: {sig.asset}",
 			f"Timeframe: {sig.timeframe}",
@@ -4560,12 +4565,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 			keyboard = InlineKeyboardMarkup([
 				[
-					InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-					InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+					InlineKeyboardButton("ðŸ“ˆ Signals", callback_data="nav_signals"),
+					InlineKeyboardButton("ðŸ“Š Performance", callback_data="nav_performance"),
 				],
 				[
-					InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-					InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+					InlineKeyboardButton("ðŸš€ Upgrade", callback_data="nav_upgrade"),
+					InlineKeyboardButton("ðŸ†˜ Support", callback_data="nav_support"),
 				],
 			])
 		except Exception:
@@ -4635,15 +4640,15 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if bot_username and code:
 		link: str = f"https://t.me/{bot_username}?start=ref_{code}"
 		await update.message.reply_text(
-			f"🎁 Invite link:\n{link}\n\n"
-			"Reward: invite 3 new users → get +7 days Premium."
+			f"ðŸŽ Invite link:\n{link}\n\n"
+			"Reward: invite 3 new users â†’ get +7 days Premium."
 			f"{progress_line}"
 		)
 		return
 
 	await update.message.reply_text(
-		f"🎁 Your invite code: {code}\n\n"
-		"Reward: invite 3 new users → get +7 days Premium.\n"
+		f"ðŸŽ Your invite code: {code}\n\n"
+		"Reward: invite 3 new users â†’ get +7 days Premium.\n"
 		"Invite link not available (bot username not resolved)."
 		f"{progress_line}"
 	)
@@ -4733,25 +4738,25 @@ async def analyze_command(update, context) -> None:
 		news_lines = []
 		if headlines:
 			for title, published_at, score in headlines:
-				news_lines.append(f"• {title} ({score:+d})")
+				news_lines.append(f"â€¢ {title} ({score:+d})")
 
 		sentiment_label = "Positive" if sentiment > 0 else "Negative" if sentiment < 0 else "Neutral"
 
 		trend_label = "Bullish" if (ema_fast and ema_slow and ema_fast > ema_slow) else "Bearish" if (ema_fast and ema_slow and ema_fast < ema_slow) else "Neutral"
 
 		msg_lines = [
-			f"🧠 AI Market Analysis ({asset} {tf})",
+			f"ðŸ§  AI Market Analysis ({asset} {tf})",
 			f"Direction: {best.direction.upper()}",
 			f"Entry: {best.entry}",
-			f"Stop Loss: {best.stop_loss} → AI {ai_sl}",
+			f"Stop Loss: {best.stop_loss} â†’ AI {ai_sl}",
 		]
 		msg_lines.append("Take Profits (AI):")
 		for i, tp_price in enumerate(ai_tps, 1):
 			msg_lines.append(f"  TP{i}: {tp_price}")
 		msg_lines += [
 			f"Strategy: {best.strategy_name} ({best.strategy_group})",
-			f"Score: {best.score:.1f} → AI-adjusted {adjusted_score:.1f}",
-			f"Confidence: {best.confidence:.2f} → AI-adjusted {adjusted_conf:.2f}",
+			f"Score: {best.score:.1f} â†’ AI-adjusted {adjusted_score:.1f}",
+			f"Confidence: {best.confidence:.2f} â†’ AI-adjusted {adjusted_conf:.2f}",
 			f"News Sentiment: {sentiment_label} ({sentiment:.2f})",
 			f"Trend: {trend_label} | RSI: {rsi:.1f}" if isinstance(rsi, (int, float)) else f"Trend: {trend_label}",
 			f"ADX: {adx:.1f}" if isinstance(adx, (int, float)) else "ADX: n/a",
@@ -4763,13 +4768,13 @@ async def analyze_command(update, context) -> None:
 		msg_lines += [
 			"",
 			"Risk Plan (compact):",
-			f"• Max risk: {risk_pct:.1f}% of account",
-			f"• Position size: (Account × {risk_pct/100:.2f}) ÷ {sl_distance:.6f}",
+			f"â€¢ Max risk: {risk_pct:.1f}% of account",
+			f"â€¢ Position size: (Account Ã— {risk_pct/100:.2f}) Ã· {sl_distance:.6f}",
 		]
 		if news_lines:
 			msg_lines.append("Top Headlines:")
 			msg_lines += news_lines
-		msg_lines.append("\n⚠️ Educational only. Not financial advice.")
+		msg_lines.append("\nâš ï¸ Educational only. Not financial advice.")
 		await update.message.reply_text("\n".join(msg_lines))
 		return
 	except Exception as e:
@@ -4799,7 +4804,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	)
 
 
-# ── Inline-button callbacks for /upgrade VIP waitlist ─────────────────────
+# â”€â”€ Inline-button callbacks for /upgrade VIP waitlist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Handle 'Join Waitlist' button pressed from /upgrade when VIP is full."""
 	query = update.callback_query
@@ -4825,24 +4830,24 @@ async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAU
 						session.add(VIPWaitlist(user_id=u.id, joined_at=now_utc_naive()))
 						await session.commit()
 						await query.edit_message_text(
-							"✅ You've been added to the VIP waitlist!\n\n"
+							"âœ… You've been added to the VIP waitlist!\n\n"
 							"We'll DM you within 24 hours when a seat opens. "
 							"You'll get a personal payment link to complete your upgrade.",
 						)
 						return
 					else:
-						await query.answer("You're already on the waitlist. We'll notify you when a seat opens! 🕐", show_alert=True)
+						await query.answer("You're already on the waitlist. We'll notify you when a seat opens! ðŸ•", show_alert=True)
 						return
 	except Exception:
 		pass
 	await query.answer("Could not add to waitlist. Please contact @theocrilox.", show_alert=True)
 
 
-# ── Terms gate callbacks (/start disclaimer) ───────────────────────────────
+# â”€â”€ Terms gate callbacks (/start disclaimer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""User clicked [✅ I Agree] on the financial disclaimer."""
+	"""User clicked [âœ… I Agree] on the financial disclaimer."""
 	query = update.callback_query
-	await query.answer("Terms accepted ✅")
+	await query.answer("Terms accepted âœ…")
 	user_id = update.effective_user.id if update.effective_user else None
 	if not user_id:
 		return
@@ -4865,11 +4870,11 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception as exc:
 		logger.warning("[terms] paper account initialization deferred user=%s err=%s", user_id, exc)
 	welcome = (
-		"✅ <b>Welcome to SignalRankAI!</b>\n\n"
+		"âœ… <b>Welcome to SignalRankAI!</b>\n\n"
 		"You're all set. Here's what you get:\n"
-		"• Risk-managed signals filtered for high-probability setups\n"
-		"• Outcome tracking - no hype, no guarantees\n"
-		"• Real-time market coverage: Crypto, Forex, Stocks, Commodities\n\n"
+		"â€¢ Risk-managed signals filtered for high-probability setups\n"
+		"â€¢ Outcome tracking - no hype, no guarantees\n"
+		"â€¢ Real-time market coverage: Crypto, Forex, Stocks, Commodities\n\n"
 		"Use /pricing to see plans, or /upgrade to subscribe.\n"
 		"Use /signals to see the latest setups."
 	)
@@ -4891,27 +4896,27 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def decline_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""User clicked [❌ Decline] on the financial disclaimer."""
+	"""User clicked [âŒ Decline] on the financial disclaimer."""
 	query = update.callback_query
 	await query.answer()
 	try:
 		await query.edit_message_text(
 			"No problem. You can return anytime by sending /start.\n\n"
-			"Remember: SignalRankAI provides educational trade ideas only — "
+			"Remember: SignalRankAI provides educational trade ideas only â€” "
 			"never financial advice."
 		)
 	except Exception:
 		pass
 
 
-# ── Admin dashboard ────────────────────────────────────────────────────────
+# â”€â”€ Admin dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""OWNER/ADMIN only — show real-time platform dashboard."""
+	"""OWNER/ADMIN only â€” show real-time platform dashboard."""
 	if update.effective_user is None or update.message is None:
 		return
 	tier = _effective_tier(update.effective_user.id)
 	if tier_rank(tier) < tier_rank("ADMIN"):
-		await update.message.reply_text("⛔ Access Denied.")
+		await update.message.reply_text("â›” Access Denied.")
 		return
 
 	import os as _os_adm
@@ -4960,14 +4965,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 		vip_limit = int(_os_adm.getenv("VIP_SEAT_LIMIT", "15"))
 		msg = (
-			"🛡️ *Admin Dashboard*\n\n"
-			f"👥 Total Users: `{total_users:,}`\n"
-			f"💎 VIP Active: `{vip_active}` / `{vip_limit}`\n"
-			f"⭐ Premium Active: `{premium_active}`\n"
-			f"🆓 Free Tier: `{max(0, free_users):,}`\n\n"
-			f"📡 Signals Today: `{signals_today}`\n"
-			f"📊 Total Signals (all-time): `{total_signals:,}`\n\n"
-			f"🕐 UTC: `{now.strftime('%Y-%m-%d %H:%M')}`"
+			"ðŸ›¡ï¸ *Admin Dashboard*\n\n"
+			f"ðŸ‘¥ Total Users: `{total_users:,}`\n"
+			f"ðŸ’Ž VIP Active: `{vip_active}` / `{vip_limit}`\n"
+			f"â­ Premium Active: `{premium_active}`\n"
+			f"ðŸ†“ Free Tier: `{max(0, free_users):,}`\n\n"
+			f"ðŸ“¡ Signals Today: `{signals_today}`\n"
+			f"ðŸ“Š Total Signals (all-time): `{total_signals:,}`\n\n"
+			f"ðŸ• UTC: `{now.strftime('%Y-%m-%d %H:%M')}`"
 		)
 		await update.message.reply_text(msg, parse_mode="MarkdownV2")
 
@@ -4976,9 +4981,9 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		await update.message.reply_text(f"Admin query failed: {e}")
 
 
-# ── Admin broadcast ────────────────────────────────────────────────────────
+# â”€â”€ Admin broadcast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""OWNER/ADMIN only — DM all registered users with a message.
+	"""OWNER/ADMIN only â€” DM all registered users with a message.
 
 	Usage: /admin_broadcast <message text>
 	"""
@@ -4986,14 +4991,14 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 		return
 	tier = _effective_tier(update.effective_user.id)
 	if tier_rank(tier) < tier_rank("ADMIN"):
-		await update.message.reply_text("⛔ Access Denied.")
+		await update.message.reply_text("â›” Access Denied.")
 		return
 
 	msg_text = " ".join(context.args or []).strip()
 	if not msg_text:
 		await update.message.reply_text(
 			"Usage: /admin_broadcast <message>\n\n"
-			"Example:\n/admin_broadcast New premium signals just dropped! 🔥"
+			"Example:\n/admin_broadcast New premium signals just dropped! ðŸ”¥"
 		)
 		return
 
@@ -5013,7 +5018,7 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 
 		import asyncio
 		from telegram.error import RetryAfter
-		broadcast_text = f"📢 *SignalRankAI*\n\n{msg_text}"
+		broadcast_text = f"ðŸ“¢ *SignalRankAI*\n\n{msg_text}"
 		sent = 0
 		failed = 0
 		for uid in user_ids:
@@ -5043,15 +5048,15 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 		await update.message.reply_text(f"Broadcast failed: {e}")
 
 
-# ── Terms blast (send disclaimer to all users without accepted_terms) ──────
+# â”€â”€ Terms blast (send disclaimer to all users without accepted_terms) â”€â”€â”€â”€â”€â”€
 async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""OWNER/ADMIN — send the financial disclaimer gate to every user who hasn't
+	"""OWNER/ADMIN â€” send the financial disclaimer gate to every user who hasn't
 	accepted terms yet, PLUS the caller so they can verify the UI.
 	Safe to run multiple times; idempotent per user."""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
-		await update.message.reply_text("⛔ Access Denied.")
+		await update.message.reply_text("â›” Access Denied.")
 		return
 
 	try:
@@ -5061,7 +5066,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 		engine = get_engine_for_event_loop()
 		if engine is None:
-			await update.message.reply_text("⚠️ Database connection error. Please try again later.")
+			await update.message.reply_text("âš ï¸ Database connection error. Please try again later.")
 			return
 
 		async with _gs_bt() as session:
@@ -5076,23 +5081,23 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			pending_ids.insert(0, caller_id)
 
 		await update.message.reply_text(
-			f"📢 Sending terms gate to {len(pending_ids)} user(s)\u2026"
+			f"ðŸ“¢ Sending terms gate to {len(pending_ids)} user(s)\u2026"
 		)
 
 		from telegram import InlineKeyboardMarkup as _IKM_bt, InlineKeyboardButton as _IKB_bt
 		disclaimer = (
-			"⚠️ *SignalRankAI — Financial Disclaimer*\n\n"
+			"âš ï¸ *SignalRankAI â€” Financial Disclaimer*\n\n"
 			"Please read and confirm to continue:\n\n"
-			"• All signals are for *educational purposes only*\n"
-			"• Nothing here constitutes financial advice or a trade recommendation\n"
-			"• Trading involves significant risk — losses can exceed your deposit\n"
-			"• Past performance does not guarantee future results\n"
-			"• You are solely responsible for your trading decisions\n\n"
-			"Tap *✅ I Agree* to acknowledge these terms and continue."
+			"â€¢ All signals are for *educational purposes only*\n"
+			"â€¢ Nothing here constitutes financial advice or a trade recommendation\n"
+			"â€¢ Trading involves significant risk â€” losses can exceed your deposit\n"
+			"â€¢ Past performance does not guarantee future results\n"
+			"â€¢ You are solely responsible for your trading decisions\n\n"
+			"Tap *âœ… I Agree* to acknowledge these terms and continue."
 		)
 		_kbd_bt = _IKM_bt([[
-			_IKB_bt("✅ I Agree", callback_data="agree_terms"),
-			_IKB_bt("❌ Decline", callback_data="decline_terms"),
+			_IKB_bt("âœ… I Agree", callback_data="agree_terms"),
+			_IKB_bt("âŒ Decline", callback_data="decline_terms"),
 		]])
 
 		sent = 0
@@ -5125,7 +5130,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
-		await update.message.reply_text(f"⚠️ Blast failed: {e}")
+		await update.message.reply_text(f"âš ï¸ Blast failed: {e}")
 
 	try:
 		from db.session import get_engine_for_event_loop, get_session as _gs_bt
@@ -5144,27 +5149,27 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			pending_ids = [row[0] for row in result.fetchall()]
 
 		if not pending_ids:
-			await update.message.reply_text("✅ All users have already accepted the terms.")
+			await update.message.reply_text("âœ… All users have already accepted the terms.")
 			return
 
 		await update.message.reply_text(
-			f"📢 Sending terms gate to {len(pending_ids)} user(s)…"
+			f"ðŸ“¢ Sending terms gate to {len(pending_ids)} user(s)â€¦"
 		)
 
 		from telegram import InlineKeyboardMarkup as _IKM_bt, InlineKeyboardButton as _IKB_bt
 		disclaimer = (
-			"⚠️ *SignalRankAI — Financial Disclaimer*\n\n"
+			"âš ï¸ *SignalRankAI â€” Financial Disclaimer*\n\n"
 			"We've updated our terms. Please read and confirm to continue:\n\n"
-			"• All signals are for *educational purposes only*\n"
-			"• Nothing here constitutes financial advice or a trade recommendation\n"
-			"• Trading involves significant risk — losses can exceed your deposit\n"
-			"• Past performance does not guarantee future results\n"
-			"• You are solely responsible for your trading decisions\n\n"
-			"Tap *✅ I Agree* to acknowledge and continue using the bot."
+			"â€¢ All signals are for *educational purposes only*\n"
+			"â€¢ Nothing here constitutes financial advice or a trade recommendation\n"
+			"â€¢ Trading involves significant risk â€” losses can exceed your deposit\n"
+			"â€¢ Past performance does not guarantee future results\n"
+			"â€¢ You are solely responsible for your trading decisions\n\n"
+			"Tap *âœ… I Agree* to acknowledge and continue using the bot."
 		)
 		_kbd_bt = _IKM_bt([[
-			_IKB_bt("✅ I Agree", callback_data="agree_terms"),
-			_IKB_bt("❌ Decline", callback_data="decline_terms"),
+			_IKB_bt("âœ… I Agree", callback_data="agree_terms"),
+			_IKB_bt("âŒ Decline", callback_data="decline_terms"),
 		]])
 
 		sent = 0
@@ -5204,13 +5209,13 @@ async def policy_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	msg = (
-		"📄 Subscription & Refund Policy\n\n"
-		"• Payments are non-refundable.\n"
-		"• Auto-renew only applies if you explicitly agree and link your card.\n"
-		"• If you do not link a card, your plan expires at the end of the purchased period.\n"
-		"• If technical issues prevent delivery, subscription time may be extended.\n\n"
+		"ðŸ“„ Subscription & Refund Policy\n\n"
+		"â€¢ Payments are non-refundable.\n"
+		"â€¢ Auto-renew only applies if you explicitly agree and link your card.\n"
+		"â€¢ If you do not link a card, your plan expires at the end of the purchased period.\n"
+		"â€¢ If technical issues prevent delivery, subscription time may be extended.\n\n"
 		"Subscriptions activate after successful verification.\n\n"
-		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
+		"âš ï¸ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
 	await update.message.reply_text(msg)
 
@@ -5240,10 +5245,10 @@ async def recap_command(update, context):
 			best_strategy: str = ", ".join(list((stats or {}).get("top_strategies") or [])[:1]) or "N/A"
 			await update.message.reply_text(
 				"\U0001F4CA SignalRankAI Weekly Recap\n\n"
-				"Here’s a quick overview of your past week:\n\n"
-				f"• Total signals delivered: {total}\n"
-				f"• Markets most active: {most_active}\n"
-				f"• Best-performing strategy: {best_strategy}\n\n"
+				"Hereâ€™s a quick overview of your past week:\n\n"
+				f"â€¢ Total signals delivered: {total}\n"
+				f"â€¢ Markets most active: {most_active}\n"
+				f"â€¢ Best-performing strategy: {best_strategy}\n\n"
 				"Thank you for trading responsibly."
 			)
 			return
@@ -5267,10 +5272,10 @@ async def recap_command(update, context):
 	best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
 	await update.message.reply_text(
 		"\U0001F4CA SignalRankAI Weekly Recap\n\n"
-		"Here’s a quick overview of your past week:\n\n"
-		f"• Total signals sent: {total_signals}\n"
-		f"• Markets most active: {most_active}\n"
-		f"• Best-performing strategy: {best_strategy}"
+		"Hereâ€™s a quick overview of your past week:\n\n"
+		f"â€¢ Total signals sent: {total_signals}\n"
+		f"â€¢ Markets most active: {most_active}\n"
+		f"â€¢ Best-performing strategy: {best_strategy}"
 	)
 
 from core.performance import strategy_stats
@@ -5279,7 +5284,7 @@ from core.performance import strategy_stats
 # /start or welcome message
 
 async def start_command(update, context):
-	# ── Diagnostic entry log — visible in Railway logs ───────────────────────
+	# â”€â”€ Diagnostic entry log â€” visible in Railway logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	try:
 		logger.info(
 			"[/start] handler invoked user_id=%s username=%s chat_id=%s",
@@ -5290,10 +5295,10 @@ async def start_command(update, context):
 	except Exception:
 		pass
 	if update.effective_user is None or update.message is None:
-		logger.warning("[/start] update missing effective_user or message — ignoring")
+		logger.warning("[/start] update missing effective_user or message â€” ignoring")
 		return
 	user_id = update.effective_user.id
-	logger.info("[/start] processing user_id=%s — checking rate limit", user_id)
+	logger.info("[/start] processing user_id=%s â€” checking rate limit", user_id)
 	# Do not block user registration on kill-switch.
 	# Keep only a light rate limit to prevent abuse.
 	try:
@@ -5322,7 +5327,7 @@ async def start_command(update, context):
 	referral_outcome = None
 	# Prefer Postgres for user creation + referral attribution + audit (single session)
 	upgrade_notice = None
-	logger.info("[/start] user_id=%s — opening DB session", user_id)
+	logger.info("[/start] user_id=%s â€” opening DB session", user_id)
 	try:
 		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
@@ -5338,7 +5343,7 @@ async def start_command(update, context):
 			for attempt in range(1, max_attempts + 1):
 				try:
 					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-						logger.info("[/start] user_id=%s — DB session open, querying user row (attempt=%s)", user_id, attempt)
+						logger.info("[/start] user_id=%s â€” DB session open, querying user row (attempt=%s)", user_id, attempt)
 						res: Result[Tuple[User]] = await asyncio.wait_for(
 							session.execute(select(User).where(User.telegram_user_id == int(user_id))),
 							timeout=timeout_s,
@@ -5374,9 +5379,9 @@ async def start_command(update, context):
 								try:
 									user_row.tier = "owner" if effective_tier == "OWNER" else "admin"
 									upgrade_notice = (
-										"✅ Owner access granted via configuration. Use /help to see owner commands."
+										"âœ… Owner access granted via configuration. Use /help to see owner commands."
 										if effective_tier == "OWNER"
-										else "✅ Admin access granted. Use /help to see admin commands."
+										else "âœ… Admin access granted. Use /help to see admin commands."
 									)
 								except Exception:
 									pass
@@ -5425,7 +5430,7 @@ async def start_command(update, context):
 						terms_accepted: bool = bool(getattr(user_row, "accepted_terms", False))
 
 						await asyncio.wait_for(session.commit(), timeout=timeout_s)
-						logger.info("[/start] user_id=%s — DB session commit complete (attempt=%s)", user_id, attempt)
+						logger.info("[/start] user_id=%s â€” DB session commit complete (attempt=%s)", user_id, attempt)
 						break
 				except asyncio.TimeoutError:
 					if attempt >= max_attempts:
@@ -5469,17 +5474,17 @@ async def start_command(update, context):
 		"SignalRankAI provides algorithmic market analysis for educational purposes only. "
 		"This is not financial advice. Trading involves risk.\n\n"
 		"What you get:\n"
-		"• Risk-managed signals filtered for high-probability setups\n"
-		"• Outcome tracking (no hype, no guarantees)\n\n"
+		"â€¢ Risk-managed signals filtered for high-probability setups\n"
+		"â€¢ Outcome tracking (no hype, no guarantees)\n\n"
 		"Use /proof for verified outcomes, /pricing to see plans, or /upgrade to subscribe."
 	)
 	# Referral feedback (minimal, non-spammy)
 	if referral_outcome and update.message is not None:
 		status = str(referral_outcome.get("status"))
 		if status in {"attributed", "reward_granted"}:
-			await update.message.reply_text("✅ Referral applied. Welcome!")
+			await update.message.reply_text("âœ… Referral applied. Welcome!")
 		elif status == "invalid_code":
-			await update.message.reply_text("⚠️ Referral code not recognized.")
+			await update.message.reply_text("âš ï¸ Referral code not recognized.")
 		# else: silent for self_referral/already_referred/not_new
 
 	if upgrade_notice and update.message is not None:
@@ -5506,7 +5511,7 @@ async def start_command(update, context):
 				await context.bot.send_message(
 					chat_id=referrer_id,
 					text=(
-						f"🎁 Bonus Plan Extension\n\n"
+						f"ðŸŽ Bonus Plan Extension\n\n"
 						f"+{days} premium days have been added to your current plan!\n\n"
 						"Use /signals to get the latest trading ideas."
 					)
@@ -5514,28 +5519,28 @@ async def start_command(update, context):
 	except Exception:
 		pass
 
-	# ── Terms gate: new / unaccepted users must agree to disclaimer first ─────
+	# â”€â”€ Terms gate: new / unaccepted users must agree to disclaimer first â”€â”€â”€â”€â”€
 	if not terms_accepted:
 		from telegram import InlineKeyboardMarkup as _IKM, InlineKeyboardButton as _IKB
 		disclaimer = (
-			"⚠️ *Financial Disclaimer*\n\n"
+			"âš ï¸ *Financial Disclaimer*\n\n"
 			"Before you continue, please read and accept:\n\n"
-			"• All signals are for *educational purposes only*\n"
-			"• Nothing here constitutes financial advice or a trade recommendation\n"
-			"• Trading involves significant risk — losses can exceed your deposit\n"
-			"• Past performance does not guarantee future results\n"
-			"• You are solely responsible for your trading decisions\n\n"
-			"Tap *✅ I Agree* to acknowledge these terms and continue."
+			"â€¢ All signals are for *educational purposes only*\n"
+			"â€¢ Nothing here constitutes financial advice or a trade recommendation\n"
+			"â€¢ Trading involves significant risk â€” losses can exceed your deposit\n"
+			"â€¢ Past performance does not guarantee future results\n"
+			"â€¢ You are solely responsible for your trading decisions\n\n"
+			"Tap *âœ… I Agree* to acknowledge these terms and continue."
 		)
 		_kbd = _IKM([[
-			_IKB("✅ I Agree", callback_data="agree_terms"),
-			_IKB("❌ Decline", callback_data="decline_terms"),
+			_IKB("âœ… I Agree", callback_data="agree_terms"),
+			_IKB("âŒ Decline", callback_data="decline_terms"),
 		]])
 		# Use plain text here to avoid MarkdownV2 parsing failures that can drop /start replies.
 		await update.message.reply_text(disclaimer, reply_markup=_kbd)
 		return  # Hold back welcome message until terms are accepted
 
-	# Terms already accepted — send normal welcome
+	# Terms already accepted â€” send normal welcome
 	_tier = _effective_tier(int(user_id))
 	_kbd_start = _build_dynamic_menu(user_id=int(user_id), tier=_tier)
 	await update.message.reply_text(msg, reply_markup=_kbd_start)
@@ -5598,8 +5603,8 @@ async def about_command(update, context) -> None:
 		paper = await paper_trading_service.snapshot(uid)
 		if paper is not None:
 			paper_line = (
-				f"Paper equity: <b>${paper.equity:,.2f}</b> • "
-				f"open: <b>{paper.open_positions}</b> • auto: <b>{'ON' if paper.auto_trade_enabled else 'OFF'}</b>"
+				f"Paper equity: <b>${paper.equity:,.2f}</b> â€¢ "
+				f"open: <b>{paper.open_positions}</b> â€¢ auto: <b>{'ON' if paper.auto_trade_enabled else 'OFF'}</b>"
 			)
 	except Exception:
 		logger.exception("[/about] paper snapshot failed user=%s", uid)
@@ -5611,7 +5616,7 @@ async def about_command(update, context) -> None:
 		version = str(os.getenv("APP_VERSION") or "current")
 
 	msg = (
-		"📊 <b>About SignalRankAI</b>\n\n"
+		"ðŸ“Š <b>About SignalRankAI</b>\n\n"
 		"SignalRankAI is a Telegram-first, multi-user trading-intelligence ecosystem. "
 		"It combines multi-provider market data, multiple existing strategy families, "
 		"asset-specific adaptive evidence, ML/AI review, news and regime filters, risk controls, "
@@ -5623,7 +5628,7 @@ async def about_command(update, context) -> None:
 		f"Completed delivered-signal outcomes: <b>{completed}</b>\n"
 		f"{paper_line}\n\n"
 		"<b>Markets</b>\n"
-		"Crypto • Forex • Stocks • Indices • Commodities\n\n"
+		"Crypto â€¢ Forex â€¢ Stocks â€¢ Indices â€¢ Commodities\n\n"
 		"<b>Execution</b>\n"
 		"Signals can be monitored or paper-traded without a broker. Optional MT5/MetaApi execution "
 		"requires a linked, verified account, explicit consent, tier access, and a successful risk preflight. "
@@ -5646,7 +5651,7 @@ async def faq_command(update, context) -> None:
 		"Only when high-quality setups appear. Some days may have fewer or no signals.\n\n"
 		"4) What markets are covered?\n"
 		"Crypto (BTC, ETH, SOL), Forex (EUR/USD, GBP/USD, USD/JPY), Stocks (AAPL, TSLA, MSFT), and Commodities (Gold, Silver, Oil, Natural Gas).\n\n"
-		"5) What’s the difference between Free, Premium, and VIP?\n"
+		"5) Whatâ€™s the difference between Free, Premium, and VIP?\n"
 		"Free: Proof-oriented feed (up to 3/day) with limited details.\n"
 		"Premium: Broader active feed with full Entry, SL, TP, and analytics.\n"
 		"VIP: Stricter high-conviction feed with elite controls and priority delivery.\n\n"
@@ -5662,7 +5667,7 @@ async def disclaimer_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	msg = (
-		"⚠️ Disclaimer\n\n"
+		"âš ï¸ Disclaimer\n\n"
 		"SignalRankAI provides trading signals for informational and educational purposes only.\n\n"
 		"Nothing provided by this bot constitutes financial advice, investment advice, or a recommendation to buy or sell any asset.\n\n"
 		"Trading involves risk, and you are fully responsible for your trading decisions.\n"
@@ -5691,12 +5696,12 @@ async def performance_command(update, context):
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		_perf_kbd = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+				InlineKeyboardButton("ðŸ“ˆ Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("ðŸ‘¤ Account", callback_data="nav_account"),
 			],
 			[
-				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+				InlineKeyboardButton("ðŸš€ Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("ðŸ†˜ Support", callback_data="nav_support"),
 			],
 		])
 	except Exception:
@@ -5824,7 +5829,7 @@ async def performance_command(update, context):
 
 				if deliveries_30d > 0:
 					msg: str = (
-						"📊 Performance (pending outcomes)\n\n"
+						"ðŸ“Š Performance (pending outcomes)\n\n"
 						f"Signals delivered (30d): {deliveries_30d}\n"
 						"Outcomes not yet tracked for these signals. They will appear once TP/SL is marked."
 					)
@@ -5838,7 +5843,7 @@ async def performance_command(update, context):
 			if tier_rank(tier) < tier_rank("PREMIUM"):
 				bucket: str = "strong" if win_rate >= 0.6 else ("cautious" if win_rate <= 0.4 else "mixed")
 				msg: str = (
-					"📊 Performance (limited)\n\n"
+					"ðŸ“Š Performance (limited)\n\n"
 					f"Recent trend: {bucket}.\n"
 					"Upgrade to Premium for full stats and history."
 				)
@@ -5849,7 +5854,7 @@ async def performance_command(update, context):
 			avg_r_str: str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
 			net_r_str: str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
 			profit_str: str = f"+{profit_loss:.2f}%" if profit_loss >= 0 else f"{profit_loss:.2f}%"
-			profit_emoji: str = "✅" if profit_loss >= 0 else "⚠️"
+			profit_emoji: str = "âœ…" if profit_loss >= 0 else "âš ï¸"
 			
 			msg: str = (
 				"Performance (last 30 days)\n\n"
@@ -5920,7 +5925,7 @@ async def quality_command(update, context) -> None:
 			)
 			return
 			await update.message.reply_text(
-				"📉 Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
+				"ðŸ“‰ Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
 			)
 			return
 
@@ -5961,7 +5966,7 @@ async def quality_command(update, context) -> None:
 			top_lines.append(f"- {reason[:70]}: {cnt}")
 
 		msg = (
-			"🧪 Quality (last 24h)\n\n"
+			"ðŸ§ª Quality (last 24h)\n\n"
 			f"Issued: {issued}\n"
 			f"Rejected/Skipped: {rejected}\n"
 			f"Acceptance rate: {accept_rate:.1f}%\n\n"
@@ -5978,7 +5983,7 @@ async def quality_command(update, context) -> None:
 
 		await update.message.reply_text(msg)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not build quality report: {exc}")
+		await update.message.reply_text(f"âŒ Could not build quality report: {exc}")
 
 
 async def gemini_command(update, context) -> None:
@@ -6285,18 +6290,18 @@ async def stats_command(update, context) -> None:
 			total_week = int((week or {}).get("total") or 0)
 			today: int = len(today_rows or [])
 			lines = [
-				"📈 *My Stats*",
+				"ðŸ“ˆ *My Stats*",
 				"",
-				f"📡 Signals today: `{today}`",
-				f"📊 Signals this week: `{total_week}`",
+				f"ðŸ“¡ Signals today: `{today}`",
+				f"ðŸ“Š Signals this week: `{total_week}`",
 			]
 			if _tracked > 0:
 				lines += [
 					"",
-					f"✅ Wins: `{_wins}` | ❌ Losses: `{_losses}` | Total: `{_tracked}`",
-					f"🎯 Win Rate: `{_win_rate:.1f}%`" if _win_rate is not None else "",
-					f"📐 Net R: `{_net_r:+.2f}R`" if _net_r is not None else "",
-					f"📏 Avg R/trade: `{_avg_r:+.2f}R`" if _avg_r is not None else "",
+					f"âœ… Wins: `{_wins}` | âŒ Losses: `{_losses}` | Total: `{_tracked}`",
+					f"ðŸŽ¯ Win Rate: `{_win_rate:.1f}%`" if _win_rate is not None else "",
+					f"ðŸ“ Net R: `{_net_r:+.2f}R`" if _net_r is not None else "",
+					f"ðŸ“ Avg R/trade: `{_avg_r:+.2f}R`" if _avg_r is not None else "",
 				]
 			else:
 				lines.append("\n_No tracked outcomes yet. Outcomes appear when TP/SL levels are hit._")
@@ -6333,7 +6338,7 @@ async def history_command(update, context):
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			if update.message is not None:
-				await update.message.reply_text("⚠️ Database not configured.")
+				await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		from db.pg_features import list_recent_signals_delivered
@@ -6361,18 +6366,18 @@ async def history_command(update, context):
 		if not rows:
 			if update.message is not None:
 				await update.message.reply_text(
-					"📭 No signal history found yet.\n\n"
+					"ðŸ“­ No signal history found yet.\n\n"
 					"You'll see your past signals here as they arrive."
 				)
 			return
 
-		lines: list[str] = [f"🧾 <b>Signal History</b> (last {len(rows)})\n"]
+		lines: list[str] = [f"ðŸ§¾ <b>Signal History</b> (last {len(rows)})\n"]
 		_r_values: list[float] = []
 		for s in rows:
 			oc = oc_map.get(s.signal_id)
 			if oc is not None and oc.status:
 				status_u = str(oc.status).upper()
-				oc_emoji = "✅" if oc.status.startswith("tp") else ("❌" if oc.status == "sl" else "⏳")
+				oc_emoji = "âœ…" if oc.status.startswith("tp") else ("âŒ" if oc.status == "sl" else "â³")
 				r_txt = ""
 				if oc.r_multiple is not None:
 					r_sign = "+" if float(oc.r_multiple) >= 0 else ""
@@ -6380,13 +6385,13 @@ async def history_command(update, context):
 					_r_values.append(float(oc.r_multiple))
 				outcome_txt = f"{oc_emoji} <b>{status_u}</b>{r_txt}"
 			else:
-				outcome_txt = "⏳ Open"
+				outcome_txt = "â³ Open"
 
 			tf_txt = f" [{s.timeframe}]" if s.timeframe else ""
-			entry_txt = f"{float(s.entry):.5f}" if s.entry is not None else "—"
+			entry_txt = f"{float(s.entry):.5f}" if s.entry is not None else "â€”"
 			ref = s.signal_id[:8]
 			lines.append(
-				f"• <b>{s.asset}</b>{tf_txt} {str(s.direction or '').upper()}\n"
+				f"â€¢ <b>{s.asset}</b>{tf_txt} {str(s.direction or '').upper()}\n"
 				f"  Entry: <code>{entry_txt}</code>  {outcome_txt}  Ref: <code>{ref}</code>"
 			)
 
@@ -6396,21 +6401,21 @@ async def history_command(update, context):
 				_sr = sharpe_ratio(_r_values)
 				_so = sortino_ratio(_r_values)
 				lines.append("")
-				lines.append("📐 <b>Advanced Ratios</b>")
-				lines.append(f"• Sharpe: <b>{_sr:.2f}</b>")
-				lines.append(f"• Sortino: <b>{_so:.2f}</b>")
+				lines.append("ðŸ“ <b>Advanced Ratios</b>")
+				lines.append(f"â€¢ Sharpe: <b>{_sr:.2f}</b>")
+				lines.append(f"â€¢ Sortino: <b>{_so:.2f}</b>")
 			except Exception:
 				pass
 
-		lines.append("\n💡 /signal &lt;ref&gt; for full signal details")
-		lines.append("💡 /simulate &lt;capital&gt; &lt;risk%&gt; for Monte Carlo forecast")
+		lines.append("\nðŸ’¡ /signal &lt;ref&gt; for full signal details")
+		lines.append("ðŸ’¡ /simulate &lt;capital&gt; &lt;risk%&gt; for Monte Carlo forecast")
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 		return
 
 	except Exception as exc:
 		if update.message is not None:
-			await update.message.reply_text(f"❌ Could not load history: {exc}")
+			await update.message.reply_text(f"âŒ Could not load history: {exc}")
 
 
 @require_tier("VIP")
@@ -6433,7 +6438,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 		snapshot = await paper_trading_service.snapshot(uid)
 		if snapshot is None:
-			await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+			await update.message.reply_text("âš ï¸ Profile not found. Send /start first.")
 			return
 		capital = float(snapshot.equity)
 		risk_pct = float(snapshot.risk_pct)
@@ -6441,13 +6446,13 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			try:
 				capital = max(50.0, float(args[0]))
 			except Exception:
-				await update.message.reply_text("❌ Invalid capital. Example: /simulate 10000 1")
+				await update.message.reply_text("âŒ Invalid capital. Example: /simulate 10000 1")
 				return
 		if len(args) >= 2:
 			try:
 				risk_pct = max(0.1, min(10.0, float(args[1])))
 			except Exception:
-				await update.message.reply_text("❌ Invalid risk %. Example: /simulate 10000 1")
+				await update.message.reply_text("âŒ Invalid risk %. Example: /simulate 10000 1")
 				return
 
 		evidence = await paper_trading_service.delivered_r_samples(uid)
@@ -6458,7 +6463,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			partial_milestones = int(evidence.get("partial_milestones") or 0)
 			delivered_total = int(evidence.get("delivered_total") or 0)
 			await update.message.reply_text(
-				"🧪 <b>Simulation evidence is not sufficient yet</b>\n\n"
+				"ðŸ§ª <b>Simulation evidence is not sufficient yet</b>\n\n"
 				f"Completed delivered outcomes available: <b>{len(r_values)}</b>\n"
 				f"Minimum required: <b>{minimum}</b>\n"
 				f"Proof-backed delivered signals: <b>{delivered_total}</b>\n"
@@ -6498,7 +6503,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		)
 
 		msg = (
-			"🧪 <b>Delivered-Signal Simulation</b>\n\n"
+			"ðŸ§ª <b>Delivered-Signal Simulation</b>\n\n"
 			f"Evidence: <b>{len(r_values)} confirmed outcomes</b>\n"
 			f"Observed win rate: <b>{win_rate * 100.0:.1f}%</b>\n"
 			f"Observed average win/loss: <b>{avg_win_r:.2f}R / {avg_loss_r:.2f}R</b>\n"
@@ -6507,9 +6512,9 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			f"Risk per trade: <b>{risk_pct:.2f}%</b>\n"
 			f"Simulations: <b>{result['runs']}</b>\n\n"
 			"Projected month-end range:\n"
-			f"• 5th percentile: <b>${result['p05']:.2f}</b>\n"
-			f"• Median: <b>${result['p50']:.2f}</b>\n"
-			f"• 95th percentile: <b>${result['p95']:.2f}</b>\n\n"
+			f"â€¢ 5th percentile: <b>${result['p05']:.2f}</b>\n"
+			f"â€¢ Median: <b>${result['p50']:.2f}</b>\n"
+			f"â€¢ 95th percentile: <b>${result['p95']:.2f}</b>\n\n"
 			f"Ruin probability: <b>{result['ruin_probability_pct']:.2f}%</b>\n"
 			f"Current paper equity/open positions: <b>${snapshot.equity:,.2f} / {snapshot.open_positions}</b>\n\n"
 			"This is a statistical scenario based only on your confirmed delivered-signal history, not a profit forecast."
@@ -6517,7 +6522,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
 		logger.exception("[/simulate] failed user=%s", uid)
-		await update.message.reply_text("❌ Simulation is temporarily unavailable. Your paper account and live broker state were not changed.")
+		await update.message.reply_text("âŒ Simulation is temporarily unavailable. Your paper account and live broker state were not changed.")
 
 
 @require_tier("PREMIUM")
@@ -6525,8 +6530,8 @@ async def risk_command(update, context) -> None:
 	"""Show or update risk settings (recommended % per trade).
 
 	Usage:
-	  /risk           → show current setting
-	  /risk 1.5       → set risk to 1.5% per trade
+	  /risk           â†’ show current setting
+	  /risk 1.5       â†’ set risk to 1.5% per trade
 	"""
 	if update.message is None or update.effective_user is None:
 		return
@@ -6540,7 +6545,7 @@ async def risk_command(update, context) -> None:
 		from sqlalchemy import select
 
 		if get_engine_for_event_loop() is None:
-			await update.message.reply_text("⚠️ Database not configured.")
+			await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		async with _gs() as session:
@@ -6549,15 +6554,15 @@ async def risk_command(update, context) -> None:
 			)).scalar_one_or_none()
 
 			if user_row is None:
-				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+				await update.message.reply_text("âš ï¸ Profile not found. Send /start first.")
 				return
 
 			if not args:
 				current = float(getattr(user_row, "max_risk_percentage", 1.0) or 1.0)
 				await update.message.reply_text(
-					"🛡️ <b>Risk Per Trade</b>\n\n"
+					"ðŸ›¡ï¸ <b>Risk Per Trade</b>\n\n"
 					f"Current setting: <b>{current:.2f}%</b> per trade\n\n"
-					"Recommended: 1% per trade. Never risk more than 2–3%.\n\n"
+					"Recommended: 1% per trade. Never risk more than 2â€“3%.\n\n"
 					"To update: <code>/risk 1.5</code>",
 					parse_mode="HTML",
 				)
@@ -6566,24 +6571,24 @@ async def risk_command(update, context) -> None:
 			try:
 				new_risk = float(args[0])
 			except ValueError:
-				await update.message.reply_text("❌ Invalid value. Use a number, e.g. /risk 1.5")
+				await update.message.reply_text("âŒ Invalid value. Use a number, e.g. /risk 1.5")
 				return
 
 			if new_risk < 0.1 or new_risk > 10.0:
-				await update.message.reply_text("❌ Risk must be between 0.1% and 10%.")
+				await update.message.reply_text("âŒ Risk must be between 0.1% and 10%.")
 				return
 
 			user_row.max_risk_percentage = round(new_risk, 2)
 			await session.commit()
 
 		await update.message.reply_text(
-			f"✅ <b>Risk per trade updated</b>\n\n"
+			f"âœ… <b>Risk per trade updated</b>\n\n"
 			f"New setting: <b>{round(new_risk, 2):.2f}%</b> per trade\n\n"
 			"This setting is used for VIP risk-based lot sizing on AUTO execution.",
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update risk: {exc}")
+		await update.message.reply_text(f"âŒ Could not update risk: {exc}")
 
 
 @require_tier("PREMIUM")
@@ -6629,17 +6634,17 @@ async def alerts_command(update, context) -> None:
 		prefs = await _get_prefs()
 		qs = prefs.get("quiet_start_hour")
 		qe = prefs.get("quiet_end_hour")
-		quiet: str = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
+		quiet: str = "off" if qs is None or qe is None else f"{qs}:00â€“{qe}:00"
 		status: str = "on" if prefs.get("tp_sl_enabled", True) else "off"
 		if update.message is not None:
-			await update.message.reply_text(f"🔔 Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+			await update.message.reply_text(f"ðŸ”” Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
 		return
 
 	cmd: str = str(context.args[0]).lower()
 	if cmd in {"on", "off"}:
 		_ = await _set_prefs(tp_sl_enabled=(cmd == "on"))
 		if update.message is not None:
-			await update.message.reply_text("✅ Updated.")
+			await update.message.reply_text("âœ… Updated.")
 		return
 	if cmd == "quiet" and len(context.args) == 3:
 		try:
@@ -6649,7 +6654,7 @@ async def alerts_command(update, context) -> None:
 				raise ValueError()
 			_ = await _set_prefs(quiet_start_hour=qs, quiet_end_hour=qe)
 			if update.message is not None:
-				await update.message.reply_text("✅ Quiet hours updated.")
+				await update.message.reply_text("âœ… Quiet hours updated.")
 			return
 		except Exception:
 			pass
@@ -6770,7 +6775,7 @@ async def elite_command(update, context) -> None:
 @require_tier("VIP")
 async def early_command(update, context) -> None:
 	if update.message is not None:
-		await update.message.reply_text("⚡ Early access is automatic for VIP. You’ll receive signals first when available.")
+		await update.message.reply_text("âš¡ Early access is automatic for VIP. Youâ€™ll receive signals first when available.")
 
 
 @require_tier("VIP")
@@ -6799,7 +6804,7 @@ async def report_command(update, context) -> None:
 		net_r = stats.get("net_r", 0) or 0
 		profit = float(stats.get("profit_loss_pct", 0.0) or 0.0)
 		msg = (
-			"🗓️ VIP Report (last 30 days)\n\n"
+			"ðŸ—“ï¸ VIP Report (last 30 days)\n\n"
 			f"Signals: {total}\n"
 			f"Wins/Losses: {wins}/{losses}\n"
 			f"Win rate: {win_rate:.1f}%\n"
@@ -6844,7 +6849,7 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		if current_price is None:
 			await update.message.reply_text(
-				f"❌ Could not fetch price for <b>{asset}</b>.\n\n"
+				f"âŒ Could not fetch price for <b>{asset}</b>.\n\n"
 				f"Check the symbol and try again.",
 				parse_mode="HTML",
 			)
@@ -6862,16 +6867,16 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		timestamp = now_utc_naive().strftime("%Y-%m-%d %H:%M:%S UTC")
 		msg = (
-			f"💰 <b>Live Price</b>\n\n"
+			f"ðŸ’° <b>Live Price</b>\n\n"
 			f"Asset: <b>{asset}</b>\n"
 			f"Type: {asset_type}\n"
 			f"Price: <b>{price_str}</b>\n\n"
-			f"🕐 {timestamp}"
+			f"ðŸ• {timestamp}"
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Error fetching price: {exc}")
+		await update.message.reply_text(f"âŒ Error fetching price: {exc}")
 
 
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6891,7 +6896,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		import asyncio
 
 		if get_engine_for_event_loop() is None:
-			await update.message.reply_text("⚠️ Database not configured.")
+			await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
@@ -6900,7 +6905,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
 			if user_row is None:
-				await update.message.reply_text("⚠️ User profile not found. Send /start first.")
+				await update.message.reply_text("âš ï¸ User profile not found. Send /start first.")
 				return
 
 			# Get signals delivered to this user (active = not archived, last 72 h)
@@ -6922,7 +6927,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		if not rows:
 			await update.message.reply_text(
-				"📊 <b>Portfolio</b>\n\n"
+				"ðŸ“Š <b>Portfolio</b>\n\n"
 				"You have no active signals in the last 72 hours.\n\n"
 				"Use /signals to view available signals.",
 				parse_mode="HTML",
@@ -6955,7 +6960,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		total_pnl = 0.0
 		valid_count = 0
-		lines: list[str] = [f"📊 <b>Your Active Portfolio</b> ({len(signals_with_outcome)} signals)\n"]
+		lines: list[str] = [f"ðŸ“Š <b>Your Active Portfolio</b> ({len(signals_with_outcome)} signals)\n"]
 
 		for sig, oc in signals_with_outcome:
 			try:
@@ -6971,9 +6976,9 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 					if oc.r_multiple is not None:
 						r_sign = "+" if float(oc.r_multiple) >= 0 else ""
 						r_txt = f" | R: {r_sign}{float(oc.r_multiple):.2f}R"
-					status_emoji = "✅" if oc.status.startswith("tp") else "❌"
+					status_emoji = "âœ…" if oc.status.startswith("tp") else "âŒ"
 					lines.append(
-						f"{status_emoji} <b>{asset}</b> {direction} — <b>{status_u}</b>{r_txt}\n"
+						f"{status_emoji} <b>{asset}</b> {direction} â€” <b>{status_u}</b>{r_txt}\n"
 						f"   Entry: <code>{entry:.5f}</code> | Ref: <code>{ref}</code>\n"
 					)
 					continue
@@ -6981,7 +6986,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				current_price = prices.get(asset)
 				if current_price is None or entry <= 0:
 					lines.append(
-						f"⚪ <b>{asset}</b> {direction}\n"
+						f"âšª <b>{asset}</b> {direction}\n"
 						f"   Entry: <code>{entry:.5f}</code> | Price: unavailable | Ref: <code>{ref}</code>\n"
 					)
 					continue
@@ -6990,11 +6995,11 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				total_pnl += pnl_pct
 				valid_count += 1
 				pnl_sign = "+" if pnl_pct >= 0 else ""
-				pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+				pnl_emoji = "ðŸŸ¢" if pnl_pct >= 0 else "ðŸ”´"
 
 				lines.append(
 					f"{pnl_emoji} <b>{asset}</b> {direction}\n"
-					f"   Entry: <code>{entry:.5f}</code> → Now: <code>{current_price:.5f}</code>\n"
+					f"   Entry: <code>{entry:.5f}</code> â†’ Now: <code>{current_price:.5f}</code>\n"
 					f"   P&amp;L: <b>{pnl_sign}{pnl_pct:.2f}%</b> | Ref: <code>{ref}</code>\n"
 				)
 			except Exception:
@@ -7003,17 +7008,17 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		if valid_count > 0:
 			avg_pnl = total_pnl / valid_count
 			avg_sign = "+" if avg_pnl >= 0 else ""
-			summary_emoji = "📈" if avg_pnl >= 0 else "📉"
+			summary_emoji = "ðŸ“ˆ" if avg_pnl >= 0 else "ðŸ“‰"
 			lines.append(
-				f"━━━━━━━━━━━━━━━━\n"
+				f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
 				f"{summary_emoji} <b>Open P&amp;L avg:</b> {avg_sign}{avg_pnl:.2f}%\n"
 			)
 
-		lines.append("💡 Use /signal &lt;ref&gt; for full signal details")
+		lines.append("ðŸ’¡ Use /signal &lt;ref&gt; for full signal details")
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load portfolio: {exc}")
+		await update.message.reply_text(f"âŒ Could not load portfolio: {exc}")
 
 
 async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7029,12 +7034,12 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 		# Define major assets to track
 		major_assets = [
-			("BTCUSDT",  "Bitcoin",     "₿"),
-			("ETHUSDT",  "Ethereum",    "⬡"),
-			("EURUSD",   "EUR/USD",     "🇪🇺"),
-			("XAUUSD",   "Gold",        "🥇"),
-			("GBPUSD",   "GBP/USD",     "🇬🇧"),
-			("USDJPY",   "USD/JPY",     "🇯🇵"),
+			("BTCUSDT",  "Bitcoin",     "â‚¿"),
+			("ETHUSDT",  "Ethereum",    "â¬¡"),
+			("EURUSD",   "EUR/USD",     "ðŸ‡ªðŸ‡º"),
+			("XAUUSD",   "Gold",        "ðŸ¥‡"),
+			("GBPUSD",   "GBP/USD",     "ðŸ‡¬ðŸ‡§"),
+			("USDJPY",   "USD/JPY",     "ðŸ‡¯ðŸ‡µ"),
 		]
 
 		async def _fetch(symbol: str) -> tuple[str, float | None]:
@@ -7050,7 +7055,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		from datetime import datetime
 		timestamp = now_utc_naive().strftime("%H:%M UTC")
 
-		lines = [f"🌐 <b>Market Overview</b> — {timestamp}\n"]
+		lines = [f"ðŸŒ <b>Market Overview</b> â€” {timestamp}\n"]
 		for symbol, name, icon in major_assets:
 			price = price_map.get(symbol)
 			if price is None:
@@ -7066,11 +7071,11 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				price_str = f"{price:,.2f}"
 			lines.append(f"{icon} <b>{name}</b>: <code>{price_str}</code>")
 
-		lines.append("\n💡 /liveprice &lt;symbol&gt; for any asset  |  /signals for active trades")
+		lines.append("\nðŸ’¡ /liveprice &lt;symbol&gt; for any asset  |  /signals for active trades")
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not fetch market data: {exc}")
+		await update.message.reply_text(f"âŒ Could not fetch market data: {exc}")
 
 
 # --------- MT5 LINK COMMAND ---------
@@ -7091,7 +7096,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	# Require at least PREMIUM tier to link MT5
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 MT5 account linking requires a Premium or VIP subscription.\n"
+			"ðŸ”’ MT5 account linking requires a Premium or VIP subscription.\n"
 			"Use /upgrade to unlock one-click MT5 execution."
 		)
 		return
@@ -7108,10 +7113,10 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	args = (context.args or [])
 	if len(args) < 3:
 		await update.message.reply_text(
-			"⚙️ <b>Link your MT5 Account</b>\n\n"
+			"âš™ï¸ <b>Link your MT5 Account</b>\n\n"
 			"Usage: <code>/mt5_link &lt;login&gt; &lt;password&gt; &lt;server&gt;</code>\n\n"
 			"Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
-			"🔒 Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
+			"ðŸ”’ Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
 			"Neither SignalRankAI staff nor Railway can read it in plaintext.",
 			parse_mode="HTML"
 		)
@@ -7128,7 +7133,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		pass
 
 	processing_msg = await update.effective_chat.send_message(
-		"🔄 Linking your MT5 account… please wait."
+		"ðŸ”„ Linking your MT5 accountâ€¦ please wait."
 	)
 
 	try:
@@ -7142,19 +7147,19 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		if result.get("success"):
 			meta_id = result.get("metaapi_account_id") or ""
 			reply = (
-				"✅ MT5 Account Linked Successfully!\n\n"
-				f"🏦 Server: {mt5_server}\n"
-				f"🔐 Login: {mt5_login} (credentials encrypted)\n"
+				"âœ… MT5 Account Linked Successfully!\n\n"
+				f"ðŸ¦ Server: {mt5_server}\n"
+				f"ðŸ” Login: {mt5_login} (credentials encrypted)\n"
 			)
 			if meta_id:
-				reply += f"☁️ MetaApi Account ID: {meta_id}\n"
+				reply += f"â˜ï¸ MetaApi Account ID: {meta_id}\n"
 			reply += (
 				"\nYou can now use the Trade on MT5 button "
 				"on any signal to execute instantly.\n\n"
-				"⚙️ Configure execution routing with /execution\n"
-				"• /execution manual (default)\n"
-				"• /execution none\n"
-				"• /execution auto 5 (VIP)"
+				"âš™ï¸ Configure execution routing with /execution\n"
+				"â€¢ /execution manual (default)\n"
+				"â€¢ /execution none\n"
+				"â€¢ /execution auto 5 (VIP)"
 			)
 			if not result.get("executable"):
 				reply = (
@@ -7169,14 +7174,14 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		else:
 			err = result.get("error", "Unknown error")
 			reply = (
-				"❌ MT5 Link Failed\n\n"
+				"âŒ MT5 Link Failed\n\n"
 				f"Error: {err}\n\n"
 				"Please check your login, password and server name, then try again.\n"
 				"Use /mt5_link <login> <password> <server>"
 			)
 	except Exception as exc:
 		reply = (
-			f"❌ MT5 Link Error\n\n{type(exc).__name__}: {exc}\n\n"
+			f"âŒ MT5 Link Error\n\n{type(exc).__name__}: {exc}\n\n"
 			"Please try again or contact support with /support"
 		)
 
@@ -7197,7 +7202,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 MT5 features require Premium or VIP.\nUse /upgrade to subscribe."
+			"ðŸ”’ MT5 features require Premium or VIP.\nUse /upgrade to subscribe."
 		)
 		return
 
@@ -7222,15 +7227,15 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)
 			return
 		reply = (
-			"⚙️ Your Linked MT5 Account\n\n"
-			f"🏦 Server: {row.server}\n"
-			f"🔐 Login: {row.mt5_login} (password encrypted)\n"
+			"âš™ï¸ Your Linked MT5 Account\n\n"
+			f"ðŸ¦ Server: {row.server}\n"
+			f"ðŸ” Login: {row.mt5_login} (password encrypted)\n"
 		)
 		if row.metaapi_account_id:
-			reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
+			reply += f"â˜ï¸ MetaApi ID: {row.metaapi_account_id}\n"
 		status = await get_user_mt5_link_status(int(user_id))
 		if status.get("executable"):
-			reply += "\nExecution bridge: READY\nUse ⚡ buttons on signals to trade instantly."
+			reply += "\nExecution bridge: READY\nUse âš¡ buttons on signals to trade instantly."
 		else:
 			reply += (
 				"\nExecution bridge: NOT READY\n"
@@ -7242,14 +7247,14 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /setlot  — PREMIUM: set fixed lot size
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /setlot  â€” PREMIUM: set fixed lot size
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Set the fixed lot size used for PREMIUM automated executions.
 
-	Usage: /setlot <0.001–1.0>
+	Usage: /setlot <0.001â€“1.0>
 	"""
 	if update.effective_user is None or update.message is None:
 		return
@@ -7258,7 +7263,7 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 /setlot is available on <b>PREMIUM</b> and above.\n"
+			"ðŸ”’ /setlot is available on <b>PREMIUM</b> and above.\n"
 			"Use /upgrade to subscribe.",
 			parse_mode="HTML",
 		)
@@ -7268,7 +7273,7 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if not args:
 		await update.message.reply_text(
 			"Usage: <code>/setlot 0.01</code>\n"
-			"Valid range: 0.001 – 1.0 lots",
+			"Valid range: 0.001 â€“ 1.0 lots",
 			parse_mode="HTML",
 		)
 		return
@@ -7276,11 +7281,11 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	try:
 		lot = float(args[0])
 	except ValueError:
-		await update.message.reply_text("❌ Invalid lot size. Example: <code>/setlot 0.05</code>", parse_mode="HTML")
+		await update.message.reply_text("âŒ Invalid lot size. Example: <code>/setlot 0.05</code>", parse_mode="HTML")
 		return
 
 	if not (0.001 <= lot <= 1.0):
-		await update.message.reply_text("❌ Lot size must be between 0.001 and 1.0.", parse_mode="HTML")
+		await update.message.reply_text("âŒ Lot size must be between 0.001 and 1.0.", parse_mode="HTML")
 		return
 
 	lot = round(lot, 3)
@@ -7296,24 +7301,24 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				row.fixed_lot_size = lot
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save lot size: {exc}")
+		await update.message.reply_text(f"âŒ Could not save lot size: {exc}")
 		return
 
 	await update.message.reply_text(
-		f"✅ Fixed lot size set to <b>{lot}</b>.\n"
+		f"âœ… Fixed lot size set to <b>{lot}</b>.\n"
 		"All future PREMIUM executions will use this lot size.",
 		parse_mode="HTML",
 	)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /setrisk  — VIP: set risk percentage per trade
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /setrisk  â€” VIP: set risk percentage per trade
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Set the risk percentage per trade for VIP automated executions.
 
-	Usage: /setrisk <0.1–5.0>
+	Usage: /setrisk <0.1â€“5.0>
 	"""
 	if update.effective_user is None or update.message is None:
 		return
@@ -7322,7 +7327,7 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 	if tier_rank(tier) < tier_rank("VIP"):
 		await update.message.reply_text(
-			"🔒 /setrisk is available on <b>VIP</b> only.\n"
+			"ðŸ”’ /setrisk is available on <b>VIP</b> only.\n"
 			"Risk-based lot sizing is an exclusive VIP feature. Use /upgrade.",
 			parse_mode="HTML",
 		)
@@ -7332,7 +7337,7 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if not args:
 		await update.message.reply_text(
 			"Usage: <code>/setrisk 1.5</code>\n"
-			"Valid range: 0.1% – 5.0% of account balance per trade.",
+			"Valid range: 0.1% â€“ 5.0% of account balance per trade.",
 			parse_mode="HTML",
 		)
 		return
@@ -7340,14 +7345,14 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	try:
 		pct = float(args[0])
 	except ValueError:
-		await update.message.reply_text("❌ Invalid value. Example: <code>/setrisk 1.5</code>", parse_mode="HTML")
+		await update.message.reply_text("âŒ Invalid value. Example: <code>/setrisk 1.5</code>", parse_mode="HTML")
 		return
 
 	global_cap = float(os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0") or 3.0)
 	allowed_max = max(0.1, min(5.0, float(global_cap)))
 	if not (0.1 <= pct <= allowed_max):
 		await update.message.reply_text(
-			f"❌ Risk must be between 0.1% and {allowed_max:.1f}% (global cap).",
+			f"âŒ Risk must be between 0.1% and {allowed_max:.1f}% (global cap).",
 			parse_mode="HTML",
 		)
 		return
@@ -7365,11 +7370,11 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				row.max_risk_percentage = pct
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save risk setting: {exc}")
+		await update.message.reply_text(f"âŒ Could not save risk setting: {exc}")
 		return
 
 	await update.message.reply_text(
-		f"✅ Risk per trade set to <b>{pct}%</b>.\n"
+		f"âœ… Risk per trade set to <b>{pct}%</b>.\n"
 		"Lot size will be calculated automatically based on your account balance and SL distance.",
 		parse_mode="HTML",
 	)
@@ -7392,7 +7397,7 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 	raw = str(args[0]).strip()
 	disable = raw.lower() in {"off", "disable", "none"}
 	if (not disable) and not (raw.startswith("https://") or raw.startswith("http://")):
-		await update.message.reply_text("❌ Webhook URL must start with http:// or https://")
+		await update.message.reply_text("âŒ Webhook URL must start with http:// or https://")
 		return
 	try:
 		from sqlalchemy import select
@@ -7413,7 +7418,7 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 					row.is_active = False
 					row.updated_at = now_utc_naive()
 					await session.commit()
-				await update.message.reply_text("✅ VIP execution webhook disabled.")
+				await update.message.reply_text("âœ… VIP execution webhook disabled.")
 				return
 			if row is None:
 				session.add(
@@ -7429,9 +7434,9 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 				row.is_active = True
 				row.updated_at = now_utc_naive()
 			await session.commit()
-		await update.message.reply_text("✅ VIP execution webhook saved.")
+		await update.message.reply_text("âœ… VIP execution webhook saved.")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save webhook: {exc}")
+		await update.message.reply_text(f"âŒ Could not save webhook: {exc}")
 
 
 async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7451,7 +7456,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 	tier = _effective_tier(user_id)
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 /execution is available on <b>PREMIUM</b> and above.",
+			"ðŸ”’ /execution is available on <b>PREMIUM</b> and above.",
 			parse_mode="HTML",
 		)
 		return
@@ -7468,7 +7473,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		async with _gs(label="execution.command", timeout_seconds=8.0) as session:
 			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
 			if row is None:
-				await update.message.reply_text("❌ User profile not found. Send /start and try again.")
+				await update.message.reply_text("âŒ User profile not found. Send /start and try again.")
 				return
 			prefs_row = await session.get(RuntimeState, f"user_prefs:{user_id}")
 			prefs = dict(getattr(prefs_row, "value", {}) or {}) if prefs_row else {}
@@ -7479,7 +7484,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				cap = int(getattr(row, "auto_signals_daily_limit", -1) or 0)
 				cap_txt = "all" if cap < 0 else str(cap)
 				await update.message.reply_text(
-					"⚙️ <b>Execution Settings</b>\n\n"
+					"âš™ï¸ <b>Execution Settings</b>\n\n"
 					f"Mode: <b>{mode.upper()}</b>\n"
 					f"Provider: <b>{provider.upper()}</b>\n"
 					f"Daily cap: <b>{cap_txt}</b>\n\n"
@@ -7491,13 +7496,13 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			mode = args[0]
 			if mode not in {"none", "manual", "auto", "copy"}:
 				await update.message.reply_text(
-					"❌ Invalid mode. Use <code>none</code>, <code>manual</code>, <code>auto</code> or <code>copy</code>.",
+					"âŒ Invalid mode. Use <code>none</code>, <code>manual</code>, <code>auto</code> or <code>copy</code>.",
 					parse_mode="HTML",
 				)
 				return
 			if mode in {"auto", "copy"} and tier_rank(tier) < tier_rank("VIP"):
 				await update.message.reply_text(
-					"🔒 AUTO and COPY modes require <b>VIP</b>. PREMIUM supports NONE/MANUAL.",
+					"ðŸ”’ AUTO and COPY modes require <b>VIP</b>. PREMIUM supports NONE/MANUAL.",
 					parse_mode="HTML",
 				)
 				return
@@ -7514,10 +7519,10 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 						try:
 							cap = max(1, min(int(value), 100))
 						except Exception:
-							await update.message.reply_text("❌ Invalid cap/provider. Example: /execution auto 5 bybit")
+							await update.message.reply_text("âŒ Invalid cap/provider. Example: /execution auto 5 bybit")
 							return
 				else:
-					await update.message.reply_text("❌ Provider must be auto, mt5 or bybit.")
+					await update.message.reply_text("âŒ Provider must be auto, mt5 or bybit.")
 					return
 
 			row.execution_mode = "copy_trade" if mode == "copy" else mode
@@ -7545,7 +7550,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 		cap_txt = "all" if int(cap) < 0 else str(int(cap))
 		await update.message.reply_text(
-			"✅ <b>Execution settings updated</b>\n\n"
+			"âœ… <b>Execution settings updated</b>\n\n"
 			f"Mode: <b>{mode.upper()}</b>\n"
 			f"Provider: <b>{provider.upper()}</b>\n"
 			f"Daily cap: <b>{cap_txt}</b>\n\n"
@@ -7553,7 +7558,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update execution mode: {type(exc).__name__}")
+		await update.message.reply_text(f"âŒ Could not update execution mode: {type(exc).__name__}")
 
 
 async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7571,7 +7576,7 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	tier: str = _effective_tier(user_id)
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 /drawdown is available on <b>PREMIUM</b> and above.",
+			"ðŸ”’ /drawdown is available on <b>PREMIUM</b> and above.",
 			parse_mode="HTML",
 		)
 		return
@@ -7586,14 +7591,14 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		async with _gs() as session:
 			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
 			if row is None:
-				await update.message.reply_text("❌ User profile not found. Send /start and try again.")
+				await update.message.reply_text("âŒ User profile not found. Send /start and try again.")
 				return
 
 			if not args:
 				cap = float(getattr(row, "max_daily_drawdown_pct", 8.0) or 0.0)
 				cap_txt = "OFF" if cap <= 0 else f"{cap:.2f}%"
 				await update.message.reply_text(
-					"🛡️ <b>Daily Drawdown Guard</b>\n\n"
+					"ðŸ›¡ï¸ <b>Daily Drawdown Guard</b>\n\n"
 					f"Current threshold: <b>{cap_txt}</b>\n"
 					"Window: rolling 24h realized P&L\n\n"
 					"Use: <code>/drawdown 4</code> or <code>/drawdown off</code>",
@@ -7606,7 +7611,7 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 				row.max_daily_drawdown_pct = 0.0
 				await session.commit()
 				await update.message.reply_text(
-					"✅ Daily drawdown circuit breaker is now <b>OFF</b>.",
+					"âœ… Daily drawdown circuit breaker is now <b>OFF</b>.",
 					parse_mode="HTML",
 				)
 				return
@@ -7614,29 +7619,29 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			try:
 				cap = float(arg0)
 			except Exception:
-				await update.message.reply_text("❌ Invalid value. Use a number like 4 or 'off'.")
+				await update.message.reply_text("âŒ Invalid value. Use a number like 4 or 'off'.")
 				return
 
 			if cap < 0.5 or cap > 25:
-				await update.message.reply_text("❌ Allowed range is 0.5 to 25 (%).")
+				await update.message.reply_text("âŒ Allowed range is 0.5 to 25 (%).")
 				return
 
 			row.max_daily_drawdown_pct = float(round(cap, 2))
 			await session.commit()
 
 		await update.message.reply_text(
-			"✅ <b>Daily drawdown guard updated</b>\n\n"
+			"âœ… <b>Daily drawdown guard updated</b>\n\n"
 			f"Threshold: <b>{float(round(cap, 2)):.2f}%</b>\n"
 			"If rolling 24h realized P&L reaches this loss, AUTO switches to MANUAL.",
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update drawdown setting: {exc}")
+		await update.message.reply_text(f"âŒ Could not update drawdown setting: {exc}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /tiers  — Subscription comparison table
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /tiers  â€” Subscription comparison table
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Display a tier comparison table and upgrade links."""
@@ -7649,34 +7654,34 @@ async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 	vip_capacity_label = "open enrollment" if vip_limit <= 0 else f"only {vip_limit} seats"
 
 	msg = (
-		"<b>📊 SignalRankAI Subscription Tiers</b>\n\n"
-		"<b>🆓 FREE</b>\n"
-		"  • Delayed signals (top 3/day)\n"
-		"  • Basic win-rate stats\n"
-		"  • Community access\n"
-		"  • No MT5 execution\n\n"
-		f"<b>💎 PREMIUM — ₦{premium_price:,}/month</b>\n"
-		"  • All signals in real time\n"
-		"  • Up to <b>3 automated MT5 executions/day</b>\n"
-		"  • Fixed lot size (set with /setlot)\n"
-		"  • TP2 targeting only\n"
-		"  • Personal win-rate dashboard\n\n"
-		f"<b>👑 VIP — ₦{vip_price:,}/month</b> ({vip_capacity_label})\n"
-		"  • Everything in PREMIUM, plus:\n"
-		"  • <b>Unlimited</b> automated executions\n"
-		"  • Risk-based lot sizing (/setrisk)\n"
-		"  • Multi-stage TPs: TP1 → SL to entry → TP2 → TP3\n"
-		"  • FOMO broadcast priority\n"
-		"  • Friday leaderboard inclusion\n"
-		"  • Direct support line\n\n"
-		"👉 Use /upgrade to subscribe"
+		"<b>ðŸ“Š SignalRankAI Subscription Tiers</b>\n\n"
+		"<b>ðŸ†“ FREE</b>\n"
+		"  â€¢ Delayed signals (top 3/day)\n"
+		"  â€¢ Basic win-rate stats\n"
+		"  â€¢ Community access\n"
+		"  â€¢ No MT5 execution\n\n"
+		f"<b>ðŸ’Ž PREMIUM â€” â‚¦{premium_price:,}/month</b>\n"
+		"  â€¢ All signals in real time\n"
+		"  â€¢ Up to <b>3 automated MT5 executions/day</b>\n"
+		"  â€¢ Fixed lot size (set with /setlot)\n"
+		"  â€¢ TP2 targeting only\n"
+		"  â€¢ Personal win-rate dashboard\n\n"
+		f"<b>ðŸ‘‘ VIP â€” â‚¦{vip_price:,}/month</b> ({vip_capacity_label})\n"
+		"  â€¢ Everything in PREMIUM, plus:\n"
+		"  â€¢ <b>Unlimited</b> automated executions\n"
+		"  â€¢ Risk-based lot sizing (/setrisk)\n"
+		"  â€¢ Multi-stage TPs: TP1 â†’ SL to entry â†’ TP2 â†’ TP3\n"
+		"  â€¢ FOMO broadcast priority\n"
+		"  â€¢ Friday leaderboard inclusion\n"
+		"  â€¢ Direct support line\n\n"
+		"ðŸ‘‰ Use /upgrade to subscribe"
 	)
 	await update.message.reply_text(msg, parse_mode="HTML")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /mystats  — Personal performance stats
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /mystats  â€” Personal performance stats
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Show the user's personal trading statistics."""
@@ -7691,11 +7696,11 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from sqlalchemy import select, func
 
 		if get_engine_for_event_loop() is None:
-			await update.message.reply_text("⚠️ Database not configured.")
+			await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		async with _gs() as session:
-			# Resolve DB user — MT5Execution.user_id is FK to users.id, NOT telegram_user_id
+			# Resolve DB user â€” MT5Execution.user_id is FK to users.id, NOT telegram_user_id
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
@@ -7703,7 +7708,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			db_user_id: int | None = user_row.id if user_row is not None else None
 
 			if db_user_id is None:
-				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+				await update.message.reply_text("âš ï¸ Profile not found. Send /start first.")
 				return
 
 			# Total MT5 executions (correct FK)
@@ -7712,7 +7717,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			)).scalar() or 0
 
 			# Win / loss from MT5 executions
-			# Status values: 'tp1' | 'tp2' | 'tp3' | 'tp' — wins; 'sl' — losses
+			# Status values: 'tp1' | 'tp2' | 'tp3' | 'tp' â€” wins; 'sl' â€” losses
 			wins_exec = (await session.execute(
 				select(func.count()).where(
 					MT5Execution.user_id == db_user_id,
@@ -7735,7 +7740,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				)
 			)).scalar() or 0.0
 
-			# Also count from signal outcomes (broader — covers non-MT5 users too)
+			# Also count from signal outcomes (broader â€” covers non-MT5 users too)
 			oc_rows = (await session.execute(
 				select(Outcome)
 				.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
@@ -7769,7 +7774,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			if expiry:
 				if hasattr(expiry, "tzinfo") and expiry.tzinfo is None:
 					expiry = expiry.replace(tzinfo=_tz.utc)
-				sub_expiry = f"\n📅 Subscription expires: <b>{expiry.strftime('%d %b %Y')}</b>"
+				sub_expiry = f"\nðŸ“… Subscription expires: <b>{expiry.strftime('%d %b %Y')}</b>"
 
 		# Daily execution counter
 		daily_exec = 0
@@ -7783,37 +7788,37 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 		tier_disp = tier.upper()
 		msg = (
-			f"<b>📈 My Stats — {tier_disp}</b>\n\n"
-			f"🔢 MT5 executions: <b>{total_exec}</b>\n"
-			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
-			f"🎯 Win rate: <b>{win_rate:.1f}%</b>\n"
+			f"<b>ðŸ“ˆ My Stats â€” {tier_disp}</b>\n\n"
+			f"ðŸ”¢ MT5 executions: <b>{total_exec}</b>\n"
+			f"âœ… Wins: <b>{wins}</b>  âŒ Losses: <b>{losses}</b>\n"
+			f"ðŸŽ¯ Win rate: <b>{win_rate:.1f}%</b>\n"
 		)
 		if net_r is not None:
 			net_sign = "+" if net_r >= 0 else ""
-			msg += f"📐 Net R: <b>{net_sign}{net_r:.2f}R</b>\n"
+			msg += f"ðŸ“ Net R: <b>{net_sign}{net_r:.2f}R</b>\n"
 		if avg_r is not None:
 			avg_sign = "+" if avg_r >= 0 else ""
-			msg += f"📏 Avg R/trade: <b>{avg_sign}{avg_r:.2f}R</b>\n"
+			msg += f"ðŸ“ Avg R/trade: <b>{avg_sign}{avg_r:.2f}R</b>\n"
 		if total_exec > 0:
 			pnl_sign = "+" if float(total_pnl) >= 0 else ""
-			msg += f"💰 Realized P&amp;L: <b>{pnl_sign}${float(total_pnl):.2f}</b>\n"
+			msg += f"ðŸ’° Realized P&amp;L: <b>{pnl_sign}${float(total_pnl):.2f}</b>\n"
 		if tier.upper() in ("PREMIUM", "VIP"):
 			try:
 				from engine.tiered_executor import PREMIUM_DAILY_LIMIT
 				remaining = max(0, PREMIUM_DAILY_LIMIT - daily_exec)
-				msg += f"📋 Today's executions: <b>{daily_exec}/{PREMIUM_DAILY_LIMIT}</b> ({remaining} remaining)\n"
+				msg += f"ðŸ“‹ Today's executions: <b>{daily_exec}/{PREMIUM_DAILY_LIMIT}</b> ({remaining} remaining)\n"
 			except Exception:
 				pass
 		msg += sub_expiry
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"⚠️ Could not load stats: {exc}")
+		await update.message.reply_text(f"âš ï¸ Could not load stats: {exc}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /referral  — Generate referral deep-link
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /referral  â€” Generate referral deep-link
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Generate a personal referral link and show referral stats."""
@@ -7867,13 +7872,13 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		referral_url = f"https://t.me/{bot_username}?start=ref_{referral_code}"
 
 	msg = (
-		f"🔗 <b>Your Referral Link</b>\n\n"
+		f"ðŸ”— <b>Your Referral Link</b>\n\n"
 		f"<code>{referral_url or 'Bot username not set'}</code>\n\n"
-		f"📊 Referrals: <b>{referred_count}</b>\n"
-		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n"
-		f"📈 Progress: <b>{toward_next}/3</b>"
+		f"ðŸ“Š Referrals: <b>{referred_count}</b>\n"
+		f"ðŸŽ Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n"
+		f"ðŸ“ˆ Progress: <b>{toward_next}/3</b>"
 		f"{' (invite ' + str(needed_for_next) + ' more)' if needed_for_next else ' (reward unlocked on your latest milestone)'}\n\n"
-		f"💡 Earn <b>+{bonus_days} free days</b> for every 3 valid referrals.\n"
+		f"ðŸ’¡ Earn <b>+{bonus_days} free days</b> for every 3 valid referrals.\n"
 		f"Share your link and grow your streak!"
 	)
 	try:
@@ -7881,10 +7886,10 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		share_url = f"https://t.me/share/url?url={referral_url}" if referral_url else ""
 		rows = []
 		if share_url:
-			rows.append([InlineKeyboardButton("📣 Share", url=share_url)])
+			rows.append([InlineKeyboardButton("ðŸ“£ Share", url=share_url)])
 		rows.append([
-			InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
-			InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			InlineKeyboardButton("ðŸ’³ Upgrade", callback_data="nav_upgrade"),
+			InlineKeyboardButton("ðŸŽ§ Support", callback_data="nav_support"),
 		])
 		keyboard = InlineKeyboardMarkup(rows)
 	except Exception:
@@ -7892,9 +7897,9 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /leaderboard  — Weekly signal performance leaderboard (VIP)
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /leaderboard  â€” Weekly signal performance leaderboard (VIP)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Show the weekly signal performance leaderboard.
@@ -7913,7 +7918,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 		from datetime import datetime
 
 		if get_engine_for_event_loop() is None:
-			await update.message.reply_text("⚠️ Database not configured.")
+			await update.message.reply_text("âš ï¸ Database not configured.")
 			return
 
 		min_trades = max(3, int(os.getenv("LEADERBOARD_MIN_TRACKED_TRADES", "5") or 5))
@@ -7963,7 +7968,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 		if not rows:
 			await update.message.reply_text(
-				"🏆 <b>Weekly Leaderboard</b>\n\n"
+				"ðŸ† <b>Weekly Leaderboard</b>\n\n"
 				"No qualifying entries yet this week.\n\n"
 				"Leaderboard updates as signal outcomes are tracked.",
 				parse_mode="HTML",
@@ -7971,8 +7976,8 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			return
 
 		viewer_in_vip = tier.upper() in {"VIP", "ADMIN", "OWNER"}
-		lines = ["🏆 <b>Weekly Signal Leaderboard</b> (last 7 days)\n"]
-		medals = ["🥇", "🥈", "🥉"]
+		lines = ["ðŸ† <b>Weekly Signal Leaderboard</b> (last 7 days)\n"]
+		medals = ["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"]
 
 		for i, row in enumerate(rows, 1):
 			username = str(row[0] or "")
@@ -7989,31 +7994,31 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			if row_tier == "VIP" and username and viewer_in_vip:
 				name_txt = f"@{username}"
 			elif row_tier == "VIP":
-				name_txt = "👑 VIP Member"
+				name_txt = "ðŸ‘‘ VIP Member"
 			else:
-				name_txt = f"💎 Trader #{i}"
+				name_txt = f"ðŸ’Ž Trader #{i}"
 
 			r_sign = "+" if avg_r >= 0 else ""
 			lines.append(
 				f"{rank_emoji} <b>{name_txt}</b>\n"
-				f"   {wins}W / {losses}L  •  {win_rate:.0f}% WR  •  Avg R: {r_sign}{avg_r:.2f}R\n"
+				f"   {wins}W / {losses}L  â€¢  {win_rate:.0f}% WR  â€¢  Avg R: {r_sign}{avg_r:.2f}R\n"
 			)
 
-		lines.append("━━━━━━━━━━━━━━━━")
+		lines.append("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”")
 		if tier.upper() not in {"VIP", "ADMIN", "OWNER"}:
-			lines.append("👑 Upgrade to VIP to appear on the leaderboard with your name.")
+			lines.append("ðŸ‘‘ Upgrade to VIP to appear on the leaderboard with your name.")
 		else:
 			lines.append("Your trades are included when their outcomes are recorded.")
 
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load leaderboard: {exc}")
+		await update.message.reply_text(f"âŒ Could not load leaderboard: {exc}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /connect_broker  — FSM-guided MT5 account setup
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# /connect_broker  â€” FSM-guided MT5 account setup
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 # Conversation states
 _CB_ASK_LOGIN = 0
@@ -8031,15 +8036,15 @@ async def connect_broker_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 MT5 broker connection requires <b>PREMIUM</b> or above.\nUse /upgrade.",
+			"ðŸ”’ MT5 broker connection requires <b>PREMIUM</b> or above.\nUse /upgrade.",
 			parse_mode="HTML",
 		)
 		return -1  # ConversationHandler.END
 
 	await update.message.reply_text(
-		"🔗 <b>Connect Your MT5 Broker</b>\n\n"
+		"ðŸ”— <b>Connect Your MT5 Broker</b>\n\n"
 		"I'll walk you through linking your MetaTrader 5 account.\n\n"
-		"<b>Step 1/3</b> — Enter your <b>MT5 login number</b> (numeric account ID):\n\n"
+		"<b>Step 1/3</b> â€” Enter your <b>MT5 login number</b> (numeric account ID):\n\n"
 		"Type /cancel at any time to abort.",
 		parse_mode="HTML",
 	)
@@ -8051,12 +8056,12 @@ async def connect_broker_got_login(update: Update, context: ContextTypes.DEFAULT
 		return _CB_ASK_LOGIN
 	login_text = update.message.text.strip()
 	if not login_text.isdigit():
-		await update.message.reply_text("❌ Login must be a numeric account ID. Try again:")
+		await update.message.reply_text("âŒ Login must be a numeric account ID. Try again:")
 		return _CB_ASK_LOGIN
 	context.user_data["mt5_login"] = login_text
 	await update.message.reply_text(
-		"<b>Step 2/3</b> — Enter your <b>MT5 password</b>:\n\n"
-		"⚠️ Your password will be <b>encrypted</b> before storage. "
+		"<b>Step 2/3</b> â€” Enter your <b>MT5 password</b>:\n\n"
+		"âš ï¸ Your password will be <b>encrypted</b> before storage. "
 		"We never store it in plain text.",
 		parse_mode="HTML",
 	)
@@ -8073,8 +8078,8 @@ async def connect_broker_got_password(update: Update, context: ContextTypes.DEFA
 	except Exception:
 		pass
 	await update.message.reply_text(
-		"✅ Password received and will be encrypted.\n\n"
-		"<b>Step 3/3</b> — Enter your <b>MT5 server name</b> (e.g. <code>ICMarkets-Demo</code>):",
+		"âœ… Password received and will be encrypted.\n\n"
+		"<b>Step 3/3</b> â€” Enter your <b>MT5 server name</b> (e.g. <code>ICMarkets-Demo</code>):",
 		parse_mode="HTML",
 	)
 	return _CB_ASK_SERVER
@@ -8085,15 +8090,15 @@ async def connect_broker_got_server(update: Update, context: ContextTypes.DEFAUL
 		return _CB_ASK_SERVER
 	server = update.message.text.strip()
 	if not server:
-		await update.message.reply_text("❌ Server name cannot be empty. Try again:")
+		await update.message.reply_text("âŒ Server name cannot be empty. Try again:")
 		return _CB_ASK_SERVER
 	context.user_data["mt5_server"] = server
 	login = context.user_data.get("mt5_login", "")
 	await update.message.reply_text(
 		f"<b>Confirm your MT5 details:</b>\n\n"
-		f"🔢 Login: <code>{login}</code>\n"
-		f"🏦 Server: <code>{server}</code>\n"
-		f"🔐 Password: <code>{'*' * 8}</code> (hidden)\n\n"
+		f"ðŸ”¢ Login: <code>{login}</code>\n"
+		f"ðŸ¦ Server: <code>{server}</code>\n"
+		f"ðŸ” Password: <code>{'*' * 8}</code> (hidden)\n\n"
 		"Reply <b>YES</b> to confirm or <b>NO</b> to cancel.",
 		parse_mode="HTML",
 	)
@@ -8105,7 +8110,7 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 		return -1
 	text = (update.message.text or "").strip().upper()
 	if text != "YES":
-		await update.message.reply_text("❌ Setup cancelled. Use /connect_broker to start again.")
+		await update.message.reply_text("âŒ Setup cancelled. Use /connect_broker to start again.")
 		context.user_data.clear()
 		return -1  # END
 
@@ -8124,7 +8129,7 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 		await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
 		return -1
 
-	await update.message.reply_text("⏳ Linking your account via MetaApi… (this may take 30–60 s)")
+	await update.message.reply_text("â³ Linking your account via MetaApiâ€¦ (this may take 30â€“60 s)")
 
 	try:
 		from services.mt5_client import link_mt5_account
@@ -8137,9 +8142,9 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 		if bool(result.get("success")):
 			account_id = result.get("metaapi_account_id") or result.get("id") or "pending"
 			await update.message.reply_text(
-				f"✅ <b>MT5 account linked!</b>\n\n"
-				f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
-				"You can now use ⚡ buttons on signals to execute trades instantly.\n"
+				f"âœ… <b>MT5 account linked!</b>\n\n"
+				f"â˜ï¸ MetaApi ID: <code>{account_id}</code>\n\n"
+				"You can now use âš¡ buttons on signals to execute trades instantly.\n"
 				"Use /setlot to configure your lot size.\n"
 				"Use /execution manual|none|auto [count|all] to choose execution mode.",
 				parse_mode="HTML",
@@ -8147,13 +8152,13 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 		else:
 			err = str(result.get("error") or "unknown error")
 			await update.message.reply_text(
-				f"❌ <b>Failed to link account:</b> {err}\n\n"
+				f"âŒ <b>Failed to link account:</b> {err}\n\n"
 				"Check your login/password/server and try /connect_broker again.",
 				parse_mode="HTML",
 			)
 	except Exception as exc:
 		await update.message.reply_text(
-			f"❌ <b>Failed to link account:</b> {exc}\n\n"
+			f"âŒ <b>Failed to link account:</b> {exc}\n\n"
 			"Check your login/password/server and try /connect_broker again.",
 			parse_mode="HTML",
 		)
@@ -8162,7 +8167,7 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 
 async def connect_broker_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 	if update.message:
-		await update.message.reply_text("❌ Broker setup cancelled.")
+		await update.message.reply_text("âŒ Broker setup cancelled.")
 	if context.user_data:
 		context.user_data.clear()
 	return -1  # END
@@ -8189,11 +8194,11 @@ def build_connect_broker_conversation():
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Step 1 of /cancel — show policy warning + InlineKeyboard confirmation.
+	"""Step 1 of /cancel â€” show policy warning + InlineKeyboard confirmation.
 
 	Displays the NO REFUND policy, subscription expiry date, and two buttons:
-	  ❌ Yes, Cancel Auto-Renew  →  cancel_confirm_callback (actual gateway disable)
-	  🔙 Nevermind               →  cancel_nevermind_callback (no-op, dismiss)
+	  âŒ Yes, Cancel Auto-Renew  â†’  cancel_confirm_callback (actual gateway disable)
+	  ðŸ”™ Nevermind               â†’  cancel_nevermind_callback (no-op, dismiss)
 	Safe to call on FREE tier (shows informational message and exits).
 	"""
 	user_id = update.effective_user.id if update.effective_user else None
@@ -8287,7 +8292,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 			current_tier = getattr(user, "tier", "free").lower()
 			sub_code = getattr(user, "paystack_subscription_code", None)
 
-			# Disable Paystack recurring billing (2-step: fetch email_token → POST disable)
+			# Disable Paystack recurring billing (2-step: fetch email_token â†’ POST disable)
 			gateway_cancelled = False
 			retry_attempts = 0
 			if sub_code:
@@ -8324,7 +8329,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 								if gateway_cancelled:
 									break
 				except Exception as _ge:
-					# Non-fatal — DB cancellation still proceeds
+					# Non-fatal â€” DB cancellation still proceeds
 					logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
 
 			# Mark auto_renew=False; access expires naturally at period end (no downgrade)
@@ -8346,9 +8351,9 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 
 
 async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Step 2 of /cancel (confirmed) — execute Paystack disable + set auto_renew=False.
+	"""Step 2 of /cancel (confirmed) â€” execute Paystack disable + set auto_renew=False.
 
-	Triggered by the '❌ Yes, Cancel Auto-Renew' InlineKeyboard button.
+	Triggered by the 'âŒ Yes, Cancel Auto-Renew' InlineKeyboard button.
 	Edits the original confirmation message with the result summary.
 	"""
 	query = update.callback_query
@@ -8384,7 +8389,7 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 		if result.get("escalate_admin"):
 			try:
 				admin_msg = (
-					f"⚠️ Paystack cancel gateway failed after retries.\n"
+					f"âš ï¸ Paystack cancel gateway failed after retries.\n"
 					f"user_id={int(user_id)} tier={tier} attempts={int(result.get('retry_attempts') or 0)}\n"
 					"DB auto_renew was set to False."
 				)
@@ -8413,9 +8418,9 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def cancel_nevermind_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Step 2 of /cancel (aborted) — user clicked Nevermind; no DB changes.
+	"""Step 2 of /cancel (aborted) â€” user clicked Nevermind; no DB changes.
 
-	Triggered by the '🔙 Nevermind' InlineKeyboard button.
+	Triggered by the 'ðŸ”™ Nevermind' InlineKeyboard button.
 	Edits the original message to confirm no action was taken.
 	"""
 	query = update.callback_query
@@ -8428,3 +8433,4 @@ async def cancel_nevermind_callback(update: Update, context: ContextTypes.DEFAUL
 		)
 	except Exception as e:
 		logger.warning(f"[cancel] cancel_nevermind_callback edit failed: {e}")
+

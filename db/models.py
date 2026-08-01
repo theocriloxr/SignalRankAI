@@ -144,6 +144,15 @@ def _assign_signal_identity(_mapper, _connection, target: Signal) -> None:
 
 
 
+@event.listens_for(Signal.display_id, "set", retval=True, active_history=True)
+def _keep_signal_display_id_immutable(_target, value, oldvalue, _initiator):
+    from sqlalchemy.orm.attributes import NO_VALUE
+
+    if oldvalue not in (None, NO_VALUE) and str(oldvalue) and str(value) != str(oldvalue):
+        raise ValueError("signal display_id is immutable")
+    return value
+
+
 logger.info("✅ Signal model defined successfully")
 
 
@@ -385,6 +394,8 @@ class UserSignalMonitoring(Base):
     status: Mapped[str] = mapped_column(String(24), default="auto_continue", index=True, nullable=False)
     highest_notified_tp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     stopped_at_stage: Mapped[Optional[int]] = mapped_column(Integer)
+    realized_r: Mapped[Optional[float]] = mapped_column(Float)
+    realized_outcome: Mapped[Optional[str]] = mapped_column(String(24))
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     continued_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     access_revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

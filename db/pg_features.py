@@ -2422,18 +2422,28 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
             text(
                 """
                 WITH delivered AS (
-                    SELECT DISTINCT sd.signal_id, s.status AS signal_status, s.expired, s.archived, s.expires_at
+                    SELECT DISTINCT sd.signal_id, s.status AS signal_status, s.expired, s.archived, s.expires_at,
+                           usm.status AS monitoring_status, usm.stopped_at_stage, usm.realized_r, usm.realized_outcome
                     FROM signal_deliveries sd
                     JOIN signals s ON s.signal_id = sd.signal_id
+                    LEFT JOIN user_signal_monitoring usm
+                      ON usm.user_id = sd.user_id AND usm.signal_id = sd.signal_id
                     WHERE sd.user_id = :user_id
                       AND sd.sent_ok IS TRUE
                       AND sd.delivered_at >= :cutoff
+                      AND sd.telegram_chat_id IS NOT NULL
+                      AND sd.telegram_message_id IS NOT NULL
+                      AND LOWER(COALESCE(sd.delivery_state, '')) IN ('sent','confirmed','delivered','reconciled')
                       AND COALESCE(s.performance_version, 1) >= :performance_version
                 ),
                 outcome_flags AS (
                     SELECT
                         d.signal_id,
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp3','win')) AS has_win,
+                        d.monitoring_status,
+                        d.stopped_at_stage,
+                        d.realized_r,
+                        d.realized_outcome,
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss')) AS has_loss,
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp1','tp2','partial_tp')) AS has_partial,
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('be','breakeven','break_even')) AS has_be,
@@ -2441,11 +2451,11 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('missed','missed_entry','entry_missed')) AS has_missed,
                         BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('cancelled','canceled','superseded')) AS has_cancelled,
                         COUNT(o.id) AS outcome_rows,
-                        AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL) AS avg_r,
-                        SUM(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL) AS net_r
+                        COALESCE(MAX(d.realized_r), AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL)) AS avg_r,
+                        COALESCE(MAX(d.realized_r), SUM(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL)) AS net_r
                     FROM delivered d
                     LEFT JOIN outcomes o ON o.signal_id = d.signal_id
-                    GROUP BY d.signal_id
+                    GROUP BY d.signal_id, d.monitoring_status, d.stopped_at_stage, d.realized_r, d.realized_outcome
                 ),
                 classified AS (
                     SELECT
@@ -2454,6 +2464,7 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
                             WHEN COALESCE(f.has_win, FALSE) THEN 'win'
                             WHEN COALESCE(f.has_partial, FALSE) THEN 'partial_win'
                             WHEN COALESCE(f.has_be, FALSE) THEN 'breakeven'
+                            WHEN d.monitoring_status = 'stopped' AND d.stopped_at_stage IN (1, 2) THEN 'partial_win'
                             WHEN COALESCE(f.has_loss, FALSE) THEN 'loss'
                             WHEN COALESCE(f.has_time_stop, FALSE) THEN 'expired'
                             WHEN COALESCE(f.has_missed, FALSE) THEN 'missed_entry'

@@ -1,6 +1,6 @@
 """Canonical signal identity and per-recipient monitoring reliability.
 
-Revision ID: 0030_signal_monitoring_reliability
+Revision ID: 0030_signal_monitor_reliability
 Revises: 0029_live_financial_ledger
 Create Date: 2026-07-31
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0030_signal_monitoring_reliability"
+revision = "0030_signal_monitor_reliability"
 down_revision = "0029_live_financial_ledger"
 branch_labels = None
 depends_on = None
@@ -73,6 +73,8 @@ def upgrade() -> None:
         sa.Column("status", sa.String(24), nullable=False, server_default="auto_continue"),
         sa.Column("highest_notified_tp", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("stopped_at_stage", sa.Integer(), nullable=True),
+        sa.Column("realized_r", sa.Float(), nullable=True),
+        sa.Column("realized_outcome", sa.String(24), nullable=True),
         sa.Column("stopped_at", sa.DateTime(), nullable=True),
         sa.Column("continued_at", sa.DateTime(), nullable=True),
         sa.Column("access_revoked_at", sa.DateTime(), nullable=True),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from core.signal_lifecycle import (
@@ -410,18 +410,55 @@ def _lifecycle_notification_keyboard(signal_id: object):
         return None
 
 
+async def claim_event_notification(notification_id: int, *, stale_after_seconds: int = 300) -> bool:
+    """Atomically reserve one lifecycle outbox row before Telegram network I/O."""
+    from datetime import timedelta
+    from db.models import SignalEventNotification
+    from db.session import get_session
+    from sqlalchemy import and_, or_, update
+
+    now = _utc_now_naive()
+    stale_cutoff = now - timedelta(seconds=max(60, int(stale_after_seconds)))
+    async with get_session(priority="critical", label="lifecycle.notification.claim", timeout_seconds=12) as session:
+        claimed = (await session.execute(
+            update(SignalEventNotification)
+            .where(
+                SignalEventNotification.id == int(notification_id),
+                or_(
+                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                    and_(
+                        SignalEventNotification.delivery_state == "sending",
+                        or_(
+                            SignalEventNotification.last_attempt_at.is_(None),
+                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+                        ),
+                    ),
+                ),
+            )
+            .values(
+                delivery_state="sending",
+                last_attempt_at=now,
+                updated_at=now,
+            )
+            .returning(SignalEventNotification.id)
+        )).scalar_one_or_none()
+        await session.commit()
+        return claimed is not None
+
+
 async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     if not _enabled("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
         return
     from config import config
     from db.models import AlertPreference, OutcomeNotification, SignalEventNotification, SignalTrackingEvent, User
     from db.session import get_session
-    from sqlalchemy import select
+    from sqlalchemy import and_, or_, select
     from telegram import Bot
 
     token = str(config.TELEGRAM_BOT_TOKEN or "").strip()
     if not token:
         return
+    stale_cutoff = _utc_now_naive() - timedelta(seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300))
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
         event = await session.get(SignalTrackingEvent, event_id)
         event_price = float(getattr(event, "price", 0) or signal.get("entry") or 0)
@@ -432,7 +469,16 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             .where(
                 SignalEventNotification.event_id == event_id,
                 SignalEventNotification.sent_ok.is_(False),
-                SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                or_(
+                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                    and_(
+                        SignalEventNotification.delivery_state == "sending",
+                        or_(
+                            SignalEventNotification.last_attempt_at.is_(None),
+                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+                        ),
+                    ),
+                ),
             )
         )).all()
     if not rows:
@@ -463,6 +509,11 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                     continue
             except Exception:
                 pass
+        if not await claim_event_notification(
+            int(notification.id),
+            stale_after_seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
+        ):
+            continue
         text = _event_message(
             signal, notification.event_type, event_price,
             str(user.timezone or ""), int(user.telegram_user_id),
@@ -511,6 +562,9 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             row.sent_message_id = sent_message_id
             row.sent_at = _utc_now_naive() if row.sent_ok else None
             row.error = error
+            row.attempt_count = int(row.attempt_count or 0) + 1
+            row.last_attempt_at = _utc_now_naive()
+            row.updated_at = _utc_now_naive()
             if row.sent_ok:
                 outcome_status = {
                     "tp1_hit": "tp1", "tp2_hit": "tp2", "tp3_hit": "tp3",
@@ -550,15 +604,25 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
         return 0
     from db.models import Signal, SignalEventNotification
     from db.session import get_session
-    from sqlalchemy import select
+    from sqlalchemy import and_, or_, select
 
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
+        stale_cutoff = _utc_now_naive() - timedelta(seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300))
         rows = (await session.execute(
             select(SignalEventNotification.event_id, Signal)
             .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)
             .where(
                 SignalEventNotification.sent_ok.is_(False),
-                SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                or_(
+                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                    and_(
+                        SignalEventNotification.delivery_state == "sending",
+                        or_(
+                            SignalEventNotification.last_attempt_at.is_(None),
+                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+                        ),
+                    ),
+                ),
             )
             .order_by(SignalEventNotification.created_at.asc())
             .limit(max(1, int(limit)))
