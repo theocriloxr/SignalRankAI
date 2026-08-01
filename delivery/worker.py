@@ -27,11 +27,12 @@ async def reconcile_delivery_receipt(receipt: DeliveryReceipt, *, store: Receipt
     }
     if receipt.replaces_signal_id:
         proof["edited_old_signal_id"] = receipt.replaces_signal_id
-    try:
-        timeout_seconds = max(
-            3.0,
-            float(os.getenv("DELIVERY_RECONCILE_DB_TIMEOUT_SECONDS", "10") or 10),
-        )
+    timeout_seconds = max(
+        3.0,
+        float(os.getenv("DELIVERY_RECONCILE_DB_TIMEOUT_SECONDS", "10") or 10),
+    )
+
+    async def _persist() -> bool:
         async with get_session(
             priority=DBPriority.INTERACTIVE,
             label="delivery_receipt_reconcile",
@@ -60,6 +61,18 @@ async def reconcile_delivery_receipt(receipt: DeliveryReceipt, *, store: Receipt
             receipt.message_id,
         )
         return True
+
+    try:
+        return bool(await asyncio.wait_for(_persist(), timeout=timeout_seconds + 1.0))
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[delivery_receipt_reconcile_timeout] key=%s user=%s signal=%s timeout=%.1fs",
+            receipt.idempotency_key,
+            receipt.operation.user_id,
+            receipt.operation.signal_id,
+            timeout_seconds,
+        )
+        return False
     except Exception as exc:
         logger.warning(
             "[delivery_receipt_reconcile_failed] key=%s user=%s signal=%s err=%s",
@@ -91,6 +104,19 @@ async def delivery_receipt_reconciler_loop(
     stop_event: asyncio.Event | None = None,
 ) -> None:
     interval = max(5.0, float(os.getenv("DELIVERY_RECONCILE_INTERVAL_SECONDS", "30") or 30))
+    startup_delay = max(
+        0.0,
+        float(os.getenv("DELIVERY_RECONCILE_STARTUP_DELAY_SECONDS", "30") or 30),
+    )
+    if startup_delay:
+        try:
+            if stop_event is None:
+                await asyncio.sleep(startup_delay)
+            else:
+                await asyncio.wait_for(stop_event.wait(), timeout=startup_delay)
+                return
+        except asyncio.TimeoutError:
+            pass
     while stop_event is None or not stop_event.is_set():
         try:
             result = await reconcile_delivery_receipts_once(store=store)

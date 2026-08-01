@@ -26,6 +26,31 @@ def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
     return str(delivery_state or "").strip().lower() == "formatter_failed"
 
 
+def _resend_advisory_lock() -> tuple[int, str]:
+    """Return a replica-shared lock ID isolated by Railway environment/service."""
+    import hashlib
+    import os
+
+    explicit = str(os.getenv("RESEND_JOB_LOCK_ID", "") or "").strip()
+    if explicit:
+        return int(explicit), "explicit"
+
+    scope = str(os.getenv("RESEND_JOB_LOCK_SCOPE", "") or "").strip()
+    if not scope:
+        scope = ":".join(
+            str(value or "unknown").strip()
+            for value in (
+                os.getenv("RAILWAY_PROJECT_ID"),
+                os.getenv("RAILWAY_ENVIRONMENT_ID") or os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+                os.getenv("RAILWAY_SERVICE_ID") or os.getenv("RAILWAY_SERVICE_NAME"),
+                os.getenv("APP_ENV", "development"),
+            )
+        )
+    digest = hashlib.sha256(f"signalrank:resend:{scope}".encode("utf-8")).digest()
+    lock_id = int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
+    return max(1, lock_id), scope
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
@@ -57,14 +82,18 @@ def resend_unsent_signals_job():
             _dsn = ""
 
         if _dsn:
-            _lock_id = int(os.getenv("RESEND_JOB_LOCK_ID", "739206"))
+            _lock_id, _lock_scope = _resend_advisory_lock()
             _lock_conn = psycopg2.connect(_dsn, connect_timeout=5)
             _lock_conn.autocommit = True
             with _lock_conn.cursor() as _cur:
                 _cur.execute("SELECT pg_try_advisory_lock(%s)", (_lock_id,))
                 _locked = bool((_cur.fetchone() or [False])[0])
             if not _locked:
-                logger.info("[resend] skipped: another instance holds advisory lock")
+                logger.info(
+                    "[resend] skipped: another instance holds advisory lock scope=%s lock_id=%s",
+                    _lock_scope,
+                    _lock_id,
+                )
                 try:
                     _lock_conn.close()
                 except Exception:
@@ -5881,10 +5910,37 @@ def run_bot() -> None:
             logger.info("[bot_commands] global launch catalogue published commands=%d", len(_commands_for("FREE")))
 
             async def _set_per_user_commands() -> None:
-                from signalrank_telegram.access import resolve_user_tier
-                from db.pg_compat import get_all_user_ids_compat
+                from sqlalchemy import select
 
-                user_ids = list(get_all_user_ids_compat() or [])
+                from config import ADMIN_IDS, OWNER_IDS
+                from db.access import resolve_product_tier
+                from db.models import User
+                from db.priority import DBPriority
+                from db.session import get_session
+
+                tier_by_user: dict[int, str] = {}
+                try:
+                    async with get_session(
+                        priority=DBPriority.INTERACTIVE,
+                        label="bot_commands.tier_snapshot",
+                        timeout_seconds=10.0,
+                    ) as session:
+                        rows = (await session.execute(select(User))).scalars().all()
+                        for user in rows:
+                            uid = int(user.telegram_user_id)
+                            tier_by_user[uid] = str(
+                                await resolve_product_tier(session, user) or "free"
+                            ).upper()
+                except Exception as exc:
+                    logger.warning("[bot_commands] tier snapshot deferred err=%s", exc)
+
+                owner_ids = {int(uid) for uid in (OWNER_IDS or set())}
+                admin_ids = {int(uid) for uid in (ADMIN_IDS or set())}
+                user_ids = sorted(
+                    set(tier_by_user)
+                    | owner_ids
+                    | admin_ids
+                )
                 updated = failed = 0
                 concurrency = max(1, min(10, int(os.getenv("BOT_COMMAND_SCOPE_CONCURRENCY", "4") or 4)))
                 semaphore = asyncio.Semaphore(concurrency)
@@ -5893,7 +5949,13 @@ def run_bot() -> None:
                     nonlocal updated, failed
                     async with semaphore:
                         try:
-                            tier = str(resolve_user_tier(int(_uid)) or "FREE").upper()
+                            uid = int(_uid)
+                            if uid in owner_ids:
+                                tier = "OWNER"
+                            elif uid in admin_ids:
+                                tier = "ADMIN"
+                            else:
+                                tier = tier_by_user.get(uid, "FREE")
                             scope = BotCommandScopeChat(chat_id=int(_uid))
                             try:
                                 await app.bot.delete_my_commands(scope=scope)
@@ -5982,18 +6044,25 @@ def run_bot() -> None:
 
         # \u2500\u2500 Post-deploy active-message refresh \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         # Re-render old active signal messages with latest template + buttons.
-        try:
-            import asyncio as _aio_refresh
+        if _env_bool("ACTIVE_SIGNAL_KEYBOARD_REFRESH_ENABLED", False):
+            try:
+                import asyncio as _aio_refresh
 
-            async def _refresh_after_boot():
-                await _aio_refresh.sleep(20)
-                _limit = int(os.getenv("REFRESH_ACTIVE_SIGNAL_LIMIT", "800") or 800)
-                await _refresh_active_signal_messages_on_startup(app.bot, limit=_limit)
+                async def _refresh_after_boot():
+                    delay = max(
+                        30,
+                        int(os.getenv("REFRESH_ACTIVE_SIGNAL_STARTUP_DELAY_SECONDS", "90") or 90),
+                    )
+                    await _aio_refresh.sleep(delay)
+                    _limit = int(os.getenv("REFRESH_ACTIVE_SIGNAL_LIMIT", "800") or 800)
+                    await _refresh_active_signal_messages_on_startup(app.bot, limit=_limit)
 
-            _aio_refresh.ensure_future(_refresh_after_boot())
-            logger.info("[refresh_messages] startup refresh scheduled")
-        except Exception as _r_err:
-            logger.warning(f"[refresh_messages] failed to schedule startup refresh: {_r_err}")
+                _aio_refresh.ensure_future(_refresh_after_boot())
+                logger.info("[refresh_messages] startup refresh scheduled")
+            except Exception as _r_err:
+                logger.warning(f"[refresh_messages] failed to schedule startup refresh: {_r_err}")
+        else:
+            logger.info("[refresh_messages] startup refresh disabled")
 
     async def _post_stop(app):
         """Gracefully stop background tasks when the bot shuts down."""
@@ -8346,7 +8415,7 @@ def run_bot() -> None:
 
                             from services.delivery_authorization import authorize_signal_delivery
                             async with get_session(
-                                priority="background",
+                                priority="interactive",
                                 label="free_summary.delivery_authorization",
                                 timeout_seconds=5.0,
                             ) as auth_session:

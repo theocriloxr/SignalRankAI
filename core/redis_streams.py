@@ -91,6 +91,7 @@ class RecoverableStream:
         self._group_lock = asyncio.Lock()
         self._attempts_key = f"{self.name}:attempts"
         self._dedupe_prefix = f"{self.name}:dedupe:"
+        self._last_read_warning_at = 0.0
 
     @property
     def configured(self) -> bool:
@@ -277,22 +278,41 @@ class RecoverableStream:
         if client is None or not await self.ensure_group():
             return []
         wanted = max(1, min(100, int(count)))
-        raw_messages = await self._claim_stale(
-            client,
-            consumer=consumer,
-            count=wanted,
-        )
-        if not raw_messages:
-            rows = await client.xreadgroup(
-                groupname=self.group,
-                consumername=consumer,
-                streams={self.name: ">"},
+        try:
+            raw_messages = await self._claim_stale(
+                client,
+                consumer=consumer,
                 count=wanted,
-                block=max(0, min(60_000, int(block_ms))),
             )
-            raw_messages = []
-            for _stream_name, messages in rows or []:
-                raw_messages.extend(messages or [])
+            if not raw_messages:
+                rows = await client.xreadgroup(
+                    groupname=self.group,
+                    consumername=consumer,
+                    streams={self.name: ">"},
+                    count=wanted,
+                    block=max(0, min(60_000, int(block_ms))),
+                )
+                raw_messages = []
+                for _stream_name, messages in rows or []:
+                    raw_messages.extend(messages or [])
+        except Exception as exc:
+            # A blocking read ending at the Redis socket timeout is an idle poll,
+            # not a reason to terminate the long-running webhook worker.
+            transient = isinstance(exc, (asyncio.TimeoutError, TimeoutError, OSError)) or (
+                type(exc).__name__ in {"TimeoutError", "ConnectionError"}
+                and str(type(exc).__module__).startswith("redis")
+            )
+            if not transient:
+                raise
+            now = time.monotonic()
+            if now - self._last_read_warning_at >= 30.0:
+                self._last_read_warning_at = now
+                logger.warning(
+                    "[redis_stream] transient read failure stream=%s error=%s",
+                    self.name,
+                    type(exc).__name__,
+                )
+            return []
 
         decoded: list[StreamMessage] = []
         for message_id, fields in raw_messages:
