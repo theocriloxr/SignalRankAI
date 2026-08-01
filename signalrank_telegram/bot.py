@@ -1745,6 +1745,12 @@ async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = No
             "created_at": getattr(signal_row, "created_at", None),
             "expired": getattr(signal_row, "expired", False),
         }
+    except TimeoutError as exc:
+        # Admission timeouts mean the database is busy, not that the signal or
+        # its delivery proof is absent. Let interactive callers surface the
+        # existing temporary-failure response instead of a false "not found".
+        logger.warning("[signal_payload] lookup timed out ref=%s err=%s", signal_id, exc)
+        raise
     except Exception as exc:
         logger.debug(f"[signal_payload] failed to load {signal_id}: {exc}")
         return None
@@ -2727,7 +2733,12 @@ def _auto_execute_signal_if_enabled(
         logger.debug(f"[autoexec] failed user={telegram_user_id}: {exc}")
 
 
-async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None = None) -> tuple[str, bool, object | None]:
+async def _build_monitor_snapshot(
+    signal_id: str,
+    telegram_user_id: int | None = None,
+    *,
+    signal_payload: dict | None = None,
+) -> tuple[str, bool, object | None]:
     """Build a monitor card from a fresh typed quote and durable lifecycle state.
 
     Do not use ``core.trade_tracker`` here: its legacy cache is suitable for
@@ -2738,7 +2749,12 @@ async def _build_monitor_snapshot(signal_id: str, telegram_user_id: int | None =
     import time
     from datetime import datetime, timezone
 
-    payload = await _load_signal_payload(signal_id, telegram_user_id=telegram_user_id)
+    # The callback has already completed the user-scoped delivery-proof lookup.
+    # Reuse it so one click does not compete for the constrained interactive DB
+    # lane twice. Scheduler callers can continue to resolve the payload here.
+    payload = signal_payload
+    if payload is None:
+        payload = await _load_signal_payload(signal_id, telegram_user_id=telegram_user_id)
     if not payload:
         return "\u274C <b>Monitor unavailable</b>\nSignal not found.", False, None
 
@@ -6429,7 +6445,9 @@ def run_bot() -> None:
                     reconcile_exc,
                 )
             text, is_active, expires_at = await _build_monitor_snapshot(
-                signal_id, telegram_user_id=int(user_id)
+                signal_id,
+                telegram_user_id=int(user_id),
+                signal_payload=resolved_payload,
             )
             from db.session import get_session as _gs_mon
             from db.models import RuntimeState

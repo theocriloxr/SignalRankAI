@@ -51,6 +51,24 @@ def test_monitor_refresh_never_overwrites_signal_card_and_recovers_failed_edits(
     assert "_build_monitor_keyboard" in fallback
 
 
+def test_monitor_does_not_misclassify_db_timeout_as_missing_delivery():
+    payload_loader = BOT[BOT.index("async def _load_signal_payload"):BOT.index("async def _render_signal_card_for_user")]
+    concrete = BOT[BOT.index("async def _signal_monitor_callback"):BOT.index("application.add_handler(_CQH(_signal_monitor_callback")]
+
+    assert "except TimeoutError as exc:" in payload_loader
+    assert "raise" in payload_loader[payload_loader.index("except TimeoutError as exc:"):]
+    assert "Monitor refresh failed temporarily" in concrete
+
+
+def test_monitor_reuses_authorized_payload_instead_of_resolving_it_twice():
+    concrete = BOT[BOT.index("async def _signal_monitor_callback"):BOT.index("application.add_handler(_CQH(_signal_monitor_callback")]
+    snapshot = BOT[BOT.index("async def _build_monitor_snapshot"):BOT.index("def _parse_tp_levels_for_outcome")]
+
+    assert "signal_payload=resolved_payload" in concrete
+    assert "signal_payload: dict | None = None" in snapshot
+    assert "payload = signal_payload" in snapshot
+
+
 def test_monitor_displays_real_best_price_separately_from_tp_progress():
     assert "max_price_seen" in BOT
     assert "min_price_seen" in BOT

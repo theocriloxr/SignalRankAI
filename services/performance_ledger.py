@@ -131,6 +131,26 @@ async def reconcile_user_performance_ledger(
             .order_by(SignalDelivery.delivery_confirmed_at.asc(), SignalDelivery.id.asc())
         )
     ).all()
+    signal_ids = {str(signal.signal_id) for _delivery, signal, *_rest in rows}
+    existing_entries = []
+    if signal_ids:
+        existing_entries = list(
+            (
+                await session.execute(
+                    select(PerformanceLedgerEntry)
+                    .where(
+                        PerformanceLedgerEntry.user_id == int(user.id),
+                        PerformanceLedgerEntry.signal_id.in_(signal_ids),
+                        PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+                        PerformanceLedgerEntry.environment == env,
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+    existing_by_signal = {str(entry.signal_id): entry for entry in existing_entries}
     changed = 0
     for delivery, signal, outcome, lifecycle, monitoring in rows:
         bucket, final_r, source, included, exclusion = _classify(
@@ -144,16 +164,8 @@ async def reconcile_user_performance_ledger(
             "monitoring_id": getattr(monitoring, "id", None),
             "policy": PERFORMANCE_POLICY_VERSION,
         }
-        existing = (
-            await session.execute(
-                select(PerformanceLedgerEntry).where(
-                    PerformanceLedgerEntry.user_id == int(user.id),
-                    PerformanceLedgerEntry.signal_id == str(signal.signal_id),
-                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-                    PerformanceLedgerEntry.environment == env,
-                ).with_for_update()
-            )
-        ).scalar_one_or_none()
+        canonical_signal_id = str(signal.signal_id)
+        existing = existing_by_signal.get(canonical_signal_id)
         if existing is not None and existing.finalized_at is not None:
             continue
         values = {
@@ -183,13 +195,14 @@ async def reconcile_user_performance_ledger(
             existing = PerformanceLedgerEntry(
                 ledger_id=str(uuid4()),
                 user_id=int(user.id),
-                signal_id=str(signal.signal_id),
+                signal_id=canonical_signal_id,
                 domain=PERFORMANCE_DOMAIN,
                 environment=env,
                 created_at=now_utc_naive(),
                 **values,
             )
             session.add(existing)
+            existing_by_signal[canonical_signal_id] = existing
         else:
             for key, value in values.items():
                 setattr(existing, key, value)

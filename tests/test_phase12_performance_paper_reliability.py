@@ -123,3 +123,15 @@ def test_performance_command_has_no_unverified_aggregate_fallback():
     assert "SUM(o.r_multiple)" not in handler
     assert "risk_fraction_pct" in handler
     assert "Standardized compounded return ({risk_pct:g}% risk)" in handler
+
+
+def test_performance_reconciliation_bulk_loads_existing_ledger_rows():
+    source = (ROOT / "services/performance_ledger.py").read_text("utf-8")
+    start = source.index("async def reconcile_user_performance_ledger")
+    end = source.index("@dataclass", start)
+    reconcile = source[start:end]
+    loop = reconcile[reconcile.index("for delivery, signal, outcome, lifecycle, monitoring in rows:"):]
+
+    assert "PerformanceLedgerEntry.signal_id.in_(signal_ids)" in reconcile
+    assert "existing_by_signal" in reconcile
+    assert "await session.execute" not in loop
