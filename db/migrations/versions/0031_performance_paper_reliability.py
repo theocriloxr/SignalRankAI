@@ -115,7 +115,7 @@ def upgrade() -> None:
             finalized_at, meta, created_at, updated_at
         )
         SELECT
-            md5(pp.position_id || ':0031')::uuid::text,
+            CAST(CAST(md5(pp.position_id || '|0031') AS uuid) AS text),
             pp.account_id, pp.user_id, pp.signal_id, pp.delivery_id,
             'legacy-paper-position:' || pp.position_id,
             'SKIPPED', COALESCE(pp.exit_reason, 'legacy_skip'), false, 1,
