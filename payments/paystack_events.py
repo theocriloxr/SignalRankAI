@@ -28,6 +28,26 @@ class PaystackInboxError(RuntimeError):
     pass
 
 
+def paystack_recovery_configuration() -> tuple[bool, str]:
+    """Validate that recovery has a complete key pair in one Paystack mode."""
+    enabled = str(os.getenv("PAYMENTS_ENABLED", "0") or "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if not enabled:
+        return False, "payments_disabled"
+
+    secret = str(os.getenv("PAYSTACK_SECRET_KEY", "") or "").strip()
+    public = str(os.getenv("PAYSTACK_PUBLIC_KEY", "") or "").strip()
+    if not secret or not public:
+        return False, "paystack_key_pair_incomplete"
+
+    matching_test = secret.startswith("sk_test_") and public.startswith("pk_test_")
+    matching_live = secret.startswith("sk_live_") and public.startswith("pk_live_")
+    if not (matching_test or matching_live):
+        return False, "paystack_key_pair_mode_mismatch"
+    return True, "configured"
+
+
 async def ingest_paystack_event(
     payload: Mapping[str, Any],
     raw_body: bytes,
@@ -170,6 +190,7 @@ async def paystack_webhook_recovery_loop(stop_event: asyncio.Event) -> None:
 __all__ = [
     "PaystackInboxError",
     "ingest_paystack_event",
+    "paystack_recovery_configuration",
     "paystack_webhook_recovery_loop",
     "process_stored_paystack_event",
     "recover_paystack_events_once",

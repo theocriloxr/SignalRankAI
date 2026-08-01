@@ -90,7 +90,7 @@ def resend_unsent_signals_job():
         except Exception:
             pass
         import asyncio
-        job_timeout = max(15.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "90") or 90))
+        job_timeout = max(15.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "180") or 180))
         run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
     except TimeoutError:
         logger.warning("[resend] job timed out; remaining work deferred to next run")
@@ -114,7 +114,7 @@ async def _resend_unsent_signals_async():
             mark_signal_delivery_result,
         )
         from signalrank_telegram.tier_delivery import TierDeliveryManager
-        from signalrank_telegram.access import resolve_user_tier
+        from db.access import resolve_product_tier
         from .formatter import format_signal, signal_format_diagnostics
         from services.trade_profiles import infer_trade_profile
         from services.user_intelligence import (
@@ -130,9 +130,10 @@ async def _resend_unsent_signals_async():
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
         from sqlalchemy import select
-        from db.models import Outcome, SignalDelivery
+        from db.models import Outcome, SignalDelivery, User
         formatter_failed_signal_ids: set[str] = set()
         terminal_signal_ids: set[str] = set()
+        db_product_tiers: dict[int, str] = {}
         try:
             async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
                 user_ids = await list_all_user_telegram_ids(_bootstrap_session)
@@ -162,6 +163,16 @@ async def _resend_unsent_signals_async():
                         for signal_id, status in (terminal_rows.all() or [])
                         if str(status or "").strip().lower() in _terminal_statuses
                     }
+                user_rows = (
+                    await _bootstrap_session.execute(
+                        select(User).where(User.telegram_user_id.in_([int(uid) for uid in (user_ids or [])]))
+                    )
+                ).scalars().all()
+                for user_row in user_rows:
+                    db_product_tiers[int(user_row.telegram_user_id)] = await resolve_product_tier(
+                        _bootstrap_session,
+                        user_row,
+                    )
                 await _bootstrap_session.commit()
         except Exception as bootstrap_err:
             if type(bootstrap_err).__name__ == "NoncriticalWriteDropped":
@@ -260,10 +271,7 @@ async def _resend_unsent_signals_async():
             os.getenv("RESEND_INCLUDE_FREE", "1") or "1"
         ).strip().lower() in {"1", "true", "yes", "on"}
         for _uid in user_ids:
-            try:
-                _tier = str(resolve_user_tier(int(_uid)) or "free").lower()
-            except Exception:
-                _tier = "free"
+            _tier = str(db_product_tiers.get(int(_uid), "free") or "free").lower()
             user_tier_map[int(_uid)] = _tier
             tier_counts[_tier] = int(tier_counts.get(_tier, 0) or 0) + 1
         try:
@@ -470,7 +478,7 @@ async def _resend_unsent_signals_async():
                         from services.delivery_authorization import authorize_signal_delivery
 
                         async with get_session(
-                            priority="background",
+                            priority="interactive",
                             label="resend.delivery_authorization",
                             timeout_seconds=5.0,
                         ) as _auth_session:
@@ -8917,14 +8925,14 @@ def run_bot() -> None:
 
             limit = max(1, int(os.getenv("MONITOR_REFRESH_LIMIT", "100") or 100))
             concurrency = max(1, int(os.getenv("MONITOR_REFRESH_CONCURRENCY", "4") or 4))
-            db_timeout = max(0.5, float(os.getenv("MONITOR_REFRESH_DB_TIMEOUT_SECONDS", "2") or 2))
+            db_timeout = max(0.5, float(os.getenv("MONITOR_REFRESH_DB_TIMEOUT_SECONDS", "5") or 5))
             snapshot_timeout = max(1.0, float(os.getenv("MONITOR_REFRESH_SNAPSHOT_TIMEOUT_SECONDS", "8") or 8))
             telegram_timeout = max(1.0, float(os.getenv("MONITOR_REFRESH_TELEGRAM_TIMEOUT_SECONDS", "10") or 10))
 
             # Phase 1: copy only primitive row data, then release the DB session.
             try:
                 async with _gs_mon(
-                    priority="background",
+                    priority="interactive",
                     label="monitor_refresh.snapshot",
                     timeout_seconds=db_timeout,
                 ) as session:
@@ -9015,7 +9023,7 @@ def run_bot() -> None:
             if mutations:
                 try:
                     async with _gs_mon(
-                        priority="background",
+                        priority="interactive",
                         label="monitor_refresh.persist",
                         timeout_seconds=db_timeout,
                     ) as session:

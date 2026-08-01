@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.tier_policy import get_entitlements, normalize_tier
-from db.access import resolve_user_tier
+from db.access import resolve_product_tier
 from db.models import SignalDelivery, User
 from utils.timeutils import now_utc_naive
 
@@ -68,7 +68,9 @@ async def authorize_signal_delivery(
     if audience and int(telegram_user_id) not in audience:
         return DeliveryAuthorization(False, "TEST_AUDIENCE_RESTRICTED", "none", "testing audience restriction")
 
-    tier = str(await resolve_user_tier(int(telegram_user_id)) or "free").lower()
+    # Reuse the caller's session. Opening a second session here can deadlock a
+    # two-connection Railway pool while delivery authorization owns one lane.
+    tier = str(await resolve_product_tier(session, user) or "free").lower()
     if tier == "none":
         return DeliveryAuthorization(False, "ACCOUNT_BLOCKED", tier, "account is blocked or suspended")
     policy = get_entitlements(tier)

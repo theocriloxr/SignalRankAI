@@ -107,6 +107,26 @@ def test_price_batch_ignores_individual_failures(monkeypatch):
     assert result == {"GOOD": 123.45}
 
 
+def test_crypto_price_uses_canonical_railway_router_first(monkeypatch):
+    import data.get_live_price as canonical_prices
+    import engine.price_fetcher as price_fetcher
+
+    async def canonical(asset: str, timeout: float = 5.0):
+        assert asset == "DOGEUSDT"
+        assert timeout == 2.0
+        return 0.1234
+
+    async def legacy_must_not_run(_asset: str):
+        raise AssertionError("legacy region-blocked provider was called")
+
+    monkeypatch.setattr(canonical_prices, "get_live_price", canonical)
+    monkeypatch.setattr(price_fetcher, "_fetch_price_binance", legacy_must_not_run)
+    monkeypatch.setattr(price_fetcher, "_fetch_price_bybit", legacy_must_not_run)
+
+    result = asyncio.run(price_fetcher.get_live_price("DOGEUSDT", timeout_seconds=2.0))
+    assert result == 0.1234
+
+
 def test_launch_catalog_commands_are_registered():
     import re
     from signalrank_telegram.command_catalog import COMMANDS

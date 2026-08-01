@@ -28,7 +28,15 @@ async def reconcile_delivery_receipt(receipt: DeliveryReceipt, *, store: Receipt
     if receipt.replaces_signal_id:
         proof["edited_old_signal_id"] = receipt.replaces_signal_id
     try:
-        async with get_session(priority=DBPriority.CRITICAL) as session:
+        timeout_seconds = max(
+            3.0,
+            float(os.getenv("DELIVERY_RECONCILE_DB_TIMEOUT_SECONDS", "10") or 10),
+        )
+        async with get_session(
+            priority=DBPriority.INTERACTIVE,
+            label="delivery_receipt_reconcile",
+            timeout_seconds=timeout_seconds,
+        ) as session:
             persisted = await mark_signal_delivery_result(
                 session,
                 telegram_user_id=receipt.operation.user_id,

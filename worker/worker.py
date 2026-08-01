@@ -255,13 +255,23 @@ class Worker:
 
         if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
             try:
-                from payments.paystack_events import paystack_webhook_recovery_loop
-                _register_task(
-                    "paystack_webhook_recovery",
-                    lambda: paystack_webhook_recovery_loop(self._stop),
-                    restart_on_failure=True,
+                from payments.paystack_events import (
+                    paystack_recovery_configuration,
+                    paystack_webhook_recovery_loop,
                 )
-                logger.info("[worker] PaystackWebhookRecovery started")
+                recovery_ready, recovery_reason = paystack_recovery_configuration()
+                if recovery_ready:
+                    _register_task(
+                        "paystack_webhook_recovery",
+                        lambda: paystack_webhook_recovery_loop(self._stop),
+                        restart_on_failure=True,
+                    )
+                    logger.info("[worker] PaystackWebhookRecovery started")
+                else:
+                    logger.warning(
+                        "[worker] PaystackWebhookRecovery disabled reason=%s",
+                        recovery_reason,
+                    )
             except Exception as e:
                 logger.warning("[worker] Failed to start Paystack webhook recovery: %s", e)
 

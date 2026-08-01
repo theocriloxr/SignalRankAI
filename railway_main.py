@@ -893,6 +893,10 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     # Initialize and start the Application on uvicorn's event loop
     try:
         await app_obj.initialize()
+        post_init = getattr(app_obj, "post_init", None)
+        if callable(post_init):
+            await post_init(app_obj)
+            logger.info("[bot] post_init completed in webhook lifecycle")
         await app_obj.start()
     except Exception as exc:
         print(f"[bot] application initialize/start failed: {exc}", flush=True)
@@ -1043,6 +1047,17 @@ async def _stop_telegram_bot(application: object) -> None:
             await application.stop()
     except Exception:
         pass
+    try:
+        post_stop = getattr(application, "post_stop", None)
+        if callable(post_stop):
+            await post_stop(application)
+    except Exception as exc:
+        logger.debug("[bot] post_stop callback failed: %s", exc)
+    try:
+        if hasattr(application, "shutdown"):
+            await application.shutdown()
+    except Exception as exc:
+        logger.debug("[bot] application shutdown failed: %s", exc)
 
 
 async def _notify_admin_bot_ready() -> None:

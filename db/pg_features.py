@@ -3048,11 +3048,17 @@ async def queue_random_free_signals_for_all_users(
     daily_limit = 3
     count = 0
     
-    # Get all FREE tier users
+    # Resolve the effective product tier rather than filtering on a potentially
+    # stale cached value or an operator allowlist.
+    from db.access import resolve_product_tier
+
     res_users: Result[Tuple[User]] = await session.execute(
-        select(User).where(User.tier == "free")
+        select(User).where(User.is_blocked.is_(False), User.is_suspended.is_(False))
     )
-    free_users: list[User] = list(res_users.scalars().all())
+    free_users: list[User] = []
+    for candidate in list(res_users.scalars().all()):
+        if await resolve_product_tier(session, candidate) == "free":
+            free_users.append(candidate)
     
     for user in free_users:
         # Check user's daily window
