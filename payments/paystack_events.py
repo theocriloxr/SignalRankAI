@@ -19,6 +19,7 @@ from db.repository import (
     update_webhook_event_status,
 )
 from db.session import get_session, is_db_configured
+from db.priority import DBPriority
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,13 @@ async def recover_paystack_events_once() -> int:
     if not is_db_configured():
         return 0
     max_attempts = max(1, int(os.getenv("PAYSTACK_WEBHOOK_MAX_ATTEMPTS", "10") or 10))
-    async with get_session(label="paystack.recovery.list", timeout_seconds=8.0) as session:
+    # Recovery is retryable maintenance. It must yield to signal delivery and
+    # user-tier resolution instead of consuming the single critical lane.
+    async with get_session(
+        priority=DBPriority.BACKGROUND,
+        label="paystack.recovery.list",
+        timeout_seconds=2.0,
+    ) as session:
         rows = await list_recoverable_webhook_events(
             session,
             provider="paystack",

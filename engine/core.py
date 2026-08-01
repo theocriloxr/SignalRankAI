@@ -333,17 +333,26 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         return
     empty_cycles = int(_diagnostic_state.empty_cycles.get(asset_key, 0) + 1)
     _diagnostic_state.empty_cycles[asset_key] = empty_cycles
-    threshold = max(1, _env_int("DIAGNOSTIC_HEATMAP_EMPTY_CYCLES", 3))
+    # An asset universe can rotate before the same symbol is scanned three
+    # times. Emit a compact aggregate for every empty asset by default.
+    threshold = max(1, _env_int("DIAGNOSTIC_HEATMAP_EMPTY_CYCLES", 1))
     if empty_cycles < threshold:
         return
     gates = _diagnostic_state.gate_counts.get(asset_key) or Counter()
     heatmap = {gate: count for gate, count in gates.most_common(12)}
+    if not heatmap:
+        # Never report a zero-output scan without an explicit classification.
+        heatmap = {"unclassified_pipeline_exit": 1}
     logger.warning(
-        "[engine][diagnostic_heatmap] asset=%s cycle=%s empty_cycles=%s heatmap=%s",
+        "[engine][diagnostic_heatmap] asset=%s cycle=%s empty_cycles=%s heatmap=%s "
+        "effective_thresholds={score:%.2f,confluence:%.2f,ml:%.3f}",
         asset_key,
         cycle_no,
         empty_cycles,
         heatmap,
+        _env_float("PREMIUM_SCORE_THRESHOLD", 48.0),
+        _env_float("CONFLUENCE_GATE_MIN", 0.0),
+        _env_float("ML_PROB_THRESHOLD", 0.55),
     )
     _diagnostic_state.empty_cycles[asset_key] = 0
     _diagnostic_state.gate_counts[asset_key] = Counter()
@@ -1852,7 +1861,7 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
         if cfg is not None:
             # Allow an explicit env-var override to take precedence over DB-driven thresholds.
             # Set PREMIUM_SCORE_THRESHOLD_FORCE=1 to prevent DB from overwriting runtime env values.
-            _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
+            _force_env_override = _env_bool("PREMIUM_SCORE_THRESHOLD_FORCE", False)
 
             if not _force_env_override:
                 previous_min_score = _runtime_min_score_threshold
@@ -1877,7 +1886,13 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
                     float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55),
                 )
             else:
-                logger.info("[engine] PREMIUM_SCORE_THRESHOLD_FORCE set; preserving env vars over DB thresholds")
+                logger.info(
+                    "[engine] PREMIUM_SCORE_THRESHOLD_FORCE enabled; preserving env thresholds "
+                    "score=%.2f confluence=%.2f ml=%.3f",
+                    _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold),
+                    _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min),
+                    _env_float("ML_PROB_THRESHOLD", 0.55),
+                )
         else:
             _runtime_min_score_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
             _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min)
@@ -2783,13 +2798,14 @@ def main_loop(DRY_RUN: bool = False):
                             "CONSENSUS_BLOCK_ON_EMPTY",
                             _env_bool("PROD_MODE", False),
                         )
-                        if not consensus_signals and _block_on_empty_consensus:
-                            logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
+                        if not consensus_signals:
                             pipeline_stats["no_consensus"] += 1
-                            _increment_engine_veto("other")
                             _record_gate_failure(asset, "consensus", "empty")
-                            _maybe_log_heatmap(asset, cycle_no, 0)
-                            continue  # Skip asset entirely
+                            if _block_on_empty_consensus:
+                                logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
+                                _increment_engine_veto("other")
+                                _maybe_log_heatmap(asset, cycle_no, 0)
+                                continue  # Skip asset entirely
                     except Exception as e:
                         logger.error(f"Consensus failed for {asset}: {e}")
                         pipeline_stats["consensus_exception"] += 1
@@ -2965,6 +2981,8 @@ def main_loop(DRY_RUN: bool = False):
 
                     pipeline_stats["strict_candidates"] += len(strict_candidates)
                     if not strict_candidates:
+                        _record_gate_failure(asset, "strict_candidates", "empty")
+                        _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
     # ML advisory (non-blocking)
@@ -3045,6 +3063,8 @@ def main_loop(DRY_RUN: bool = False):
 
                     pipeline_stats["risk_passed"] += len(risk_passed)
                     if not risk_passed:
+                        _record_gate_failure(asset, "ml_filter", "no_risk_passed_candidates")
+                        _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
                     # Scoring and advanced filters
@@ -3584,6 +3604,10 @@ def main_loop(DRY_RUN: bool = False):
                     final_signals = collapsed_signals
 
                     pipeline_stats["final_signals"] += len(final_signals)
+                    if not final_signals:
+                        # Avoid a critical cooldown query when nothing can be stored.
+                        _maybe_log_heatmap(asset, cycle_no, 0)
+                        continue
                     # store final_signals
                     from datetime import timedelta as _timedelta  # ensure available in this scope
 

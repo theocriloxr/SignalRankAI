@@ -475,11 +475,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 274,
+      "line_count": 279,
       "path": "configs/env/railway-staging.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0d0a2c87f257d40d639a1b58438ac23c3789f032e02494e45dc0c3377d5cd9dc",
-      "size_bytes": 8945
+      "sha256": "c574ce6a8de2732ff2945618e9ebc78aaa7c1605c54fa24c27be8bd1c8326d6d",
+      "size_bytes": 9090
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2955,11 +2955,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 5002,
+      "line_count": 5026,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "43f48f1f3de448e0af73496698f76ab8dd1243735f58bf69fe2813f607d176cd",
-      "size_bytes": 266543
+      "sha256": "b4d0feb4ba74fc88223bdece74f851ed1683783be490f169228884e877a8f66b",
+      "size_bytes": 267930
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3379,11 +3379,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1275,
+      "line_count": 1277,
       "path": "engine/signal_deduplicator.py",
       "reason": "production/build source",
-      "sha256": "7933a01ec25be2742f2b3b0288433bb968cecf7f0a1d55b881f239c542e3b5f6",
-      "size_bytes": 53516
+      "sha256": "58f690578da7099696237506e7029e7f039a4f11dd77b2be49796c31ddb2d0c8",
+      "size_bytes": 53602
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4259,11 +4259,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 169,
+      "line_count": 176,
       "path": "payments/paystack_events.py",
       "reason": "production/build source",
-      "sha256": "f11014c1f22dc9e864e09b9a9c54b0b66c7af9c9487f9dc37eaac4c77481bde8",
-      "size_bytes": 6386
+      "sha256": "9933c04c5c9b2abab0ee1bdeb15422d229700084965336927cd8687402b37845",
+      "size_bytes": 6636
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4611,11 +4611,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 11955,
+      "line_count": 11980,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "5dc51e2ca3917a88998203ad74f6d601e21514f4da786ea2e2d065b217afdba9",
-      "size_bytes": 373708
+      "sha256": "619afcf981a141e641aa9256144fa675a88e82741d810de8564a80a41f754233",
+      "size_bytes": 374457
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -4627,11 +4627,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 918,
+      "line_count": 926,
       "path": "requirements/feature_flags.yaml",
       "reason": "machine-readable governance",
-      "sha256": "6ac1b7002f2f6d90106c35a492e9ed07716e5aa1725368363b4ac75f8df1c943",
-      "size_bytes": 31544
+      "sha256": "ed253ea7f75210092247864a7aa3d2f5020460846ef0178b7a2a822fef7419f7",
+      "size_bytes": 31827
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8059,11 +8059,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 79,
+      "line_count": 111,
       "path": "tests/test_runtime_hardening_contract.py",
       "reason": "automated test evidence",
-      "sha256": "1906b535578f7fd610302a7e9354221ffe1348b10ccfb9587bc4563389a5b0ff",
-      "size_bytes": 2513
+      "sha256": "106955997000be4d4cc40332d87978115bccfd2634e428ddecfbfe29d8410344",
+      "size_bytes": 3974
     },
     {
       "disposition": "TEST_ONLY",

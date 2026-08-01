@@ -77,3 +77,35 @@ def test_changed_python_files_parse():
         "scripts/validate_env_contract.py",
     ):
         ast.parse(text(relative), filename=relative)
+
+
+def test_empty_final_candidates_skip_cooldown_database_reads():
+    source = text("engine/core.py")
+    empty_guard = source.index('if not final_signals:')
+    cooldown = source.index('async def _batch_cooldown_check()', empty_guard)
+    between = source[empty_guard:cooldown]
+    assert "_maybe_log_heatmap" in between
+    assert "continue" in between
+
+
+def test_threshold_force_uses_boolean_parsing_and_logs_effective_values():
+    core_source = text("engine/core.py")
+    dedup_source = text("engine/signal_deduplicator.py")
+    assert '_env_bool("PREMIUM_SCORE_THRESHOLD_FORCE", False)' in core_source
+    assert 'bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE")' not in core_source
+    assert 'in {"1", "true", "yes", "on", "y"}' in dedup_source
+    assert "preserving env thresholds" in core_source
+
+
+def test_every_empty_asset_is_classified_immediately():
+    source = text("engine/core.py")
+    assert 'DIAGNOSTIC_HEATMAP_EMPTY_CYCLES", 1' in source
+    assert 'heatmap = {"unclassified_pipeline_exit": 1}' in source
+    assert 'effective_thresholds={score:%.2f,confluence:%.2f,ml:%.3f}' in source
+
+
+def test_paystack_recovery_never_occupies_the_critical_db_lane():
+    source = text("payments/paystack_events.py")
+    recovery = source[source.index("async def recover_paystack_events_once"):source.index("async def paystack_webhook_recovery_loop")]
+    assert "priority=DBPriority.BACKGROUND" in recovery
+    assert "timeout_seconds=2.0" in recovery

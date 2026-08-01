@@ -1087,7 +1087,9 @@ class MLRejectionTracker:
 
                 cfg = await refresh_thresholds(force=True)
                 if cfg is not None:
-                    _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
+                    _force_env_override = str(
+                        os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or ""
+                    ).strip().lower() in {"1", "true", "yes", "on", "y"}
                     os.environ["ML_PROB_THRESHOLD"] = str(float(getattr(cfg, "ml_prob_threshold", 0.55) or 0.55))
                     if not _force_env_override:
                         os.environ["PREMIUM_SCORE_THRESHOLD"] = str(
