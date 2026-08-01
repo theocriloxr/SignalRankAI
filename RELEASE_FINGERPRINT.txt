@@ -1,1 +1,1 @@
-v1.3.2-auto-delivery-callback-monitor-recovery-20260730
+v1.3.3-full-system-certification-gates-20260801

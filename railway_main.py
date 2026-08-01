@@ -1390,6 +1390,24 @@ async def lifespan(_: FastAPI):
 
 
     _running_on_railway = _is_running_on_railway()
+    # Production and certification workers must never race repository migrations.
+    # Pre-deploy is responsible for upgrading the schema; runtime only proves it.
+    profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
+    strict_worker_admission = _production_readiness_required() or profile in {
+        "staging-certification",
+        "production-advisory",
+        "production-live-owner-canary",
+    }
+    worker_admitted = True
+    worker_admission: dict[str, object] = {"ok": True, "detail": "not_required"}
+    if strict_worker_admission:
+        worker_admission = await _database_readiness_check()
+        worker_admitted = bool(worker_admission.get("ok"))
+        logger.info("[worker_admission] %s", json.dumps(worker_admission, sort_keys=True, default=str))
+        if not worker_admitted:
+            logger.critical(
+                "[worker_admission] engine and worker loops blocked until database is at repository head"
+            )
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     # Default ON in monolith so web+bot+engine+worker run in one service.
@@ -1405,6 +1423,8 @@ async def lifespan(_: FastAPI):
         )
     elif not _db_ready:
         logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
+    elif not worker_admitted:
+        logger.critical("[startup] Engine loop blocked by database worker admission")
     else:
         try:
             engine_task = _start_engine_loop_in_background()
@@ -1436,6 +1456,8 @@ async def lifespan(_: FastAPI):
         )
     elif not _db_ready:
         logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
+    elif not worker_admitted:
+        logger.critical("[startup] Worker loop blocked by database worker admission")
     else:
         try:
             worker_task = _start_worker_loop_in_background()
@@ -2549,11 +2571,22 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         financial_activation = evaluate_financial_activation().as_dict()
     except Exception as exc:
         financial_activation = {"ok": False, "detail": type(exc).__name__}
+    try:
+        from core.version import runtime_commit_matches_expected
+
+        commit_ok, commit_detail = runtime_commit_matches_expected()
+    except Exception as exc:
+        commit_ok, commit_detail = False, type(exc).__name__
     checks: dict[str, object] = {
         "database": database,
         "state_redis": state_redis,
         "delivery_redis": delivery_redis,
         "production_cutover": _readiness_cutover_check(production=production),
+        "release_commit": {
+            "ok": commit_ok if production else True,
+            "required": production,
+            "detail": commit_detail if production else "not_required_for_nonproduction",
+        },
         "financial_activation": financial_activation,
     }
 

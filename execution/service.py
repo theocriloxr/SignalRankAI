@@ -132,6 +132,44 @@ class ExecutionGate:
                 reasons.append("DEMO_EXECUTION_DISABLED")
         else:
             provider = str(request.broker_provider or "mt5").strip().lower()
+            from core.financial_activation import evaluate_financial_activation
+
+            activation = evaluate_financial_activation()
+            if not activation.ok:
+                reasons.append("PRODUCTION_ACTIVATION_CONTRACT_BLOCKED")
+            allowed_users = {
+                item.strip()
+                for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS") or "").split(",")
+                if item.strip()
+            }
+            allowed_accounts = {
+                item.strip()
+                for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS") or "").split(",")
+                if item.strip()
+            }
+            allowed_providers = {
+                item.strip().lower()
+                for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_PROVIDERS") or "").split(",")
+                if item.strip()
+            }
+            allowed_symbols = {
+                item.strip().upper()
+                for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_SYMBOLS") or "").split(",")
+                if item.strip()
+            }
+            request_symbol = str(
+                (request.signal or {}).get("symbol")
+                or (request.signal or {}).get("asset")
+                or ""
+            ).strip().upper()
+            if str(request.user_id) not in allowed_users:
+                reasons.append("LIVE_USER_NOT_ALLOWLISTED")
+            if str(request.account_id or "").strip() not in allowed_accounts:
+                reasons.append("LIVE_ACCOUNT_NOT_ALLOWLISTED")
+            if provider not in allowed_providers:
+                reasons.append("LIVE_PROVIDER_NOT_ALLOWLISTED")
+            if not request_symbol or request_symbol not in allowed_symbols:
+                reasons.append("LIVE_SYMBOL_NOT_ALLOWLISTED")
             if not self.safety_flags.real_execution_enabled:
                 reasons.append("REAL_EXECUTION_DISABLED")
             if provider == "mt5" and not self.safety_flags.mt5_live_accounts_enabled:

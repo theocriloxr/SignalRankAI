@@ -20,6 +20,16 @@ if [ "${ALLOW_DOTENV:-false}" = "true" ] && [ -f .env ]; then
     set +a
 fi
 
+# Protected Railway profiles migrate only through scripts/controlled_migrate.py,
+# which verifies source identity, production backup evidence and the advisory lock.
+case "${SIGNALRANK_ENV_PROFILE:-}" in
+    staging-certification|production-advisory|production-live-owner-canary)
+        if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ]; then
+            echo "[FATAL] Boot-time migrations are forbidden for protected profiles." >&2
+            exit 1
+        fi
+        ;;
+esac
 # Run migrations only during a controlled deployment. A failed migration is a
 # hard startup failure; the service must never run against an unknown schema.
 if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}" ]; then
@@ -28,6 +38,12 @@ if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}
         echo "[FATAL] Migration failed; refusing to start with an unknown schema state." >&2
         exit 1
     fi
+fi
+
+# Print repository and deployed migration identity on every database-backed boot.
+python -m alembic heads 2>&1 | sed 's/^/[boot] alembic_expected_head=/' || true
+if [ -n "${DATABASE_URL:-}" ]; then
+    python -m alembic current 2>&1 | sed 's/^/[boot] alembic_current=/' || true
 fi
 
 _start_monolith() {

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, MutableMapping
 
 from core.env import env_bool
@@ -17,6 +18,8 @@ LIVE_FINANCIAL_ACK_VALUE = "I_ACCEPT_REAL_MONEY_TRADING_AND_PAYOUT_RISK"
 REAL_PAYOUT_ACK_VALUE = "I_ACCEPT_MANUAL_APPROVAL_REAL_PAYOUT_RISK"
 PAYSTACK_TRANSFERS_ACK_VALUE = "I_CONFIRM_PAYSTACK_TRANSFERS_IS_ENABLED_FOR_THIS_BUSINESS"
 BYBIT_DEDICATED_ACCOUNT_ACK_VALUE = "I_CONFIRM_BYBIT_ACCOUNT_IS_DEDICATED_TO_SIGNALRANKAI"
+PRODUCTION_EXECUTION_ACK_VALUE = "I_APPROVE_OWNER_ONLY_LIVE_EXECUTION"
+MAX_ACTIVATION_WINDOW = timedelta(hours=24)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,28 @@ def _configured(value: str) -> bool:
     return value.lower() not in {"changeme", "change-me", "replace-me", "placeholder", "todo", "none", "null"}
 
 
+def _csv(value: str) -> tuple[str, ...]:
+    return tuple(sorted({item.strip() for item in str(value or "").split(",") if item.strip()}))
+
+
+def _positive_number(value: str) -> bool:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return number > 0 and number < float("inf")
+
+
+def _utc_timestamp(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
 def _environment(env: MutableMapping[str, str] | None) -> str:
     return (
         _raw(env, "RAILWAY_ENVIRONMENT_NAME")
@@ -101,12 +126,43 @@ def evaluate_financial_activation(
     metaapi_token = _raw(environ, "META_API_TOKEN")
     paystack_secret = _raw(environ, "PAYSTACK_SECRET_KEY")
     paystack_public = _raw(environ, "PAYSTACK_PUBLIC_KEY")
+    owner_id = _raw(environ, "LIVE_ACTIVATION_OWNER_TELEGRAM_ID")
+    allowed_users = _csv(_raw(environ, "LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS"))
+    allowed_accounts = _csv(_raw(environ, "LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS"))
+    allowed_providers = {item.lower() for item in _csv(_raw(environ, "LIVE_EXECUTION_ALLOWED_PROVIDERS"))}
+    allowed_symbols = _csv(_raw(environ, "LIVE_EXECUTION_ALLOWED_SYMBOLS"))
+    started_at = _utc_timestamp(_raw(environ, "LIVE_ACTIVATION_STARTED_AT"))
+    expires_at = _utc_timestamp(_raw(environ, "LIVE_ACTIVATION_EXPIRES_AT"))
+    now = datetime.now(timezone.utc)
+    activation_window_valid = bool(
+        started_at
+        and expires_at
+        and started_at <= now < expires_at
+        and expires_at - started_at <= MAX_ACTIVATION_WINDOW
+    )
+    owner_scope_valid = bool(owner_id.isdigit() and allowed_users == (owner_id,))
+    provider_scope_valid = bool(
+        allowed_providers
+        and allowed_providers.issubset({"mt5", "bybit"})
+        and (not mt5_live or "mt5" in allowed_providers)
+        and (not bybit_execution or "bybit" in allowed_providers)
+    )
 
     checks: list[ActivationCheck] = [
         ActivationCheck("environment_production", environment in {"production", "prod"}, f"environment={environment}"),
         ActivationCheck("testing_disabled", not _bool(environ, "PUBLIC_TESTING_MODE") and not _bool(environ, "FULL_SYSTEM_STAGING_TEST_MODE"), "testing and staging modes must be off"),
         ActivationCheck("master_switch", (not requested) or master_enabled, "LIVE_FINANCIAL_FEATURES_ENABLED must be on for requested live-money features"),
         ActivationCheck("risk_acknowledgement", (not requested) or ack_valid, "exact live-financial acknowledgement required"),
+        ActivationCheck("production_execution_acknowledgement", (not live_execution_requested) or _raw(environ, "PRODUCTION_EXECUTION_ACK") == PRODUCTION_EXECUTION_ACK_VALUE, "exact owner-only production execution acknowledgement required"),
+        ActivationCheck("owner_identity_and_user_scope", (not live_execution_requested) or owner_scope_valid, "owner identity must be numeric and the live Telegram allowlist must contain only that owner"),
+        ActivationCheck("broker_account_allowlist", (not live_execution_requested) or bool(allowed_accounts), "at least one exact broker account ID is required"),
+        ActivationCheck("provider_allowlist", (not live_execution_requested) or provider_scope_valid, "provider allowlist must contain only enabled mt5/bybit adapters"),
+        ActivationCheck("symbol_allowlist", (not live_execution_requested) or bool(allowed_symbols), "at least one exact live symbol is required"),
+        ActivationCheck("demo_certification", (not live_execution_requested) or _configured(_raw(environ, "DEMO_CERTIFICATION_REPORT_ID")), "a completed demo certification report ID is required"),
+        ActivationCheck("maximum_live_position_size", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_POSITION_SIZE")), "a positive maximum live position size is required"),
+        ActivationCheck("maximum_daily_loss", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_DAILY_LOSS")), "a positive maximum daily loss is required"),
+        ActivationCheck("maximum_total_exposure", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_TOTAL_EXPOSURE")), "a positive maximum total exposure is required"),
+        ActivationCheck("activation_window", (not live_execution_requested) or activation_window_valid, "activation timestamps must be UTC-aware, current, and no longer than 24 hours"),
         ActivationCheck("encryption_configured", (not live_execution_requested) or _configured(encryption_key), "ENCRYPTION_KEY is required for broker credentials"),
         ActivationCheck("global_kill_switch_clear", (not live_execution_requested) or not _bool(environ, "GLOBAL_EXECUTION_KILL_SWITCH", True), "GLOBAL_EXECUTION_KILL_SWITCH must be 0"),
         ActivationCheck("auto_execution_dependency", (not (auto_trade or copy_trade)) or auto_execution, "AUTO_TRADE/COPY_TRADE require AUTO_EXECUTION_ENABLED"),
@@ -163,6 +219,7 @@ __all__ = [
     "LIVE_FINANCIAL_ACK_VALUE",
     "REAL_PAYOUT_ACK_VALUE",
     "PAYSTACK_TRANSFERS_ACK_VALUE",
+    "PRODUCTION_EXECUTION_ACK_VALUE",
     "evaluate_financial_activation",
     "force_invalid_financial_flags_off",
 ]

@@ -11,12 +11,12 @@ def _first(*names: str, default: str = "") -> str:
     return default
 
 
-CODE_VERSION = "1.3.2"
+CODE_VERSION = "1.3.3"
 CONFIGURED_APP_VERSION = _first("APP_VERSION", default=CODE_VERSION)
 # The runtime banner must identify the code actually deployed. A stale Railway
 # APP_VERSION remains visible as configured_version instead of mislabelling code.
 APP_VERSION = CODE_VERSION
-RELEASE_FINGERPRINT = "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
+RELEASE_FINGERPRINT = "v1.3.3-full-system-certification-gates-20260801"
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",
@@ -27,6 +27,26 @@ GIT_COMMIT_SHA = _first(
 )
 DEPLOYMENT_ID = _first("RAILWAY_DEPLOYMENT_ID", default="unknown")
 ENVIRONMENT = _first("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT", "APP_ENV", default="unknown")
+GIT_BRANCH = _first("RAILWAY_GIT_BRANCH", "GIT_BRANCH", "SOURCE_BRANCH", default="unknown")
+BUILD_IDENTIFIER = _first("RAILWAY_BUILD_ID", "BUILD_ID", "SOURCE_BUILD_ID", default=BUILD_TIME_UTC)
+RAILWAY_PROJECT = _first("RAILWAY_PROJECT_NAME", "RAILWAY_PROJECT_ID", default="unknown")
+RAILWAY_SERVICE = _first("RAILWAY_SERVICE_NAME", "RAILWAY_SERVICE_ID", default="unknown")
+ENVIRONMENT_PROFILE = _first("SIGNALRANK_ENV_PROFILE", "DEPLOYMENT_PROFILE", default=ENVIRONMENT)
+EXPECTED_RELEASE_COMMIT = _first("EXPECTED_RELEASE_COMMIT", default="")
+
+
+def runtime_commit_matches_expected() -> tuple[bool, str]:
+    """Prove the runtime image came from the explicitly approved release commit."""
+    actual = str(GIT_COMMIT_SHA or "").strip().lower()
+    expected = str(EXPECTED_RELEASE_COMMIT or "").strip().lower()
+    if not expected:
+        return False, "EXPECTED_RELEASE_COMMIT is missing"
+    if actual in {"", "dev", "unknown"}:
+        return False, "runtime commit is unavailable"
+    minimum = min(12, len(expected), len(actual))
+    if minimum < 7 or actual[:minimum] != expected[:minimum]:
+        return False, f"runtime commit {actual[:12]} does not match expected {expected[:12]}"
+    return True, f"runtime commit {actual[:12]} matches expected release"
 
 
 def get_version_banner() -> str:
@@ -37,8 +57,10 @@ def get_version_banner() -> str:
         else ""
     )
     return (
-        f"SignalRankAI v{APP_VERSION} commit={short_sha} "
-        f"build={BUILD_TIME_UTC} deployment={DEPLOYMENT_ID} env={ENVIRONMENT} "
+        f"SignalRankAI v{APP_VERSION} commit={short_sha} branch={GIT_BRANCH} "
+        f"build={BUILD_IDENTIFIER} build_time={BUILD_TIME_UTC} "
+        f"railway_project={RAILWAY_PROJECT} railway_service={RAILWAY_SERVICE} "
+        f"deployment={DEPLOYMENT_ID} env={ENVIRONMENT} profile={ENVIRONMENT_PROFILE} "
         f"release={RELEASE_FINGERPRINT}{configured}"
     )
 
