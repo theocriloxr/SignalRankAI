@@ -49,7 +49,7 @@ def test_lifecycle_updates_never_replace_the_original_signal_card(monkeypatch):
 
 
 def test_primary_signal_and_outcome_sends_are_explicitly_non_silent():
-    source = (ROOT / "signalrank_telegram" / "bot.py").read_text()
+    source = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
     assert "disable_notification=False" in source
     assert "Live refresh is temporarily busy" in source
     assert "Outcome check is busy right now" not in source
@@ -60,7 +60,7 @@ def test_production_profiles_enable_fast_recovery_without_edit_delivery():
         "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
         "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example",
     ):
-        profile = (ROOT / filename).read_text()
+        profile = (ROOT / filename).read_text(encoding="utf-8")
         for marker in (
             "DELIVERY_SIGNAL_UPDATE_ENABLED=0",
             "LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED=1",
@@ -73,7 +73,7 @@ def test_production_profiles_enable_fast_recovery_without_edit_delivery():
 
 
 def test_production_readiness_rejects_silent_or_duplicate_notification_modes():
-    source = (ROOT / "railway_main.py").read_text()
+    source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     assert "duplicate_tp_sl_notification_dispatchers_enabled" in source
     assert "signal_delivery_edit_mode_enabled" in source
     assert "telegram_send_retries_too_low" in source

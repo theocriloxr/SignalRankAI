@@ -11,7 +11,7 @@ import threading
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 try:
     import redis

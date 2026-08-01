@@ -73,7 +73,8 @@ def test_outcome_tracker_critical_session_is_labelled() -> None:
 def test_railway_runs_migrations_and_predeploy_diagnostics() -> None:
     payload = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
     command = payload["deploy"]["preDeployCommand"]
-    assert "alembic upgrade head" in command
+    assert "scripts/controlled_migrate.py" in command
+    assert "signalrank_migration_evidence.json" in command
     assert "deployment_diagnostics.py" in command
     assert "--strict-core" in command
 
@@ -122,10 +123,10 @@ def test_deployment_diagnostics_inspects_delivery_stream_backlog() -> None:
     assert "async def redis_state_queue_diagnostics" in source
 
 
-def test_predeploy_does_not_hide_or_block_only_on_legacy_free_queue() -> None:
+def test_predeploy_blocks_until_legacy_free_queue_is_reconciled() -> None:
     source = (ROOT / "scripts" / "deployment_diagnostics.py").read_text(encoding="utf-8")
     assert 'name="free_signal_queue_safety"' in source
-    assert 'queue_status = WARN if report.phase == "predeploy" else FAIL' in source
+    assert 'queue_status = BLOCKED if report.phase == "predeploy" else FAIL' in source
     assert "quarantine_free_signal_queue.py" in source
 
 

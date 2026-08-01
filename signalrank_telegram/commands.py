@@ -4,7 +4,7 @@ import asyncio
 
 from telegram import Update
 from telegram.ext import ContextTypes
-from db.session import get_session, get_engine_for_event_loop
+from db.session import collect_database_health, get_session, get_engine_for_event_loop
 from config import config
 from db.repository import get_active_subscription
 from engine.market_state import get_market_state_async
@@ -57,7 +57,7 @@ def require_tier(min_tier):
 			try:
 				ks: KillSwitchState = state.get_killswitch_sync()
 			except Exception:
-				ks: KS = type("KS", (), {"enabled": False})()
+				ks = type("KillSwitchFallback", (), {"enabled": False})()
 			if getattr(ks, "enabled", False):
 				await update.message.reply_text("🚨 Signals are temporarily paused.")
 				return
@@ -4393,7 +4393,6 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from db.models import Signal, User, Outcome
 		from sqlalchemy import select
 		import json
-		import os
 
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			# Ensure user exists
@@ -5334,7 +5333,7 @@ async def start_command(update, context):
 				try:
 					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 						logger.info("[/start] user_id=%s — DB session open, querying user row (attempt=%s)", user_id, attempt)
-						res: Result[Tuple[User]] = await asyncio.wait_for(
+						res = await asyncio.wait_for(
 							session.execute(select(User).where(User.telegram_user_id == int(user_id))),
 							timeout=timeout_s,
 						)
@@ -5808,16 +5807,7 @@ async def quality_command(update, context) -> None:
 
 		if not rows:
 			await update.message.reply_text(
-				"<b>Weekly Leaderboard</b>\n\n"
-				"No positive-expectancy leaderboard entries qualify yet this week.\n\n"
-				f"Minimum standard: {min_trades}+ tracked trades, {min_win_rate:.0f}%+ WR, "
-				f"and Avg R >= {min_avg_r:.2f}R.\n\n"
-				"Leaderboard will publish only when performance is strong enough to be useful.",
-				parse_mode="HTML",
-			)
-			return
-			await update.message.reply_text(
-				"📉 Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
+				"Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
 			)
 			return
 

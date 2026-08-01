@@ -21,18 +21,30 @@ def _live_staging_env() -> dict[str, str]:
     }
 
 
-def test_guarded_live_paystack_staging_remains_enabled():
+def test_production_live_paystack_semantics_remain_enabled():
+    from payments.paystack_policy import evaluate_paystack_operation
+
+    decision = evaluate_paystack_operation(
+        telegram_user_id=1409578077,
+        amount_ngn=1000,
+        environ={"APP_ENV": "production", "PAYSTACK_SECRET_KEY": "sk_live_production_example"},
+    )
+    assert decision.allowed
+    assert decision.mode == "live"
+    assert decision.reason == "production_policy"
+
+def test_live_paystack_staging_is_retired_and_fails_closed():
     from runtime_safety import apply_runtime_safety_environment
 
     env = _live_staging_env()
     result = apply_runtime_safety_environment(env)
     assert result.full_system_test_enabled is True
-    assert env["PAYSTACK_LIVE_STAGING_ACTIVE"] == "1"
-    assert env["PAYMENTS_PUBLIC_TEST_MODE"] == "0"
-    assert env["PAYMENTS_ENABLED"] == "1"
-    assert env["PAYMENTS_PUBLIC_ENABLED"] == "1"
-    assert env["REAL_PAYOUTS_ENABLED"] == "1"
-    assert "PAYSTACK_LIVE_STAGING_GUARDED" in result.hard_boundaries
+    assert env["PAYSTACK_LIVE_STAGING_ACTIVE"] == "0"
+    assert env["PAYMENTS_PUBLIC_TEST_MODE"] == "1"
+    assert env["PAYMENTS_ENABLED"] == "0"
+    assert env["PAYMENTS_PUBLIC_ENABLED"] == "0"
+    assert env["REAL_PAYOUTS_ENABLED"] == "0"
+    assert "PAYSTACK_LIVE_KEY_REJECTED" in result.hard_boundaries
 
 
 def test_live_paystack_staging_invalid_second_ack_fails_money_paths_closed():
@@ -46,20 +58,19 @@ def test_live_paystack_staging_invalid_second_ack_fails_money_paths_closed():
     assert env["PAYMENTS_ENABLED"] == "0"
     assert env["PAYMENTS_PUBLIC_ENABLED"] == "0"
     assert env["REAL_PAYOUTS_ENABLED"] == "0"
-    assert "PAYSTACK_LIVE_STAGING_ACK_INVALID" in result.hard_boundaries
+    assert "PAYSTACK_LIVE_STAGING_NOT_ENABLED" in result.hard_boundaries
 
 
-def test_live_paystack_policy_enforces_user_and_amount_cap():
+def test_live_paystack_policy_rejects_every_staging_user_and_amount():
     from payments.paystack_policy import evaluate_paystack_operation
     from runtime_safety import apply_runtime_safety_environment
 
     env = _live_staging_env()
     apply_runtime_safety_environment(env)
-    assert evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56000, environ=env).allowed
-    denied_user = evaluate_paystack_operation(telegram_user_id=999, amount_ngn=1000, environ=env)
-    assert not denied_user.allowed and denied_user.reason == "telegram_user_not_allowlisted"
-    denied_amount = evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56001, environ=env)
-    assert not denied_amount.allowed and denied_amount.reason.startswith("amount_exceeds_live_staging_cap")
+    for user_id, amount in ((1409578077, 56000), (999, 1000), (1409578077, 56001)):
+        decision = evaluate_paystack_operation(telegram_user_id=user_id, amount_ngn=amount, environ=env)
+        assert not decision.allowed
+        assert decision.reason == "live_staging_ack_or_configuration_invalid"
 
 
 def test_paystack_signature_accepts_secret_key_even_when_rotation_value_differs():

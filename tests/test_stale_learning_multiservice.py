@@ -168,12 +168,12 @@ def test_no_secrets_soak_profile_contains_only_non_secret_configuration():
     assert "AUTO_TRADE_ENABLED=0" in text
     assert "LEGACY_TRADE_TRACKER_ENABLED=0" in text
     assert "ASSET_LEARNING_ENABLED=0" in text
-    analytics = (ROOT / "deploy" / "railway_roles" / "analytics.env").read_text()
+    analytics = (ROOT / "deploy" / "railway_roles" / "analytics.env").read_text(encoding="utf-8")
     assert "ASSET_LEARNING_ENABLED=1" in analytics
 
 
 def test_start_script_supports_all_decomposed_roles():
-    source = (ROOT / "start.sh").read_text()
+    source = (ROOT / "start.sh").read_text(encoding="utf-8")
     for role in ("delivery", "outcome", "analytics", "scheduler"):
         assert role in source
 

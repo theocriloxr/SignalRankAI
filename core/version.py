@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 
 def _first(*names: str, default: str = "") -> str:
@@ -43,8 +44,9 @@ def runtime_commit_matches_expected() -> tuple[bool, str]:
         return False, "EXPECTED_RELEASE_COMMIT is missing"
     if actual in {"", "dev", "unknown"}:
         return False, "runtime commit is unavailable"
-    minimum = min(12, len(expected), len(actual))
-    if minimum < 7 or actual[:minimum] != expected[:minimum]:
+    if not re.fullmatch(r"[0-9a-f]{40}", expected):
+        return False, "EXPECTED_RELEASE_COMMIT must be the exact 40-character Git SHA"
+    if not re.fullmatch(r"[0-9a-f]{40}", actual) or actual != expected:
         return False, f"runtime commit {actual[:12]} does not match expected {expected[:12]}"
     return True, f"runtime commit {actual[:12]} matches expected release"
 

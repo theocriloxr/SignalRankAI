@@ -6,7 +6,7 @@ import json
 import hmac
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from collections import deque
 
 from sqlalchemy import func, select
@@ -16,6 +16,9 @@ from sqlalchemy.exc import IntegrityError
 
 from db.models import Subscription, User, Signal, Outcome, DecisionLog, ProcessedWebhookEvent, ApiToken
 from db.session import get_session
+
+if TYPE_CHECKING:
+    from db.models import EconomicEvent
 
 ACTIVE_PARTIAL_OUTCOME_STATUSES = ("tp1", "tp2")
 _DECISION_LOG_RETRY_QUEUE: deque[dict[str, Any]] = deque(maxlen=5000)

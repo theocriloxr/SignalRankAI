@@ -78,14 +78,14 @@ def test_version_bumped():
     assert 'default="1.2.1"' in source("core/version.py")
 
 def test_delivery_freshness_has_one_canonical_entry_drift_gate():
-    source = Path("engine/delivery_freshness.py").read_text()
+    source = Path("engine/delivery_freshness.py").read_text(encoding="utf-8")
     assert "def _canonical_entry_drift_pct" in source
     assert "entry_drift_exceeded:" not in source
     assert "final_entry_drift:" in source
 
 
 def test_outcome_lookup_is_user_scoped_and_canonicalised():
-    source = Path("signalrank_telegram/bot.py").read_text()
+    source = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
     assert "_load_signal_payload(raw, telegram_user_id=uid)" in source
     assert "_read_cached_outcome_snapshot(_canonical_ref)" in source
     assert 'label="telegram.check_outcome"' in source

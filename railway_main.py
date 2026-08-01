@@ -1061,7 +1061,14 @@ async def _notify_admin_bot_ready() -> None:
             ttl_seconds = max(30, int(os.getenv("BOT_READY_NOTIFICATION_DEDUPE_SECONDS", "180") or 180))
         except (TypeError, ValueError):
             ttl_seconds = 180
-        dedupe_key = f"startup:bot_ready:{str(ENVIRONMENT or 'unknown').lower()}"
+        environment = str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME")
+            or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV")
+            or "unknown"
+        ).strip().lower()
+        deployment_id = str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "unknown").strip()
+        dedupe_key = f"startup:bot_ready:{environment}"
 
         async def _claim_ready_notification() -> bool:
             try:
@@ -1072,14 +1079,14 @@ async def _notify_admin_bot_ready() -> None:
                     if redis_client is not None:
                         return bool(redis_client.set(
                             dedupe_key,
-                            str(DEPLOYMENT_ID or "unknown"),
+                            deployment_id,
                             ex=ttl_seconds,
                             nx=True,
                         ))
                     # Best-effort fallback for local development without Redis.
                     if state.get_sync(dedupe_key):
                         return False
-                    state.set_sync(dedupe_key, str(DEPLOYMENT_ID or "unknown"), ex=ttl_seconds)
+                    state.set_sync(dedupe_key, deployment_id, ex=ttl_seconds)
                     return True
 
                 return bool(await asyncio.to_thread(_claim))
@@ -1401,12 +1408,20 @@ async def lifespan(_: FastAPI):
     worker_admitted = True
     worker_admission: dict[str, object] = {"ok": True, "detail": "not_required"}
     if strict_worker_admission:
-        worker_admission = await _database_readiness_check()
-        worker_admitted = bool(worker_admission.get("ok"))
+        from core.version import runtime_commit_matches_expected
+
+        database_admission = await _database_readiness_check()
+        commit_ok, commit_detail = runtime_commit_matches_expected()
+        worker_admitted = bool(database_admission.get("ok")) and commit_ok
+        worker_admission = {
+            "ok": worker_admitted,
+            "database": database_admission,
+            "release_commit": {"ok": commit_ok, "detail": commit_detail},
+        }
         logger.info("[worker_admission] %s", json.dumps(worker_admission, sort_keys=True, default=str))
         if not worker_admitted:
             logger.critical(
-                "[worker_admission] engine and worker loops blocked until database is at repository head"
+                "[worker_admission] engine and worker loops blocked by schema or release identity"
             )
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
