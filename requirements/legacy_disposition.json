@@ -667,11 +667,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1295,
+      "line_count": 1302,
       "path": "core/paper_trading_service.py",
       "reason": "production/build source",
-      "sha256": "4df19eedd5cf7f9c15badbec8cb7e71a841a3dc671c940a4f78a5f4fc7f5e188",
-      "size_bytes": 66075
+      "sha256": "122ea4c8237d7b73a9fafca10b67ea0009dd4c440fbf1f023f92911a040f62ae",
+      "size_bytes": 66221
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1523,11 +1523,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 242,
+      "line_count": 277,
       "path": "db/migrations/versions/0031_performance_paper_reliability.py",
       "reason": "database migration history",
-      "sha256": "d6c9feac7a6cb31c85a3bcc34df637d1ddac1688eea549d0aa6244e7ce2b30b8",
-      "size_bytes": 13220
+      "sha256": "0edcf5c3791abaeb66a24e15f37673c1387c5307fee65164f45062e5d731e5de",
+      "size_bytes": 14807
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4590,7 +4590,7 @@
       "line_count": 11893,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "de26411e72b2d8f80714cd0f1a475f82bb0f0f5f5b558de6887cca5f0653000a",
+      "sha256": "ead57a7609b83651301678a75a59f58e5218dc7375a1765916cf6fb742ae1778",
       "size_bytes": 371923
     },
     {
@@ -5491,11 +5491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 346,
+      "line_count": 424,
       "path": "services/performance_ledger.py",
       "reason": "production/build source",
-      "sha256": "0c8ec97bc5514a245385b221861a46d9834d768c7c8c4f3e9cd0c976b318a465",
-      "size_bytes": 15863
+      "sha256": "a5c74086b143a4efc27eea77091b44126035845b17708c4a8aa4631c955ded1e",
+      "size_bytes": 18780
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7651,11 +7651,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 121,
+      "line_count": 124,
       "path": "tests/test_phase12_performance_paper_reliability.py",
       "reason": "automated test evidence",
-      "sha256": "c62f3ab2b95ec0061bd6d05d33bca8ba2183d889238b32a2033a822951068890",
-      "size_bytes": 5214
+      "sha256": "7e72ae964496a743df87a636d157d8d297b7113a079da75717987c6461dd37ec",
+      "size_bytes": 5349
     },
     {
       "disposition": "TEST_ONLY",

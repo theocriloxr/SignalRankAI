@@ -38,7 +38,7 @@
       "name": "ACTIVE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:294",
+        "services/performance_ledger.py:297",
         "signalrank_telegram/commands.py:5761"
       ],
       "required_by_code": true,
@@ -1039,8 +1039,8 @@
         "railway_main.py:2500",
         "railway_main.py:483",
         "services/delivery_authorization.py:26",
-        "services/performance_ledger.py:107",
-        "services/performance_ledger.py:247",
+        "services/performance_ledger.py:108",
+        "services/performance_ledger.py:250",
         "signalrank_telegram/bot.py:187"
       ],
       "required_by_code": true,
@@ -1656,7 +1656,7 @@
       "name": "BREAKEVEN",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:293",
+        "services/performance_ledger.py:296",
         "signalrank_telegram/commands.py:5760"
       ],
       "required_by_code": true,
@@ -1892,7 +1892,7 @@
       "name": "CANCELLED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:298",
+        "services/performance_ledger.py:301",
         "signalrank_telegram/commands.py:5762"
       ],
       "required_by_code": true,
@@ -4274,7 +4274,7 @@
       "name": "EXPIRED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:296",
+        "services/performance_ledger.py:299",
         "signalrank_telegram/commands.py:5762"
       ],
       "required_by_code": true,
@@ -5596,7 +5596,7 @@
       "name": "MISSED_ENTRY",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:297",
+        "services/performance_ledger.py:300",
         "signalrank_telegram/commands.py:5762"
       ],
       "required_by_code": true,
@@ -7267,8 +7267,8 @@
       "name": "PAPER_CASH_TOLERANCE",
       "production_example_default": "0.00000001",
       "read_locations": [
-        "core/paper_trading_service.py:928",
-        "core/paper_trading_service.py:965"
+        "core/paper_trading_service.py:932",
+        "core/paper_trading_service.py:969"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7367,7 +7367,7 @@
       "name": "PAPER_ENTRY_RETRY_SECONDS",
       "production_example_default": "15",
       "read_locations": [
-        "core/paper_trading_service.py:690"
+        "core/paper_trading_service.py:694"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7698,7 +7698,7 @@
       "name": "PENDING_ENTRY",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:295",
+        "services/performance_ledger.py:298",
         "signalrank_telegram/commands.py:5761"
       ],
       "required_by_code": true,
@@ -8254,7 +8254,7 @@
       "name": "PROVIDER_UNAVAILABLE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:300",
+        "services/performance_ledger.py:303",
         "signalrank_telegram/commands.py:5763"
       ],
       "required_by_code": true,
@@ -10059,7 +10059,7 @@
       "name": "SL",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:274",
+        "services/performance_ledger.py:277",
         "signalrank_telegram/commands.py:5758"
       ],
       "required_by_code": true,
@@ -10350,8 +10350,8 @@
       "name": "STOPPED_AT_TP1",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:292",
-        "services/performance_ledger.py:301",
+        "services/performance_ledger.py:295",
+        "services/performance_ledger.py:304",
         "signalrank_telegram/commands.py:5759"
       ],
       "required_by_code": true,
@@ -10362,8 +10362,8 @@
       "name": "STOPPED_AT_TP2",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:292",
-        "services/performance_ledger.py:302",
+        "services/performance_ledger.py:295",
+        "services/performance_ledger.py:305",
         "signalrank_telegram/commands.py:5759"
       ],
       "required_by_code": true,
@@ -10931,7 +10931,7 @@
       "name": "TP3",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:273",
+        "services/performance_ledger.py:276",
         "signalrank_telegram/commands.py:5758"
       ],
       "required_by_code": true,
@@ -10962,8 +10962,8 @@
       "name": "TRACKING_FAILED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:299",
-        "services/performance_ledger.py:315",
+        "services/performance_ledger.py:302",
+        "services/performance_ledger.py:318",
         "signalrank_telegram/commands.py:5763"
       ],
       "required_by_code": true,

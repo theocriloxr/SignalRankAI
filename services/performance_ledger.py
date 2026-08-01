@@ -177,6 +177,8 @@ async def reconcile_user_performance_ledger(
             "snapshot_hash": _snapshot_hash(payload),
             "updated_at": now_utc_naive(),
         }
+        if existing is not None and existing.snapshot_hash == values["snapshot_hash"]:
+            continue
         if existing is None:
             existing = PerformanceLedgerEntry(
                 ledger_id=str(uuid4()),
