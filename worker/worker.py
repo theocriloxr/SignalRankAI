@@ -626,6 +626,23 @@ class Worker:
 
             drifting = list(result.get("drifting_features") or [])
             top = ", ".join(drifting[:8]) if drifting else "unknown"
+            from core.health_notifications import claim_health_notification
+
+            claimed, claim_key = await asyncio.to_thread(
+                claim_health_notification,
+                "ml_drift_detected",
+                {
+                    "features": sorted(str(name) for name in drifting),
+                    "psi_scores": result.get("psi_scores") or {},
+                },
+                ttl_seconds=max(
+                    300,
+                    int(os.getenv("ML_DRIFT_NOTIFICATION_DEDUPE_SECONDS", "21600") or 21600),
+                ),
+            )
+            if not claimed:
+                logger.info("[drift_notification] duplicate suppressed key=%s", claim_key)
+                return
             text = (
                 "⚠️ ML Data Drift Detected\n"
                 f"Features drifting: {top}\n"

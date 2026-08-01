@@ -1374,6 +1374,7 @@ def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, A
 def start_outage_alert_job():
     def _job():
         import requests as _requests
+        from core.health_notifications import claim_health_notification
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         while True:
             try:
@@ -1384,6 +1385,13 @@ def start_outage_alert_job():
                     if bot_token:
                         for recovery in consume_provider_recovery_alerts():
                             provider_name = str((recovery or {}).get("provider") or "provider")
+                            claimed, _ = claim_health_notification(
+                                "provider_recovered",
+                                {"provider": provider_name, "status": "recovered"},
+                                ttl_seconds=3600,
+                            )
+                            if not claimed:
+                                continue
                             msg = f"✅ Provider recovered: {provider_name} is healthy again."
                             for admin_id in (OWNER_IDS or []):
                                 try:
@@ -1402,6 +1410,13 @@ def start_outage_alert_job():
                         if not should_alert_provider_outage(name, mins):
                             continue
                         stage = provider_outage_alert_label(name, mins)
+                        claimed, _ = claim_health_notification(
+                            "provider_outage",
+                            {"provider": str(name), "stage": str(stage)},
+                            ttl_seconds=3600,
+                        )
+                        if not claimed:
+                            continue
                         msg = f"🚨 Provider outage ({stage}): {name} has been down for {mins:.1f} minutes."
                         for admin_id in (OWNER_IDS or []):
                             try:

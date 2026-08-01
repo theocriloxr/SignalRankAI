@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -27,10 +27,43 @@ class ShadowOutcomeWorker:
         self._batch_size = max(1, min(250, int(os.getenv("SHADOW_TRACKER_BATCH_SIZE", "50") or 50)))
         self._price_concurrency = max(1, min(8, int(os.getenv("SHADOW_PRICE_CONCURRENCY", "3") or 3)))
 
+    def _publish_health(
+        self,
+        status: str,
+        *,
+        scanned: int = 0,
+        evaluated: int = 0,
+        tracked: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Publish durable proof that the configured tracker is actually running."""
+        try:
+            import json
+            from core.redis_state import state
+
+            payload = {
+                "status": str(status),
+                "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+                "interval_seconds": self._interval,
+                "deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"),
+                "git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+                "scanned": max(0, int(scanned or 0)),
+                "evaluated": max(0, int(evaluated or 0)),
+                "tracked": max(0, int(tracked or 0)),
+                "error": str(error)[:240] if error else None,
+            }
+            state.set_sync(
+                "shadow:tracker:health",
+                json.dumps(payload, sort_keys=True),
+                ex=max(300, self._interval * 5),
+            )
+        except Exception:
+            logger.debug("[shadow_tracker] health publication failed", exc_info=True)
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        self._publish_health("starting")
         self._task = asyncio.create_task(self._run_loop(), name="shadow-outcome-tracker")
         logger.info("[shadow_tracker] started interval=%ss batch=%s", self._interval, self._batch_size)
 
@@ -40,6 +73,7 @@ class ShadowOutcomeWorker:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+        self._publish_health("stopped")
 
     async def _load_rows(self) -> list[dict[str, Any]]:
         from db.models import MLRejectedSignal
@@ -142,9 +176,16 @@ class ShadowOutcomeWorker:
     async def run_once(self) -> int:
         rows = await self._load_rows()
         if not rows:
+            self._publish_health("idle")
             return 0
         evaluated = await self._evaluate_rows(rows)
         tracked = await self._persist(evaluated)
+        self._publish_health(
+            "healthy",
+            scanned=len(rows),
+            evaluated=len(evaluated),
+            tracked=tracked,
+        )
         if tracked:
             logger.info("[shadow_tracker] processed=%s scanned=%s", tracked, len(rows))
         return tracked
@@ -157,6 +198,7 @@ class ShadowOutcomeWorker:
                 raise
             except Exception as exc:
                 logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
+                self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
             except asyncio.TimeoutError:

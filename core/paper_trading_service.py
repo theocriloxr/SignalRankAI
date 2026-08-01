@@ -759,6 +759,9 @@ class PaperTradingService:
         stop: float | None = None,
         target: float | None = None,
         remaining_cash: float | None = None,
+        position_id: str | None = None,
+        attempt_id: str | None = None,
+        execution_evidence: dict[str, Any] | None = None,
     ) -> None:
         if decision == "DEFERRED":
             return
@@ -790,6 +793,12 @@ class PaperTradingService:
                     f"Selected target: {float(target or 0):.8g}\n"
                     f"Entry fee: ${float(getattr(sizing, 'entry_fee', 0) or 0):.4f}\n"
                     f"Remaining virtual cash: ${float(remaining_cash or 0):,.2f}\n\n"
+                    "Execution evidence:\n"
+                    f"- Paper position: {position_id}\n"
+                    f"- Delivery row: {candidate.get('delivery_id')}\n"
+                    f"- Attempt: {attempt_id}\n"
+                    f"- Canonical position count: {int((execution_evidence or {}).get('position_count') or 0)}\n"
+                    "- Auto-management: ACTIVE for this confirmed paper position\n\n"
                     "This uses virtual funds only."
                 )
             else:
@@ -809,6 +818,20 @@ class PaperTradingService:
             )
 
     async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
+        from core.execution_claims import execution_destination_lock
+
+        async with execution_destination_lock(
+            int(candidate["telegram_user_id"]), str(candidate["signal_id"]),
+        ) as claimed:
+            if not claimed:
+                logger.warning(
+                    "[paper_candidate] execution destination lock unavailable user=%s signal=%s",
+                    candidate.get("telegram_user_id"), candidate.get("signal_id"),
+                )
+                return "deferred"
+            return await self._open_candidate_locked(candidate, market_price)
+
+    async def _open_candidate_locked(self, candidate: dict[str, Any], market_price: float | None) -> str:
         notify: dict[str, Any] | None = None
         result_status = "failed"
         async with get_session(
@@ -827,6 +850,13 @@ class PaperTradingService:
             if account is None:
                 account = await self.ensure_account(int(user.telegram_user_id), session=session)
             if account is None:
+                return "skipped"
+            execution_mode = str(getattr(user, "execution_mode", "manual") or "manual").strip().lower()
+            if execution_mode in {"auto", "copy", "copy_trade", "live"}:
+                logger.info(
+                    "[paper_candidate] skipped broker execution mode user=%s signal=%s mode=%s",
+                    user.telegram_user_id, candidate.get("signal_id"), execution_mode,
+                )
                 return "skipped"
             if account.status != "active" or not bool(account.auto_trade_enabled):
                 await self._record_attempt(
@@ -847,6 +877,19 @@ class PaperTradingService:
                     )
                 ).scalar_one_or_none()
                 if existing:
+                    return "skipped"
+                from services.execution_evidence import get_execution_evidence
+
+                evidence_before = await get_execution_evidence(
+                    session,
+                    telegram_user_id=int(user.telegram_user_id),
+                    signal_id=str(candidate["signal_id"]),
+                )
+                if not evidence_before.get("delivery_proven") or evidence_before.get("position_count"):
+                    logger.warning(
+                        "[paper_candidate] blocked by canonical evidence user=%s signal=%s evidence=%s",
+                        user.telegram_user_id, candidate.get("signal_id"), evidence_before,
+                    )
                     return "skipped"
                 open_count = int((await session.execute(
                     select(func.count(PaperPosition.position_id)).where(
@@ -981,12 +1024,20 @@ class PaperTradingService:
                                             "sizing_policy_version": sizing.policy_version,
                                         },
                                     ))
-                                    await self._record_attempt(
+                                    attempt = await self._record_attempt(
                                         session, account=account, user=user, candidate=candidate,
                                         decision="OPENED", reason="eligible_confirmed_delivery", retryable=False,
                                         market_price=market_price, sizing=sizing, finalized=True,
                                         meta={"position_id": position.position_id},
                                     )
+                                    execution_evidence = await get_execution_evidence(
+                                        session,
+                                        telegram_user_id=int(user.telegram_user_id),
+                                        signal_id=str(candidate["signal_id"]),
+                                        expected_reference=str(position.position_id),
+                                    )
+                                    if not execution_evidence.get("exactly_one"):
+                                        raise RuntimeError("paper_execution_evidence_not_exactly_one")
                                     try:
                                         await session.commit()
                                     except IntegrityError:
@@ -997,6 +1048,9 @@ class PaperTradingService:
                                         "decision": "OPENED", "reason": "eligible_confirmed_delivery",
                                         "fill": fill, "sizing": sizing, "risk_pct": _safe_float(account.risk_pct),
                                         "stop": stop, "target": target, "remaining_cash": account.cash_balance,
+                                        "position_id": str(position.position_id),
+                                        "attempt_id": str(attempt.attempt_id),
+                                        "execution_evidence": execution_evidence,
                                     }
                                     logger.info(
                                         "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s "

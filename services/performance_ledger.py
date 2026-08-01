@@ -255,7 +255,35 @@ async def get_user_performance_report(
         await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None:
-        return {"basis": "delivery_cohort", "start": start, "end": end, "delivered": 0, "buckets": {}}
+        snapshot_id = _snapshot_hash({
+            "user": int(telegram_user_id), "start": start, "end": end, "rows": [],
+            "policy": PERFORMANCE_POLICY_VERSION,
+        })[:16]
+        return {
+            "basis": "delivery_cohort",
+            "basis_label": f"Confirmed signals delivered during the last {int(days)} days",
+            "start": start,
+            "end": end,
+            "snapshot_generated_at": end,
+            "snapshot_id": snapshot_id,
+            "reconciliation_id": snapshot_id,
+            "window_days": int(days),
+            "risk_fraction_pct": 1.0,
+            "environment": env,
+            "delivered": 0,
+            "total": 0,
+            "buckets": {},
+            "completed_r_count": 0,
+            "net_r": 0.0,
+            "avg_r": None,
+            "median_r": None,
+            "standardized_simple_return_pct": 0.0,
+            "standardized_compounded_return_pct": 0.0,
+            "strict_win_rate": 0.0,
+            "terminal_coverage": 0.0,
+            "invariant_ok": True,
+            "rows": [],
+        }
     rows = list((await session.execute(
         select(PerformanceLedgerEntry).where(
             PerformanceLedgerEntry.user_id == int(user.id),
@@ -277,11 +305,22 @@ async def get_user_performance_report(
     losses = buckets.get("SL", 0)
     strict_denominator = tp3 + losses
     resolved = sum(buckets.get(name, 0) for name in COMPLETED_BUCKETS | NON_TRADE_BUCKETS)
+    snapshot_id = _snapshot_hash({
+        "user": user.id,
+        "start": start,
+        "end": end,
+        "policy": PERFORMANCE_POLICY_VERSION,
+        "rows": [row.snapshot_hash for row in rows],
+    })[:16]
     return {
         "basis": "delivery_cohort",
         "basis_label": f"Confirmed signals delivered during the last {int(days)} days",
         "start": start,
         "end": end,
+        "snapshot_generated_at": end,
+        "snapshot_id": snapshot_id,
+        "window_days": int(days),
+        "risk_fraction_pct": 1.0,
         "environment": env,
         "delivered": delivered,
         "total": delivered,
@@ -318,7 +357,7 @@ async def get_user_performance_report(
         "tracking_failure_rate": buckets.get("TRACKING_FAILED", 0) / delivered if delivered else 0.0,
         "tracked_outcomes": resolved,
         "invariant_ok": invariant_ok,
-        "reconciliation_id": _snapshot_hash({"user": user.id, "start": start, "end": end, "rows": [row.snapshot_hash for row in rows]})[:16],
+        "reconciliation_id": snapshot_id,
         "rows": rows,
     }
 
@@ -396,10 +435,22 @@ async def correct_performance_ledger_entry(
     await session.flush()
     return row
 
-async def audit_user_performance(session, *, telegram_user_id: int, days: int = 30) -> dict[str, Any]:
-    report = await get_user_performance_report(session, telegram_user_id=telegram_user_id, days=days)
+async def audit_user_performance(
+    session,
+    *,
+    telegram_user_id: int,
+    days: int = 30,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Audit the exact canonical snapshot already shown to the user when supplied."""
+    report = snapshot or await get_user_performance_report(
+        session, telegram_user_id=telegram_user_id, days=days,
+    )
     invalid_r = [row.signal_id for row in report.get("rows", []) if row.final_realized_r is not None and not math.isfinite(float(row.final_realized_r))]
     return {
+        "snapshot_id": report.get("snapshot_id"),
+        "snapshot_generated_at": report.get("snapshot_generated_at"),
+        "window_days": report.get("window_days"),
         "reconciliation_id": report.get("reconciliation_id"),
         "confirmed_delivery_count": report.get("delivered", 0),
         "bucket_sum": sum(report.get("buckets", {}).values()),

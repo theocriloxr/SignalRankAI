@@ -2680,6 +2680,10 @@ def _auto_execute_signal_if_enabled(
             or getattr(routed, "message", None)
             or "unknown"
         )
+        evidence = dict(getattr(routed, "evidence", None) or {})
+        position = dict(evidence.get("position") or {})
+        provider = str(getattr(routed, "provider", None) or position.get("provider") or "broker")
+        execution_status = str(getattr(routed, "status", None) or position.get("status") or "confirmed")
         bot = Bot(token=_require_telegram_token())
         asset = str(signal.get("asset") or "")
         if ok:
@@ -2689,8 +2693,14 @@ def _auto_execute_signal_if_enabled(
                 text=(
                     "🧾 <b>Execution Receipt (AUTO)</b>\n\n"
                     f"Asset: <b>{asset}</b>\n"
+                    f"Provider: <b>{provider.upper()}</b>\n"
                     f"Order: <code>{detail}</code>\n"
-                    f"Signal ID: <code>{sig_id}</code>"
+                    f"Signal ID: <code>{sig_id}</code>\n"
+                    f"Ledger record: <code>{position.get('record_id')}</code>\n"
+                    f"Execution state: <b>{execution_status}</b>\n"
+                    f"Confirmed deliveries: {int(evidence.get('delivery_count') or 0)}\n"
+                    f"Canonical position count: {int(evidence.get('position_count') or 0)}\n\n"
+                    "Auto-management: ACTIVE only for the broker order identified above."
                 ),
                 parse_mode="HTML",
             )

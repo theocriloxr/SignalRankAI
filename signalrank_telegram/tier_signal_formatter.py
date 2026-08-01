@@ -418,29 +418,43 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
 
 
 def _execution_mode(signal: DictType[str, Any]) -> str:
-    """Return the execution mode proven for this specific signal/user context.
-
-    A platform-wide feature flag does not prove that the recipient has a ready
-    broker account, consent, encrypted credentials, or an enabled execution
-    limit.  Signal copy must therefore claim automatic management only when the
-    routed payload explicitly says this delivery is auto-managed.
-    """
-    mode = str(signal.get("execution_mode") or signal.get("trade_execution_mode") or "manual").strip().lower()
-    ready = signal.get("execution_ready")
-    if ready is None:
-        ready = signal.get("broker_account_ready")
-    ready_bool = str(ready).strip().lower() in {"1", "true", "yes", "on"} if ready is not None else False
-    if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"} and ready_bool:
-        return "auto"
+    """Return recipient-specific execution state; intent alone never proves management."""
+    mode = str(
+        signal.get("delivery_execution_mode")
+        or signal.get("execution_mode")
+        or signal.get("trade_execution_mode")
+        or "manual"
+    ).strip().lower()
+    state = str(signal.get("execution_state") or "").strip().lower()
+    evidence = signal.get("execution_evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    reference = str(
+        evidence.get("reference")
+        or signal.get("broker_order_id")
+        or signal.get("paper_position_id")
+        or ""
+    ).strip()
+    destination = str(evidence.get("destination") or "").strip().lower()
+    if reference and state in {"confirmed", "open", "partially_filled", "filled"}:
+        return "paper_managed" if destination == "paper" else "broker_managed"
+    if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"}:
+        return "auto_pending"
     return "manual"
 
 
 def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
-    if _execution_mode(signal) == "auto":
+    mode = _execution_mode(signal)
+    if mode in {"broker_managed", "paper_managed"}:
         return [
             "(Bot will auto-close 50% &amp; move SL to BE)",
             "(Bot will auto-close 25%)",
             "(Moonbag running risk-free)",
+        ]
+    if mode == "auto_pending":
+        return [
+            "(Auto-close starts only after a separate execution receipt confirms one open position)",
+            "(No automated close is active until that receipt arrives)",
+            "(Manual management applies if execution is not confirmed)",
         ]
     return [
         "(Suggested close 50% &amp; move SL to BE)",
@@ -448,6 +462,16 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
         "(Optional runner; manual execution)",
     ]
 
+
+def _execution_status_line(signal: DictType[str, Any]) -> str:
+    mode = _execution_mode(signal)
+    if mode == "broker_managed":
+        return "Execution: Broker position confirmed — automated management is active for that order"
+    if mode == "paper_managed":
+        return "Execution: Paper position confirmed — automated virtual management is active"
+    if mode == "auto_pending":
+        return "Execution: Automatic entry requested — not active until a separate execution receipt"
+    return "Execution: Manual — confirm trade and size yourself"
 
 def _best_rr(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_levels: List[float]) -> Optional[float]:
     """Prefer actual target-derived R/R over profile minimum placeholders."""
@@ -600,8 +624,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🌍 Regime: {_h(str(regime))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
-    if _execution_mode(signal) == "manual":
-        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
+    lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:
@@ -831,8 +854,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
-    if _execution_mode(signal) == "manual":
-        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
+    lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:

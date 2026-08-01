@@ -20,7 +20,7 @@ def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
     text = f"{reason or ''} {decision or ''}".lower()
     if any(token in text for token in ("ml", "gemini", "ai", "model", "probability")):
         return "ml"
-    if any(token in text for token in ("squeeze",)):
+    if "squeeze" in text:
         return "squeeze"
     if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
         return "microstructure"
@@ -32,8 +32,28 @@ def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
         return "risk"
     if any(token in text for token in ("duplicate", "cooldown", "open_limit")):
         return "dedupe"
-    return "other"
+    if any(token in text for token in ("candle", "market_data", "stale", "provider", "quote")):
+        return "data_unavailable"
+    if any(token in text for token in ("strategy", "consensus", "no_signal", "generation")):
+        return "generation_empty"
+    if any(token in text for token in ("validation", "invalid", "geometry")):
+        return "validation"
+    if any(token in text for token in ("exception", "error", "failed", "store")):
+        return "processing_error"
+    if str(reason or "").strip():
+        return "policy_other"
+    return "unclassified_reason"
 
+
+def _decision_bucket(decision: str | None) -> str:
+    value = str(decision or "").strip().lower()
+    if value in {"issued", "accepted", "approved", "sent", "delivered", "selected", "eligible"}:
+        return "accepted"
+    if value in {"failed", "error", "exception"}:
+        return "processing_error"
+    if value in {"rejected", "skipped", "delayed", "suppressed"}:
+        return "rejection"
+    return f"decision_{value}" if value else "decision_unclassified"
 
 def _profile_from_timeframe(timeframe: str | None) -> str:
     tf = str(timeframe or "").strip().lower()
@@ -85,38 +105,116 @@ def _cycle_rejection_buckets(cycle: dict[str, Any]) -> dict[str, int]:
             return 0
 
     buckets = {
-        "regime": 0,
-        "squeeze": 0,
         "microstructure": _i("advanced_filter_failed") + _i("skipped_confluence_block"),
         "score": _i("score_rejected"),
-        "ml": 0,
         "risk": _i("risk_failed") + _i("skipped_portfolio_exposure"),
         "dedupe": (
-            _i("skipped_open_limit_asset")
-            + _i("skipped_open_limit_class")
-            + _i("skipped_cycle_cooldown")
-            + _i("skipped_cycle_asset_cooldown")
-            + _i("skipped_db_cooldown")
-            + _i("skipped_db_asset_cooldown")
+            _i("skipped_open_limit_asset") + _i("skipped_open_limit_class")
+            + _i("skipped_cycle_cooldown") + _i("skipped_cycle_asset_cooldown")
+            + _i("skipped_db_cooldown") + _i("skipped_db_asset_cooldown")
             + _i("skipped_duplicate_trade")
         ),
-        "other": (
-            _i("no_candles")
-            + _i("stale_data")
-            + _i("no_strategy_signals")
-            + _i("validation_failed")
-            + _i("quality_rejected")
-            + _i("invalid_tp")
-            + _i("no_consensus")
-            + _i("strategy_exception")
-            + _i("consensus_exception")
-            + _i("scoring_exception")
-            + _i("store_failed")
+        "data_unavailable": _i("no_candles") + _i("stale_data"),
+        "generation_empty": _i("no_strategy_signals") + _i("no_consensus"),
+        "validation": _i("validation_failed") + _i("invalid_tp"),
+        "processing_error": (
+            _i("strategy_exception") + _i("consensus_exception")
+            + _i("scoring_exception") + _i("store_failed")
         ),
+        "policy_other": _i("quality_rejected"),
     }
-    return {k: v for k, v in buckets.items() if v > 0}
+    return {name: value for name, value in buckets.items() if value > 0}
 
 
+
+def _reconcile_window(
+    *,
+    scanned: int,
+    delivered: int,
+    classifications: dict[str, int],
+    source: str,
+) -> dict[str, Any]:
+    """Return a self-accounting counter window without hiding a remainder."""
+    scanned = max(0, int(scanned or 0))
+    delivered = max(0, int(delivered or 0))
+    clean = {
+        str(name): max(0, int(value or 0))
+        for name, value in (classifications or {}).items()
+        if int(value or 0) > 0
+    }
+    classified = sum(clean.values())
+    if classified < scanned:
+        clean["classification_gap"] = scanned - classified
+        classified = scanned
+    return {
+        "scanned": scanned,
+        "delivered": delivered,
+        "classifications": clean,
+        "accounted": classified,
+        "classification_gap": int(clean.get("classification_gap") or 0),
+        "classification_overflow": max(0, classified - scanned),
+        "source": source,
+    }
+
+
+def _deployment_window(lifetime: dict[str, Any]) -> dict[str, Any]:
+    """Subtract a deployment-scoped Redis baseline from lifetime counters."""
+    deployment_id = str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local").strip()
+    key = f"pulse:deployment_baseline:{deployment_id}"
+    numeric = {
+        "scanned": int(lifetime.get("scanned") or 0),
+        "delivered": int(lifetime.get("delivered") or 0),
+        **{
+            f"classification:{name}": int(value or 0)
+            for name, value in (lifetime.get("classifications") or {}).items()
+        },
+    }
+    baseline = dict(numeric)
+    try:
+        from core.redis_state import state
+
+        raw = state.get_sync(key)
+        if raw:
+            baseline = json.loads(str(raw))
+        else:
+            client = state._get_redis_sync()
+            encoded = json.dumps(numeric, sort_keys=True)
+            if client is not None:
+                client.set(key, encoded, nx=True)
+                raw = client.get(key)
+                baseline = json.loads(str(raw)) if raw else dict(numeric)
+            else:
+                state.set_sync(key, encoded)
+    except Exception:
+        baseline = dict(numeric)
+    classifications = {
+        name.split(":", 1)[1]: max(0, value - int(baseline.get(name) or 0))
+        for name, value in numeric.items()
+        if name.startswith("classification:")
+    }
+    return _reconcile_window(
+        scanned=max(0, numeric["scanned"] - int(baseline.get("scanned") or 0)),
+        delivered=max(0, numeric["delivered"] - int(baseline.get("delivered") or 0)),
+        classifications=classifications,
+        source=f"lifetime_minus_deployment_baseline:{deployment_id}",
+    )
+
+
+def _shadow_tracker_health() -> dict[str, Any]:
+    try:
+        from core.redis_state import state
+
+        raw = state.get_sync("shadow:tracker:health")
+        payload = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
+        heartbeat = datetime.fromisoformat(str(payload.get("heartbeat_at") or "").replace("Z", "+00:00"))
+        age_seconds = max(0.0, (datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc)).total_seconds())
+        interval = max(15, int(payload.get("interval_seconds") or 60))
+        status = str(payload.get("status") or "unknown")
+        payload["heartbeat_age_seconds"] = age_seconds
+        payload["proven"] = status in {"starting", "idle", "healthy"} and age_seconds <= max(180, interval * 3)
+        return payload
+    except Exception:
+        return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
     
@@ -142,7 +240,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "microstructure": global_stats.get("vetoed_microstructure", 0),
             "score": global_stats.get("vetoed_score", 0),
             "ml": global_stats.get("vetoed_ml", 0),
-            "other": global_stats.get("vetoed_other", 0),
+            "unclassified_legacy": global_stats.get("vetoed_other", 0),
         }
         use_global_stats = True
         logger.info("[admin_pulse] Using GlobalStats for real-time metrics")
@@ -200,7 +298,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                             "SELECT reason, decision, COUNT(*) FROM decision_log "
                             "WHERE created_at >= :since "
                             "AND decision IN ('rejected','skipped','delayed','suppressed') "
-                            "GROUP BY reason, decision ORDER BY COUNT(*) DESC LIMIT 20"
+                            "GROUP BY reason, decision ORDER BY COUNT(*) DESC"
                         ),
                         params,
                     )
@@ -479,6 +577,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "correct_block": correct_block,
             "partial_win": partial_win,
             "shadow_winner_rate_pct": shadow_winner_rate,
+            "tracker": _shadow_tracker_health(),
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

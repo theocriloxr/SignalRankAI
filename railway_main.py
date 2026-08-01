@@ -2337,6 +2337,7 @@ async def _database_readiness_check() -> dict[str, object]:
             "ok": True,
             "detail": "reachable",
             "revision": deployed,
+            "expected_revision": expected_heads[0],
             "critical_schema": column_flags,
             "active_signal_guard": True,
             "outcome_projection_guard": True,
@@ -2587,10 +2588,16 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
     except Exception as exc:
         financial_activation = {"ok": False, "detail": type(exc).__name__}
     try:
-        from core.version import runtime_commit_matches_expected
+        from core.version import (
+            EXPECTED_RELEASE_COMMIT,
+            GIT_COMMIT_SHA,
+            runtime_commit_matches_expected,
+        )
 
         commit_ok, commit_detail = runtime_commit_matches_expected()
     except Exception as exc:
+        GIT_COMMIT_SHA = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown")
+        EXPECTED_RELEASE_COMMIT = str(os.getenv("EXPECTED_RELEASE_COMMIT") or "")
         commit_ok, commit_detail = False, type(exc).__name__
     checks: dict[str, object] = {
         "database": database,
@@ -2615,6 +2622,24 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "detail": "distinct" if distinct_redis else ("shared_dev_override" if allow_shared_dev else "must_be_distinct"),
     }
 
+    shadow_required = _env_bool("SHADOW_OUTCOME_TRACKER_ENABLED", False) or _env_bool(
+        "WORKER_SHADOW_TRACKER_ENABLED", False
+    )
+    if shadow_required:
+        try:
+            from engine.admin_pulse import _shadow_tracker_health
+
+            shadow_health = _shadow_tracker_health()
+            checks["shadow_tracker"] = {
+                "ok": bool(shadow_health.get("proven")),
+                "detail": str(shadow_health.get("status") or "missing"),
+                **shadow_health,
+            }
+        except Exception as exc:
+            checks["shadow_tracker"] = {
+                "ok": False,
+                "detail": f"health_probe_failed:{type(exc).__name__}",
+            }
     if str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
         checks["telegram"] = {
             "ok": bool(_bot_ready and _bot_application is not None),
@@ -2654,9 +2679,18 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
             logger.warning("[readyz] degraded checks=%s", signature)
             _LAST_READINESS_FAILURE_SIGNATURE = signature
             _LAST_READINESS_FAILURE_LOG_MONO = now
+    deployed_revision = database.get("revision") or database.get("deployed_revision")
+    expected_revision = database.get("expected_revision")
     return {
         "status": "ready" if ready else "degraded",
         "ready": ready,
+        "release_identity": {
+            "confirmed": bool(commit_ok and database.get("ok") and deployed_revision == expected_revision),
+            "deployed_git_sha": str(GIT_COMMIT_SHA),
+            "expected_git_sha": str(EXPECTED_RELEASE_COMMIT),
+            "deployed_alembic_revision": deployed_revision,
+            "expected_alembic_revision": expected_revision,
+        },
         "checks": checks,
     }
 

@@ -5701,7 +5701,9 @@ async def performance_command(update, context) -> None:
 		async with get_session(priority="interactive", label="canonical_performance_command") as session:
 			report = await get_user_performance_report(session, telegram_user_id=user_id, days=days)
 			if mode == "audit":
-				audit = await audit_user_performance(session, telegram_user_id=user_id, days=days)
+				audit = await audit_user_performance(
+					session, telegram_user_id=user_id, days=days, snapshot=report,
+				)
 			await session.commit()
 	except Exception as exc:
 		_audit_logger.exception("/performance canonical ledger failed user=%s: %s", user_id, exc)
@@ -5730,7 +5732,8 @@ async def performance_command(update, context) -> None:
 
 	if mode == "audit":
 		await update.message.reply_text(
-			"Performance audit (30d)\n\n"
+			f"Performance audit ({int(audit.get('window_days') or days)}d)\n\n"
+			f"Snapshot: {audit.get('snapshot_id')}\n"
 			f"Reconciliation: {audit.get('reconciliation_id')}\n"
 			f"Confirmed deliveries: {audit.get('confirmed_delivery_count', 0)}\n"
 			f"Bucket sum: {audit.get('bucket_sum', 0)}\n"
@@ -5748,8 +5751,9 @@ async def performance_command(update, context) -> None:
 	completed = int(report.get("completed_r_count") or 0)
 	avg_r = report.get("avg_r")
 	median_r = report.get("median_r")
+	risk_pct = float(report.get("risk_fraction_pct") or 0.0)
 	lines = [
-		f"Performance ({days}d)",
+		f"Performance ({int(report.get('window_days') or days)}d)",
 		str(report.get("basis_label") or "Confirmed delivery cohort"),
 		"",
 		f"Confirmed deliveries: {int(report.get('delivered') or 0)}",
@@ -5764,12 +5768,13 @@ async def performance_command(update, context) -> None:
 		f"Net R: {float(report.get('net_r') or 0):+.2f}R",
 		f"Average R: {'n/a' if avg_r is None else f'{float(avg_r):+.2f}R'}",
 		f"Median R: {'n/a' if median_r is None else f'{float(median_r):+.2f}R'}",
-		f"Standardized simple return (1% risk): {float(report.get('standardized_simple_return_pct') or 0):+.2f}%",
-		f"Standardized compounded return (1% risk): {float(report.get('standardized_compounded_return_pct') or 0):+.2f}%",
+		f"Standardized simple return ({risk_pct:g}% risk): {float(report.get('standardized_simple_return_pct') or 0):+.2f}%",
+		f"Standardized compounded return ({risk_pct:g}% risk): {float(report.get('standardized_compounded_return_pct') or 0):+.2f}%",
 		f"Strict win rate (TP3 vs SL): {float(report.get('strict_win_rate') or 0) * 100:.1f}%",
 		f"Terminal coverage: {float(report.get('terminal_coverage') or 0) * 100:.1f}%",
 		"",
-		"Returns are standardized illustrations at 1% risk per completed result; they are not account returns, financial advice, or a guarantee.",
+		f"Returns are standardized illustrations at {risk_pct:g}% risk per completed result; they are not account returns, financial advice, or a guarantee.",
+		f"Snapshot: {report.get('snapshot_id', 'n/a')}",
 		f"Reconciliation: {report.get('reconciliation_id', 'n/a')}",
 	]
 	await update.message.reply_text("\n".join(lines))
