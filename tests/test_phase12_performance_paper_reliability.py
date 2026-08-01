@@ -121,4 +121,5 @@ def test_performance_command_has_no_unverified_aggregate_fallback():
     assert "get_user_performance_report" in handler
     assert "No estimated or unverified fallback was shown" in handler
     assert "SUM(o.r_multiple)" not in handler
-    assert "Standardized compounded return (1% risk)" in handler
+    assert "risk_fraction_pct" in handler
+    assert "Standardized compounded return ({risk_pct:g}% risk)" in handler

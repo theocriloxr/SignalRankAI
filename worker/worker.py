@@ -169,9 +169,12 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = (
-            _analytics_work_allowed_in_worker()
-            and _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), False)
+        # Shadow outcome tracking is an operational reliability loop, not an
+        # analytics/training workload. Its explicit flag must therefore have
+        # the same meaning in monolith and decomposed worker deployments.
+        _enable_shadow = _env_bool_any(
+            ("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"),
+            False,
         )
         if _enable_shadow:
             try:

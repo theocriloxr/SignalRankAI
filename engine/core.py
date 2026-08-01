@@ -2120,10 +2120,23 @@ def main_loop(DRY_RUN: bool = False):
                 from db.pg_features import get_active_managed_assets
                 from utils.async_runner import run_sync as _run_sync
                 async def _fetch_managed():
-                    async with get_session() as _session:
+                    async with get_session(
+                        priority="background",
+                        label="engine.managed_assets",
+                        timeout_seconds=3.0,
+                    ) as _session:
                         return await get_active_managed_assets(_session)
                 _managed_assets = [
-                    _normalize_asset_symbol(s) for s in (list(_run_sync(_fetch_managed()) or []))
+                    _normalize_asset_symbol(s)
+                    for s in (
+                        list(
+                            _run_sync(
+                                _fetch_managed(),
+                                timeout=float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "5") or 5),
+                            )
+                            or []
+                        )
+                    )
                 ]
             except Exception:
                 pass

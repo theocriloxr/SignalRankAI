@@ -327,7 +327,7 @@ async def test_admin_pulse_uses_latest_cycle_when_db_window_is_empty(monkeypatch
 
     assert stats["scanned"] == 20
     assert stats["delivered"] == 0
-    assert stats["rejected_by"] == {"other": 20}
+    assert stats["rejected_by"] == {"data_unavailable": 20}
     assert stats["unaccounted"] == 0
     assert stats["sources"]["cycle_attempted"] == 20
     assert stats["latest_cycle"]["cycle"] == 482

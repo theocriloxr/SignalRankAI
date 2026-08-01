@@ -50,8 +50,10 @@ def test_execution_copy_is_signal_specific_and_broker_error_is_friendly() -> Non
     formatter = _source("signalrank_telegram/tier_signal_formatter.py")
     bot = _source("signalrank_telegram/bot.py")
     execution_messages = _source("signalrank_telegram/execution_messages.py")
-    assert 'broker_account_ready' in formatter
-    assert 'execution_ready' in formatter
+    assert 'execution_evidence' in formatter
+    assert 'execution_state' in formatter
+    assert 'broker_order_id' in formatter
+    assert 'paper_position_id' in formatter
     assert 'AUTO_TRADE_ENABLED' not in formatter[formatter.index("def _execution_mode"):formatter.index("def _tp_notes_for_execution", formatter.index("def _execution_mode"))]
     assert 'Your broker account is not connected and verified' in execution_messages
     assert 'Readiness reference: <code>' in execution_messages
