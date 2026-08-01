@@ -680,12 +680,16 @@ class PaperTradingService:
         meta: dict[str, Any] | None = None,
     ) -> PaperTradeAttempt:
         now = now_utc_naive()
-        attempt_number = int((await session.execute(
-            select(func.count(PaperTradeAttempt.id)).where(
-                PaperTradeAttempt.user_id == int(user.id),
-                PaperTradeAttempt.signal_id == str(candidate["signal_id"]),
+        previous_attempt = (
+            await session.execute(
+                select(PaperTradeAttempt).where(
+                    PaperTradeAttempt.user_id == int(user.id),
+                    PaperTradeAttempt.signal_id == str(candidate["signal_id"]),
+                ).order_by(PaperTradeAttempt.attempt_number.desc()).limit(1)
             )
-        )).scalar() or 0) + 1
+        ).scalar_one_or_none()
+        attempt_number = int(getattr(previous_attempt, "attempt_number", 0) or 0) + 1
+        first_attempt_at = getattr(previous_attempt, "first_attempt_at", None) or now
         retry_deadline = candidate.get("retry_deadline")
         retry_delay = int(next_retry_seconds if next_retry_seconds is not None else os.getenv("PAPER_ENTRY_RETRY_SECONDS", "15"))
         next_retry_at = now + timedelta(seconds=max(1, retry_delay)) if retryable else None
@@ -714,7 +718,7 @@ class PaperTradingService:
             calculated_fee=float(getattr(sizing, "entry_fee", 0) or 0) if sizing is not None else None,
             required_cash=float(getattr(sizing, "total_required", 0) or 0) if sizing is not None else None,
             sizing_policy_version=str(getattr(sizing, "policy_version", "paper-fee-reserve-v2")),
-            first_attempt_at=now,
+            first_attempt_at=first_attempt_at,
             last_attempt_at=now,
             next_retry_at=next_retry_at,
             retry_deadline=retry_deadline,
@@ -1105,19 +1109,22 @@ class PaperTradingService:
                 SignalDelivery.user_id == int(user.id), SignalDelivery.signal_id == signal_id,
                 SignalDelivery.sent_ok.is_(True), SignalDelivery.telegram_chat_id.is_not(None),
                 SignalDelivery.telegram_message_id.is_not(None), SignalDelivery.delivery_confirmed_at.is_not(None),
-                func.lower(SignalDelivery.delivery_state).in_(["sent", "confirmed", "delivered", "reconciled"]),
+                func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
             ).limit(1))).scalar_one_or_none()
             if delivery is None:
                 return False, "confirmed delivery proof is missing"
             deadline = delivery.delivery_confirmed_at + timedelta(seconds=max_age_s)
             if deadline <= now:
                 return False, "paper entry freshness deadline expired"
-            latest = (await session.execute(select(PaperTradeAttempt).where(
-                PaperTradeAttempt.user_id == int(user.id), PaperTradeAttempt.signal_id == signal_id,
-            ).order_by(PaperTradeAttempt.created_at.desc()).limit(1))).scalar_one_or_none()
-            repairable = {"insufficient_virtual_cash", "live_price_unavailable", "watching_for_entry", "database_admission_unavailable"}
-            if latest is not None and not latest.retryable and latest.reason not in repairable:
-                return False, f"decision is permanent: {latest.reason}"
+            terminal_statuses = tuple(TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"})
+            terminal = await session.scalar(
+                select(Outcome.id).where(
+                    Outcome.signal_id == signal_id,
+                    func.lower(Outcome.status).in_(terminal_statuses),
+                ).limit(1)
+            )
+            if terminal is not None:
+                return False, "signal already has a terminal outcome"
             candidate = {
                 "signal_id": signal_id, "delivery_id": int(delivery.id),
                 "retry_deadline": deadline, "asset": resolved.signal.asset,

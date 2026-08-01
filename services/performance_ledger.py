@@ -18,6 +18,7 @@ from sqlalchemy import and_, func, select
 from core.delivery_state import CONFIRMED_DELIVERY_STATES
 from db.models import (
     Outcome,
+    PerformanceCorrectionAudit,
     PerformanceLedgerEntry,
     Signal,
     SignalDelivery,
@@ -320,6 +321,79 @@ async def get_user_performance_report(
     }
 
 
+async def correct_performance_ledger_entry(
+    session,
+    *,
+    ledger_id: str,
+    actor: str,
+    reason: str,
+    primary_bucket: str,
+    final_realized_r: Any = None,
+    included: bool = True,
+    exclusion_reason: str | None = None,
+) -> PerformanceLedgerEntry:
+    """Apply one attributed correction and append an immutable audit record."""
+    actor_s = str(actor or "").strip()
+    reason_s = str(reason or "").strip()
+    if not actor_s or not reason_s:
+        raise ValueError("performance correction requires actor and reason")
+    bucket = str(primary_bucket or "").strip().upper()
+    allowed = COMPLETED_BUCKETS | NON_TRADE_BUCKETS | {"PENDING_ENTRY", "ACTIVE"}
+    if bucket not in allowed:
+        raise ValueError(f"unsupported performance bucket: {bucket}")
+    r_value = _decimal(final_realized_r)
+    if final_realized_r is not None and r_value is None:
+        raise ValueError("final_realized_r must be finite")
+    row = (
+        await session.execute(
+            select(PerformanceLedgerEntry)
+            .where(PerformanceLedgerEntry.ledger_id == str(ledger_id))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise LookupError("performance ledger row not found")
+    before = {
+        "primary_bucket": row.primary_bucket,
+        "final_realized_r": row.final_realized_r,
+        "included": row.included,
+        "exclusion_reason": row.exclusion_reason,
+        "snapshot_hash": row.snapshot_hash,
+        "row_version": row.row_version,
+    }
+    now = now_utc_naive()
+    row.primary_bucket = bucket
+    row.final_realized_r = float(r_value) if r_value is not None else None
+    row.included = bool(included)
+    row.exclusion_reason = str(exclusion_reason)[:128] if exclusion_reason else None
+    row.corrected_at = now
+    row.corrected_by = actor_s[:128]
+    row.correction_reason = reason_s
+    row.row_version = int(row.row_version or 0) + 1
+    after = {
+        "primary_bucket": row.primary_bucket,
+        "final_realized_r": row.final_realized_r,
+        "included": row.included,
+        "exclusion_reason": row.exclusion_reason,
+        "row_version": row.row_version,
+    }
+    row.snapshot_hash = _snapshot_hash({
+        "ledger_id": row.ledger_id, "correction": after, "actor": actor_s,
+        "reason": reason_s, "at": now,
+    })
+    after["snapshot_hash"] = row.snapshot_hash
+    session.add(PerformanceCorrectionAudit(
+        ledger_id=row.ledger_id,
+        actor=actor_s[:128],
+        reason=reason_s,
+        before_values=before,
+        after_values=after,
+        tool_version="performance-correction-v1",
+        created_at=now,
+    ))
+    await session.flush()
+    return row
+
 async def audit_user_performance(session, *, telegram_user_id: int, days: int = 30) -> dict[str, Any]:
     report = await get_user_performance_report(session, telegram_user_id=telegram_user_id, days=days)
     invalid_r = [row.signal_id for row in report.get("rows", []) if row.final_realized_r is not None and not math.isfinite(float(row.final_realized_r))]
@@ -329,6 +403,7 @@ async def audit_user_performance(session, *, telegram_user_id: int, days: int = 
         "bucket_sum": sum(report.get("buckets", {}).values()),
         "invariant_ok": bool(report.get("invariant_ok")),
         "invalid_r_signal_ids": invalid_r,
+        "invalid_final_r": invalid_r,
         "excluded": [
             {"signal_id": row.signal_id, "reason": row.exclusion_reason}
             for row in report.get("rows", []) if not row.included
@@ -341,6 +416,7 @@ __all__ = [
     "PERFORMANCE_POLICY_VERSION",
     "audit_user_performance",
     "calculate_performance_metrics",
+    "correct_performance_ledger_entry",
     "get_user_performance_report",
     "reconcile_user_performance_ledger",
 ]

@@ -35,6 +35,34 @@ def upgrade() -> None:
               ('tp','tp3','win','sl','loss','stop','stop_loss','be','breakeven','break_even','time_stop')
     """)
 
+    op.execute("""
+        CREATE OR REPLACE FUNCTION enforce_terminal_outcome_finality()
+        RETURNS trigger AS $$
+        BEGIN
+            IF OLD.terminal_version > 0
+               AND (
+                    NEW.status IS DISTINCT FROM OLD.status OR
+                    NEW.canonical_outcome IS DISTINCT FROM OLD.canonical_outcome OR
+                    NEW.r_multiple IS DISTINCT FROM OLD.r_multiple OR
+                    NEW.percent IS DISTINCT FROM OLD.percent OR
+                    NEW.closed_at IS DISTINCT FROM OLD.closed_at
+               )
+               AND NOT (
+                    NEW.corrected_at IS DISTINCT FROM OLD.corrected_at AND
+                    NULLIF(BTRIM(NEW.corrected_by), '') IS NOT NULL AND
+                    NULLIF(BTRIM(NEW.correction_reason), '') IS NOT NULL
+               ) THEN
+                RAISE EXCEPTION 'terminal outcome requires audited correction metadata';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    op.execute("""
+        CREATE TRIGGER trg_terminal_outcome_finality
+        BEFORE UPDATE ON outcomes
+        FOR EACH ROW EXECUTE FUNCTION enforce_terminal_outcome_finality()
+    """)
     op.create_table(
         "paper_trade_attempts",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -100,6 +128,7 @@ def upgrade() -> None:
         FROM paper_positions pp
         JOIN paper_accounts pa ON pa.id = pp.account_id
         WHERE LOWER(pp.status) = 'skipped'
+          AND pp.delivery_id IS NOT NULL
         ON CONFLICT (idempotency_key) DO NOTHING
     """)
     op.drop_constraint("uq_paper_position_user_signal", "paper_positions", type_="unique")
@@ -170,13 +199,17 @@ def upgrade() -> None:
         RETURNS trigger AS $$
         BEGIN
             IF OLD.finalized_at IS NOT NULL
-               AND NEW.corrected_at IS NOT DISTINCT FROM OLD.corrected_at
                AND (
                     NEW.primary_bucket IS DISTINCT FROM OLD.primary_bucket OR
                     NEW.final_realized_r IS DISTINCT FROM OLD.final_realized_r OR
                     NEW.included IS DISTINCT FROM OLD.included OR
                     NEW.exclusion_reason IS DISTINCT FROM OLD.exclusion_reason OR
                     NEW.snapshot_hash IS DISTINCT FROM OLD.snapshot_hash
+               )
+               AND NOT (
+                    NEW.corrected_at IS DISTINCT FROM OLD.corrected_at AND
+                    NULLIF(BTRIM(NEW.corrected_by), '') IS NOT NULL AND
+                    NULLIF(BTRIM(NEW.correction_reason), '') IS NOT NULL
                ) THEN
                 RAISE EXCEPTION 'finalized performance ledger row requires audited correction metadata';
             END IF;
@@ -227,6 +260,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS trg_terminal_outcome_finality ON outcomes")
+    op.execute("DROP FUNCTION IF EXISTS enforce_terminal_outcome_finality()")
     op.execute("DROP TRIGGER IF EXISTS trg_performance_ledger_finality ON performance_ledger_entries")
     op.execute("DROP FUNCTION IF EXISTS enforce_performance_ledger_finality()")
     op.drop_table("performance_correction_audit")

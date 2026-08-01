@@ -82,6 +82,9 @@ def test_migration_0031_contains_ledger_attempt_and_immutability_guards():
     assert "uq_paper_actual_position_user_signal" in text
     assert "WHERE LOWER(status) IN ('open', 'closed')" in text
     assert "trg_performance_ledger_finality" in text
+    assert "trg_terminal_outcome_finality" in text
+    assert "NEW.corrected_by" in text
+    assert "NEW.correction_reason" in text
     assert "ml_past_training_data" in text
 
 
