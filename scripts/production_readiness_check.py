@@ -44,6 +44,11 @@ REQUIRED_FILES = (
     "core/financial_activation.py",
     "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
     "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example",
+    "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
+    "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
+    "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
+    "scripts/controlled_migrate.py",
+    "scripts/generate_certification_bundle.py",
     "configs/env/railway-hobby-full-advisory.env.example",
     "configs/env/railway-hobby-owner-beta.env.example",
     "configs/env/railway-hobby-paper-demo.env.example",
@@ -74,6 +79,36 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
     "APP_MEMORY_SOFT_RATIO",
     "APP_MEMORY_HARD_RATIO",
 )
+
+PROFILE_REQUIRED_ENV_KEYS = {
+    "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example": (
+        "SIGNALRANK_ENV_PROFILE=staging-certification",
+        "PAYMENTS_PUBLIC_TEST_MODE=1",
+        "BYBIT_TESTNET=1",
+        "MT5_ALLOW_LIVE_ACCOUNTS=0",
+        "REAL_PAYOUTS_ENABLED=0",
+        "EXPECTED_RELEASE_COMMIT=",
+    ),
+    "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example": (
+        "SIGNALRANK_ENV_PROFILE=production-advisory",
+        "PRODUCTION_DB_BACKUP_VERIFIED=",
+        "EXPECTED_RELEASE_COMMIT=",
+        "REAL_EXECUTION_ENABLED=0",
+        "AUTO_EXECUTION_ENABLED=0",
+        "GLOBAL_EXECUTION_KILL_SWITCH=1",
+    ),
+    "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example": (
+        "SIGNALRANK_ENV_PROFILE=production-live-owner-canary",
+        "PRODUCTION_EXECUTION_ACK=I_APPROVE_OWNER_ONLY_LIVE_EXECUTION",
+        "LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS=",
+        "LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS=",
+        "LIVE_EXECUTION_ALLOWED_SYMBOLS=",
+        "DEMO_CERTIFICATION_REPORT_ID=",
+        "LIVE_MAX_DAILY_LOSS=",
+        "LIVE_MAX_TOTAL_EXPOSURE=",
+        "LIVE_ACTIVATION_EXPIRES_AT=",
+    ),
+}
 
 REQUIRED_WEB_MARKERS = (
     "/health",
@@ -146,6 +181,14 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     )
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
     add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")
+    for profile_path, markers in PROFILE_REQUIRED_ENV_KEYS.items():
+        profile_text = _read(root, profile_path)
+        missing_profile = [marker for marker in markers if marker not in profile_text]
+        add(
+            f"profile_contract:{profile_path}",
+            not missing_profile,
+            "missing=" + ",".join(missing_profile) if missing_profile else "profile-specific gates documented",
+        )
 
     # The Railway monolith owns the externally probed health endpoints while
     # ``web/app.py`` retains the standalone web-service routes. Check both and

@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_version_and_release_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.2"
-    assert RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
+    assert APP_VERSION == "1.3.3"
+    assert RELEASE_FINGERPRINT == "v1.3.3-full-system-certification-gates-20260801"
 
 
 def test_outcome_tracker_has_sql_func_and_separate_failure_boundaries() -> None:

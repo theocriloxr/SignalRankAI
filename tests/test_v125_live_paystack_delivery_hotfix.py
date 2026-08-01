@@ -134,5 +134,5 @@ def test_v125_profile_contains_guarded_live_paystack_settings():
 def test_version_fingerprint_is_v125():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.2"
-    assert RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
+    assert APP_VERSION == "1.3.3"
+    assert RELEASE_FINGERPRINT == "v1.3.3-full-system-certification-gates-20260801"

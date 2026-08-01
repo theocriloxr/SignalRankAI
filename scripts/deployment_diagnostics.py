@@ -2,7 +2,7 @@
 """Evidence-first SignalRankAI deployment diagnostics.
 
 The command is safe/read-only by default.  It inventories the entire configured
-runtime and records PASS/FAIL/WARN/BLOCKED/SKIPPED instead of treating missing
+runtime and records PASS/FAIL/BLOCKED/SAFE_EXPECTED_OFF/NOT_IN_SCOPE instead of treating missing
 credentials as success.  Optional network sends, Paystack calls, Gemini calls,
 and MetaApi demo orders require explicit opt-in flags.
 
@@ -54,9 +54,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 PASS = "PASS"
 FAIL = "FAIL"
-WARN = "WARN"
 BLOCKED = "BLOCKED"
-SKIPPED = "SKIPPED"
+SAFE_EXPECTED_OFF = "SAFE_EXPECTED_OFF"
+NOT_IN_SCOPE = "NOT_IN_SCOPE"
 
 
 @dataclass(slots=True)
@@ -69,16 +69,27 @@ class Check:
     duration_ms: int = 0
     evidence: dict[str, Any] = field(default_factory=dict)
     remediation: str | None = None
+    check_id: str = ""
+    evidence_type: str = "unit"
+    required: bool = True
+    required_profile: str = "all"
+    started_at: str = ""
+    finished_at: str = ""
 
 
 class Report:
-    def __init__(self, *, phase: str) -> None:
+    def __init__(self, *, phase: str, profile: str) -> None:
         self.phase = phase
+        self.profile = profile
         self.started = time.monotonic()
         self.checks: list[Check] = []
         self.missing_permissions: list[dict[str, str]] = []
 
     def add(self, check: Check) -> None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        check.check_id = check.check_id or f"{check.category}.{check.name}"
+        check.started_at = check.started_at or timestamp
+        check.finished_at = check.finished_at or timestamp
         self.checks.append(check)
         print(
             f"[{check.status}] {check.category}/{check.name} "
@@ -98,7 +109,7 @@ class Report:
         blockers = [
             item.name
             for item in self.checks
-            if item.status == FAIL and item.severity in {"critical", "high"}
+            if item.required and item.status in {FAIL, BLOCKED}
         ]
         from core.version import get_version_banner
 
@@ -106,10 +117,12 @@ class Report:
             "schema_version": 1,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "phase": self.phase,
+            "profile": self.profile,
             "version": get_version_banner(),
             "duration_seconds": round(time.monotonic() - self.started, 3),
             "summary": {
                 "counts": counts,
+                "required_blockers": blockers,
                 "critical_or_high_failures": blockers,
                 "core_ok": not blockers,
             },
@@ -117,6 +130,7 @@ class Report:
             "missing_permissions_or_credentials": self.missing_permissions,
             "evidence_boundaries": [
                 "A PASS proves only the named check at the report timestamp.",
+                "BLOCKED on any required check makes the selected profile fail.",
                 "Missing credentials are BLOCKED, never PASS.",
                 "Read-only provider calls do not prove order execution.",
                 "A hermetic test suite does not prove Railway or Telegram network delivery.",
@@ -228,7 +242,7 @@ def check_environment(report: Report) -> None:
         "REAL_EXECUTION_ENABLED": full_test_mode,
         "AUTO_TRADE_ENABLED": full_test_mode,
         "COPY_TRADE_ENABLED": full_test_mode,
-        "REAL_PAYOUTS_ENABLED": full_test_mode,
+        "REAL_PAYOUTS_ENABLED": False,
         "PAYMENTS_PUBLIC_ENABLED": full_test_mode,
         # Live MT5 accounts remain blocked even while the execution workflow is enabled.
         "MT5_ALLOW_LIVE_ACCOUNTS": False,
@@ -255,7 +269,6 @@ def check_environment(report: Report) -> None:
 
     paystack_secret = _clean_paystack_key(os.getenv("PAYSTACK_SECRET_KEY"))
     paystack_public = _clean_paystack_key(os.getenv("PAYSTACK_PUBLIC_KEY"))
-    from payments.paystack_policy import live_staging_mode_valid
     paystack_test_pair = (
         paystack_secret.startswith("sk_test_")
         and paystack_public.startswith("pk_test_")
@@ -265,8 +278,8 @@ def check_environment(report: Report) -> None:
         paystack_secret.startswith("sk_live_")
         and paystack_public.startswith("pk_live_")
     )
-    paystack_live_guarded = live_staging_mode_valid(os.environ)
-    paystack_key_safe = (not paystack_secret) or paystack_test_mode or paystack_live_guarded
+    paystack_live_guarded = False
+    paystack_key_safe = (not paystack_secret) or paystack_test_mode
     sandbox_ok = (
         (not full_test_mode)
         or (
@@ -320,7 +333,7 @@ def check_environment(report: Report) -> None:
         Check(
             name="websocket_mode",
             category="market_data",
-            status=PASS if ws_ok else WARN,
+            status=PASS if ws_ok else FAIL,
             severity="medium",
             detail=f"master={ws_master} crypto={ws_crypto} full_test_mode={full_test_mode}",
             remediation=None if ws_ok else "Apply the matching safe or full-system staging profile.",
@@ -426,6 +439,8 @@ def static_checks(report: Report) -> None:
                 "deploy/railway_roles/monolith_safe.env",
                 "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example",
                 "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
+                "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
+                "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
                 *env_profiles,
             ],
             "critical",
@@ -534,7 +549,7 @@ def extended_scan_inventory(report: Report, *, run_scans: bool) -> None:
                 Check(
                     name=f"scanner_{executable}",
                     category="extended_scans",
-                    status=SKIPPED,
+                    status=BLOCKED,
                     severity="medium",
                     detail=f"available={path}; use --extended-scans to execute",
                 )
@@ -575,7 +590,7 @@ def extended_scan_inventory(report: Report, *, run_scans: bool) -> None:
     if not mutation_available:
         report.add(Check("mutation_testing", "extended_scans", BLOCKED, "high", "mutmut not installed"))
     elif not _truthy("DEPLOYMENT_MUTATION_TESTS_ENABLED", False):
-        report.add(Check("mutation_testing", "extended_scans", SKIPPED, "high", "set DEPLOYMENT_MUTATION_TESTS_ENABLED=1 in an isolated certification service"))
+        report.add(Check("mutation_testing", "extended_scans", BLOCKED, "high", "set DEPLOYMENT_MUTATION_TESTS_ENABLED=1 in an isolated certification service"))
     elif run_scans:
         run_subprocess_check(
             report,
@@ -812,7 +827,7 @@ async def database_check(report: Report) -> None:
             # A pre-deploy diagnostic must not prevent the corrected release from
             # being deployed solely because an older release left rows behind.
             # Runtime diagnostics fail until the rows are explicitly reconciled.
-            queue_status = WARN if report.phase == "predeploy" else FAIL
+            queue_status = BLOCKED if report.phase == "predeploy" else FAIL
         report.add(
             Check(
                 name="free_signal_queue_safety",
@@ -1021,7 +1036,7 @@ async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
         unsafe = stale_pending or stale_lag or dlq_depth > 0 or legacy_depth > 0
 
         if group_missing and report.phase == "predeploy":
-            status = WARN
+            status = SAFE_EXPECTED_OFF
             severity = "medium"
             detail_prefix = "consumer group not created yet (valid before first app startup)"
         elif group_missing:
@@ -1029,7 +1044,7 @@ async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
             severity = "critical"
             detail_prefix = "consumer group missing or unreadable"
         elif unsafe and report.phase == "predeploy":
-            status = WARN
+            status = BLOCKED
             severity = "high"
             detail_prefix = "existing backlog requires runtime reconciliation after deploy"
         elif unsafe:
@@ -1273,6 +1288,39 @@ def http_check(report: Report, base_url: str) -> None:
                 )
 
 
+def _external_certification_evidence(name: str) -> tuple[bool, dict[str, Any], str]:
+    """Validate a named, redacted external proof file without making credentials equal proof."""
+    env_name = "SIGNALRANK_CERTIFICATION_" + re.sub(r"[^A-Z0-9]+", "_", name.upper()) + "_EVIDENCE"
+    raw_path = _value(env_name)
+    if not raw_path:
+        return False, {}, f"{env_name} is missing"
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.is_file():
+        return False, {"reference": str(path)}, "evidence file does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, {"reference": str(path)}, f"invalid evidence JSON: {type(exc).__name__}"
+    evidence_type = str(payload.get("evidence_type") or "").strip().lower()
+    allowed_types = {"sandbox external", "live read-only", "live write canary"}
+    ok = payload.get("status") == PASS and evidence_type in allowed_types
+    evidence = {
+        "reference": str(path),
+        "evidence_type": evidence_type or None,
+        "report_id": payload.get("report_id"),
+        "release_commit": payload.get("release_commit"),
+    }
+    detail = "validated external proof" if ok else "proof must have status=PASS and an external evidence type"
+    return ok, evidence, detail
+
+
+def _not_in_scope_approved(name: str) -> bool:
+    approved = {item.strip().lower() for item in _value("NOT_IN_SCOPE_INTEGRATIONS").split(",") if item.strip()}
+    approval_id = _value("NOT_IN_SCOPE_OWNER_APPROVAL_ID")
+    return bool(approval_id and name.lower() in approved)
+
 def integration_inventory(report: Report) -> None:
     paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
     paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
@@ -1285,15 +1333,17 @@ def integration_inventory(report: Report) -> None:
         if paystack_secret or paystack_public
         else "missing"
     )
+    paystack_proof_ok, paystack_proof, paystack_proof_detail = _external_certification_evidence(
+        f"paystack_{paystack_mode}"
+    )
     report.add(
         Check(
             name=f"paystack_{paystack_mode}",
             category="optional_integrations",
-            status=WARN if paystack_mode in {"live", "test"} else FAIL if paystack_mode == "incomplete" else BLOCKED,
+            status=PASS if paystack_mode in {"live", "test"} and paystack_proof_ok else FAIL if paystack_mode == "incomplete" else BLOCKED,
             severity="high" if paystack_mode in {"live", "incomplete"} else "medium",
             detail=(
-                f"key_pair={paystack_mode}; "
-                "webhook/transaction certification still required"
+                f"key_pair={paystack_mode}; {paystack_proof_detail}"
                 if paystack_mode in {"live", "test"}
                 else "PAYSTACK_SECRET_KEY and PAYSTACK_PUBLIC_KEY must be a matching pair"
                 if paystack_mode == "incomplete"
@@ -1304,6 +1354,10 @@ def integration_inventory(report: Report) -> None:
                 if paystack_mode in {"live", "test"}
                 else "Set PAYSTACK_SECRET_KEY and PAYSTACK_PUBLIC_KEY using matching sk_/pk_ mode prefixes."
             ),
+            evidence=paystack_proof,
+            evidence_type=str(paystack_proof.get("evidence_type") or "integration"),
+            required=True,
+            required_profile=report.profile,
         )
     )
 
@@ -1316,18 +1370,44 @@ def integration_inventory(report: Report) -> None:
         ("provider_fmp", ["FMP_API_KEY"], "equity provider certification"),
         ("provider_oanda", ["OANDA_API_KEY", "OANDA_ACCOUNT_ID"], "forex practice certification"),
     ]
+    profile_required = {
+        "staging-certification": {name for name, _, _ in optional},
+        "production-advisory": {"tradingview"},
+        "production-live-owner-canary": {"tradingview", "metaapi_demo"},
+    }.get(report.profile, set())
+    profile_required.update(
+        item.strip().lower()
+        for item in _value("REQUIRED_CERTIFIED_INTEGRATIONS").split(",")
+        if item.strip()
+    )
     for name, envs, purpose in optional:
         configured = all(bool(_value(env)) for env in envs)
+        proof_ok, proof, proof_detail = _external_certification_evidence(name)
+        excluded = _not_in_scope_approved(name)
+        required = name in profile_required and not excluded
+        if configured and proof_ok:
+            status = PASS
+            detail = proof_detail
+        elif excluded:
+            status = NOT_IN_SCOPE
+            detail = f"excluded by owner approval {_value('NOT_IN_SCOPE_OWNER_APPROVAL_ID')}"
+        else:
+            status = BLOCKED
+            detail = f"configured={configured}; {proof_detail}"
         report.add(
             Check(
                 name=name,
                 category="optional_integrations",
-                status=WARN if configured else BLOCKED,
+                status=status,
                 severity="medium",
-                detail="credentials configured; live certification still required" if configured else f"missing {envs}",
+                detail=detail,
+                evidence=proof,
+                evidence_type=str(proof.get("evidence_type") or "integration"),
+                required=required,
+                required_profile=report.profile,
             )
         )
-        if not configured:
+        if not configured and required:
             report.missing(name=name, purpose=purpose, env_vars=envs)
 
 
@@ -1371,7 +1451,7 @@ def run_full_suite(report: Report, *, live_providers: bool, continue_on_failure:
 
 
 async def main_async(args: argparse.Namespace) -> int:
-    report = Report(phase=args.phase)
+    report = Report(phase=args.phase, profile=args.profile)
     check_environment(report)
     static_checks(report)
     extended_scan_inventory(report, run_scans=args.extended_scans)
@@ -1396,12 +1476,42 @@ async def main_async(args: argparse.Namespace) -> int:
     if args.live_providers:
         run_provider_certification(report, args.providers)
     else:
-        report.add(Check("live_provider_certification", "providers", SKIPPED, "high", "use --live-providers to make external calls"))
+        proof_ok, proof, detail = _external_certification_evidence("live_provider_certification")
+        required = report.profile == "staging-certification" or _truthy("REQUIRE_LIVE_PROVIDER_CERTIFICATION", False)
+        status = PASS if proof_ok else BLOCKED if required else NOT_IN_SCOPE
+        report.add(
+            Check(
+                "live_provider_certification",
+                "providers",
+                status,
+                "high",
+                detail,
+                evidence=proof,
+                evidence_type=str(proof.get("evidence_type") or "integration"),
+                required=required,
+                required_profile=report.profile,
+            )
+        )
 
     if args.run_full_suite:
         run_full_suite(report, live_providers=args.live_providers, continue_on_failure=args.continue_on_failure)
     else:
-        report.add(Check("complete_system_orchestrator", "full_suite", SKIPPED, "critical", "use --run-full-suite in an isolated staging certification service"))
+        proof_ok, proof, detail = _external_certification_evidence("full_system_e2e")
+        required = report.profile == "staging-certification" or _truthy("REQUIRE_FULL_SYSTEM_E2E", False)
+        status = PASS if proof_ok else BLOCKED if required else NOT_IN_SCOPE
+        report.add(
+            Check(
+                "complete_system_orchestrator",
+                "full_suite",
+                status,
+                "critical",
+                detail,
+                evidence=proof,
+                evidence_type=str(proof.get("evidence_type") or "integration"),
+                required=required,
+                required_profile=report.profile,
+            )
+        )
 
     payload = report.payload()
     output = Path(args.output)
@@ -1421,6 +1531,7 @@ async def main_async(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=("predeploy", "runtime", "full"), default="runtime")
+    parser.add_argument("--profile", choices=("staging-certification", "production-advisory", "production-live-owner-canary"), default=os.getenv("SIGNALRANK_ENV_PROFILE", "production-advisory"))
     parser.add_argument("--base-url", default="")
     parser.add_argument("--output", default="artifacts/deployment-diagnostics.json")
     parser.add_argument("--strict-core", action="store_true")

@@ -18,12 +18,14 @@ def test_full_system_staging_mode_enables_feature_paths_and_keeps_sandbox_bounda
     for name in (
         "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED",
         "COPY_TRADE_ENABLED", "BYBIT_EXECUTION_ENABLED", "PAYMENTS_ENABLED",
-        "PAYMENTS_PUBLIC_ENABLED", "REAL_PAYOUTS_ENABLED",
+        "PAYMENTS_PUBLIC_ENABLED",
         "FREE_SIGNAL_DISTRIBUTION_ENABLED", "FREE_RANDOM_DISTRIBUTION_ENABLED",
         "WS_INGEST_ENABLED", "WS_CRYPTO_ENABLED", "CRYPTO_WS_ENABLED",
         "PAPER_TRADING_ENABLED", "PAPER_AUTO_EXECUTION_ENABLED",
     ):
         assert env[name] == "1"
+    assert env["REAL_PAYOUTS_ENABLED"] == "0"
+    assert env["PAYMENTS_PUBLIC_TEST_MODE"] == "1"
     assert env["MT5_ALLOW_LIVE_ACCOUNTS"] == "0"
     assert env["BYBIT_TESTNET"] == "1"
     assert env["PAYMENTS_PUBLIC_TEST_MODE"] == "1"
