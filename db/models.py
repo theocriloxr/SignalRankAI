@@ -173,6 +173,14 @@ class Outcome(Base):
     canonical_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     vip_fill_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     sentiment_outcome: Mapped[Optional[str]] = mapped_column(String(16))
+    terminal_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    provenance: Mapped[str] = mapped_column(String(32), default="canonical_live", nullable=False)
+    calculation_policy_version: Mapped[str] = mapped_column(String(64), default="legacy", nullable=False)
+    performance_inclusion_status: Mapped[str] = mapped_column(String(24), default="eligible", nullable=False)
+    performance_exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
+    corrected_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    corrected_by: Mapped[Optional[str]] = mapped_column(String(128))
+    correction_reason: Mapped[Optional[str]] = mapped_column(Text)
 
     signal: Mapped[Signal] = relationship(back_populates="outcomes")
 
@@ -778,6 +786,96 @@ class PaperLedgerEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
 
 
+class PaperTradeAttempt(Base):
+    """Audited paper-candidate decisions; positions contain only real trades."""
+
+    __tablename__ = "paper_trade_attempts"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_paper_trade_attempt_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid4()), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), index=True, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    market_price: Mapped[Optional[float]] = mapped_column(Float)
+    available_cash: Mapped[Optional[float]] = mapped_column(Float)
+    risk_amount: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_quantity: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_notional: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_fee: Mapped[Optional[float]] = mapped_column(Float)
+    required_cash: Mapped[Optional[float]] = mapped_column(Float)
+    sizing_policy_version: Mapped[str] = mapped_column(String(64), default="paper-fee-reserve-v2", nullable=False)
+    first_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    retry_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PerformanceLedgerEntry(Base):
+    """One canonical proof-backed performance row per user and signal."""
+
+    __tablename__ = "performance_ledger_entries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", "domain", "environment", name="uq_performance_ledger_scope"),
+    )
+
+    ledger_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), index=True, nullable=False)
+    domain: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    delivery_confirmed_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    primary_bucket: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    entry_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    highest_tp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    global_outcome: Mapped[Optional[str]] = mapped_column(String(32))
+    user_monitoring_outcome: Mapped[Optional[str]] = mapped_column(String(32))
+    final_realized_r: Mapped[Optional[float]] = mapped_column(Float)
+    outcome_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    outcome_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    calculation_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    signal_plan_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    included: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    corrected_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    corrected_by: Mapped[Optional[str]] = mapped_column(String(128))
+    correction_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PerformanceCorrectionAudit(Base):
+    __tablename__ = "performance_correction_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("performance_ledger_entries.ledger_id"), index=True, nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    before_values: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    after_values: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class MarketTick(Base):
     __tablename__ = "market_ticks"
 
@@ -901,6 +999,10 @@ class MLPastTrainingData(Base):
     outcome_r_multiple: Mapped[Optional[float]] = mapped_column(Float)
     outcome_percent: Mapped[Optional[float]] = mapped_column(Float)
     outcome_meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    provenance_domain: Mapped[str] = mapped_column(String(32), default="legacy_unverified", index=True, nullable=False)
+    delivery_proof_backed: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    persistence_status: Mapped[str] = mapped_column(String(24), default="persisted", nullable=False)
+    exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
     signal_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     outcome_closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     archived_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

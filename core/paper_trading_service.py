@@ -25,8 +25,10 @@ from db.models import (
     PaperAccount,
     PaperLedgerEntry,
     PaperPosition,
+    PaperTradeAttempt,
     Signal,
     SignalDelivery,
+    SignalLifecycle,
     User,
 )
 from db.session import NoncriticalWriteDropped, get_session
@@ -180,7 +182,7 @@ class PaperTradingService:
 
     @staticmethod
     def _default_auto_enabled() -> bool:
-        return _env_bool("PAPER_AUTO_TRADE_DEFAULT_ENABLED", True)
+        return _env_bool("PAPER_AUTO_TRADE_DEFAULT_ENABLED", False)
 
     async def _user_row(self, session, telegram_user_id: int) -> User | None:
         return (
@@ -551,39 +553,77 @@ class PaperTradingService:
 
     async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
         max_age_s = _env_int("PAPER_AUTO_ENTRY_MAX_AGE_SECONDS", 900, 30, 86400)
-        cutoff = now_utc_naive() - timedelta(seconds=max_age_s)
-        async with get_session(priority=_paper_worker_priority(), label="paper.delivery_candidates", timeout_seconds=_paper_db_timeout(8.0)) as session:
+        now = now_utc_naive()
+        cutoff = now - timedelta(seconds=max_age_s)
+        terminal_statuses = tuple(TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"})
+        async with get_session(
+            priority=_paper_worker_priority(),
+            label="paper.delivery_candidates",
+            timeout_seconds=_paper_db_timeout(8.0),
+        ) as session:
+            permanent_attempt = select(PaperTradeAttempt.id).where(
+                PaperTradeAttempt.user_id == User.id,
+                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                PaperTradeAttempt.decision == "SKIPPED",
+                PaperTradeAttempt.retryable.is_(False),
+                PaperTradeAttempt.finalized_at.is_not(None),
+            ).exists()
+            retry_backoff = select(PaperTradeAttempt.id).where(
+                PaperTradeAttempt.user_id == User.id,
+                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                PaperTradeAttempt.retryable.is_(True),
+                PaperTradeAttempt.next_retry_at.is_not(None),
+                PaperTradeAttempt.next_retry_at > now,
+            ).exists()
+            retry_override = select(PaperTradeAttempt.id).where(
+                PaperTradeAttempt.user_id == User.id,
+                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                PaperTradeAttempt.decision == "RETRY_PENDING",
+                PaperTradeAttempt.retry_deadline > now,
+            ).exists()
             rows = (
                 await session.execute(
-                    select(SignalDelivery, Signal, User, PaperAccount, PaperPosition.position_id)
+                    select(
+                        SignalDelivery, Signal, User, PaperAccount,
+                        PaperPosition.position_id, SignalLifecycle,
+                    )
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .join(User, User.id == SignalDelivery.user_id)
                     .outerjoin(PaperAccount, PaperAccount.user_id == User.id)
+                    .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
+                    .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                     .outerjoin(
                         PaperPosition,
                         and_(
                             PaperPosition.user_id == User.id,
                             PaperPosition.signal_id == SignalDelivery.signal_id,
+                            func.lower(PaperPosition.status).in_(["open", "closed"]),
                         ),
                     )
                     .where(
                         SignalDelivery.sent_ok.is_(True),
-                        func.upper(SignalDelivery.delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"]),
+                        func.lower(SignalDelivery.delivery_state).in_(["sent", "confirmed", "reconciled", "delivered"]),
+                        SignalDelivery.telegram_chat_id.is_not(None),
+                        SignalDelivery.telegram_message_id.is_not(None),
                         SignalDelivery.delivery_confirmed_at.is_not(None),
                         SignalDelivery.delivery_confirmed_at >= cutoff,
                         PaperPosition.position_id.is_(None),
+                        or_(Outcome.id.is_(None), ~func.lower(Outcome.status).in_(terminal_statuses)),
+                        or_(~permanent_attempt, retry_override),
+                        ~retry_backoff,
                     )
-                    .order_by(SignalDelivery.id.asc())
+                    .order_by(SignalDelivery.delivery_confirmed_at.desc(), SignalDelivery.id.desc())
                     .limit(max(1, min(500, int(limit))))
                 )
             ).all()
             out: list[dict[str, Any]] = []
-            for delivery, signal, user, account, _ in rows:
+            for delivery, signal, user, account, _, lifecycle in rows:
                 out.append({
                     "delivery_id": int(delivery.id),
                     "telegram_user_id": int(user.telegram_user_id),
                     "user_id": int(user.id),
                     "signal_id": str(signal.signal_id),
+                    "display_id": str(getattr(signal, "display_id", "") or ""),
                     "asset": str(signal.asset),
                     "asset_class": canonical_asset_class(str(signal.asset), signal.asset_class),
                     "timeframe": str(signal.timeframe or ""),
@@ -593,10 +633,12 @@ class PaperTradingService:
                     "take_profits": parse_targets(signal.take_profit),
                     "score": _safe_float(signal.score),
                     "confirmed_at": delivery.delivery_confirmed_at,
+                    "retry_deadline": delivery.delivery_confirmed_at + timedelta(seconds=max_age_s),
                     "account_exists": account is not None,
+                    "lifecycle_state": str(getattr(lifecycle, "state", "") or ""),
+                    "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
                 })
             return out
-
     async def process_new_deliveries(self, *, limit: int = 100) -> dict[str, int]:
         candidates = await self._delivery_candidates(limit)
         if not candidates:
@@ -620,12 +662,154 @@ class PaperTradingService:
                 logger.exception("[paper] candidate processing failed delivery=%s", candidate.get("delivery_id"))
         return result
 
-    async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
-        async with get_session(priority=_paper_worker_priority(), label="paper.open_candidate", timeout_seconds=_paper_db_timeout(10.0)) as session:
-            user = (
-                await session.execute(
-                    select(User).where(User.id == int(candidate["user_id"])).limit(1)
+    async def _record_attempt(
+        self,
+        session,
+        *,
+        account: PaperAccount,
+        user: User,
+        candidate: dict[str, Any],
+        decision: str,
+        reason: str,
+        retryable: bool,
+        market_price: float | None = None,
+        sizing: Any = None,
+        finalized: bool = False,
+        next_retry_seconds: int = 15,
+        meta: dict[str, Any] | None = None,
+    ) -> PaperTradeAttempt:
+        now = now_utc_naive()
+        attempt_number = int((await session.execute(
+            select(func.count(PaperTradeAttempt.id)).where(
+                PaperTradeAttempt.user_id == int(user.id),
+                PaperTradeAttempt.signal_id == str(candidate["signal_id"]),
+            )
+        )).scalar() or 0) + 1
+        retry_deadline = candidate.get("retry_deadline")
+        next_retry_at = now + timedelta(seconds=max(1, int(next_retry_seconds))) if retryable else None
+        if retry_deadline is not None and next_retry_at is not None and next_retry_at >= retry_deadline:
+            retryable = False
+            next_retry_at = None
+            decision = "SKIPPED"
+            reason = "paper_entry_retry_deadline_expired"
+            finalized = True
+        attempt = PaperTradeAttempt(
+            attempt_id=str(uuid4()),
+            account_id=int(account.id),
+            user_id=int(user.id),
+            signal_id=str(candidate["signal_id"]),
+            delivery_id=int(candidate["delivery_id"]),
+            idempotency_key=f"paper:{candidate['delivery_id']}:{attempt_number}:{decision.lower()}",
+            decision=str(decision).upper(),
+            reason=str(reason)[:128],
+            retryable=bool(retryable),
+            attempt_number=attempt_number,
+            market_price=_safe_float(market_price) if market_price is not None else None,
+            available_cash=_safe_float(account.cash_balance),
+            risk_amount=float(getattr(sizing, "risk_amount", 0) or 0) if sizing is not None else None,
+            calculated_quantity=float(getattr(sizing, "quantity", 0) or 0) if sizing is not None else None,
+            calculated_notional=float(getattr(sizing, "notional", 0) or 0) if sizing is not None else None,
+            calculated_fee=float(getattr(sizing, "entry_fee", 0) or 0) if sizing is not None else None,
+            required_cash=float(getattr(sizing, "total_required", 0) or 0) if sizing is not None else None,
+            sizing_policy_version=str(getattr(sizing, "policy_version", "paper-fee-reserve-v2")),
+            first_attempt_at=now,
+            last_attempt_at=now,
+            next_retry_at=next_retry_at,
+            retry_deadline=retry_deadline,
+            finalized_at=now if finalized else None,
+            meta=dict(meta or {}),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(attempt)
+        session.add(PaperLedgerEntry(
+            account_id=int(account.id),
+            user_id=int(user.id),
+            entry_type=f"PAPER_{str(decision).upper()}",
+            amount=0.0,
+            balance_after=_safe_float(account.cash_balance),
+            description=f"Paper candidate {str(decision).lower()}: {reason}",
+            meta={
+                "attempt_id": attempt.attempt_id,
+                "signal_id": candidate.get("signal_id"),
+                "delivery_id": candidate.get("delivery_id"),
+                "reason": reason,
+                "retryable": bool(retryable),
+            },
+        ))
+        await session.flush()
+        return attempt
+
+    async def _notify_paper_decision(
+        self,
+        *,
+        telegram_user_id: int,
+        candidate: dict[str, Any],
+        decision: str,
+        reason: str,
+        fill: float | None = None,
+        sizing: Any = None,
+        risk_pct: float | None = None,
+        stop: float | None = None,
+        target: float | None = None,
+        remaining_cash: float | None = None,
+    ) -> None:
+        if decision == "DEFERRED":
+            return
+        actionable_reasons = {
+            "score_below_paper_minimum", "direction_not_allowed", "asset_class_not_allowed",
+            "max_open_positions", "incomplete_signal_levels", "paper_entry_no_longer_valid",
+            "paper_entry_retry_deadline_expired", "auto_trade_disabled",
+        }
+        if decision != "OPENED" and reason not in actionable_reasons:
+            return
+        try:
+            from config import config
+            from telegram import Bot
+
+            token = str(config.TELEGRAM_BOT_TOKEN or "").strip()
+            if not token:
+                return
+            signal_ref = str(candidate.get("display_id") or candidate.get("signal_id") or "")
+            if decision == "OPENED":
+                text = (
+                    "📄 Paper Trade Opened\n\n"
+                    f"Asset: {candidate.get('asset')}\n"
+                    f"Direction: {str(candidate.get('direction') or '').upper()}\n"
+                    f"📌 Signal ID: {signal_ref}\n\n"
+                    f"Virtual fill: {float(fill or 0):.8g}\n"
+                    f"Virtual size: {float(getattr(sizing, 'quantity', 0) or 0):.8g}\n"
+                    f"Risk: {float(risk_pct or 0):.2f}%\n"
+                    f"Stop Loss: {float(stop or 0):.8g}\n"
+                    f"Selected target: {float(target or 0):.8g}\n"
+                    f"Entry fee: ${float(getattr(sizing, 'entry_fee', 0) or 0):.4f}\n"
+                    f"Remaining virtual cash: ${float(remaining_cash or 0):,.2f}\n\n"
+                    "This uses virtual funds only."
                 )
+            else:
+                text = (
+                    "⚠️ Paper Trade Not Opened\n\n"
+                    f"Asset: {candidate.get('asset')}\n"
+                    f"📌 Signal ID: {signal_ref}\n\n"
+                    f"Reason: {reason.replace('_', ' ')}\n\n"
+                    "Use /paper_activity or /paper_settings to review your configuration."
+                )
+            async with Bot(token=token) as bot:
+                await bot.send_message(chat_id=int(telegram_user_id), text=text)
+        except Exception as exc:
+            logger.warning(
+                "[paper_notification_failed] user=%s signal=%s decision=%s error=%s",
+                telegram_user_id, candidate.get("signal_id"), decision, type(exc).__name__,
+            )
+
+    async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
+        notify: dict[str, Any] | None = None
+        result_status = "failed"
+        async with get_session(
+            priority=_paper_worker_priority(), label="paper.open_candidate", timeout_seconds=_paper_db_timeout(10.0)
+        ) as session:
+            user = (
+                await session.execute(select(User).where(User.id == int(candidate["user_id"])).limit(1))
             ).scalar_one_or_none()
             if user is None:
                 return "skipped"
@@ -636,183 +820,313 @@ class PaperTradingService:
             ).scalar_one_or_none()
             if account is None:
                 account = await self.ensure_account(int(user.telegram_user_id), session=session)
-            if account is None or account.status != "active" or not bool(account.auto_trade_enabled):
+            if account is None:
                 return "skipped"
-            existing = (
-                await session.execute(
-                    select(PaperPosition.position_id).where(
-                        PaperPosition.user_id == int(user.id),
-                        PaperPosition.signal_id == str(candidate["signal_id"]),
-                    ).limit(1)
+            if account.status != "active" or not bool(account.auto_trade_enabled):
+                await self._record_attempt(
+                    session, account=account, user=user, candidate=candidate,
+                    decision="SKIPPED", reason="auto_trade_disabled", retryable=False, finalized=True,
                 )
-            ).scalar_one_or_none()
-            if existing:
-                return "skipped"
-            open_count = int((
-                await session.execute(
-                    select(func.count(PaperPosition.position_id)).where(
-                        PaperPosition.user_id == int(user.id),
-                        PaperPosition.status == "open",
+                await session.commit()
+                notify = {"decision": "SKIPPED", "reason": "auto_trade_disabled"}
+                result_status = "skipped"
+            else:
+                existing = (
+                    await session.execute(
+                        select(PaperPosition.position_id).where(
+                            PaperPosition.user_id == int(user.id),
+                            PaperPosition.signal_id == str(candidate["signal_id"]),
+                            func.lower(PaperPosition.status).in_(["open", "closed"]),
+                        ).limit(1)
                     )
-                )
-            ).scalar() or 0)
-            skip_reason = ""
-            if open_count >= int(account.max_open_positions or 0):
-                skip_reason = "max_open_positions"
-            if _safe_float(candidate.get("score")) < _safe_float(account.min_signal_score):
-                skip_reason = skip_reason or "score_below_paper_minimum"
-            direction = canonical_direction(candidate.get("direction"))
-            allowed_direction = str(account.allowed_directions or "both").lower()
-            if allowed_direction not in {"both", direction}:
-                skip_reason = skip_reason or "direction_not_allowed"
-            asset_class = canonical_asset_class(candidate.get("asset"), candidate.get("asset_class"))
-            allowed_classes = {str(x).lower() for x in (account.allowed_asset_classes or [])}
-            if allowed_classes and asset_class not in allowed_classes:
-                skip_reason = skip_reason or "asset_class_not_allowed"
+                ).scalar_one_or_none()
+                if existing:
+                    return "skipped"
+                open_count = int((await session.execute(
+                    select(func.count(PaperPosition.position_id)).where(
+                        PaperPosition.user_id == int(user.id), PaperPosition.status == "open",
+                    )
+                )).scalar() or 0)
+                skip_reason = ""
+                if open_count >= int(account.max_open_positions or 0):
+                    skip_reason = "max_open_positions"
+                if _safe_float(candidate.get("score")) < _safe_float(account.min_signal_score):
+                    skip_reason = skip_reason or "score_below_paper_minimum"
+                direction = canonical_direction(candidate.get("direction"))
+                allowed_direction = str(account.allowed_directions or "both").lower()
+                if allowed_direction not in {"both", direction}:
+                    skip_reason = skip_reason or "direction_not_allowed"
+                asset_class = canonical_asset_class(candidate.get("asset"), candidate.get("asset_class"))
+                allowed_classes = {str(x).lower() for x in (account.allowed_asset_classes or [])}
+                if allowed_classes and asset_class not in allowed_classes:
+                    skip_reason = skip_reason or "asset_class_not_allowed"
+                entry = _safe_float(candidate.get("entry"))
+                stop = _safe_float(candidate.get("stop_loss"))
+                targets = parse_targets(candidate.get("take_profits"))
+                if entry <= 0 or stop <= 0 or not targets:
+                    skip_reason = skip_reason or "incomplete_signal_levels"
+                if skip_reason:
+                    await self._record_attempt(
+                        session, account=account, user=user, candidate=candidate,
+                        decision="SKIPPED", reason=skip_reason, retryable=False,
+                        market_price=market_price, finalized=True,
+                    )
+                    await session.commit()
+                    notify = {"decision": "SKIPPED", "reason": skip_reason}
+                    result_status = "skipped"
+                else:
+                    lifecycle_state = str(candidate.get("lifecycle_state") or "").strip().lower()
+                    if lifecycle_state == "watching_for_entry" and candidate.get("entry_touched_at") is None:
+                        await self._record_attempt(
+                            session, account=account, user=user, candidate=candidate,
+                            decision="DEFERRED", reason="watching_for_entry", retryable=True,
+                            market_price=market_price,
+                        )
+                        await session.commit()
+                        result_status = "deferred"
+                    else:
+                        live = _safe_float(market_price)
+                        if live <= 0:
+                            await self._record_attempt(
+                                session, account=account, user=user, candidate=candidate,
+                                decision="DEFERRED", reason="live_price_unavailable", retryable=True,
+                            )
+                            await session.commit()
+                            result_status = "deferred"
+                        else:
+                            bps = (_safe_float(account.spread_bps) + _safe_float(account.slippage_bps)) / 10000.0
+                            fill = live * (1.0 + bps if direction == "long" else 1.0 - bps)
+                            risk_per_unit = abs(fill - stop)
+                            target_idx = {"TP1": 0, "TP2": 1, "TP3": 2}.get(str(account.target_mode or "TP1").upper(), 0)
+                            target = targets[min(target_idx, len(targets) - 1)]
+                            valid_geometry = (stop < fill < target) if direction == "long" else (target < fill < stop)
+                            if risk_per_unit <= 0 or not valid_geometry:
+                                reason = "invalid_risk_distance" if risk_per_unit <= 0 else "paper_entry_no_longer_valid"
+                                await self._record_attempt(
+                                    session, account=account, user=user, candidate=candidate,
+                                    decision="SKIPPED", reason=reason, retryable=False,
+                                    market_price=market_price, finalized=True,
+                                )
+                                await session.commit()
+                                notify = {"decision": "SKIPPED", "reason": reason}
+                                result_status = "skipped"
+                            else:
+                                from core.paper_sizing import calculate_paper_position_size
 
-            entry = _safe_float(candidate.get("entry"))
-            stop = _safe_float(candidate.get("stop_loss"))
-            targets = parse_targets(candidate.get("take_profits"))
-            if entry <= 0 or stop <= 0 or not targets:
-                skip_reason = skip_reason or "incomplete_signal_levels"
-            if skip_reason:
-                await self._record_skipped(session, account, user, candidate, skip_reason, market_price)
-                await session.commit()
-                return "skipped"
-
-            live = _safe_float(market_price)
-            if live <= 0:
-                # Transient provider failure is not a strategy rejection. Leave the
-                # delivery unconsumed so the worker can retry while it is fresh.
-                return "deferred"
-            bps = (_safe_float(account.spread_bps) + _safe_float(account.slippage_bps)) / 10000.0
-            fill = live * (1.0 + bps if direction == "long" else 1.0 - bps)
-            risk_per_unit = abs(fill - stop)
-            if risk_per_unit <= 0:
-                await self._record_skipped(session, account, user, candidate, "invalid_risk_distance", market_price)
-                await session.commit()
-                return "skipped"
-            cash = _safe_float(account.cash_balance)
-            risk_amount = cash * (_safe_float(account.risk_pct, 1.0) / 100.0)
-            quantity = risk_amount / risk_per_unit
-            max_notional_pct = _env_float("PAPER_MAX_NOTIONAL_PCT", 100.0, 1.0, 100.0)
-            max_notional = cash * (max_notional_pct / 100.0)
-            quantity = min(quantity, max_notional / fill if fill > 0 else 0.0)
-            notional = quantity * fill
-            entry_fee = notional * (_safe_float(account.fee_bps) / 10000.0)
-            if quantity <= 0 or notional + entry_fee > cash:
-                await self._record_skipped(session, account, user, candidate, "insufficient_virtual_cash", market_price)
-                await session.commit()
-                return "skipped"
-            target_idx = {"TP1": 0, "TP2": 1, "TP3": 2}.get(str(account.target_mode or "TP1").upper(), 0)
-            target = targets[min(target_idx, len(targets) - 1)]
-            valid_geometry = (stop < fill < target) if direction == "long" else (target < fill < stop)
-            if not valid_geometry:
-                await self._record_skipped(session, account, user, candidate, "paper_entry_no_longer_valid", market_price)
-                await session.commit()
-                return "skipped"
-            position = PaperPosition(
-                position_id=str(uuid4()),
-                account_id=int(account.id),
-                user_id=int(user.id),
-                signal_id=str(candidate["signal_id"]),
-                delivery_id=int(candidate["delivery_id"]),
-                asset=str(candidate["asset"]),
-                asset_class=asset_class,
-                timeframe=str(candidate.get("timeframe") or ""),
-                direction=direction,
-                status="open",
-                signal_entry=entry,
-                fill_entry=fill,
-                current_price=live,
-                stop_loss=stop,
-                take_profits=targets,
-                target_price=target,
-                quantity=quantity,
-                notional=notional,
-                reserved_cash=notional,
-                entry_fee=entry_fee,
-                exit_fee=0.0,
-                unrealized_pnl=0.0,
-                realized_pnl=0.0,
-                opened_at=now_utc_naive(),
-                source="delivered_signal",
-                meta={
-                    "score": candidate.get("score"),
-                    "price_source": "live",
-                    "confirmed_at": str(candidate.get("confirmed_at") or ""),
-                    "risk_pct": _safe_float(account.risk_pct),
-                    "target_mode": str(account.target_mode or "TP1").upper(),
-                },
+                                cash = _safe_float(account.cash_balance)
+                                max_notional_pct = _env_float("PAPER_MAX_NOTIONAL_PCT", 95.0, 1.0, 100.0)
+                                try:
+                                    sizing = calculate_paper_position_size(
+                                        cash=cash,
+                                        risk_pct=account.risk_pct,
+                                        risk_per_unit=risk_per_unit,
+                                        fill=fill,
+                                        max_notional_pct=max_notional_pct,
+                                        fee_bps=account.fee_bps,
+                                        tolerance=os.getenv("PAPER_CASH_TOLERANCE", "0.00000001"),
+                                    )
+                                except ValueError as exc:
+                                    reason = str(exc)
+                                    await self._record_attempt(
+                                        session, account=account, user=user, candidate=candidate,
+                                        decision="SKIPPED", reason=reason, retryable=False,
+                                        market_price=market_price, finalized=True,
+                                    )
+                                    await session.commit()
+                                    notify = {"decision": "SKIPPED", "reason": reason}
+                                    result_status = "skipped"
+                                else:
+                                    quantity = float(sizing.quantity)
+                                    notional = float(sizing.notional)
+                                    entry_fee = float(sizing.entry_fee)
+                                    position = PaperPosition(
+                                        position_id=str(uuid4()), account_id=int(account.id), user_id=int(user.id),
+                                        signal_id=str(candidate["signal_id"]), delivery_id=int(candidate["delivery_id"]),
+                                        asset=str(candidate["asset"]), asset_class=asset_class,
+                                        timeframe=str(candidate.get("timeframe") or ""), direction=direction,
+                                        status="open", signal_entry=entry, fill_entry=fill, current_price=live,
+                                        stop_loss=stop, take_profits=targets, target_price=target,
+                                        quantity=quantity, notional=notional, reserved_cash=notional,
+                                        entry_fee=entry_fee, exit_fee=0.0, unrealized_pnl=0.0, realized_pnl=0.0,
+                                        opened_at=now_utc_naive(), source="delivered_signal",
+                                        meta={
+                                            "score": candidate.get("score"), "price_source": "live",
+                                            "confirmed_at": str(candidate.get("confirmed_at") or ""),
+                                            "risk_pct": _safe_float(account.risk_pct),
+                                            "target_mode": str(account.target_mode or "TP1").upper(),
+                                            "sizing_policy_version": sizing.policy_version,
+                                            "max_notional_pct": max_notional_pct,
+                                            "exit_fee_accounting": "deducted_from_final_proceeds",
+                                        },
+                                    )
+                                    account.cash_balance = cash - float(sizing.total_required)
+                                    if account.cash_balance < -float(os.getenv("PAPER_CASH_TOLERANCE", "0.00000001")):
+                                        raise RuntimeError("paper_cash_balance_would_be_negative")
+                                    account.updated_at = now_utc_naive()
+                                    session.add(position)
+                                    await session.flush()
+                                    session.add(PaperLedgerEntry(
+                                        account_id=int(account.id), user_id=int(user.id), position_id=position.position_id,
+                                        entry_type="POSITION_OPENED", amount=-float(sizing.total_required),
+                                        balance_after=_safe_float(account.cash_balance),
+                                        description=f"Opened paper {direction.upper()} {candidate['asset']}",
+                                        meta={
+                                            "fill": fill, "quantity": quantity, "entry_fee": entry_fee,
+                                            "sizing_policy_version": sizing.policy_version,
+                                        },
+                                    ))
+                                    await self._record_attempt(
+                                        session, account=account, user=user, candidate=candidate,
+                                        decision="OPENED", reason="eligible_confirmed_delivery", retryable=False,
+                                        market_price=market_price, sizing=sizing, finalized=True,
+                                        meta={"position_id": position.position_id},
+                                    )
+                                    try:
+                                        await session.commit()
+                                    except IntegrityError:
+                                        await session.rollback()
+                                        return "skipped"
+                                    result_status = "opened"
+                                    notify = {
+                                        "decision": "OPENED", "reason": "eligible_confirmed_delivery",
+                                        "fill": fill, "sizing": sizing, "risk_pct": _safe_float(account.risk_pct),
+                                        "stop": stop, "target": target, "remaining_cash": account.cash_balance,
+                                    }
+                                    logger.info(
+                                        "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s "
+                                        "decision=OPENED cash=%.4f risk_pct=%.4f risk_amount=%.4f fill=%.8f "
+                                        "stop=%.8f quantity=%.10f notional=%.4f entry_fee=%.4f target=%.8f",
+                                        user.telegram_user_id, candidate["signal_id"], candidate["delivery_id"],
+                                        candidate["asset"], cash, _safe_float(account.risk_pct),
+                                        float(sizing.risk_amount), fill, stop, quantity, notional, entry_fee, target,
+                                    )
+        if notify is not None:
+            await self._notify_paper_decision(
+                telegram_user_id=int(candidate["telegram_user_id"]), candidate=candidate, **notify,
             )
-            account.cash_balance = cash - notional - entry_fee
-            account.updated_at = now_utc_naive()
-            session.add(position)
-            await session.flush()
-            session.add(PaperLedgerEntry(
-                account_id=int(account.id),
-                user_id=int(user.id),
-                position_id=position.position_id,
-                entry_type="POSITION_OPENED",
-                amount=-(notional + entry_fee),
-                balance_after=_safe_float(account.cash_balance),
-                description=f"Opened paper {direction.upper()} {candidate['asset']}",
-                meta={"fill": fill, "quantity": quantity, "entry_fee": entry_fee},
-            ))
-            try:
-                await session.commit()
-            except IntegrityError:
-                await session.rollback()
-                return "skipped"
+        if result_status != "opened":
             logger.info(
-                "[paper_auto_open] user=%s signal=%s asset=%s direction=%s fill=%.8f quantity=%.8f target=%.8f",
-                user.telegram_user_id, candidate["signal_id"], candidate["asset"], direction, fill, quantity, target,
+                "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s decision=%s reason=%s",
+                candidate.get("telegram_user_id"), candidate.get("signal_id"), candidate.get("delivery_id"),
+                candidate.get("asset"), result_status.upper(), (notify or {}).get("reason", "retry_pending"),
             )
-            return "opened"
+        return result_status
 
-    async def _record_skipped(self, session, account: PaperAccount, user: User, candidate: dict[str, Any], reason: str, market_price: float | None) -> None:
-        position = PaperPosition(
-            position_id=str(uuid4()),
-            account_id=int(account.id),
-            user_id=int(user.id),
-            signal_id=str(candidate["signal_id"]),
-            delivery_id=int(candidate["delivery_id"]),
-            asset=str(candidate["asset"]),
-            asset_class=canonical_asset_class(candidate.get("asset"), candidate.get("asset_class")),
-            timeframe=str(candidate.get("timeframe") or ""),
-            direction=canonical_direction(candidate.get("direction")),
-            status="skipped",
-            signal_entry=_safe_float(candidate.get("entry")),
-            fill_entry=_safe_float(market_price, _safe_float(candidate.get("entry"))),
-            current_price=_safe_float(market_price, _safe_float(candidate.get("entry"))),
-            stop_loss=_safe_float(candidate.get("stop_loss")),
-            take_profits=parse_targets(candidate.get("take_profits")),
-            target_price=None,
-            quantity=0.0,
-            notional=0.0,
-            reserved_cash=0.0,
-            entry_fee=0.0,
-            exit_fee=0.0,
-            unrealized_pnl=0.0,
-            realized_pnl=0.0,
-            opened_at=now_utc_naive(),
-            closed_at=now_utc_naive(),
-            exit_reason=str(reason),
-            source="delivered_signal",
-            meta={"score": candidate.get("score"), "skip_reason": str(reason)},
+    async def _record_skipped(
+        self, session, account: PaperAccount, user: User, candidate: dict[str, Any],
+        reason: str, market_price: float | None,
+    ) -> None:
+        """Compatibility adapter: skipped decisions now live in the attempt ledger."""
+        await self._record_attempt(
+            session, account=account, user=user, candidate=candidate,
+            decision="SKIPPED", reason=reason, retryable=False,
+            market_price=market_price, finalized=True,
         )
-        session.add(position)
-        session.add(PaperLedgerEntry(
-            account_id=int(account.id),
-            user_id=int(user.id),
-            position_id=position.position_id,
-            entry_type="SIGNAL_SKIPPED",
-            amount=0.0,
-            balance_after=_safe_float(account.cash_balance),
-            description=f"Paper signal skipped: {reason}",
-            meta={"signal_id": candidate.get("signal_id"), "asset": candidate.get("asset")},
-        ))
+    async def list_attempts(
+        self, telegram_user_id: int, *, decision: str | None = None, limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        async with get_session(priority="interactive", label="paper.activity") as session:
+            user = await self._user_row(session, int(telegram_user_id))
+            if user is None:
+                return []
+            query = select(PaperTradeAttempt, Signal).join(
+                Signal, Signal.signal_id == PaperTradeAttempt.signal_id
+            ).where(PaperTradeAttempt.user_id == int(user.id))
+            if decision:
+                query = query.where(PaperTradeAttempt.decision == str(decision).upper())
+            rows = (await session.execute(
+                query.order_by(PaperTradeAttempt.created_at.desc()).limit(max(1, min(100, int(limit))))
+            )).all()
+            return [
+                {
+                    "attempt_id": attempt.attempt_id,
+                    "signal_id": attempt.signal_id,
+                    "display_id": str(getattr(signal, "display_id", "") or attempt.signal_id[:12]),
+                    "asset": signal.asset,
+                    "decision": attempt.decision,
+                    "reason": attempt.reason,
+                    "retryable": bool(attempt.retryable),
+                    "attempt_number": int(attempt.attempt_number or 0),
+                    "created_at": attempt.created_at,
+                    "next_retry_at": attempt.next_retry_at,
+                    "retry_deadline": attempt.retry_deadline,
+                }
+                for attempt, signal in rows
+            ]
 
+    async def status_detail(self, telegram_user_id: int) -> dict[str, Any] | None:
+        snapshot = await self.snapshot(int(telegram_user_id))
+        if snapshot is None:
+            return None
+        activity = await self.list_attempts(int(telegram_user_id), limit=100)
+        counts: dict[str, int] = {}
+        for row in activity:
+            key = str(row["decision"]).lower()
+            counts[key] = counts.get(key, 0) + 1
+        return {
+            "snapshot": asdict(snapshot),
+            "globally_available": _env_bool("PAPER_TRADING_ENABLED", True),
+            "worker_last_scan": getattr(self, "_last_cycle_at", None),
+            "worker_last_result": getattr(self, "_last_cycle_result", {}),
+            "last_decision": activity[0] if activity else None,
+            "recent_counts": counts,
+        }
+
+    async def request_retry(self, telegram_user_id: int, signal_reference: str) -> tuple[bool, str]:
+        from db.signal_reference import SignalReferenceError, resolve_signal_reference
+
+        now = now_utc_naive()
+        max_age_s = _env_int("PAPER_AUTO_ENTRY_MAX_AGE_SECONDS", 900, 30, 86400)
+        async with get_session(priority="interactive", label="paper.retry") as session:
+            try:
+                resolved = await resolve_signal_reference(
+                    session, signal_reference, telegram_user_id=int(telegram_user_id), require_delivery_proof=True,
+                )
+            except SignalReferenceError as exc:
+                return False, str(exc)
+            user = await self._user_row(session, int(telegram_user_id))
+            if user is None:
+                return False, "paper account user not found"
+            account = (await session.execute(
+                select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
+            )).scalar_one_or_none()
+            if account is None or not bool(account.auto_trade_enabled):
+                return False, "automatic paper trading is off"
+            signal_id = str(resolved.signal.signal_id)
+            actual = (await session.execute(select(PaperPosition.position_id).where(
+                PaperPosition.user_id == int(user.id), PaperPosition.signal_id == signal_id,
+                func.lower(PaperPosition.status).in_(["open", "closed"]),
+            ).limit(1))).scalar_one_or_none()
+            if actual:
+                return False, "a paper position already exists"
+            delivery = (await session.execute(select(SignalDelivery).where(
+                SignalDelivery.user_id == int(user.id), SignalDelivery.signal_id == signal_id,
+                SignalDelivery.sent_ok.is_(True), SignalDelivery.telegram_chat_id.is_not(None),
+                SignalDelivery.telegram_message_id.is_not(None), SignalDelivery.delivery_confirmed_at.is_not(None),
+                func.lower(SignalDelivery.delivery_state).in_(["sent", "confirmed", "delivered", "reconciled"]),
+            ).limit(1))).scalar_one_or_none()
+            if delivery is None:
+                return False, "confirmed delivery proof is missing"
+            deadline = delivery.delivery_confirmed_at + timedelta(seconds=max_age_s)
+            if deadline <= now:
+                return False, "paper entry freshness deadline expired"
+            latest = (await session.execute(select(PaperTradeAttempt).where(
+                PaperTradeAttempt.user_id == int(user.id), PaperTradeAttempt.signal_id == signal_id,
+            ).order_by(PaperTradeAttempt.created_at.desc()).limit(1))).scalar_one_or_none()
+            repairable = {"insufficient_virtual_cash", "live_price_unavailable", "watching_for_entry", "database_admission_unavailable"}
+            if latest is not None and not latest.retryable and latest.reason not in repairable:
+                return False, f"decision is permanent: {latest.reason}"
+            candidate = {
+                "signal_id": signal_id, "delivery_id": int(delivery.id),
+                "retry_deadline": deadline, "asset": resolved.signal.asset,
+            }
+            await self._record_attempt(
+                session, account=account, user=user, candidate=candidate,
+                decision="RETRY_PENDING", reason="manual_retry_requested", retryable=True,
+                next_retry_seconds=1, meta={"requested_by": int(telegram_user_id)},
+            )
+            await session.commit()
+            return True, "retry queued"
     async def _open_position_snapshots(self, limit: int) -> list[dict[str, Any]]:
         async with get_session(priority=_paper_worker_priority(), label="paper.open_snapshots", timeout_seconds=_paper_db_timeout(8.0)) as session:
             rows = (
@@ -955,8 +1269,15 @@ class PaperTradingService:
             except Exception as exc:
                 logger.exception("[paper_worker] mark phase failed: %s", exc)
 
-            if opened.get("opened") or marked.get("closed"):
-                logger.info("[paper_worker] cycle openings=%s marking=%s", opened, marked)
+            self._last_cycle_at = now_utc_naive()
+            self._last_cycle_result = {"openings": dict(opened), "marking": dict(marked)}
+            logger.info(
+                "[paper_worker_cycle] candidates=%s opened=%s skipped=%s deferred=%s failed=%s "
+                "marked=%s closed=%s",
+                opened.get("candidates", 0), opened.get("opened", 0), opened.get("skipped", 0),
+                opened.get("deferred", 0), opened.get("failed", 0), marked.get("updated", 0),
+                marked.get("closed", 0),
+            )
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=interval)
             except asyncio.TimeoutError:

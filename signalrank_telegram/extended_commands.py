@@ -212,7 +212,10 @@ async def paper_settings_command(update, context) -> None:
         try:
             if key == "auto" and len(args) >= 2:
                 value = args[1].lower() in {"on", "1", "true", "yes"}
-                await paper_trading_service.update_settings(uid, auto_trade_enabled=value)
+                persisted = await paper_trading_service.update_settings(uid, auto_trade_enabled=value)
+                if persisted is None or bool(persisted.auto_trade_enabled) is not bool(value):
+                    await _reply(update, "Paper setting was not persisted. Automatic entries were not changed.")
+                    return
             elif key == "risk" and len(args) >= 2:
                 await paper_trading_service.update_settings(uid, risk_pct=float(args[1]))
             elif key in {"max", "max_positions"} and len(args) >= 2:
@@ -267,6 +270,80 @@ async def paper_settings_command(update, context) -> None:
         "Automatic paper entries use only signals confirmed as delivered to your Telegram account.",
     )
 
+
+async def paper_status_command(update, context) -> None:
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    detail = await paper_trading_service.status_detail(uid)
+    if detail is None:
+        await _reply(update, "Send /start first so your paper account can be created.")
+        return
+    snap = detail["snapshot"]
+    counts = detail.get("recent_counts") or {}
+    last = detail.get("last_decision") or {}
+    classes = ", ".join(snap.get("allowed_asset_classes") or []) or "all"
+    await _reply(
+        update,
+        "📄 Paper Trading Status\n\n"
+        f"Globally available: {'YES' if detail.get('globally_available') else 'NO'}\n"
+        f"Account: active\nAutomatic entries: {'ON' if snap.get('auto_trade_enabled') else 'OFF'}\n"
+        f"Starting balance: {_money(snap.get('starting_balance'))}\n"
+        f"Available cash: {_money(snap.get('cash_balance'))}\nEquity: {_money(snap.get('equity'))}\n"
+        f"Risk: {float(snap.get('risk_pct') or 0):.2f}%\n"
+        f"Open positions: {snap.get('open_positions')}/{snap.get('max_open_positions')}\n"
+        f"Minimum score: {float(snap.get('min_signal_score') or 0):.1f}\n"
+        f"Target: {snap.get('target_mode')}\nDirections: {snap.get('allowed_directions')}\n"
+        f"Asset classes: {classes}\n"
+        f"Last worker scan: {detail.get('worker_last_scan') or 'not observed in this process'}\n"
+        f"Last decision: {last.get('decision') or 'none'} — {last.get('reason') or 'none'}\n"
+        f"Recent opened/skipped/deferred/failed: {counts.get('opened', 0)}/"
+        f"{counts.get('skipped', 0)}/{counts.get('deferred', 0)}/{counts.get('failed', 0)}"
+    )
+
+
+async def paper_activity_command(update, context) -> None:
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    rows = await paper_trading_service.list_attempts(uid, limit=20)
+    if not rows:
+        await _reply(update, "No automatic paper-trading decisions recorded yet.")
+        return
+    lines = ["📋 Paper Activity", ""]
+    for row in rows:
+        retry = "retryable" if row["retryable"] else "final"
+        lines.append(
+            f"📌 {row['display_id']} • {row['asset']} • {row['decision']} • "
+            f"{row['reason']} • {retry} • {row['created_at']}"
+        )
+    await _reply(update, "\n".join(lines)[:3900])
+
+
+async def paper_skips_command(update, context) -> None:
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    rows = await paper_trading_service.list_attempts(uid, decision="SKIPPED", limit=20)
+    if not rows:
+        await _reply(update, "No skipped paper signals.")
+        return
+    lines = ["⚠️ Skipped Paper Signals", ""]
+    for row in rows:
+        lines.append(f"📌 {row['display_id']} • {row['asset']} • {row['reason']}")
+    await _reply(update, "\n".join(lines)[:3900])
+
+
+async def paper_retry_command(update, context) -> None:
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    args = [str(value).strip() for value in (getattr(context, "args", []) or []) if str(value).strip()]
+    if not args:
+        await _reply(update, "Usage: /paper_retry <signal_id>")
+        return
+    accepted, reason = await paper_trading_service.request_retry(uid, args[0])
+    await _reply(update, ("✅ " if accepted else "⚠️ ") + reason)
 
 async def receipt_command(update, context) -> None:
     args = getattr(context, "args", []) or []

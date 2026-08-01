@@ -917,6 +917,10 @@ from .extended_commands import (
     paper_history_command,
     paper_reset_command,
     paper_settings_command,
+    paper_status_command,
+    paper_activity_command,
+    paper_skips_command,
+    paper_retry_command,
     receipt_command,
     receipts_command,
     report_issue_command,
@@ -6003,6 +6007,10 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("paper_history", _audit_handler("paper_history", paper_history_command)))
     application.add_handler(CommandHandler("paper_reset", _audit_handler("paper_reset", paper_reset_command)))
     application.add_handler(CommandHandler("paper_settings", _audit_handler("paper_settings", paper_settings_command)))
+    application.add_handler(CommandHandler("paper_status", _audit_handler("paper_status", paper_status_command)))
+    application.add_handler(CommandHandler("paper_activity", _audit_handler("paper_activity", paper_activity_command)))
+    application.add_handler(CommandHandler("paper_skips", _audit_handler("paper_skips", paper_skips_command)))
+    application.add_handler(CommandHandler("paper_retry", _audit_handler("paper_retry", paper_retry_command)))
     application.add_handler(CommandHandler("receipt", _audit_handler("receipt", receipt_command)))
     application.add_handler(CommandHandler("receipts", _audit_handler("receipts", receipts_command)))
     application.add_handler(CommandHandler("report_issue", _audit_handler("report_issue", report_issue_command)))

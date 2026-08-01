@@ -5669,209 +5669,111 @@ async def disclaimer_command(update, context) -> None:
 
 
 @require_tier("PREMIUM")
-async def performance_command(update, context):
+async def performance_command(update, context) -> None:
+	"""Show canonical proof-backed user performance, details, or an owner audit."""
 	if await _public_guard(update):
 		return
-	from datetime import datetime, timedelta
 	if update.message is None and getattr(update, "callback_query", None) is not None:
-		try:
-			update.message = update.callback_query.message
-		except Exception:
-			pass
+		update.message = update.callback_query.message
 	if update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier: str = _effective_tier(user_id)
-	try:
-		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		_perf_kbd = InlineKeyboardMarkup([
-			[
-				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
-			],
-			[
-				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
-			],
-		])
-	except Exception:
-		_perf_kbd = None
 
-	# Prefer Postgres (deliveries + outcomes)
+	user_id = int(update.effective_user.id)
+	tier = str(_effective_tier(user_id) or "free").lower()
+	args = [str(value).strip().lower() for value in (getattr(context, "args", None) or [])]
+	mode = args[0] if args else "30d"
+	if mode in {"7d", "30d", "90d"}:
+		days = int(mode[:-1])
+	elif mode in {"details", "audit"}:
+		days = 30
+	else:
+		await update.message.reply_text("Usage: /performance [7d|30d|90d|details|audit]")
+		return
+	if mode == "audit" and tier not in {"owner", "admin"}:
+		await update.message.reply_text("Performance audit is restricted to owner/admin accounts.")
+		return
+
 	try:
 		from db.session import get_engine_for_event_loop, get_session
-		engine = get_engine_for_event_loop()
-		if engine is not None:
-			from db.pg_features import get_user_performance_30d
-			from sqlalchemy import text
+		from services.performance_ledger import audit_user_performance, get_user_performance_report
 
-			async def _fallback_performance_stats(session, tg_user_id: int) -> dict[str, object]:
-				"""Fallback aggregate in case helper query fails in production."""
-				row = (
-					await session.execute(
-						text(
-							"""
-							SELECT
-							  COUNT(DISTINCT sd.id) AS total,
-							  SUM(CASE WHEN LOWER(COALESCE(o.status, '')) IN ('tp','tp1','tp2','partial_tp') THEN 1 ELSE 0 END) AS wins,
-							  SUM(CASE WHEN LOWER(COALESCE(o.status, '')) = 'sl' THEN 1 ELSE 0 END) AS losses,
-							  AVG(o.r_multiple) AS avg_r,
-							  SUM(o.r_multiple) AS net_r
-							FROM users u
-							LEFT JOIN signal_deliveries sd
-							  ON sd.user_id = u.id
-							  AND sd.delivered_at >= (NOW() - INTERVAL '30 days')
-							  AND sd.sent_ok IS TRUE
-							LEFT JOIN signals s
-							  ON s.signal_id = sd.signal_id
-							LEFT JOIN outcomes o
-							  ON o.signal_id = sd.signal_id
-							WHERE u.telegram_user_id = :uid
-							  AND COALESCE(s.performance_version, 1) >= :performance_version
-							"""
-						),
-						{
-							"uid": int(tg_user_id),
-							"performance_version": max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2)),
-						},
-					)
-				).first()
-				if not row:
-					return {
-						"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
-						"avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0,
-					}
-				total = int(row[0] or 0)
-				wins = int(row[1] or 0)
-				losses = int(row[2] or 0)
-				tracked = wins + losses
-				avg_r = float(row[3]) if row[3] is not None else None
-				net_r = float(row[4]) if row[4] is not None else None
-				profit_loss_pct = ((float(net_r) / tracked) * 1.0) if (net_r is not None and tracked > 0) else 0.0
-				return {
-					"total": total,
-					"wins": wins,
-					"losses": losses,
-					"win_rate": (wins / max(1, tracked)) if tracked > 0 else 0.0,
-					"avg_r": avg_r,
-					"net_r": net_r,
-					"tracked_outcomes": tracked,
-					"profit_loss_pct": float(profit_loss_pct),
-				}
-
-			# Fetch performance stats
-			stats = {}
-			try:
-				async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-					stats = await get_user_performance_30d(session, int(user_id))
-			except Exception as e:
-				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
-				try:
-					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-						stats = await _fallback_performance_stats(session, int(user_id))
-				except Exception as e2:
-					_audit_logger.error(f"/performance fallback query failed for user={user_id}: {e2}")
-
-			total = int((stats or {}).get("total") or 0)
-			wins = int((stats or {}).get("terminal_wins", (stats or {}).get("wins", 0)) or 0)
-			losses = int((stats or {}).get("losses") or 0)
-			win_rate = float((stats or {}).get("win_rate") or 0.0)
-			avg_r = (stats or {}).get("avg_r")
-			net_r = (stats or {}).get("net_r")
-			tracked = int((stats or {}).get("tracked_outcomes") or 0)
-			completed = int((stats or {}).get("completed_outcomes") or (wins + losses))
-			partial_wins = int((stats or {}).get("partial_wins") or 0)
-			breakeven = int((stats or {}).get("breakeven") or 0)
-			active = int((stats or {}).get("active") or 0)
-			outcome_pending = int((stats or {}).get("outcome_pending") or 0)
-			expired = int((stats or {}).get("expired") or (stats or {}).get("time_stops") or 0)
-			cancelled = int((stats or {}).get("cancelled") or 0)
-			missed_entry = int((stats or {}).get("missed_entry") or 0)
-			tracking_failed = int((stats or {}).get("tracking_failed") or 0)
-			outcome_coverage = float((stats or {}).get("outcome_coverage") or 0.0) * 100.0
-			completion_rate = float((stats or {}).get("completion_rate") or 0.0) * 100.0
-			profit_loss = float((stats or {}).get("profit_loss_pct") or 0.0)
-
-			if total <= 0:
-				# Fallback diagnostic: if deliveries exist but outcomes are missing, show a hint
-				deliveries_30d = 0
-				try:
-					from sqlalchemy import select, func
-					from db.models import SignalDelivery, User
-					cutoff: datetime = now_utc_naive() - timedelta(days=30)
-					
-					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
-						u = res_u.scalar_one_or_none()
-						if u is None:
-							deliveries_30d = 0
-						else:
-							res_d = await session.execute(
-								select(func.count(SignalDelivery.id)).where(
-									SignalDelivery.user_id == u.id,
-									SignalDelivery.delivered_at >= cutoff,
-								)
-							)
-							deliveries_30d = int(res_d.scalar() or 0)
-				except Exception as e:
-					_audit_logger.error(f"/performance delivery count failed for user={user_id}: {e}")
-					deliveries_30d = 0
-
-				if deliveries_30d > 0:
-					msg: str = (
-						"📊 Performance (pending outcomes)\n\n"
-						f"Signals delivered (30d): {deliveries_30d}\n"
-						"Outcomes not yet tracked for these signals. They will appear once TP/SL is marked."
-					)
-				else:
-					msg = "No signals in the last 30 days."
-				
-				if update.message is not None:
-					await update.message.reply_text(msg, reply_markup=_perf_kbd)
-				return
-
-			if tier_rank(tier) < tier_rank("PREMIUM"):
-				bucket: str = "strong" if win_rate >= 0.6 else ("cautious" if win_rate <= 0.4 else "mixed")
-				msg: str = (
-					"📊 Performance (limited)\n\n"
-					f"Recent trend: {bucket}.\n"
-					"Upgrade to Premium for full stats and history."
-				)
-				if update.message is not None:
-					await update.message.reply_text(msg, reply_markup=_perf_kbd)
-				return
-
-			avg_r_str: str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
-			net_r_str: str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
-			profit_str: str = f"+{profit_loss:.2f}%" if profit_loss >= 0 else f"{profit_loss:.2f}%"
-			profit_emoji: str = "✅" if profit_loss >= 0 else "⚠️"
-			
-			msg: str = (
-				"Performance (last 30 days)\n\n"
-				f"Signals delivered: {total}\n"
-				f"Outcome coverage: {tracked}/{total} ({outcome_coverage:.1f}%)\n"
-				f"Completed outcomes: {completed}/{total} ({completion_rate:.1f}%)\n"
-				f"Terminal wins: {wins} | Losses: {losses}\n"
-				f"Completed win rate: {round(win_rate*100,1)}%\n"
-				f"Partial wins: {partial_wins} | BE: {breakeven}\n"
-				f"Active: {active} | Pending: {outcome_pending}\n"
-				f"Expired: {expired} | Missed entry: {missed_entry} | Tracking failed: {tracking_failed} | Cancelled: {cancelled}\n"
-				f"Avg R per completed trade: {avg_r_str}\n"
-				f"Net R (completed): {net_r_str}\n"
-				f"{profit_emoji} Est. profit/loss: {profit_str}\n\n"
-				"Based on 1% risk per completed signal. Low coverage means win rate is not yet reliable."
-			)
-			if update.message is not None:
-				await update.message.reply_text(msg, reply_markup=_perf_kbd)
-			return
-	except Exception as e:
-		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
-		if update.message is not None:
-			await update.message.reply_text(
-				"No performance data available right now. Use /signals for recent activity.",
-				reply_markup=_perf_kbd,
-			)
+		if get_engine_for_event_loop() is None:
+			raise RuntimeError("database unavailable")
+		async with get_session(priority="interactive", label="canonical_performance_command") as session:
+			report = await get_user_performance_report(session, telegram_user_id=user_id, days=days)
+			if mode == "audit":
+				audit = await audit_user_performance(session, telegram_user_id=user_id, days=days)
+			await session.commit()
+	except Exception as exc:
+		_audit_logger.exception("/performance canonical ledger failed user=%s: %s", user_id, exc)
+		await update.message.reply_text(
+			"Performance is temporarily unavailable because the proof-backed ledger could not be verified. "
+			"No estimated or unverified fallback was shown."
+		)
 		return
+
+	buckets = dict(report.get("buckets") or {})
+	if mode == "details":
+		rows = list(report.get("rows") or [])[-20:]
+		lines = [
+			f"Performance details ({days}d)",
+			"Basis: confirmed delivery cohort; timestamps use UTC.",
+			"",
+		]
+		for row in rows:
+			r_value = "n/a" if row.final_realized_r is None else f"{float(row.final_realized_r):+.2f}R"
+			lines.append(f"{row.signal_id[:8]}  {row.primary_bucket}  {r_value}")
+		if not rows:
+			lines.append("No proof-backed ledger rows in this window.")
+		lines.extend(["", f"Reconciliation: {report.get('reconciliation_id', 'n/a')}"])
+		await update.message.reply_text("\n".join(lines))
+		return
+
+	if mode == "audit":
+		await update.message.reply_text(
+			"Performance audit (30d)\n\n"
+			f"Reconciliation: {audit.get('reconciliation_id')}\n"
+			f"Confirmed deliveries: {audit.get('confirmed_delivery_count', 0)}\n"
+			f"Bucket sum: {audit.get('bucket_sum', 0)}\n"
+			f"Invariant: {'PASS' if audit.get('invariant_ok') else 'FAIL'}\n"
+			f"Non-finite finalized R rows: {len(audit.get('invalid_final_r') or [])}"
+		)
+		return
+
+	if not report.get("invariant_ok"):
+		await update.message.reply_text(
+			"Performance is temporarily unavailable: the delivery-to-bucket reconciliation invariant failed."
+		)
+		return
+
+	completed = int(report.get("completed_r_count") or 0)
+	avg_r = report.get("avg_r")
+	median_r = report.get("median_r")
+	lines = [
+		f"Performance ({days}d)",
+		str(report.get("basis_label") or "Confirmed delivery cohort"),
+		"",
+		f"Confirmed deliveries: {int(report.get('delivered') or 0)}",
+		f"Completed results with R: {completed}",
+		f"TP3 / SL: {buckets.get('TP3', 0)} / {buckets.get('SL', 0)}",
+		f"Stopped TP1 / TP2: {buckets.get('STOPPED_AT_TP1', 0)} / {buckets.get('STOPPED_AT_TP2', 0)}",
+		f"Breakeven: {buckets.get('BREAKEVEN', 0)}",
+		f"Active / pending entry: {buckets.get('ACTIVE', 0)} / {buckets.get('PENDING_ENTRY', 0)}",
+		f"Missed / expired / cancelled: {buckets.get('MISSED_ENTRY', 0)} / {buckets.get('EXPIRED', 0)} / {buckets.get('CANCELLED', 0)}",
+		f"Tracking failed / provider unavailable: {buckets.get('TRACKING_FAILED', 0)} / {buckets.get('PROVIDER_UNAVAILABLE', 0)}",
+		"",
+		f"Net R: {float(report.get('net_r') or 0):+.2f}R",
+		f"Average R: {'n/a' if avg_r is None else f'{float(avg_r):+.2f}R'}",
+		f"Median R: {'n/a' if median_r is None else f'{float(median_r):+.2f}R'}",
+		f"Standardized simple return (1% risk): {float(report.get('standardized_simple_return_pct') or 0):+.2f}%",
+		f"Standardized compounded return (1% risk): {float(report.get('standardized_compounded_return_pct') or 0):+.2f}%",
+		f"Strict win rate (TP3 vs SL): {float(report.get('strict_win_rate') or 0) * 100:.1f}%",
+		f"Terminal coverage: {float(report.get('terminal_coverage') or 0) * 100:.1f}%",
+		"",
+		"Returns are standardized illustrations at 1% risk per completed result; they are not account returns, financial advice, or a guarantee.",
+		f"Reconciliation: {report.get('reconciliation_id', 'n/a')}",
+	]
+	await update.message.reply_text("\n".join(lines))
 
 
 @require_tier("PREMIUM")

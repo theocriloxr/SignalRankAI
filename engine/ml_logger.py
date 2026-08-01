@@ -132,16 +132,37 @@ async def log_ml_training_data(
         from sqlalchemy import select
         import json
         
-        # Check if already exists
-        existing = await session.execute(
-            select(MLPastTrainingData).where(
-                MLPastTrainingData.signal_id == signal_id
+        from core.delivery_state import CONFIRMED_DELIVERY_STATES
+        from db.models import SignalDelivery
+        from sqlalchemy import func
+
+        proof_count = await session.scalar(
+            select(func.count(SignalDelivery.id)).where(
+                SignalDelivery.signal_id == str(signal_id),
+                SignalDelivery.sent_ok.is_(True),
+                func.lower(func.coalesce(SignalDelivery.delivery_state, "")).in_(CONFIRMED_DELIVERY_STATES),
+                SignalDelivery.delivery_confirmed_at.is_not(None),
+                SignalDelivery.telegram_chat_id.is_not(None),
+                SignalDelivery.telegram_message_id.is_not(None),
             )
         )
-        if existing.scalar_one_or_none():
+        delivery_proof_backed = int(proof_count or 0) > 0
+        provenance_domain = "live_user_delivery" if delivery_proof_backed else "global_signal_outcome"
+        exclusion_reason = None if delivery_proof_backed else "missing_confirmed_delivery_proof"
+
+        # Repair provenance on an existing idempotent row.
+        existing = await session.execute(
+            select(MLPastTrainingData).where(MLPastTrainingData.signal_id == signal_id)
+        )
+        existing_row = existing.scalar_one_or_none()
+        if existing_row:
+            existing_row.delivery_proof_backed = delivery_proof_backed
+            existing_row.provenance_domain = provenance_domain
+            existing_row.persistence_status = "persisted"
+            existing_row.exclusion_reason = exclusion_reason
+            await session.commit()
             logger.debug(f"[ml_logger] Training data already exists for {signal_id}")
             return True
-        
         # Parse take_profit from string/dict to string
         if isinstance(take_profit, (list, dict)):
             tp_str = json.dumps(take_profit)
@@ -196,6 +217,10 @@ async def log_ml_training_data(
             outcome_r_multiple=training_r,
             outcome_percent=float(outcome_percent) if outcome_percent is not None else None,
             outcome_meta=meta,
+            provenance_domain=provenance_domain,
+            delivery_proof_backed=delivery_proof_backed,
+            persistence_status="persisted",
+            exclusion_reason=exclusion_reason,
             signal_created_at=signals_created_at,
             outcome_closed_at=outcome_closed_at,
         )

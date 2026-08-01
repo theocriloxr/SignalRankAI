@@ -1066,7 +1066,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 try:
                     from engine.ml_logger import log_ml_training_data
                     _outcome_status = canonical_outcome if canonical_outcome != "pending" else status_l
-                    await log_ml_training_data(
+                    _ml_saved = await log_ml_training_data(
                         session,
                         signal_id=str(signal_id),
                         asset=str(getattr(signal_data, "asset", "") or ""),
@@ -1084,10 +1084,16 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                         outcome_closed_at=now,
                     )
                     r_label = f"{float(r_mult):.2f}" if r_mult is not None else "n/a"
-                    logger.info(
-                        "[outcome_tracker] ML training data logged: %s outcome=%s r=%s",
-                        signal_id[:8], _outcome_status, r_label
-                    )
+                    if _ml_saved:
+                        logger.info(
+                            "[outcome_tracker] ML training data persisted: %s outcome=%s r=%s",
+                            signal_id[:8], _outcome_status, r_label,
+                        )
+                    else:
+                        logger.warning(
+                            "[outcome_tracker] ML training persistence returned false; retry required: %s outcome=%s",
+                            signal_id[:8], _outcome_status,
+                        )
                 except Exception as _ml_train_err:
                     logger.debug(f"[outcome_tracker] ML training data logging failed: {_ml_train_err}")
             

@@ -1608,16 +1608,28 @@ async def upsert_outcome(
     sentiment_outcome: str | None = None,
     queue_notifications: bool = True,
 ) -> Outcome:
-    """Persist the latest outcome projection without relying on ON CONFLICT.
+    """Create or progress an outcome while making terminal results immutable.
 
-    A per-signal PostgreSQL advisory lock serializes the no-row-yet insert case.
-    The row lock serializes updates. This remains functional during recovery even
-    before the uniqueness migration is applied, while the unique index provides
-    the permanent database invariant after migration 0028.
+    A finalized result can only change through an explicitly attributed audited
+    correction. Duplicate terminal writes are idempotent and do not enqueue a
+    second notification.
     """
     signal_id_str = str(signal_id)
     now = _utcnow()
-    status_l = str(status).lower()[:16]
+    status_l = str(status or "pending").strip().lower()[:32]
+    terminal_statuses = {
+        "tp", "tp3", "win", "sl", "loss", "stop", "stop_loss",
+        "be", "breakeven", "break_even", "time_stop", "expired",
+        "missed_entry", "cancel", "cancelled", "tracking_failed", "invalid",
+        "invalidated",
+    }
+    incoming_terminal = status_l in terminal_statuses
+    supplied_meta = dict(meta or {})
+    correction_requested = bool(supplied_meta.get("audited_correction"))
+    correction_actor = str(supplied_meta.get("corrected_by") or "").strip()
+    correction_reason = str(supplied_meta.get("correction_reason") or "").strip()
+    if correction_requested and (not correction_actor or not correction_reason):
+        raise ValueError("audited outcome correction requires corrected_by and correction_reason")
 
     try:
         bind = session.get_bind()
@@ -1627,8 +1639,6 @@ async def upsert_outcome(
                 {"lock_key": f"signalrank:outcome:{signal_id_str}"},
             )
     except Exception as exc:
-        # A lock failure is not safe to ignore on PostgreSQL because it reopens
-        # the insert race. Other dialects intentionally skip advisory locking.
         bind = session.get_bind()
         if getattr(getattr(bind, "dialect", None), "name", "") == "postgresql":
             raise RuntimeError("outcome advisory lock failed") from exc
@@ -1641,6 +1651,7 @@ async def upsert_outcome(
         .with_for_update()
     )
     oc = result.scalars().first()
+    changed = False
 
     if oc is None:
         oc = Outcome(
@@ -1649,17 +1660,40 @@ async def upsert_outcome(
             r_multiple=float(r_multiple) if r_multiple is not None else None,
             percent=float(percent) if percent is not None else None,
             opened_at=opened_at,
-            closed_at=closed_at or now,
+            closed_at=(closed_at or now) if incoming_terminal else closed_at,
             canonical_outcome=str(canonical_outcome).lower()[:16] if canonical_outcome is not None else None,
             vip_fill_outcome=str(vip_fill_outcome).lower()[:16] if vip_fill_outcome is not None else None,
             sentiment_outcome=str(sentiment_outcome).lower()[:16] if sentiment_outcome is not None else None,
-            meta=dict(meta or {}),
+            meta=supplied_meta,
+            terminal_version=1 if incoming_terminal else 0,
+            provenance=str(supplied_meta.get("provenance") or "canonical_live")[:32],
+            calculation_policy_version=str(supplied_meta.get("calculation_policy_version") or "outcome-v1")[:64],
         )
         session.add(oc)
         await session.flush()
+        changed = True
     else:
+        existing_status = str(getattr(oc, "status", "") or "").strip().lower()
+        existing_terminal = bool(int(getattr(oc, "terminal_version", 0) or 0)) or existing_status in terminal_statuses
+        if existing_terminal and not correction_requested:
+            logger.warning(
+                "[outcome_immutability] rejected mutation signal=%s existing=%s incoming=%s",
+                signal_id_str,
+                existing_status,
+                status_l,
+            )
+            return oc
+
+        before = {
+            "status": existing_status,
+            "r_multiple": getattr(oc, "r_multiple", None),
+            "percent": getattr(oc, "percent", None),
+            "closed_at": getattr(oc, "closed_at", None).isoformat() if getattr(oc, "closed_at", None) else None,
+            "terminal_version": int(getattr(oc, "terminal_version", 0) or 0),
+        }
         oc.status = status_l
-        oc.closed_at = closed_at or now
+        if incoming_terminal or closed_at is not None:
+            oc.closed_at = closed_at or now
         if opened_at is not None:
             oc.opened_at = opened_at
         if r_multiple is not None:
@@ -1672,10 +1706,27 @@ async def upsert_outcome(
             oc.vip_fill_outcome = str(vip_fill_outcome).lower()[:16]
         if sentiment_outcome is not None:
             oc.sentiment_outcome = str(sentiment_outcome).lower()[:16]
+        if incoming_terminal:
+            oc.terminal_version = max(1, int(getattr(oc, "terminal_version", 0) or 0) + (1 if correction_requested else 0))
+        if correction_requested:
+            oc.corrected_at = now
+            oc.corrected_by = correction_actor[:128]
+            oc.correction_reason = correction_reason
+            oc.provenance = "audited_correction"
+            corrections = list((getattr(oc, "meta", {}) or {}).get("corrections") or [])
+            corrections.append({
+                "at": now.isoformat(),
+                "by": correction_actor,
+                "reason": correction_reason,
+                "before": before,
+                "after": {"status": status_l, "r_multiple": r_multiple, "percent": percent},
+            })
+            supplied_meta["corrections"] = corrections
+        changed = True
 
-    if meta:
+    if supplied_meta:
         merged: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
-        merged.update(dict(meta))
+        merged.update(supplied_meta)
         oc.meta = merged
 
     try:
@@ -1684,22 +1735,19 @@ async def upsert_outcome(
     except Exception:
         pass
 
-    # Re-enable notification when outcome progresses (TP1→TP2→TP3, etc.).
-    try:
-        new_status = str(getattr(oc, "status", "") or "").lower()
-        _meta = dict(getattr(oc, "meta", {}) or {})
-        _meta.pop("notified", None)
-        _meta.pop("notified_at", None)
-        oc.meta = _meta
-        if queue_notifications and oc.closed_at is not None:
-            await queue_outcome_notifications_for_outcome(
-                session,
-                int(getattr(oc, "id")),
-                signal_id_str,
-                new_status,
-            )
-    except Exception:
-        pass
+    if changed:
+        try:
+            new_status = str(getattr(oc, "status", "") or "").lower()
+            mutable_meta = dict(getattr(oc, "meta", {}) or {})
+            mutable_meta.pop("notified", None)
+            mutable_meta.pop("notified_at", None)
+            oc.meta = mutable_meta
+            if queue_notifications and oc.closed_at is not None:
+                await queue_outcome_notifications_for_outcome(
+                    session, int(getattr(oc, "id")), signal_id_str, new_status
+                )
+        except Exception:
+            logger.exception("[outcome_immutability] notification queue failed signal=%s", signal_id_str)
 
     await session.flush()
     return oc
@@ -2382,192 +2430,23 @@ async def queue_free_signal_summary(
 
 
 async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int) -> dict[str, object]:
-    """Compute 30-day performance from deliveries + outcomes.
+    """Return one consistent proof-ledger snapshot for the delivery cohort."""
+    from services.performance_ledger import get_user_performance_report
 
-    Returns:
-      Delivered signal totals, exact lifecycle buckets, and outcome coverage.
-    """
-
-    now: datetime = _utcnow()
-    cutoff: datetime = now - timedelta(days=30)
-    performance_version = max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2))
-
-    def _empty() -> dict[str, object]:
-        return {
-            "total": 0,
-            "delivered": 0,
-            "wins": 0,
-            "terminal_wins": 0,
-            "losses": 0,
-            "partial_wins": 0,
-            "breakeven": 0,
-            "time_stops": 0,
-            "expired": 0,
-            "cancelled": 0,
-            "missed_entry": 0,
-            "tracking_failed": 0,
-            "active": 0,
-            "outcome_pending": 0,
-            "win_rate": 0.0,
-            "completed_win_rate": 0.0,
-            "outcome_coverage": 0.0,
-            "completion_rate": 0.0,
-            "avg_r": None,
-            "net_r": None,
-            "tracked_outcomes": 0,
-            "completed_outcomes": 0,
-            "profit_loss_pct": 0.0,
-        }
-
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
-    user: User | None = res.scalar_one_or_none()
-    if user is None:
-        return _empty()
-
-    row = (
-        await session.execute(
-            text(
-                """
-                WITH delivered AS (
-                    SELECT DISTINCT sd.signal_id, s.status AS signal_status, s.expired, s.archived, s.expires_at,
-                           usm.status AS monitoring_status, usm.stopped_at_stage, usm.realized_r, usm.realized_outcome
-                    FROM signal_deliveries sd
-                    JOIN signals s ON s.signal_id = sd.signal_id
-                    LEFT JOIN user_signal_monitoring usm
-                      ON usm.user_id = sd.user_id AND usm.signal_id = sd.signal_id
-                    WHERE sd.user_id = :user_id
-                      AND sd.sent_ok IS TRUE
-                      AND sd.delivered_at >= :cutoff
-                      AND sd.telegram_chat_id IS NOT NULL
-                      AND sd.telegram_message_id IS NOT NULL
-                      AND LOWER(COALESCE(sd.delivery_state, '')) IN ('sent','confirmed','delivered','reconciled')
-                      AND COALESCE(s.performance_version, 1) >= :performance_version
-                ),
-                outcome_flags AS (
-                    SELECT
-                        d.signal_id,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp3','win')) AS has_win,
-                        d.monitoring_status,
-                        d.stopped_at_stage,
-                        d.realized_r,
-                        d.realized_outcome,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss')) AS has_loss,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp1','tp2','partial_tp')) AS has_partial,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('be','breakeven','break_even')) AS has_be,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('time_stop','expired')) AS has_time_stop,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('missed','missed_entry','entry_missed')) AS has_missed,
-                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('cancelled','canceled','superseded')) AS has_cancelled,
-                        COUNT(o.id) AS outcome_rows,
-                        COALESCE(MAX(d.realized_r), AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL)) AS avg_r,
-                        COALESCE(MAX(d.realized_r), SUM(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL)) AS net_r
-                    FROM delivered d
-                    LEFT JOIN outcomes o ON o.signal_id = d.signal_id
-                    GROUP BY d.signal_id, d.monitoring_status, d.stopped_at_stage, d.realized_r, d.realized_outcome
-                ),
-                classified AS (
-                    SELECT
-                        d.signal_id,
-                        CASE
-                            WHEN COALESCE(f.has_win, FALSE) THEN 'win'
-                            WHEN COALESCE(f.has_partial, FALSE) THEN 'partial_win'
-                            WHEN COALESCE(f.has_be, FALSE) THEN 'breakeven'
-                            WHEN d.monitoring_status = 'stopped' AND d.stopped_at_stage IN (1, 2) THEN 'partial_win'
-                            WHEN COALESCE(f.has_loss, FALSE) THEN 'loss'
-                            WHEN COALESCE(f.has_time_stop, FALSE) THEN 'expired'
-                            WHEN COALESCE(f.has_missed, FALSE) THEN 'missed_entry'
-                            WHEN COALESCE(f.has_cancelled, FALSE) OR LOWER(COALESCE(d.signal_status, '')) IN ('cancelled','canceled','superseded') THEN 'cancelled'
-                            WHEN LOWER(COALESCE(d.signal_status, '')) IN ('tracking_failed','outcome_failed','tracker_failed') THEN 'tracking_failed'
-                            WHEN COALESCE(d.expired, FALSE) IS TRUE OR (d.expires_at IS NOT NULL AND d.expires_at < NOW()) THEN 'expired'
-                            WHEN LOWER(COALESCE(d.signal_status, '')) IN ('active','issued','open','running','delivered') AND COALESCE(d.archived, FALSE) IS FALSE THEN 'active'
-                            ELSE 'outcome_pending'
-                        END AS lifecycle_state,
-                        COALESCE(f.outcome_rows, 0) AS outcome_rows,
-                        f.avg_r,
-                        f.net_r
-                    FROM delivered d
-                    LEFT JOIN outcome_flags f ON f.signal_id = d.signal_id
-                )
-                SELECT
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN lifecycle_state = 'win' THEN 1 ELSE 0 END) AS terminal_wins,
-                    SUM(CASE WHEN lifecycle_state = 'loss' THEN 1 ELSE 0 END) AS losses,
-                    SUM(CASE WHEN lifecycle_state = 'partial_win' THEN 1 ELSE 0 END) AS partial_wins,
-                    SUM(CASE WHEN lifecycle_state = 'breakeven' THEN 1 ELSE 0 END) AS breakeven,
-                    SUM(CASE WHEN lifecycle_state = 'expired' THEN 1 ELSE 0 END) AS expired,
-                    SUM(CASE WHEN lifecycle_state = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
-                    SUM(CASE WHEN lifecycle_state = 'missed_entry' THEN 1 ELSE 0 END) AS missed_entry,
-                    SUM(CASE WHEN lifecycle_state = 'tracking_failed' THEN 1 ELSE 0 END) AS tracking_failed,
-                    SUM(CASE WHEN lifecycle_state = 'active' THEN 1 ELSE 0 END) AS active,
-                    SUM(CASE WHEN lifecycle_state = 'outcome_pending' THEN 1 ELSE 0 END) AS outcome_pending,
-                    AVG(avg_r) FILTER (WHERE avg_r IS NOT NULL) AS avg_r,
-                    SUM(net_r) FILTER (WHERE net_r IS NOT NULL) AS net_r
-                FROM classified
-                """
-            ),
-            {
-                "user_id": int(user.id),
-                "cutoff": cutoff,
-                "performance_version": performance_version,
-            },
-        )
-    ).mappings().first()
-    if not row:
-        return _empty()
-
-    total = int(row.get("total") or 0)
-    if total <= 0:
-        return _empty()
-
-    terminal_wins = int(row.get("terminal_wins") or 0)
-    losses = int(row.get("losses") or 0)
-    partial_wins = int(row.get("partial_wins") or 0)
-    breakeven = int(row.get("breakeven") or 0)
-    expired = int(row.get("expired") or 0)
-    cancelled = int(row.get("cancelled") or 0)
-    missed_entry = int(row.get("missed_entry") or 0)
-    tracking_failed = int(row.get("tracking_failed") or 0)
-    active = int(row.get("active") or 0)
-    outcome_pending = int(row.get("outcome_pending") or 0)
-    tracked_outcomes = terminal_wins + losses + partial_wins + breakeven + expired + missed_entry + cancelled
-    completed_outcomes = terminal_wins + losses
-    win_rate = (terminal_wins / max(1, completed_outcomes)) if completed_outcomes > 0 else 0.0
-    outcome_coverage = tracked_outcomes / max(1, total)
-    completion_rate = completed_outcomes / max(1, total)
-    avg_r = row.get("avg_r")
-    net_r = row.get("net_r")
-
-    # Calculate profit/loss percentage: assume equal 1% risk per trade
-    profit_loss_pct = 0.0
-    if net_r is not None and completed_outcomes > 0:
-        risk_per_trade = 1.0  # 1% risk assumed per signal
-        profit_loss_pct: float = (float(net_r) / completed_outcomes) * risk_per_trade
-
-    return {
-        "total": int(total),
-        "delivered": int(total),
-        "wins": int(terminal_wins),
-        "terminal_wins": int(terminal_wins),
-        "losses": int(losses),
-        "partial_wins": int(partial_wins),
-        "breakeven": int(breakeven),
-        "time_stops": int(expired),
-        "expired": int(expired),
-        "cancelled": int(cancelled),
-        "missed_entry": int(missed_entry),
-        "tracking_failed": int(tracking_failed),
-        "active": int(active),
-        "outcome_pending": int(outcome_pending),
-        "win_rate": float(win_rate),
-        "completed_win_rate": float(win_rate),
-        "outcome_coverage": float(outcome_coverage),
-        "completion_rate": float(completion_rate),
-        "avg_r": float(avg_r) if avg_r is not None else None,
-        "net_r": float(net_r) if net_r is not None else None,
-        "tracked_outcomes": int(tracked_outcomes),
-        "completed_outcomes": int(completed_outcomes),
-        "profit_loss_pct": float(profit_loss_pct),
-    }
-
+    report = await get_user_performance_report(
+        session,
+        telegram_user_id=int(telegram_user_id),
+        days=30,
+    )
+    report["time_stops"] = int((report.get("buckets") or {}).get("TIME_STOP", 0))
+    report["completed_win_rate"] = float(report.get("strict_win_rate") or 0.0)
+    report["completion_rate"] = (
+        float(report.get("completed_r_count") or 0) / max(1, int(report.get("delivered") or 0))
+    )
+    # ORM rows are available from the explicit detail/audit service, not this
+    # compatibility aggregate consumed by Telegram and Engine Pulse.
+    report.pop("rows", None)
+    return report
 
 async def get_due_free_signal_summaries(session: AsyncSession) -> dict[int, list[dict]]:
     now: datetime = _utcnow()
