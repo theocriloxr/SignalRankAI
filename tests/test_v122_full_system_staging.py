@@ -48,6 +48,42 @@ def test_missing_acknowledgement_fails_closed():
     assert env["PAYMENTS_PUBLIC_ENABLED"] == "0"
 
 
+def test_regular_staging_preserves_all_explicit_free_distribution():
+    from runtime_safety import apply_runtime_safety_environment
+
+    env = {
+        "APP_ENV": "staging",
+        "FREE_SIGNAL_DISTRIBUTION_ENABLED": "1",
+        "FREE_RANDOM_DISTRIBUTION_ENABLED": "1",
+        "REAL_EXECUTION_ENABLED": "1",
+    }
+    result = apply_runtime_safety_environment(env)
+
+    assert result.full_system_test_enabled is False
+    assert env["FREE_SIGNAL_DISTRIBUTION_ENABLED"] == "1"
+    assert "FREE_SIGNAL_DISTRIBUTION_ENABLED" not in result.forced_off
+    assert env["FREE_RANDOM_DISTRIBUTION_ENABLED"] == "1"
+    assert "FREE_RANDOM_DISTRIBUTION_ENABLED" not in result.forced_off
+    assert env["REAL_EXECUTION_ENABLED"] == "0"
+
+
+def test_production_preserves_all_explicit_free_distribution():
+    from runtime_safety import apply_runtime_safety_environment
+
+    env = {
+        "APP_ENV": "production",
+        "FREE_SIGNAL_DISTRIBUTION_ENABLED": "1",
+        "FREE_RANDOM_DISTRIBUTION_ENABLED": "1",
+    }
+    result = apply_runtime_safety_environment(env)
+
+    assert result.environment == "production"
+    assert env["FREE_SIGNAL_DISTRIBUTION_ENABLED"] == "1"
+    assert "FREE_SIGNAL_DISTRIBUTION_ENABLED" not in result.forced_off
+    assert env["FREE_RANDOM_DISTRIBUTION_ENABLED"] == "1"
+    assert "FREE_RANDOM_DISTRIBUTION_ENABLED" not in result.forced_off
+
+
 def test_incomplete_production_financial_activation_fails_closed():
     from runtime_safety import apply_runtime_safety_environment
 
@@ -99,6 +135,33 @@ def test_v122_profile_contains_all_workflow_flags():
         "MT5_ALLOW_LIVE_ACCOUNTS=0",
     ):
         assert line in profile
+
+
+def test_canonical_staging_profile_enables_all_free_distribution():
+    root = Path(__file__).resolve().parents[1]
+    profile = (root / "RAILWAY_ENV_UPDATED.env.example").read_text(encoding="utf-8")
+
+    for line in (
+        "FREE_SIGNAL_DISTRIBUTION_ENABLED=1",
+        "FREE_RANDOM_DISTRIBUTION_ENABLED=1",
+        "RESEND_INCLUDE_FREE=1",
+        "RESEND_AUDIENCE_ALLOWLIST_ONLY=0",
+        "DELIVERY_AUDIENCE_RESTRICTION_MODE=0",
+        "DELIVERY_AUDIENCE_ALLOWLIST=",
+    ):
+        assert line in profile
+
+
+def test_current_production_profiles_enable_all_free_distribution():
+    root = Path(__file__).resolve().parents[1]
+
+    for filename in (
+        "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
+        "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
+    ):
+        profile = (root / filename).read_text(encoding="utf-8")
+        assert "FREE_SIGNAL_DISTRIBUTION_ENABLED=1" in profile
+        assert "FREE_RANDOM_DISTRIBUTION_ENABLED=1" in profile
 
 
 def test_live_paystack_key_disables_money_paths_in_staging():

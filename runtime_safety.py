@@ -75,8 +75,11 @@ _FULL_SYSTEM_OPERATIONAL_SETTINGS = {
     "DIAGNOSTIC_HEATMAP_EMPTY_CYCLES": "1",
 }
 
-# Default fail-closed behaviour when full-system testing has not been explicitly
-# acknowledged.
+# Default fail-closed behaviour for money-moving capabilities when full-system
+# testing has not been explicitly acknowledged. Free-tier distribution is an
+# audience feature, so explicit FREE_SIGNAL_DISTRIBUTION_ENABLED and
+# FREE_RANDOM_DISTRIBUTION_ENABLED values are preserved in staging and
+# production.
 _NONPRODUCTION_FORCE_OFF = (
     "REAL_EXECUTION_ENABLED",
     "AUTO_EXECUTION_ENABLED",
@@ -86,8 +89,6 @@ _NONPRODUCTION_FORCE_OFF = (
     "BYBIT_EXECUTION_ENABLED",
     "REAL_PAYOUTS_ENABLED",
     "PAYMENTS_PUBLIC_ENABLED",
-    "FREE_SIGNAL_DISTRIBUTION_ENABLED",
-    "FREE_RANDOM_DISTRIBUTION_ENABLED",
 )
 
 
@@ -175,7 +176,6 @@ def apply_runtime_safety_environment(
             "STAGING_QUALITY_GATES_ADVISORY",
             "STAGING_DELIVERY_FRESHNESS_ADVISORY",
             "STAGING_TEST_DELIVERY_LIVE_EXECUTION_BLOCK",
-            "FREE_RANDOM_DISTRIBUTION_ENABLED",
         ):
             if _truthy(env.get(name)):
                 forced_off.append(name)

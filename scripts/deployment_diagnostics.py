@@ -310,19 +310,24 @@ def check_environment(report: Report) -> None:
         )
     )
 
-    free_enabled = _truthy("FREE_RANDOM_DISTRIBUTION_ENABLED", False) or _truthy(
-        "FREE_SIGNAL_DISTRIBUTION_ENABLED", False
-    )
+    free_signal_enabled = _truthy("FREE_SIGNAL_DISTRIBUTION_ENABLED", False)
+    free_random_enabled = _truthy("FREE_RANDOM_DISTRIBUTION_ENABLED", False)
     allowlist = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip()
-    free_ok = (free_enabled and bool(allowlist)) if full_test_mode else not free_enabled
+    free_ok = free_signal_enabled and free_random_enabled
     report.add(
         Check(
             name="free_distribution_test_audience",
             category="safety_flags",
             status=PASS if free_ok else FAIL,
             severity="critical",
-            detail=f"enabled={free_enabled} allowlist_configured={bool(allowlist)} full_test_mode={full_test_mode}",
-            remediation=None if free_ok else "Enable free distribution only with DELIVERY_AUDIENCE_ALLOWLIST in full-system staging mode.",
+            detail=(
+                f"signal_enabled={free_signal_enabled} random_enabled={free_random_enabled} "
+                f"allowlist_configured={bool(allowlist)} full_test_mode={full_test_mode}"
+            ),
+            remediation=None if free_ok else (
+                "Enable FREE_SIGNAL_DISTRIBUTION_ENABLED and "
+                "FREE_RANDOM_DISTRIBUTION_ENABLED for full free-tier availability."
+            ),
         )
     )
 
