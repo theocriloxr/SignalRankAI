@@ -67,5 +67,8 @@ def test_timezone_migration_and_performance_v2_contracts():
     assert 'down_revision = "0018_signal_lifecycle_events"' in migration
     assert "timezone_auto_update" in migration
     assert "performance_version" in migration
-    assert "COALESCE(s.performance_version, 1) >= :performance_version" in pg_features
-    assert "COALESCE(s.performance_version, 1) >= :performance_version" in commands
+    assert "get_user_performance_report" in pg_features
+    assert "get_user_performance_report" in commands
+    ledger = (ROOT / "services" / "performance_ledger.py").read_text(encoding="utf-8")
+    assert "delivery_confirmed_at >= start" in ledger
+    assert "delivery_confirmed_at < end" in ledger

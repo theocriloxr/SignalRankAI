@@ -70,9 +70,11 @@ def test_paper_target_parser_and_accounting_contract():
     assert parse_targets('[101, 102, 103]') == [101.0, 102.0, 103.0]
     assert parse_targets({"tp1": 101, "tp2": 102}) == [101.0, 102.0]
     service = source("core/paper_trading_service.py")
-    assert 'delivery_state).in_(["CONFIRMED", "RECONCILED", "DELIVERED"])' in service
+    assert "CONFIRMED_DELIVERY_STATES" in service
+    assert "telegram_chat_id.is_not(None)" in service
+    assert "telegram_message_id.is_not(None)" in service
     assert 'position.unrealized_pnl = gross' in service
-    assert 'return "deferred"' in service
+    assert 'result_status = "deferred"' in service
     assert "signal_entry_fallback" not in service
 
 

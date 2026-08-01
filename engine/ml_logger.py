@@ -136,7 +136,7 @@ async def log_ml_training_data(
         from db.models import SignalDelivery
         from sqlalchemy import func
 
-        proof_count = await session.scalar(
+        proof_result = await session.execute(
             select(func.count(SignalDelivery.id)).where(
                 SignalDelivery.signal_id == str(signal_id),
                 SignalDelivery.sent_ok.is_(True),
@@ -146,6 +146,7 @@ async def log_ml_training_data(
                 SignalDelivery.telegram_message_id.is_not(None),
             )
         )
+        proof_count = proof_result.scalar_one_or_none()
         delivery_proof_backed = int(proof_count or 0) > 0
         provenance_domain = "live_user_delivery" if delivery_proof_backed else "global_signal_outcome"
         exclusion_reason = None if delivery_proof_backed else "missing_confirmed_delivery_proof"

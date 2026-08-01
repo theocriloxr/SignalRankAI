@@ -580,7 +580,7 @@
     {
       "dangerous": false,
       "name": "PAPER_AUTO_TRADE_DEFAULT_ENABLED",
-      "production_example_default": "1",
+      "production_example_default": "0",
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null

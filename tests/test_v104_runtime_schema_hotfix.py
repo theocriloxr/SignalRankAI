@@ -29,7 +29,7 @@ def _render_upgrade_sql() -> str:
 
 def test_v104_is_the_sole_migration_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0030_signal_monitor_reliability"]
+    assert script.get_heads() == ["0031_perf_paper_reliability"]
 
 
 def test_clean_upgrade_contains_all_signal_runtime_columns_before_head() -> None:

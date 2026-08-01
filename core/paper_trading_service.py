@@ -31,6 +31,7 @@ from db.models import (
     SignalLifecycle,
     User,
 )
+from core.delivery_state import CONFIRMED_DELIVERY_STATES
 from db.session import NoncriticalWriteDropped, get_session
 from utils.timeutils import now_utc_naive
 
@@ -602,7 +603,7 @@ class PaperTradingService:
                     )
                     .where(
                         SignalDelivery.sent_ok.is_(True),
-                        func.lower(SignalDelivery.delivery_state).in_(["sent", "confirmed", "reconciled", "delivered"]),
+                        func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
                         SignalDelivery.telegram_chat_id.is_not(None),
                         SignalDelivery.telegram_message_id.is_not(None),
                         SignalDelivery.delivery_confirmed_at.is_not(None),
@@ -649,7 +650,7 @@ class PaperTradingService:
             from engine.price_fetcher import get_live_price_batch
             prices = await get_live_price_batch(assets, max_concurrent=_env_int("PAPER_PRICE_CONCURRENCY", 4, 1, 20))
         except Exception as exc:
-            logger.warning("[paper] live price batch failed; new paper entries will be skipped: %s", exc)
+            logger.warning("[paper] live price batch failed; new paper entries will be deferred: %s", exc)
         result = {"candidates": len(candidates), "opened": 0, "skipped": 0, "deferred": 0, "failed": 0}
         for candidate in candidates:
             try:
@@ -675,7 +676,7 @@ class PaperTradingService:
         market_price: float | None = None,
         sizing: Any = None,
         finalized: bool = False,
-        next_retry_seconds: int = 15,
+        next_retry_seconds: int | None = None,
         meta: dict[str, Any] | None = None,
     ) -> PaperTradeAttempt:
         now = now_utc_naive()
@@ -686,7 +687,8 @@ class PaperTradingService:
             )
         )).scalar() or 0) + 1
         retry_deadline = candidate.get("retry_deadline")
-        next_retry_at = now + timedelta(seconds=max(1, int(next_retry_seconds))) if retryable else None
+        retry_delay = int(next_retry_seconds if next_retry_seconds is not None else os.getenv("PAPER_ENTRY_RETRY_SECONDS", "15"))
+        next_retry_at = now + timedelta(seconds=max(1, retry_delay)) if retryable else None
         if retry_deadline is not None and next_retry_at is not None and next_retry_at >= retry_deadline:
             retryable = False
             next_retry_at = None

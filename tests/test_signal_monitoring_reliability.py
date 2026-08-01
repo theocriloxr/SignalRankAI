@@ -127,14 +127,16 @@ def test_outboxes_claim_before_io_recover_stale_and_suppress_stopped_users() -> 
 
 
 def test_user_performance_is_proof_backed_and_counts_stopped_tp_r() -> None:
-    source = (ROOT / "db/pg_features.py").read_text(encoding="utf-8")
-    block = source[source.index("async def get_user_performance_30d"):source.index("async def get_due_free_signal_summaries")]
-    assert "sd.telegram_chat_id IS NOT NULL" in block
-    assert "sd.telegram_message_id IS NOT NULL" in block
-    assert "usm.realized_r" in block
-    assert "d.monitoring_status = 'stopped'" in block
-    assert "SUM(net_r)" in block
-
+    pg_source = (ROOT / "db/pg_features.py").read_text(encoding="utf-8")
+    ledger = (ROOT / "services/performance_ledger.py").read_text(encoding="utf-8")
+    block = pg_source[pg_source.index("async def get_user_performance_30d"):pg_source.index("async def get_due_free_signal_summaries")]
+    assert "get_user_performance_report" in block
+    assert "SignalDelivery.telegram_chat_id.is_not(None)" in ledger
+    assert "SignalDelivery.telegram_message_id.is_not(None)" in ledger
+    assert "monitoring.realized_r" in ledger
+    assert '_status(monitoring.status) == "stopped"' in ledger
+    assert "included_r" in ledger
+    assert "calculate_performance_metrics" in ledger
 
 def test_production_audience_allowlist_is_not_a_normal_recipient_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     from services.delivery_authorization import _restricted_audience
