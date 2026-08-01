@@ -30,6 +30,7 @@ GENERATED_AT = "2026-07-27T00:00:00Z"
 
 EXCLUDED_PARTS = {
     ".git",
+    ".audit-venv",
     ".venv",
     "venv",
     "__pycache__",
@@ -38,6 +39,7 @@ EXCLUDED_PARTS = {
     ".diagnostics",
     ".mypy_cache",
     ".ruff_cache",
+    "artifacts",
     "node_modules",
 }
 TEXT_EXTENSIONS = {
