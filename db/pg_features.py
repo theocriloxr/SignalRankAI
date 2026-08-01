@@ -2294,6 +2294,13 @@ async def queue_free_signal_summary(
     delay_minutes: Optional[int] = None,
     daily_limit: Optional[int] = None,
 ) -> bool:
+    distribution_enabled = any(
+        str(os.getenv(name, "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+        for name in ("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED")
+    )
+    if not distribution_enabled:
+        # Disabled distribution must not create an undrainable queue.
+        return False
     if delay_minutes is None:
         # Default to immediate dispatch for FREE tier while still enforcing daily cap.
         delay_minutes = _env_int("FREE_DELAY_MINUTES", 0)

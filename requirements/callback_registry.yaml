@@ -57,7 +57,7 @@
       "pattern": "^check_outcome_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6826",
+      "source": "signalrank_telegram/bot.py:6958",
       "status": "IMPLEMENTED"
     },
     {
@@ -107,7 +107,7 @@
       "pattern": "^monitor_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6472",
+      "source": "signalrank_telegram/bot.py:6604",
       "status": "IMPLEMENTED"
     },
     {
@@ -157,7 +157,7 @@
       "pattern": "^mt5_trade_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6603",
+      "source": "signalrank_telegram/bot.py:6735",
       "status": "IMPLEMENTED"
     },
     {
@@ -187,7 +187,7 @@
       "pattern": "^open_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6657",
+      "source": "signalrank_telegram/bot.py:6789",
       "status": "IMPLEMENTED"
     },
     {
@@ -199,6 +199,16 @@
       "route_class": "global_fallback",
       "source": "signalrank_telegram/callback_handlers.py",
       "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_signal_monitoring_action_callback",
+      "name": "signal_monitoring_action_callback",
+      "pattern": "^sigmon_(?:continue|stop)_[12]_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:6603",
+      "status": "IMPLEMENTED"
     },
     {
       "ack_policy": "immediate",
@@ -217,7 +227,7 @@
       "pattern": "^signal_reaction_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6287",
+      "source": "signalrank_telegram/bot.py:6344",
       "status": "IMPLEMENTED"
     },
     {
@@ -261,7 +271,7 @@
       "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
     }
   ],
-  "count": 26,
+  "count": 27,
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "invariants": [

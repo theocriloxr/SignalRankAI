@@ -16,7 +16,7 @@ def test_release_identity_and_single_migration_head() -> None:
     assert RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
-    assert audit["heads"] == ["0029_live_financial_ledger"]
+    assert audit["heads"] == ["0030_signal_monitor_reliability"]
 
 
 def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:

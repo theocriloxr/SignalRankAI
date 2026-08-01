@@ -46,18 +46,24 @@ async def ensure_monitoring_for_delivery(
     )
     if not proof_ok:
         return None
+    delivery_user_id = getattr(delivery, "user_id", None)
+    delivery_signal_id = getattr(delivery, "signal_id", None)
+    if delivery_user_id is None or not delivery_signal_id:
+        # Compatibility with reconciled/legacy proof rows that predate these
+        # foreign-key fields; delivery confirmation must remain successful.
+        return None
     row = (
         await session.execute(
             select(UserSignalMonitoring).where(
-                UserSignalMonitoring.user_id == int(delivery.user_id),
-                UserSignalMonitoring.signal_id == str(delivery.signal_id),
+                UserSignalMonitoring.user_id == int(delivery_user_id),
+                UserSignalMonitoring.signal_id == str(delivery_signal_id),
             ).with_for_update()
         )
     ).scalar_one_or_none()
     if row is None:
         row = UserSignalMonitoring(
-            user_id=int(delivery.user_id),
-            signal_id=str(delivery.signal_id),
+            user_id=int(delivery_user_id),
+            signal_id=str(delivery_signal_id),
             delivery_id=int(delivery.id),
             status="auto_continue",
         )

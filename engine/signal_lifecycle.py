@@ -589,6 +589,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             select(SignalEventNotification.id).where(
                 SignalEventNotification.event_id == event_id,
                 SignalEventNotification.sent_ok.is_(False),
+                SignalEventNotification.delivery_state.in_(["pending", "failed", "sending"]),
             )
         )).first()
         if remaining is None:
