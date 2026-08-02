@@ -1239,6 +1239,86 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 
+async def outcome_rebuild_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only bounded outcome projection and notification-outbox recovery."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    action = str(context.args[0] if context.args else "status").strip().lower()
+    if action not in {"dry_run", "apply", "status"}:
+        await update.message.reply_text("Usage: /outcome_rebuild dry_run | apply | status")
+        return
+
+    from services.outcome_reconciliation import (
+        ensure_outcome_projections,
+        outcome_projection_health,
+        repair_outcome_notification_outbox,
+    )
+    if action == "status":
+        async with get_session() as session:
+            health = await outcome_projection_health(session, days=30)
+        await update.message.reply_text(
+            "Outcome recovery status\n"
+            f"{json.dumps(health, sort_keys=True, default=str)}"
+        )
+        return
+
+    async with get_session() as session:
+        result = await ensure_outcome_projections(session)
+        outbox = await repair_outcome_notification_outbox(session)
+        if action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+    await update.message.reply_text(
+        f"Outcome recovery {action} completed.\n"
+        f"projection={json.dumps(result.as_dict(), sort_keys=True)}\n"
+        f"outbox={json.dumps(outbox.as_dict(), sort_keys=True)}\n"
+        + (
+            "Changes committed; the front door will drain pending notifications."
+            if action == "apply"
+            else "Dry run rolled back; no database changes were retained."
+        )
+    )
+
+
+async def outcome_audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only outcome projection/outbox readiness audit."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    days = 30
+    if context.args:
+        try:
+            days = max(1, min(3650, int(context.args[0])))
+        except Exception:
+            await update.message.reply_text("Usage: /outcome_audit [days]")
+            return
+
+    from sqlalchemy import func, select
+    from db.models import OutcomeNotification
+    from services.outcome_reconciliation import outcome_projection_health
+
+    async with get_session() as session:
+        health = await outcome_projection_health(session, days=days)
+        rows = (await session.execute(
+            select(OutcomeNotification.delivery_state, func.count(OutcomeNotification.id))
+            .group_by(OutcomeNotification.delivery_state)
+        )).all()
+    outbox = {str(state_name or "unknown"): int(count or 0) for state_name, count in rows}
+    blocked = int(outbox.get("failed", 0)) > 0 or int(outbox.get("sending", 0)) > 0
+    verdict = "PASS" if health.get("ok") and not blocked else "BLOCKED"
+    await update.message.reply_text(
+        f"Outcome delivery audit: {verdict}\n"
+        f"projection={json.dumps(health, sort_keys=True, default=str)}\n"
+        f"outbox={json.dumps(outbox, sort_keys=True)}"
+    )
+
+
 async def performance_rebuild_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only bounded performance projection rebuild and dry-run."""
     if update.effective_user is None or update.message is None:

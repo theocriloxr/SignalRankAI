@@ -37,6 +37,20 @@ def resend_unsent_signals_job():
         logger.warning("[resend] DB engine pre-flight failed: %s", preflight_error)
         return
 
+    # A budget-exhausted resend cycle must back off instead of waking every
+    # scheduler tick and competing with outcome notifications for DB/Telegram
+    # capacity. The deadline is shared through Redis when available.
+    try:
+        backoff_until = float(state.cache_get_sync("resend:budget_backoff_until") or 0)
+        if backoff_until > time.time():
+            logger.debug(
+                "[resend] budget backoff active remaining_s=%.1f",
+                backoff_until - time.time(),
+            )
+            return
+    except Exception:
+        pass
+
     from core.job_leases import acquire_scheduler_job_lease
     lease_seconds = max(30, int(os.getenv("RESEND_JOB_LEASE_SECONDS", "45") or 45))
     with acquire_scheduler_job_lease("resend_unsent_signals", lease_seconds=lease_seconds) as lease:
@@ -366,7 +380,6 @@ async def _resend_unsent_signals_async():
             for sig in signals:
                 if time.monotonic() >= _job_deadline:
                     _budget_exhausted = True
-                    logger.info("[resend] job budget exhausted before next signal; deferring remaining work")
                     break
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
                 if not signal_id:
@@ -451,7 +464,6 @@ async def _resend_unsent_signals_async():
                 for user_id in user_ids:
                     if time.monotonic() >= _job_deadline:
                         _budget_exhausted = True
-                        logger.info("[resend] job budget exhausted; deferring remaining recipients")
                         break
                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
                     gate_tier = _normalized_delivery_tier(user_tier)
@@ -667,7 +679,23 @@ async def _resend_unsent_signals_async():
             skipped_already_delivered_count,
         )
         if _budget_exhausted:
-            logger.info("[resend] remaining work deferred reason=job_budget_exhausted budget_s=%.1f", _job_budget_seconds)
+            backoff_seconds = max(
+                60,
+                int(os.getenv("RESEND_BUDGET_BACKOFF_SECONDS", "180") or 180),
+            )
+            try:
+                state.cache_set_sync(
+                    "resend:budget_backoff_until",
+                    str(time.time() + backoff_seconds),
+                    ex=backoff_seconds + 30,
+                )
+            except Exception:
+                pass
+            logger.info(
+                "[resend] remaining work deferred reason=job_budget_exhausted budget_s=%.1f backoff_s=%s",
+                _job_budget_seconds,
+                backoff_seconds,
+            )
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")
@@ -899,6 +927,8 @@ from .owner_commands import (
     broadcast_command,
     performance_rebuild_command,
     performance_audit_command,
+    outcome_rebuild_command,
+    outcome_audit_command,
 )
 
 from .extended_commands import (
@@ -6275,6 +6305,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("broadcast", _audit_handler("broadcast", broadcast_command)))
     application.add_handler(CommandHandler("performance_rebuild", _audit_handler("performance_rebuild", performance_rebuild_command)))
     application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
+    application.add_handler(CommandHandler("outcome_rebuild", _audit_handler("outcome_rebuild", outcome_rebuild_command)))
+    application.add_handler(CommandHandler("outcome_audit", _audit_handler("outcome_audit", outcome_audit_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 
@@ -7147,6 +7179,12 @@ def run_bot() -> None:
 
     # Initialize and schedule jobs
     def _send_outcome_notifications_owned():
+        _cycle_started = time.monotonic()
+        _cycle_outcomes = 0
+        _cycle_recipients = 0
+        _cycle_sent = 0
+        _cycle_failed = 0
+        _cycle_quiet_deferred = 0
         if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
             logger.info("[outcome_notify] disabled by env")
             return
@@ -7201,14 +7239,21 @@ def run_bot() -> None:
             try:
                 pending = run_sync(_fetch())
             except Exception:
+                logger.exception("[outcome_notify] pending snapshot failed")
                 pending = []
             if not pending:
+                logger.debug(
+                    "[outcome_notify_cycle] pending=0 elapsed_ms=%s",
+                    int((time.monotonic() - _cycle_started) * 1000),
+                )
                 return
 
             _outcome_deadline = time.monotonic() + _outcome_budget_seconds
             outcome_bot = Bot(token=_require_telegram_token())
 
             for oc, sig, recipients in pending:
+                _cycle_outcomes += 1
+                _cycle_recipients += len(recipients or [])
                 if time.monotonic() >= _outcome_deadline:
                     logger.info("[outcome] job budget exhausted before next outcome; deferring remaining work")
                     break
@@ -7333,6 +7378,20 @@ def run_bot() -> None:
                         tp_level_num = max(0, min(2, int((_status_meta or {}).get("tp_hit_index") or 0)))
                     except Exception:
                         tp_level_num = 0
+                else:
+                    # Terminal time-stop/expiry records may still contain TP1/TP2
+                    # progress. Preserve that evidence in the user-facing close.
+                    try:
+                        _status_meta = getattr(oc, "meta", {}) or {}
+                        if isinstance(_status_meta, str):
+                            import json as _json
+                            _status_meta = _json.loads(_status_meta)
+                        tp_level_num = max(
+                            tp_level_num,
+                            max(0, min(3, int((_status_meta or {}).get("tp_hit_index") or 0))),
+                        )
+                    except Exception:
+                        pass
 
                 # Outcome notifications must use the price evidence captured by the
                 # lifecycle/outcome tracker. Fetching a fresh OHLC series here used
@@ -7517,10 +7576,71 @@ def run_bot() -> None:
                             + timing
                         )
 
+                    def _format_non_price_terminal_message(label: str, explanation: str) -> str:
+                        outcome_meta = dict(getattr(oc, "meta", {}) or {})
+                        closed_at = getattr(oc, "closed_at", None)
+                        event_time = outcome_meta.get("outcome_event_time") or (
+                            closed_at.isoformat() if closed_at else "unknown"
+                        )
+                        notification_time = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                        provider = str(outcome_meta.get("observation_provider") or "stored lifecycle evidence")
+                        observed_price = (
+                            current_market_price
+                            or outcome_meta.get("close_price")
+                            or outcome_meta.get("last_event_price")
+                            or outcome_meta.get("terminal_price")
+                        )
+                        price_line = (
+                            f"Observed: <b>{float(observed_price):g}</b> | Provider: <b>{provider}</b>\n"
+                            if observed_price is not None
+                            else f"Provider: <b>{provider}</b>\n"
+                        )
+                        realized_r = getattr(oc, "r_multiple", None)
+                        result_line = (
+                            f"Recorded result: <b>{float(realized_r):+.2f}R</b>\n"
+                            if realized_r is not None else ""
+                        )
+                        highest_tp_text = f"TP{tp_level_num}" if tp_level_num else "None"
+                        return (
+                            f"{label}\n"
+                            f"<b>{asset} {str(direction or '').upper()} • {timeframe}</b>\n"
+                            f"Signal ID: <code>{ref}</code>\n"
+                            f"{explanation}\n"
+                            f"Highest TP reached: <b>{highest_tp_text}</b>\n"
+                            + result_line
+                            + price_line
+                            + f"Outcome time: <code>{event_time}</code>\n"
+                            + f"Notification time: <code>{notification_time}</code>"
+                        )
+
 
                     if status in {"partial_win_be", "partial_win"}:
                         notify = True
                         msg = _format_terminal_close_message(protected_stage=tp_level_num)
+                    elif status == "sl":
+                        notify = True
+                        msg = _format_terminal_close_message(protected_stage=tp_level_num)
+                    elif status in {"expired", "time_stop"}:
+                        notify = True
+                        if tp_level_num > 0:
+                            msg = _format_terminal_close_message(protected_stage=tp_level_num)
+                        else:
+                            msg = _format_non_price_terminal_message(
+                                "⏰ <b>Signal Window Closed</b>",
+                                "The monitoring window ended before a verified TP or stop-loss close.",
+                            )
+                    elif status in {"missed", "missed_entry"}:
+                        notify = True
+                        msg = _format_non_price_terminal_message(
+                            "⚪ <b>Entry Not Triggered</b>",
+                            "The verified entry zone was not reached before the signal expired.",
+                        )
+                    elif status in {"invalid", "invalidated", "cancel", "cancelled", "canceled"}:
+                        notify = True
+                        msg = _format_non_price_terminal_message(
+                            "🚫 <b>Signal Invalidated</b>",
+                            "The setup was invalidated or cancelled before normal completion.",
+                        )
                     elif tp_level_num in (1, 2, 3):
                         notify = True
                         display_outcome_tier = (
@@ -7534,9 +7654,6 @@ def run_bot() -> None:
                             float(getattr(oc, "percent", 0) or 0),
                             current_market_price,
                         )
-                    elif status == "sl":
-                        notify = True
-                        msg = _format_terminal_close_message()
 
                     if notify and msg:
                         eligible_count += 1
@@ -7590,6 +7707,7 @@ def run_bot() -> None:
 
                             run_sync(_mark_notification_delivered(int(notification_id)))
                             sent_count += 1
+                            _cycle_sent += 1
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
                             if notification_id:
@@ -7607,7 +7725,10 @@ def run_bot() -> None:
                                 except Exception:
                                     pass
                             failed_count += 1
+                            _cycle_failed += 1
                             pass
+
+                _cycle_quiet_deferred += quiet_deferred_count
 
                 mark_notified = False
                 if len(recipients or []) == 0:
@@ -7640,8 +7761,17 @@ def run_bot() -> None:
                         failed_count,
                         quiet_deferred_count,
                     )
+            logger.info(
+                "[outcome_notify_cycle] pending=%s recipients=%s sent=%s failed=%s quiet_deferred=%s elapsed_ms=%s",
+                _cycle_outcomes,
+                _cycle_recipients,
+                _cycle_sent,
+                _cycle_failed,
+                _cycle_quiet_deferred,
+                int((time.monotonic() - _cycle_started) * 1000),
+            )
         except Exception as e:
-            logger.warning(f"[outcome] Failed to process outcomes: {e}")
+            logger.exception("[outcome] Failed to process outcomes: %s", e)
             return
 
 

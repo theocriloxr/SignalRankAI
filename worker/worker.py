@@ -457,7 +457,10 @@ class Worker:
         while not self._stop.is_set():
             try:
                 from core.job_leases import acquire_scheduler_job_lease
-                from services.outcome_reconciliation import ensure_outcome_projections
+                from services.outcome_reconciliation import (
+                    ensure_outcome_projections,
+                    repair_outcome_notification_outbox,
+                )
                 from services.performance_ledger import (
                     reconcile_all_performance_ledgers,
                     repair_partial_exit_outcomes,
@@ -483,6 +486,7 @@ class Worker:
                                 label="outcome_reconciliation",
                             ) as session:
                                 result = await ensure_outcome_projections(session)
+                                outbox_repair = await repair_outcome_notification_outbox(session)
                                 repaired_partial_exits = await repair_partial_exit_outcomes(session)
                                 performance_result = await reconcile_all_performance_ledgers(session)
                                 # Commit successful outcome repairs and per-user savepoints before
@@ -493,8 +497,9 @@ class Worker:
                                     performance_result, persist_cursor=True
                                 )
                                 logger.info(
-                                    "[outcome_reconciliation] completed outcome=%s partial_exit_repairs=%s performance=%s",
+                                    "[outcome_reconciliation] completed outcome=%s outbox=%s partial_exit_repairs=%s performance=%s",
                                     result.as_dict(),
+                                    outbox_repair.as_dict(),
                                     repaired_partial_exits,
                                     performance_result.as_dict(),
                                 )

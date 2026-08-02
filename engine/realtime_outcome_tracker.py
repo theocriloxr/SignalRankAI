@@ -1236,16 +1236,37 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     .where(Signal.signal_id == signal_id)
                     .values(archived=True)
                 )
-            # Preserve the existing tier-aware fallback outbox. The canonical
-            # lifecycle dispatcher cross-marks these rows after successful
-            # event delivery, while upsert_outcome is told not to double-queue.
-            await queue_outcome_notifications_for_outcome(
-                session,
-                int(getattr(_outcome, "id")),
-                str(signal_id),
-                status_l,
-            )
+            # Commit canonical trading truth before notification fan-out. In
+            # v1.3.6.8 the outbox helper ran inside this same transaction, so a
+            # notification-only NameError rolled back the Outcome row, signal
+            # archive flag, and performance evidence. Notification delivery is
+            # recoverable; terminal outcome truth must not be.
             await session.commit()
+
+            # Queue recipient notifications in a new transaction on the same
+            # session. Any failure is isolated and later repaired by the worker's
+            # idempotent outcome-outbox reconciliation pass.
+            try:
+                await queue_outcome_notifications_for_outcome(
+                    session,
+                    int(getattr(_outcome, "id")),
+                    str(signal_id),
+                    status_l,
+                )
+                await session.commit()
+            except Exception as outbox_error:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                logger.exception(
+                    "[outcome_tracker] outbox queue failed after outcome commit signal=%s status=%s outcome_id=%s error=%s",
+                    str(signal_id),
+                    status_l,
+                    getattr(_outcome, "id", None),
+                    outbox_error,
+                )
+
             if terminal:
                 _EXCURSION_CACHE.pop(str(signal_id), None)
             
@@ -1287,7 +1308,19 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             
         logger.info("[outcome_tracker] Outcome persisted: %s -> %s @ %.5f", signal_id[:8], status_l, price)
     except Exception as exc:
-        logger.error("[outcome_tracker] persist_outcome error: %s", exc)
+        # This path is financially and operationally significant: a failure
+        # here means the durable outcome, performance projection and recipient
+        # notification outbox may all be missing.  Preserve the traceback and
+        # signal/stage context instead of emitting only a repeated exception
+        # string that cannot be diagnosed from Railway logs.
+        logger.exception(
+            "[outcome_tracker] persist_outcome error signal=%s status=%s entry=%s price=%s error=%s",
+            str(signal_id),
+            str(status),
+            entry,
+            price,
+            exc,
+        )
 
 
 async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_idx: int) -> None:

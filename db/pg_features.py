@@ -102,6 +102,20 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Parse a boolean environment flag consistently and fail safely.
+
+    Outcome recipient selection uses this helper before an outcome notification
+    row can be queued.  v1.3.6.8 referenced ``_env_bool`` from that path without
+    defining it in this module, which raised ``NameError`` after every detected
+    TP/SL transition and prevented outcome persistence and notification fan-out.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 def _utcnow() -> datetime:
     # Return a naive UTC datetime to match DB columns (TIMESTAMP WITHOUT TIME ZONE)
     return now_utc_naive()

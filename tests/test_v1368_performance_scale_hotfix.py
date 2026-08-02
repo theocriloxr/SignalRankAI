@@ -101,7 +101,9 @@ def test_provider_manifest_separates_declared_from_certified_capability() -> Non
     assert manifest.supports(Capability.LIVE_QUOTES, certified_only=True)
 
 
-def test_release_identity_is_v1368() -> None:
+def test_release_identity_preserves_v1368_foundations_in_v1369() -> None:
     version = (ROOT / "core" / "version.py").read_text("utf-8")
-    assert 'CODE_VERSION = "1.3.6.8"' in version
-    assert "performance-ledger-scale-hotfix" in version
+    assert 'CODE_VERSION = "1.3.6.9"' in version
+    assert "outcome-delivery-recovery-hotfix" in version
+    assert (ROOT / "core" / "durable_event_stream.py").exists()
+    assert (ROOT / "data" / "provider_contracts.py").exists()

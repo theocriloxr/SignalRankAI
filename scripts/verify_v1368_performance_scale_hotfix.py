@@ -16,7 +16,7 @@ def main() -> None:
     worker = (ROOT / "worker/worker.py").read_text("utf-8")
     bot = (ROOT / "signalrank_telegram/bot.py").read_text("utf-8")
     version = (ROOT / "core/version.py").read_text("utf-8")
-    check("version", 'CODE_VERSION = "1.3.6.8"' in version)
+    check("v1.3.6.8 foundations retained", 'CODE_VERSION = "1.3.6.9"' in version and (ROOT / "core/durable_event_stream.py").exists())
     check("per-user savepoint", "async with session.begin_nested()" in ledger)
     check("cursor pagination", "User.id > int(after_user_id)" in ledger)
     check("audited policy migration", "performance-policy-migration-v1" in ledger)
@@ -31,7 +31,7 @@ def main() -> None:
     check("owner rebuild command", 'CommandHandler("performance_rebuild"' in bot)
     check("owner audit command", 'CommandHandler("performance_audit"' in bot)
     check("event stream disabled by default", 'DURABLE_EVENT_STREAM_ENABLED", "0"' in (ROOT / "core/durable_event_stream.py").read_text("utf-8"))
-    print("v1.3.6.8 static verification complete")
+    print("v1.3.6.8 foundation verification complete on current release")
 
 
 if __name__ == "__main__":
