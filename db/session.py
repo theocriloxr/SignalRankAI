@@ -351,12 +351,61 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # for a real DB session. This lets heavy features run continuously without
 # starving interactive Telegram commands, signal delivery proof writes, or
 # signal storage. The value is intentionally smaller than the main gate.
-_background_gate_limit = max(1, min(_session_gate_limit, _pool_int("DB_BACKGROUND_MAX_CONCURRENT_SESSIONS", max(1, min(2, _session_gate_limit // 2 or 1)), minimum=1)))
+_default_foreground_reserve = (
+    1
+    if _session_gate_limit <= 2
+    else min(4, max(2, _session_gate_limit // 4))
+)
+_foreground_reserved_sessions = max(
+    1,
+    min(
+        _session_gate_limit,
+        _pool_int(
+            "DB_FOREGROUND_RESERVED_SESSIONS",
+            _default_foreground_reserve,
+            minimum=1,
+        ),
+    ),
+)
+_default_background_limit = max(
+    1,
+    min(4, max(1, _session_gate_limit - _foreground_reserved_sessions)),
+)
+_background_gate_limit = max(
+    1,
+    min(
+        max(1, _session_gate_limit - _foreground_reserved_sessions),
+        _pool_int(
+            "DB_BACKGROUND_MAX_CONCURRENT_SESSIONS",
+            _default_background_limit,
+            minimum=1,
+        ),
+    ),
+)
 _background_gate = threading.BoundedSemaphore(_background_gate_limit)
+_default_interactive_limit = 1 if _session_gate_limit <= 2 else max(1, _foreground_reserved_sessions // 2)
+_default_critical_limit = 1 if _session_gate_limit <= 2 else max(1, _foreground_reserved_sessions - _default_interactive_limit)
+_interactive_session_limit = max(
+    1,
+    min(
+        _session_gate_limit,
+        _pool_int("DB_INTERACTIVE_MAX_CONCURRENT_SESSIONS", _default_interactive_limit, minimum=1),
+    ),
+)
+_critical_session_limit = max(
+    1,
+    min(
+        _session_gate_limit,
+        _pool_int("DB_CRITICAL_MAX_CONCURRENT_SESSIONS", _default_critical_limit, minimum=1),
+    ),
+)
 _priority_admission = DBAdmissionController(
     _session_gate_limit,
-    background_limit=min(_background_gate_limit, max(1, _session_gate_limit - 1)),
-    analytics_limit=max(1, min(_session_gate_limit - 1 if _session_gate_limit > 1 else 1, 1)),
+    foreground_reserve=_foreground_reserved_sessions,
+    interactive_limit=_interactive_session_limit,
+    critical_limit=_critical_session_limit,
+    background_limit=_background_gate_limit,
+    analytics_limit=max(1, min(_session_gate_limit - _foreground_reserved_sessions, 1)),
     analytics_enabled=bool(
         _session_gate_limit > 2
         or _database_role() == "analytics"
@@ -662,6 +711,9 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
         "session_limit": int(_session_gate_limit),
         "background_session_limit": int(_background_gate_limit),
+        "foreground_reserved_sessions": int(_foreground_reserved_sessions),
+        "interactive_session_limit": int(_interactive_session_limit),
+        "critical_session_limit": int(_critical_session_limit),
         "session_metrics": session_metrics,
         "priority_admission": _priority_admission.snapshot(),
         "active_session_holders": _active_holder_snapshot(),
@@ -892,6 +944,7 @@ async def get_session(
     label: str | None = None,
     timeout_seconds: float | None = None,
     timeout: float | None = None,
+    drop_if_busy: bool | None = None,
     noncritical: bool = False,
     critical: bool = False,
     interactive: bool = False,
@@ -943,10 +996,13 @@ async def get_session(
     is_analytics = resolved is DBPriority.ANALYTICS
     is_interactive = resolved is DBPriority.INTERACTIVE
     is_critical = resolved is DBPriority.CRITICAL
+    configured_drop_background = bool(
+        _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
+        and _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+    )
     drop_background = bool(
         is_background
-        and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
-        and _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+        and (configured_drop_background if drop_if_busy is None else bool(drop_if_busy))
     )
     nonblocking = bool(is_analytics or drop_background)
 
@@ -1037,7 +1093,10 @@ async def get_session(
             with _session_metrics_lock:
                 _session_metrics["background_active"] += 1
 
-        main_nonblocking = bool(is_background or is_analytics)
+        # Durable background work (drop_if_busy=False) may wait for the shared
+        # session gate after it has been admitted to the non-reserved capacity.
+        # Drop-on-busy jobs and analytics remain nonblocking.
+        main_nonblocking = bool(is_analytics or drop_background)
         if not main_nonblocking:
             with _session_metrics_lock:
                 _session_metrics["waiting"] += 1

@@ -6,11 +6,14 @@ Loads signals + outcomes from Postgres, builds feature matrix, trains model.
 from utils.timeutils import now_utc_naive
 
 import os
+import asyncio
 import hashlib
 import sys
 import json
 import logging
 import math
+import tempfile
+from bisect import bisect_right
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -33,6 +36,30 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _training_db_priority() -> str:
+    value = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background").strip().lower()
+    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+
+
+def _training_db_timeout() -> float:
+    try:
+        return max(5.0, float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30))
+    except Exception:
+        return 30.0
+
+
+def _training_session_kwargs(label: str) -> dict:
+    return {
+        "priority": _training_db_priority(),
+        "label": label,
+        "timeout_seconds": _training_db_timeout(),
+        # ML snapshots are durable maintenance work. They may wait for the
+        # non-reserved pool portion but can never consume foreground-reserved
+        # sessions used by Telegram commands and delivery writes.
+        "drop_if_busy": False,
+    }
 
 
 def _is_production_runtime() -> bool:
@@ -250,8 +277,8 @@ async def load_training_data(lookback_days: int = 90):
     try:
         from db.session import get_session
 
-        from db.models import Signal, Outcome, SignalDelivery, MarketCandle, MLRejectedSignal
-        from sqlalchemy import select, desc, exists
+        from db.models import Signal, Outcome, SignalDelivery, MarketCandle, MLRejectedSignal, PaperPosition
+        from sqlalchemy import select, desc, exists, func
 
         def _parse_tp(raw_tp):
             if raw_tp is None:
@@ -279,25 +306,35 @@ async def load_training_data(lookback_days: int = 90):
                 except Exception:
                     return 0.0
 
+        candle_cache: dict[tuple[str, str], tuple[list[int], list[object]]] = {}
+
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
                 return []
-            cutoff_ms = int(created_at.timestamp() * 1000)
-            async with get_session(priority="background", label="ml_training_candle_read") as candle_session:
-                q = (
-                    select(MarketCandle)
-                    .where(
-                        MarketCandle.symbol == str(symbol),
-                        MarketCandle.timeframe == str(timeframe),
-                        MarketCandle.open_time_ms <= cutoff_ms,
+            key = (str(symbol).upper(), str(timeframe).lower())
+            cached = candle_cache.get(key)
+            if cached is None:
+                max_rows = max(500, min(100000, int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000)))
+                async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
+                    q = (
+                        select(MarketCandle)
+                        .where(
+                            MarketCandle.symbol == key[0],
+                            MarketCandle.timeframe == key[1],
+                        )
+                        .order_by(desc(MarketCandle.open_time_ms))
+                        .limit(max_rows)
                     )
-                    .order_by(desc(MarketCandle.open_time_ms))
-                    .limit(limit)
-                )
-                res = await candle_session.execute(q)
-                rows = list(res.scalars().all())
-                rows.reverse()
-                return rows
+                    res = await candle_session.execute(q)
+                    all_rows = list(res.scalars().all())
+                all_rows.reverse()
+                open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
+                cached = (open_times, all_rows)
+                candle_cache[key] = cached
+            open_times, all_rows = cached
+            cutoff_ms = int(created_at.timestamp() * 1000)
+            stop = bisect_right(open_times, cutoff_ms)
+            return all_rows[max(0, stop - max(1, int(limit))):stop]
 
         def _atr(highs, lows, closes, period=14):
             if len(closes) < period + 1:
@@ -331,7 +368,7 @@ async def load_training_data(lookback_days: int = 90):
                 return -1.0
             return 0.0
 
-        async with get_session(priority="background", label="ml_training_live_outcomes_read") as session:
+        async with get_session(**_training_session_kwargs("ml_training_live_outcomes_read")) as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
             cutoff = now_utc_naive() - timedelta(days=cutoff_days)
@@ -355,23 +392,20 @@ async def load_training_data(lookback_days: int = 90):
                 res = await session.execute(stmt)
                 rows = list(res.all())
             except Exception as exc:
+                # Live proof is the strongest source, but a temporary query or
+                # schema issue must not prevent archive, shadow, and paper
+                # evidence from producing a candidate model. Promotion remains
+                # gated by ML_MIN_LIVE_PROOF_ROWS below.
                 logger.warning(
-                    "Live ML data unavailable; preserving the current model without retraining: %s",
+                    "Live ML data unavailable; continuing with secondary evidence: %s",
                     exc,
                 )
-                if _offline_bootstrap_allowed():
-                    return _generate_offline_bootstrap_data(
-                        int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
-                    )
-                return None
+                rows = []
 
         if not rows:
-            logger.warning("No delivery-proof-backed signals with outcomes found in the requested lookback")
-            if _offline_bootstrap_allowed():
-                return _generate_offline_bootstrap_data(
-                    int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
-                )
-            return None
+            logger.warning(
+                "No delivery-proof-backed live outcomes found; loading archive, shadow, and paper evidence"
+            )
 
         live_proof_rows = len(rows)
         data = []
@@ -504,6 +538,8 @@ async def load_training_data(lookback_days: int = 90):
                 'false_breakout': int(false_breakout),
                 'barrier_type': barrier,
                 'sample_weight': float(sample_weight),
+                'source_type': 'live_delivery',
+                'source_weight': 1.0,
                 'created_at': created_at,
                 'target': target,
             }
@@ -515,7 +551,7 @@ async def load_training_data(lookback_days: int = 90):
             from db.models import MLPastTrainingData
             from sqlalchemy import text
 
-            async with get_session(priority="background", label="ml_training_archive_read") as session:
+            async with get_session(**_training_session_kwargs("ml_training_archive_read")) as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
                 await session.execute(text(
@@ -611,6 +647,9 @@ async def load_training_data(lookback_days: int = 90):
                 a_take_profit = _parse_tp(getattr(a, 'take_profit', 0))
                 a_entry = _safe_float(getattr(a, 'entry', 0))
                 a_sl = _safe_float(getattr(a, 'stop_loss', 0))
+                archive_proof = bool(getattr(a, 'delivery_proof_backed', False))
+                archive_source_weight = 0.80 if archive_proof else 0.25
+                sample_weight *= archive_source_weight
 
                 data.append({
                     'signal_id': getattr(a, 'signal_id', None),
@@ -651,6 +690,8 @@ async def load_training_data(lookback_days: int = 90):
                     'false_breakout': int(false_breakout),
                     'barrier_type': barrier,
                     'sample_weight': float(sample_weight),
+                    'source_type': 'archive_proof' if archive_proof else 'archive_legacy',
+                    'source_weight': float(archive_source_weight),
                     'created_at': getattr(a, 'signal_created_at', None) or now_utc_naive(),
                     'target': target,
                 })
@@ -662,7 +703,7 @@ async def load_training_data(lookback_days: int = 90):
         try:
             from sqlalchemy import and_
 
-            async with get_session(priority="background", label="ml_training_rejections_read") as session:
+            async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
                 rejected_rows = (
                     await session.execute(
                         select(MLRejectedSignal).where(
@@ -702,7 +743,7 @@ async def load_training_data(lookback_days: int = 90):
 
                 barrier = "upper" if outcome == "win" else "lower"
                 target = 1 if barrier == "upper" else 0
-                sample_weight = 1.0 if target == 1 else 0.9
+                sample_weight = (1.0 if target == 1 else 0.9) * 0.60
                 if false_breakout:
                     sample_weight *= 0.75
 
@@ -752,6 +793,8 @@ async def load_training_data(lookback_days: int = 90):
                         "false_breakout": int(false_breakout),
                         "barrier_type": barrier,
                         "sample_weight": float(sample_weight),
+                        "source_type": "shadow_rejected",
+                        "source_weight": 0.60,
                         "created_at": getattr(rj, "created_at", None) or now_utc_naive(),
                         "target": target,
                     }
@@ -759,18 +802,130 @@ async def load_training_data(lookback_days: int = 90):
         except Exception as rejected_err:
             logger.warning(f"Failed to load rejected-signal training rows: {rejected_err}")
 
+        # Include one closed paper execution per signal only when the same
+        # signal is not already represented by stronger live/archive evidence.
+        # Paper fills are useful for execution-aware learning but remain
+        # deliberately lower weight than confirmed live outcomes.
+        try:
+            existing_signal_ids = {str(item.get("signal_id") or "") for item in data}
+            async with get_session(**_training_session_kwargs("ml_training_paper_read")) as session:
+                paper_result = await session.execute(
+                    select(PaperPosition, Signal)
+                    .join(Signal, Signal.signal_id == PaperPosition.signal_id)
+                    .where(
+                        PaperPosition.closed_at.is_not(None),
+                        PaperPosition.closed_at >= cutoff,
+                        func.lower(PaperPosition.status).in_(("closed", "complete", "completed")),
+                    )
+                    .order_by(desc(PaperPosition.closed_at))
+                )
+                paper_pairs = list(paper_result.all())
+
+            paper_by_signal = {}
+            for position, sig in paper_pairs:
+                sid = str(getattr(position, "signal_id", "") or "")
+                if not sid or sid in existing_signal_ids or sid in paper_by_signal:
+                    continue
+                paper_by_signal[sid] = (position, sig)
+
+            for sid, (position, sig) in paper_by_signal.items():
+                exit_reason = str(getattr(position, "exit_reason", "") or "").lower()
+                r_multiple = _safe_float(getattr(position, "r_multiple", 0.0))
+                if any(token in exit_reason for token in ("tp", "target", "take_profit")):
+                    target = 1
+                    barrier = "upper"
+                elif any(token in exit_reason for token in ("sl", "stop")):
+                    target = 0
+                    barrier = "lower"
+                elif r_multiple != 0:
+                    target = 1 if r_multiple > 0 else 0
+                    barrier = "upper" if target else "lower"
+                else:
+                    continue
+                meta = getattr(position, "meta", None) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                rr_raw = _safe_float(getattr(sig, "rr_estimate", 0.0))
+                paper_weight = 0.35 * min(1.25, max(0.50, 0.75 + min(4.0, max(0.5, rr_raw or 1.0)) / 4.0))
+                data.append({
+                    "signal_id": sid,
+                    "asset": getattr(sig, "asset", None) or getattr(position, "asset", "UNKNOWN"),
+                    "timeframe": getattr(sig, "timeframe", None) or getattr(position, "timeframe", "1h") or "1h",
+                    "direction": getattr(sig, "direction", None) or getattr(position, "direction", "long"),
+                    "score": _safe_float(getattr(sig, "score", 0)),
+                    "entry": _safe_float(getattr(sig, "entry", getattr(position, "signal_entry", 0))),
+                    "stop_loss": _safe_float(getattr(sig, "stop_loss", getattr(position, "stop_loss", 0))),
+                    "take_profit": _parse_tp(getattr(sig, "take_profit", getattr(position, "take_profits", 0))),
+                    "rr_ratio": rr_raw,
+                    "strategy_name": getattr(sig, "strategy_name", "paper") or "paper",
+                    "regime": getattr(sig, "regime", "unknown") or "unknown",
+                    "strength": _safe_float(getattr(sig, "strength", 0)),
+                    "ml_probability": _safe_float(getattr(sig, "ml_probability", 0)),
+                    "price_velocity_3": _safe_float(meta.get("price_velocity_3", 0.0)),
+                    "price_velocity_5": _safe_float(meta.get("price_velocity_5", 0.0)),
+                    "price_velocity_10": _safe_float(meta.get("price_velocity_10", 0.0)),
+                    "price_acceleration_3_10": _safe_float(meta.get("price_acceleration_3_10", 0.0)),
+                    "atr_rel": _safe_float(meta.get("atr_rel", 0.0)),
+                    "atr_regime": _safe_float(meta.get("atr_regime", 0.0)),
+                    "relative_volume": _safe_float(meta.get("relative_volume", 0.0)),
+                    "mtf_4h_trend": _safe_float(meta.get("mtf_4h_trend", 0.0)),
+                    "mtf_1d_trend": _safe_float(meta.get("mtf_1d_trend", 0.0)),
+                    "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
+                    "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
+                    "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
+                    "dxy_trend": _safe_float(meta.get("dxy_trend", 0.0)),
+                    "vix_trend": _safe_float(meta.get("vix_trend", 0.0)),
+                    "us10y_trend": _safe_float(meta.get("us10y_trend", 0.0)),
+                    "yield_spread": _safe_float(meta.get("yield_spread", 0.0)),
+                    "minutes_since_high_impact_news": _safe_float(meta.get("minutes_since_high_impact_news", 0.0)),
+                    "minutes_until_high_impact_news": _safe_float(meta.get("minutes_until_high_impact_news", 0.0)),
+                    "news_event_impact_score": _safe_float(meta.get("news_event_impact_score", 0.0)),
+                    "spx_trend": _safe_float(meta.get("spx_trend", 0.0)),
+                    "btc_corr": _safe_float(meta.get("btc_corr", 0.0)),
+                    "partial_tp_progress": 0.0,
+                    "false_breakout": 0,
+                    "barrier_type": barrier,
+                    "sample_weight": float(paper_weight),
+                    "source_type": "paper_execution",
+                    "source_weight": 0.35,
+                    "created_at": getattr(sig, "created_at", None) or getattr(position, "opened_at", None) or now_utc_naive(),
+                    "target": int(target),
+                })
+        except Exception as paper_err:
+            logger.warning("Failed to load paper-execution training rows: %s", paper_err)
+
         df = pd.DataFrame(data)
+        source_counts = (
+            df["source_type"].value_counts().to_dict()
+            if not df.empty and "source_type" in df.columns
+            else {}
+        )
+        df.attrs["read_status"] = "success"
         df.attrs["live_proof_rows"] = int(live_proof_rows)
-        logger.info(f"Loaded {len(df)} signals with outcomes")
+        df.attrs["source_counts"] = {str(k): int(v) for k, v in source_counts.items()}
+        df.attrs["candle_series_loaded"] = int(len(candle_cache))
+        logger.info(
+            "[ml_dataset] status=success rows=%s live_proof=%s sources=%s candle_series=%s",
+            len(df),
+            live_proof_rows,
+            source_counts,
+            len(candle_cache),
+        )
         logger.info(f"Class distribution: {df['target'].value_counts().to_dict()}")
         return df
 
     except Exception as e:
         if type(e).__name__ in {"DatabaseWorkDeferred", "NoncriticalWriteDropped", "AnalyticsWorkDeferred"}:
             logger.warning("ML training data read deferred; current model preserved: %s", e)
-        else:
-            logger.error(f"Failed to load training data: {e}", exc_info=True)
-        return None
+            deferred = pd.DataFrame()
+            deferred.attrs["read_status"] = "deferred"
+            deferred.attrs["read_error"] = f"{type(e).__name__}: {e}"
+            return deferred
+        logger.error(f"Failed to load training data: {e}", exc_info=True)
+        failed = pd.DataFrame()
+        failed.attrs["read_status"] = "failed"
+        failed.attrs["read_error"] = f"{type(e).__name__}: {e}"
+        return failed
 
 
 def engineer_features(df):
@@ -914,7 +1069,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     logger.info(f"Test Accuracy: {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
     logger.info(f"Confusion Matrix:\n{confusion_matrix(y_te, y_pred)}")
-    logger.info(f"Classification Report:\n{classification_report(y_te, y_pred)}")
+    logger.info(f"Classification Report:\n{classification_report(y_te, y_pred, zero_division=0)}")
 
     # Drift detection: compare with last run (if available)
     drift_path = Path(__file__).parent / "ml_drift.json"
@@ -951,12 +1106,32 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     importance = dict(zip(feature_cols, model.feature_importances_))
     logger.info(f"Top features: {sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]}")
 
-    return model, feature_cols, calibration_x, calibration_y
+    metrics = {
+        "accuracy": float(acc),
+        "auc": float(auc),
+        "train_rows": int(len(X_tr)),
+        "validation_rows": int(len(X_te)),
+        "positive_rows": int((y_train == 1).sum()),
+        "negative_rows": int((y_train == 0).sum()),
+    }
+    return model, feature_cols, calibration_x, calibration_y, metrics
 
 
-def save_model(model, feature_cols, calibration_x=None, calibration_y=None, training_meta=None):
-    """Save model to JSON."""
-    model_path = Path(__file__).parent / "model.json"
+def _primary_model_path() -> Path:
+    raw = str(os.getenv("ML_MODEL_PATH") or "").strip()
+    return Path(raw) if raw else Path(__file__).parent / "model.json"
+
+
+def save_model(
+    model,
+    feature_cols,
+    calibration_x=None,
+    calibration_y=None,
+    training_meta=None,
+    model_path: str | Path | None = None,
+):
+    """Atomically save a primary or candidate model payload."""
+    model_path = Path(model_path) if model_path is not None else _primary_model_path()
     
     # Save model as ubj (XGBoost binary JSON) - avoids format warnings
     import base64
@@ -978,15 +1153,34 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None, trai
         "training_meta": dict(training_meta or {}),
     }
 
-    with open(model_path, 'w') as f:
-        json.dump(model_dict, f, indent=2)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix="model.",
+        suffix=".json.tmp",
+        dir=str(model_path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(model_dict, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_name, model_path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
 
-    logger.info(f"Model saved to {model_path}")
+    logger.info(
+        "[ml_model_saved] path=%s hash=%s rows=%s",
+        model_path,
+        artifact_hash_sha256,
+        (training_meta or {}).get("total_rows"),
+    )
     return model_path
 
 
 async def main(lookback_days: int | None = None):
-    logger.info("Starting ML model training...")
+    run_id = f"ml-{now_utc_naive().strftime('%Y%m%d%H%M%S')}"
+    logger.info("[ml_training_run] id=%s status=starting", run_id)
 
     if lookback_days is None:
         try:
@@ -994,8 +1188,17 @@ async def main(lookback_days: int | None = None):
         except Exception:
             lookback_days = 90
 
-    # Load data
     df = await load_training_data(int(lookback_days or 90))
+    read_status = str((df.attrs.get("read_status") if df is not None else "failed") or "failed")
+    if read_status != "success":
+        logger.warning(
+            "[ml_training_run] id=%s status=%s error=%s current_model_preserved=true",
+            run_id,
+            read_status,
+            (df.attrs.get("read_error") if df is not None else "dataset_none"),
+        )
+        return False
+
     default_min_rows = "100" if _is_production_runtime() else "10"
     min_rows = int(os.getenv("ML_MIN_TRAIN_ROWS", default_min_rows) or default_min_rows)
     bootstrap_enabled = _offline_bootstrap_allowed()
@@ -1003,18 +1206,19 @@ async def main(lookback_days: int | None = None):
     used_bootstrap = False
     source_rows = int(len(df)) if df is not None else 0
     live_proof_rows = int(df.attrs.get("live_proof_rows", 0)) if df is not None else 0
+    source_counts = dict(df.attrs.get("source_counts") or {}) if df is not None else {}
     min_live_proof_rows = int(
-        os.getenv("ML_MIN_LIVE_PROOF_ROWS", "100" if _is_production_runtime() else "1")
-        or ("100" if _is_production_runtime() else "1")
+        os.getenv("ML_MIN_LIVE_PROOF_ROWS", "10" if _is_production_runtime() else "1")
+        or ("10" if _is_production_runtime() else "1")
     )
 
-    if _is_production_runtime() and live_proof_rows < min_live_proof_rows:
+    promotion_eligible = not _is_production_runtime() or live_proof_rows >= min_live_proof_rows
+    if not promotion_eligible:
         logger.warning(
-            "ML retrain skipped: only %s delivery-proof-backed live outcomes; need >= %s; current model preserved",
-            live_proof_rows,
-            min_live_proof_rows,
+            "[ml_training_run] id=%s status=candidate_only reason=insufficient_live_proof "
+            "live_proof=%s required=%s sources=%s primary_model_preserved=true",
+            run_id, live_proof_rows, min_live_proof_rows, source_counts,
         )
-        return False
 
     if (df is None or len(df) < min_rows) and bootstrap_enabled:
         boot = _generate_offline_bootstrap_data(max(bootstrap_rows, min_rows))
@@ -1027,9 +1231,9 @@ async def main(lookback_days: int | None = None):
 
     if df is None or len(df) < min_rows:
         logger.warning(
-            "ML retrain skipped: insufficient delivery-proof-backed live data "
-            "(need >= %s rows); current model preserved",
-            min_rows,
+            "[ml_training_run] id=%s status=skipped reason=insufficient_total_rows "
+            "rows=%s required=%s sources=%s current_model_preserved=true",
+            run_id, 0 if df is None else len(df), min_rows, source_counts,
         )
         return False
 
@@ -1037,34 +1241,165 @@ async def main(lookback_days: int | None = None):
         logger.error("Refusing to save a bootstrap-trained model in production")
         return False
 
-    # Engineer features
-    X_train, y_train, feature_cols, sample_weights, timestamps = engineer_features(df)
-    logger.info(f"Features engineered: {feature_cols}")
-    logger.info(f"Training set shape: {X_train.shape}")
+    effective_rows = float(df.get("sample_weight", pd.Series([1.0] * len(df))).fillna(1.0).sum())
+    min_effective_rows = float(os.getenv("ML_MIN_EFFECTIVE_ROWS", str(max(25, min_rows // 2))) or max(25, min_rows // 2))
+    if effective_rows < min_effective_rows:
+        logger.warning(
+            "[ml_training_run] id=%s status=skipped reason=insufficient_effective_rows "
+            "effective_rows=%.2f required=%.2f sources=%s",
+            run_id, effective_rows, min_effective_rows, source_counts,
+        )
+        return False
 
-    # Train model
-    model, feature_cols, calibration_x, calibration_y = train_model(
+    # CPU-heavy feature engineering and XGBoost fitting must not block Telegram
+    # callback acknowledgement or the realtime outcome loop.
+    X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(
+        engineer_features, df
+    )
+    logger.info(
+        "[ml_training_run] id=%s status=fitting rows=%s effective_rows=%.2f features=%s sources=%s",
+        run_id, len(df), effective_rows, len(feature_cols), source_counts,
+    )
+    model, feature_cols, calibration_x, calibration_y, metrics = await asyncio.to_thread(
+        train_model,
         X_train,
         y_train,
         feature_cols,
-        sample_weights=sample_weights,
-        timestamps=timestamps,
+        sample_weights,
+        timestamps,
     )
 
-    # Save model
-    save_model(
+    min_auc = float(os.getenv("ML_MIN_PROMOTION_AUC", "0.52") or 0.52)
+    min_accuracy = float(os.getenv("ML_MIN_PROMOTION_ACCURACY", "0.50") or 0.50)
+    if metrics["auc"] < min_auc or metrics["accuracy"] < min_accuracy:
+        logger.warning(
+            "[ml_training_run] id=%s status=rejected reason=quality_gate "
+            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
+            run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+        )
+        return False
+
+    training_meta = {
+        "run_id": run_id,
+        "offline_bootstrap_used": bool(used_bootstrap),
+        "source_rows": int(source_rows),
+        "total_rows": int(len(df)),
+        "effective_rows": float(effective_rows),
+        "live_proof_rows": int(live_proof_rows),
+        "source_counts": source_counts,
+        "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
+        "metrics": metrics,
+        "promotion_eligible": bool(promotion_eligible),
+    }
+    primary_path = _primary_model_path()
+    candidate_path = Path(
+        str(
+            os.getenv("ML_CANDIDATE_MODEL_PATH")
+            or (Path(__file__).parent / "model_candidate.json")
+        )
+    )
+    target_path = primary_path if promotion_eligible else candidate_path
+    previous_model_bytes = target_path.read_bytes() if target_path.exists() else None
+    model_path = await asyncio.to_thread(
+        save_model,
         model,
         feature_cols,
-        calibration_x=calibration_x,
-        calibration_y=calibration_y,
-        training_meta={
-            "offline_bootstrap_used": bool(used_bootstrap),
-            "source_rows": int(source_rows),
-            "total_rows": int(len(df)),
-        },
+        calibration_x,
+        calibration_y,
+        training_meta,
+        target_path,
     )
 
-    logger.info("✅ Model training complete!")
+    # Candidate-only training learns from every trustworthy source without
+    # changing live decisions until sufficient delivery-proof evidence exists.
+    if not promotion_eligible:
+        from engine import ml as engine_ml
+        candidate_reload = await asyncio.to_thread(engine_ml.reload_shadow_model)
+        if not candidate_reload.get("loaded"):
+            if previous_model_bytes is not None:
+                target_path.write_bytes(previous_model_bytes)
+            elif target_path.exists():
+                target_path.unlink()
+            await asyncio.to_thread(engine_ml.reload_shadow_model)
+            logger.error(
+                "[ml_training_run] id=%s status=rejected reason=candidate_reload_failed error=%s",
+                run_id, candidate_reload.get("error"),
+            )
+            return False
+
+        from ml.artifact_store import persist_active_model_artifact
+        candidate_persisted = await persist_active_model_artifact(
+            model_path, training_meta=training_meta, model_name="candidate"
+        )
+        require_candidate_durable = _env_bool(
+            "ML_REQUIRE_DURABLE_CANDIDATE_ARTIFACT", _is_production_runtime()
+        )
+        if require_candidate_durable and not candidate_persisted:
+            if previous_model_bytes is not None:
+                target_path.write_bytes(previous_model_bytes)
+            elif target_path.exists():
+                target_path.unlink()
+            await asyncio.to_thread(engine_ml.reload_shadow_model)
+            logger.error(
+                "[ml_training_run] id=%s status=rejected reason=candidate_artifact_persistence_failed",
+                run_id,
+            )
+            return False
+        logger.info(
+            "[ml_training_run] id=%s status=candidate_saved model=%s accuracy=%.4f auc=%.4f "
+            "rows=%s live=%s sources=%s durable=%s candidate_version=%s",
+            run_id, model_path, metrics["accuracy"], metrics["auc"], len(df),
+            live_proof_rows, source_counts, candidate_persisted,
+            candidate_reload.get("version"),
+        )
+        return True
+
+    # The running engine caches the booster. A successful file write is not a
+    # promotion until the new artifact can be loaded by the live inference path.
+    from engine import ml as engine_ml
+
+    reload_status = await asyncio.to_thread(engine_ml.reload_model)
+    if not reload_status.get("loaded"):
+        if previous_model_bytes is not None:
+            primary_path.write_bytes(previous_model_bytes)
+        elif primary_path.exists():
+            primary_path.unlink()
+        await asyncio.to_thread(engine_ml.reload_model)
+        logger.error(
+            "[ml_training_run] id=%s status=rejected reason=live_reload_failed error=%s",
+            run_id, reload_status.get("error"),
+        )
+        return False
+
+    from ml.artifact_store import persist_active_model_artifact
+
+    artifact_persisted = await persist_active_model_artifact(
+        model_path,
+        training_meta=training_meta,
+    )
+    require_durable = _env_bool(
+        "ML_REQUIRE_DURABLE_MODEL_ARTIFACT",
+        _is_production_runtime(),
+    )
+    if require_durable and not artifact_persisted:
+        if previous_model_bytes is not None:
+            primary_path.write_bytes(previous_model_bytes)
+        elif primary_path.exists():
+            primary_path.unlink()
+        await asyncio.to_thread(engine_ml.reload_model)
+        logger.error(
+            "[ml_training_run] id=%s status=rejected reason=artifact_persistence_failed "
+            "current_model_restored=true",
+            run_id,
+        )
+        return False
+
+    logger.info(
+        "[ml_training_run] id=%s status=promoted model=%s accuracy=%.4f auc=%.4f "
+        "rows=%s live=%s sources=%s durable=%s active_version=%s",
+        run_id, model_path, metrics["accuracy"], metrics["auc"], len(df), live_proof_rows,
+        source_counts, artifact_persisted, reload_status.get("version"),
+    )
     return True
 
 

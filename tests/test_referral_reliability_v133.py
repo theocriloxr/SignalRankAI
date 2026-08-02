@@ -62,10 +62,13 @@ def test_referral_progress_is_lifetime_based_and_no_nested_tier_session() -> Non
 
 
 def test_referral_migration_follows_current_head() -> None:
-    source = Path("db/migrations/versions/0032_referral_reliability.py").read_text(encoding="utf-8")
-    assert 'revision = "0032_referral_reliability"' in source
-    assert 'down_revision = "0031_perf_paper_reliability"' in source
-    assert "uq_referral_rewards_reference" in source
+    referral = Path("db/migrations/versions/0032_referral_reliability.py").read_text(encoding="utf-8")
+    ml_runtime = Path("db/migrations/versions/0033_ml_learning_runtime.py").read_text(encoding="utf-8")
+    assert 'revision = "0032_referral_reliability"' in referral
+    assert 'down_revision = "0031_perf_paper_reliability"' in referral
+    assert "uq_referral_rewards_reference" in referral
+    assert 'revision = "0033_ml_learning_runtime"' in ml_runtime
+    assert 'down_revision = "0032_referral_reliability"' in ml_runtime
 
 
 def test_successful_webhook_processing_does_not_retry_when_xack_returns_zero() -> None:

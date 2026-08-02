@@ -83,7 +83,12 @@ class ShadowOutcomeWorker:
 
         cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
         try:
-            async with get_session(priority=DBPriority.BACKGROUND, label="shadow_outcome_scan") as session:
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="shadow_outcome_scan",
+                timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
+                drop_if_busy=False,
+            ) as session:
                 rows = list((await session.execute(
                     select(MLRejectedSignal)
                     .where(MLRejectedSignal.outcome_tracked_at.is_(None))
@@ -134,7 +139,12 @@ class ShadowOutcomeWorker:
         by_id = {row["id"]: (row, outcome) for row, outcome in evaluated}
         now = now_utc_naive()
         try:
-            async with get_session(priority=DBPriority.BACKGROUND, label="shadow_outcome_write") as session:
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="shadow_outcome_write",
+                timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
+                drop_if_busy=False,
+            ) as session:
                 db_rows = list((await session.execute(
                     select(MLRejectedSignal).where(MLRejectedSignal.id.in_(ids)).with_for_update(skip_locked=True)
                 )).scalars().all())

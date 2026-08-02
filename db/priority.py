@@ -30,15 +30,23 @@ class DBAdmissionController:
         capacity: int,
         *,
         background_limit: int | None = None,
+        interactive_limit: int | None = None,
+        critical_limit: int | None = None,
         analytics_limit: int | None = None,
         analytics_enabled: bool = True,
+        foreground_reserve: int | None = None,
     ) -> None:
         self.capacity = max(1, int(capacity))
         self.analytics_enabled = bool(analytics_enabled)
-        borrower_capacity = max(1, self.capacity - 1) if self.capacity > 1 else 1
+        default_reserve = 1 if self.capacity <= 2 else min(4, max(2, self.capacity // 4))
+        requested_reserve = default_reserve if foreground_reserve is None else int(foreground_reserve)
+        self.foreground_reserve = max(1, min(self.capacity, requested_reserve))
+        borrower_capacity = max(1, self.capacity - self.foreground_reserve)
+        default_interactive = 1 if self.capacity <= 2 else max(1, self.foreground_reserve // 2)
+        default_critical = 1 if self.capacity <= 2 else max(1, self.foreground_reserve - default_interactive)
         self.limits = {
-            DBPriority.INTERACTIVE: 1,
-            DBPriority.CRITICAL: 1,
+            DBPriority.INTERACTIVE: max(1, min(self.capacity, int(interactive_limit or default_interactive))),
+            DBPriority.CRITICAL: max(1, min(self.capacity, int(critical_limit or default_critical))),
             DBPriority.BACKGROUND: max(
                 1,
                 min(borrower_capacity, int(background_limit or borrower_capacity)),
@@ -92,8 +100,18 @@ class DBAdmissionController:
         if self._active[priority] >= self.limits[priority]:
             return False
         if priority in (DBPriority.BACKGROUND, DBPriority.ANALYTICS):
-            if self._foreground_pressure():
+            # Borrowers may use only the non-reserved portion of a larger pool.
+            # This preserves immediate capacity for Telegram commands, delivery
+            # proofs and outcome transitions without disabling all maintenance
+            # work whenever one foreground session is active. With a two-slot
+            # pool this reduces to the previous strict behaviour.
+            borrower_ceiling = max(0, self.capacity - self.foreground_reserve)
+            if total_active >= borrower_ceiling:
                 return False
+            if self._foreground_pressure():
+                free_slots = self.capacity - total_active
+                if free_slots <= self.foreground_reserve:
+                    return False
             # Background and analytics are separate heavy-work lanes. Mixing
             # them makes analytics capable of delaying operational jobs.
             if priority is DBPriority.BACKGROUND:
@@ -194,6 +212,7 @@ class DBAdmissionController:
             return {
                 "capacity": int(self.capacity),
                 "analytics_enabled": bool(self.analytics_enabled),
+                "foreground_reserve": int(self.foreground_reserve),
                 "active_total": int(sum(self._active.values())),
                 "waiting_total": int(sum(self._waiting.values())),
                 "classes": classes,

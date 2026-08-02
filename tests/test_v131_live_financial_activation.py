@@ -75,9 +75,9 @@ def _full_env() -> dict[str, str]:
 
 
 def test_version_and_migration_head():
-    assert APP_VERSION == "1.3.3"
-    assert RELEASE_FINGERPRINT == "v1.3.3-full-system-certification-gates-20260801"
-    assert audit_versions(ROOT)["heads"] == ["0032_referral_reliability"]
+    assert APP_VERSION == "1.3.5"
+    assert RELEASE_FINGERPRINT == "v1.3.5-ml-learning-runtime-reliability-20260802"
+    assert audit_versions(ROOT)["heads"] == ["0033_ml_learning_runtime"]
 
 
 def test_financial_flags_off_are_safe():

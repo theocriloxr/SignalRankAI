@@ -961,6 +961,22 @@ class MLShadowPrediction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class MLModelArtifact(Base):
+    __tablename__ = "ml_model_artifacts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    model_name: Mapped[str] = mapped_column(String(64), default="primary", index=True, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_schema_version: Mapped[str] = mapped_column(String(64), default="1", nullable=False)
+    artifact_hash_sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    source_counts: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    trained_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class MLRejectedSignal(Base):
     __tablename__ = "ml_rejected_signals"
 

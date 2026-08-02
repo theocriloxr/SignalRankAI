@@ -1614,6 +1614,7 @@ class RealtimeOutcomeTracker:
     def __init__(self) -> None:
         self.running = False
         self._task: Optional[asyncio.Task] = None
+        self._ml_retrain_task: Optional[asyncio.Task] = None
         self._last_retrain_ts: float = 0.0
 
     async def start(self) -> None:
@@ -1633,6 +1634,12 @@ class RealtimeOutcomeTracker:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+        if self._ml_retrain_task and not self._ml_retrain_task.done():
+            self._ml_retrain_task.cancel()
+            try:
+                await self._ml_retrain_task
             except asyncio.CancelledError:
                 pass
         logger.info("[outcome_tracker] Stopped")
@@ -1655,6 +1662,17 @@ class RealtimeOutcomeTracker:
             )
         except Exception as exc:
             logger.debug("[lifecycle] pending notification retry skipped: %s", exc)
+
+    async def _run_ml_retrain(self) -> None:
+        try:
+            from ml import train_model as _train_model
+
+            ok = await _train_model.main()
+            logger.info("[outcome_tracker] ML retraining complete (ok=%s).", bool(ok))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("[outcome_tracker] ML retraining failed: %s", exc)
 
     async def _check_all(self) -> None:
         signals = await _fetch_active_signals()
@@ -1738,19 +1756,21 @@ class RealtimeOutcomeTracker:
         await asyncio.gather(*tasks, return_exceptions=True)
         await self._dispatch_pending_notifications()
 
-        # Retrain ML periodically (not on every tracking cycle).
-        try:
-            now_ts = datetime.now(timezone.utc).timestamp()
-            retrain_interval = int(os.getenv("OUTCOME_TRACKER_ML_RETRAIN_INTERVAL_SECONDS", "21600") or 21600)
-            min_interval = max(900, retrain_interval)
-            if (now_ts - float(self._last_retrain_ts or 0.0)) >= float(min_interval):
-                logger.info("[outcome_tracker] Triggering scheduled ML retraining after outcome tracking...")
-                from ml import train_model as _train_model
-                ok = await _train_model.main()
-                self._last_retrain_ts = now_ts
-                logger.info("[outcome_tracker] ML retraining complete (ok=%s).", bool(ok))
-        except Exception as exc:
-            logger.error(f"[outcome_tracker] ML retraining failed: {exc}")
+        # Retrain ML periodically without blocking the outcome loop or Telegram
+        # callbacks. Dataset reads use reserved-capacity-aware maintenance lanes
+        # and CPU fitting runs in a worker thread.
+        now_ts = datetime.now(timezone.utc).timestamp()
+        retrain_interval = int(os.getenv("OUTCOME_TRACKER_ML_RETRAIN_INTERVAL_SECONDS", "21600") or 21600)
+        min_interval = max(900, retrain_interval)
+        retrain_due = (now_ts - float(self._last_retrain_ts or 0.0)) >= float(min_interval)
+        retrain_running = bool(self._ml_retrain_task and not self._ml_retrain_task.done())
+        if retrain_due and not retrain_running:
+            logger.info("[outcome_tracker] Scheduling ML retraining after outcome tracking...")
+            self._last_retrain_ts = now_ts
+            self._ml_retrain_task = asyncio.create_task(
+                self._run_ml_retrain(),
+                name="ml-retrain",
+            )
 
         # Update user performance for all affected users
         if update_user_perf:

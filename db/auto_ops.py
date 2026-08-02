@@ -428,9 +428,94 @@ def run_startup_ops(run_mode: str) -> None:
                     ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP
                     """
                 )
+
+                # Durable promoted ML artifact — failsafe for migration 0033.
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ml_model_artifacts (
+                        id BIGSERIAL PRIMARY KEY,
+                        model_name VARCHAR(64) NOT NULL DEFAULT 'primary',
+                        model_version VARCHAR(64) NOT NULL,
+                        feature_schema_version VARCHAR(64) NOT NULL DEFAULT '1',
+                        artifact_hash_sha256 VARCHAR(64) NOT NULL,
+                        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        source_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        is_active BOOLEAN NOT NULL DEFAULT FALSE,
+                        trained_at TIMESTAMP NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_ml_model_artifacts_active_name
+                    ON ml_model_artifacts (model_name)
+                    WHERE is_active = TRUE
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS ix_ml_model_artifacts_name_created
+                    ON ml_model_artifacts (model_name, created_at DESC)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS ix_ml_model_artifacts_hash
+                    ON ml_model_artifacts (artifact_hash_sha256)
+                    """
+                )
                 conn.commit()
         except Exception:
             pass
+
+        # 5) Restore the latest promoted model after an ephemeral Railway restart.
+        #    This runs after schema repair and before the live engine begins inference.
+        if _env_bool("ML_RESTORE_ACTIVE_ARTIFACT_ON_STARTUP", True):
+            try:
+                from pathlib import Path
+                from ml.artifact_store import restore_active_model_artifact_sync
+
+                raw_model_path = str(os.getenv("ML_MODEL_PATH") or "").strip()
+                model_path = (
+                    Path(raw_model_path)
+                    if raw_model_path
+                    else Path(__file__).resolve().parents[1] / "ml" / "model.json"
+                )
+                restored = restore_active_model_artifact_sync(
+                    conn, model_path, model_name="primary"
+                )
+                candidate_restored = False
+                candidate_path = Path(
+                    str(
+                        os.getenv("ML_CANDIDATE_MODEL_PATH")
+                        or (Path(__file__).resolve().parents[1] / "ml" / "model_candidate.json")
+                    )
+                )
+                if _env_bool("ML_RESTORE_CANDIDATE_ARTIFACT_ON_STARTUP", True):
+                    candidate_restored = restore_active_model_artifact_sync(
+                        conn, candidate_path, model_name="candidate"
+                    )
+                if restored or candidate_restored:
+                    try:
+                        from engine import ml as engine_ml
+                        reload_status = engine_ml.reload_model() if restored else None
+                        shadow_status = (
+                            engine_ml.reload_shadow_model() if candidate_restored else None
+                        )
+                        print(
+                            "[auto_ops] restored ML artifacts "
+                            f"primary={reload_status} candidate={shadow_status}",
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        print(
+                            f"[auto_ops] restored ML artifact but live reload failed: {exc}",
+                            flush=True,
+                        )
+            except Exception as exc:
+                print(f"[auto_ops] ML artifact restore skipped: {exc}", flush=True)
 
     finally:
         if conn is not None:

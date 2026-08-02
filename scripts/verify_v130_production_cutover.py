@@ -26,7 +26,7 @@ def main() -> int:
     )
     migrations = audit_versions(ROOT)
     require(migrations["ok"] is True, "migration graph")
-    require(migrations["heads"] == ["0032_referral_reliability"], "migration head")
+    require(migrations["heads"] == ["0033_ml_learning_runtime"], "migration head")
     require(audit_outcome_projection_contract(ROOT)["ok"] is True, "outcome projection guard")
     profile = ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example"
     require(profile.exists(), "production profile")

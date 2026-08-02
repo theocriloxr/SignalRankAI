@@ -146,7 +146,12 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
         return {"snapshots": len(batch), "candles": 0}
     inserted = 0
     try:
-        async with get_session(priority=_capture_db_priority(), label="adaptive.candle_capture", timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "4") or 4)) as session:
+        async with get_session(
+            priority=_capture_db_priority(),
+            label="adaptive.candle_capture",
+            timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "20") or 20),
+            drop_if_busy=False,
+        ) as session:
             # The schema already has uq_market_candles_symbol_tf_open. A true
             # PostgreSQL bulk upsert both removes asyncpg bind ambiguity and
             # updates the still-open candle instead of preserving its first tick.

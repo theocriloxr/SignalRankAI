@@ -3,6 +3,7 @@ from utils.timeutils import now_utc_naive
 
 import gc
 import os
+import threading
 import logging
 import json
 import base64
@@ -32,6 +33,7 @@ _MODEL_CACHE: dict[str, Any] = {
 logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
 _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
+_MODEL_RELOAD_LOCK = threading.Lock()
 
 
 def _asset_class_to_int(asset: str) -> float:
@@ -99,22 +101,76 @@ def _load_model() -> None:
         _MODEL_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
 
 
+def reload_model() -> dict[str, Any]:
+    """Atomically clear and reload the active model after training or restore."""
+    with _MODEL_RELOAD_LOCK:
+        _MODEL_CACHE.update({
+            "loaded": False,
+            "feature_cols": [],
+            "booster": None,
+            "path": None,
+            "error": None,
+            "version": "",
+            "trained_at": "",
+        })
+        _load_model()
+        status = {
+            "loaded": bool(_MODEL_CACHE.get("booster") is not None),
+            "version": str(_MODEL_CACHE.get("version") or ""),
+            "trained_at": str(_MODEL_CACHE.get("trained_at") or ""),
+            "error": _MODEL_CACHE.get("error"),
+            "path": _MODEL_CACHE.get("path"),
+        }
+        logger.info("[ml_model_reload] %s", status)
+        return status
+
+
+def reload_shadow_model() -> dict[str, Any]:
+    """Clear and reload the candidate model used for shadow inference."""
+    with _MODEL_RELOAD_LOCK:
+        _SHADOW_CACHE.update({
+            "loaded": False,
+            "booster": None,
+            "feature_cols": [],
+            "name": "xgb_candidate",
+            "version": None,
+            "error": None,
+        })
+        _load_shadow_model()
+        status = {
+            "loaded": bool(_SHADOW_CACHE.get("booster") is not None),
+            "version": _SHADOW_CACHE.get("version"),
+            "error": _SHADOW_CACHE.get("error"),
+            "path": str(
+                os.getenv(
+                    "ML_CANDIDATE_MODEL_PATH",
+                    str(Path(__file__).parent.parent / "ml" / "model_candidate.json"),
+                )
+            ),
+        }
+        logger.info("[ml_shadow_model_reload] %s", status)
+        return status
+
+
 def _load_shadow_model() -> None:
     if _SHADOW_CACHE.get("loaded"):
         return
-    _SHADOW_CACHE.update({"loaded": True, "booster": None, "feature_cols": []})
+    _SHADOW_CACHE.update({"loaded": True, "booster": None, "feature_cols": [], "error": None})
     shadow_path = os.getenv("ML_CANDIDATE_MODEL_PATH", str(Path(__file__).parent.parent / "ml" / "model_candidate.json"))
     if xgb is None:
+        _SHADOW_CACHE["error"] = "xgboost_not_installed"
         return
     assert xgb is not None
     p = Path(shadow_path)
     if not p.exists():
+        _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
         feature_cols: List[str] = list(payload.get("feature_cols") or [])
         model_bytes_b64 = payload.get("model_bytes_b64")
         if not model_bytes_b64 or not feature_cols:
+            _SHADOW_CACHE["error"] = "invalid_candidate_payload"
             return
         raw_bytes = base64.b64decode(model_bytes_b64)
         booster = xgb.Booster()
@@ -124,6 +180,7 @@ def _load_shadow_model() -> None:
         _SHADOW_CACHE["feature_cols"] = feature_cols
         _SHADOW_CACHE["version"] = str(payload.get("version") or "unknown")
     except Exception as exc:
+        _SHADOW_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
 
 

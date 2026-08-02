@@ -2,7 +2,9 @@
 
 Date: 2026-08-02
 Target release: v1.3.4 referral reliability hotfix
-Migration head: `0032_referral_reliability`
+Current package migration head: `0033_ml_learning_runtime`
+
+Referral reliability migration: `0032_referral_reliability`
 
 ## Confirmed runtime problems
 
@@ -124,7 +126,7 @@ python -m alembic current
 Expected:
 
 ```text
-0032_referral_reliability (head)
+0033_ml_learning_runtime (head)
 ```
 
 5. Run a dry reconciliation, inspect results, then apply it.
@@ -166,7 +168,7 @@ stream acknowledgement failed
 ## Validation completed
 
 - Python compilation passed for all modified Python modules.
-- Alembic reports `0032_referral_reliability` as the only head.
+- Alembic reports `0033_ml_learning_runtime` as the only head; referral fixes remain in revision `0032_referral_reliability`.
 - 34 focused migration, pool-safety, referral-reliability, and performance/paper-reliability tests passed.
 
 ## Remaining operational requirement
