@@ -166,7 +166,9 @@ async def _is_admin_or_owner(user_id: int) -> bool:
 
 
 async def _is_strict_owner(user_id: int) -> bool:
-    return int(user_id) in _strict_owner_ids()
+    uid = int(user_id)
+    oid = _owner_id()
+    return uid in _strict_owner_ids() or bool(oid and uid == oid)
 
 
     key = getattr(config, "BYPASS_KEY", None)
@@ -1235,3 +1237,92 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
     await update.message.reply_text("\n".join(lines))
 
+
+
+async def performance_rebuild_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only bounded performance projection rebuild and dry-run."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    action = str(context.args[0] if context.args else "status").strip().lower()
+    if action not in {"dry_run", "apply", "status"}:
+        await update.message.reply_text(
+            "Usage: /performance_rebuild dry_run | apply | status"
+        )
+        return
+    from core.env import runtime_environment_name
+    from services.performance_ledger import (
+        performance_ledger_health,
+        reconcile_all_performance_ledgers,
+        persist_performance_reconciliation_result,
+    )
+    env = str(runtime_environment_name("development") or "development").lower()
+    status_key = f"performance_reconciliation:status:{env}"
+    if action == "status":
+        raw = await __import__("asyncio").to_thread(state.get_sync, status_key)
+        async with get_session() as session:
+            health = await performance_ledger_health(session, environment=env)
+        await update.message.reply_text(
+            "Performance rebuild status\n"
+            f"environment={env}\n"
+            f"last_batch={raw or 'none'}\n"
+            f"health={json.dumps(health, sort_keys=True, default=str)}"
+        )
+        return
+
+    # Keep owner commands bounded. The worker continues cursor-based projection
+    # on later cycles, so this does not load the full population into one request.
+    limit = max(1, min(500, int(getattr(config, "PERFORMANCE_OWNER_REBUILD_LIMIT", 100) or 100)))
+    async with get_session() as session:
+        result = await reconcile_all_performance_ledgers(
+            session,
+            environment=env,
+            limit_users=limit,
+            dry_run=(action == "dry_run"),
+            reset_cursor=True,
+            persist_cursor=(action == "apply"),
+            wrap_cursor=False,
+        )
+        if action == "apply":
+            await session.commit()
+            await persist_performance_reconciliation_result(
+                result, environment=env, persist_cursor=True
+            )
+        else:
+            await session.rollback()
+            await persist_performance_reconciliation_result(
+                result, environment=env, persist_cursor=False
+            )
+    await update.message.reply_text(
+        f"Performance rebuild {action} completed for one bounded batch.\n"
+        f"{json.dumps(result.as_dict(), sort_keys=True)}\n"
+        "The worker will continue from the saved cursor after apply."
+    )
+
+
+async def performance_audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only production-readiness audit for the proof-backed ledger."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    from core.env import runtime_environment_name
+    from services.performance_ledger import performance_ledger_health
+    days = 30
+    if context.args:
+        try:
+            days = max(1, min(3650, int(context.args[0])))
+        except Exception:
+            await update.message.reply_text("Usage: /performance_audit [days]")
+            return
+    env = str(runtime_environment_name("development") or "development").lower()
+    async with get_session() as session:
+        health = await performance_ledger_health(session, days=days, environment=env)
+    verdict = "PASS" if health.get("ok") else "BLOCKED"
+    await update.message.reply_text(
+        f"Performance ledger audit: {verdict}\n"
+        f"{json.dumps(health, sort_keys=True, default=str)}"
+    )

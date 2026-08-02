@@ -897,6 +897,8 @@ from .owner_commands import (
     provider_status_command,
     qa_report_command,
     broadcast_command,
+    performance_rebuild_command,
+    performance_audit_command,
 )
 
 from .extended_commands import (
@@ -6271,6 +6273,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
     application.add_handler(CommandHandler("qa_report", _audit_handler("qa_report", qa_report_command)))
     application.add_handler(CommandHandler("broadcast", _audit_handler("broadcast", broadcast_command)))
+    application.add_handler(CommandHandler("performance_rebuild", _audit_handler("performance_rebuild", performance_rebuild_command)))
+    application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 

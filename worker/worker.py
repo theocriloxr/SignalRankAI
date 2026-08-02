@@ -461,6 +461,7 @@ class Worker:
                 from services.performance_ledger import (
                     reconcile_all_performance_ledgers,
                     repair_partial_exit_outcomes,
+                    persist_performance_reconciliation_result,
                 )
 
                 with acquire_scheduler_job_lease(
@@ -484,13 +485,25 @@ class Worker:
                                 result = await ensure_outcome_projections(session)
                                 repaired_partial_exits = await repair_partial_exit_outcomes(session)
                                 performance_result = await reconcile_all_performance_ledgers(session)
+                                # Commit successful outcome repairs and per-user savepoints before
+                                # surfacing a batch certification failure. This prevents a poison
+                                # performance user from rolling back already verified repairs.
                                 await session.commit()
+                                await persist_performance_reconciliation_result(
+                                    performance_result, persist_cursor=True
+                                )
                                 logger.info(
                                     "[outcome_reconciliation] completed outcome=%s partial_exit_repairs=%s performance=%s",
                                     result.as_dict(),
                                     repaired_partial_exits,
                                     performance_result.as_dict(),
                                 )
+                                if performance_result.certification_failed:
+                                    raise RuntimeError(
+                                        "performance ledger certification failed: all examined users failed; "
+                                        f"reconciliation_id={performance_result.reconciliation_id} "
+                                        f"reasons={performance_result.failed_users_by_reason}"
+                                    )
 
                         await run_with_db_retry(_run)
             except Exception as exc:

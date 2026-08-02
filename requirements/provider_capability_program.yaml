@@ -1,0 +1,64 @@
+schema_version: 1
+policy:
+  execution_default: disabled
+  production_support_requires: production_certified
+  data_only_and_execution_are_separate: true
+  bypass_geographic_restrictions: false
+  recheck_official_docs_at_implementation: true
+providers:
+  hyperliquid:
+    priority: A1
+    target: [instrument_discovery, live_quotes, trades, order_book_l2, funding, open_interest, account_state, execution, position_reconciliation]
+    current_state: declared
+    activation_flag: HYPERLIQUID_EXECUTION_ENABLED
+  kraken:
+    priority: A1
+    target: [instrument_discovery, live_quotes, historical_ohlc, trades, order_book_l2, order_book_l3, funding, open_interest, account_state, execution, position_reconciliation]
+    current_state: declared
+    activation_flag: KRAKEN_EXECUTION_ENABLED
+  dydx:
+    priority: A1
+    target: [instrument_discovery, live_quotes, trades, order_book_l2, funding, open_interest, account_state, execution, position_reconciliation]
+    current_state: declared
+    activation_flag: DYDX_EXECUTION_ENABLED
+  oanda:
+    priority: A2
+    target: [instrument_discovery, historical_ohlc, live_quotes, account_state, execution, position_reconciliation]
+    current_state: declared
+    activation_flag: OANDA_EXECUTION_ENABLED
+  alpaca:
+    priority: A2
+    target: [instrument_discovery, historical_ohlc, live_quotes, trades, account_state, execution, position_reconciliation, options_chains]
+    current_state: declared
+    activation_flag: ALPACA_EXECUTION_ENABLED
+  ibkr:
+    priority: A2
+    target: [instrument_discovery, historical_ohlc, live_quotes, account_state, execution, position_reconciliation, options_chains, greeks]
+    current_state: declared
+    activation_flag: IBKR_EXECUTION_ENABLED
+certification_checklist:
+  - connect
+  - authenticate
+  - discover_instruments
+  - fetch_balances
+  - fetch_positions
+  - fetch_orders
+  - fetch_trades
+  - stream_order_book
+  - stream_account_events
+  - place
+  - amend
+  - cancel
+  - partial_fill
+  - reject
+  - rate_limit
+  - disconnect
+  - reconnect
+  - restart
+  - reconcile
+  - duplicate_order
+  - stale_data
+  - precision
+  - minimum_size
+  - kill_switch
+  - secret_leak
