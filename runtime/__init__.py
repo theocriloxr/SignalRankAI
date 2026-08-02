@@ -6,6 +6,6 @@ existing monolith to remain the compatibility implementation during the role
 decomposition pass.
 """
 
-from runtime.roles import RunMode, infer_run_mode, parse_run_mode
+from runtime.roles import RunMode, infer_run_mode, parse_run_mode, process_ownership
 
-__all__ = ["RunMode", "infer_run_mode", "parse_run_mode"]
+__all__ = ["RunMode", "infer_run_mode", "parse_run_mode", "process_ownership"]

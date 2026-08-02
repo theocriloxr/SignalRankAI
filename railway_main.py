@@ -443,6 +443,26 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _railway_process_ownership():
+    """Resolve the only valid compositions for ``railway_main:app``.
+
+    The HTTP application may run as the compatibility monolith or as the fast
+    decomposed front door. Dedicated engine/worker roles must use ``main.py``
+    and are rejected here so a bad Railway start command cannot silently
+    recreate the monolith.
+    """
+    from runtime.roles import RunMode, process_ownership
+
+    requested = os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all"
+    ownership = process_ownership(requested)
+    if ownership.mode not in {RunMode.FRONTDOOR, RunMode.ALL_DEV}:
+        raise RuntimeError(
+            f"railway_main:app cannot own RUN_MODE={ownership.mode.value}; "
+            "use start.sh/main.py for dedicated roles"
+        )
+    return ownership
+
+
 def _is_running_on_railway() -> bool:
     markers = (
         "RAILWAY_SERVICE_NAME",
@@ -537,7 +557,7 @@ def _log_railway_env_readiness() -> None:
         logger.warning("[railway] missing env vars: %s", ", ".join(missing))
 
 
-async def _run_startup_ops() -> None:
+async def _run_startup_ops(run_mode: str = "all") -> None:
     """Run DB migrations/startup ops first.
 
     Uses existing db.auto_ops.run_startup_ops which handles:
@@ -550,7 +570,7 @@ async def _run_startup_ops() -> None:
 
     logger.info("[startup] DB startup ops begin")
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: run_startup_ops("all"))
+    await loop.run_in_executor(None, lambda: run_startup_ops("web" if run_mode == "frontdoor" else run_mode))
     logger.info("[startup] DB startup ops end")
 
 
@@ -1274,8 +1294,20 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
+    ownership = _railway_process_ownership()
     _validate_production_runtime_contract()
     _log_railway_env_readiness()
+    logger.info(
+        "[runtime_ownership] mode=%s decomposed=%s http=%s telegram=%s scheduler=%s engine=%s worker=%s startup_ops=%s",
+        ownership.mode.value,
+        str(ownership.decomposed).lower(),
+        str(ownership.http).lower(),
+        str(ownership.telegram).lower(),
+        str(ownership.scheduler).lower(),
+        str(ownership.engine).lower(),
+        str(ownership.worker).lower(),
+        str(ownership.startup_ops).lower(),
+    )
     try:
         from db.session import get_session_api_contract
 
@@ -1310,15 +1342,16 @@ async def lifespan(_: FastAPI):
     # and only wait for bounded time when explicitly configured.
     startup_ops_task: asyncio.Task | None = None
     startup_maintenance_tasks: list[asyncio.Task] = []
+    startup_work_enabled = bool(ownership.startup_ops) and _env_bool("STARTUP_OPS_ENABLED", True)
 
     # On Railway, default to non-blocking startup so healthchecks can connect
     # immediately; operators can opt in to waiting by setting STARTUP_OPS_TIMEOUT_SECONDS.
     _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
     startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", _default_ops_timeout) or 0)
 
-    if _db_ready:
+    if _db_ready and startup_work_enabled:
         try:
-            startup_ops_task = asyncio.create_task(_run_startup_ops())
+            startup_ops_task = asyncio.create_task(_run_startup_ops(ownership.mode.value))
             startup_ops_task.add_done_callback(lambda t: _log_task_failure(t, "startup-ops"))
             startup_maintenance_tasks.append(startup_ops_task)
             if startup_ops_timeout_s > 0:
@@ -1335,8 +1368,10 @@ async def lifespan(_: FastAPI):
                 "[startup] DB startup ops failed: %s; continuing anyway — web endpoints will serve degraded responses",
                 exc,
             )
-    else:
+    elif not _db_ready:
         logger.warning("[startup] DB startup ops skipped: DATABASE_URL not configured")
+    else:
+        logger.info("[startup] DB startup ops skipped by role/config mode=%s", ownership.mode.value)
 
     async def _run_post_startup_maintenance() -> None:
         """Run maintenance in strict order once startup ops are done.
@@ -1391,7 +1426,7 @@ async def lifespan(_: FastAPI):
     maintenance_timeout_s = int(
         os.getenv("STARTUP_MAINTENANCE_TIMEOUT_SECONDS", _default_maintenance_timeout) or 0
     )
-    if _db_ready:
+    if _db_ready and startup_work_enabled:
         try:
             maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
             maintenance_task.add_done_callback(lambda t: _log_task_failure(t, "startup-maintenance"))
@@ -1407,8 +1442,10 @@ async def lifespan(_: FastAPI):
             )
         except Exception as exc:
             logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
-    else:
+    elif not _db_ready:
         logger.warning("[startup] post-startup maintenance skipped: DATABASE_URL not configured")
+    else:
+        logger.info("[startup] post-startup maintenance skipped by role/config mode=%s", ownership.mode.value)
 
 
     _running_on_railway = _is_running_on_railway()
@@ -1422,7 +1459,7 @@ async def lifespan(_: FastAPI):
     }
     worker_admitted = True
     worker_admission: dict[str, object] = {"ok": True, "detail": "not_required"}
-    if strict_worker_admission:
+    if strict_worker_admission and (ownership.engine or ownership.worker):
         from core.version import runtime_commit_matches_expected
 
         database_admission = await _database_readiness_check()
@@ -1443,13 +1480,12 @@ async def lifespan(_: FastAPI):
     # Default ON in monolith so web+bot+engine+worker run in one service.
     # Can still be disabled explicitly with RUN_ENGINE_LOOP=0.
     engine_task = None
-    _run_engine = str(
-        os.getenv("RUN_ENGINE_LOOP", "1")
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    _run_engine = bool(ownership.engine)
     if not _run_engine:
         logger.info(
-            "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
+            "[startup] Engine loop skipped by ownership mode=%s%s",
+            ownership.mode.value,
+            " [decomposed front door]" if ownership.decomposed else "",
         )
     elif not _db_ready:
         logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
@@ -1476,13 +1512,12 @@ async def lifespan(_: FastAPI):
     # Default ON in monolith so web+bot+engine+worker run in one service.
     # Can still be disabled explicitly with RUN_WORKER_LOOP=0.
     worker_task = None
-    _run_worker = str(
-        os.getenv("RUN_WORKER_LOOP", "1")
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    _run_worker = bool(ownership.worker)
     if not _run_worker:
         logger.info(
-            "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
+            "[startup] Worker loop skipped by ownership mode=%s%s",
+            ownership.mode.value,
+            " [decomposed front door]" if ownership.decomposed else "",
         )
     elif not _db_ready:
         logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
@@ -1977,6 +2012,7 @@ async def lifespan(_: FastAPI):
     _bot_state = "DISABLED" if not _db_ready else ("ENABLED" if bot_started else "INITIALIZING")
     _subsystem_summary = (
         "[startup] subsystem summary | "
+        f"mode={ownership.mode.value} | "
         f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
         f"outcome_worker={'ENABLED' if worker_task else 'DISABLED'} | "
         f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
@@ -2457,10 +2493,24 @@ def _production_cutover_check() -> dict[str, object]:
         violations.append(f"financial_activation_forced_off:{forced_financial}")
     if not _env_bool("FREE_SIGNAL_DISTRIBUTION_ENABLED", True):
         violations.append("free_distribution_disabled")
-    if not _env_bool("RUN_ENGINE_LOOP", True):
-        violations.append("engine_loop_disabled")
-    if not _env_bool("RUN_WORKER_LOOP", True):
-        violations.append("worker_loop_disabled")
+    try:
+        ownership = _railway_process_ownership()
+    except Exception as exc:
+        ownership = None
+        violations.append(f"runtime_ownership_invalid:{type(exc).__name__}")
+    if ownership is not None:
+        if ownership.mode.value == "frontdoor":
+            if not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False):
+                violations.append("frontdoor_without_decomposed_topology")
+            if _env_bool("RUN_ENGINE_LOOP", False):
+                violations.append("frontdoor_engine_loop_requested")
+            if _env_bool("RUN_WORKER_LOOP", False):
+                violations.append("frontdoor_worker_loop_requested")
+        else:
+            if not ownership.engine:
+                violations.append("engine_loop_disabled")
+            if not ownership.worker:
+                violations.append("worker_loop_disabled")
     if not _env_bool("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
         violations.append("lifecycle_notifications_disabled")
     if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):

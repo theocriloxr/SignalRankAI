@@ -39,6 +39,9 @@ def _is_decomposed_database_role() -> bool:
     return _database_role() in {
         "analytics",
         "bot",
+        "frontdoor",
+        "front-door",
+        "webhook",
         "delivery",
         "engine",
         "outcome",
@@ -543,18 +546,26 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
             )
         )
         if _is_railway_runtime():
-            if pool_size > 2:
-                logger.warning(
-                    "[db_pool_effective_config] unsafe Railway monolith pool configuration "
-                    "pool_size=%s max_overflow=%s effective=%s+%s; recommended DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+            role = _database_role()
+            if _is_decomposed_database_role():
+                logger.info(
+                    "[db_pool_effective_config] Railway decomposed role=%s pool_size=%s max_overflow=%s",
+                    role,
                     pool_size,
                     max_overflow,
+                )
+            elif pool_size > 2:
+                logger.warning(
+                    "[db_pool_effective_config] unsafe Railway monolith pool configuration "
+                    "role=%s pool_size=%s max_overflow=%s; recommended DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+                    role,
                     pool_size,
                     max_overflow,
                 )
             else:
                 logger.info(
-                    "[db_pool_effective_config] Railway safe pool: pool_size=%s max_overflow=%s",
+                    "[db_pool_effective_config] Railway safe monolith role=%s pool_size=%s max_overflow=%s",
+                    role,
                     pool_size,
                     max_overflow,
                 )

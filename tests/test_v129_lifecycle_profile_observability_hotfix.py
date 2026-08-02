@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_v129_version_and_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.5"
-    assert RELEASE_FINGERPRINT == "v1.3.5-ml-learning-runtime-reliability-20260802"
+    assert APP_VERSION == "1.3.6"
+    assert RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802"
 
 
 def test_lifecycle_event_imports_func_in_its_own_scope() -> None:

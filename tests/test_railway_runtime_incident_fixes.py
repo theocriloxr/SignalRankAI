@@ -70,13 +70,15 @@ def test_outcome_tracker_critical_session_is_labelled() -> None:
     assert "get_pool_diagnostics" in source
 
 
-def test_railway_runs_migrations_and_predeploy_diagnostics() -> None:
+def test_frontdoor_owns_migrations_and_predeploy_diagnostics() -> None:
     payload = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
-    command = payload["deploy"]["preDeployCommand"]
-    assert "scripts/controlled_migrate.py" in command
-    assert "signalrank_migration_evidence.json" in command
-    assert "deployment_diagnostics.py" in command
-    assert "--strict-core" in command
+    assert "preDeployCommand" not in payload["deploy"]
+    split = (ROOT / "split_signalrank_railway.ps1").read_text(encoding="utf-8")
+    assert "scripts/controlled_migrate.py" in split
+    assert "signalrank_migration_evidence.json" in split
+    assert "deployment_diagnostics.py" in split
+    assert "--strict-core" in split
+    assert 'Set-ServiceConfig -Service $SourceService -Path "preDeployCommand"' in split
 
 
 def test_deployment_diagnostics_and_protected_endpoint_present() -> None:

@@ -15,6 +15,7 @@ from typing import Mapping
 
 
 class RunMode(StrEnum):
+    FRONTDOOR = "frontdoor"
     WEB = "web"
     BOT = "bot"
     ENGINE = "engine"
@@ -37,6 +38,9 @@ class SchedulerOwner(StrEnum):
 # bounded compatibility window, but expose only the canonical enum values to
 # new callers.
 MODE_ALIASES: Mapping[str, RunMode] = {
+    "front-door": RunMode.FRONTDOOR,
+    "webhook": RunMode.FRONTDOOR,
+    "telegram-webhook": RunMode.FRONTDOOR,
     "all": RunMode.ALL_DEV,
     "all_dev": RunMode.ALL_DEV,
     "dev": RunMode.ALL_DEV,
@@ -67,13 +71,19 @@ class SchedulerOwnership:
     def allows(self, mode: str | RunMode) -> bool:
         parsed = parse_run_mode(mode)
         if self.owner is SchedulerOwner.MONOLITH:
-            return parsed is RunMode.ALL_DEV
+            return parsed in {RunMode.ALL_DEV, RunMode.FRONTDOOR}
         if self.owner is SchedulerOwner.STANDALONE:
             return parsed is RunMode.SCHEDULER
         return False
 
 
 ROLE_SPECS: Mapping[RunMode, RoleSpec] = {
+    RunMode.FRONTDOOR: RoleSpec(
+        RunMode.FRONTDOOR,
+        "HTTP ingress, Telegram interaction, delivery and scheduler",
+        "Fast front door without embedded signal-engine or background-worker loops",
+        ("webhook", "front-door"),
+    ),
     RunMode.WEB: RoleSpec(RunMode.WEB, "FastAPI ingress and API", "HTTP routes and readiness", ()),
     RunMode.BOT: RoleSpec(RunMode.BOT, "Telegram interaction", "Commands and callbacks", ()),
     RunMode.ENGINE: RoleSpec(RunMode.ENGINE, "Signal candidate pipeline", "Market analysis and persistence", ()),
@@ -107,7 +117,7 @@ def parse_run_mode(value: str | RunMode | None) -> RunMode:
         return value
     raw = str(value or "").strip().lower().replace("\\", "/")
     if not raw:
-        raise ValueError("RUN_MODE is required (web, bot, engine, delivery, outcome, analytics, scheduler, all/dev)")
+        raise ValueError("RUN_MODE is required (frontdoor, web, bot, engine, delivery, outcome, analytics, scheduler, all/dev)")
     try:
         return RunMode(raw)
     except ValueError:
@@ -132,6 +142,9 @@ def infer_run_mode(environ: Mapping[str, str] | None = None) -> RunMode:
 
     service = str(env.get("RAILWAY_SERVICE_NAME") or env.get("RAILWAY_SERVICE") or "").lower()
     for needle, mode in (
+        ("frontdoor", RunMode.FRONTDOOR),
+        ("front-door", RunMode.FRONTDOOR),
+        ("webhook", RunMode.FRONTDOOR),
         ("all", RunMode.ALL_DEV),
         ("web", RunMode.WEB),
         ("bot", RunMode.BOT),
@@ -153,6 +166,84 @@ def role_spec(mode: str | RunMode | None) -> RoleSpec:
     """Return immutable ownership metadata for a role."""
 
     return ROLE_SPECS[parse_run_mode(mode)]
+
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessOwnership:
+    """Resolved ownership for one executable process.
+
+    This is the fail-closed contract used by Railway startup. A front-door
+    process owns HTTP/Telegram/scheduler work only; expensive market and
+    lifecycle loops must run in dedicated services.
+    """
+
+    mode: RunMode
+    http: bool
+    telegram: bool
+    scheduler: bool
+    engine: bool
+    worker: bool
+    startup_ops: bool
+    data_selfcheck: bool
+    decomposed: bool
+
+
+def _env_flag(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def process_ownership(
+    mode: str | RunMode | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> ProcessOwnership:
+    """Resolve process ownership and reject hidden monolith fallback.
+
+    ``DECOMPOSED_TOPOLOGY_ENABLED=1`` requires an explicit non-monolith role.
+    Stale ``RUN_ENGINE_LOOP`` / ``RUN_WORKER_LOOP`` variables cannot re-enable
+    heavy loops inside ``frontdoor``.
+    """
+
+    env = os.environ if environ is None else environ
+    requested = mode
+    if requested is None:
+        requested = env.get("RUN_MODE") or env.get("SERVICE_ROLE") or "all"
+    parsed = parse_run_mode(requested)
+    decomposed = _env_flag(env, "DECOMPOSED_TOPOLOGY_ENABLED", False)
+
+    if decomposed and parsed is RunMode.ALL_DEV:
+        raise ValueError(
+            "DECOMPOSED_TOPOLOGY_ENABLED=1 forbids RUN_MODE=all; "
+            "use frontdoor, engine, and worker services explicitly"
+        )
+
+    if parsed is RunMode.FRONTDOOR:
+        return ProcessOwnership(parsed, True, True, True, False, False, True, False, True)
+    if parsed is RunMode.ALL_DEV:
+        return ProcessOwnership(
+            parsed, True, True, True,
+            _env_flag(env, "RUN_ENGINE_LOOP", True),
+            _env_flag(env, "RUN_WORKER_LOOP", True),
+            True, True, False,
+        )
+    if parsed is RunMode.WEB:
+        return ProcessOwnership(parsed, True, False, False, False, False, True, False, decomposed)
+    if parsed is RunMode.BOT:
+        return ProcessOwnership(parsed, False, True, False, False, False, False, False, decomposed)
+    if parsed is RunMode.ENGINE:
+        return ProcessOwnership(parsed, False, False, False, True, False, False, True, decomposed)
+    if parsed is RunMode.DELIVERY:
+        return ProcessOwnership(parsed, False, False, False, False, True, False, False, decomposed)
+    if parsed is RunMode.OUTCOME:
+        return ProcessOwnership(parsed, False, False, False, False, True, False, False, decomposed)
+    if parsed is RunMode.ANALYTICS:
+        return ProcessOwnership(parsed, False, False, False, False, True, False, False, decomposed)
+    if parsed is RunMode.SCHEDULER:
+        return ProcessOwnership(parsed, False, False, True, False, False, False, False, decomposed)
+    raise ValueError(f"Unsupported RUN_MODE={parsed.value}")
 
 
 def scheduler_ownership(environ: Mapping[str, str] | None = None) -> SchedulerOwnership:
@@ -182,6 +273,9 @@ def scheduler_ownership(environ: Mapping[str, str] | None = None) -> SchedulerOw
         "all": SchedulerOwner.MONOLITH,
         "all/dev": SchedulerOwner.MONOLITH,
         "web": SchedulerOwner.MONOLITH,
+        "frontdoor": SchedulerOwner.MONOLITH,
+        "front-door": SchedulerOwner.MONOLITH,
+        "webhook": SchedulerOwner.MONOLITH,
         "monolith": SchedulerOwner.MONOLITH,
         "scheduler": SchedulerOwner.STANDALONE,
         "standalone": SchedulerOwner.STANDALONE,
@@ -205,12 +299,14 @@ def scheduler_ownership(environ: Mapping[str, str] | None = None) -> SchedulerOw
 __all__ = [
     "MODE_ALIASES",
     "ROLE_SPECS",
+    "ProcessOwnership",
     "RoleSpec",
     "RunMode",
     "SchedulerOwner",
     "SchedulerOwnership",
     "infer_run_mode",
     "parse_run_mode",
+    "process_ownership",
     "role_spec",
     "scheduler_ownership",
 ]

@@ -1,1 +1,1 @@
-v1.3.5-ml-learning-runtime-reliability-20260802
+v1.3.6-railway-performance-decomposition-20260802

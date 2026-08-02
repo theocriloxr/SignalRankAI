@@ -30,12 +30,14 @@ def test_start_script_is_fail_fast_and_single_worker():
     assert "exec uvicorn railway_main:app" in source
 
 
-def test_railway_healthcheck_timeout_allows_cold_start():
+def test_frontdoor_healthcheck_timeout_allows_cold_start():
     import json
 
     config = json.loads(Path("railway.json").read_text(encoding="utf-8"))
-    assert config["deploy"]["healthcheckPath"] == "/readyz"
-    assert config["deploy"]["healthcheckTimeout"] >= 300
+    assert "healthcheckPath" not in config["deploy"]
+    split = Path("split_signalrank_railway.ps1").read_text(encoding="utf-8")
+    assert 'Set-ServiceConfig -Service $SourceService -Path "healthcheckPath" -Value "/readyz"' in split
+    assert 'Set-ServiceConfig -Service $SourceService -Path "healthcheckTimeout" -Value "300"' in split
 
 
 def test_railway_simulation_accepts_canonical_liveness_status():

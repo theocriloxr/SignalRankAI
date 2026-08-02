@@ -46,7 +46,19 @@ if [ -n "${DATABASE_URL:-}" ]; then
     python -m alembic current 2>&1 | sed 's/^/[boot] alembic_current=/' || true
 fi
 
+_start_frontdoor() {
+    export RUN_MODE="frontdoor"
+    export DECOMPOSED_TOPOLOGY_ENABLED="1"
+    export RUN_ENGINE_LOOP="0"
+    export RUN_WORKER_LOOP="0"
+    exec uvicorn railway_main:app \
+        --host 0.0.0.0 \
+        --port "${PORT:-8000}" \
+        --workers 1
+}
+
 _start_monolith() {
+    export RUN_MODE="all"
     # SignalRankAI's Railway Hobby profile is a coordinated single-process
     # async monolith. Keep one Uvicorn worker so schedulers, queues, engines and
     # lifecycle workers cannot be duplicated by process-local ownership.
@@ -71,14 +83,25 @@ fi
 # overridden, because the platform healthcheck and Telegram webhook require it.
 if [ -n "${RUN_MODE:-}" ] && { [ "${_on_railway}" != "true" ] || [ "${_honor_run_mode_on_railway}" = "true" ]; }; then
     case "${RUN_MODE}" in
+        frontdoor|front-door|webhook)
+            _start_frontdoor
+            ;;
         web|worker|engine|bot|delivery|outcome|analytics|scheduler)
             exec python main.py
             ;;
-        all)
+        all|all/dev)
+            if [ "${DECOMPOSED_TOPOLOGY_ENABLED:-false}" = "true" ] || [ "${DECOMPOSED_TOPOLOGY_ENABLED:-0}" = "1" ]; then
+                echo "[FATAL] Decomposed topology forbids RUN_MODE=${RUN_MODE}; refusing hidden monolith fallback." >&2
+                exit 64
+            fi
             _start_monolith
             ;;
         *)
-            echo "[boot] Unknown RUN_MODE=${RUN_MODE}; starting safe monolith" >&2
+            if [ "${DECOMPOSED_TOPOLOGY_ENABLED:-false}" = "true" ] || [ "${DECOMPOSED_TOPOLOGY_ENABLED:-0}" = "1" ]; then
+                echo "[FATAL] Unknown RUN_MODE=${RUN_MODE} in decomposed topology; refusing monolith fallback." >&2
+                exit 64
+            fi
+            echo "[boot] Unknown RUN_MODE=${RUN_MODE}; starting compatibility monolith" >&2
             _start_monolith
             ;;
     esac

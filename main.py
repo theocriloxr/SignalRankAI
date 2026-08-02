@@ -33,6 +33,27 @@ def _check_database_configured() -> bool:
         return False
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _startup_ops_enabled(mode: str) -> bool:
+    explicit = os.getenv("STARTUP_OPS_ENABLED")
+    if explicit is not None:
+        return _env_bool("STARTUP_OPS_ENABLED", False)
+    return mode in {"web", "all", "all/dev"}
+
+
+def _startup_data_selfcheck_enabled(mode: str) -> bool:
+    explicit = os.getenv("STARTUP_DATA_SELFCHECK_ENABLED")
+    if explicit is not None:
+        return _env_bool("STARTUP_DATA_SELFCHECK_ENABLED", False)
+    return mode in {"engine", "all", "all/dev"}
+
+
 def main() -> None:
     # Configure logging early so modules can log during init
     try:
@@ -71,18 +92,27 @@ def main() -> None:
         f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')} ",
         flush=True,
     )
-    # Run DB migrations and startup ops once per process
-    try:
-        from db.auto_ops import run_startup_ops
-        run_startup_ops("web" if mode == "all" else mode)
-    except Exception:
-        raise
-    try:
-        from data.startup_selfcheck import run_startup_data_selfcheck
-        run_startup_data_selfcheck()
-    except Exception:
-        pass
-    if mode == "all":
+    # Startup maintenance belongs to the front door/pre-deploy path. Dedicated
+    # engine/worker services skip the large idempotent schema patch sweep unless
+    # explicitly opted in, which removes avoidable launch and DB contention.
+    if _startup_ops_enabled(mode):
+        try:
+            from db.auto_ops import run_startup_ops
+            run_startup_ops("web" if mode in {"all", "all/dev", "frontdoor"} else mode)
+        except Exception:
+            raise
+    else:
+        print(f"[startup] startup ops skipped for dedicated role={mode}", flush=True)
+
+    if _startup_data_selfcheck_enabled(mode):
+        try:
+            from data.startup_selfcheck import run_startup_data_selfcheck
+            run_startup_data_selfcheck()
+        except Exception:
+            pass
+    else:
+        print(f"[startup] data self-check skipped for role={mode}", flush=True)
+    if mode in {"all", "all/dev"}:
         # Delegate to railway_main which owns the /telegram/webhook FastAPI route.
         # Running separate per-mode processes (old approach) caused the bot process
         # to register a Telegram webhook URL that the web process (web.app:app,
@@ -96,6 +126,10 @@ def main() -> None:
         # rollback reference but is unreachable after the adapter return.
         print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
         
+    elif mode == "frontdoor":
+        from runtime.frontdoor import run as run_frontdoor
+        run_frontdoor()
+        return
     elif mode == "web":
         from runtime.web import run as run_web
         run_web()

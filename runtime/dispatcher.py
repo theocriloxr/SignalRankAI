@@ -18,7 +18,9 @@ def dispatch(mode: str | RunMode | None, *, legacy_worker: bool = False) -> Any:
 
     raw = str(mode or "").strip().lower()
     parsed = parse_run_mode(mode)
-    if parsed is RunMode.WEB:
+    if parsed is RunMode.FRONTDOOR:
+        from runtime.frontdoor import run
+    elif parsed is RunMode.WEB:
         from runtime.web import run
     elif parsed is RunMode.BOT:
         from runtime.bot import run

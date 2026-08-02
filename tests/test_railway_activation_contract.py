@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 
 
-def test_railway_activates_only_when_dependencies_ready():
+def test_railway_uses_neutral_multiservice_config_and_frontdoor_readiness():
     data = json.loads(Path('railway.json').read_text(encoding='utf-8'))
-    assert data['deploy']['healthcheckPath'] == '/readyz'
+    assert data['deploy']['startCommand'] == 'bash start.sh'
+    assert 'healthcheckPath' not in data['deploy']
+    split = Path('split_signalrank_railway.ps1').read_text(encoding='utf-8')
+    assert 'Set-ServiceConfig -Service $SourceService -Path "healthcheckPath" -Value "/readyz"' in split
 
 
 def test_runtime_schema_bootstrap_is_opt_in():

@@ -191,5 +191,5 @@ def test_webhook_timeout_is_retryable_without_dual_queue_fallback() -> None:
 def test_version_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.5"
-    assert RELEASE_FINGERPRINT == "v1.3.5-ml-learning-runtime-reliability-20260802"
+    assert APP_VERSION == "1.3.6"
+    assert RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802"
