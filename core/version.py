@@ -12,12 +12,12 @@ def _first(*names: str, default: str = "") -> str:
     return default
 
 
-CODE_VERSION = "1.3.6.5"
+CODE_VERSION = "1.3.6.6"
 CONFIGURED_APP_VERSION = _first("APP_VERSION", default=CODE_VERSION)
 # The runtime banner must identify the code actually deployed. A stale Railway
 # APP_VERSION remains visible as configured_version instead of mislabelling code.
 APP_VERSION = CODE_VERSION
-RELEASE_FINGERPRINT = "v1.3.6.5-production-integrity-hardening-20260802"
+RELEASE_FINGERPRINT = "v1.3.6.6-runtime-certification-hotfix-20260802"
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",

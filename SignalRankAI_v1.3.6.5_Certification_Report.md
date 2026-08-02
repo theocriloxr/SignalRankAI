@@ -1,113 +1,76 @@
 # SignalRankAI v1.3.6.5 Source Certification Report
 
-Date: 2026-08-02
+Date: 2026-08-02  
+Release: `1.3.6.5`  
 Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
 
 ## Certification result
 
-**SOURCE CERTIFICATION: PASS**
-**STAGING DEPLOYMENT: ELIGIBLE**
-**UNRESTRICTED LIVE/COPY/PUBLIC CLAIM ACTIVATION: BLOCKED PENDING RUNTIME EVIDENCE**
+**Source certification: PASS for staging deployment and runtime certification.**
 
-## Verified source contracts
+**Live-production certification: NOT YET EARNED.**
 
-| Contract | Result |
+This distinction is intentional. Source tests prove the controls are implemented; only Railway staging/canary, real providers and broker reconciliation can prove that the deployed system operates safely.
+
+## Implemented controls
+
+- canonical cross-timeframe signal-thesis fingerprint;
+- transaction-serialized thesis persistence;
+- transaction-serialized per-user asset delivery reservation;
+- four-hour user asset cooldown with production fail-closed behavior;
+- delivered signal geometry immutability;
+- online multi-provider asset discovery and provenance;
+- profile-demand scan planning and per-user eligibility/ranking;
+- execution-time freshness checks;
+- paper duplicate-asset and portfolio exposure controls;
+- paper close-all recovery;
+- monotonic outcome stages and durable notification claims;
+- proof-backed delivery projection reconciliation;
+- independent-thesis performance statistics;
+- terminal-coverage and Wilson-confidence public claim gate;
+- held-out calibration evidence requirements;
+- live/copy execution evidence gates;
+- provider-coverage and production-integrity readiness checks;
+- Alembic migration `0034_production_integrity`.
+
+## Automated evidence
+
+| Check | Result |
 |---|---|
-| Migration graph | PASS — 34 revisions, one head: `0034_production_integrity` |
-| Signal thesis deduplication | PASS |
-| Per-user asset cooldown/race protection | PASS |
-| Purpose-specific freshness | PASS |
-| Provider discovery/provenance gate | PASS |
-| Aggregate profile-demand scanning | PASS |
-| Per-user delivery/paper/live/copy policy | PASS |
-| Signal geometry and quality gate | PASS |
-| Out-of-sample calibration evidence path | PASS |
-| Public probability fail-closed behavior | PASS |
-| Paper duplicate/freshness/exposure controls | PASS |
-| Paper daily-loss and aggregate-risk breakers | PASS |
-| Monotonic outcome ordering | PASS |
-| Candle-extrema outcome recovery contract | PASS |
-| Worker outcome projection reconciliation | PASS |
-| Worker performance-ledger reconciliation | PASS |
-| Public performance fail-closed behavior | PASS |
-| Independent-thesis public-claim statistics | PASS |
-| Shadow and Engine Pulse certification gates | PASS |
-| Live financial dependency graph | PASS |
-| Copy-trading separate certification gate | PASS |
-| Generated governance artifacts | PASS |
+| Integrated relevant test suite | 114 passed, 1 deselected |
+| Focused final UTC-clean suite | 41 passed |
+| Python compilation | PASS |
+| Alembic heads | `0034_production_integrity (head)` |
+| v1.3.6.5 integrity verifier | PASS |
+| Railway decomposition verifier | PASS |
+| Production cutover verifier | PASS |
+| Static asset fallback default | OFF |
+| Real execution default | OFF |
+| Copy trading default | OFF |
+| Global execution kill switch default | ON |
 
-## Validation evidence
+## Evidence still required before live launch
 
-### Production-focused matrix
+- the exact approved Git commit deployed to all three roles;
+- successful migration and readiness from Railway;
+- provider-discovery certification across enabled asset classes;
+- freshness and profile-routing canaries;
+- paper-trading admission and recovery canaries;
+- outcome projection coverage meeting the configured threshold;
+- stable command/callback and scheduler SLOs;
+- held-out calibration artifact meeting row/Brier/ECE thresholds;
+- broker demo execution and reconciliation;
+- owner-only live canary with bounded exposure;
+- separately certified copy-trading fan-out and reconciliation;
+- performance truth with independent theses and at least 95% terminal coverage;
+- a statistical report before any public 60% claim.
 
-```text
-144 passed
-```
+## Public-claim determination
 
-Modules covered production integrity, profile routing, v1.3.6.4 regression compatibility, signal deduplication, paper exits, monitoring reliability, outcome delivery, provider/asset registry hardening, live financial activation, Railway decomposition, staged contracts, runtime hardening and canonical broker entrypoints.
+The release prevents a 60% claim solely because a point estimate reaches 60%. The claim is allowed only when the sample, unique-thesis count, terminal coverage and 95% Wilson lower confidence bound all meet the configured threshold.
 
-### Broad dependency-independent matrix
+Therefore, v1.3.6.5 is capable of supporting a truthful future claim, but it does not itself establish that the strategy has achieved 60% reliability.
 
-```text
-405 passed, 1 skipped
-```
+## Final source verdict
 
-This matrix covered 105 modules that do not require importing the unavailable Telegram/APScheduler dependencies in the validation container.
-
-### Integrity verifier
-
-```text
-overall=PASS release=v1.3.6.5 live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED
-```
-
-### Schema audit
-
-```text
-ok=true
-heads=[0034_production_integrity]
-revisions=34
-live_financial_contract.ok=true
-outcome_projection_contract.ok=true
-signal_runtime_contract.ok=true
-```
-
-### Compilation
-
-```text
-818 Python files compiled
-0 errors
-```
-
-## Environment limitation
-
-The validation container does not have `python-telegram-bot` or APScheduler and its package index could not provide them. Therefore the complete 195-module repository collection was not executed in this environment. The production-focused source-contract tests passed, but the full suite must also be run in the project’s `.audit-venv` and after Railway deployment where declared runtime dependencies are installed.
-
-## Required runtime certification
-
-Source certification does not create these IDs. They must be generated from real evidence and must never be invented:
-
-- production integrity;
-- live runtime;
-- calibrated ML artifact;
-- provider discovery;
-- freshness;
-- profile routing;
-- paper trading;
-- delivery and Telegram lifecycle;
-- outcome tracking;
-- performance truth;
-- public performance claim;
-- shadow tracking;
-- Engine Pulse integrity;
-- OHLC pipeline;
-- tests and secret scan;
-- demo trading;
-- copy trading, when requested.
-
-## Profitability and claim boundary
-
-No source test can prove a future win rate. The system may only display calibrated probabilities when held-out calibration passes, and may only make a public 60% claim when the independent-thesis sample, terminal coverage, observed rate and Wilson lower-confidence-bound gates all pass.
-
-## Final determination
-
-The code is suitable for controlled staging, paper simulation, provider discovery validation, profile-routing validation and broker demo certification. It remains intentionally blocked from unrestricted live money, public paid launch, copy trading and performance marketing until the deployment guide’s runtime gates pass.
+The code is suitable for deployment to staging and controlled certification. It is not honest or safe to enable unrestricted live auto-trading, copy trading, paid public launch or a 60% marketing claim until the external evidence gates above have genuinely passed.

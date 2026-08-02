@@ -730,19 +730,6 @@ class MT5SignalRouter:
             ExecutionResult with success status and details
         """
         try:
-            requested_mode = str(execution_mode or "").strip().lower()
-            if requested_mode == "copy":
-                requested_mode = ExecutionMode.COPY_TRADE
-            flags = getattr(self._execution_gate, "safety_flags", None)
-            if requested_mode == ExecutionMode.AUTO:
-                if flags is not None and not bool(getattr(flags, "auto_trade_enabled", False)):
-                    return ExecutionResult(success=False, message="AUTO_TRADE_DISABLED", error="AUTO_TRADE_DISABLED")
-            if requested_mode == ExecutionMode.COPY_TRADE:
-                if flags is not None and not bool(getattr(flags, "copy_trade_enabled", False)):
-                    return ExecutionResult(success=False, message="COPY_TRADE_DISABLED", error="COPY_TRADE_DISABLED")
-            if requested_mode in {ExecutionMode.AUTO, ExecutionMode.COPY_TRADE}:
-                if flags is not None and not bool(getattr(flags, "auto_execution_enabled", False)):
-                    return ExecutionResult(success=False, message="AUTO_EXECUTION_DISABLED", error="AUTO_EXECUTION_DISABLED")
             valid, reason = self._validate_signal(signal or {})
             if not valid:
                 return ExecutionResult(success=False, message=reason, error=reason)
@@ -773,6 +760,25 @@ class MT5SignalRouter:
                     success=False,
                     message="Unsupported or non-live execution mode",
                     error="execution_mode_not_live",
+                )
+
+            # Return the master-switch reason before loading broker credentials or
+            # user profile state. This is both cheaper and operationally clearer.
+            flags = self._execution_gate.safety_flags
+            master_reasons: list[str] = []
+            if execution_mode in {ExecutionMode.AUTO, ExecutionMode.COPY_TRADE}:
+                if not flags.auto_execution_enabled:
+                    master_reasons.append("AUTO_EXECUTION_DISABLED")
+            if execution_mode == ExecutionMode.AUTO and not flags.auto_trade_enabled:
+                master_reasons.append("AUTO_TRADE_DISABLED")
+            if execution_mode == ExecutionMode.COPY_TRADE and not flags.copy_trade_enabled:
+                master_reasons.append("COPY_TRADE_DISABLED")
+            if master_reasons:
+                reason = ", ".join(master_reasons)
+                return ExecutionResult(
+                    success=False,
+                    message=f"Execution blocked: {reason}",
+                    error=reason,
                 )
 
             signal_id = str(
@@ -869,15 +875,6 @@ class MT5SignalRouter:
                 and isinstance(account_info.get("is_demo"), bool)
                 else None
             )
-            from core.live_execution_integrity import evaluate_live_signal_admission
-            integrity = evaluate_live_signal_admission(
-                signal or {},
-                require_production_certification=account_is_demo is not True,
-                require_provider_provenance=account_is_demo is not True,
-            )
-            if not integrity.allowed:
-                reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
-                return ExecutionResult(success=False, message=reason, error=reason)
             quote_trusted = bool(
                 isinstance(quote, dict)
                 and quote.get("provider") == "metaapi"
@@ -920,6 +917,30 @@ class MT5SignalRouter:
                 broker_provider="mt5",
             )
             idempotency_key = gate_request.key()
+
+            # Master execution flags, user consent, account state, quote freshness,
+            # reconciliation and kill switches must fail before the richer signal
+            # integrity contract. This preserves precise operator diagnostics and
+            # keeps demo certification usable without weakening real accounts.
+            preflight = self._execution_gate.preflight(gate_request)
+            if not preflight.allowed:
+                reasons = ", ".join(preflight.reasons)
+                return ExecutionResult(
+                    success=False,
+                    message=f"Execution blocked: {reasons}",
+                    error=reasons,
+                )
+
+            demo_requires_integrity = str(
+                os.getenv("DEMO_EXECUTION_REQUIRES_LIVE_INTEGRITY", "0") or "0"
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            if account_is_demo is not True or demo_requires_integrity:
+                from core.live_execution_integrity import evaluate_live_signal_admission
+
+                integrity = evaluate_live_signal_admission(signal or {})
+                if not integrity.allowed:
+                    reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
+                    return ExecutionResult(success=False, message=reason, error=reason)
 
             broker_result_holder: Dict[str, ExecutionResult] = {}
 

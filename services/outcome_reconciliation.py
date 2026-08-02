@@ -47,6 +47,46 @@ def _terminal_price(lifecycle: SignalLifecycle | None, signal: Signal) -> float 
     return None
 
 
+def build_outcome_reconciliation_query(*, cutoff: datetime, limit: int):
+    """Build deterministic one-row-per-signal reconciliation SQL.
+
+    PostgreSQL ``DISTINCT ON`` requires its expressions to lead ``ORDER BY``.
+    Delivery proofs need chronological ordering instead, so aggregate proof rows
+    first and join the canonical signal/lifecycle/outcome records afterwards.
+    This helper is intentionally public enough for dialect-compilation tests.
+    """
+    proof_time = func.coalesce(
+        SignalDelivery.delivery_confirmed_at,
+        SignalDelivery.delivered_at_utc,
+        SignalDelivery.delivered_at,
+    )
+    first_proof_time = func.min(proof_time)
+    proof_candidates = (
+        select(
+            SignalDelivery.signal_id.label("signal_id"),
+            first_proof_time.label("first_proof_time"),
+        )
+        .where(
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
+            proof_time >= cutoff,
+        )
+        .group_by(SignalDelivery.signal_id)
+        .subquery("proof_delivery_candidates")
+    )
+    return (
+        select(Signal, SignalLifecycle, Outcome)
+        .join(proof_candidates, proof_candidates.c.signal_id == Signal.signal_id)
+        .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
+        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+        .where(Outcome.id.is_(None))
+        .order_by(proof_candidates.c.first_proof_time.asc(), Signal.signal_id.asc())
+        .limit(max(1, min(5000, int(limit))))
+    )
+
+
 async def ensure_outcome_projections(
     session,
     *,
@@ -67,22 +107,14 @@ async def ensure_outcome_projections(
         SignalDelivery.delivered_at_utc,
         SignalDelivery.delivered_at,
     )
-    rows = (await session.execute(
-        select(Signal, SignalLifecycle, Outcome)
-        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
-        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-        .where(
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
-            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
-            proof_time >= cutoff,
-        )
-        .order_by(proof_time.asc(), Signal.signal_id.asc())
-        .distinct(Signal.signal_id)
-        .limit(limit)
-    )).all()
+    # PostgreSQL requires every ``DISTINCT ON`` expression to be the leading
+    # ORDER BY expression.  The previous ORM query ordered by proof time first
+    # and then called ``distinct(Signal.signal_id)``, which compiled to invalid
+    # SQL and stopped both outcome and performance reconciliation.  Aggregate
+    # delivery proof into one row per signal first, then join the canonical
+    # signal/lifecycle/outcome rows in proof-time order.
+    query = build_outcome_reconciliation_query(cutoff=cutoff, limit=limit)
+    rows = (await session.execute(query)).all()
 
     examined = created = projected = unchanged = failed = 0
     for signal, lifecycle, outcome in rows:
@@ -157,4 +189,4 @@ async def outcome_projection_health(session, *, days: int = 30) -> dict[str, flo
     }
 
 
-__all__ = ["OutcomeReconciliationResult", "ensure_outcome_projections", "outcome_projection_health"]
+__all__ = ["OutcomeReconciliationResult", "build_outcome_reconciliation_query", "ensure_outcome_projections", "outcome_projection_health"]

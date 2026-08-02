@@ -22,18 +22,12 @@ class LiveAdmissionDecision:
     reasons: tuple[str, ...]
 
 
-def evaluate_live_signal_admission(
-    signal: Mapping[str, Any],
-    *,
-    require_production_certification: bool = True,
-    require_provider_provenance: bool | None = None,
-) -> LiveAdmissionDecision:
+def evaluate_live_signal_admission(signal: Mapping[str, Any]) -> LiveAdmissionDecision:
     reasons: list[str] = []
-    if require_production_certification:
-        if not _enabled("PRODUCTION_INTEGRITY_CERTIFIED", False):
-            reasons.append("production_integrity_not_certified")
-        if not str(os.getenv("LIVE_RUNTIME_CERTIFICATION_ID") or "").strip():
-            reasons.append("live_runtime_certification_id_missing")
+    if not _enabled("PRODUCTION_INTEGRITY_CERTIFIED", False):
+        reasons.append("production_integrity_not_certified")
+    if not str(os.getenv("LIVE_RUNTIME_CERTIFICATION_ID") or "").strip():
+        reasons.append("live_runtime_certification_id_missing")
     quality = evaluate_signal_quality(signal, execution=True)
     reasons.extend(quality.reasons)
     freshness = evaluate_signal_freshness(
@@ -46,12 +40,7 @@ def evaluate_live_signal_admission(
         reasons.append(freshness.reason)
     if not str(signal.get("thesis_fingerprint") or quality.thesis_fingerprint).strip():
         reasons.append("thesis_fingerprint_missing")
-    provider_required = (
-        _enabled("LIVE_EXECUTION_REQUIRES_PROVIDER_DISCOVERY", True)
-        if require_provider_provenance is None
-        else bool(require_provider_provenance)
-    )
-    if provider_required:
+    if _enabled("LIVE_EXECUTION_REQUIRES_PROVIDER_DISCOVERY", True):
         provenance = str(signal.get("asset_discovery_provider") or signal.get("provider_provenance") or "").strip()
         if not provenance:
             reasons.append("asset_provider_provenance_missing")

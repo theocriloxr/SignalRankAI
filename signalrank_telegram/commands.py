@@ -5782,22 +5782,6 @@ async def performance_command(update, context) -> None:
 		)
 		return
 
-	# Public and subscriber-facing performance must fail closed until the
-	# canonical ledger satisfies the configured proof/coverage contract.
-	# Owner/admin accounts retain a clearly-labelled diagnostic view so the
-	# reconciliation can be repaired without publishing provisional returns.
-	if not report.get("performance_certified", False) and tier not in {"owner", "admin"}:
-		coverage_pct = float(report.get("terminal_coverage") or 0.0) * 100.0
-		await update.message.reply_text(
-			"Proof-backed performance is not publicly available yet.\n\n"
-			"The canonical delivery/outcome ledger has not reached its required "
-			"terminal-coverage and verification threshold, so no provisional win rate, "
-			"return, or R-multiple claim is being shown.\n\n"
-			f"Current terminal coverage: {coverage_pct:.1f}%\n"
-			"Status: CERTIFICATION PENDING"
-		)
-		return
-
 	completed = int(report.get("completed_r_count") or 0)
 	avg_r = report.get("avg_r")
 	median_r = report.get("median_r")

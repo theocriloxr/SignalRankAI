@@ -1,5 +1,5 @@
 {
-  "count": 120,
+  "count": 119,
   "flags": [
     {
       "dangerous": false,
@@ -588,14 +588,6 @@
     {
       "dangerous": false,
       "name": "OUTCOME_LIFECYCLE_ENABLED",
-      "production_example_default": null,
-      "required_safe_default": null,
-      "rollback": "restore previous environment value and redeploy",
-      "safe_default_satisfied": null
-    },
-    {
-      "dangerous": false,
-      "name": "OUTCOME_RECONCILIATION_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

@@ -84,6 +84,30 @@ def _is_production_runtime() -> bool:
     )
 
 
+def _promotion_quality_gate(
+    metrics: dict,
+    *,
+    deployed_runtime: bool | None = None,
+) -> tuple[bool, float, float]:
+    """Return whether a fitted candidate clears minimum predictive quality.
+
+    Deployed staging/production services use conservative defaults. Explicit
+    environment overrides remain possible for controlled experiments, while
+    the public/live calibration gate is evaluated separately.
+    """
+    if deployed_runtime is None:
+        deployed_runtime = _is_production_runtime()
+    default_min_auc = "0.60" if deployed_runtime else "0.52"
+    default_min_accuracy = "0.55" if deployed_runtime else "0.50"
+    min_auc = float(os.getenv("ML_MIN_PROMOTION_AUC", default_min_auc) or default_min_auc)
+    min_accuracy = float(
+        os.getenv("ML_MIN_PROMOTION_ACCURACY", default_min_accuracy) or default_min_accuracy
+    )
+    accuracy = float(metrics.get("accuracy", 0.0) or 0.0)
+    auc = float(metrics.get("auc", 0.0) or 0.0)
+    return accuracy >= min_accuracy and auc >= min_auc, min_accuracy, min_auc
+
+
 def _offline_bootstrap_allowed() -> bool:
     """Synthetic rows are opt-in and can never replace a Railway model."""
     explicit = os.getenv("ML_OFFLINE_BOOTSTRAP_ENABLED")
@@ -1373,15 +1397,37 @@ async def main(lookback_days: int | None = None):
         timestamps,
     )
 
-    min_auc = float(os.getenv("ML_MIN_PROMOTION_AUC", "0.52") or 0.52)
-    min_accuracy = float(os.getenv("ML_MIN_PROMOTION_ACCURACY", "0.50") or 0.50)
-    if metrics["auc"] < min_auc or metrics["accuracy"] < min_accuracy:
+    deployed_runtime = _is_production_runtime()
+    quality_ok, min_accuracy, min_auc = _promotion_quality_gate(
+        metrics, deployed_runtime=deployed_runtime
+    )
+    if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
             "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
             run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
         )
         return False
+
+    calibration_metrics = dict(metrics.get("calibration") or {})
+    require_valid_calibration = _env_bool(
+        "ML_PROMOTION_REQUIRES_VALID_CALIBRATION",
+        deployed_runtime,
+    )
+    if require_valid_calibration and not bool(calibration_metrics.get("validated")):
+        promotion_eligible = False
+        logger.warning(
+            "[ml_training_run] id=%s status=candidate_only reason=calibration_unvalidated "
+            "validation_rows=%s required=%s brier=%s max_brier=%s ece=%s max_ece=%s "
+            "primary_model_preserved=true",
+            run_id,
+            calibration_metrics.get("validation_rows", 0),
+            calibration_metrics.get("minimum_validation_rows"),
+            calibration_metrics.get("calibrated_brier"),
+            calibration_metrics.get("maximum_brier"),
+            calibration_metrics.get("calibrated_ece"),
+            calibration_metrics.get("maximum_ece"),
+        )
 
     training_meta = {
         "run_id": run_id,

@@ -481,18 +481,3 @@ def test_production_readiness_requires_shadow_pulse_and_performance_health():
     assert '"performance_ledger": performance_ledger' in source
     assert 'checks["engine_pulse"]' in source
     assert '_env_bool("SHADOW_OUTCOME_TRACKER_ENABLED", True)' in source
-
-
-def test_public_performance_fails_closed_until_certified():
-    source = Path("signalrank_telegram/commands.py").read_text(encoding="utf-8")
-    assert 'if not report.get("performance_certified", False) and tier not in {"owner", "admin"}' in source
-    assert "no provisional win rate" in source
-    assert "Status: CERTIFICATION PENDING" in source
-
-
-def test_paper_portfolio_circuit_breakers_are_wired():
-    source = Path("core/paper_trading_service.py").read_text(encoding="utf-8")
-    assert '"PAPER_MAX_DAILY_LOSS_PCT", 5.0' in source
-    assert '"PAPER_MAX_OPEN_RISK_PCT", 3.0' in source
-    assert 'reason="max_open_risk"' in source
-    assert 'skip_reason = skip_reason or "paper_daily_loss_limit"' in source

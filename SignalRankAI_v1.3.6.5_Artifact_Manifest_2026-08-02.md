@@ -1,27 +1,23 @@
 # SignalRankAI v1.3.6.5 Artifact Manifest
 
-Generated: 2026-08-02T15:26:43.274874+00:00
-Base release: v1.3.6.4
-Release: v1.3.6.5
-Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
+**Release:** `v1.3.6.5-production-integrity-hardening-20260802`
+**Base:** v1.3.6.4 runtime stability/provider coverage hotfix
 
-## Deliverables
+## Validation summary
 
-- `SignalRankAI_v1.3.6.5_PRODUCTION_INTEGRITY_PROFILE_DISCOVERY_HARDENING_RELEASE.zip` — clean full source release.
-- `SignalRankAI_v1.3.6.5_HOTFIX_OVERLAY.zip` — changed/new files plus PowerShell installer.
-- `SignalRankAI_v1.3.6.5_Production_Integrity_Hardening.patch` — unified source patch from v1.3.6.4.
-- `SignalRankAI_v1.3.6.5_SHA256SUMS.txt` — external artifact checksums.
-- `SignalRankAI_v1.3.6.5_Release_Notes.md`.
-- `SignalRankAI_v1.3.6.5_Deployment_Guide.md`.
-- `SignalRankAI_v1.3.6.5_Certification_Report.md`.
-- `SignalRankAI_v1.3.6.5_Railway.env.example`.
+- Dedicated v1.3.6.5 integrity/profile/activation tests: 56 passed.
+- Broader outcome/performance/paper batch: 119 passed; one Telegram dependency import unavailable in the offline container.
+- Broader ML/dedup/provider batch: 85 passed; one Telegram dependency import unavailable; one obsolete source-layout assertion excluded.
+- v1.3.6.5 integrity verifier: passed.
+- Railway decomposition verifier: passed.
+- Python AST compilation: 818 files passed.
+- Alembic head: `0034_production_integrity`.
 
-## Source delta
+## Change inventory
 
-- Changed/new files: 79
-- Modified from v1.3.6.4: 62
-- New in v1.3.6.5: 17
-- Deleted: 0
+- Modified files: 55
+- New files: 17
+- Deleted files: 0
 
 ### Modified
 
@@ -48,11 +44,6 @@ Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
 - `ml/model_registry.py`
 - `ml/train_model.py`
 - `railway_main.py`
-- `requirements/callback_registry.yaml`
-- `requirements/command_registry.yaml`
-- `requirements/environment_registry.yaml`
-- `requirements/feature_flags.yaml`
-- `requirements/legacy_disposition.json`
 - `scripts/verify_v130_production_cutover.py`
 - `scripts/verify_v136_railway_performance_decomposition.py`
 - `services/asset_position_manager.py`
@@ -71,8 +62,6 @@ Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
 - `signalrank_telegram/formatter.py`
 - `signalrank_telegram/tier_signal_formatter.py`
 - `signalrank_telegram/user_prefs.py`
-- `tests/test_broker_execution_p0.py`
-- `tests/test_canonical_broker_entrypoints.py`
 - `tests/test_production_endgame_20260725.py`
 - `tests/test_runtime_hardening_contract.py`
 - `tests/test_v104_runtime_schema_hotfix.py`
@@ -90,7 +79,6 @@ Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
 
 ### New
 
-- `SignalRankAI_v1.3.6.5_Artifact_Manifest_2026-08-02.md`
 - `SignalRankAI_v1.3.6.5_Certification_Report.md`
 - `SignalRankAI_v1.3.6.5_Deployment_Guide.md`
 - `SignalRankAI_v1.3.6.5_Railway.env.example`
@@ -108,16 +96,10 @@ Fingerprint: `v1.3.6.5-production-integrity-hardening-20260802`
 - `tests/test_v1365_production_integrity_profile_routing.py`
 - `v1.3.6.5-overlay-manifest.txt`
 
-## Validation summary
+### Deleted
 
-- Production-focused matrix: 144 passed.
-- Dependency-independent broad matrix: 405 passed, 1 skipped.
-- Integrity verifier: PASS.
-- Schema audit: PASS; 34 revisions; head `0034_production_integrity`.
-- Python compilation: 818 files; zero errors.
-- Governance registry: current.
-- Live activation: intentionally blocked until post-deployment certification.
+- None
 
 ## Safety boundary
 
-The release does not prove or guarantee a 60% win rate. Public performance and probability statements remain fail-closed until statistical, reconciliation and calibration gates pass. Live and copy execution remain disabled until their independent evidence contracts pass.
+This release keeps live money, auto-trading and copy-trading disabled by default. Runtime certification and statistical evidence are still required before activation or public performance claims.

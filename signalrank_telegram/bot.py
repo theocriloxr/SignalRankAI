@@ -7193,7 +7193,10 @@ def run_bot() -> None:
             from datetime import datetime
             _outcome_limit = max(1, min(50, int(os.getenv("OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5") or 5)))
             _outcome_budget_seconds = max(10.0, float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20") or 20))
-            _outcome_deadline = time.monotonic() + _outcome_budget_seconds
+            # The budget governs delivery work, not the prerequisite DB snapshot.
+            # Starting it before `_fetch()` caused every run to expire before the
+            # first recipient whenever Postgres was briefly slow.
+            _outcome_deadline = float("inf")
             _outcome_budget_exhausted = False
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
@@ -7220,6 +7223,7 @@ def run_bot() -> None:
             if not pending:
                 return
 
+            _outcome_deadline = time.monotonic() + _outcome_budget_seconds
             outcome_bot = Bot(token=_require_telegram_token())
 
             for oc, sig, recipients in pending:
@@ -7329,20 +7333,76 @@ def run_bot() -> None:
                 quiet_deferred_count = 0
                 eligible_count = 0
 
-                # The market observation is identical for every recipient of this
-                # outcome. Fetch it once per outcome instead of once per user.
+                # Outcome notifications must use the price evidence captured by the
+                # lifecycle/outcome tracker. Fetching a fresh OHLC series here used
+                # most of the front-door job budget and repeatedly deferred every
+                # recipient. A bounded network fallback is opt-in only.
                 current_market_price = None
                 try:
-                    from data.market_data import fetch_market_data_cached
-                    async def _fetch_market_price_once():
-                        tf = timeframe or "1h"
-                        data = await fetch_market_data_cached(asset, [tf])
-                        payload = data.get(tf) or {}
-                        candles = payload.get("candles") or []
-                        return candles[-1].get("close") if candles else None
-                    current_market_price = run_sync(_fetch_market_price_once())
+                    import json as _json
+
+                    _meta = getattr(oc, "meta", None)
+                    if isinstance(_meta, str):
+                        try:
+                            _meta = _json.loads(_meta)
+                        except Exception:
+                            _meta = {}
+                    if not isinstance(_meta, dict):
+                        _meta = {}
+                    _evidence = _meta.get("terminal_evidence")
+                    if not isinstance(_evidence, dict):
+                        _evidence = {}
+                    for _candidate in (
+                        _meta.get("terminal_price"),
+                        _meta.get("observed_price"),
+                        _meta.get("hit_price"),
+                        _meta.get("current_price"),
+                        _evidence.get("terminal_price"),
+                        _evidence.get("observed_price"),
+                        _evidence.get("price"),
+                    ):
+                        try:
+                            _value = float(_candidate)
+                            if _value > 0:
+                                current_market_price = _value
+                                break
+                        except Exception:
+                            continue
+
+                    if current_market_price is None and status == "sl":
+                        _value = float(getattr(sig, "stop_loss", 0) or 0)
+                        current_market_price = _value if _value > 0 else None
+                    elif current_market_price is None and tp_level_num > 0:
+                        _levels = _parse_tp_levels_for_outcome(getattr(sig, "take_profit", None))
+                        if _levels:
+                            _idx = min(len(_levels), tp_level_num) - 1
+                            current_market_price = float(_levels[_idx])
                 except Exception as exc:
-                    logger.debug("[outcome] market price unavailable asset=%s err=%s", asset, exc)
+                    logger.debug("[outcome] stored evidence price unavailable asset=%s err=%s", asset, exc)
+
+                if current_market_price is None and _env_bool(
+                    "OUTCOME_NOTIFICATION_FETCH_MARKET_PRICE_FALLBACK", False
+                ):
+                    try:
+                        import asyncio as _asyncio
+                        from data.market_data import fetch_market_data_cached
+
+                        async def _fetch_market_price_once():
+                            tf = timeframe or "1h"
+                            timeout_s = max(1.0, min(5.0, float(os.getenv(
+                                "OUTCOME_NOTIFICATION_PRICE_TIMEOUT_SECONDS", "3"
+                            ) or 3)))
+                            data = await _asyncio.wait_for(
+                                fetch_market_data_cached(asset, [tf]),
+                                timeout=timeout_s,
+                            )
+                            payload = data.get(tf) or {}
+                            candles = payload.get("candles") or []
+                            return candles[-1].get("close") if candles else None
+
+                        current_market_price = run_sync(_fetch_market_price_once())
+                    except Exception as exc:
+                        logger.debug("[outcome] bounded market price fallback unavailable asset=%s err=%s", asset, exc)
 
                 for telegram_user_id, tier_at_send, prefs in recipients:
                     if time.monotonic() >= _outcome_deadline:
