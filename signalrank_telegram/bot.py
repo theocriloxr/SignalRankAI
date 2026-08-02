@@ -5919,28 +5919,46 @@ def run_bot() -> None:
                 from db.session import get_session
 
                 tier_by_user: dict[int, str] = {}
-                try:
-                    async with get_session(
-                        priority=DBPriority.INTERACTIVE,
-                        label="bot_commands.tier_snapshot",
-                        timeout_seconds=10.0,
-                    ) as session:
-                        rows = (await session.execute(select(User))).scalars().all()
-                        for user in rows:
-                            uid = int(user.telegram_user_id)
-                            tier_by_user[uid] = str(
-                                await resolve_product_tier(session, user) or "free"
-                            ).upper()
-                except Exception as exc:
-                    logger.warning("[bot_commands] tier snapshot deferred err=%s", exc)
+                # A startup scan across every user becomes an N+1 database and
+                # Telegram API storm at scale. The global FREE scope is already
+                # published above. By default only owner/admin scopes are set at
+                # startup; paid-user scopes should be refreshed when the user
+                # starts the bot or when entitlement changes.
+                bulk_refresh_enabled = str(
+                    os.getenv("BOT_COMMAND_SCOPE_BULK_REFRESH_ENABLED", "0") or "0"
+                ).strip().lower() in {"1", "true", "yes", "on"}
+                if bulk_refresh_enabled:
+                    bulk_limit = max(
+                        1,
+                        min(5000, int(os.getenv("BOT_COMMAND_SCOPE_BULK_LIMIT", "500") or 500)),
+                    )
+                    try:
+                        async with get_session(
+                            priority=DBPriority.BACKGROUND,
+                            label="bot_commands.tier_snapshot",
+                            timeout_seconds=5.0,
+                        ) as session:
+                            rows = (
+                                await session.execute(
+                                    select(User).order_by(User.id.desc()).limit(bulk_limit)
+                                )
+                            ).scalars().all()
+                            for user in rows:
+                                uid = int(user.telegram_user_id)
+                                tier_by_user[uid] = str(
+                                    await resolve_product_tier(session, user) or "free"
+                                ).upper()
+                    except Exception as exc:
+                        logger.warning("[bot_commands] tier snapshot deferred err=%s", exc)
+                else:
+                    logger.info(
+                        "[bot_commands] bulk per-user scope refresh disabled; "
+                        "using global FREE plus owner/admin scopes"
+                    )
 
                 owner_ids = {int(uid) for uid in (OWNER_IDS or set())}
                 admin_ids = {int(uid) for uid in (ADMIN_IDS or set())}
-                user_ids = sorted(
-                    set(tier_by_user)
-                    | owner_ids
-                    | admin_ids
-                )
+                user_ids = sorted(set(tier_by_user) | owner_ids | admin_ids)
                 updated = failed = 0
                 concurrency = max(1, min(10, int(os.getenv("BOT_COMMAND_SCOPE_CONCURRENCY", "4") or 4)))
                 semaphore = asyncio.Semaphore(concurrency)

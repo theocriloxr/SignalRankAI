@@ -176,6 +176,24 @@ def _effective_pool_settings() -> tuple[int, int]:
         absolute_pool_raw = os.getenv("DB_POOL_RAILWAY_ABSOLUTE_CAP")
         absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
         decomposed_role = _is_decomposed_database_role()
+        reviewed_monolith_pool = (
+            not _public_testing
+            and not decomposed_role
+            and _pool_bool("DB_ALLOW_REVIEWED_MONOLITH_POOL", False)
+        )
+
+        # A reviewed monolith override is intentionally bounded. It exists as a
+        # temporary bridge while the bot/engine/workers are decomposed, not as
+        # an unlimited escape hatch. The requested 12+6 values are therefore
+        # capped at conservative defaults unless the reviewed maxima are raised.
+        reviewed_monolith_pool_max = min(
+            _pool_int("DB_REVIEWED_MONOLITH_POOL_MAX", 8, minimum=2),
+            16,
+        )
+        reviewed_monolith_overflow_max = min(
+            _pool_int("DB_REVIEWED_MONOLITH_OVERFLOW_MAX", 2, minimum=0),
+            4,
+        )
         
         # In public-testing mode, enforce strictest defaults regardless of overrides.
         if _public_testing:
@@ -188,6 +206,13 @@ def _effective_pool_settings() -> tuple[int, int]:
             )
         elif absolute_pool_raw is not None and decomposed_role:
             railway_pool_cap = _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1)
+        elif reviewed_monolith_pool:
+            requested_cap = _pool_int(
+                "DB_POOL_RAILWAY_ABSOLUTE_CAP",
+                _pool_int("DB_POOL_SIZE_RAILWAY", reviewed_monolith_pool_max, minimum=1),
+                minimum=1,
+            )
+            railway_pool_cap = min(requested_cap, reviewed_monolith_pool_max)
         else:
             railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
         
@@ -195,10 +220,27 @@ def _effective_pool_settings() -> tuple[int, int]:
             railway_overflow_cap = 0
         elif absolute_overflow_raw is not None and decomposed_role:
             railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0)
+        elif reviewed_monolith_pool:
+            requested_overflow = _pool_int(
+                "DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP",
+                _pool_int("DB_MAX_OVERFLOW_RAILWAY", reviewed_monolith_overflow_max, minimum=0),
+                minimum=0,
+            )
+            railway_overflow_cap = min(requested_overflow, reviewed_monolith_overflow_max)
         else:
             railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
 
-        if not decomposed_role and (
+        if reviewed_monolith_pool:
+            logger.warning(
+                "[db_pool_reviewed_monolith] enabled role=%s requested=%s+%s capped=%s+%s; "
+                "use only after verifying Postgres max_connections and continue service decomposition",
+                _database_role(),
+                pool_size,
+                max_overflow,
+                railway_pool_cap,
+                railway_overflow_cap,
+            )
+        elif not decomposed_role and (
             (absolute_pool_raw is not None and _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1) > 2)
             or (
                 absolute_overflow_raw is not None
@@ -207,7 +249,7 @@ def _effective_pool_settings() -> tuple[int, int]:
         ):
             logger.warning(
                 "[db_pool_safe] ignored oversized Railway absolute pool cap for monolith role=%s; "
-                "effective maximum is DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+                "set DB_ALLOW_REVIEWED_MONOLITH_POOL=1 after capacity review or decompose the service",
                 _database_role(),
             )
         

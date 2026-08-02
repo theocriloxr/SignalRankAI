@@ -192,6 +192,9 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
+                    "ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS reference VARCHAR(128)",
+                    "ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_rewards_reference ON referral_rewards(reference) WHERE reference IS NOT NULL",
                     # outcomes (0023 migration belt-and-suspenders)
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",

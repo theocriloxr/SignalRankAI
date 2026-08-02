@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import random
+import secrets
 from datetime import datetime, timedelta, timezone
 from utils.timeutils import now_utc_naive
 def to_naive_utc(dt: datetime) -> datetime:
@@ -2498,51 +2499,121 @@ async def expire_old_free_signal_summaries(session: AsyncSession, max_age_hours:
 
 
 async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_user_id: int) -> str:
-    referrer: User = await get_or_create_user(session, telegram_user_id=int(referrer_telegram_user_id))
+    """Return one durable referral code for a Telegram user.
 
-    res: Result[Tuple[ReferralCode]] = await session.execute(select(ReferralCode).where(ReferralCode.referrer_user_id == referrer.id))
-    existing: ReferralCode | None = res.scalar_one_or_none()
+    The referrer row is locked so concurrent /invite and /referral commands do
+    not create multiple active codes. No synthetic fallback code is returned:
+    every code exposed to users must already exist in PostgreSQL.
+    """
+    referrer: User = await get_or_create_user(
+        session,
+        telegram_user_id=int(referrer_telegram_user_id),
+    )
+    locked_referrer = (
+        await session.execute(
+            select(User).where(User.id == int(referrer.id)).with_for_update()
+        )
+    ).scalar_one()
+
+    existing = (
+        await session.execute(
+            select(ReferralCode)
+            .where(ReferralCode.referrer_user_id == int(locked_referrer.id))
+            .order_by(ReferralCode.id.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     if existing is not None:
-        return existing.code
+        return str(existing.code)
 
-    # One-time random suffix for uniqueness; referrer id included for readability.
-    suffix: int = random.randint(1000, 9999)
-    code: str = f"SRK{int(referrer_telegram_user_id)}{suffix}"[:32]
-
-    rc = ReferralCode(code=code, referrer_user_id=referrer.id)
-    session.add(rc)
-    await session.flush()
-    return rc.code
+    # Telegram start parameters allow URL-safe characters. Keep the code short
+    # enough for sharing while including the internal id for collision resistance.
+    for _ in range(5):
+        token = secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
+        code = f"SRK{int(locked_referrer.id):X}{token}"[:32]
+        collision = (
+            await session.execute(
+                select(ReferralCode.id).where(func.lower(ReferralCode.code) == code.lower())
+            )
+        ).scalar_one_or_none()
+        if collision is not None:
+            continue
+        row = ReferralCode(code=code, referrer_user_id=int(locked_referrer.id))
+        session.add(row)
+        await session.flush()
+        logger.info(
+            "[referral_code_created] referrer_user_id=%s telegram_user_id=%s code=%s",
+            locked_referrer.id,
+            referrer_telegram_user_id,
+            code,
+        )
+        return str(row.code)
+    raise RuntimeError("Unable to allocate a unique referral code")
 
 
 async def _count_referrals(session: AsyncSession, referrer_user_id: int) -> int:
     res: Result[Tuple[int]] = await session.execute(
-        select(func.count(ReferralAttribution.id)).where(ReferralAttribution.referrer_user_id == referrer_user_id)
+        select(func.count(ReferralAttribution.id)).where(
+            ReferralAttribution.referrer_user_id == int(referrer_user_id)
+        )
     )
     return int(res.scalar() or 0)
 
 
 async def get_referral_progress(session: AsyncSession, referrer_telegram_user_id: int) -> dict[str, int]:
-    referrer: User = await get_or_create_user(session, telegram_user_id=int(referrer_telegram_user_id))
-    total: int = await _count_referrals(session, referrer_user_id=referrer.id)
-    toward_next: int = total % 3
-    needed: int = 3 - toward_next if toward_next else 0
+    referrer: User = await get_or_create_user(
+        session,
+        telegram_user_id=int(referrer_telegram_user_id),
+    )
+    total = await _count_referrals(session, referrer_user_id=int(referrer.id))
+    requirement = max(1, int(os.getenv("REFERRALS_PER_REWARD", "3") or 3))
+    reward_days = max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7))
+    toward_next = int(total % requirement)
+    # At zero or an exact milestone, the *next* reward still requires a full batch.
+    needed = int(requirement if toward_next == 0 else requirement - toward_next)
     return {
         "total": int(total),
-        "toward_next": int(toward_next),
-        "needed_for_next": int(needed),
-        "reward_days_per_3": 7,
+        "toward_next": toward_next,
+        "needed_for_next": needed,
+        "reward_days_per_3": reward_days,
+        "rewards_earned": int(total // requirement),
+        "requirement": int(requirement),
     }
 
 
 async def _sum_reward_days(session: AsyncSession, referrer_user_id: int) -> int:
     res: Result[Tuple[int]] = await session.execute(
         select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
-            ReferralReward.referrer_user_id == referrer_user_id,
+            ReferralReward.referrer_user_id == int(referrer_user_id),
             ReferralReward.reward_type == "premium_days",
         )
     )
     return int(res.scalar() or 0)
+
+
+async def _resolve_referral_reward_tier(
+    session: AsyncSession,
+    referrer_user: User,
+) -> str:
+    """Resolve the entitlement to extend without opening a nested DB session."""
+    now = _utcnow()
+    active_tiers = list(
+        (
+            await session.execute(
+                select(Subscription.tier)
+                .where(
+                    Subscription.user_id == int(referrer_user.id),
+                    Subscription.status == "active",
+                    Subscription.expires_at.is_not(None),
+                    Subscription.expires_at > now,
+                )
+                .order_by(Subscription.expires_at.desc())
+            )
+        ).scalars().all()
+    )
+    tiers = [normalize_tier(str(getattr(referrer_user, "tier", "free") or "free"))]
+    tiers.extend(normalize_tier(str(value or "free")) for value in active_tiers)
+    return "vip" if "vip" in tiers else "premium"
 
 
 async def process_referral_start(
@@ -2551,198 +2622,306 @@ async def process_referral_start(
     referral_code: str,
     is_new_user: bool,
 ) -> dict:
+    """Atomically attribute a qualified new user and grant milestone rewards.
+
+    Canonical product rule: each genuinely new Telegram user may be attributed
+    once. Every configured batch of referrals grants subscription days. Payment
+    conversion is recorded separately and never runs a competing reward system.
     """
-    Process referral when a new user starts the bot with a referral code.
-    
-    IMPORTANT RULES:
-    1. Referrer ID is extracted from the ReferralCode linked to the referral link
-    2. Referral is ONLY counted if is_new_user=True (first-time start only)
-    3. Reward is distributed to the referrer_id that owns the referral code
-    4. Referred user can only be attributed once (no duplicate credit)
-    """
-    result = {
+    result: dict[str, Any] = {
         "status": "ignored",
         "referrer_id": None,
         "referrals_total": 0,
         "days_granted": 0,
         "referrer_notified": False,
     }
-
-    code: str = (referral_code or "").strip()
+    code = str(referral_code or "").strip()
     if not code:
         result["status"] = "invalid_code"
         return result
 
-    # STEP 1: Look up referral code to find who created it (the referrer)
-    res: Result[Tuple[ReferralCode]] = await session.execute(
-        select(ReferralCode).where(func.lower(ReferralCode.code) == code.lower())
-    )
-    rc: ReferralCode | None = res.scalar_one_or_none()
+    rc = (
+        await session.execute(
+            select(ReferralCode).where(func.lower(ReferralCode.code) == code.lower())
+        )
+    ).scalar_one_or_none()
     if rc is None:
         result["status"] = "invalid_code"
+        logger.info("[referral_start] status=invalid_code referred=%s code=%s", referred_telegram_user_id, code)
         return result
 
-    # STEP 2: Get referrer details from ReferralCode.referrer_user_id
-    # This ID is linked to the referral link and is used for reward distribution
-    res2: Result[Tuple[User]] = await session.execute(select(User).where(User.id == rc.referrer_user_id))
-    referrer_user: User | None = res2.scalar_one_or_none()
+    referrer_user = (
+        await session.execute(
+            select(User).where(User.id == int(rc.referrer_user_id)).with_for_update()
+        )
+    ).scalar_one_or_none()
     if referrer_user is None:
         result["status"] = "invalid_code"
         return result
 
     referrer_tid = int(referrer_user.telegram_user_id)
     result["referrer_id"] = referrer_tid
-
     if int(referred_telegram_user_id) == referrer_tid:
         result["status"] = "self_referral"
         return result
-
-    # STEP 3: CRITICAL CHECK - Only count referral if this is a NEW USER
-    # Existing users using a referral code do NOT trigger referral counting
-    # This ensures each user can only be counted once (at first /start)
     if not bool(is_new_user):
         result["status"] = "not_new"
         return result
 
-    referred_user: User = await get_or_create_user(session, telegram_user_id=int(referred_telegram_user_id))
-
-    # STEP 4: Check if this referred user was already attributed to someone else
-    # Each user can only be attributed once - no duplicate referral credits
-    res3: Result[Tuple[ReferralAttribution]] = await session.execute(
-        select(ReferralAttribution).where(ReferralAttribution.referred_user_id == referred_user.id)
+    referred_user = await get_or_create_user(
+        session,
+        telegram_user_id=int(referred_telegram_user_id),
     )
-    if res3.scalar_one_or_none() is not None:
+    # Lock the referred user so simultaneous duplicate /start updates cannot
+    # create two attributions before the unique constraint is observed.
+    referred_user = (
+        await session.execute(
+            select(User).where(User.id == int(referred_user.id)).with_for_update()
+        )
+    ).scalar_one()
+    existing_attribution = (
+        await session.execute(
+            select(ReferralAttribution).where(
+                ReferralAttribution.referred_user_id == int(referred_user.id)
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_attribution is not None:
         result["status"] = "already_referred"
+        result["referrer_id"] = int(
+            (
+                await session.execute(
+                    select(User.telegram_user_id).where(
+                        User.id == int(existing_attribution.referrer_user_id)
+                    )
+                )
+            ).scalar_one()
+        )
         return result
 
-    # STEP 5: Create referral attribution record
-    # Links referred_user to referrer_user via the ReferralCode's referrer_user_id
-    # This ensures proper reward distribution to the correct referrer
+    now = _utcnow()
     attribution = ReferralAttribution(
-        referred_user_id=referred_user.id,
-        referrer_user_id=rc.referrer_user_id  # Referrer ID from the referral link owner
+        referred_user_id=int(referred_user.id),
+        referrer_user_id=int(referrer_user.id),
+        is_successful=True,
+        successful_at=now,
+        reward_applied=False,
     )
     session.add(attribution)
+    if not getattr(referred_user, "referred_by", None):
+        referred_user.referred_by = referrer_tid
 
-    # Persist denormalized referrer mapping for fast reads and payment bonus logic.
-    try:
-        if not getattr(referred_user, "referred_by", None):
-            referred_user.referred_by = int(referrer_tid)
-    except Exception:
-        pass
-    
-    session.add(
-        ReferralReward(
-            referrer_user_id=rc.referrer_user_id,
-            referred_user_id=referred_user.id,
-            reward_type="referral_signup",
-            reward_value=1,
+    signup_reference = f"REFERRAL_SIGNUP:{int(referred_user.id)}"
+    existing_signup_reward = (
+        await session.execute(
+            select(ReferralReward.id).where(ReferralReward.reference == signup_reference)
         )
-    )
+    ).scalar_one_or_none()
+    if existing_signup_reward is None:
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer_user.id),
+                referred_user_id=int(referred_user.id),
+                reward_type="referral_signup",
+                reward_value=1,
+                reference=signup_reference,
+                meta={"referral_code": code, "qualified_on": "new_user_start"},
+            )
+        )
     await session.flush()
 
-    # STEP 6: Increment referrer's referral_count by 1
-    # This tracks progress toward the next reward (3 referrals = 1 reward)
-    # The referrer_user object is fetched from the ReferralCode, ensuring correct attribution
-    referrer_user.referral_count = (referrer_user.referral_count or 0) + 1
-    await session.flush()
-    
-    referral_count: int | None = referrer_user.referral_count
-    result["referrals_total"] = int(referral_count)  # Return updated count to caller
-    
-    # STEP 7: Check if referrer has reached reward threshold
-    # Requirement: 3 referrals (counting from 1) = 1 reward cycle
-    # Referrer gets 7 premium days + count resets to 0
-    REFERRAL_REQUIREMENT = 3
-    has_earned_reward = (referral_count % REFERRAL_REQUIREMENT) == 0
-    
-    # Prepare notification message for referrer
-    msg_for_referrer = None
-    if has_earned_reward:
-        remaining_after_reward = referral_count - REFERRAL_REQUIREMENT
-        msg_for_referrer: str = (
-            f"🎉 Someone joined with your referral link!\n\n"
-            f"Referral count: {referral_count}\n"
-            f"✅ You've reached {REFERRAL_REQUIREMENT} referrals! You earned 7 premium days.\n\n"
-            f"Progress toward next reward: {remaining_after_reward}/{REFERRAL_REQUIREMENT}"
-        )
-    else:
-        needed = REFERRAL_REQUIREMENT - (referral_count % REFERRAL_REQUIREMENT)
-        msg_for_referrer: str = (
-            f"👤 Someone joined with your referral link!\n\n"
-            f"Referral count: {referral_count}\n"
-            f"You need {needed} more referrals to earn 7 premium days."
-        )
-    
-    result["referrer_message"] = msg_for_referrer
-    
-    if not has_earned_reward:
+    total = await _count_referrals(session, referrer_user_id=int(referrer_user.id))
+    referrer_user.referral_count = int(total)  # denormalized lifetime total; never reset
+    result["referrals_total"] = int(total)
+
+    requirement = max(1, int(os.getenv("REFERRALS_PER_REWARD", "3") or 3))
+    configured_grant_days = max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7))
+    toward_next = int(total % requirement)
+    if toward_next != 0:
+        needed = int(requirement - toward_next)
         result["status"] = "attributed"
+        result["referrer_message"] = (
+            "👤 Someone joined with your referral link!\n\n"
+            f"Total valid referrals: {total}\n"
+            f"Progress: {toward_next}/{requirement}\n"
+            f"Invite {needed} more to earn +{configured_grant_days} Premium days."
+        )
+        logger.info(
+            "[referral_start] status=attributed referrer=%s referred=%s total=%s",
+            referrer_tid,
+            referred_telegram_user_id,
+            total,
+        )
         return result
 
-    # REWARD LOGIC: Grant 7 premium days and reset referral_count
-    from db.access import resolve_user_tier
+    batch_number = int(total // requirement)
+    reward_ref = f"REFERRAL:{referrer_tid}:{batch_number}"
+    existing_reward = (
+        await session.execute(
+            select(ReferralReward).where(ReferralReward.reference == reward_ref)
+        )
+    ).scalar_one_or_none()
+    if existing_reward is not None:
+        result["status"] = "reward_already_granted"
+        result["days_granted"] = int(existing_reward.reward_value or 0)
+        return result
 
-    current_tier: str = normalize_tier(await resolve_user_tier(referrer_tid))
-    tier_to_extend: str = "vip" if current_tier == "vip" else "premium"
-
-    # Make idempotent per reward “batch”.
-    grant_days: int = 7
     try:
-        monthly_cap_days = max(7, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28))
+        monthly_cap_days = max(
+            configured_grant_days,
+            int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28),
+        )
     except Exception:
         monthly_cap_days = 28
-    now_utc = _utcnow()
-    month_start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    monthly_days_res: Result[Tuple[int]] = await session.execute(
-        select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
-            ReferralReward.referrer_user_id == rc.referrer_user_id,
-            ReferralReward.reward_type == "premium_days",
-            ReferralReward.created_at >= month_start,
-        )
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_days_used = int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+                    ReferralReward.referrer_user_id == int(referrer_user.id),
+                    ReferralReward.reward_type == "premium_days",
+                    ReferralReward.created_at >= month_start,
+                )
+            )
+        ).scalar()
+        or 0
     )
-    monthly_days_used = int(monthly_days_res.scalar() or 0)
     monthly_remaining = max(0, int(monthly_cap_days - monthly_days_used))
     if monthly_remaining <= 0:
-        # Monthly cap reached: don't grant new days this month.
-        referrer_user.referral_count = 0
-        await session.flush()
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer_user.id),
+                referred_user_id=int(referred_user.id),
+                reward_type="premium_days_capped",
+                reward_value=0,
+                reference=reward_ref,
+                meta={"batch": batch_number, "monthly_cap_days": monthly_cap_days},
+            )
+        )
         result["status"] = "reward_capped"
-        result["days_granted"] = 0
         result["referrer_message"] = (
-            "🎯 Referral milestone reached, but your monthly referral bonus cap is already reached.\n"
-            "More referral days can be earned again next month."
+            "🎯 Referral milestone reached, but your monthly referral bonus cap "
+            "has already been reached. New referral days can be earned next month."
         )
         return result
-    grant_days = min(int(grant_days), int(monthly_remaining))
-    total: int = int(referral_count or 0)
-    batch_number: int = int(total // REFERRAL_REQUIREMENT)
-    reward_ref: str = f"REFERRAL:{referrer_tid}:{batch_number}"
+
+    grant_days = min(configured_grant_days, monthly_remaining)
+    tier_to_extend = await _resolve_referral_reward_tier(session, referrer_user)
     await activate_subscription(
         session,
         telegram_user_id=referrer_tid,
         tier=tier_to_extend,
         duration_days=int(grant_days),
         paystack_reference=reward_ref,
-        meta={"source": "referral", "referred": int(referred_telegram_user_id), "batch": int(batch_number), "grant_days": grant_days},
+        meta={
+            "source": "referral",
+            "referred": int(referred_telegram_user_id),
+            "batch": batch_number,
+            "grant_days": int(grant_days),
+        },
     )
-
     session.add(
         ReferralReward(
-            referrer_user_id=rc.referrer_user_id,
-            referred_user_id=referred_user.id,
+            referrer_user_id=int(referrer_user.id),
+            referred_user_id=int(referred_user.id),
             reward_type="premium_days",
             reward_value=int(grant_days),
+            reference=reward_ref,
+            meta={"batch": batch_number, "tier_extended": tier_to_extend},
         )
     )
-    
-    # RESET referral_count after reward
-    referrer_user.referral_count = 0
+
+    pending_refs = list(
+        (
+            await session.execute(
+                select(ReferralAttribution)
+                .where(
+                    ReferralAttribution.referrer_user_id == int(referrer_user.id),
+                    ReferralAttribution.reward_applied.is_(False),
+                )
+                .order_by(ReferralAttribution.created_at.asc())
+                .limit(requirement)
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    for row in pending_refs:
+        row.reward_applied = True
     await session.flush()
 
     result["status"] = "reward_granted"
     result["days_granted"] = int(grant_days)
+    result["referrer_message"] = (
+        "🎉 Referral milestone reached!\n\n"
+        f"Total valid referrals: {total}\n"
+        f"+{grant_days} {tier_to_extend.title()} days have been added.\n"
+        f"Progress toward the next reward: 0/{requirement}."
+    )
+    logger.info(
+        "[referral_reward_granted] referrer=%s batch=%s days=%s total=%s",
+        referrer_tid,
+        batch_number,
+        grant_days,
+        total,
+    )
     return result
+
+
+async def record_referral_conversion(
+    session: AsyncSession,
+    *,
+    referred_telegram_user_id: int,
+    payment_reference: str,
+) -> dict[str, Any]:
+    """Record first-purchase conversion without running a second reward policy."""
+    reference = str(payment_reference or "").strip()
+    if not reference:
+        return {"recorded": False, "reason": "missing_reference"}
+    conversion_reference = f"REFERRAL_CONVERSION:{reference}"[:128]
+    if (
+        await session.execute(
+            select(ReferralReward.id).where(ReferralReward.reference == conversion_reference)
+        )
+    ).scalar_one_or_none() is not None:
+        return {"recorded": True, "idempotent": True}
+
+    referred_user = (
+        await session.execute(
+            select(User).where(User.telegram_user_id == int(referred_telegram_user_id))
+        )
+    ).scalar_one_or_none()
+    if referred_user is None:
+        return {"recorded": False, "reason": "user_missing"}
+    attribution = (
+        await session.execute(
+            select(ReferralAttribution)
+            .where(ReferralAttribution.referred_user_id == int(referred_user.id))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if attribution is None:
+        return {"recorded": False, "reason": "not_referred"}
+
+    attribution.is_successful = True
+    attribution.successful_at = attribution.successful_at or _utcnow()
+    session.add(
+        ReferralReward(
+            referrer_user_id=int(attribution.referrer_user_id),
+            referred_user_id=int(referred_user.id),
+            reward_type="first_purchase_conversion",
+            reward_value=1,
+            reference=conversion_reference,
+            meta={"payment_reference": reference},
+        )
+    )
+    await session.flush()
+    logger.info(
+        "[referral_conversion_recorded] referred=%s referrer_user_id=%s payment=%s",
+        referred_telegram_user_id,
+        attribution.referrer_user_id,
+        reference,
+    )
+    return {"recorded": True, "idempotent": False}
 
 # === NEW: Signal Archiving & Outcome Handling ===
 

@@ -252,6 +252,8 @@ class ReferralReward(Base):
     referred_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     reward_type: Mapped[str] = mapped_column(String(64), index=True)
     reward_value: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

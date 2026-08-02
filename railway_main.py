@@ -1778,8 +1778,15 @@ async def lifespan(_: FastAPI):
                 if stream_message is not None:
                     acknowledged = await _webhook_stream.ack(stream_message.message_id)
                     if not acknowledged:
-                        raise RuntimeError(
-                            f"stream acknowledgement failed for {stream_message.message_id}"
+                        # The Telegram update has already been processed. XACK=0
+                        # commonly means another consumer/recovery pass already
+                        # acknowledged the same stream id. Retrying the business
+                        # action would duplicate commands, referrals, or sends.
+                        logger.warning(
+                            "[webhook] stream ack returned zero after successful processing; "
+                            "treating as idempotent id=%s update_id=%s",
+                            stream_message.message_id,
+                            payload_update_id,
                         )
                 logger.info("[webhook] worker=%s finished update_id=%s", worker_id, payload_update_id)
             except Exception as exc:

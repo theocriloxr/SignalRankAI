@@ -3,7 +3,10 @@ import hmac
 import hashlib
 import os
 import json
+import logging
 import httpx
+
+logger = logging.getLogger(__name__)
 
 PAYSTACK_SECRET = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
@@ -259,6 +262,21 @@ async def process_event(event):
                     "event": event_type,
                 },
             )
+            # Record conversion in the same transaction. Referral rewards are
+            # granted by qualified signups; payment conversion is analytics-only
+            # and must never run a competing reward manager.
+            from db.pg_features import record_referral_conversion
+            conversion = await record_referral_conversion(
+                session,
+                referred_telegram_user_id=int(telegram_user_id),
+                payment_reference=reference,
+            )
+            logger.info(
+                "[paystack_referral_conversion] telegram_user_id=%s reference=%s result=%s",
+                telegram_user_id,
+                reference,
+                conversion,
+            )
             await session.commit()
     except Exception as e:
         # The payment_events unique reference is the authoritative concurrency
@@ -283,14 +301,6 @@ async def process_event(event):
             "Use /signals for the latest trading ideas\\."
         )
         await bot.send_message(chat_id=int(telegram_user_id), text=msg, parse_mode="MarkdownV2")
-    except Exception:
-        pass
-    
-    # Mark referral as successful (triggers reward check)
-    try:
-        from engine.referral_manager import ReferralManager
-        rm = ReferralManager()
-        await rm.mark_referral_successful(int(telegram_user_id))
     except Exception:
         pass
     

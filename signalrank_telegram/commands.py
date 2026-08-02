@@ -2363,103 +2363,108 @@ async def referral_leaderboard_command(update, context) -> None:
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	if get_engine_for_event_loop() is None:
-		await update.message.reply_text("Database unavailable.")
-		return
-	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-		from sqlalchemy import select, func, desc
-
-		res = await session.execute(
-			select(
-				ReferralAttribution.referrer_user_id,
-				func.count(ReferralAttribution.id).label("cnt"),
-			)
-			.group_by(ReferralAttribution.referrer_user_id)
-			.order_by(desc("cnt"))
-			.limit(10)
-		)
-		rows = list(res.all() or [])
-		if not rows:
-			await update.message.reply_text("No referral data yet.")
-			await session.commit()
-			return
-
-		# Get usernames if possible
-		ids = [int(r[0]) for r in rows]
-		users = {}
-		if ids:
-			res2 = await session.execute(
+	try:
+		async with get_session(
+			priority="interactive",
+			label="referral.leaderboard",
+			timeout_seconds=8.0,
+		) as session:
+			from sqlalchemy import select, func, desc
+			rows = list((await session.execute(
+				select(
+					ReferralAttribution.referrer_user_id,
+					func.count(ReferralAttribution.id).label("cnt"),
+				)
+				.group_by(ReferralAttribution.referrer_user_id)
+				.order_by(desc("cnt"))
+				.limit(10)
+			)).all() or [])
+			if not rows:
+				await update.message.reply_text("No referral data yet.")
+				return
+			ids = [int(row[0]) for row in rows]
+			user_rows = list((await session.execute(
 				select(User.id, User.telegram_user_id, User.username).where(User.id.in_(ids))
-			)
-			users = {int(r[0]): (r[1], r[2]) for r in (res2.all() or [])}
+			)).all() or [])
+			users = {int(row[0]): (row[1], row[2]) for row in user_rows}
+	except Exception as exc:
+		logging.getLogger(__name__).exception(
+			"[referral_leaderboard_failed] user=%s error=%s",
+			update.effective_user.id,
+			exc,
+		)
+		await update.message.reply_text("⚠️ Referral leaderboard is temporarily unavailable. Please try again.")
+		return
 
-		msg = "🏆 Referral Leaderboard:\n\n"
-		for i, (uid, cnt) in enumerate(rows, 1):
-			uid = int(uid)
-			telegram_uid, username = users.get(uid, (None, None))
-			if username:
-				uname = f"@{username}"
-			elif telegram_uid:
-				uname = f"User ***{str(telegram_uid)[-3:]}"
-			else:
-				uname = f"User ***{str(uid)[-3:]}"
-			msg += f"{i}. {uname}: {cnt} referrals\n"
-		await session.commit()
-		await update.message.reply_text(msg)
+	msg = "🏆 Referral Leaderboard:\n\n"
+	for index, (uid, count) in enumerate(rows, 1):
+		telegram_uid, username = users.get(int(uid), (None, None))
+		if username:
+			name = f"@{username}"
+		elif telegram_uid:
+			name = f"User ***{str(telegram_uid)[-3:]}"
+		else:
+			name = f"User ***{str(uid)[-3:]}"
+		msg += f"{index}. {name}: {int(count)} valid referrals\n"
+	await update.message.reply_text(msg)
 
 async def referral_rewards_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	if get_engine_for_event_loop() is None:
-		await update.message.reply_text("Database unavailable.")
-		return
-	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
-		from sqlalchemy import select, func
-		from db.pg_features import get_referral_progress
-
-		res = await session.execute(
-			select(
-				ReferralReward.reward_type,
-				func.count(ReferralReward.id).label("cnt"),
-				func.coalesce(func.sum(ReferralReward.reward_value), 0).label("total"),
-			)
-			.where(ReferralReward.referrer_user_id == int(user.id))
-			.group_by(ReferralReward.reward_type)
+	user_id = int(update.effective_user.id)
+	try:
+		async with get_session(
+			priority="interactive",
+			label="referral.rewards",
+			timeout_seconds=8.0,
+		) as session:
+			from sqlalchemy import select, func
+			from db.pg_features import get_referral_progress
+			user = await get_or_create_user(session, telegram_user_id=user_id)
+			rows = list((await session.execute(
+				select(
+					ReferralReward.reward_type,
+					func.count(ReferralReward.id).label("cnt"),
+					func.coalesce(func.sum(ReferralReward.reward_value), 0).label("total"),
+				)
+				.where(ReferralReward.referrer_user_id == int(user.id))
+				.group_by(ReferralReward.reward_type)
+			)).all() or [])
+			progress = await get_referral_progress(session, referrer_telegram_user_id=user_id)
+			await session.commit()
+	except Exception as exc:
+		logging.getLogger(__name__).exception(
+			"[referral_rewards_failed] user=%s error=%s",
+			user_id,
+			exc,
 		)
-		rows = list(res.all() or [])
+		await update.message.reply_text("⚠️ Referral rewards are temporarily unavailable. Please try again.")
+		return
 
-		progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
-		total_refs = int(progress.get("total", 0) or 0)
-		toward_next = int(progress.get("toward_next", 0) or 0)
-		needed = int(progress.get("needed_for_next", 0) or 0)
+	total_days = sum(
+		int(total or 0)
+		for reward_type, _count, total in rows
+		if str(reward_type).lower() == "premium_days"
+	)
+	if not rows:
+		msg = "No rewards earned yet. Refer friends to earn rewards!"
+	else:
+		msg = "🎁 Your Referral Rewards:\n"
+		for reward_type, count, total in rows:
+			msg += f"• {reward_type}: {int(count or 0)} time(s), total value: {int(total or 0)}\n"
+	if total_days > 0:
+		msg += f"\n✅ Total Premium days earned: +{total_days}"
+	requirement = int(progress.get("requirement", 3) or 3)
+	msg += (
+		f"\n\n📊 Progress: {int(progress.get('toward_next', 0) or 0)}/{requirement}"
+		f" (invite {int(progress.get('needed_for_next', requirement) or requirement)} more "
+		f"for the next +{int(progress.get('reward_days_per_3', 7) or 7)} days)"
+		f"\n👥 Total valid referrals: {int(progress.get('total', 0) or 0)}"
+	)
+	await update.message.reply_text(msg)
 
-		total_days = 0
-		for rtype, _cnt, total in rows:
-			if str(rtype).lower().startswith("premium_days"):
-				total_days += int(total or 0)
-
-		if not rows:
-			msg = "No rewards earned yet. Refer friends to earn rewards!"
-		else:
-			msg = "🎁 Your Referral Rewards:\n"
-			for rtype, cnt, total in rows:
-				msg += f"• {rtype}: {int(cnt or 0)} time(s), total value: {int(total or 0)}\n"
-
-		if total_days > 0:
-			msg += f"\n✅ Total premium days earned: +{total_days}"
-
-		msg += f"\n\n📊 Progress: {toward_next}/3"
-		if needed > 0:
-			msg += f" (invite {needed} more for next +7 days)"
-		else:
-			msg += " (milestone reached on latest referral)"
-		msg += f"\n👥 Total referrals: {total_refs}"
-		await session.commit()
-		await update.message.reply_text(msg)
 from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
 from config import OWNER_IDS, ADMIN_IDS
@@ -4578,68 +4583,68 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id: int = update.effective_user.id
-	code = None
-	progress = None
+	user_id = int(update.effective_user.id)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
-		engine = get_engine_for_event_loop()
-		if engine is None:
-			try:
-				from db.session import _get_global_engine
-				engine = _get_global_engine()
-			except Exception:
-				engine = None
-		if engine is not None:
-			from db.pg_features import get_or_create_referral_code, get_referral_progress
-			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
-				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
-				await session.commit()
-		else:
-			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
-	except Exception:
-		progress = None
-		try:
-			import hashlib
-			import base64
-			digest = hashlib.sha1(str(user_id).encode("utf-8")).digest()
-			code = base64.b32encode(digest).decode("utf-8").lower().strip("=")[:8]
-		except Exception:
-			code = str(user_id)
-
-	bot_username: str | None = None
-	try:
-		me = await context.bot.get_me()
-		bot_username = str(getattr(me, "username", None) or "").strip() or None
-	except Exception:
-		bot_username = (os.getenv("BOT_USERNAME") or "").strip() or None
-	progress_line: str = ""
-	if progress:
-		need = int(progress.get("needed_for_next", 0) or 0)
-		toward = int(progress.get("toward_next", 0) or 0)
-		total = int(progress.get("total", 0) or 0)
-		# If you're exactly on a multiple of 3, you already earned the previous reward;
-		# the next reward needs 3 more invites.
-		if toward == 0:
-			progress_line: str = f"\n\nProgress: 0/3 (invite 3 more people to earn +7 days Premium). Total invites: {total}."
-		else:
-			progress_line: str = f"\n\nProgress: {toward}/3 (invite {need} more to earn +7 days Premium). Total invites: {total}."
-
-	if bot_username and code:
-		link: str = f"https://t.me/{bot_username}?start=ref_{code}"
+		from db.session import get_session
+		from db.pg_features import get_or_create_referral_code, get_referral_progress
+		async with get_session(
+			priority="interactive",
+			label="referral.invite",
+			timeout_seconds=8.0,
+		) as session:
+			code = await get_or_create_referral_code(
+				session,
+				referrer_telegram_user_id=user_id,
+			)
+			progress = await get_referral_progress(
+				session,
+				referrer_telegram_user_id=user_id,
+			)
+			await session.commit()
+	except Exception as exc:
+		logging.getLogger(__name__).exception(
+			"[referral_invite_failed] user=%s error=%s",
+			user_id,
+			exc,
+		)
 		await update.message.reply_text(
-			f"🎁 Invite link:\n{link}\n\n"
-			"Reward: invite 3 new users → get +7 days Premium."
-			f"{progress_line}"
+			"⚠️ Your referral link could not be loaded right now. "
+			"No temporary or invalid code was created. Please try /invite again."
 		)
 		return
 
+	bot_username = None
+	try:
+		me = await context.bot.get_me()
+		bot_username = str(getattr(me, "username", None) or "").strip().lstrip("@") or None
+	except Exception:
+		bot_username = (os.getenv("BOT_USERNAME") or "").strip().lstrip("@") or None
+
+	requirement = int(progress.get("requirement", 3) or 3)
+	toward = int(progress.get("toward_next", 0) or 0)
+	need = int(progress.get("needed_for_next", requirement) or requirement)
+	total = int(progress.get("total", 0) or 0)
+	reward_days = int(progress.get("reward_days_per_3", 7) or 7)
+	progress_line = (
+		f"Progress: {toward}/{requirement} "
+		f"(invite {need} more to earn +{reward_days} days Premium). "
+		f"Total valid referrals: {total}."
+	)
+
+	if not bot_username:
+		await update.message.reply_text(
+			f"🎁 Your durable invite code: {code}\n\n"
+			f"Reward: invite {requirement} new users → get +{reward_days} days Premium.\n"
+			"Invite link is unavailable because the bot username could not be resolved.\n\n"
+			+ progress_line
+		)
+		return
+
+	link = f"https://t.me/{bot_username}?start=ref_{code}"
 	await update.message.reply_text(
-		f"🎁 Your invite code: {code}\n\n"
-		"Reward: invite 3 new users → get +7 days Premium.\n"
-		"Invite link not available (bot username not resolved)."
-		f"{progress_line}"
+		f"🎁 Invite link:\n{link}\n\n"
+		f"Reward: invite {requirement} new users → get +{reward_days} days Premium.\n\n"
+		+ progress_line
 	)
 
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -5396,8 +5401,20 @@ async def start_command(update, context):
 									referral_code=str(code),
 									is_new_user=bool(is_new),
 								)
-							except Exception:
-								referral_outcome = None
+							except Exception as referral_exc:
+								logging.getLogger(__name__).exception(
+									"[referral_start_failed] referred_user=%s code=%s is_new=%s error=%s",
+									user_id,
+									code,
+									is_new,
+									referral_exc,
+								)
+								referral_outcome = {
+									"status": "processing_failed",
+									"referrer_id": None,
+									"days_granted": 0,
+									"error_type": type(referral_exc).__name__,
+								}
 
 						# Audit: always record the start event when Postgres is available
 						try:
@@ -5470,43 +5487,39 @@ async def start_command(update, context):
 	# Referral feedback (minimal, non-spammy)
 	if referral_outcome and update.message is not None:
 		status = str(referral_outcome.get("status"))
-		if status in {"attributed", "reward_granted"}:
+		if status in {"attributed", "reward_granted", "reward_already_granted"}:
 			await update.message.reply_text("✅ Referral applied. Welcome!")
 		elif status == "invalid_code":
 			await update.message.reply_text("⚠️ Referral code not recognized.")
+		elif status == "processing_failed":
+			await update.message.reply_text(
+				"⚠️ Your referral could not be verified because the database was busy. "
+				"The failure was logged; please send the invite link to support if it persists."
+			)
 		# else: silent for self_referral/already_referred/not_new
 
 	if upgrade_notice and update.message is not None:
 		await update.message.reply_text(upgrade_notice)
 
-	# Notify referrer when someone joins with their link or when reward is unlocked
+	# Notify the referrer once. Reward details are already included in the
+	# canonical referrer_message, so a milestone must not generate duplicates.
 	try:
 		if referral_outcome:
-			referrer_id = int(referral_outcome.get("referrer_id"))
-			status = str(referral_outcome.get("status"))
-			
-			if status in {"attributed", "reward_granted"}:
-				# Send referrer message about their referral count
-				referrer_msg = referral_outcome.get("referrer_message")
-				if referrer_msg:
-					await context.bot.send_message(
-						chat_id=referrer_id,
-						text=referrer_msg,
-					)
-			
-			# Additional message for reward_granted
-			if status == "reward_granted":
-				days = int(referral_outcome.get("days_granted"))
+			status = str(referral_outcome.get("status") or "")
+			referrer_raw = referral_outcome.get("referrer_id")
+			referrer_msg = referral_outcome.get("referrer_message")
+			if status in {"attributed", "reward_granted", "reward_capped"} and referrer_raw and referrer_msg:
 				await context.bot.send_message(
-					chat_id=referrer_id,
-					text=(
-						f"🎁 Bonus Plan Extension\n\n"
-						f"+{days} premium days have been added to your current plan!\n\n"
-						"Use /signals to get the latest trading ideas."
-					)
+					chat_id=int(referrer_raw),
+					text=str(referrer_msg),
 				)
-	except Exception:
-		pass
+	except Exception as referral_notify_exc:
+		logging.getLogger(__name__).exception(
+			"[referral_notification_failed] referred_user=%s outcome=%s error=%s",
+			user_id,
+			referral_outcome,
+			referral_notify_exc,
+		)
 
 	# ── Terms gate: new / unaccepted users must agree to disclaimer first ─────
 	if not terms_accepted:
@@ -7708,65 +7721,82 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Generate a personal referral link and show referral stats."""
+	"""Generate a durable personal referral link and show canonical stats."""
 	if update.effective_user is None or update.message is None:
 		return
-	user_id: int = update.effective_user.id
-
+	user_id = int(update.effective_user.id)
 	bot_username = ""
 	try:
-		bot_username = (await context.bot.get_me()).username or ""
+		bot_username = str((await context.bot.get_me()).username or "")
 	except Exception:
 		bot_username = os.getenv("BOT_USERNAME", "")
-	bot_username = (bot_username or "").strip().lstrip("@")
+	bot_username = bot_username.strip().lstrip("@")
 
-	referral_code = str(user_id)
-	referral_url = ""
-	bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
-
-	# Source of truth: referral_code + attributions + reward ledger in Postgres.
-	referred_count = 0
-	toward_next = 0
-	needed_for_next = 0
-	bonus_earned_days = 0
 	try:
 		from db.session import get_session as _gs
 		from db.models import User, ReferralReward
 		from sqlalchemy import select, func
 		from db.pg_features import get_or_create_referral_code, get_referral_progress
-
-		async with _gs() as session:
-			referral_code = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
-			progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
-			referred_count = int(progress.get("total", 0) or 0)
-			toward_next = int(progress.get("toward_next", 0) or 0)
-			needed_for_next = int(progress.get("needed_for_next", 0) or 0)
-
-			user_row = (await session.execute(
-				select(User).where(User.telegram_user_id == int(user_id))
-			)).scalar_one_or_none()
-			if user_row is not None:
-				bonus_earned_days = int((await session.execute(
-					select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
-						ReferralReward.referrer_user_id == user_row.id,
-						ReferralReward.reward_type == "premium_days",
+		async with _gs(
+			priority="interactive",
+			label="referral.dashboard",
+			timeout_seconds=8.0,
+		) as session:
+			referral_code = await get_or_create_referral_code(
+				session,
+				referrer_telegram_user_id=user_id,
+			)
+			progress = await get_referral_progress(
+				session,
+				referrer_telegram_user_id=user_id,
+			)
+			user_row = (
+				await session.execute(
+					select(User).where(User.telegram_user_id == user_id)
+				)
+			).scalar_one()
+			bonus_earned_days = int(
+				(
+					await session.execute(
+						select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+							ReferralReward.referrer_user_id == int(user_row.id),
+							ReferralReward.reward_type == "premium_days",
+						)
 					)
-				)).scalar() or 0)
-	except Exception:
-		pass
+				).scalar()
+				or 0
+			)
+			await session.commit()
+	except Exception as exc:
+		logging.getLogger(__name__).exception(
+			"[referral_dashboard_failed] user=%s error=%s",
+			user_id,
+			exc,
+		)
+		await update.message.reply_text(
+			"⚠️ Referral information is temporarily unavailable because the database is busy. "
+			"No invalid fallback link was generated. Please try /referral again."
+		)
+		return
 
-	if bot_username:
-		referral_url = f"https://t.me/{bot_username}?start=ref_{referral_code}"
-
+	referred_count = int(progress.get("total", 0) or 0)
+	toward_next = int(progress.get("toward_next", 0) or 0)
+	needed_for_next = int(progress.get("needed_for_next", 3) or 3)
+	requirement = int(progress.get("requirement", 3) or 3)
+	bonus_days = int(progress.get("reward_days_per_3", 7) or 7)
+	referral_url = (
+		f"https://t.me/{bot_username}?start=ref_{referral_code}"
+		if bot_username
+		else ""
+	)
 	msg = (
 		f"🔗 <b>Your Referral Link</b>\n\n"
-		f"<code>{referral_url or 'Bot username not set'}</code>\n\n"
-		f"📊 Referrals: <b>{referred_count}</b>\n"
+		f"<code>{referral_url or referral_code}</code>\n\n"
+		f"📊 Valid referrals: <b>{referred_count}</b>\n"
 		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n"
-		f"📈 Progress: <b>{toward_next}/3</b>"
-		f"{' (invite ' + str(needed_for_next) + ' more)' if needed_for_next else ' (reward unlocked on your latest milestone)'}\n\n"
-		f"💡 Earn <b>+{bonus_days} free days</b> for every 3 valid referrals.\n"
-		f"Share your link and grow your streak!"
+		f"📈 Progress: <b>{toward_next}/{requirement}</b> "
+		f"(invite {needed_for_next} more)\n\n"
+		f"💡 Earn <b>+{bonus_days} free days</b> for every {requirement} valid referrals."
 	)
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -7781,7 +7811,12 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		keyboard = InlineKeyboardMarkup(rows)
 	except Exception:
 		keyboard = None
-	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard)
+	await update.message.reply_text(
+		msg,
+		parse_mode="HTML",
+		disable_web_page_preview=True,
+		reply_markup=keyboard,
+	)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

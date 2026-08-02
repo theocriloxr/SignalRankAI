@@ -16,7 +16,7 @@ def test_release_identity_and_single_migration_head() -> None:
     assert RELEASE_FINGERPRINT == "v1.3.3-full-system-certification-gates-20260801"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
-    assert audit["heads"] == ["0031_perf_paper_reliability"]
+    assert audit["heads"] == ["0032_referral_reliability"]
 
 
 def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:
