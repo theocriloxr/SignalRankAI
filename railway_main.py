@@ -2525,17 +2525,17 @@ def _production_cutover_check() -> dict[str, object]:
     except Exception:
         violations.append("telegram_send_retries_invalid")
     try:
-        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30) > 60:
+        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "60") or 60) > 300:
             violations.append("unsent_signal_recovery_interval_too_high")
     except Exception:
         violations.append("unsent_signal_recovery_interval_invalid")
     try:
-        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30) > 60:
+        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90") or 90) > 300:
             violations.append("outcome_notification_interval_too_high")
     except Exception:
         violations.append("outcome_notification_interval_invalid")
     try:
-        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60) > 120:
+        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "120") or 120) > 300:
             violations.append("monitor_refresh_interval_too_high")
     except Exception:
         violations.append("monitor_refresh_interval_invalid")
@@ -2636,6 +2636,78 @@ def _readiness_cutover_check(*, production: bool) -> dict[str, object]:
     }
 
 
+async def _provider_coverage_readiness_check(*, production: bool) -> dict[str, object]:
+    """Validate configured live-quote coverage for enabled asset classes.
+
+    Staging exposes partial coverage without failing traffic admission. Production
+    fails closed when FX or commodities rely only on the public Yahoo fallback.
+    """
+    raw_classes = str(
+        os.getenv("ENABLED_ASSET_CLASSES")
+        or os.getenv("ASSET_CLASSES")
+        or "crypto,fx,stock,index,commodity"
+    )
+    enabled = {
+        part.strip().lower()
+        for part in raw_classes.replace(";", ",").split(",")
+        if part.strip()
+    }
+    aliases = {"forex": "fx", "stocks": "stock", "indices": "index", "commodities": "commodity"}
+    enabled = {aliases.get(item, item) for item in enabled}
+    probes = {
+        "crypto": "BTCUSDT",
+        "fx": "EURUSD",
+        "commodity": "XAGUSD",
+        "stock": "AAPL",
+        "index": "US500",
+    }
+    coverage: dict[str, object] = {}
+    missing: list[str] = []
+    try:
+        from data.get_live_price import _get_providers_for_asset
+
+        for asset_class, symbol in probes.items():
+            if asset_class not in enabled:
+                coverage[asset_class] = {"required": False, "providers": []}
+                continue
+            providers = list(_get_providers_for_asset(symbol))
+            if "metaapi" in providers and not any(
+                str(os.getenv(name) or "").strip()
+                for name in ("META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID", "METAAPI_ACCOUNT_ID")
+            ):
+                # Readiness must stay fast and deterministic. Runtime delivery may
+                # resolve an owner's stored account, but production admission
+                # requires an explicit dedicated market-data account ID.
+                providers = [provider for provider in providers if provider != "metaapi"]
+            configured_trusted = [provider for provider in providers if provider != "yahoo"]
+            complete = bool(providers)
+            if asset_class in {"fx", "commodity"}:
+                complete = bool(configured_trusted)
+            coverage[asset_class] = {
+                "required": True,
+                "providers": providers,
+                "configured_trusted": configured_trusted,
+                "complete": complete,
+            }
+            if not complete:
+                missing.append(asset_class)
+    except Exception as exc:
+        return {
+            "ok": not production,
+            "required": production,
+            "detail": f"coverage_check_failed:{type(exc).__name__}",
+            "coverage": coverage,
+        }
+    complete = not missing
+    return {
+        "ok": complete if production else True,
+        "required": production,
+        "complete": complete,
+        "detail": "complete" if complete else ("missing:" + ",".join(sorted(missing))),
+        "coverage": coverage,
+    }
+
+
 @app.get("/ready")
 @app.get("/readyz")
 async def _readyz_endpoint(response: Response) -> dict[str, object]:
@@ -2659,6 +2731,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         financial_activation = evaluate_financial_activation().as_dict()
     except Exception as exc:
         financial_activation = {"ok": False, "detail": type(exc).__name__}
+    provider_coverage = await _provider_coverage_readiness_check(production=production)
     try:
         from core.version import (
             EXPECTED_RELEASE_COMMIT,
@@ -2682,6 +2755,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
             "detail": commit_detail if production else "not_required_for_nonproduction",
         },
         "financial_activation": financial_activation,
+        "provider_coverage": provider_coverage,
     }
 
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)

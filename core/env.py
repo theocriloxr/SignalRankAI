@@ -43,8 +43,26 @@ def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int
     return value
 
 
+def runtime_environment_name(default: str = "dev") -> str:
+    """Return the platform environment used for runtime isolation.
+
+    Railway environment metadata is authoritative when present. This prevents a
+    copied APP_ENV=production value from contaminating staging advisory locks,
+    ledgers, caches, and delivery scopes.
+    """
+    raw = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or default
+    ).strip().lower()
+    aliases = {"prod": "production", "development": "dev", "preview": "staging"}
+    return aliases.get(raw, raw or default)
+
+
 def environment() -> Environment:
-    raw = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "dev").strip().lower()
+    raw = runtime_environment_name("dev")
     try:
         return Environment(raw)
     except ValueError:
@@ -125,6 +143,7 @@ __all__ = [
     "env_int",
     "environment",
     "redact_value",
+    "runtime_environment_name",
     "secret_present",
     "validate_required_secrets",
 ]

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.env import runtime_environment_name
 from core.tier_policy import get_entitlements, normalize_tier
 from db.access import resolve_product_tier
 from db.models import SignalDelivery, User
@@ -23,7 +24,7 @@ class DeliveryAuthorization:
 
 
 def _restricted_audience() -> set[int]:
-    app_env = str(os.getenv("APP_ENV", "development") or "development").strip().lower()
+    app_env = runtime_environment_name("development")
     explicit = str(os.getenv("DELIVERY_AUDIENCE_RESTRICTION_MODE", "0") or "0").lower() in {
         "1", "true", "yes", "on",
     }

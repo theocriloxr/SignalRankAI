@@ -1,0 +1,1885 @@
+diff --git a/SignalRankAI_v1.3.6.4_Certification_Report.md b/SignalRankAI_v1.3.6.4_Certification_Report.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..be372cfd84bc6fe273bfa62f228c92eac4b2c443
+--- /dev/null
++++ b/SignalRankAI_v1.3.6.4_Certification_Report.md
+@@ -0,0 +1,43 @@
++# SignalRankAI v1.3.6.4 Source Certification Report
++
++## Scope
++
++Certification was performed against the exact v1.3.6 Railway Performance Decomposition release archive supplied in the user's file library.
++
++## Verified fixes
++
++| Finding | Source-level result |
++|---|---|
++| `/performance` duplicate ledger traceback | Atomic PostgreSQL conflict handling implemented |
++| Staging records/locks scoped as production | Railway environment metadata made authoritative |
++| Multiple resend owners | Shared project/environment/job lease implemented |
++| Scheduler executions exceed interval | Work budgets, smaller batches, longer intervals, coalescing implemented |
++| Outcome notification duplicate ownership | Shared distributed lease implemented |
++| Per-recipient repeated market fetch | Changed to one fetch per outcome |
++| Unconfigured provider timeout waste | Keyed providers removed from routes when unconfigured |
++| XAGUSD trusted route absent | MetaApi/OANDA/Twelve Data/FCS routes added before Yahoo |
++| FCS API incompatibility | v4 `/forex/latest` contract implemented and tested |
++| Production accepts partial provider coverage | `/readyz` provider-coverage gate added |
++
++## Test results
++
++- Focused regression suite: **78 passed**.
++- Expanded relevant suite: **111 passed, 3 deselected**.
++- Hotfix-specific tests: **10 passed**.
++- Provider hotfix subset: **46 passed**.
++- Python `compileall`: **passed**.
++- Patch application against pristine v1.3.6 plus compilation: **passed**.
++- Scheduler lease smoke test: **passed**.
++
++The three deselected tests import `railway_main` and require APScheduler. The offline validation container did not contain that dependency and had no package-index access. APScheduler is already declared in the project's `requirements.txt` and was present in the successful Railway runtime logs.
++
++## Limitations
++
++This report certifies the source artifact, not the live Railway deployment. Final production certification requires:
++
++1. Deployment of the same commit to all three services.
++2. Rotation of credentials previously exposed in copied terminal output.
++3. A configured trusted FX/metals provider.
++4. Runtime confirmation that `/performance` no longer raises a duplicate-ledger error.
++5. Runtime confirmation that scheduler jobs remain within their intervals.
++6. Production `/readyz` reporting `checks.provider_coverage.complete=true`.
+diff --git a/SignalRankAI_v1.3.6.4_Deployment_Guide.md b/SignalRankAI_v1.3.6.4_Deployment_Guide.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1ef5cfd040f2c72d03ad6e2e633b84be476e785
+--- /dev/null
++++ b/SignalRankAI_v1.3.6.4_Deployment_Guide.md
+@@ -0,0 +1,122 @@
++# Deploy SignalRankAI v1.3.6.4
++
++## Apply the overlay on Windows
++
++Place the extracted hotfix overlay package anywhere, open PowerShell in the SignalRankAI project, and run:
++
++```powershell
++Set-ExecutionPolicy -Scope Process Bypass
++
++& "C:\path\to\SignalRankAI_v1.3.6.4_HOTFIX_OVERLAY\apply_signalrank_v1.3.6.4_hotfix.ps1" `
++  -ProjectRoot (Get-Location).Path
++```
++
++The script backs up every replaced file and compiles the changed Python modules.
++
++## Inspect and test
++
++```powershell
++git status --short
++git diff --stat
++
++python -m pytest -q `
++  tests/test_phase12_performance_paper_reliability.py `
++  tests/test_phase4_pass1_live_validation.py `
++  tests/test_phase4_pass1_quote_contract.py `
++  tests/test_v132_auto_delivery_callbacks_monitor.py `
++  tests/test_v136_railway_performance_decomposition.py `
++  tests/test_v1364_runtime_stability_hotfix.py
++```
++
++Expected focused result: `78 passed` or more if additional tests are present locally.
++
++## Commit
++
++```powershell
++git add `
++  core/env.py `
++  core/job_leases.py `
++  data/get_live_price.py `
++  railway_main.py `
++  services/delivery_authorization.py `
++  services/performance_ledger.py `
++  signalrank_telegram/bot.py `
++  tests/test_phase12_performance_paper_reliability.py `
++  tests/test_phase4_pass1_live_validation.py `
++  tests/test_v132_auto_delivery_callbacks_monitor.py `
++  tests/test_v1364_runtime_stability_hotfix.py `
++  SignalRankAI_v1.3.6.4_Railway.env.example `
++  SignalRankAI_v1.3.6.4_Runtime_Stability_Hotfix_Release_Notes.md `
++  SignalRankAI_v1.3.6.4_Certification_Report.md `
++  SignalRankAI_v1.3.6.4_Deployment_Guide.md
++
++git commit -m "fix(runtime): stabilize scheduler ownership, ledger reconciliation, and providers"
++git push
++```
++
++Do not stage `.env`, Railway secret exports, database URLs, or backup directories.
++
++## Update front-door Railway variables
++
++For the current staging front door:
++
++```powershell
++railway variables `
++  --service bountiful-miracle `
++  --environment staging `
++  --set "APP_VERSION=1.3.6" `
++  --set "RESEND_UNSENT_INTERVAL_SECONDS=60" `
++  --set "RESEND_JOB_TIMEOUT_SECONDS=25" `
++  --set "RESEND_JOB_BUDGET_SECONDS=20" `
++  --set "RESEND_JOB_LEASE_SECONDS=45" `
++  --set "RESEND_MAX_USERS_PER_RUN=6" `
++  --set "RESEND_MAX_SIGNALS=3" `
++  --set "RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE=1" `
++  --set "OUTCOME_NOTIFICATION_INTERVAL_SECONDS=90" `
++  --set "OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS=20" `
++  --set "OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS=45" `
++  --set "OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN=5" `
++  --set "MONITOR_REFRESH_INTERVAL_SECONDS=120" `
++  --set "DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE=1"
++```
++
++Configure one trusted FX/metals provider in Railway. For MetaApi, set the existing secret `META_API_TOKEN` and an explicit `META_API_MARKET_DATA_ACCOUNT_ID`. Never paste secrets into terminal output that will be shared.
++
++## Verify all deployments
++
++```powershell
++railway service status --all --environment staging
++
++railway logs `
++  --service bountiful-miracle `
++  --environment staging `
++  --lines 500
++```
++
++Use the actual current service names until the services are renamed:
++
++- `bountiful-miracle`: front door
++- `striking-optimism`: engine
++- `SignalRankAI`: worker
++
++## Runtime certification
++
++```powershell
++curl.exe -s https://bountiful-miracle-staging.up.railway.app/readyz
++```
++
++Then:
++
++1. Run `/performance` twice quickly.
++2. Send `/start` and another command.
++3. Click multiple inline buttons.
++4. Wait through at least three resend intervals and three outcome intervals.
++5. Inspect logs for:
++   - `UniqueViolationError`
++   - `uq_performance_ledger_scope`
++   - `maximum number of running instances reached`
++   - `another instance holds advisory lock`
++   - `:production` in staging lock/ledger scope
++   - `All providers failed for XAGUSD`
++
++Normal healthy ownership logs may say a replica is in `standby` because another owner holds a Redis lease. That is expected and is different from the old stale advisory-lock defect.
+diff --git a/SignalRankAI_v1.3.6.4_Railway.env.example b/SignalRankAI_v1.3.6.4_Railway.env.example
+new file mode 100644
+index 0000000000000000000000000000000000000000..87b5a423c3db2a4a7eabf3000d7dc8fec1ac0b19
+--- /dev/null
++++ b/SignalRankAI_v1.3.6.4_Railway.env.example
+@@ -0,0 +1,48 @@
++# SignalRankAI v1.3.6.4 runtime-stability hotfix
++# Application code version remains 1.3.6.
++APP_VERSION=1.3.6
++
++# Front-door scheduler ownership and bounded work
++RESEND_UNSENT_JOB_ENABLED=1
++RESEND_UNSENT_INTERVAL_SECONDS=60
++RESEND_UNSENT_STARTUP_DELAY_SECONDS=20
++RESEND_JOB_TIMEOUT_SECONDS=25
++RESEND_JOB_BUDGET_SECONDS=20
++RESEND_JOB_LEASE_SECONDS=45
++RESEND_CANDIDATE_QUERY_LIMIT=50
++RESEND_MAX_USERS_PER_RUN=6
++RESEND_MAX_SIGNALS=3
++RESEND_INTER_SEND_DELAY_SECONDS=0.10
++RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE=1
++RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE=0
++
++SEND_OUTCOME_NOTIFICATIONS_ENABLED=1
++OUTCOME_NOTIFICATION_INTERVAL_SECONDS=90
++OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS=25
++OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS=20
++OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS=45
++OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN=5
++OUTCOME_NOTIFICATION_INTER_SEND_DELAY_SECONDS=0.05
++
++MONITOR_REFRESH_INTERVAL_SECONDS=120
++DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE=1
++
++# Public front-door URLs (replace with the active domain)
++WEBHOOK_DOMAIN=https://bountiful-miracle-staging.up.railway.app
++WEBHOOK_URL=https://bountiful-miracle-staging.up.railway.app
++PUBLIC_BASE_URL=https://bountiful-miracle-staging.up.railway.app
++APP_BASE_URL=https://bountiful-miracle-staging.up.railway.app
++
++# Trusted FX/metals coverage: configure at least one path.
++# Preferred broker-native path:
++META_API_MARKET_DATA_ACCOUNT_ID=<dedicated-metaapi-account-id>
++# META_API_TOKEN is a secret and must be set in Railway, not committed here.
++
++# Alternatives (secrets must be set in Railway):
++# OANDA_ACCOUNT_ID=<oanda-account-id>
++# OANDA_API_KEY=<secret>
++# TWELVEDATA_API_KEY=<secret>
++# FCS_API_KEY=<secret>
++
++# Enabled classes checked by /readyz provider_coverage.
++ENABLED_ASSET_CLASSES=crypto,fx,stock,index,commodity
+diff --git a/SignalRankAI_v1.3.6.4_Runtime_Stability_Hotfix_Release_Notes.md b/SignalRankAI_v1.3.6.4_Runtime_Stability_Hotfix_Release_Notes.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e971811c7229ed0b02ed41eee2b6d1539698e7d9
+--- /dev/null
++++ b/SignalRankAI_v1.3.6.4_Runtime_Stability_Hotfix_Release_Notes.md
+@@ -0,0 +1,141 @@
++# SignalRankAI v1.3.6.4 Runtime Stability and Provider Coverage Hotfix
++
++**Application version:** 1.3.6
++**Hotfix/tooling revision:** 1.3.6.4
++**Base release:** v1.3.6 Railway Performance Decomposition
++**Target:** decomposed Railway front door, engine, and worker services
++
++## Purpose
++
++This hotfix addresses the remaining staging findings after the v1.3.6 Railway split:
++
++1. `/performance` duplicate-ledger traceback.
++2. Intermittent resend ownership and stale production lock scope in staging.
++3. Front-door scheduler jobs exceeding their own intervals.
++4. Incomplete FX and metals live-price provider routing.
++5. Production readiness being reported without complete trusted provider coverage.
++
++## Changes
++
++### 1. Idempotent performance-ledger reconciliation
++
++`services/performance_ledger.py` now uses one PostgreSQL `INSERT ... ON CONFLICT DO UPDATE` operation against `uq_performance_ledger_scope`.
++
++- Concurrent `/performance` reconciliation no longer races through a read-then-insert sequence.
++- Finalized rows remain immutable.
++- Mutable rows update only when the snapshot changes.
++- Duplicate source rows are collapsed to one row per canonical signal before the statement is issued.
++- Railway environment metadata takes precedence over a copied `APP_ENV` value, preventing staging records from being written with `environment=production`.
++
++### 2. Cluster-wide scheduler ownership
++
++New module: `core/job_leases.py`.
++
++- Redis `SET NX EX` is the preferred cross-replica lease.
++- PostgreSQL advisory locking is the fallback.
++- Production fails closed when no distributed lock backend is available.
++- Lock scope is `project:environment:job`; it deliberately excludes service and deployment IDs.
++- Redis lease release is token-safe.
++- PostgreSQL locks are explicitly released and job-body exceptions are never swallowed by lock fallback logic.
++
++Both jobs now use the lease:
++
++- `resend_unsent_signals_job`
++- `send_outcome_notifications`
++
++A standby log is expected when another healthy replica owns a lease. Repeated old logs containing `another instance holds advisory lock ... :production` should disappear after every old deployment is stopped.
++
++### 3. Bounded front-door background work
++
++Defaults are deliberately below their scheduling intervals:
++
++| Job | Interval | Work budget | Lease |
++|---|---:|---:|---:|
++| Resend recovery | 60 s | 20 s | 45 s |
++| Outcome notifications | 90 s | 20 s | 45 s |
++| Monitor refresh | 120 s | existing bounded implementation | n/a |
++
++Additional controls:
++
++- Resend candidates: 50 maximum queried.
++- Resend users per run: 6.
++- Resend signals per run: 3.
++- Outcome records per run: 5.
++- Remaining work is deferred to the next run when the monotonic budget expires.
++- Outcome market data is fetched once per outcome, not once per recipient.
++- Background jobs defer by default while critical/interactive DB work is active.
++- Scheduler jobs use coalescing and bounded misfire grace.
++- Resend can be disabled with `RESEND_UNSENT_JOB_ENABLED=0` during emergency diagnosis.
++
++### 4. Trusted FX and metals live-price routing
++
++`data/get_live_price.py` now builds routes from providers that are actually configured, so missing API keys do not consume the quote deadline.
++
++FX and commodity order:
++
++1. MetaApi broker-native bid/ask
++2. OANDA
++3. Twelve Data
++4. FCS API v4
++5. Yahoo public fallback
++
++The FCS implementation uses `/forex/latest`, supports the v4 response contract, includes `type=commodity` for metals, maps `XAGUSD` to `SILVER`, and requires a provider timestamp.
++
++MetaApi requires a token and an account. For production readiness, configure a dedicated explicit account ID rather than relying on owner-account lookup.
++
++### 5. Fail-closed production provider readiness
++
++`/readyz` now includes `checks.provider_coverage`.
++
++- Staging remains reachable while reporting partial coverage.
++- Production readiness fails when an enabled FX or commodity class has no configured trusted provider.
++- Yahoo-only FX or commodity routing is not accepted as production-complete.
++- The readiness check is configuration-only and does not make external price requests, avoiding rate-limit pressure on health probes.
++
++## Required Railway settings
++
++Apply the accompanying `SignalRankAI_v1.3.6.4_Railway.env.example` values to the front-door service. Keep engine and worker role variables unchanged.
++
++For production FX/metals coverage, configure at least one trusted path:
++
++- MetaApi: `META_API_TOKEN` plus `META_API_MARKET_DATA_ACCOUNT_ID`
++- OANDA: `OANDA_API_KEY`/`OANDA_TOKEN` plus `OANDA_ACCOUNT_ID`
++- Twelve Data: `TWELVEDATA_API_KEY`
++- FCS API: `FCS_API_KEY`
++
++MetaApi or OANDA is preferred for broker-native bid/ask data.
++
++## Deployment order
++
++1. Back up the current project or create a Git branch.
++2. Apply the overlay or replace the project with the full hotfix release.
++3. Deploy the same commit to front door, engine, and worker.
++4. Ensure old deployments and extra front-door replicas are stopped.
++5. Confirm the public domain remains attached only to the front door.
++6. Run `/readyz` and inspect `checks.provider_coverage`.
++7. Run `/performance` twice in quick succession.
++8. Click inline buttons and send normal commands.
++9. Observe at least three resend and outcome scheduler intervals.
++
++## Runtime certification targets
++
++The deployment is not certified until all conditions hold:
++
++- No `UniqueViolationError` or `uq_performance_ledger_scope` traceback.
++- `/performance` succeeds repeatedly.
++- No stale `:production` lock scope in staging.
++- No repeated `maximum number of running instances reached` warnings for resend or outcome notifications.
++- Webhook pending count returns to zero.
++- Callback acknowledgements remain immediate.
++- Production `/readyz` reports provider coverage complete.
++- `XAGUSD` and at least one FX pair receive fresh timestamped quotes from a configured trusted provider.
++
++## Local validation performed
++
++- Focused regression suite: 78 passed.
++- Expanded relevant suite: 110 passed, 3 deselected because the offline validation container did not contain APScheduler and could not download packages.
++- Hotfix-specific tests: 10 passed.
++- Full Python compilation: passed.
++- Cross-replica lease local smoke test: passed, including exception propagation and reacquisition.
++
++These validations prove source-level correctness in the supplied v1.3.6 archive. Production certification still requires the runtime checks above after Railway deployment.
+diff --git a/core/env.py b/core/env.py
+index 235b86d290de1e183de7c10e955ce30437bf6723..4a21279eb22256038897b4f6e6d62b8995391a65 100644
+--- a/core/env.py
++++ b/core/env.py
+@@ -43,8 +43,26 @@ def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int
+     return value
+ 
+ 
++def runtime_environment_name(default: str = "dev") -> str:
++    """Return the platform environment used for runtime isolation.
++
++    Railway environment metadata is authoritative when present. This prevents a
++    copied APP_ENV=production value from contaminating staging advisory locks,
++    ledgers, caches, and delivery scopes.
++    """
++    raw = str(
++        os.getenv("RAILWAY_ENVIRONMENT_NAME")
++        or os.getenv("RAILWAY_ENVIRONMENT")
++        or os.getenv("APP_ENV")
++        or os.getenv("ENVIRONMENT")
++        or default
++    ).strip().lower()
++    aliases = {"prod": "production", "development": "dev", "preview": "staging"}
++    return aliases.get(raw, raw or default)
++
++
+ def environment() -> Environment:
+-    raw = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "dev").strip().lower()
++    raw = runtime_environment_name("dev")
+     try:
+         return Environment(raw)
+     except ValueError:
+@@ -125,6 +143,7 @@ __all__ = [
+     "env_int",
+     "environment",
+     "redact_value",
++    "runtime_environment_name",
+     "secret_present",
+     "validate_required_secrets",
+ ]
+diff --git a/core/job_leases.py b/core/job_leases.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..89b81bd6a4c3930ff94ce67b820dc45fceeed4c0
+--- /dev/null
++++ b/core/job_leases.py
+@@ -0,0 +1,148 @@
++"""Cross-replica leases for synchronous APScheduler jobs."""
++
++from __future__ import annotations
++
++import hashlib
++import os
++import threading
++import uuid
++from contextlib import contextmanager
++from dataclasses import dataclass
++from typing import Iterator
++
++from core.env import runtime_environment_name
++
++
++_LOCAL_LOCKS: dict[str, threading.Lock] = {}
++_LOCAL_GUARD = threading.Lock()
++
++
++@dataclass(frozen=True, slots=True)
++class SchedulerJobLease:
++    acquired: bool
++    backend: str
++    scope: str
++    key: str
++
++
++def scheduler_job_scope(job_name: str) -> str:
++    explicit = str(os.getenv(f"{job_name.upper()}_LOCK_SCOPE") or "").strip()
++    if explicit:
++        return explicit
++    project = str(
++        os.getenv("RAILWAY_PROJECT_ID")
++        or os.getenv("RAILWAY_PROJECT_NAME")
++        or "local"
++    ).strip()
++    environment = runtime_environment_name("development")
++    return f"{project}:{environment}:{str(job_name).strip().lower()}"
++
++
++def _lock_id(scope: str) -> int:
++    digest = hashlib.sha256(f"signalrank:scheduler:{scope}".encode("utf-8")).digest()
++    return max(1, int.from_bytes(digest[:8], "big") & ((1 << 63) - 1))
++
++
++@contextmanager
++def acquire_scheduler_job_lease(
++    job_name: str,
++    *,
++    lease_seconds: int = 120,
++) -> Iterator[SchedulerJobLease]:
++    """Acquire one cluster-wide lease and release only our own token.
++
++    Redis is preferred because its TTL recovers automatically after process
++    termination. PostgreSQL advisory locks are the durable fallback. Production
++    fails closed when neither backend is available.
++    """
++    scope = scheduler_job_scope(job_name)
++    key = f"signalrank:scheduler-lease:{scope}"
++    token = uuid.uuid4().hex
++    redis_client = None
++    acquired = False
++
++    try:
++        from core.redis_state import state
++
++        redis_client = state._get_redis_sync()
++    except Exception:
++        redis_client = None
++
++    if redis_client is not None:
++        try:
++            acquired = bool(
++                redis_client.set(
++                    key,
++                    token,
++                    ex=max(30, int(lease_seconds)),
++                    nx=True,
++                )
++            )
++            yield SchedulerJobLease(acquired, "redis", scope, key)
++        finally:
++            if acquired:
++                try:
++                    redis_client.eval(
++                        "if redis.call('get', KEYS[1]) == ARGV[1] then "
++                        "return redis.call('del', KEYS[1]) else return 0 end",
++                        1,
++                        key,
++                        token,
++                    )
++                except Exception:
++                    pass
++        return
++
++    connection = None
++    postgres_available = False
++    try:
++        import psycopg2
++        from config import resolve_database_url
++
++        dsn = resolve_database_url(async_driver=False) or ""
++        if dsn:
++            connection = psycopg2.connect(dsn, connect_timeout=5)
++            connection.autocommit = True
++            with connection.cursor() as cursor:
++                cursor.execute("SELECT pg_try_advisory_lock(%s)", (_lock_id(scope),))
++                acquired = bool((cursor.fetchone() or [False])[0])
++            postgres_available = True
++    except Exception:
++        if connection is not None:
++            try:
++                connection.close()
++            except Exception:
++                pass
++        connection = None
++
++    if postgres_available and connection is not None:
++        try:
++            yield SchedulerJobLease(acquired, "postgres", scope, key)
++        finally:
++            try:
++                if acquired:
++                    with connection.cursor() as cursor:
++                        cursor.execute("SELECT pg_advisory_unlock(%s)", (_lock_id(scope),))
++            finally:
++                connection.close()
++        return
++
++    if runtime_environment_name("development") == "production":
++        yield SchedulerJobLease(False, "unavailable", scope, key)
++        return
++
++    with _LOCAL_GUARD:
++        local_lock = _LOCAL_LOCKS.setdefault(scope, threading.Lock())
++    acquired = local_lock.acquire(blocking=False)
++    try:
++        yield SchedulerJobLease(acquired, "local", scope, key)
++    finally:
++        if acquired:
++            local_lock.release()
++
++
++__all__ = [
++    "SchedulerJobLease",
++    "acquire_scheduler_job_lease",
++    "scheduler_job_scope",
++]
+diff --git a/data/get_live_price.py b/data/get_live_price.py
+index 76d0eb43c90d60ac213b677dd417e17bfcb9b55a..e6195c187f8f672dcfa56bb5373d13e06f52a7fd 100644
+--- a/data/get_live_price.py
++++ b/data/get_live_price.py
+@@ -105,19 +105,43 @@ def _is_crypto(asset: str) -> bool:
+     )
+ 
+ 
+-def _get_providers_for_asset(asset: str) -> List[str]:
+-    """Get provider priority list for live-price checks.
++def _provider_is_configured(provider: str) -> bool:
++    provider = str(provider or "").lower()
++    if provider == "metaapi":
++        owner_present = bool(
++            (os.getenv("TELEGRAM_OWNER_ID") or "").strip()
++            or (os.getenv("OWNER_TELEGRAM_ID") or "").strip()
++            or (os.getenv("OWNER_IDS") or "").strip()
++        )
++        return bool(
++            (os.getenv("META_API_TOKEN") or "").strip()
++            and (
++                os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
++                or os.getenv("META_API_ACCOUNT_ID")
++                or os.getenv("METAAPI_ACCOUNT_ID")
++                or owner_present
++            )
++        )
++    if provider == "oanda":
++        return bool(
++            (os.getenv("OANDA_API_KEY") or os.getenv("OANDA_TOKEN") or "").strip()
++            and (os.getenv("OANDA_ACCOUNT_ID") or "").strip()
++        )
++    if provider == "twelvedata":
++        return bool((os.getenv("TWELVEDATA_API_KEY") or os.getenv("TWELVE_DATA_API_KEY") or "").strip())
++    if provider == "polygon":
++        return bool((os.getenv("POLYGON_API_KEY") or "").strip())
++    if provider == "fcs":
++        return bool((os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip())
++    return True
+ 
+-    The final-send gate must not reuse candle-cache prices. It needs a fresh
+-    quote from a provider whose symbol mapping matches the asset class.
+ 
+-    Railway-compatible priority for crypto:
+-    1. Coinbase - REST API works from Railway (EU/US regions)
+-    2. OKX - REST API works from Railway (all regions)
+-    3. Binance - may fail with HTTP 451 in restricted regions
+-    4. Bybit - may fail with HTTP 403 in some regions
+-    
+-    Stocks, FX, and commodities prefer Yahoo with keyed Twelve Data fallback.
++def _get_providers_for_asset(asset: str) -> List[str]:
++    """Return a fast, asset-correct live quote route.
++
++    Configured broker/keyed providers are tried before public endpoints. Missing
++    credentials are removed from the route so they do not consume the overall
++    quote deadline. Metals and FX can use a trusted MetaApi broker quote.
+     """
+     try:
+         from services.asset_mapper import classify_asset
+@@ -125,12 +149,12 @@ def _get_providers_for_asset(asset: str) -> List[str]:
+     except Exception:
+         cls = "crypto" if _is_crypto(asset) else "stock"
+     if cls == "crypto":
+-        # Coinbase and OKX are the most Railway-compatible crypto providers.
+-        # Binance/Bybit/CryptoCompare are fallbacks that may be region-blocked.
+-        return ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
+-    if cls in {"forex", "commodity"}:
+-        return ["yahoo", "twelvedata", "oanda", "polygon"]
+-    return ["yahoo", "twelvedata", "polygon"]
++        providers = ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
++    elif cls in {"forex", "commodity"}:
++        providers = ["metaapi", "oanda", "twelvedata", "fcs", "yahoo"]
++    else:
++        providers = ["twelvedata", "polygon", "yahoo"]
++    return [provider for provider in providers if _provider_is_configured(provider)]
+ 
+ 
+ # ============================================================================
+@@ -599,6 +623,151 @@ async def _fetch_cryptocompare_quote(symbol: str) -> LivePriceQuote | LivePriceF
+         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+ 
+ 
++async def _fetch_metaapi_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
++    """Fetch a fresh broker-native FX/metals quote through MetaApi."""
++    provider = "metaapi"
++    account_id = str(
++        os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
++        or os.getenv("META_API_ACCOUNT_ID")
++        or os.getenv("METAAPI_ACCOUNT_ID")
++        or ""
++    ).strip()
++    if not _provider_is_configured(provider):
++        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
++    started = time.perf_counter()
++    try:
++        from services.asset_mapper import map_symbol
++        from services.mt5_client import (
++            get_live_quote as get_metaapi_live_quote,
++            get_user_mt5_account_id,
++        )
++        if not account_id:
++            owner_raw = str(
++                os.getenv("TELEGRAM_OWNER_ID")
++                or os.getenv("OWNER_TELEGRAM_ID")
++                or os.getenv("OWNER_IDS")
++                or ""
++            ).replace(";", ",").split(",")[0].strip()
++            if owner_raw:
++                try:
++                    account_id = str(await get_user_mt5_account_id(int(owner_raw)) or "").strip()
++                except (TypeError, ValueError):
++                    account_id = ""
++        if not account_id:
++            return _typed_failure(symbol, provider, "market_data_account_missing", retryable=False)
++        provider_symbol = map_symbol(symbol, "mt5") or str(symbol or "").upper()
++        row = await get_metaapi_live_quote(account_id, provider_symbol)
++        received_at = time.time()
++        if not row or not row.get("trusted"):
++            return _typed_failure(symbol, provider, "missing_or_stale_broker_quote")
++        quoted_at = row.get("quoted_at")
++        source_timestamp = quoted_at.timestamp() if hasattr(quoted_at, "timestamp") else quoted_at
++        return _typed_quote(
++            symbol=symbol,
++            provider=provider,
++            price=row.get("mid"),
++            bid=row.get("bid"),
++            ask=row.get("ask"),
++            source_timestamp=source_timestamp,
++            started=started,
++            received_at=received_at,
++            quote_kind=QuoteKind.BID_ASK.value,
++            market_status="open",
++            confidence_reasons=("broker_native_quote",),
++        )
++    except Exception as exc:
++        logger.debug("[price] MetaApi typed quote error for %s: %s", symbol, exc)
++        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
++
++
++async def _fetch_fcs_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
++    """Fetch a timestamped FCS v4 FX/commodity quote when configured."""
++    import requests
++
++    provider = "fcs"
++    api_key = (os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip()
++    if not api_key:
++        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
++    breaker = _get_breaker(provider)
++    if not breaker.allow():
++        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
++
++    started = time.perf_counter()
++    compact = str(symbol or "").upper().replace("/", "").replace("-", "").replace("_", "")
++    try:
++        from services.asset_mapper import classify_asset
++
++        asset_class = str(classify_asset(compact) or "").lower()
++    except Exception:
++        asset_class = "forex"
++    fcs_symbol = {
++        "XAGUSD": "SILVER",
++        "SILVER": "SILVER",
++        "WTI": "OSX",
++        "USOIL": "OSX",
++    }.get(compact, compact)
++    data_type = "commodity" if asset_class == "commodity" else "forex"
++
++    try:
++        response = await asyncio.to_thread(
++            requests.get,
++            "https://api-v4.fcsapi.com/forex/latest",
++            params={"symbol": fcs_symbol, "type": data_type, "access_key": api_key},
++            timeout=5,
++        )
++        received_at = time.time()
++        payload = response.json() if response.ok else {}
++        rows = payload.get("response") if isinstance(payload, dict) else None
++        row = rows[0] if isinstance(rows, list) and rows else None
++        active = row.get("active") if isinstance(row, dict) else None
++        if not response.ok or not isinstance(active, dict):
++            breaker.record_failure()
++            return _typed_failure(
++                symbol,
++                provider,
++                f"invalid_response:{getattr(response, 'status_code', 'unknown')}",
++            )
++        bid = active.get("b") or active.get("bid")
++        ask = active.get("a") or active.get("ask")
++        price = active.get("c") or active.get("close")
++        if price is None and bid is not None and ask is not None:
++            try:
++                price = (float(bid) + float(ask)) / 2.0
++            except (TypeError, ValueError):
++                price = None
++        source_timestamp = (
++            active.get("t")
++            or active.get("timestamp")
++            or row.get("timestamp")
++            or (payload.get("info") or {}).get("server_time")
++        )
++        if source_timestamp is None:
++            breaker.record_failure()
++            return _typed_failure(symbol, provider, "source_timestamp_missing")
++        quote = _typed_quote(
++            symbol=symbol,
++            provider=provider,
++            price=price,
++            bid=bid,
++            ask=ask,
++            source_timestamp=source_timestamp,
++            started=started,
++            received_at=received_at,
++            quote_kind=QuoteKind.BID_ASK.value if bid is not None and ask is not None else QuoteKind.TICKER.value,
++            market_status="open",
++            confidence_reasons=("timestamped_fcs_quote",),
++        )
++        if isinstance(quote, LivePriceQuote):
++            breaker.record_success()
++        else:
++            breaker.record_failure()
++        return quote
++    except Exception as exc:
++        breaker.record_failure()
++        logger.debug("[price] FCS typed quote error for %s: %s", symbol, exc)
++        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
++
++
+ async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+     import requests
+ 
+@@ -1013,6 +1182,8 @@ async def _fetch_structured_quote(
+         "binance": _fetch_binance_quote,
+         "bybit": _fetch_bybit_quote,
+         "cryptocompare": _fetch_cryptocompare_quote,
++        "metaapi": _fetch_metaapi_quote,
++        "fcs": _fetch_fcs_quote,
+         "yahoo": _fetch_yahoo_quote,
+         "twelvedata": _fetch_twelvedata_quote,
+         "polygon": _fetch_polygon_quote,
+diff --git a/railway_main.py b/railway_main.py
+index 7743088b7774332492b431641019b049ad05c3d2..aa2237c516c74c4d4e15e23b4feba7515a31ac98 100644
+--- a/railway_main.py
++++ b/railway_main.py
+@@ -2525,17 +2525,17 @@ def _production_cutover_check() -> dict[str, object]:
+     except Exception:
+         violations.append("telegram_send_retries_invalid")
+     try:
+-        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30) > 60:
++        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "60") or 60) > 300:
+             violations.append("unsent_signal_recovery_interval_too_high")
+     except Exception:
+         violations.append("unsent_signal_recovery_interval_invalid")
+     try:
+-        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30) > 60:
++        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90") or 90) > 300:
+             violations.append("outcome_notification_interval_too_high")
+     except Exception:
+         violations.append("outcome_notification_interval_invalid")
+     try:
+-        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60) > 120:
++        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "120") or 120) > 300:
+             violations.append("monitor_refresh_interval_too_high")
+     except Exception:
+         violations.append("monitor_refresh_interval_invalid")
+@@ -2636,6 +2636,78 @@ def _readiness_cutover_check(*, production: bool) -> dict[str, object]:
+     }
+ 
+ 
++async def _provider_coverage_readiness_check(*, production: bool) -> dict[str, object]:
++    """Validate configured live-quote coverage for enabled asset classes.
++
++    Staging exposes partial coverage without failing traffic admission. Production
++    fails closed when FX or commodities rely only on the public Yahoo fallback.
++    """
++    raw_classes = str(
++        os.getenv("ENABLED_ASSET_CLASSES")
++        or os.getenv("ASSET_CLASSES")
++        or "crypto,fx,stock,index,commodity"
++    )
++    enabled = {
++        part.strip().lower()
++        for part in raw_classes.replace(";", ",").split(",")
++        if part.strip()
++    }
++    aliases = {"forex": "fx", "stocks": "stock", "indices": "index", "commodities": "commodity"}
++    enabled = {aliases.get(item, item) for item in enabled}
++    probes = {
++        "crypto": "BTCUSDT",
++        "fx": "EURUSD",
++        "commodity": "XAGUSD",
++        "stock": "AAPL",
++        "index": "US500",
++    }
++    coverage: dict[str, object] = {}
++    missing: list[str] = []
++    try:
++        from data.get_live_price import _get_providers_for_asset
++
++        for asset_class, symbol in probes.items():
++            if asset_class not in enabled:
++                coverage[asset_class] = {"required": False, "providers": []}
++                continue
++            providers = list(_get_providers_for_asset(symbol))
++            if "metaapi" in providers and not any(
++                str(os.getenv(name) or "").strip()
++                for name in ("META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID", "METAAPI_ACCOUNT_ID")
++            ):
++                # Readiness must stay fast and deterministic. Runtime delivery may
++                # resolve an owner's stored account, but production admission
++                # requires an explicit dedicated market-data account ID.
++                providers = [provider for provider in providers if provider != "metaapi"]
++            configured_trusted = [provider for provider in providers if provider != "yahoo"]
++            complete = bool(providers)
++            if asset_class in {"fx", "commodity"}:
++                complete = bool(configured_trusted)
++            coverage[asset_class] = {
++                "required": True,
++                "providers": providers,
++                "configured_trusted": configured_trusted,
++                "complete": complete,
++            }
++            if not complete:
++                missing.append(asset_class)
++    except Exception as exc:
++        return {
++            "ok": not production,
++            "required": production,
++            "detail": f"coverage_check_failed:{type(exc).__name__}",
++            "coverage": coverage,
++        }
++    complete = not missing
++    return {
++        "ok": complete if production else True,
++        "required": production,
++        "complete": complete,
++        "detail": "complete" if complete else ("missing:" + ",".join(sorted(missing))),
++        "coverage": coverage,
++    }
++
++
+ @app.get("/ready")
+ @app.get("/readyz")
+ async def _readyz_endpoint(response: Response) -> dict[str, object]:
+@@ -2659,6 +2731,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
+         financial_activation = evaluate_financial_activation().as_dict()
+     except Exception as exc:
+         financial_activation = {"ok": False, "detail": type(exc).__name__}
++    provider_coverage = await _provider_coverage_readiness_check(production=production)
+     try:
+         from core.version import (
+             EXPECTED_RELEASE_COMMIT,
+@@ -2682,6 +2755,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
+             "detail": commit_detail if production else "not_required_for_nonproduction",
+         },
+         "financial_activation": financial_activation,
++        "provider_coverage": provider_coverage,
+     }
+ 
+     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
+diff --git a/services/delivery_authorization.py b/services/delivery_authorization.py
+index 00c414a65f8f8b35e6bea07d591c2e5b983ffa03..c6b4e2c7458ba4f9c4baee2f47d7aef9460f3d67 100644
+--- a/services/delivery_authorization.py
++++ b/services/delivery_authorization.py
+@@ -8,6 +8,7 @@ from dataclasses import dataclass
+ from sqlalchemy import func, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
++from core.env import runtime_environment_name
+ from core.tier_policy import get_entitlements, normalize_tier
+ from db.access import resolve_product_tier
+ from db.models import SignalDelivery, User
+@@ -23,7 +24,7 @@ class DeliveryAuthorization:
+ 
+ 
+ def _restricted_audience() -> set[int]:
+-    app_env = str(os.getenv("APP_ENV", "development") or "development").strip().lower()
++    app_env = runtime_environment_name("development")
+     explicit = str(os.getenv("DELIVERY_AUDIENCE_RESTRICTION_MODE", "0") or "0").lower() in {
+         "1", "true", "yes", "on",
+     }
+diff --git a/services/performance_ledger.py b/services/performance_ledger.py
+index c9187f342f8ab94da6367d05c09194cd8f2929e8..dccca3ae4717a4b67b9470ecdc9300d161983404 100644
+--- a/services/performance_ledger.py
++++ b/services/performance_ledger.py
+@@ -14,6 +14,7 @@ from typing import Any, Iterable
+ from uuid import uuid4
+ 
+ from sqlalchemy import and_, func, select
++from sqlalchemy.dialects.postgresql import insert as pg_insert
+ 
+ from core.delivery_state import CONFIRMED_DELIVERY_STATES
+ from db.models import (
+@@ -26,6 +27,7 @@ from db.models import (
+     User,
+     UserSignalMonitoring,
+ )
++from core.env import runtime_environment_name
+ from utils.timeutils import now_utc_naive
+ 
+ 
+@@ -99,13 +101,19 @@ async def reconcile_user_performance_ledger(
+     telegram_user_id: int,
+     environment: str | None = None,
+ ) -> int:
+-    """Reconcile non-final rows; finalized rows require the correction workflow."""
++    """Reconcile canonical rows with a race-safe PostgreSQL upsert.
++
++    Concurrent /performance requests previously selected an empty scope and
++    then both inserted it, causing ``uq_performance_ledger_scope`` violations.
++    The bulk ON CONFLICT statement makes the operation idempotent across
++    replicas while preserving finalized rows.
++    """
+     user = (
+         await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
+     ).scalar_one_or_none()
+     if user is None:
+         return 0
+-    env = str(environment or os.getenv("APP_ENV", "development") or "development").lower()
++    env = str(environment or runtime_environment_name("development") or "development").lower()
+     states = tuple(CONFIRMED_DELIVERY_STATES)
+     rows = (
+         await session.execute(
+@@ -137,21 +145,18 @@ async def reconcile_user_performance_ledger(
+         existing_entries = list(
+             (
+                 await session.execute(
+-                    select(PerformanceLedgerEntry)
+-                    .where(
++                    select(PerformanceLedgerEntry).where(
+                         PerformanceLedgerEntry.user_id == int(user.id),
+                         PerformanceLedgerEntry.signal_id.in_(signal_ids),
+                         PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+                         PerformanceLedgerEntry.environment == env,
+                     )
+-                    .with_for_update()
+                 )
+-            )
+-            .scalars()
+-            .all()
++            ).scalars().all()
+         )
+     existing_by_signal = {str(entry.signal_id): entry for entry in existing_entries}
+-    changed = 0
++    upsert_by_signal: dict[str, dict[str, Any]] = {}
++
+     for delivery, signal, outcome, lifecycle, monitoring in rows:
+         bucket, final_r, source, included, exclusion = _classify(
+             signal=signal, outcome=outcome, lifecycle=lifecycle, monitoring=monitoring,
+@@ -168,7 +173,20 @@ async def reconcile_user_performance_ledger(
+         existing = existing_by_signal.get(canonical_signal_id)
+         if existing is not None and existing.finalized_at is not None:
+             continue
+-        values = {
++        now = now_utc_naive()
++        snapshot_hash = _snapshot_hash(payload)
++        if existing is not None and existing.snapshot_hash == snapshot_hash:
++            continue
++        finalized_at = None
++        outcome_completed_at = getattr(outcome, "closed_at", None) or getattr(monitoring, "stopped_at", None)
++        if bucket in COMPLETED_BUCKETS and final_r is not None and included:
++            finalized_at = outcome_completed_at or now
++        upsert_by_signal[canonical_signal_id] = {
++            "ledger_id": str(uuid4()),
++            "user_id": int(user.id),
++            "signal_id": canonical_signal_id,
++            "domain": PERFORMANCE_DOMAIN,
++            "environment": env,
+             "delivery_id": int(delivery.id),
+             "delivery_confirmed_at": delivery.delivery_confirmed_at,
+             "asset": str(signal.asset),
+@@ -180,38 +198,59 @@ async def reconcile_user_performance_ledger(
+             "global_outcome": _status(getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None)) or None,
+             "user_monitoring_outcome": _status(getattr(monitoring, "realized_outcome", None)) or None,
+             "final_realized_r": float(final_r) if final_r is not None else None,
+-            "outcome_completed_at": getattr(outcome, "closed_at", None) or getattr(monitoring, "stopped_at", None),
++            "outcome_completed_at": outcome_completed_at,
+             "outcome_source": source,
+             "calculation_policy_version": PERFORMANCE_POLICY_VERSION,
+             "signal_plan_version": str((getattr(signal, "meta", {}) or {}).get("signal_plan_version") or "legacy-plan-v1"),
+             "included": bool(included),
+             "exclusion_reason": exclusion,
+-            "snapshot_hash": _snapshot_hash(payload),
+-            "updated_at": now_utc_naive(),
++            "snapshot_hash": snapshot_hash,
++            "row_version": 1,
++            "finalized_at": finalized_at,
++            "created_at": now,
++            "updated_at": now,
+         }
+-        if existing is not None and existing.snapshot_hash == values["snapshot_hash"]:
+-            continue
+-        if existing is None:
+-            existing = PerformanceLedgerEntry(
+-                ledger_id=str(uuid4()),
+-                user_id=int(user.id),
+-                signal_id=canonical_signal_id,
+-                domain=PERFORMANCE_DOMAIN,
+-                environment=env,
+-                created_at=now_utc_naive(),
+-                **values,
+-            )
+-            session.add(existing)
+-            existing_by_signal[canonical_signal_id] = existing
+-        else:
+-            for key, value in values.items():
+-                setattr(existing, key, value)
+-            existing.row_version = int(existing.row_version or 0) + 1
+-        if bucket in COMPLETED_BUCKETS and final_r is not None and included:
+-            existing.finalized_at = values["outcome_completed_at"] or now_utc_naive()
+-        changed += 1
+-    await session.flush()
+-    return changed
++
++    pending = list(upsert_by_signal.values())
++    if not pending:
++        return 0
++
++    dialect_name = str(session.get_bind().dialect.name or "").lower()
++    if dialect_name == "postgresql":
++        insert_stmt = pg_insert(PerformanceLedgerEntry).values(pending)
++        excluded = insert_stmt.excluded
++        mutable_columns = (
++            "delivery_id", "delivery_confirmed_at", "asset", "timeframe", "direction",
++            "primary_bucket", "entry_status", "highest_tp", "global_outcome",
++            "user_monitoring_outcome", "final_realized_r", "outcome_completed_at",
++            "outcome_source", "calculation_policy_version", "signal_plan_version",
++            "included", "exclusion_reason", "snapshot_hash", "finalized_at", "updated_at",
++        )
++        statement = insert_stmt.on_conflict_do_update(
++            constraint="uq_performance_ledger_scope",
++            set_={
++                **{name: getattr(excluded, name) for name in mutable_columns},
++                "row_version": PerformanceLedgerEntry.row_version + 1,
++            },
++            where=and_(
++                PerformanceLedgerEntry.finalized_at.is_(None),
++                PerformanceLedgerEntry.snapshot_hash.is_distinct_from(excluded.snapshot_hash),
++            ),
++        )
++        await session.execute(statement)
++    else:
++        # Test/development fallback for non-PostgreSQL databases.
++        for values in pending:
++            existing = existing_by_signal.get(str(values["signal_id"]))
++            if existing is None:
++                session.add(PerformanceLedgerEntry(**values))
++            elif existing.finalized_at is None and existing.snapshot_hash != values["snapshot_hash"]:
++                for key, value in values.items():
++                    if key not in {"ledger_id", "user_id", "signal_id", "domain", "environment", "created_at"}:
++                        setattr(existing, key, value)
++                existing.row_version = int(existing.row_version or 0) + 1
++        await session.flush()
++    return len(pending)
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -260,7 +299,7 @@ async def get_user_performance_report(
+ ) -> dict[str, Any]:
+     end = report_end or now_utc_naive()
+     start = end - timedelta(days=max(1, min(3650, int(days))))
+-    env = str(environment or os.getenv("APP_ENV", "development") or "development").lower()
++    env = str(environment or runtime_environment_name("development") or "development").lower()
+     await reconcile_user_performance_ledger(
+         session, telegram_user_id=int(telegram_user_id), environment=env,
+     )
+diff --git a/signalrank_telegram/bot.py b/signalrank_telegram/bot.py
+index cab74f06f4c180b975dac1c9ae0f982ab36ace6f..d4e395f24d739a0956d49f34ac99a7fadb88654e 100644
+--- a/signalrank_telegram/bot.py
++++ b/signalrank_telegram/bot.py
+@@ -26,83 +26,27 @@ def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
+     return str(delivery_state or "").strip().lower() == "formatter_failed"
+ 
+ 
+-def _resend_advisory_lock() -> tuple[int, str]:
+-    """Return a replica-shared lock ID isolated by Railway environment/service."""
+-    import hashlib
+-    import os
+-
+-    explicit = str(os.getenv("RESEND_JOB_LOCK_ID", "") or "").strip()
+-    if explicit:
+-        return int(explicit), "explicit"
+-
+-    scope = str(os.getenv("RESEND_JOB_LOCK_SCOPE", "") or "").strip()
+-    if not scope:
+-        scope = ":".join(
+-            str(value or "unknown").strip()
+-            for value in (
+-                os.getenv("RAILWAY_PROJECT_ID"),
+-                os.getenv("RAILWAY_ENVIRONMENT_ID") or os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+-                os.getenv("RAILWAY_SERVICE_ID") or os.getenv("RAILWAY_SERVICE_NAME"),
+-                os.getenv("APP_ENV", "development"),
+-            )
+-        )
+-    digest = hashlib.sha256(f"signalrank:resend:{scope}".encode("utf-8")).digest()
+-    lock_id = int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
+-    return max(1, lock_id), scope
+-
+-
+ def resend_unsent_signals_job():
+-    """Scheduled job: resend top-scored unsent signals to eligible users.
+-
+-    Signals are capped to the top-20 by score from the last 24 h to avoid flooding.
+-    Uses run_sync() so the global async engine is re-used correctly whether or not
+-    an event loop is already running in the calling thread.
+-    """
+-    # Pre-flight: make sure the global async engine is initialised.  This is a
+-    # no-op when run_bot() has already set it up, but guards against edge cases
+-    # where the job fires before the main startup path completes.
++    """Run bounded resend recovery under one cross-replica owner lease."""
+     try:
+         from db.session import _get_global_engine
+         if _get_global_engine() is None:
+-            logger.warning("[resend] DB engine not initialised \u2014 skipping job")
++            logger.warning("[resend] DB engine not initialised — skipping job")
+             return
+-    except Exception as _pre_err:
+-        logger.warning("[resend] DB engine pre-flight failed: %s", _pre_err)
++    except Exception as preflight_error:
++        logger.warning("[resend] DB engine pre-flight failed: %s", preflight_error)
+         return
+-    _lock_conn = None
+-    try:
+-        # Cluster-safe lock (Postgres advisory lock): prevents duplicate resend
+-        # runs across multiple Railway instances when Redis is unavailable.
+-        import os
+-        import psycopg2
+-        try:
+-            from config import resolve_database_url
+-            _dsn = resolve_database_url(async_driver=False) or ""
+-        except Exception:
+-            _dsn = ""
+-
+-        if _dsn:
+-            _lock_id, _lock_scope = _resend_advisory_lock()
+-            _lock_conn = psycopg2.connect(_dsn, connect_timeout=5)
+-            _lock_conn.autocommit = True
+-            with _lock_conn.cursor() as _cur:
+-                _cur.execute("SELECT pg_try_advisory_lock(%s)", (_lock_id,))
+-                _locked = bool((_cur.fetchone() or [False])[0])
+-            if not _locked:
+-                logger.info(
+-                    "[resend] skipped: another instance holds advisory lock scope=%s lock_id=%s",
+-                    _lock_scope,
+-                    _lock_id,
+-                )
+-                try:
+-                    _lock_conn.close()
+-                except Exception:
+-                    pass
+-                return
+-    except Exception as _lock_err:
+-        logger.debug(f"[resend] advisory lock unavailable, continuing without lock: {_lock_err}")
+ 
+-    try:
++    from core.job_leases import acquire_scheduler_job_lease
++    lease_seconds = max(30, int(os.getenv("RESEND_JOB_LEASE_SECONDS", "45") or 45))
++    with acquire_scheduler_job_lease("resend_unsent_signals", lease_seconds=lease_seconds) as lease:
++        if not lease.acquired:
++            logger.info(
++                "[resend] standby: active delivery owner holds lease backend=%s scope=%s",
++                lease.backend,
++                lease.scope,
++            )
++            return
+         try:
+             if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False):
+                 fanout_lock = state.cache_get_sync("engine_delivery_fanout:active")
+@@ -113,24 +57,19 @@ def resend_unsent_signals_job():
+             pass
+         try:
+             from db.session import critical_db_work_active
+-            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", False):
+-                logger.info("[resend] skipped: critical DB work active")
++            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", True):
++                logger.info("[resend] deferred: interactive/critical DB work active")
+                 return
+         except Exception:
+             pass
+-        import asyncio
+-        job_timeout = max(15.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "180") or 180))
+-        run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
+-    except TimeoutError:
+-        logger.warning("[resend] job timed out; remaining work deferred to next run")
+-    except Exception:
+-        logger.exception("[resend] resend_unsent_signals_job failed")
+-    finally:
+-        if _lock_conn is not None:
+-            try:
+-                _lock_conn.close()
+-            except Exception:
+-                pass
++        try:
++            import asyncio
++            job_timeout = max(10.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "25") or 25))
++            run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
++        except TimeoutError:
++            logger.info("[resend] job budget reached; remaining work deferred")
++        except Exception:
++            logger.exception("[resend] resend_unsent_signals_job failed")
+ 
+ 
+ async def _resend_unsent_signals_async():
+@@ -153,6 +92,9 @@ async def _resend_unsent_signals_async():
+         import asyncio
+ 
+         delivery_mgr = TierDeliveryManager()
++        _job_budget_seconds = max(10.0, float(os.getenv("RESEND_JOB_BUDGET_SECONDS", "20") or 20))
++        _job_deadline = time.monotonic() + _job_budget_seconds
++        _budget_exhausted = False
+ 
+         # Fetch user IDs with a direct async call \u2014 avoids calling
+         # get_all_user_ids_compat() (which uses run_sync() internally and would
+@@ -166,7 +108,7 @@ async def _resend_unsent_signals_async():
+         try:
+             async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
+                 user_ids = await list_all_user_telegram_ids(_bootstrap_session)
+-                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=100)
++                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=max(10, int(os.getenv("RESEND_CANDIDATE_QUERY_LIMIT", "50") or 50)))
+                 failed_rows = await _bootstrap_session.execute(
+                     select(SignalDelivery.signal_id).where(
+                         SignalDelivery.delivery_state == "formatter_failed"
+@@ -224,7 +166,8 @@ async def _resend_unsent_signals_async():
+             user_ids = list(user_ids or [])
+ 
+         allowlist_raw = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", "") or "").strip()
+-        app_env = str(os.getenv("APP_ENV", "development") or "development").strip().lower()
++        from core.env import runtime_environment_name
++        app_env = runtime_environment_name("development")
+         restriction_mode = _env_bool("DELIVERY_AUDIENCE_RESTRICTION_MODE", False)
+         testing_mode = _env_bool_any(
+             ("PUBLIC_TESTING_MODE", "FULL_SYSTEM_STAGING_TEST_MODE", "FULL_SYSTEM_STAGING_TEST_ACTIVE"),
+@@ -269,14 +212,14 @@ async def _resend_unsent_signals_async():
+             primary_owner = None
+         if primary_owner in user_ids:
+             user_ids = [primary_owner] + [uid for uid in user_ids if uid != primary_owner]
+-        max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "25") or 25))
++        max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "6") or 6))
+         if len(user_ids) > max_users:
+             # Keep the primary owner in every proof run, but rotate the remaining
+             # audience deterministically so users beyond the first page are not starved.
+             ordered_others = [uid for uid in user_ids if uid != primary_owner]
+             owner_slots = 1 if primary_owner in user_ids else 0
+             rotating_slots = max(1, max_users - owner_slots)
+-            interval_seconds = max(15, int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "30")) or 30))
++            interval_seconds = max(15, int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "60")) or 60))
+             bucket = int(time.time() // interval_seconds)
+             start = (bucket * rotating_slots) % max(1, len(ordered_others))
+             rotated = (ordered_others[start:] + ordered_others[:start])[:rotating_slots]
+@@ -321,7 +264,7 @@ async def _resend_unsent_signals_async():
+             return
+ 
+         resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
+-        resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "8") or 8)
++        resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "3") or 3)
+ 
+         # Keep highest-quality signals only to avoid flooding users.
+         ranked = sorted(
+@@ -420,6 +363,10 @@ async def _resend_unsent_signals_async():
+         bot = Bot(token=_require_telegram_token())
+         async with bot:
+             for sig in signals:
++                if time.monotonic() >= _job_deadline:
++                    _budget_exhausted = True
++                    logger.info("[resend] job budget exhausted before next signal; deferring remaining work")
++                    break
+                 signal_id = str(getattr(sig, 'signal_id', '') or '')
+                 if not signal_id:
+                     continue
+@@ -501,6 +448,10 @@ async def _resend_unsent_signals_async():
+                     sig_dict = {}
+ 
+                 for user_id in user_ids:
++                    if time.monotonic() >= _job_deadline:
++                        _budget_exhausted = True
++                        logger.info("[resend] job budget exhausted; deferring remaining recipients")
++                        break
+                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
+                     gate_tier = _normalized_delivery_tier(user_tier)
+                     try:
+@@ -675,7 +626,7 @@ async def _resend_unsent_signals_async():
+                             )
+                             raise send_err
+ 
+-                        await asyncio.sleep(0.5)
++                        await asyncio.sleep(max(0.0, float(os.getenv("RESEND_INTER_SEND_DELAY_SECONDS", "0.10") or 0.10)))
+                         delivered_count += 1
+                         logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
+                         delivered_user_ids.add(int(user_id))
+@@ -712,6 +663,8 @@ async def _resend_unsent_signals_async():
+             skipped_profile_count,
+             skipped_already_delivered_count,
+         )
++        if _budget_exhausted:
++            logger.info("[resend] remaining work deferred reason=job_budget_exhausted budget_s=%.1f", _job_budget_seconds)
+ 
+     except Exception as e:
+         logger.warning(f"[resend] Job inner error: {e}")
+@@ -3977,7 +3930,7 @@ def notify_all_users_trade_outcome(strategy, result, ret, user_ids=None):
+         notify_trade_outcome(uid, strategy, result, ret)
+         try:
+             import asyncio
+-            run_sync(asyncio.sleep(0.5))
++            run_sync(asyncio.sleep(max(0.0, float(os.getenv("OUTCOME_NOTIFICATION_INTER_SEND_DELAY_SECONDS", "0.05") or 0.05))))
+         except Exception:
+             pass
+ 
+@@ -5309,7 +5262,7 @@ def distribute_random_signals_to_free_users_job():
+ 
+     try:
+         from db.session import critical_db_work_active
+-        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
++        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+             logger.info("[free_distribution] skipped: critical DB work active")
+             return
+     except Exception:
+@@ -7156,14 +7109,14 @@ def run_bot() -> None:
+             return
+ 
+     # Initialize and schedule jobs
+-    def send_outcome_notifications():
++    def _send_outcome_notifications_owned():
+         if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
+             logger.info("[outcome_notify] disabled by env")
+             return
+         try:
+             from db.session import critical_db_work_active
+-            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
+-                logger.info("[outcome_notify] skipped: critical DB work active")
++            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
++                logger.info("[outcome_notify] deferred: interactive/critical DB work active")
+                 return
+         except Exception:
+             pass
+@@ -7184,10 +7137,14 @@ def run_bot() -> None:
+                 get_alert_prefs,
+             )
+             from datetime import datetime
++            _outcome_limit = max(1, min(50, int(os.getenv("OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5") or 5)))
++            _outcome_budget_seconds = max(10.0, float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20") or 20))
++            _outcome_deadline = time.monotonic() + _outcome_budget_seconds
++            _outcome_budget_exhausted = False
+ 
+             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
+                 async with get_session(priority="background", label="signalrank_telegram_bot") as session:
+-                    rows = await list_unnotified_outcomes(session, limit=50)
++                    rows = await list_unnotified_outcomes(session, limit=_outcome_limit)
+                     out = []
+                     for oc, sig in rows:
+                         recipients = await list_delivery_recipients_for_signal(session, str(sig.signal_id))
+@@ -7212,6 +7169,10 @@ def run_bot() -> None:
+             outcome_bot = Bot(token=_require_telegram_token())
+ 
+             for oc, sig, recipients in pending:
++                if time.monotonic() >= _outcome_deadline:
++                    _outcome_budget_exhausted = True
++                    logger.info("[outcome] job budget exhausted before next outcome; deferring remaining work")
++                    break
+                 status = str(getattr(oc, 'status', '') or '').lower()
+                 ref = str(getattr(sig, 'signal_id', '') or '')
+                 # Shorten ref to 8 chars for display
+@@ -7314,7 +7275,26 @@ def run_bot() -> None:
+                 quiet_deferred_count = 0
+                 eligible_count = 0
+ 
++                # The market observation is identical for every recipient of this
++                # outcome. Fetch it once per outcome instead of once per user.
++                current_market_price = None
++                try:
++                    from data.market_data import fetch_market_data_cached
++                    async def _fetch_market_price_once():
++                        tf = timeframe or "1h"
++                        data = await fetch_market_data_cached(asset, [tf])
++                        payload = data.get(tf) or {}
++                        candles = payload.get("candles") or []
++                        return candles[-1].get("close") if candles else None
++                    current_market_price = run_sync(_fetch_market_price_once())
++                except Exception as exc:
++                    logger.debug("[outcome] market price unavailable asset=%s err=%s", asset, exc)
++
+                 for telegram_user_id, tier_at_send, prefs in recipients:
++                    if time.monotonic() >= _outcome_deadline:
++                        _outcome_budget_exhausted = True
++                        logger.info("[outcome] job budget exhausted; deferring remaining recipients ref=%s", ref_short)
++                        break
+                     try:
+                         if isinstance(prefs, dict) and not prefs.get('tp_sl_enabled', True):
+                             continue
+@@ -7379,23 +7359,6 @@ def run_bot() -> None:
+                     # Outcome notification logic by tier
+                     notify = False
+                     msg = None
+-                    # Try to get current market price for the asset
+-                    current_market_price = None
+-                    try:
+-                        from data.market_data import fetch_market_data_cached
+-                        async def _fetch_market_price():
+-                            tf = timeframe or "1h"
+-                            data = await fetch_market_data_cached(asset, [tf])
+-                            payload = data.get(tf) or {}
+-                            candles = payload.get("candles") or []
+-                            if candles:
+-                                return candles[-1].get("close")
+-                            return None
+-                        current_market_price = run_sync(_fetch_market_price())
+-                    except Exception as e:
+-                        logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
+-                        pass
+-
+                     def _format_sl_closed_message() -> str:
+                         try:
+                             entry_v = float(signal_data.get("entry") or 0)
+@@ -7580,6 +7543,20 @@ def run_bot() -> None:
+             return
+ 
+ 
++    def send_outcome_notifications():
++        from core.job_leases import acquire_scheduler_job_lease
++        lease_seconds = max(30, int(os.getenv("OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS", "45") or 45))
++        with acquire_scheduler_job_lease("outcome_notifications", lease_seconds=lease_seconds) as lease:
++            if not lease.acquired:
++                logger.info(
++                    "[outcome_notify] standby: active notification owner holds lease backend=%s scope=%s",
++                    lease.backend,
++                    lease.scope,
++                )
++                return
++            return _send_outcome_notifications_owned()
++
++
+     def smart_exit_guard_job():
+         """Phase 2: close weak AUTO positions early on structural deterioration."""
+         try:
+@@ -9443,11 +9420,11 @@ def run_bot() -> None:
+         )
+         _outcome_notification_interval_seconds = max(
+             15,
+-            int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30),
++            int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90") or 90),
+         )
+         _monitor_refresh_interval_seconds = max(
+             30,
+-            int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60),
++            int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "120") or 120),
+         )
+         _outcome_first_run = now_utc_naive() + timedelta(seconds=_outcome_start_delay_seconds)
+         _worker_outcome_owner = _env_bool("WORKER_OUTCOME_TRACKER_ENABLED", True)
+@@ -9474,6 +9451,8 @@ def run_bot() -> None:
+                 id='send_outcome_notifications',
+                 replace_existing=True,
+                 max_instances=1,
++                coalesce=True,
++                misfire_grace_time=min(300, _outcome_notification_interval_seconds),
+                 next_run_time=_outcome_first_run,
+             )
+             scheduler.add_job(
+@@ -9535,6 +9514,8 @@ def run_bot() -> None:
+                 id='send_outcome_notifications',
+                 replace_existing=True,
+                 max_instances=1,
++                coalesce=True,
++                misfire_grace_time=min(300, _outcome_notification_interval_seconds),
+                 next_run_time=_outcome_first_run,
+             )
+             scheduler.add_job(
+@@ -9688,24 +9669,27 @@ def run_bot() -> None:
+             logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err, exc_info=True)
+         resend_interval_seconds = max(
+             15,
+-            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30),
++            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "60") or 60),
+         )
+         resend_start_delay_seconds = max(
+             10,
+             int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "15")) or 15),
+         )
+-        scheduler.add_job(
+-            resend_unsent_signals_job,
+-            'interval',
+-            seconds=resend_interval_seconds,
+-            id='resend_unsent_signals_job',
+-            replace_existing=True,
+-            max_instances=1,
+-            coalesce=True,
+-            misfire_grace_time=min(120, resend_interval_seconds),
+-            jobstore=_sa,
+-            next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
+-        )
++        if _env_bool("RESEND_UNSENT_JOB_ENABLED", True):
++            scheduler.add_job(
++                resend_unsent_signals_job,
++                'interval',
++                seconds=resend_interval_seconds,
++                id='resend_unsent_signals_job',
++                replace_existing=True,
++                max_instances=1,
++                coalesce=True,
++                misfire_grace_time=min(300, resend_interval_seconds),
++                jobstore=_sa,
++                next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
++            )
++        else:
++            logger.info("[sched] resend_unsent_signals_job disabled by RESEND_UNSENT_JOB_ENABLED=0")
+         if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), False):
+             free_start_delay_seconds = max(
+                 resend_start_delay_seconds + 60,
+diff --git a/tests/test_phase12_performance_paper_reliability.py b/tests/test_phase12_performance_paper_reliability.py
+index 016e96ec801e47f8192249bf6541f7ea6f10bc79..13a641b39163f1eb92dff3f5705731754d80f057 100644
+--- a/tests/test_phase12_performance_paper_reliability.py
++++ b/tests/test_phase12_performance_paper_reliability.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from decimal import Decimal
+-from pathlib import Path
++from pathlib import Path
+ from types import SimpleNamespace
+ 
+ import pytest
+@@ -63,17 +63,17 @@ def test_canonical_r_formulas_are_exact_and_stable():
+     assert first.standardized_compounded_return_pct == Decimal("1.48490000")
+ 
+ 
+-def test_delivery_proof_requires_all_durable_telegram_fields():
+-    assert is_confirmed_delivery_state("confirmed")
+-    assert has_durable_delivery_proof(SimpleNamespace(
+-        sent_ok=True, delivery_state="confirmed", delivery_confirmed_at=object(),
+-        telegram_chat_id=123, telegram_message_id=456,
+-    ))
+-    assert not has_durable_delivery_proof(SimpleNamespace(
+-        sent_ok=True, delivery_state="confirmed", delivery_confirmed_at=object(),
+-        telegram_chat_id=123, telegram_message_id=None,
+-    ))
+-
++def test_delivery_proof_requires_all_durable_telegram_fields():
++    assert is_confirmed_delivery_state("confirmed")
++    assert has_durable_delivery_proof(SimpleNamespace(
++        sent_ok=True, delivery_state="confirmed", delivery_confirmed_at=object(),
++        telegram_chat_id=123, telegram_message_id=456,
++    ))
++    assert not has_durable_delivery_proof(SimpleNamespace(
++        sent_ok=True, delivery_state="confirmed", delivery_confirmed_at=object(),
++        telegram_chat_id=123, telegram_message_id=None,
++    ))
++
+ def test_migration_0031_contains_ledger_attempt_and_immutability_guards():
+     text = (ROOT / "db/migrations/versions/0031_performance_paper_reliability.py").read_text("utf-8")
+     assert 'down_revision = "0030_signal_monitor_reliability"' in text
+@@ -81,9 +81,9 @@ def test_migration_0031_contains_ledger_attempt_and_immutability_guards():
+     assert "performance_ledger_entries" in text
+     assert "uq_paper_actual_position_user_signal" in text
+     assert "WHERE LOWER(status) IN ('open', 'closed')" in text
+-    assert "trg_performance_ledger_finality" in text
+-    assert "trg_terminal_outcome_finality" in text
+-    assert "NEW.corrected_by" in text
++    assert "trg_performance_ledger_finality" in text
++    assert "trg_terminal_outcome_finality" in text
++    assert "NEW.corrected_by" in text
+     assert "NEW.correction_reason" in text
+     assert "ml_past_training_data" in text
+ 
+@@ -134,4 +134,8 @@ def test_performance_reconciliation_bulk_loads_existing_ledger_rows():
+ 
+     assert "PerformanceLedgerEntry.signal_id.in_(signal_ids)" in reconcile
+     assert "existing_by_signal" in reconcile
+-    assert "await session.execute" not in loop
++    assert "pg_insert(PerformanceLedgerEntry).values(pending)" in reconcile
++    assert 'constraint="uq_performance_ledger_scope"' in reconcile
++    assert "PerformanceLedgerEntry.snapshot_hash.is_distinct_from" in reconcile
++    # The only write is one bulk upsert after the row-building loop.
++    assert loop.count("await session.execute") == 1
+diff --git a/tests/test_phase4_pass1_live_validation.py b/tests/test_phase4_pass1_live_validation.py
+index aebe62c74cc05b7962a7a688f95939336ff22698..5e714e0c92c6670334b5a5595c9d22c480662883 100644
+--- a/tests/test_phase4_pass1_live_validation.py
++++ b/tests/test_phase4_pass1_live_validation.py
+@@ -47,11 +47,29 @@ def test_live_price_provider_routing_stock_not_fx():
+     assert "binance" not in providers[:1]
+ 
+ 
+-def test_live_price_provider_routing_metals_has_keyed_fallback():
++def test_live_price_provider_routing_metals_prioritizes_configured_broker(monkeypatch):
+     from data.get_live_price import _get_providers_for_asset
+ 
++    monkeypatch.setenv("META_API_TOKEN", "token")
++    monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "account")
++    monkeypatch.setenv("OANDA_API_KEY", "key")
++    monkeypatch.setenv("OANDA_ACCOUNT_ID", "account")
++    monkeypatch.setenv("TWELVEDATA_API_KEY", "key")
+     providers = _get_providers_for_asset("XAGUSD")
+-    assert providers == ["yahoo", "twelvedata", "oanda", "polygon"]
++    assert providers == ["metaapi", "oanda", "twelvedata", "yahoo"]
++
++
++def test_live_price_provider_routing_skips_unconfigured_keyed_providers(monkeypatch):
++    from data.get_live_price import _get_providers_for_asset
++
++    for name in (
++        "META_API_TOKEN", "META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID",
++        "METAAPI_ACCOUNT_ID", "TELEGRAM_OWNER_ID", "OWNER_TELEGRAM_ID", "OWNER_IDS",
++        "OANDA_API_KEY", "OANDA_TOKEN", "OANDA_ACCOUNT_ID",
++        "TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY", "FCS_API_KEY", "FCS_API_SECRET",
++    ):
++        monkeypatch.delenv(name, raising=False)
++    assert _get_providers_for_asset("XAGUSD") == ["yahoo"]
+ 
+ 
+ def test_rich_message_builder_uses_table_and_details():
+diff --git a/tests/test_v132_auto_delivery_callbacks_monitor.py b/tests/test_v132_auto_delivery_callbacks_monitor.py
+index 0c95233253d5ed2678633386c0bf7186b940de4b..f2a17037c6c33480b635e8c7dc5ba6ba37315aba 100644
+--- a/tests/test_v132_auto_delivery_callbacks_monitor.py
++++ b/tests/test_v132_auto_delivery_callbacks_monitor.py
+@@ -86,18 +86,20 @@ def test_proactive_lifecycle_and_outcome_messages_are_non_silent_and_actionable(
+     assert 'callback_data=f"open_signal_{ref}"' in LIFECYCLE
+     assert 'callback_data=f"monitor_signal_{ref}"' in LIFECYCLE
+ 
+-    outcome_block = BOT[BOT.index("def send_outcome_notifications"):BOT.index("def refresh_monitor_snapshots_job")]
++    outcome_block = BOT[BOT.index("def _send_outcome_notifications_owned"):BOT.index("def refresh_monitor_snapshots_job")]
+     assert "reply_markup=_build_monitor_keyboard(str(ref))" in outcome_block
+     assert "_send_message_with_retry_sync" in outcome_block
+ 
+ 
+ def test_delivery_recovery_runs_frequently_and_is_not_suppressed_by_fanout():
+     assert '_env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False)' in BOT
+-    assert 'RESEND_UNSENT_INTERVAL_SECONDS", "30"' in BOT
++    assert 'RESEND_UNSENT_INTERVAL_SECONDS", "60"' in BOT
+     assert 'RESEND_UNSENT_STARTUP_DELAY_SECONDS' in BOT
+-    assert 'OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30"' in BOT
+-    assert 'MONITOR_REFRESH_INTERVAL_SECONDS", "60"' in BOT
+-    assert 'RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "30")' in BOT
++    assert 'OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90"' in BOT
++    assert 'MONITOR_REFRESH_INTERVAL_SECONDS", "120"' in BOT
++    assert 'RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "60")' in BOT
++    assert 'RESEND_JOB_BUDGET_SECONDS", "20"' in BOT
++    assert 'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20"' in BOT
+ 
+ 
+ def test_all_production_profiles_enable_global_automatic_delivery_contract():
+diff --git a/tests/test_v1364_runtime_stability_hotfix.py b/tests/test_v1364_runtime_stability_hotfix.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc40e7a82bca5b65b4cc393e4b2af66d93987d32
+--- /dev/null
++++ b/tests/test_v1364_runtime_stability_hotfix.py
+@@ -0,0 +1,171 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def test_runtime_environment_prefers_railway_metadata(monkeypatch):
++    from core.env import runtime_environment_name
++
++    monkeypatch.setenv("APP_ENV", "production")
++    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
++    assert runtime_environment_name() == "staging"
++
++
++def test_scheduler_lease_is_project_environment_scoped_not_service_scoped(monkeypatch):
++    monkeypatch.setenv("RAILWAY_PROJECT_ID", "project-id")
++    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
++    monkeypatch.setenv("RAILWAY_SERVICE_ID", "service-id")
++    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "deployment-id")
++
++    from core.job_leases import scheduler_job_scope
++
++    scope = scheduler_job_scope("resend_unsent_signals")
++    assert scope == "project-id:staging:resend_unsent_signals"
++    assert "service-id" not in scope
++    assert "deployment-id" not in scope
++
++
++def test_postgres_lease_releases_explicitly_and_does_not_wrap_job_body():
++    source = (ROOT / "core/job_leases.py").read_text("utf-8")
++    assert "SELECT pg_try_advisory_lock" in source
++    assert "SELECT pg_advisory_unlock" in source
++    assert "if postgres_available and connection is not None:" in source
++
++
++def test_performance_ledger_uses_atomic_conflict_handling():
++    source = (ROOT / "services/performance_ledger.py").read_text("utf-8")
++    assert "pg_insert(PerformanceLedgerEntry).values(pending)" in source
++    assert 'constraint="uq_performance_ledger_scope"' in source
++    assert "snapshot_hash.is_distinct_from" in source
++    assert 'runtime_environment_name("development")' in source
++
++
++def test_background_jobs_are_bounded_leased_and_coalesced():
++    source = (ROOT / "signalrank_telegram/bot.py").read_text("utf-8")
++    for marker in (
++        'RESEND_JOB_BUDGET_SECONDS", "20"',
++        'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20"',
++        'OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5"',
++        'RESEND_MAX_USERS_PER_RUN", "6"',
++        'RESEND_MAX_SIGNALS", "3"',
++        'RESEND_UNSENT_INTERVAL_SECONDS", "60"',
++        'OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90"',
++        'RESEND_UNSENT_JOB_ENABLED',
++        'acquire_scheduler_job_lease("resend_unsent_signals"',
++        'acquire_scheduler_job_lease("outcome_notifications"',
++        'standby: active delivery owner holds lease',
++    ):
++        assert marker in source
++
++
++def test_metals_and_fx_route_to_broker_native_provider_when_configured(monkeypatch):
++    monkeypatch.setenv("META_API_TOKEN", "token")
++    monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "account")
++    from data.get_live_price import _get_providers_for_asset
++
++    assert _get_providers_for_asset("XAGUSD")[0] == "metaapi"
++    assert _get_providers_for_asset("EURUSD")[0] == "metaapi"
++
++
++def test_unconfigured_keyed_providers_do_not_consume_quote_budget(monkeypatch):
++    for name in (
++        "META_API_TOKEN", "META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID",
++        "METAAPI_ACCOUNT_ID", "OANDA_API_KEY", "OANDA_TOKEN", "OANDA_ACCOUNT_ID",
++        "TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY", "FCS_API_KEY", "FCS_API_SECRET",
++    ):
++        monkeypatch.delenv(name, raising=False)
++    monkeypatch.delenv("TELEGRAM_OWNER_ID", raising=False)
++    monkeypatch.delenv("OWNER_TELEGRAM_ID", raising=False)
++    monkeypatch.delenv("OWNER_IDS", raising=False)
++
++    from data.get_live_price import _get_providers_for_asset
++
++    assert _get_providers_for_asset("XAGUSD") == ["yahoo"]
++    assert _get_providers_for_asset("EURUSD") == ["yahoo"]
++
++
++def test_production_readiness_exposes_fail_closed_provider_coverage():
++    source = (ROOT / "railway_main.py").read_text("utf-8")
++    assert "async def _provider_coverage_readiness_check" in source
++    assert '"provider_coverage": provider_coverage' in source
++    assert 'complete = bool(configured_trusted)' in source
++    assert '"ok": complete if production else True' in source
++
++
++def test_fcs_v4_quote_contract_is_parsed(monkeypatch):
++    import asyncio
++    import time
++    import requests
++
++    class Response:
++        ok = True
++        status_code = 200
++
++        @staticmethod
++        def json():
++            return {
++                "status": True,
++                "response": [
++                    {
++                        "ticker": "SILVER",
++                        "active": {
++                            "a": 28.12,
++                            "b": 28.10,
++                            "c": 28.11,
++                            "t": int(time.time()),
++                        },
++                    }
++                ],
++            }
++
++    monkeypatch.setenv("FCS_API_KEY", "test-key")
++    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: Response())
++
++    from data.get_live_price import _fetch_fcs_quote, _price_breakers
++    from data.provider_types import LivePriceQuote
++
++    _price_breakers.pop("fcs", None)
++    quote = asyncio.run(_fetch_fcs_quote("XAGUSD"))
++    assert isinstance(quote, LivePriceQuote)
++    assert quote.provider == "fcs"
++    assert quote.bid == 28.10
++    assert quote.ask == 28.12
++    assert quote.price == 28.11
++
++
++def test_provider_coverage_gate_is_nonblocking_in_staging_and_fail_closed_in_production(monkeypatch):
++    import ast
++    import asyncio
++    import os
++    import data.get_live_price as live_price
++
++    source = (ROOT / "railway_main.py").read_text("utf-8")
++    tree = ast.parse(source)
++    helper_node = next(
++        node
++        for node in tree.body
++        if isinstance(node, ast.AsyncFunctionDef)
++        and node.name == "_provider_coverage_readiness_check"
++    )
++    namespace = {"os": os}
++    exec(compile(ast.Module(body=[helper_node], type_ignores=[]), "railway_main.py", "exec"), namespace)
++    helper = namespace["_provider_coverage_readiness_check"]
++
++    monkeypatch.setenv("ENABLED_ASSET_CLASSES", "fx,commodity")
++    monkeypatch.delenv("META_API_MARKET_DATA_ACCOUNT_ID", raising=False)
++    monkeypatch.delenv("META_API_ACCOUNT_ID", raising=False)
++    monkeypatch.delenv("METAAPI_ACCOUNT_ID", raising=False)
++    monkeypatch.setattr(live_price, "_get_providers_for_asset", lambda symbol: ["yahoo"])
++
++    staging = asyncio.run(helper(production=False))
++    production = asyncio.run(helper(production=True))
++    assert staging["ok"] is True
++    assert staging["complete"] is False
++    assert production["ok"] is False
++    assert production["detail"] == "missing:commodity,fx"
++
++    monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "dedicated-account")
++    monkeypatch.setattr(live_price, "_get_providers_for_asset", lambda symbol: ["metaapi", "yahoo"])
++    production = asyncio.run(helper(production=True))
++    assert production["ok"] is True
++    assert production["complete"] is True

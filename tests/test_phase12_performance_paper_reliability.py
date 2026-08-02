@@ -134,4 +134,8 @@ def test_performance_reconciliation_bulk_loads_existing_ledger_rows():
 
     assert "PerformanceLedgerEntry.signal_id.in_(signal_ids)" in reconcile
     assert "existing_by_signal" in reconcile
-    assert "await session.execute" not in loop
+    assert "pg_insert(PerformanceLedgerEntry).values(pending)" in reconcile
+    assert 'constraint="uq_performance_ledger_scope"' in reconcile
+    assert "PerformanceLedgerEntry.snapshot_hash.is_distinct_from" in reconcile
+    # The only write is one bulk upsert after the row-building loop.
+    assert loop.count("await session.execute") == 1

@@ -86,18 +86,20 @@ def test_proactive_lifecycle_and_outcome_messages_are_non_silent_and_actionable(
     assert 'callback_data=f"open_signal_{ref}"' in LIFECYCLE
     assert 'callback_data=f"monitor_signal_{ref}"' in LIFECYCLE
 
-    outcome_block = BOT[BOT.index("def send_outcome_notifications"):BOT.index("def refresh_monitor_snapshots_job")]
+    outcome_block = BOT[BOT.index("def _send_outcome_notifications_owned"):BOT.index("def refresh_monitor_snapshots_job")]
     assert "reply_markup=_build_monitor_keyboard(str(ref))" in outcome_block
     assert "_send_message_with_retry_sync" in outcome_block
 
 
 def test_delivery_recovery_runs_frequently_and_is_not_suppressed_by_fanout():
     assert '_env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False)' in BOT
-    assert 'RESEND_UNSENT_INTERVAL_SECONDS", "30"' in BOT
+    assert 'RESEND_UNSENT_INTERVAL_SECONDS", "60"' in BOT
     assert 'RESEND_UNSENT_STARTUP_DELAY_SECONDS' in BOT
-    assert 'OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30"' in BOT
-    assert 'MONITOR_REFRESH_INTERVAL_SECONDS", "60"' in BOT
-    assert 'RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "30")' in BOT
+    assert 'OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90"' in BOT
+    assert 'MONITOR_REFRESH_INTERVAL_SECONDS", "120"' in BOT
+    assert 'RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "60")' in BOT
+    assert 'RESEND_JOB_BUDGET_SECONDS", "20"' in BOT
+    assert 'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20"' in BOT
 
 
 def test_all_production_profiles_enable_global_automatic_delivery_contract():

@@ -105,19 +105,43 @@ def _is_crypto(asset: str) -> bool:
     )
 
 
+def _provider_is_configured(provider: str) -> bool:
+    provider = str(provider or "").lower()
+    if provider == "metaapi":
+        owner_present = bool(
+            (os.getenv("TELEGRAM_OWNER_ID") or "").strip()
+            or (os.getenv("OWNER_TELEGRAM_ID") or "").strip()
+            or (os.getenv("OWNER_IDS") or "").strip()
+        )
+        return bool(
+            (os.getenv("META_API_TOKEN") or "").strip()
+            and (
+                os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
+                or os.getenv("META_API_ACCOUNT_ID")
+                or os.getenv("METAAPI_ACCOUNT_ID")
+                or owner_present
+            )
+        )
+    if provider == "oanda":
+        return bool(
+            (os.getenv("OANDA_API_KEY") or os.getenv("OANDA_TOKEN") or "").strip()
+            and (os.getenv("OANDA_ACCOUNT_ID") or "").strip()
+        )
+    if provider == "twelvedata":
+        return bool((os.getenv("TWELVEDATA_API_KEY") or os.getenv("TWELVE_DATA_API_KEY") or "").strip())
+    if provider == "polygon":
+        return bool((os.getenv("POLYGON_API_KEY") or "").strip())
+    if provider == "fcs":
+        return bool((os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip())
+    return True
+
+
 def _get_providers_for_asset(asset: str) -> List[str]:
-    """Get provider priority list for live-price checks.
+    """Return a fast, asset-correct live quote route.
 
-    The final-send gate must not reuse candle-cache prices. It needs a fresh
-    quote from a provider whose symbol mapping matches the asset class.
-
-    Railway-compatible priority for crypto:
-    1. Coinbase - REST API works from Railway (EU/US regions)
-    2. OKX - REST API works from Railway (all regions)
-    3. Binance - may fail with HTTP 451 in restricted regions
-    4. Bybit - may fail with HTTP 403 in some regions
-    
-    Stocks, FX, and commodities prefer Yahoo with keyed Twelve Data fallback.
+    Configured broker/keyed providers are tried before public endpoints. Missing
+    credentials are removed from the route so they do not consume the overall
+    quote deadline. Metals and FX can use a trusted MetaApi broker quote.
     """
     try:
         from services.asset_mapper import classify_asset
@@ -125,12 +149,12 @@ def _get_providers_for_asset(asset: str) -> List[str]:
     except Exception:
         cls = "crypto" if _is_crypto(asset) else "stock"
     if cls == "crypto":
-        # Coinbase and OKX are the most Railway-compatible crypto providers.
-        # Binance/Bybit/CryptoCompare are fallbacks that may be region-blocked.
-        return ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
-    if cls in {"forex", "commodity"}:
-        return ["yahoo", "twelvedata", "oanda", "polygon"]
-    return ["yahoo", "twelvedata", "polygon"]
+        providers = ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
+    elif cls in {"forex", "commodity"}:
+        providers = ["metaapi", "oanda", "twelvedata", "fcs", "yahoo"]
+    else:
+        providers = ["twelvedata", "polygon", "yahoo"]
+    return [provider for provider in providers if _provider_is_configured(provider)]
 
 
 # ============================================================================
@@ -599,6 +623,151 @@ async def _fetch_cryptocompare_quote(symbol: str) -> LivePriceQuote | LivePriceF
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+async def _fetch_metaapi_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch a fresh broker-native FX/metals quote through MetaApi."""
+    provider = "metaapi"
+    account_id = str(
+        os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
+        or os.getenv("META_API_ACCOUNT_ID")
+        or os.getenv("METAAPI_ACCOUNT_ID")
+        or ""
+    ).strip()
+    if not _provider_is_configured(provider):
+        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
+    started = time.perf_counter()
+    try:
+        from services.asset_mapper import map_symbol
+        from services.mt5_client import (
+            get_live_quote as get_metaapi_live_quote,
+            get_user_mt5_account_id,
+        )
+        if not account_id:
+            owner_raw = str(
+                os.getenv("TELEGRAM_OWNER_ID")
+                or os.getenv("OWNER_TELEGRAM_ID")
+                or os.getenv("OWNER_IDS")
+                or ""
+            ).replace(";", ",").split(",")[0].strip()
+            if owner_raw:
+                try:
+                    account_id = str(await get_user_mt5_account_id(int(owner_raw)) or "").strip()
+                except (TypeError, ValueError):
+                    account_id = ""
+        if not account_id:
+            return _typed_failure(symbol, provider, "market_data_account_missing", retryable=False)
+        provider_symbol = map_symbol(symbol, "mt5") or str(symbol or "").upper()
+        row = await get_metaapi_live_quote(account_id, provider_symbol)
+        received_at = time.time()
+        if not row or not row.get("trusted"):
+            return _typed_failure(symbol, provider, "missing_or_stale_broker_quote")
+        quoted_at = row.get("quoted_at")
+        source_timestamp = quoted_at.timestamp() if hasattr(quoted_at, "timestamp") else quoted_at
+        return _typed_quote(
+            symbol=symbol,
+            provider=provider,
+            price=row.get("mid"),
+            bid=row.get("bid"),
+            ask=row.get("ask"),
+            source_timestamp=source_timestamp,
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.BID_ASK.value,
+            market_status="open",
+            confidence_reasons=("broker_native_quote",),
+        )
+    except Exception as exc:
+        logger.debug("[price] MetaApi typed quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
+async def _fetch_fcs_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch a timestamped FCS v4 FX/commodity quote when configured."""
+    import requests
+
+    provider = "fcs"
+    api_key = (os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip()
+    if not api_key:
+        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+
+    started = time.perf_counter()
+    compact = str(symbol or "").upper().replace("/", "").replace("-", "").replace("_", "")
+    try:
+        from services.asset_mapper import classify_asset
+
+        asset_class = str(classify_asset(compact) or "").lower()
+    except Exception:
+        asset_class = "forex"
+    fcs_symbol = {
+        "XAGUSD": "SILVER",
+        "SILVER": "SILVER",
+        "WTI": "OSX",
+        "USOIL": "OSX",
+    }.get(compact, compact)
+    data_type = "commodity" if asset_class == "commodity" else "forex"
+
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://api-v4.fcsapi.com/forex/latest",
+            params={"symbol": fcs_symbol, "type": data_type, "access_key": api_key},
+            timeout=5,
+        )
+        received_at = time.time()
+        payload = response.json() if response.ok else {}
+        rows = payload.get("response") if isinstance(payload, dict) else None
+        row = rows[0] if isinstance(rows, list) and rows else None
+        active = row.get("active") if isinstance(row, dict) else None
+        if not response.ok or not isinstance(active, dict):
+            breaker.record_failure()
+            return _typed_failure(
+                symbol,
+                provider,
+                f"invalid_response:{getattr(response, 'status_code', 'unknown')}",
+            )
+        bid = active.get("b") or active.get("bid")
+        ask = active.get("a") or active.get("ask")
+        price = active.get("c") or active.get("close")
+        if price is None and bid is not None and ask is not None:
+            try:
+                price = (float(bid) + float(ask)) / 2.0
+            except (TypeError, ValueError):
+                price = None
+        source_timestamp = (
+            active.get("t")
+            or active.get("timestamp")
+            or row.get("timestamp")
+            or (payload.get("info") or {}).get("server_time")
+        )
+        if source_timestamp is None:
+            breaker.record_failure()
+            return _typed_failure(symbol, provider, "source_timestamp_missing")
+        quote = _typed_quote(
+            symbol=symbol,
+            provider=provider,
+            price=price,
+            bid=bid,
+            ask=ask,
+            source_timestamp=source_timestamp,
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.BID_ASK.value if bid is not None and ask is not None else QuoteKind.TICKER.value,
+            market_status="open",
+            confidence_reasons=("timestamped_fcs_quote",),
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] FCS typed quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
 async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     import requests
 
@@ -1013,6 +1182,8 @@ async def _fetch_structured_quote(
         "binance": _fetch_binance_quote,
         "bybit": _fetch_bybit_quote,
         "cryptocompare": _fetch_cryptocompare_quote,
+        "metaapi": _fetch_metaapi_quote,
+        "fcs": _fetch_fcs_quote,
         "yahoo": _fetch_yahoo_quote,
         "twelvedata": _fetch_twelvedata_quote,
         "polygon": _fetch_polygon_quote,

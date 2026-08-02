@@ -26,83 +26,27 @@ def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
     return str(delivery_state or "").strip().lower() == "formatter_failed"
 
 
-def _resend_advisory_lock() -> tuple[int, str]:
-    """Return a replica-shared lock ID isolated by Railway environment/service."""
-    import hashlib
-    import os
-
-    explicit = str(os.getenv("RESEND_JOB_LOCK_ID", "") or "").strip()
-    if explicit:
-        return int(explicit), "explicit"
-
-    scope = str(os.getenv("RESEND_JOB_LOCK_SCOPE", "") or "").strip()
-    if not scope:
-        scope = ":".join(
-            str(value or "unknown").strip()
-            for value in (
-                os.getenv("RAILWAY_PROJECT_ID"),
-                os.getenv("RAILWAY_ENVIRONMENT_ID") or os.getenv("RAILWAY_ENVIRONMENT_NAME"),
-                os.getenv("RAILWAY_SERVICE_ID") or os.getenv("RAILWAY_SERVICE_NAME"),
-                os.getenv("APP_ENV", "development"),
-            )
-        )
-    digest = hashlib.sha256(f"signalrank:resend:{scope}".encode("utf-8")).digest()
-    lock_id = int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
-    return max(1, lock_id), scope
-
-
 def resend_unsent_signals_job():
-    """Scheduled job: resend top-scored unsent signals to eligible users.
-
-    Signals are capped to the top-20 by score from the last 24 h to avoid flooding.
-    Uses run_sync() so the global async engine is re-used correctly whether or not
-    an event loop is already running in the calling thread.
-    """
-    # Pre-flight: make sure the global async engine is initialised.  This is a
-    # no-op when run_bot() has already set it up, but guards against edge cases
-    # where the job fires before the main startup path completes.
+    """Run bounded resend recovery under one cross-replica owner lease."""
     try:
         from db.session import _get_global_engine
         if _get_global_engine() is None:
-            logger.warning("[resend] DB engine not initialised \u2014 skipping job")
+            logger.warning("[resend] DB engine not initialised — skipping job")
             return
-    except Exception as _pre_err:
-        logger.warning("[resend] DB engine pre-flight failed: %s", _pre_err)
+    except Exception as preflight_error:
+        logger.warning("[resend] DB engine pre-flight failed: %s", preflight_error)
         return
-    _lock_conn = None
-    try:
-        # Cluster-safe lock (Postgres advisory lock): prevents duplicate resend
-        # runs across multiple Railway instances when Redis is unavailable.
-        import os
-        import psycopg2
-        try:
-            from config import resolve_database_url
-            _dsn = resolve_database_url(async_driver=False) or ""
-        except Exception:
-            _dsn = ""
 
-        if _dsn:
-            _lock_id, _lock_scope = _resend_advisory_lock()
-            _lock_conn = psycopg2.connect(_dsn, connect_timeout=5)
-            _lock_conn.autocommit = True
-            with _lock_conn.cursor() as _cur:
-                _cur.execute("SELECT pg_try_advisory_lock(%s)", (_lock_id,))
-                _locked = bool((_cur.fetchone() or [False])[0])
-            if not _locked:
-                logger.info(
-                    "[resend] skipped: another instance holds advisory lock scope=%s lock_id=%s",
-                    _lock_scope,
-                    _lock_id,
-                )
-                try:
-                    _lock_conn.close()
-                except Exception:
-                    pass
-                return
-    except Exception as _lock_err:
-        logger.debug(f"[resend] advisory lock unavailable, continuing without lock: {_lock_err}")
-
-    try:
+    from core.job_leases import acquire_scheduler_job_lease
+    lease_seconds = max(30, int(os.getenv("RESEND_JOB_LEASE_SECONDS", "45") or 45))
+    with acquire_scheduler_job_lease("resend_unsent_signals", lease_seconds=lease_seconds) as lease:
+        if not lease.acquired:
+            logger.info(
+                "[resend] standby: active delivery owner holds lease backend=%s scope=%s",
+                lease.backend,
+                lease.scope,
+            )
+            return
         try:
             if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False):
                 fanout_lock = state.cache_get_sync("engine_delivery_fanout:active")
@@ -113,24 +57,19 @@ def resend_unsent_signals_job():
             pass
         try:
             from db.session import critical_db_work_active
-            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", False):
-                logger.info("[resend] skipped: critical DB work active")
+            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", True):
+                logger.info("[resend] deferred: interactive/critical DB work active")
                 return
         except Exception:
             pass
-        import asyncio
-        job_timeout = max(15.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "180") or 180))
-        run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
-    except TimeoutError:
-        logger.warning("[resend] job timed out; remaining work deferred to next run")
-    except Exception:
-        logger.exception("[resend] resend_unsent_signals_job failed")
-    finally:
-        if _lock_conn is not None:
-            try:
-                _lock_conn.close()
-            except Exception:
-                pass
+        try:
+            import asyncio
+            job_timeout = max(10.0, float(os.getenv("RESEND_JOB_TIMEOUT_SECONDS", "25") or 25))
+            run_sync(asyncio.wait_for(_resend_unsent_signals_async(), timeout=job_timeout))
+        except TimeoutError:
+            logger.info("[resend] job budget reached; remaining work deferred")
+        except Exception:
+            logger.exception("[resend] resend_unsent_signals_job failed")
 
 
 async def _resend_unsent_signals_async():
@@ -153,6 +92,9 @@ async def _resend_unsent_signals_async():
         import asyncio
 
         delivery_mgr = TierDeliveryManager()
+        _job_budget_seconds = max(10.0, float(os.getenv("RESEND_JOB_BUDGET_SECONDS", "20") or 20))
+        _job_deadline = time.monotonic() + _job_budget_seconds
+        _budget_exhausted = False
 
         # Fetch user IDs with a direct async call \u2014 avoids calling
         # get_all_user_ids_compat() (which uses run_sync() internally and would
@@ -166,7 +108,7 @@ async def _resend_unsent_signals_async():
         try:
             async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
                 user_ids = await list_all_user_telegram_ids(_bootstrap_session)
-                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=100)
+                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=max(10, int(os.getenv("RESEND_CANDIDATE_QUERY_LIMIT", "50") or 50)))
                 failed_rows = await _bootstrap_session.execute(
                     select(SignalDelivery.signal_id).where(
                         SignalDelivery.delivery_state == "formatter_failed"
@@ -224,7 +166,8 @@ async def _resend_unsent_signals_async():
             user_ids = list(user_ids or [])
 
         allowlist_raw = str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", "") or "").strip()
-        app_env = str(os.getenv("APP_ENV", "development") or "development").strip().lower()
+        from core.env import runtime_environment_name
+        app_env = runtime_environment_name("development")
         restriction_mode = _env_bool("DELIVERY_AUDIENCE_RESTRICTION_MODE", False)
         testing_mode = _env_bool_any(
             ("PUBLIC_TESTING_MODE", "FULL_SYSTEM_STAGING_TEST_MODE", "FULL_SYSTEM_STAGING_TEST_ACTIVE"),
@@ -269,14 +212,14 @@ async def _resend_unsent_signals_async():
             primary_owner = None
         if primary_owner in user_ids:
             user_ids = [primary_owner] + [uid for uid in user_ids if uid != primary_owner]
-        max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "25") or 25))
+        max_users = max(1, int(os.getenv("RESEND_MAX_USERS_PER_RUN", "6") or 6))
         if len(user_ids) > max_users:
             # Keep the primary owner in every proof run, but rotate the remaining
             # audience deterministically so users beyond the first page are not starved.
             ordered_others = [uid for uid in user_ids if uid != primary_owner]
             owner_slots = 1 if primary_owner in user_ids else 0
             rotating_slots = max(1, max_users - owner_slots)
-            interval_seconds = max(15, int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "30")) or 30))
+            interval_seconds = max(15, int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "60")) or 60))
             bucket = int(time.time() // interval_seconds)
             start = (bucket * rotating_slots) % max(1, len(ordered_others))
             rotated = (ordered_others[start:] + ordered_others[:start])[:rotating_slots]
@@ -321,7 +264,7 @@ async def _resend_unsent_signals_async():
             return
 
         resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
-        resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "8") or 8)
+        resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "3") or 3)
 
         # Keep highest-quality signals only to avoid flooding users.
         ranked = sorted(
@@ -420,6 +363,10 @@ async def _resend_unsent_signals_async():
         bot = Bot(token=_require_telegram_token())
         async with bot:
             for sig in signals:
+                if time.monotonic() >= _job_deadline:
+                    _budget_exhausted = True
+                    logger.info("[resend] job budget exhausted before next signal; deferring remaining work")
+                    break
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
                 if not signal_id:
                     continue
@@ -501,6 +448,10 @@ async def _resend_unsent_signals_async():
                     sig_dict = {}
 
                 for user_id in user_ids:
+                    if time.monotonic() >= _job_deadline:
+                        _budget_exhausted = True
+                        logger.info("[resend] job budget exhausted; deferring remaining recipients")
+                        break
                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
                     gate_tier = _normalized_delivery_tier(user_tier)
                     try:
@@ -675,7 +626,7 @@ async def _resend_unsent_signals_async():
                             )
                             raise send_err
 
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(max(0.0, float(os.getenv("RESEND_INTER_SEND_DELAY_SECONDS", "0.10") or 0.10)))
                         delivered_count += 1
                         logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
                         delivered_user_ids.add(int(user_id))
@@ -712,6 +663,8 @@ async def _resend_unsent_signals_async():
             skipped_profile_count,
             skipped_already_delivered_count,
         )
+        if _budget_exhausted:
+            logger.info("[resend] remaining work deferred reason=job_budget_exhausted budget_s=%.1f", _job_budget_seconds)
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")
@@ -3977,7 +3930,7 @@ def notify_all_users_trade_outcome(strategy, result, ret, user_ids=None):
         notify_trade_outcome(uid, strategy, result, ret)
         try:
             import asyncio
-            run_sync(asyncio.sleep(0.5))
+            run_sync(asyncio.sleep(max(0.0, float(os.getenv("OUTCOME_NOTIFICATION_INTER_SEND_DELAY_SECONDS", "0.05") or 0.05))))
         except Exception:
             pass
 
@@ -5309,7 +5262,7 @@ def distribute_random_signals_to_free_users_job():
 
     try:
         from db.session import critical_db_work_active
-        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
+        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
             logger.info("[free_distribution] skipped: critical DB work active")
             return
     except Exception:
@@ -7156,14 +7109,14 @@ def run_bot() -> None:
             return
 
     # Initialize and schedule jobs
-    def send_outcome_notifications():
+    def _send_outcome_notifications_owned():
         if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
             logger.info("[outcome_notify] disabled by env")
             return
         try:
             from db.session import critical_db_work_active
-            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
-                logger.info("[outcome_notify] skipped: critical DB work active")
+            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+                logger.info("[outcome_notify] deferred: interactive/critical DB work active")
                 return
         except Exception:
             pass
@@ -7184,10 +7137,14 @@ def run_bot() -> None:
                 get_alert_prefs,
             )
             from datetime import datetime
+            _outcome_limit = max(1, min(50, int(os.getenv("OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5") or 5)))
+            _outcome_budget_seconds = max(10.0, float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20") or 20))
+            _outcome_deadline = time.monotonic() + _outcome_budget_seconds
+            _outcome_budget_exhausted = False
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
                 async with get_session(priority="background", label="signalrank_telegram_bot") as session:
-                    rows = await list_unnotified_outcomes(session, limit=50)
+                    rows = await list_unnotified_outcomes(session, limit=_outcome_limit)
                     out = []
                     for oc, sig in rows:
                         recipients = await list_delivery_recipients_for_signal(session, str(sig.signal_id))
@@ -7212,6 +7169,10 @@ def run_bot() -> None:
             outcome_bot = Bot(token=_require_telegram_token())
 
             for oc, sig, recipients in pending:
+                if time.monotonic() >= _outcome_deadline:
+                    _outcome_budget_exhausted = True
+                    logger.info("[outcome] job budget exhausted before next outcome; deferring remaining work")
+                    break
                 status = str(getattr(oc, 'status', '') or '').lower()
                 ref = str(getattr(sig, 'signal_id', '') or '')
                 # Shorten ref to 8 chars for display
@@ -7314,7 +7275,26 @@ def run_bot() -> None:
                 quiet_deferred_count = 0
                 eligible_count = 0
 
+                # The market observation is identical for every recipient of this
+                # outcome. Fetch it once per outcome instead of once per user.
+                current_market_price = None
+                try:
+                    from data.market_data import fetch_market_data_cached
+                    async def _fetch_market_price_once():
+                        tf = timeframe or "1h"
+                        data = await fetch_market_data_cached(asset, [tf])
+                        payload = data.get(tf) or {}
+                        candles = payload.get("candles") or []
+                        return candles[-1].get("close") if candles else None
+                    current_market_price = run_sync(_fetch_market_price_once())
+                except Exception as exc:
+                    logger.debug("[outcome] market price unavailable asset=%s err=%s", asset, exc)
+
                 for telegram_user_id, tier_at_send, prefs in recipients:
+                    if time.monotonic() >= _outcome_deadline:
+                        _outcome_budget_exhausted = True
+                        logger.info("[outcome] job budget exhausted; deferring remaining recipients ref=%s", ref_short)
+                        break
                     try:
                         if isinstance(prefs, dict) and not prefs.get('tp_sl_enabled', True):
                             continue
@@ -7379,23 +7359,6 @@ def run_bot() -> None:
                     # Outcome notification logic by tier
                     notify = False
                     msg = None
-                    # Try to get current market price for the asset
-                    current_market_price = None
-                    try:
-                        from data.market_data import fetch_market_data_cached
-                        async def _fetch_market_price():
-                            tf = timeframe or "1h"
-                            data = await fetch_market_data_cached(asset, [tf])
-                            payload = data.get(tf) or {}
-                            candles = payload.get("candles") or []
-                            if candles:
-                                return candles[-1].get("close")
-                            return None
-                        current_market_price = run_sync(_fetch_market_price())
-                    except Exception as e:
-                        logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
-                        pass
-
                     def _format_sl_closed_message() -> str:
                         try:
                             entry_v = float(signal_data.get("entry") or 0)
@@ -7578,6 +7541,20 @@ def run_bot() -> None:
         except Exception as e:
             logger.warning(f"[outcome] Failed to process outcomes: {e}")
             return
+
+
+    def send_outcome_notifications():
+        from core.job_leases import acquire_scheduler_job_lease
+        lease_seconds = max(30, int(os.getenv("OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS", "45") or 45))
+        with acquire_scheduler_job_lease("outcome_notifications", lease_seconds=lease_seconds) as lease:
+            if not lease.acquired:
+                logger.info(
+                    "[outcome_notify] standby: active notification owner holds lease backend=%s scope=%s",
+                    lease.backend,
+                    lease.scope,
+                )
+                return
+            return _send_outcome_notifications_owned()
 
 
     def smart_exit_guard_job():
@@ -9443,11 +9420,11 @@ def run_bot() -> None:
         )
         _outcome_notification_interval_seconds = max(
             15,
-            int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "30") or 30),
+            int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90") or 90),
         )
         _monitor_refresh_interval_seconds = max(
             30,
-            int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "60") or 60),
+            int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "120") or 120),
         )
         _outcome_first_run = now_utc_naive() + timedelta(seconds=_outcome_start_delay_seconds)
         _worker_outcome_owner = _env_bool("WORKER_OUTCOME_TRACKER_ENABLED", True)
@@ -9474,6 +9451,8 @@ def run_bot() -> None:
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                coalesce=True,
+                misfire_grace_time=min(300, _outcome_notification_interval_seconds),
                 next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
@@ -9535,6 +9514,8 @@ def run_bot() -> None:
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                coalesce=True,
+                misfire_grace_time=min(300, _outcome_notification_interval_seconds),
                 next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
@@ -9688,24 +9669,27 @@ def run_bot() -> None:
             logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err, exc_info=True)
         resend_interval_seconds = max(
             15,
-            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "30") or 30),
+            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "60") or 60),
         )
         resend_start_delay_seconds = max(
             10,
             int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "15")) or 15),
         )
-        scheduler.add_job(
-            resend_unsent_signals_job,
-            'interval',
-            seconds=resend_interval_seconds,
-            id='resend_unsent_signals_job',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=min(120, resend_interval_seconds),
-            jobstore=_sa,
-            next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
-        )
+        if _env_bool("RESEND_UNSENT_JOB_ENABLED", True):
+            scheduler.add_job(
+                resend_unsent_signals_job,
+                'interval',
+                seconds=resend_interval_seconds,
+                id='resend_unsent_signals_job',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=min(300, resend_interval_seconds),
+                jobstore=_sa,
+                next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
+            )
+        else:
+            logger.info("[sched] resend_unsent_signals_job disabled by RESEND_UNSENT_JOB_ENABLED=0")
         if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), False):
             free_start_delay_seconds = max(
                 resend_start_delay_seconds + 60,

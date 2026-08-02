@@ -14,6 +14,7 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.delivery_state import CONFIRMED_DELIVERY_STATES
 from db.models import (
@@ -26,6 +27,7 @@ from db.models import (
     User,
     UserSignalMonitoring,
 )
+from core.env import runtime_environment_name
 from utils.timeutils import now_utc_naive
 
 
@@ -99,13 +101,19 @@ async def reconcile_user_performance_ledger(
     telegram_user_id: int,
     environment: str | None = None,
 ) -> int:
-    """Reconcile non-final rows; finalized rows require the correction workflow."""
+    """Reconcile canonical rows with a race-safe PostgreSQL upsert.
+
+    Concurrent /performance requests previously selected an empty scope and
+    then both inserted it, causing ``uq_performance_ledger_scope`` violations.
+    The bulk ON CONFLICT statement makes the operation idempotent across
+    replicas while preserving finalized rows.
+    """
     user = (
         await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None:
         return 0
-    env = str(environment or os.getenv("APP_ENV", "development") or "development").lower()
+    env = str(environment or runtime_environment_name("development") or "development").lower()
     states = tuple(CONFIRMED_DELIVERY_STATES)
     rows = (
         await session.execute(
@@ -137,21 +145,18 @@ async def reconcile_user_performance_ledger(
         existing_entries = list(
             (
                 await session.execute(
-                    select(PerformanceLedgerEntry)
-                    .where(
+                    select(PerformanceLedgerEntry).where(
                         PerformanceLedgerEntry.user_id == int(user.id),
                         PerformanceLedgerEntry.signal_id.in_(signal_ids),
                         PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
                         PerformanceLedgerEntry.environment == env,
                     )
-                    .with_for_update()
                 )
-            )
-            .scalars()
-            .all()
+            ).scalars().all()
         )
     existing_by_signal = {str(entry.signal_id): entry for entry in existing_entries}
-    changed = 0
+    upsert_by_signal: dict[str, dict[str, Any]] = {}
+
     for delivery, signal, outcome, lifecycle, monitoring in rows:
         bucket, final_r, source, included, exclusion = _classify(
             signal=signal, outcome=outcome, lifecycle=lifecycle, monitoring=monitoring,
@@ -168,7 +173,20 @@ async def reconcile_user_performance_ledger(
         existing = existing_by_signal.get(canonical_signal_id)
         if existing is not None and existing.finalized_at is not None:
             continue
-        values = {
+        now = now_utc_naive()
+        snapshot_hash = _snapshot_hash(payload)
+        if existing is not None and existing.snapshot_hash == snapshot_hash:
+            continue
+        finalized_at = None
+        outcome_completed_at = getattr(outcome, "closed_at", None) or getattr(monitoring, "stopped_at", None)
+        if bucket in COMPLETED_BUCKETS and final_r is not None and included:
+            finalized_at = outcome_completed_at or now
+        upsert_by_signal[canonical_signal_id] = {
+            "ledger_id": str(uuid4()),
+            "user_id": int(user.id),
+            "signal_id": canonical_signal_id,
+            "domain": PERFORMANCE_DOMAIN,
+            "environment": env,
             "delivery_id": int(delivery.id),
             "delivery_confirmed_at": delivery.delivery_confirmed_at,
             "asset": str(signal.asset),
@@ -180,38 +198,59 @@ async def reconcile_user_performance_ledger(
             "global_outcome": _status(getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None)) or None,
             "user_monitoring_outcome": _status(getattr(monitoring, "realized_outcome", None)) or None,
             "final_realized_r": float(final_r) if final_r is not None else None,
-            "outcome_completed_at": getattr(outcome, "closed_at", None) or getattr(monitoring, "stopped_at", None),
+            "outcome_completed_at": outcome_completed_at,
             "outcome_source": source,
             "calculation_policy_version": PERFORMANCE_POLICY_VERSION,
             "signal_plan_version": str((getattr(signal, "meta", {}) or {}).get("signal_plan_version") or "legacy-plan-v1"),
             "included": bool(included),
             "exclusion_reason": exclusion,
-            "snapshot_hash": _snapshot_hash(payload),
-            "updated_at": now_utc_naive(),
+            "snapshot_hash": snapshot_hash,
+            "row_version": 1,
+            "finalized_at": finalized_at,
+            "created_at": now,
+            "updated_at": now,
         }
-        if existing is not None and existing.snapshot_hash == values["snapshot_hash"]:
-            continue
-        if existing is None:
-            existing = PerformanceLedgerEntry(
-                ledger_id=str(uuid4()),
-                user_id=int(user.id),
-                signal_id=canonical_signal_id,
-                domain=PERFORMANCE_DOMAIN,
-                environment=env,
-                created_at=now_utc_naive(),
-                **values,
-            )
-            session.add(existing)
-            existing_by_signal[canonical_signal_id] = existing
-        else:
-            for key, value in values.items():
-                setattr(existing, key, value)
-            existing.row_version = int(existing.row_version or 0) + 1
-        if bucket in COMPLETED_BUCKETS and final_r is not None and included:
-            existing.finalized_at = values["outcome_completed_at"] or now_utc_naive()
-        changed += 1
-    await session.flush()
-    return changed
+
+    pending = list(upsert_by_signal.values())
+    if not pending:
+        return 0
+
+    dialect_name = str(session.get_bind().dialect.name or "").lower()
+    if dialect_name == "postgresql":
+        insert_stmt = pg_insert(PerformanceLedgerEntry).values(pending)
+        excluded = insert_stmt.excluded
+        mutable_columns = (
+            "delivery_id", "delivery_confirmed_at", "asset", "timeframe", "direction",
+            "primary_bucket", "entry_status", "highest_tp", "global_outcome",
+            "user_monitoring_outcome", "final_realized_r", "outcome_completed_at",
+            "outcome_source", "calculation_policy_version", "signal_plan_version",
+            "included", "exclusion_reason", "snapshot_hash", "finalized_at", "updated_at",
+        )
+        statement = insert_stmt.on_conflict_do_update(
+            constraint="uq_performance_ledger_scope",
+            set_={
+                **{name: getattr(excluded, name) for name in mutable_columns},
+                "row_version": PerformanceLedgerEntry.row_version + 1,
+            },
+            where=and_(
+                PerformanceLedgerEntry.finalized_at.is_(None),
+                PerformanceLedgerEntry.snapshot_hash.is_distinct_from(excluded.snapshot_hash),
+            ),
+        )
+        await session.execute(statement)
+    else:
+        # Test/development fallback for non-PostgreSQL databases.
+        for values in pending:
+            existing = existing_by_signal.get(str(values["signal_id"]))
+            if existing is None:
+                session.add(PerformanceLedgerEntry(**values))
+            elif existing.finalized_at is None and existing.snapshot_hash != values["snapshot_hash"]:
+                for key, value in values.items():
+                    if key not in {"ledger_id", "user_id", "signal_id", "domain", "environment", "created_at"}:
+                        setattr(existing, key, value)
+                existing.row_version = int(existing.row_version or 0) + 1
+        await session.flush()
+    return len(pending)
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,7 +299,7 @@ async def get_user_performance_report(
 ) -> dict[str, Any]:
     end = report_end or now_utc_naive()
     start = end - timedelta(days=max(1, min(3650, int(days))))
-    env = str(environment or os.getenv("APP_ENV", "development") or "development").lower()
+    env = str(environment or runtime_environment_name("development") or "development").lower()
     await reconcile_user_performance_ledger(
         session, telegram_user_id=int(telegram_user_id), environment=env,
     )

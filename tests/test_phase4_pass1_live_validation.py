@@ -47,11 +47,29 @@ def test_live_price_provider_routing_stock_not_fx():
     assert "binance" not in providers[:1]
 
 
-def test_live_price_provider_routing_metals_has_keyed_fallback():
+def test_live_price_provider_routing_metals_prioritizes_configured_broker(monkeypatch):
     from data.get_live_price import _get_providers_for_asset
 
+    monkeypatch.setenv("META_API_TOKEN", "token")
+    monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "account")
+    monkeypatch.setenv("OANDA_API_KEY", "key")
+    monkeypatch.setenv("OANDA_ACCOUNT_ID", "account")
+    monkeypatch.setenv("TWELVEDATA_API_KEY", "key")
     providers = _get_providers_for_asset("XAGUSD")
-    assert providers == ["yahoo", "twelvedata", "oanda", "polygon"]
+    assert providers == ["metaapi", "oanda", "twelvedata", "yahoo"]
+
+
+def test_live_price_provider_routing_skips_unconfigured_keyed_providers(monkeypatch):
+    from data.get_live_price import _get_providers_for_asset
+
+    for name in (
+        "META_API_TOKEN", "META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID",
+        "METAAPI_ACCOUNT_ID", "TELEGRAM_OWNER_ID", "OWNER_TELEGRAM_ID", "OWNER_IDS",
+        "OANDA_API_KEY", "OANDA_TOKEN", "OANDA_ACCOUNT_ID",
+        "TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY", "FCS_API_KEY", "FCS_API_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert _get_providers_for_asset("XAGUSD") == ["yahoo"]
 
 
 def test_rich_message_builder_uses_table_and_details():
