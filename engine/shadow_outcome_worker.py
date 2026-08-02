@@ -103,17 +103,99 @@ class ShadowOutcomeWorker:
                     "entry": float(r.entry or 0.0), "stop_loss": float(r.stop_loss or 0.0),
                     "take_profit": r.take_profit, "ml_probability": float(r.ml_probability or 0.0),
                     "rejection_reason": r.rejection_reason, "features": dict(r.features or {}),
+                    "created_at": r.created_at,
                 } for r in rows]
         except NoncriticalWriteDropped:
             logger.info("[shadow_tracker] deferred reason=db_background_capacity")
             return []
 
     async def _evaluate_rows(self, rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]:
+        from data.fetcher import async_get_candles
         from engine.realtime_outcome_tracker import _check_hit, _get_live_price, _parse_tp_levels
         semaphore = asyncio.Semaphore(self._price_concurrency)
 
+        def candle_value(candle: Any, *names: str) -> float | None:
+            if isinstance(candle, dict):
+                for name in names:
+                    try:
+                        value = float(candle.get(name))
+                        if value > 0:
+                            return value
+                    except Exception:
+                        pass
+            return None
+
+        def _candle_time(candle: Any) -> datetime | None:
+            if not isinstance(candle, dict):
+                return None
+            raw = None
+            for key in ("timestamp", "time", "datetime", "open_time", "openTime", "date"):
+                if candle.get(key) not in (None, ""):
+                    raw = candle.get(key)
+                    break
+            if raw is None:
+                return None
+            try:
+                if isinstance(raw, (int, float)):
+                    value = float(raw)
+                    if value > 10_000_000_000:
+                        value /= 1000.0
+                    return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+            except Exception:
+                return None
+
+        def historical_terminal(row: dict[str, Any], candles: Any) -> str | None:
+            if not isinstance(candles, list):
+                return None
+            created_at = row.get("created_at")
+            if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+                created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+            direction = str(row.get("direction") or "long").lower()
+            stop = float(row.get("stop_loss") or 0.0)
+            targets = _parse_tp_levels(row.get("take_profit"))
+            final_target = float(targets[-1]) if targets else 0.0
+            if stop <= 0 or final_target <= 0:
+                return None
+            for candle in candles:
+                candle_time = _candle_time(candle)
+                # A rejected signal can only be judged on market data observed
+                # after the rejection. Using older candles creates false wins
+                # and false losses that the engine could never have traded.
+                if isinstance(created_at, datetime):
+                    if candle_time is None or candle_time < created_at:
+                        continue
+                high = candle_value(candle, "high", "h")
+                low = candle_value(candle, "low", "l")
+                if high is None or low is None:
+                    continue
+                sl_hit = low <= stop if direction == "long" else high >= stop
+                tp_hit = high >= final_target if direction == "long" else low <= final_target
+                if sl_hit and tp_hit:
+                    # Candle resolution cannot prove which barrier occurred first.
+                    return "ambiguous"
+                if sl_hit:
+                    return "sl"
+                if tp_hit:
+                    return "tp3"
+            return None
+
         async def one(row: dict[str, Any]):
             async with semaphore:
+                try:
+                    candles = await async_get_candles(str(row["asset"]), str(row.get("timeframe") or "1h"))
+                except Exception:
+                    candles = []
+                historical = historical_terminal(row, candles)
+                if historical == "ambiguous":
+                    # Persist ambiguous candle ordering as an explicit excluded
+                    # research result. Retrying forever would leave shadow
+                    # pending counts at zero/unknown and could later convert an
+                    # unknowable sequence into a false win or false loss.
+                    return row, "ambiguous"
+                if historical:
+                    return row, historical
                 price = await _get_live_price(str(row["asset"]))
             if price is None:
                 return None

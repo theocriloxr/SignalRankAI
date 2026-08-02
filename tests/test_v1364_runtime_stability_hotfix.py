@@ -162,10 +162,22 @@ def test_provider_coverage_gate_is_nonblocking_in_staging_and_fail_closed_in_pro
     assert staging["ok"] is True
     assert staging["complete"] is False
     assert production["ok"] is False
-    assert production["detail"] == "missing:commodity,fx"
+    assert "missing_provider_classes:commodity,fx" in production["detail"]
+    assert "asset_discovery_unverified" in production["detail"]
 
     monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "dedicated-account")
     monkeypatch.setattr(live_price, "_get_providers_for_asset", lambda symbol: ["metaapi", "yahoo"])
+    import data.pair_discovery as pair_discovery
+    monkeypatch.setattr(
+        pair_discovery,
+        "get_asset_discovery_snapshot",
+        lambda force_refresh=False: {
+            "total": 10,
+            "last_refresh_age_seconds": 5,
+            "untrusted_total": 0,
+            "providers": {"provider_backed": True},
+        },
+    )
     production = asyncio.run(helper(production=True))
     assert production["ok"] is True
     assert production["complete"] is True

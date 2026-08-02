@@ -20,7 +20,7 @@ import os
 import hashlib
 import math
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 import asyncio
@@ -52,6 +52,7 @@ class ExecutionRequest:
     execution_mode: str
     tier: str  # user's tier at time of execution
     created_at: datetime
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -296,6 +297,103 @@ class MT5SignalRouter:
                 exc_info=True,
             )
             return False
+
+    async def _get_user_profile_policy(
+        self,
+        user_id: int,
+        signal: Dict[str, Any],
+        requested_execution_mode: str,
+    ) -> Dict[str, Any]:
+        """Evaluate the canonical user profile before any broker-side work."""
+        result: Dict[str, Any] = {
+            "allowed": False,
+            "reason": "profile_unavailable",
+            "max_concurrent_positions": 0,
+        }
+        try:
+            from db.models import BrokerExecution, MT5Execution, User
+            from db.session import get_session
+            from services.user_intelligence import (
+                get_user_trading_preferences,
+                signal_matches_preferences,
+            )
+            from sqlalchemy import func, select
+
+            async with get_session(label="mt5.profile_policy", timeout_seconds=8.0) as session:
+                user = (await session.execute(
+                    select(User).where(User.telegram_user_id == int(user_id)).limit(1)
+                )).scalar_one_or_none()
+                if user is None:
+                    return {**result, "reason": "user_profile_missing"}
+                prefs = await get_user_trading_preferences(session, int(user_id))
+                profile_ok, profile_reason = signal_matches_preferences(signal, prefs)
+                if not profile_ok:
+                    return {**result, "reason": f"signal_profile_mismatch:{profile_reason}"}
+                if str(prefs.trading_mode or "paper").lower() not in {"live", "both"}:
+                    return {**result, "reason": "profile_live_disabled"}
+                requested = str(requested_execution_mode or "").strip().lower()
+                configured = str(prefs.execution_mode or "manual").strip().lower()
+                if requested in {ExecutionMode.COPY_TRADE, "copy"} and configured != "copy_trade":
+                    return {**result, "reason": "profile_copy_disabled"}
+                if requested in {ExecutionMode.AUTO, "live"} and configured not in {"auto", "live"}:
+                    return {**result, "reason": "profile_auto_disabled"}
+                if requested == ExecutionMode.MANUAL_CONFIRMED and configured not in {
+                    "manual", "manual_confirmed", "semi_auto"
+                }:
+                    return {**result, "reason": "profile_manual_confirmation_disabled"}
+                provider = str(prefs.execution_provider or "auto").strip().lower()
+                if provider not in {"auto", "mt5", "metaapi"}:
+                    return {**result, "reason": "profile_provider_mismatch"}
+
+                open_statuses = ("pending", "submitted", "confirmed", "open", "submitting", "ambiguous", "reconciliation_pending")
+                mt5_open = int((await session.execute(
+                    select(func.count(MT5Execution.id)).where(
+                        MT5Execution.user_id == int(user.id),
+                        func.lower(MT5Execution.status).in_(open_statuses),
+                    )
+                )).scalar_one() or 0)
+                bybit_open = int((await session.execute(
+                    select(func.count(BrokerExecution.id)).where(
+                        BrokerExecution.user_id == int(user.id),
+                        func.lower(BrokerExecution.status).in_(open_statuses),
+                    )
+                )).scalar_one() or 0)
+                asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+                duplicate_mt5 = int((await session.execute(
+                    select(func.count(MT5Execution.id)).where(
+                        MT5Execution.user_id == int(user.id),
+                        MT5Execution.symbol == asset,
+                        func.lower(MT5Execution.status).in_(open_statuses),
+                    )
+                )).scalar_one() or 0) > 0
+                duplicate_bybit = int((await session.execute(
+                    select(func.count(BrokerExecution.id)).where(
+                        BrokerExecution.user_id == int(user.id),
+                        BrokerExecution.symbol == asset,
+                        func.lower(BrokerExecution.status).in_(open_statuses),
+                    )
+                )).scalar_one() or 0) > 0
+                if duplicate_mt5 or duplicate_bybit:
+                    return {**result, "reason": "duplicate_open_asset"}
+                maximum = max(1, int(prefs.max_concurrent_positions or 1))
+                if mt5_open + bybit_open >= maximum:
+                    return {
+                        **result,
+                        "reason": "profile_max_concurrent_positions",
+                        "max_concurrent_positions": maximum,
+                    }
+                return {
+                    "allowed": True,
+                    "reason": "ok",
+                    "max_concurrent_positions": maximum,
+                    "risk_per_trade_pct": float(prefs.risk_per_trade_pct),
+                    "trade_profile": prefs.trade_profile,
+                    "risk_profile": prefs.risk_profile,
+                    "execution_provider": provider,
+                }
+        except Exception:
+            logger.warning("[SignalRouter] canonical user profile unavailable; blocking", exc_info=True)
+            return result
 
     async def _get_user_execution_policy(
         self,
@@ -632,6 +730,19 @@ class MT5SignalRouter:
             ExecutionResult with success status and details
         """
         try:
+            requested_mode = str(execution_mode or "").strip().lower()
+            if requested_mode == "copy":
+                requested_mode = ExecutionMode.COPY_TRADE
+            flags = getattr(self._execution_gate, "safety_flags", None)
+            if requested_mode == ExecutionMode.AUTO:
+                if flags is not None and not bool(getattr(flags, "auto_trade_enabled", False)):
+                    return ExecutionResult(success=False, message="AUTO_TRADE_DISABLED", error="AUTO_TRADE_DISABLED")
+            if requested_mode == ExecutionMode.COPY_TRADE:
+                if flags is not None and not bool(getattr(flags, "copy_trade_enabled", False)):
+                    return ExecutionResult(success=False, message="COPY_TRADE_DISABLED", error="COPY_TRADE_DISABLED")
+            if requested_mode in {ExecutionMode.AUTO, ExecutionMode.COPY_TRADE}:
+                if flags is not None and not bool(getattr(flags, "auto_execution_enabled", False)):
+                    return ExecutionResult(success=False, message="AUTO_EXECUTION_DISABLED", error="AUTO_EXECUTION_DISABLED")
             valid, reason = self._validate_signal(signal or {})
             if not valid:
                 return ExecutionResult(success=False, message=reason, error=reason)
@@ -687,16 +798,23 @@ class MT5SignalRouter:
             )
 
             asset = str(signal.get("asset") or signal.get("symbol") or "").upper()
-            account_info, symbol_spec, quote, policy, evidence = await asyncio.gather(
+            account_info, symbol_spec, quote, policy, profile_policy, evidence = await asyncio.gather(
                 get_account_info(mt5_account_id),
                 get_symbol_specification(mt5_account_id, asset),
                 get_live_quote(mt5_account_id, asset),
                 self._get_user_execution_policy(user_id, mt5_account_id, execution_mode),
+                self._get_user_profile_policy(user_id, signal, execution_mode),
                 self._has_execution_evidence(
                     user_id,
                     str(signal.get("evidence_signal_id") or signal_id),
                 ),
             )
+            if not bool(profile_policy.get("allowed")):
+                return ExecutionResult(
+                    success=False,
+                    message=f"Execution blocked by user profile: {profile_policy.get('reason')}",
+                    error=str(profile_policy.get("reason") or "profile_policy_blocked"),
+                )
             reconciliation = await get_reconciliation_snapshot(
                 mt5_account_id,
                 account_info=account_info,
@@ -751,6 +869,15 @@ class MT5SignalRouter:
                 and isinstance(account_info.get("is_demo"), bool)
                 else None
             )
+            from core.live_execution_integrity import evaluate_live_signal_admission
+            integrity = evaluate_live_signal_admission(
+                signal or {},
+                require_production_certification=account_is_demo is not True,
+                require_provider_provenance=account_is_demo is not True,
+            )
+            if not integrity.allowed:
+                reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
+                return ExecutionResult(success=False, message=reason, error=reason)
             quote_trusted = bool(
                 isinstance(quote, dict)
                 and quote.get("provider") == "metaapi"
@@ -775,7 +902,7 @@ class MT5SignalRouter:
                 account_id=mt5_account_id,
                 tier=tier,
                 mode=execution_mode,
-                user_enabled=bool(policy.get("found") and user_enabled),
+                user_enabled=bool(policy.get("found") and user_enabled and profile_policy.get("allowed")),
                 consent=bool(policy.get("consent")),
                 account_ready=account_ready,
                 account_is_demo=account_is_demo,
@@ -1188,9 +1315,17 @@ class MT5SignalRouter:
                     .limit(1)
                 )
                 row = result.fetchone()
-            if not row or row[0] is None:
-                return None
-            value = float(row[0])
+                if not row or row[0] is None:
+                    return None
+                value = float(row[0])
+                try:
+                    from services.user_intelligence import get_user_trading_preferences
+                    prefs = await get_user_trading_preferences(session, int(user_id))
+                    profile_risk = float(getattr(prefs, "risk_per_trade_pct", value) or value)
+                    if profile_risk > 0:
+                        value = min(value, profile_risk)
+                except Exception:
+                    pass
             return value if math.isfinite(value) and value > 0 else None
         except Exception:
             logger.warning(
@@ -1234,6 +1369,7 @@ class MT5SignalRouter:
     async def _process_request(self, request: ExecutionRequest) -> ExecutionResult:
         """Route one queued request through the canonical execution gate."""
         signal = {
+            **dict(request.metadata or {}),
             "signal_id": request.signal_id,
             "asset": request.asset,
             "direction": request.direction,

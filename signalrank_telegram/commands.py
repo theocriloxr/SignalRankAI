@@ -1871,19 +1871,10 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				]])
 			else:
 				cmd = args[0]
-				next_prefs = UserTradingPreferences(
-					trade_profile=current.trade_profile,
-					risk_profile=current.risk_profile,
-					asset_classes=current.asset_classes,
-					preferred_assets=current.preferred_assets,
-					blocked_assets=current.blocked_assets,
-					sessions=current.sessions,
-					notification_style=current.notification_style,
-					execution_mode=current.execution_mode,
-					max_signals_per_day=current.max_signals_per_day,
-					auto_trade_brokers=current.auto_trade_brokers,
-					learned_preferences=current.learned_preferences,
-				)
+				next_prefs = UserTradingPreferences(**{
+					field_name: getattr(current, field_name)
+					for field_name in current.__dataclass_fields__
+				})
 				valid_update = True
 				if cmd in {"scalp", "scalper", "day", "swing", "position", "all"}:
 					next_prefs.trade_profile = normalize_trade_profile(cmd, default="all")
@@ -1899,6 +1890,10 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						("crypto", "fx", "commodity", "index", "stock")
 						if "all" in classes else tuple(classes or current.asset_classes)
 					)
+				elif cmd == "timeframes" and len(args) >= 2:
+					next_prefs.preferred_timeframes = tuple(dict.fromkeys(args[1:]))
+				elif cmd == "strategies" and len(args) >= 2:
+					next_prefs.preferred_strategies = tuple(dict.fromkeys(args[1:]))
 				elif cmd == "sessions" and len(args) >= 2:
 					next_prefs.sessions = tuple(args[1:]) or ("auto",)
 				elif cmd == "notify" and len(args) >= 2:
@@ -2947,57 +2942,77 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 	except Exception as exc:
 		await update.message.reply_text(f"❌ ops health failed: {exc}")
 
-from .user_prefs import user_prefs_store
 from telegram import Update
 from telegram.helpers import escape_markdown
 from telegram.ext import ContextTypes
 # --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
 @require_tier("PREMIUM")
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Let users customize which assets, timeframes, or strategies they want to receive signals for.
+	"""Persist notification asset/timeframe/strategy preferences in the canonical profile.
+
 	Usage:
 	  /notify assets BTCUSDT,ETHUSDT
-	  /notify timeframes 1h,4h
-	  /notify strategies momentum,trend
+	  /notify timeframes 15m,1h
+	  /notify strategies ema_trend,breakout
 	  /notify clear
-	  /notify (shows current prefs)
+	  /notify
 	"""
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id: int = update.effective_user.id
-	args: list[str] = context.args or []
-	if not args:
-		prefs = user_prefs_store.get_prefs(user_id)
-		if not prefs:
-			await update.message.reply_text("No custom notification preferences set. You will receive all signals allowed by your tier.")
-		else:
-			lines: list[str] = ["Your notification preferences:"]
-			for k, v in prefs.items():
-				lines.append(f"{k}: {', '.join(sorted(v))}")
-			await update.message.reply_text("\n".join(lines))
-		return
-	cmd: str = args[0].lower()
-	if cmd == "clear":
-		user_prefs_store.clear_prefs(user_id)
-		await update.message.reply_text("✅ Notification preferences cleared. You will receive all signals allowed by your tier.")
-		return
-	if len(args) < 2:
-		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
-		return
-	values: list[str] = [x.strip().upper() for x in " ".join(args[1:]).split(",") if x.strip()]
-	if cmd == "assets":
-		user_prefs_store.set_prefs(user_id, assets=values)
-		await update.message.reply_text(f"✅ Assets updated: {', '.join(values)}")
-	elif cmd == "timeframes":
-		user_prefs_store.set_prefs(user_id, timeframes=values)
-		await update.message.reply_text(f"✅ Timeframes updated: {', '.join(values)}")
-	elif cmd == "strategies":
-		user_prefs_store.set_prefs(user_id, strategies=values)
-		await update.message.reply_text(f"✅ Strategies updated: {', '.join(values)}")
-	else:
-		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
+	user_id = int(update.effective_user.id)
+	args = [str(x).strip() for x in (context.args or []) if str(x).strip()]
+	from db.session import get_session
+	from services.user_intelligence import (
+		get_user_trading_preferences,
+		set_user_trading_preferences,
+	)
+
+	try:
+		async with get_session(priority="interactive", label="notify.preferences", timeout_seconds=5) as session:
+			prefs = await get_user_trading_preferences(session, user_id)
+			if not args:
+				lines = [
+					"Notification preferences",
+					"",
+					f"Assets: {', '.join(prefs.preferred_assets) if prefs.preferred_assets else 'all profile-eligible assets'}",
+					f"Timeframes: {', '.join(prefs.preferred_timeframes) if prefs.preferred_timeframes else 'profile defaults'}",
+					f"Strategies: {', '.join(prefs.preferred_strategies) if prefs.preferred_strategies else 'all qualified strategies'}",
+				]
+				await update.message.reply_text("\n".join(lines))
+				return
+
+			cmd = args[0].lower()
+			if cmd == "clear":
+				prefs.preferred_assets = ()
+				prefs.preferred_timeframes = ()
+				prefs.preferred_strategies = ()
+				message = "✅ Notification preferences cleared. Profile and tier gates still apply."
+			else:
+				if len(args) < 2 or cmd not in {"assets", "timeframes", "strategies"}:
+					await update.message.reply_text(
+						"Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear"
+					)
+					return
+				values = [x.strip() for x in " ".join(args[1:]).split(",") if x.strip()]
+				if cmd == "assets":
+					prefs.preferred_assets = tuple(dict.fromkeys(x.upper() for x in values))
+					message = f"✅ Assets updated: {', '.join(prefs.preferred_assets)}"
+				elif cmd == "timeframes":
+					prefs.preferred_timeframes = tuple(dict.fromkeys(x.lower() for x in values))
+					message = f"✅ Timeframes updated: {', '.join(prefs.preferred_timeframes)}"
+				else:
+					prefs.preferred_strategies = tuple(dict.fromkeys(x.lower() for x in values))
+					message = f"✅ Strategies updated: {', '.join(prefs.preferred_strategies)}"
+			await set_user_trading_preferences(session, user_id, prefs)
+			await session.commit()
+		await update.message.reply_text(message)
+	except TimeoutError:
+		await update.message.reply_text("Notification preferences are temporarily busy. Please retry /notify.")
+	except Exception as exc:
+		logger.exception("[notify] preference update failed user=%s", user_id)
+		await update.message.reply_text(f"Could not update notification preferences: {type(exc).__name__}")
 # --------- FEEDBACK COMMAND ---------
 from .feedback import feedback_store
 @require_tier("PREMIUM")
@@ -5760,13 +5775,36 @@ async def performance_command(update, context) -> None:
 			"Performance is temporarily unavailable: the delivery-to-bucket reconciliation invariant failed."
 		)
 		return
+	if not report.get("report_verified", False):
+		await update.message.reply_text(
+			"Performance is temporarily unavailable: one or more terminal ledger rows "
+			"lack a verified realized-R value. No estimated fallback was shown."
+		)
+		return
+
+	# Public and subscriber-facing performance must fail closed until the
+	# canonical ledger satisfies the configured proof/coverage contract.
+	# Owner/admin accounts retain a clearly-labelled diagnostic view so the
+	# reconciliation can be repaired without publishing provisional returns.
+	if not report.get("performance_certified", False) and tier not in {"owner", "admin"}:
+		coverage_pct = float(report.get("terminal_coverage") or 0.0) * 100.0
+		await update.message.reply_text(
+			"Proof-backed performance is not publicly available yet.\n\n"
+			"The canonical delivery/outcome ledger has not reached its required "
+			"terminal-coverage and verification threshold, so no provisional win rate, "
+			"return, or R-multiple claim is being shown.\n\n"
+			f"Current terminal coverage: {coverage_pct:.1f}%\n"
+			"Status: CERTIFICATION PENDING"
+		)
+		return
 
 	completed = int(report.get("completed_r_count") or 0)
 	avg_r = report.get("avg_r")
 	median_r = report.get("median_r")
 	risk_pct = float(report.get("risk_fraction_pct") or 0.0)
+	_report_status = "CERTIFIED" if report.get("performance_certified") else "PROVISIONAL — NOT FOR PUBLIC CLAIMS"
 	lines = [
-		f"Performance ({int(report.get('window_days') or days)}d)",
+		f"Performance ({int(report.get('window_days') or days)}d) — {_report_status}",
 		str(report.get("basis_label") or "Confirmed delivery cohort"),
 		"",
 		f"Confirmed deliveries: {int(report.get('delivered') or 0)}",
@@ -5783,8 +5821,15 @@ async def performance_command(update, context) -> None:
 		f"Median R: {'n/a' if median_r is None else f'{float(median_r):+.2f}R'}",
 		f"Standardized simple return ({risk_pct:g}% risk): {float(report.get('standardized_simple_return_pct') or 0):+.2f}%",
 		f"Standardized compounded return ({risk_pct:g}% risk): {float(report.get('standardized_compounded_return_pct') or 0):+.2f}%",
-		f"Strict win rate (TP3 vs SL): {float(report.get('strict_win_rate') or 0) * 100:.1f}%",
+		f"Raw delivered-signal win rate (TP3 vs SL): {float(report.get('strict_win_rate') or 0) * 100:.1f}%",
+		f"Independent thesis sample: {int(report.get('independent_thesis_count') or 0)} "
+		f"({int(report.get('independent_thesis_wins') or 0)}W / {int(report.get('independent_thesis_losses') or 0)}L)",
+		f"Public 60% claim: {'ELIGIBLE' if report.get('public_claim_allowed') else 'NOT ELIGIBLE'} "
+		f"({report.get('public_claim_reason') or 'unknown'})",
+		f"95% lower confidence bound: {float(report.get('public_claim_wilson_lower_bound') or 0) * 100:.1f}%",
 		f"Terminal coverage: {float(report.get('terminal_coverage') or 0) * 100:.1f}%",
+		f"Performance certification: {'PASS' if report.get('performance_certified') else 'BLOCKED'} "
+		f"({report.get('performance_certification_reason') or 'unknown'})",
 		"",
 		f"Returns are standardized illustrations at {risk_pct:g}% risk per completed result; they are not account returns, financial advice, or a guarantee.",
 		f"Snapshot: {report.get('snapshot_id', 'n/a')}",

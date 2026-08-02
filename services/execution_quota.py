@@ -45,6 +45,15 @@ async def reserve_user_execution_quota(
                 await session.rollback()
                 return False, "user_profile_missing", None
 
+            try:
+                from services.user_intelligence import get_user_trading_preferences
+                profile_prefs = await get_user_trading_preferences(
+                    session,
+                    int(telegram_user_id),
+                )
+            except Exception:
+                profile_prefs = None
+
             reset_at = getattr(user, "daily_executions_reset_at", None)
             if reset_at is None or reset_at.date() < now.date():
                 user.daily_executions_today = 0
@@ -67,6 +76,10 @@ async def reserve_user_execution_quota(
                 bybit_realized.scalar_one_or_none() or 0.0
             )
             drawdown_cap = float(getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0)
+            if profile_prefs is not None:
+                profile_drawdown = float(getattr(profile_prefs, "max_daily_loss_pct", drawdown_cap) or drawdown_cap)
+                if profile_drawdown > 0:
+                    drawdown_cap = min(drawdown_cap, profile_drawdown)
             if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
                 await session.rollback()
                 return False, "daily_drawdown_guard", int(user.id)
@@ -75,6 +88,10 @@ async def reserve_user_execution_quota(
             tier_upper = str(tier or "FREE").upper()
             if tier_upper == "PREMIUM":
                 limit = max(0, int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3))
+                if profile_prefs is not None:
+                    profile_limit = int(getattr(profile_prefs, "max_daily_trades", limit) or limit)
+                    if profile_limit > 0:
+                        limit = min(limit, profile_limit) if limit > 0 else profile_limit
                 if limit == 0 or current >= limit:
                     await session.rollback()
                     return False, "premium_daily_execution_limit", int(user.id)
@@ -82,6 +99,13 @@ async def reserve_user_execution_quota(
             mode = str(execution_mode or "").strip().lower()
             if mode in {"auto", "live"}:
                 auto_limit = int(getattr(user, "auto_signals_daily_limit", 0) or 0)
+                if profile_prefs is not None:
+                    profile_limit = getattr(profile_prefs, "max_signals_per_day", None)
+                    if profile_limit in (None, 0):
+                        profile_limit = getattr(profile_prefs, "max_daily_trades", auto_limit)
+                    profile_limit = int(profile_limit or 0)
+                    if profile_limit > 0:
+                        auto_limit = min(auto_limit, profile_limit) if auto_limit > 0 else profile_limit
                 if auto_limit == 0:
                     await session.rollback()
                     return False, "auto_execution_limit_disabled", int(user.id)

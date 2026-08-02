@@ -74,11 +74,12 @@ def _soft_cap_score(raw_score: float) -> float:
         return 0.0
     raw_score = max(0.0, raw_score)
     knee = max(50.0, min(_safe_float(os.getenv("SCORE_SOFT_CAP_KNEE")) or 90.0, 99.0))
-    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 97.0, 100.0))
-    scale = max(1.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 25.0)
+    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 96.0, 99.0))
+    scale = max(10.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 150.0)
     if raw_score <= knee:
         return raw_score
-    return min(knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale))), ceiling)
+    excess = raw_score - knee
+    return min(knee + ((ceiling - knee) * excess / (excess + scale)), ceiling)
 
 
 def resolve_confluence_percent(signal: Mapping[str, Any]) -> Optional[float]:
@@ -136,8 +137,17 @@ def resolve_confluence_total(signal: Mapping[str, Any]) -> Optional[int]:
 
 
 def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
-    """Resolve ML probability as a 0..1 ratio, derived if missing."""
-    for key in ("ml_probability", "ml_prob", "ml_score", "ml_confidence"):
+    """Resolve the best available model probability as a 0..1 ratio.
+
+    Validated calibrated probability always wins. Raw model outputs remain
+    available for internal diagnostics and pre-calibration model development,
+    but must never override a validated calibration curve for scoring or sizing.
+    """
+    if bool(signal.get("ml_calibration_validated", False)):
+        calibrated = _clamp_ratio(signal.get("ml_probability_calibrated"))
+        if calibrated is not None and str(signal.get("ml_calibration_version") or "").strip():
+            return calibrated
+    for key in ("ml_probability_raw", "ml_probability", "ml_prob", "ml_score", "ml_confidence"):
         val = _clamp_ratio(signal.get(key))
         if val is not None:
             return val

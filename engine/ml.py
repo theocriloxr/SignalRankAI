@@ -29,6 +29,11 @@ _MODEL_CACHE: dict[str, Any] = {
     "error": None,
     "version": "",
     "trained_at": "",
+    "calibration_kind": "none",
+    "calibration_x": [],
+    "calibration_y": [],
+    "metrics": {},
+    "calibration_metrics": {},
 }
 logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
@@ -97,8 +102,36 @@ def _load_model() -> None:
         _MODEL_CACHE["booster"] = booster
         _MODEL_CACHE["version"] = str(metadata.get("version") or "")
         _MODEL_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
+        _MODEL_CACHE["calibration_kind"] = str(metadata.get("calibration_kind") or "none")
+        _MODEL_CACHE["calibration_x"] = list(metadata.get("calibration_x") or [])
+        _MODEL_CACHE["calibration_y"] = list(metadata.get("calibration_y") or [])
+        _MODEL_CACHE["metrics"] = dict(metadata.get("metrics") or {})
+        _MODEL_CACHE["calibration_metrics"] = dict(
+            metadata.get("calibration_metrics")
+            or (_MODEL_CACHE["metrics"].get("calibration") if isinstance(_MODEL_CACHE["metrics"], dict) else {})
+            or {}
+        )
     except Exception as exc:  # pragma: no cover - defensive
         _MODEL_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
+
+
+
+
+def _apply_probability_calibration(raw_probability: float) -> tuple[float, bool, str]:
+    """Apply the model artifact's held-out calibration curve when available."""
+    raw = max(0.0, min(1.0, float(raw_probability)))
+    kind = str(_MODEL_CACHE.get("calibration_kind") or "none").lower()
+    xs = _MODEL_CACHE.get("calibration_x") or []
+    ys = _MODEL_CACHE.get("calibration_y") or []
+    try:
+        xs_f = [float(x) for x in xs]
+        ys_f = [float(y) for y in ys]
+        if kind in {"isotonic", "platt"} and len(xs_f) >= 2 and len(xs_f) == len(ys_f):
+            calibrated = float(np.interp(raw, xs_f, ys_f, left=ys_f[0], right=ys_f[-1]))
+            return max(0.0, min(1.0, calibrated)), True, f"{kind}:{_MODEL_CACHE.get('version') or 'unknown'}"
+    except Exception as exc:
+        logger.warning("[ml] probability calibration failed: %s", exc)
+    return raw, False, "uncalibrated"
 
 
 def reload_model() -> dict[str, Any]:
@@ -112,6 +145,11 @@ def reload_model() -> dict[str, Any]:
             "error": None,
             "version": "",
             "trained_at": "",
+            "calibration_kind": "none",
+            "calibration_x": [],
+            "calibration_y": [],
+            "metrics": {},
+            "calibration_metrics": {},
         })
         _load_model()
         status = {
@@ -123,6 +161,50 @@ def reload_model() -> dict[str, Any]:
         }
         logger.info("[ml_model_reload] %s", status)
         return status
+
+
+def get_model_integrity_status(*, ensure_loaded: bool = True) -> dict[str, Any]:
+    """Return fail-closed calibration evidence for readiness and execution gates."""
+    if ensure_loaded:
+        _load_model()
+    metrics = dict(_MODEL_CACHE.get("calibration_metrics") or {})
+    kind = str(_MODEL_CACHE.get("calibration_kind") or "none").lower()
+    rows = int(metrics.get("validation_rows") or 0)
+    min_rows = max(20, int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100))
+    brier = metrics.get("calibrated_brier")
+    ece = metrics.get("calibrated_ece")
+    max_brier = float(os.getenv("ML_MAX_CALIBRATION_BRIER", "0.25") or 0.25)
+    max_ece = float(os.getenv("ML_MAX_CALIBRATION_ECE", "0.10") or 0.10)
+    curve_ok = bool(
+        kind in {"isotonic", "platt"}
+        and len(_MODEL_CACHE.get("calibration_x") or []) >= 2
+        and len(_MODEL_CACHE.get("calibration_x") or []) == len(_MODEL_CACHE.get("calibration_y") or [])
+    )
+    validated = bool(
+        metrics.get("validated")
+        and curve_ok
+        and rows >= min_rows
+        and brier is not None and float(brier) <= max_brier
+        and ece is not None and float(ece) <= max_ece
+    )
+    artifact_id = str(os.getenv("ML_CALIBRATION_ARTIFACT_ID") or "").strip()
+    loaded = bool(_MODEL_CACHE.get("booster") is not None)
+    return {
+        "ok": bool(loaded and validated and artifact_id),
+        "loaded": loaded,
+        "version": str(_MODEL_CACHE.get("version") or ""),
+        "trained_at": str(_MODEL_CACHE.get("trained_at") or ""),
+        "calibration_kind": kind,
+        "validation_rows": rows,
+        "minimum_validation_rows": min_rows,
+        "calibrated_brier": brier,
+        "maximum_brier": max_brier,
+        "calibrated_ece": ece,
+        "maximum_ece": max_ece,
+        "validated": validated,
+        "artifact_id_configured": bool(artifact_id),
+        "error": _MODEL_CACHE.get("error"),
+    }
 
 
 def reload_shadow_model() -> dict[str, Any]:
@@ -377,14 +459,27 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
             if shadow_mode:
                 _persist_shadow_prediction(signal, 0.0, schema_ok=True, prob_source="empty_prediction")
             return None
-        prob = float(preds[0])
-        if prob < 0 or prob > 1:
-            logger.warning("[ml] probability out of range: %.3f for asset=%s", prob, signal.get("asset"))
+        raw_prob = float(preds[0])
+        if raw_prob < 0 or raw_prob > 1:
+            logger.warning("[ml] probability out of range: %.3f for asset=%s", raw_prob, signal.get("asset"))
             if shadow_mode:
                 _persist_shadow_prediction(signal, 0.0, schema_ok=True, prob_source="out_of_range")
             return None
-            
-        logger.info("[ml] scored asset=%s prob=%.3f", signal.get("asset"), prob)
+        prob, calibrated, calibration_version = _apply_probability_calibration(raw_prob)
+        signal["ml_probability_raw"] = raw_prob
+        signal["ml_probability_calibrated"] = prob if calibrated else None
+        signal["ml_calibration_version"] = calibration_version if calibrated else None
+        calibration_metrics = dict(_MODEL_CACHE.get("calibration_metrics") or {})
+        calibration_validated = bool(calibrated and calibration_metrics.get("validated"))
+        signal["ml_probability_is_calibrated"] = bool(calibrated)
+        signal["ml_calibration_validated"] = calibration_validated
+        signal["ml_calibration_validation_rows"] = int(calibration_metrics.get("validation_rows") or 0)
+        signal["ml_calibration_brier"] = calibration_metrics.get("calibrated_brier")
+        signal["ml_calibration_ece"] = calibration_metrics.get("calibrated_ece")
+        logger.info(
+            "[ml] scored asset=%s raw_prob=%.3f probability=%.3f calibrated=%s version=%s",
+            signal.get("asset"), raw_prob, prob, calibrated, calibration_version,
+        )
         
         # Shadow mode: evaluate candidate model silently and persist
         if shadow_mode:
@@ -437,6 +532,10 @@ def scored_signals_with_ml(signals: Iterable[Dict[str, Any]], threshold: float |
             out["ml_pass"] = True
         else:
             out["ml_probability"] = float(prob)
+            out["ml_probability_raw"] = sig.get("ml_probability_raw")
+            out["ml_probability_calibrated"] = sig.get("ml_probability_calibrated")
+            out["ml_calibration_version"] = sig.get("ml_calibration_version")
+            out["ml_probability_is_calibrated"] = bool(sig.get("ml_probability_is_calibrated"))
             if threshold is None:
                 out["ml_pass"] = True
             else:

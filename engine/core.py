@@ -2046,6 +2046,7 @@ def main_loop(DRY_RUN: bool = False):
     index_timeframes = _resolve_timeframes('INDEX_TIMEFRAMES')
 
     cycle_no = 0
+    _profile_demand_snapshot = None
 
         # Round-robin queue — covers every open asset exactly once per round
         # before any asset is repeated.  Persists across cycles; new assets
@@ -2122,6 +2123,43 @@ def main_loop(DRY_RUN: bool = False):
             # Pull dynamic thresholds from adaptive ML/Gemini optimizer on schedule.
             _refresh_runtime_thresholds(force=(cycle_no == 1))
 
+            # Aggregate active user demand.  The engine still creates one canonical
+            # market candidate per thesis, but its discovery order and timeframe
+            # coverage are driven by the profiles that may receive those candidates.
+            try:
+                from db.session import get_session as _get_profile_demand_session
+                from services.profile_demand import get_profile_demand as _get_profile_demand
+                from utils.async_runner import run_sync as _run_profile_demand_sync
+
+                async def _load_profile_demand():
+                    async with _get_profile_demand_session(
+                        priority="background",
+                        label="engine.profile_demand",
+                        timeout_seconds=4.0,
+                    ) as _demand_session:
+                        return await _get_profile_demand(
+                            _demand_session,
+                            force=(cycle_no == 1),
+                        )
+
+                _profile_demand_snapshot = _run_profile_demand_sync(
+                    _load_profile_demand(),
+                    timeout=max(5.0, float(os.getenv("PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "8") or 8)),
+                )
+                logger.info(
+                    "[engine_profile_demand] active_profiles=%s asset_classes=%s timeframes=%s preferred_assets=%s source=%s",
+                    getattr(_profile_demand_snapshot, "active_profiles", 0),
+                    list(getattr(_profile_demand_snapshot, "asset_classes", ()) or ()),
+                    list(getattr(_profile_demand_snapshot, "preferred_timeframes", ()) or ()),
+                    list(getattr(_profile_demand_snapshot, "preferred_assets", ()) or ())[:20],
+                    getattr(_profile_demand_snapshot, "source", "unknown"),
+                )
+            except Exception as _profile_demand_err:
+                logger.warning(
+                    "[engine_profile_demand] unavailable error=%s",
+                    type(_profile_demand_err).__name__,
+                )
+
             # Acquire assets list — ALWAYS merge manually-configured (saved) assets
             # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
             _saved_assets = [
@@ -2163,6 +2201,22 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 pass
             assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
+            if (
+                _env_bool("PROFILE_DRIVEN_UNIVERSE_ENABLED", True)
+                and _profile_demand_snapshot is not None
+                and int(getattr(_profile_demand_snapshot, "active_profiles", 0) or 0) > 0
+            ):
+                original_order = {asset: index for index, asset in enumerate(assets)}
+                assets = [
+                    asset for asset in assets
+                    if _profile_demand_snapshot.accepts_asset(asset)
+                ]
+                assets.sort(
+                    key=lambda asset: (
+                        -float(_profile_demand_snapshot.asset_priority(asset)),
+                        original_order.get(asset, 10**9),
+                    )
+                )
             if not assets:
                 logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
                 time.sleep(max(5, cycle_sleep_seconds))
@@ -2394,6 +2448,11 @@ def main_loop(DRY_RUN: bool = False):
                 "started_at": cycle_started_at.isoformat(),
                 "assets_attempted": int(cycle_assets),
                 "class_counts": dict(_selected_counts or {}),
+                "profile_demand": (
+                    _profile_demand_snapshot.as_dict()
+                    if _profile_demand_snapshot is not None
+                    else {"active_profiles": 0, "source": "unavailable"}
+                ),
             }
             _publish_engine_cycle_state(_cycle_state)
 
@@ -2412,6 +2471,23 @@ def main_loop(DRY_RUN: bool = False):
                     tfs = commodity_timeframes
                 else:
                     tfs = stock_timeframes
+                if (
+                    _env_bool("PROFILE_DRIVEN_TIMEFRAMES_ENABLED", True)
+                    and _profile_demand_snapshot is not None
+                    and int(getattr(_profile_demand_snapshot, "active_profiles", 0) or 0) > 0
+                ):
+                    try:
+                        tfs = _profile_demand_snapshot.timeframes_for(
+                            tfs,
+                            asset_class=_asset_class(asset),
+                            allowed=_allowed_tfs,
+                        )
+                    except Exception as _profile_tf_err:
+                        logger.debug(
+                            "[engine_profile_demand] timeframe routing failed asset=%s err=%s",
+                            asset,
+                            _profile_tf_err,
+                        )
                 asset_to_tfs[asset] = list(tfs)
 
             # Dynamic cycle sleep based on smallest timeframe
@@ -3591,6 +3667,40 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 pass
 
+                            from core.signal_quality_gate import evaluate_signal_quality
+                            from data.pair_discovery import asset_discovery_provenance
+                            sig["asset_discovery_provider"] = asset_discovery_provenance(str(sig.get("asset") or asset))
+                            _quality_decision = evaluate_signal_quality(sig, execution=False)
+                            sig["quality_gate_version"] = _quality_decision.version
+                            sig["quality_gate_passed"] = bool(_quality_decision.ok)
+                            sig["thesis_fingerprint"] = _quality_decision.thesis_fingerprint
+                            sig["quality_tp1_rr"] = _quality_decision.tp1_rr
+                            sig["quality_final_rr"] = _quality_decision.final_rr
+                            if not _quality_decision.ok:
+                                sig["rejection_reason"] = "quality_gate:" + ",".join(_quality_decision.reasons)
+                                _record_gate_failure(asset, "production_quality", sig["rejection_reason"])
+                                _log_decision("skipped", sig, reason=sig["rejection_reason"], meta={
+                                    "quality_gate_version": _quality_decision.version,
+                                    "tp1_rr": _quality_decision.tp1_rr,
+                                    "final_rr": _quality_decision.final_rr,
+                                    "thesis_fingerprint": _quality_decision.thesis_fingerprint,
+                                })
+                                try:
+                                    run_sync(_ml_rejection_tracker.persist_rejection(
+                                        asset=str(sig.get("asset") or ""),
+                                        timeframe=str(sig.get("timeframe") or ""),
+                                        direction=str(sig.get("direction") or ""),
+                                        entry_price=float(sig.get("entry") or 0),
+                                        stop_loss=float(sig.get("stop_loss") or 0),
+                                        take_profit_levels=sig.get("take_profit") or [],
+                                        ml_probability=float(sig.get("ml_probability") or 0.0),
+                                        rejection_reason=str(sig["rejection_reason"]),
+                                        features=dict(sig),
+                                        rejection_type="production_quality_gate",
+                                    ))
+                                except Exception as _quality_track_error:
+                                    logger.debug("[engine] quality rejection persistence failed: %s", _quality_track_error)
+                                continue
                             final_signals.append(sig)
                         except Exception:
                             logger.exception("scoring/filtering failed for signal")
@@ -4495,11 +4605,19 @@ def main_loop(DRY_RUN: bool = False):
                                 )
                                 await _ls.commit()
                         except Exception as _dl_err:
-                            logger.debug(
+                            logger.warning(
                                 "[engine] DB daily-limit count failed for user=%s: %s",
                                 user_id,
                                 _dl_err,
                             )
+                            from core.env import runtime_environment_name as _runtime_environment_name
+                            _limit_fail_closed = _env_bool(
+                                "DELIVERY_LIMIT_FAIL_CLOSED",
+                                _runtime_environment_name("dev") == "production",
+                            )
+                            if _limit_fail_closed:
+                                _delivery_skip("daily_limit_unavailable")
+                                continue
                             signals_sent_today = 0
                         
                         daily_limit = TIER_DAILY_LIMITS.get(
@@ -4539,11 +4657,51 @@ def main_loop(DRY_RUN: bool = False):
                                 getattr(user_trade_prefs, "execution_mode", "manual"),
                             )
                         except Exception as _profile_err:
-                            logger.debug(
+                            logger.warning(
                                 "[engine] trading preference lookup failed user=%s: %s",
                                 user_id,
                                 _profile_err,
                             )
+                            from core.env import runtime_environment_name as _runtime_environment_name
+                            _profile_fail_closed = _env_bool(
+                                "PROFILE_POLICY_FAIL_CLOSED",
+                                _runtime_environment_name("dev") == "production",
+                            )
+                            if _profile_fail_closed:
+                                _delivery_skip("profile_policy_unavailable")
+                                continue
+
+                        # A user's explicit daily cap can only tighten the tier cap.
+                        # It may never expand entitlements supplied by the billing tier.
+                        if user_trade_prefs is not None and getattr(user_trade_prefs, "max_signals_per_day", None) is not None:
+                            try:
+                                preference_limit = max(0, int(user_trade_prefs.max_signals_per_day))
+                                daily_limit = min(int(daily_limit), preference_limit)
+                            except Exception:
+                                pass
+                        if signals_sent_today >= int(daily_limit):
+                            logger.info(
+                                "[engine] personalized daily limit reached user=%s tier=%s limit=%s",
+                                user_id, user_tier, daily_limit,
+                            )
+                            skipped_daily_limit += 1
+                            _delivery_skip("personalized_daily_limit")
+                            continue
+
+                        if user_trade_prefs is not None:
+                            profile_daily_limit = getattr(user_trade_prefs, "max_signals_per_day", None)
+                            if profile_daily_limit not in (None, 0):
+                                daily_limit = min(int(daily_limit), max(1, int(profile_daily_limit)))
+                            if signals_sent_today >= daily_limit:
+                                logger.info(
+                                    "[engine] profile daily limit reached user=%s sent=%s limit=%s",
+                                    user_id,
+                                    signals_sent_today,
+                                    daily_limit,
+                                )
+                                skipped_daily_limit += 1
+                                _delivery_skip("profile_daily_limit")
+                                continue
 
                         user_signals = []
                         for _source_sig in _fresh_scored_signals:
@@ -4607,7 +4765,14 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as e:
                                 _delivery_skip("price_validation_error")
                                 logger.warning(f"[engine] Price validation failed for signal: {e}")
-                                # Continue with signal delivery even if validation fails
+                                from core.env import runtime_environment_name as _runtime_environment_name
+                                if _env_bool(
+                                    "DELIVERY_PRICE_VALIDATION_FAIL_CLOSED",
+                                    _runtime_environment_name("dev") == "production",
+                                ):
+                                    continue
+                                # Non-production operators may explicitly allow diagnostic
+                                # delivery even when live price validation is unavailable.
 
                             # Match the candidate to the user's trader profile before calling
                             # Telegram dispatch. Dispatch applies the same filter again as a
@@ -4630,13 +4795,22 @@ def main_loop(DRY_RUN: bool = False):
                                             pref_reason,
                                         )
                                         continue
+                                    from services.user_intelligence import personalize_signal_for_preferences as _personalize_signal
+                                    sig = _personalize_signal(sig, user_trade_prefs)
                                 except Exception as _pref_err:
-                                    logger.debug(
-                                        "[engine] preference filter skipped user=%s asset=%s err=%s",
+                                    logger.warning(
+                                        "[engine] preference filter failed user=%s asset=%s err=%s",
                                         user_id,
                                         sig.get("asset"),
                                         _pref_err,
                                     )
+                                    from core.env import runtime_environment_name as _runtime_environment_name
+                                    if _env_bool(
+                                        "PROFILE_POLICY_FAIL_CLOSED",
+                                        _runtime_environment_name("dev") == "production",
+                                    ):
+                                        _delivery_skip("profile_filter_error")
+                                        continue
 
                             # Robust eligibility check with logging
                             try:
@@ -4661,6 +4835,8 @@ def main_loop(DRY_RUN: bool = False):
                                             sig["delivery_asset_classes"] = tuple(getattr(user_trade_prefs, "asset_classes", ()) or ())
                                             sig["delivery_preferred_assets"] = tuple(getattr(user_trade_prefs, "preferred_assets", ()) or ())
                                             sig["delivery_blocked_assets"] = tuple(getattr(user_trade_prefs, "blocked_assets", ()) or ())
+                                            sig["delivery_preferred_timeframes"] = tuple(getattr(user_trade_prefs, "preferred_timeframes", ()) or ())
+                                            sig["delivery_preferred_strategies"] = tuple(getattr(user_trade_prefs, "preferred_strategies", ()) or ())
                                             sig["delivery_sessions"] = tuple(getattr(user_trade_prefs, "sessions", ()) or ())
                                             sig["delivery_notification_style"] = str(getattr(user_trade_prefs, "notification_style", "normal") or "normal")
                                             sig["delivery_profile_verified"] = True
@@ -4687,6 +4863,21 @@ def main_loop(DRY_RUN: bool = False):
 
                         # Filter out signals already sent to this user (prevent duplicates)
                         user_signals = await filter_non_duplicate_signals(user_id, user_signals)
+                        user_signals.sort(
+                            key=lambda item: float(
+                                item.get("personalized_rank_score")
+                                or item.get("score_calibrated")
+                                or item.get("score_final")
+                                or item.get("score")
+                                or 0.0
+                            ),
+                            reverse=True,
+                        )
+                        remaining_profile_capacity = max(0, int(daily_limit) - int(signals_sent_today))
+                        if remaining_profile_capacity:
+                            user_signals = user_signals[:remaining_profile_capacity]
+                        else:
+                            user_signals = []
                         if not user_signals:
                             logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                             skipped_no_eligible_signals += 1

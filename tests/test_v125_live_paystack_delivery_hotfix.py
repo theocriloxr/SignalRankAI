@@ -145,5 +145,5 @@ def test_v125_profile_contains_guarded_live_paystack_settings():
 def test_version_fingerprint_is_v125():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802"
+    assert APP_VERSION == "1.3.6.5"
+    assert RELEASE_FINGERPRINT == "v1.3.6.5-production-integrity-hardening-20260802"

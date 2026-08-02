@@ -133,6 +133,11 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
         ),
     )
     monkeypatch.setattr(router, "_has_execution_evidence", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        router,
+        "_get_user_profile_policy",
+        AsyncMock(return_value={"allowed": True, "reason": "ok"}),
+    )
     monkeypatch.setattr(router, "_calculate_position_size", AsyncMock(return_value=0.2))
     monkeypatch.setattr(router, "_reserve_execution_once", AsyncMock(return_value=True))
     monkeypatch.setattr(
@@ -209,10 +214,22 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
         {
             "signal_id": "sig-manual",
             "asset": "EURUSD",
+            "asset_class": "fx",
             "direction": "long",
+            "timeframe": "1h",
             "entry": 1.1,
             "stop_loss": 1.09,
-            "take_profit": [1.12],
+            "take_profit": [1.112, 1.12, 1.13],
+            "strategy_name": "ema_trend",
+            "score": 88.0,
+            "quality_gate_passed": True,
+            "ml_probability_calibrated": 0.67,
+            "ml_calibration_version": "isotonic:test",
+            "ml_calibration_validated": True,
+            "ml_calibration_validation_rows": 250,
+            "ml_calibration_brier": 0.16,
+            "ml_calibration_ece": 0.04,
+            "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         },
         7,
         "manual_confirmed",

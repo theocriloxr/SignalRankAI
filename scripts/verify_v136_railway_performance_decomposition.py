@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static/runtime verifier for SignalRankAI v1.3.6 Railway decomposition."""
+"""Static/runtime verifier for SignalRankAI v1.3.6.5 Railway decomposition."""
 from __future__ import annotations
 
 import json
@@ -28,9 +28,9 @@ def main() -> int:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
     from runtime.roles import RunMode, parse_run_mode, process_ownership
 
-    require(APP_VERSION == "1.3.6", "runtime version")
+    require(APP_VERSION == "1.3.6.5", "runtime version")
     require(
-        RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802",
+        RELEASE_FINGERPRINT == "v1.3.6.5-production-integrity-hardening-20260802",
         "release fingerprint",
     )
     require(parse_run_mode("frontdoor") is RunMode.FRONTDOOR, "frontdoor canonical role")
@@ -93,7 +93,8 @@ def main() -> int:
     require("preDeployCommand" not in deploy, "predeploy is frontdoor service-specific")
 
     require((ROOT / "db/migrations/versions/0033_ml_learning_runtime.py").exists(), "migration 0033 retained")
-    print("overall=PASS release=v1.3.6")
+    require((ROOT / "db/migrations/versions/0034_production_integrity.py").exists(), "migration 0034 integrity head present")
+    print("overall=PASS release=v1.3.6.5")
     return 0
 
 

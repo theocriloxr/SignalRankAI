@@ -42,6 +42,20 @@ def _full_env() -> dict[str, str]:
         "LIVE_EXECUTION_ALLOWED_PROVIDERS": "mt5,bybit",
         "LIVE_EXECUTION_ALLOWED_SYMBOLS": "EURUSD,BTCUSDT",
         "DEMO_CERTIFICATION_REPORT_ID": "demo-cert-pass-1",
+        "PRODUCTION_INTEGRITY_CERTIFIED": "1",
+        "PRODUCTION_INTEGRITY_CERTIFICATION_ID": "integrity-cert-pass-1",
+        "LIVE_RUNTIME_CERTIFICATION_ID": "runtime-cert-pass-1",
+        "ML_CALIBRATION_ARTIFACT_ID": "calibration-artifact-pass-1",
+        "FRESHNESS_CERTIFICATION_ID": "freshness-cert-pass-1",
+        "PROFILE_ROUTING_CERTIFICATION_ID": "profile-routing-cert-pass-1",
+        "PAPER_TRADING_CERTIFICATION_ID": "paper-cert-pass-1",
+        "OUTCOME_TRACKER_CERTIFICATION_ID": "outcome-cert-pass-1",
+        "PERFORMANCE_TRUTH_CERTIFICATION_ID": "performance-cert-pass-1",
+        "SHADOW_TRACKING_CERTIFICATION_ID": "shadow-cert-pass-1",
+        "ENGINE_PULSE_CERTIFICATION_ID": "pulse-cert-pass-1",
+        "COPY_TRADING_CERTIFICATION_ID": "copy-cert-pass-1",
+        "ASSET_DISCOVERY_CERTIFICATION_ID": "discovery-cert-pass-1",
+        "ALLOW_STATIC_ASSET_FALLBACK": "0",
         "LIVE_MAX_POSITION_SIZE": "0.01",
         "LIVE_MAX_DAILY_LOSS": "10",
         "LIVE_MAX_TOTAL_EXPOSURE": "50",
@@ -75,9 +89,9 @@ def _full_env() -> dict[str, str]:
 
 
 def test_version_and_migration_head():
-    assert APP_VERSION == "1.3.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802"
-    assert audit_versions(ROOT)["heads"] == ["0033_ml_learning_runtime"]
+    assert APP_VERSION == "1.3.6.5"
+    assert RELEASE_FINGERPRINT == "v1.3.6.5-production-integrity-hardening-20260802"
+    assert audit_versions(ROOT)["heads"] == ["0034_production_integrity"]
 
 
 def test_financial_flags_off_are_safe():

@@ -115,6 +115,10 @@ class OutcomePriceObservation:
     provider_trusted: bool
     reason: str | None = None
     request_id: str | None = None
+    high: float | None = None
+    low: float | None = None
+    range_time: str | None = None
+    range_trusted: bool = False
 
 
 async def _get_outcome_quote(symbol: str) -> OutcomePriceObservation:
@@ -164,6 +168,70 @@ async def _get_outcome_quote(symbol: str) -> OutcomePriceObservation:
         )
 
 
+def _candle_timestamp_utc(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    try:
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, (int, float)):
+            raw = float(value)
+            if raw > 10**12:
+                raw /= 1000.0
+            dt = datetime.fromtimestamp(raw, tz=timezone.utc)
+        else:
+            text_value = str(value).strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(text_value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+async def _get_recent_outcome_range(symbol: str) -> tuple[float | None, float | None, str | None, bool]:
+    """Fetch a fresh closed/current micro candle for intracycle hit recovery."""
+    if str(os.getenv("OUTCOME_CANDLE_RECONCILIATION_ENABLED", "1")).strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return None, None, None, False
+    timeframe = str(os.getenv("OUTCOME_CANDLE_RECONCILIATION_TIMEFRAME", "1m") or "1m").strip().lower()
+    try:
+        from data.fetcher import async_get_candles
+
+        candles = await asyncio.wait_for(
+            async_get_candles(symbol, timeframe),
+            timeout=max(2.0, float(os.getenv("OUTCOME_CANDLE_TIMEOUT_SECONDS", "8") or 8)),
+        )
+        if hasattr(candles, "to_dict"):
+            candles = candles.to_dict("records")
+        if not isinstance(candles, (list, tuple)) or not candles:
+            return None, None, None, False
+        candle = candles[-1]
+        if not isinstance(candle, dict):
+            return None, None, None, False
+        high = float(candle.get("high") if candle.get("high") is not None else candle.get("h"))
+        low = float(candle.get("low") if candle.get("low") is not None else candle.get("l"))
+        if not (high > 0 and low > 0 and high >= low):
+            return None, None, None, False
+        candle_time = _candle_timestamp_utc(
+            candle.get("timestamp")
+            or candle.get("time")
+            or candle.get("datetime")
+            or candle.get("date")
+            or candle.get("t")
+        )
+        max_age = max(60.0, float(os.getenv("OUTCOME_CANDLE_MAX_AGE_SECONDS", "300") or 300))
+        if candle_time is not None:
+            age = max(0.0, (datetime.now(timezone.utc) - candle_time).total_seconds())
+            if age > max_age:
+                return None, None, candle_time.isoformat(), False
+        return high, low, candle_time.isoformat() if candle_time else None, True
+    except Exception as exc:
+        logger.debug("[outcome_tracker] candle range unavailable asset=%s err=%s", symbol, exc)
+        return None, None, None, False
+
+
 async def _fetch_outcome_quotes(
     signals: List[Dict[str, Any]],
 ) -> Dict[str, OutcomePriceObservation]:
@@ -180,7 +248,21 @@ async def _fetch_outcome_quotes(
 
     async def _one(asset: str) -> tuple[str, OutcomePriceObservation]:
         async with semaphore:
-            return asset, await _get_outcome_quote(asset)
+            quote = await _get_outcome_quote(asset)
+            high, low, range_time, range_trusted = await _get_recent_outcome_range(asset)
+            return asset, OutcomePriceObservation(
+                asset=quote.asset,
+                price=quote.price,
+                provider=quote.provider,
+                quote_time=quote.quote_time,
+                provider_trusted=quote.provider_trusted,
+                reason=quote.reason,
+                request_id=quote.request_id,
+                high=high,
+                low=low,
+                range_time=range_time,
+                range_trusted=range_trusted,
+            )
 
     rows = await asyncio.gather(*(_one(asset) for asset in assets))
     return dict(rows)
@@ -464,7 +546,17 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 .where(
                     or_(
                         Outcome.id.is_(None),
-                        Outcome.status.in_(["tp1", "tp2"]),
+                        func.lower(Outcome.status).in_([
+                            "pending",
+                            "entry",
+                            "entered",
+                            "active",
+                            "watching",
+                            "tp1",
+                            "tp2",
+                            "partial_win",
+                            "breakeven",
+                        ]),
                     )
                 )
                 .limit(limit)
@@ -489,6 +581,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                     "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
                     "highest_tp_hit": _database_tp_progress(lifecycle, o),
                     "lifecycle_last_price": getattr(lifecycle, "last_price", None),
+                    "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
                     "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
                     "outcome_category": "LIVE_DELIVERED",
                     "outcome_eligibility_reason": "verified_delivery_query",
@@ -583,6 +676,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
                     "lifecycle_state": "WATCHING_FOR_ENTRY",
                     "highest_tp_hit": 0,
                     "lifecycle_last_price": None,
+                    "lifecycle_last_checked_at": None,
                     "entry_touched_at": None,
                     "outcome_category": "LIVE_DELIVERED",
                     "outcome_eligibility_reason": "verified_delivery_backfill_query",
@@ -669,6 +763,7 @@ async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str,
             ),
             "highest_tp_hit": _database_tp_progress(lifecycle, outcome_row),
             "lifecycle_last_price": getattr(lifecycle, "last_price", None),
+            "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
             "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
             "outcome_category": "LIVE_DELIVERED",
             "outcome_eligibility_reason": "interactive_reconciliation",
@@ -758,6 +853,55 @@ def _check_hit(
         if max_idx > 0:
             return f"tp{max_idx}" if max_idx <= 3 else "tp"
     return None
+
+
+def _check_hit_observation(
+    direction: str,
+    stop_loss: float,
+    tp_levels: List[float],
+    current_price: float,
+    *,
+    high: float | None = None,
+    low: float | None = None,
+) -> Optional[str]:
+    """Evaluate quote/candle extrema with conservative same-candle ordering."""
+    observation_high = float(high) if high is not None else float(current_price)
+    observation_low = float(low) if low is not None else float(current_price)
+    if str(direction or "long").lower() == "long":
+        if observation_low <= float(stop_loss):
+            return "sl"
+        reached = [idx for idx, target in enumerate(tp_levels, 1) if observation_high >= float(target)]
+    else:
+        if observation_high >= float(stop_loss):
+            return "sl"
+        reached = [idx for idx, target in enumerate(tp_levels, 1) if observation_low <= float(target)]
+    if not reached:
+        return None
+    maximum = max(reached)
+    return f"tp{maximum}" if maximum <= 3 else "tp"
+
+
+def _range_is_new_for_signal(signal: Dict[str, Any], observation: OutcomePriceObservation) -> bool:
+    """Use a candle range only when its window starts after prior observation.
+
+    This prevents a newly delivered or newly entered signal from inheriting a
+    high/low that happened earlier in the same candle before the signal existed
+    or before entry became active.
+    """
+    if not observation.range_trusted or not observation.range_time:
+        return False
+    range_start = _candle_timestamp_utc(observation.range_time)
+    if range_start is None:
+        return False
+    baseline = (
+        signal.get("lifecycle_last_checked_at")
+        or signal.get("entry_touched_at")
+        or signal.get("created_at")
+    )
+    baseline_dt = _candle_timestamp_utc(baseline)
+    if baseline_dt is None:
+        return True
+    return range_start >= baseline_dt - timedelta(seconds=2)
 
 
 def _halfway_to_tp1_reached(direction: str, entry: float, tp1: float, price: float) -> bool:
@@ -1301,7 +1445,20 @@ def _outcome_monitoring_keyboard(signal_id: str, status: str):
     stage = 1 if status_l in {"tp1", "partial_tp"} else (2 if status_l == "tp2" else 0)
     if stage == 0:
         return None
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    try:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    except ImportError:  # pragma: no cover - audit/test environments only
+        # Keep this pure helper testable when the optional Telegram runtime is
+        # not installed. Production requirements include python-telegram-bot,
+        # so normal deployments always use the real classes.
+        class InlineKeyboardButton:  # type: ignore[no-redef]
+            def __init__(self, text: str, callback_data: str):
+                self.text = text
+                self.callback_data = callback_data
+
+        class InlineKeyboardMarkup:  # type: ignore[no-redef]
+            def __init__(self, inline_keyboard):
+                self.inline_keyboard = inline_keyboard
 
     ref = str(signal_id or "")[:36]
     next_label = "Continue to TP2/TP3" if stage == 1 else "Continue to TP3"
@@ -1319,6 +1476,11 @@ def _outcome_monitoring_keyboard(signal_id: str, status: str):
 
 async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> None:
     """Send branded PnL notification to queued recipients (idempotent, personal-only)."""
+    # One canonical sender prevents the worker and front door from racing and
+    # emitting delayed stages out of order. The front door owns Telegram I/O by
+    # default in the decomposed Railway architecture.
+    if str(os.getenv("OUTCOME_NOTIFICATION_CANONICAL_SENDER", "frontdoor")).strip().lower() != "worker":
+        return
     try:
         from db.session import get_session
         from db.models import OutcomeNotification, User
@@ -1841,8 +2003,11 @@ class RealtimeOutcomeTracker:
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
         direction = signal.get("direction", "long")
+        use_range = _range_is_new_for_signal(signal, observation)
+        range_high = observation.high if use_range else None
+        range_low = observation.low if use_range else None
         lifecycle_state = normalize_lifecycle_state(
-            await update_lifecycle_observation(signal, price)
+            await update_lifecycle_observation(signal, price, high=range_high, low=range_low)
         )
         signal["lifecycle_state"] = lifecycle_state
         prev_tp = max(prev_tp, highest_tp_for_state(lifecycle_state))
@@ -1884,7 +2049,13 @@ class RealtimeOutcomeTracker:
                     await _persist_outcome(signal_id, "missed_entry", entry, price)
                 await publish_snapshot()
                 return
-            if not entry_was_touched(direction, entry, price):
+            if not entry_was_touched(
+                direction,
+                entry,
+                price,
+                high=range_high,
+                low=range_low,
+            ):
                 await publish_snapshot()
                 return
             if await record_lifecycle_event(signal, "entry_touched", price):
@@ -1914,7 +2085,12 @@ class RealtimeOutcomeTracker:
         # Explicit risk-free trigger at 50% to TP1 (one-time per signal).
         try:
             tp1 = float(tp_levels[0])
-            if _halfway_to_tp1_reached(direction, entry, tp1, price):
+            favorable_price = (
+                float(range_low) if str(direction).lower() == "short" and range_low is not None
+                else float(range_high) if str(direction).lower() == "long" and range_high is not None
+                else price
+            )
+            if _halfway_to_tp1_reached(direction, entry, tp1, favorable_price):
                 if await _mark_risk_free_triggered(signal_id):
                     await _apply_trailing_sl_to_breakeven(signal, price)
                     await record_lifecycle_event(
@@ -1950,7 +2126,14 @@ class RealtimeOutcomeTracker:
         except Exception as exc:
             logger.debug("[outcome_tracker] retrace warning check failed for %s: %s", signal_id[:8], exc)
 
-        hit = _check_hit(direction, entry, sl, tp_levels, price)
+        hit = _check_hit_observation(
+            direction,
+            sl,
+            tp_levels,
+            price,
+            high=range_high,
+            low=range_low,
+        )
         if hit:
             hit_l = str(hit).lower()
             logger.info(
@@ -1965,15 +2148,22 @@ class RealtimeOutcomeTracker:
                 target_tp = max(0, min(3, target_tp))
                 for tp_index in range(prev_tp + 1, target_tp + 1):
                     event_type = f"tp{tp_index}_hit"
+                    event_price = float(tp_levels[tp_index - 1])
                     accepted = await record_lifecycle_event(
                         signal,
                         event_type,
-                        price,
-                        {"highest_tp_hit": tp_index},
+                        event_price,
+                        {
+                            "highest_tp_hit": tp_index,
+                            "observation_high": range_high,
+                            "observation_low": range_low,
+                            "observation_provider": observation.provider,
+                            "observation_range_time": observation.range_time,
+                        },
                     )
                     if not accepted and lifecycle_cas_enabled:
                         continue
-                    await _persist_outcome(signal_id, f"tp{tp_index}", entry, price)
+                    await _persist_outcome(signal_id, f"tp{tp_index}", entry, event_price)
                     await _set_tp_progress(signal_id, tp_index)
                     prev_tp = tp_index
                     lifecycle_state = event_state(event_type)
@@ -1986,13 +2176,19 @@ class RealtimeOutcomeTracker:
             accepted = await record_lifecycle_event(
                 signal,
                 event_type,
-                price,
-                {"highest_tp_hit": prev_tp},
+                sl,
+                {
+                    "highest_tp_hit": prev_tp,
+                    "observation_high": range_high,
+                    "observation_low": range_low,
+                    "observation_provider": observation.provider,
+                    "observation_range_time": observation.range_time,
+                },
             )
             if accepted or not lifecycle_cas_enabled:
                 lifecycle_state = event_state(event_type)
                 signal["lifecycle_state"] = lifecycle_state
-                await _persist_outcome(signal_id, persist_status, entry, price)
+                await _persist_outcome(signal_id, persist_status, entry, sl)
             await publish_snapshot()
             return
 

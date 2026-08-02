@@ -28,6 +28,7 @@ from db.models import (
     UserSignalMonitoring,
 )
 from core.env import runtime_environment_name
+from core.production_integrity import evaluate_public_win_rate_claim, signal_thesis_fingerprint
 from utils.timeutils import now_utc_naive
 
 
@@ -35,6 +36,20 @@ PERFORMANCE_POLICY_VERSION = "proof-ledger-v1"
 PERFORMANCE_DOMAIN = "live_user_delivery"
 COMPLETED_BUCKETS = frozenset({"STOPPED_AT_TP1", "STOPPED_AT_TP2", "TP3", "SL", "BREAKEVEN", "TIME_STOP"})
 NON_TRADE_BUCKETS = frozenset({"MISSED_ENTRY", "EXPIRED", "CANCELLED", "TRACKING_FAILED", "PROVIDER_UNAVAILABLE"})
+
+
+@dataclass(frozen=True, slots=True)
+class PerformanceReconciliationResult:
+    users_examined: int = 0
+    rows_changed: int = 0
+    failed_users: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "users_examined": int(self.users_examined),
+            "rows_changed": int(self.rows_changed),
+            "failed_users": int(self.failed_users),
+        }
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -190,6 +205,14 @@ async def reconcile_user_performance_ledger(
             "delivery_id": int(delivery.id),
             "delivery_confirmed_at": delivery.delivery_confirmed_at,
             "asset": str(signal.asset),
+            "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None) or signal_thesis_fingerprint({
+                "asset": signal.asset,
+                "direction": signal.direction,
+                "strategy_name": signal.strategy_name,
+                "regime": signal.regime,
+                "entry": signal.entry,
+                "timeframe": signal.timeframe,
+            }),
             "timeframe": str(signal.timeframe or ""),
             "direction": str(signal.direction or ""),
             "primary_bucket": bucket,
@@ -220,7 +243,7 @@ async def reconcile_user_performance_ledger(
         insert_stmt = pg_insert(PerformanceLedgerEntry).values(pending)
         excluded = insert_stmt.excluded
         mutable_columns = (
-            "delivery_id", "delivery_confirmed_at", "asset", "timeframe", "direction",
+            "delivery_id", "delivery_confirmed_at", "asset", "thesis_fingerprint", "timeframe", "direction",
             "primary_bucket", "entry_status", "highest_tp", "global_outcome",
             "user_monitoring_outcome", "final_realized_r", "outcome_completed_at",
             "outcome_source", "calculation_policy_version", "signal_plan_version",
@@ -287,6 +310,116 @@ def calculate_performance_metrics(
         completed_r_count=count,
         positive_r_count=sum(1 for value in r_values if value > 0),
     )
+
+
+async def reconcile_all_performance_ledgers(
+    session,
+    *,
+    days: int | None = None,
+    limit_users: int | None = None,
+    environment: str | None = None,
+) -> PerformanceReconciliationResult:
+    """Continuously project proof-backed deliveries into every user's ledger.
+
+    Performance truth must not depend on a user invoking ``/performance``. The
+    worker calls this bounded sweep after outcome projection reconciliation.
+    """
+    days = max(1, int(days or os.getenv("PERFORMANCE_RECONCILIATION_DAYS", "30") or 30))
+    limit_users = max(1, min(5000, int(
+        limit_users or os.getenv("PERFORMANCE_RECONCILIATION_USER_LIMIT", "500") or 500
+    )))
+    cutoff = now_utc_naive() - timedelta(days=days)
+    proof_time = func.coalesce(
+        SignalDelivery.delivery_confirmed_at,
+        SignalDelivery.delivered_at_utc,
+        SignalDelivery.delivered_at,
+    )
+    telegram_ids = list((await session.execute(
+        select(User.telegram_user_id)
+        .join(SignalDelivery, SignalDelivery.user_id == User.id)
+        .where(
+            SignalDelivery.sent_ok.is_(True),
+            func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            proof_time >= cutoff,
+        )
+        .distinct()
+        .order_by(User.telegram_user_id.asc())
+        .limit(limit_users)
+    )).scalars().all())
+    changed = failed = 0
+    env = str(environment or runtime_environment_name("development") or "development").lower()
+    for telegram_id in telegram_ids:
+        try:
+            changed += int(await reconcile_user_performance_ledger(
+                session, telegram_user_id=int(telegram_id), environment=env
+            ) or 0)
+        except Exception:
+            failed += 1
+    await session.flush()
+    return PerformanceReconciliationResult(len(telegram_ids), changed, failed)
+
+
+async def performance_ledger_health(
+    session,
+    *,
+    days: int = 30,
+    environment: str | None = None,
+) -> dict[str, Any]:
+    """Return production-readiness invariants for the canonical ledger.
+
+    This checks projection completeness and malformed terminal rows. It does not
+    pretend that a fresh delivery cohort is already terminal; public claims use
+    the stricter matured-cohort Wilson gate in ``evaluate_public_win_rate_claim``.
+    """
+    env = str(environment or runtime_environment_name("development") or "development").lower()
+    cutoff = now_utc_naive() - timedelta(days=max(1, int(days)))
+    proof_time = func.coalesce(
+        SignalDelivery.delivery_confirmed_at,
+        SignalDelivery.delivered_at_utc,
+        SignalDelivery.delivered_at,
+    )
+    proof_deliveries = int((await session.execute(
+        select(func.count(SignalDelivery.id)).where(
+            SignalDelivery.sent_ok.is_(True),
+            func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            proof_time >= cutoff,
+        )
+    )).scalar_one() or 0)
+    ledger_rows = int((await session.execute(
+        select(func.count(PerformanceLedgerEntry.ledger_id)).where(
+            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+            PerformanceLedgerEntry.environment == env,
+            PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
+        )
+    )).scalar_one() or 0)
+    malformed_terminal = int((await session.execute(
+        select(func.count(PerformanceLedgerEntry.ledger_id)).where(
+            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+            PerformanceLedgerEntry.environment == env,
+            PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
+            PerformanceLedgerEntry.primary_bucket.in_(tuple(COMPLETED_BUCKETS)),
+            PerformanceLedgerEntry.final_realized_r.is_(None),
+        )
+    )).scalar_one() or 0)
+    projection_coverage = ledger_rows / proof_deliveries if proof_deliveries else 1.0
+    min_coverage = max(0.0, min(1.0, float(os.getenv(
+        "PERFORMANCE_LEDGER_MIN_PROJECTION_COVERAGE", "0.99"
+    ) or 0.99)))
+    ok = bool(projection_coverage >= min_coverage and malformed_terminal == 0)
+    return {
+        "ok": ok,
+        "environment": env,
+        "proof_backed_deliveries": proof_deliveries,
+        "ledger_rows": ledger_rows,
+        "missing_ledger_rows": max(0, proof_deliveries - ledger_rows),
+        "projection_coverage": projection_coverage,
+        "minimum_projection_coverage": min_coverage,
+        "malformed_terminal_rows": malformed_terminal,
+    }
 
 
 async def get_user_performance_report(
@@ -357,6 +490,28 @@ async def get_user_performance_report(
     losses = buckets.get("SL", 0)
     strict_denominator = tp3 + losses
     resolved = sum(buckets.get(name, 0) for name in COMPLETED_BUCKETS | NON_TRADE_BUCKETS)
+    # Public claims are based on independent thesis groups, not every repriced
+    # delivery. Repeated BTC/SOL signals from the same move must not inflate the
+    # sample size or win rate.
+    thesis_terminal: dict[str, set[str]] = {}
+    for row in rows:
+        if row.primary_bucket not in {"TP3", "SL"}:
+            continue
+        key = str(row.thesis_fingerprint or row.signal_id)
+        thesis_terminal.setdefault(key, set()).add(str(row.primary_bucket))
+    thesis_wins = sum(1 for values in thesis_terminal.values() if "TP3" in values and "SL" not in values)
+    thesis_losses = sum(1 for values in thesis_terminal.values() if "SL" in values)
+    claim = evaluate_public_win_rate_claim(
+        wins=thesis_wins,
+        losses=thesis_losses,
+        delivered=delivered,
+        resolved=resolved,
+        unique_theses=len(thesis_terminal),
+    )
+    unresolved_or_invalid = sum(
+        1 for row in rows
+        if row.primary_bucket in COMPLETED_BUCKETS and row.final_realized_r is None
+    )
     snapshot_id = _snapshot_hash({
         "user": user.id,
         "start": start,
@@ -364,6 +519,16 @@ async def get_user_performance_report(
         "policy": PERFORMANCE_POLICY_VERSION,
         "rows": [row.snapshot_hash for row in rows],
     })[:16]
+    terminal_coverage = resolved / delivered if delivered else 0.0
+    min_certified_coverage = max(0.0, min(1.0, float(os.getenv(
+        "PERFORMANCE_CERTIFIED_MIN_TERMINAL_COVERAGE", "0.95"
+    ) or 0.95)))
+    performance_certified = bool(
+        invariant_ok
+        and unresolved_or_invalid == 0
+        and terminal_coverage >= min_certified_coverage
+        and delivered > 0
+    )
     return {
         "basis": "delivery_cohort",
         "basis_label": f"Confirmed signals delivered during the last {int(days)} days",
@@ -404,11 +569,28 @@ async def get_user_performance_report(
         "strict_win_rate": tp3 / strict_denominator if strict_denominator else 0.0,
         "win_rate": tp3 / strict_denominator if strict_denominator else 0.0,
         "profitable_result_rate": metrics.positive_r_count / metrics.completed_r_count if metrics.completed_r_count else 0.0,
-        "terminal_coverage": resolved / delivered if delivered else 0.0,
-        "outcome_coverage": resolved / delivered if delivered else 0.0,
+        "terminal_coverage": terminal_coverage,
+        "outcome_coverage": terminal_coverage,
+        "performance_certified": performance_certified,
+        "performance_certification_reason": (
+            "certified" if performance_certified
+            else "terminal_coverage_below_threshold" if terminal_coverage < min_certified_coverage
+            else "ledger_invariant_or_realized_r_incomplete"
+        ),
+        "performance_certified_min_terminal_coverage": min_certified_coverage,
         "tracking_failure_rate": buckets.get("TRACKING_FAILED", 0) / delivered if delivered else 0.0,
         "tracked_outcomes": resolved,
         "invariant_ok": invariant_ok,
+        "report_verified": bool(invariant_ok and unresolved_or_invalid == 0),
+        "invalid_terminal_rows": unresolved_or_invalid,
+        "independent_thesis_wins": thesis_wins,
+        "independent_thesis_losses": thesis_losses,
+        "independent_thesis_count": len(thesis_terminal),
+        "public_claim_allowed": claim.allowed,
+        "public_claim_reason": claim.reason,
+        "public_claim_observed_win_rate": claim.observed_win_rate,
+        "public_claim_wilson_lower_bound": claim.lower_bound,
+        "public_claim_sample_size": claim.sample_size,
         "reconciliation_id": snapshot_id,
         "rows": rows,
     }
@@ -524,4 +706,7 @@ __all__ = [
     "correct_performance_ledger_entry",
     "get_user_performance_report",
     "reconcile_user_performance_ledger",
+    "reconcile_all_performance_ledgers",
+    "performance_ledger_health",
+    "PerformanceReconciliationResult",
 ]

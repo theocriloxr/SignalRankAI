@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_v129_version_and_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6-railway-performance-decomposition-20260802"
+    assert APP_VERSION == "1.3.6.5"
+    assert RELEASE_FINGERPRINT == "v1.3.6.5-production-integrity-hardening-20260802"
 
 
 def test_lifecycle_event_imports_func_in_its_own_scope() -> None:
@@ -48,7 +48,7 @@ def test_timezone_prompt_can_skip_nested_db_lookup() -> None:
 def test_ops_health_uses_main_pool_inventory_fallback() -> None:
     source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
     start = source.index("async def ops_health_command")
-    end = source.index("from .user_prefs", start)
+    end = source.index("\nfrom telegram import Update", start)
     block = source[start:end]
     assert 'pool.get("engine_inventory")' in block
     assert 'not item.get("nullpool")' in block

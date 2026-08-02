@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from db.user_preferences import get_user_preferences
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +73,9 @@ async def route_signal_to_broker(
                 evidence=before,
             )
 
-        prefs = await get_user_preferences(int(telegram_user_id))
+        async with get_session(label="broker.profile_policy", timeout_seconds=8.0) as session:
+            from services.user_intelligence import get_user_trading_preferences
+            prefs = await get_user_trading_preferences(session, int(telegram_user_id))
         provider = str(getattr(prefs, "execution_provider", "auto") or "auto").strip().lower()
         asset_class = str(signal.get("asset_class") or "").strip().lower()
         symbol = str(signal.get("asset") or signal.get("symbol") or "").strip().upper()

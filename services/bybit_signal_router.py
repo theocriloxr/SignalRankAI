@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from db.models import BrokerExecution, RuntimeState, SignalDelivery, User
+from db.models import BrokerExecution, MT5Execution, RuntimeState, SignalDelivery, User
 from db.session import get_session
 from execution.service import ExecutionGate, ExecutionRequest
 from services.bybit_client import (
@@ -84,6 +84,12 @@ async def route_signal_to_bybit(
     telegram_user_id: int,
     execution_mode: str = "auto",
 ) -> BybitRouteResult:
+    if str(execution_mode or "").strip().lower() in {"auto", "copy", "copy_trade"}:
+        from core.live_execution_integrity import evaluate_live_signal_admission
+        integrity = evaluate_live_signal_admission(signal)
+        if not integrity.allowed:
+            reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
+            return BybitRouteResult(False, reason, error=reason)
     if not _asset_supported(signal):
         return BybitRouteResult(False, "Bybit execution supports USDT crypto signals only", error="unsupported_asset")
 
@@ -100,6 +106,62 @@ async def route_signal_to_bybit(
         user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one_or_none()
         if user is None:
             return BybitRouteResult(False, "User profile not found", error="user_not_found")
+        try:
+            from services.user_intelligence import (
+                get_user_trading_preferences,
+                signal_matches_preferences,
+            )
+            profile_prefs = await get_user_trading_preferences(
+                session,
+                int(telegram_user_id),
+            )
+        except Exception:
+            profile_prefs = None
+        if profile_prefs is None:
+            return BybitRouteResult(False, "User trading profile unavailable", error="user_profile_unavailable")
+        profile_ok, profile_reason = signal_matches_preferences(dict(signal), profile_prefs)
+        if not profile_ok:
+            return BybitRouteResult(
+                False,
+                f"Signal does not match user profile: {profile_reason}",
+                error="user_profile_signal_mismatch",
+            )
+        if str(profile_prefs.trading_mode or "paper").lower() not in {"live", "both"}:
+            return BybitRouteResult(False, "Live trading is disabled in the user profile", error="profile_live_disabled")
+        requested_mode = str(execution_mode or "auto").strip().lower()
+        configured_mode = str(profile_prefs.execution_mode or "manual").strip().lower()
+        if requested_mode in {"copy", "copy_trade"} and configured_mode != "copy_trade":
+            return BybitRouteResult(False, "Copy trading is not enabled in the user profile", error="profile_copy_disabled")
+        if requested_mode in {"auto", "live"} and configured_mode not in {"auto", "live"}:
+            return BybitRouteResult(False, "Automatic execution is not enabled in the user profile", error="profile_auto_disabled")
+        configured_provider = str(profile_prefs.execution_provider or "auto").strip().lower()
+        if configured_provider not in {"auto", "bybit"}:
+            return BybitRouteResult(False, "User profile selected a different execution provider", error="profile_provider_mismatch")
+        open_statuses = ("reserved", "submitting", "ambiguous", "confirmed", "open", "reconciliation_pending")
+        bybit_open_count = int((await session.execute(
+            select(func.count(BrokerExecution.id)).where(
+                BrokerExecution.user_id == int(user.id),
+                func.lower(BrokerExecution.status).in_(open_statuses),
+            )
+        )).scalar_one() or 0)
+        mt5_open_count = int((await session.execute(
+            select(func.count(MT5Execution.id)).where(
+                MT5Execution.user_id == int(user.id),
+                func.lower(MT5Execution.status).in_(("pending", "confirmed", "open", "submitted")),
+            )
+        )).scalar_one() or 0)
+        duplicate_asset = int((await session.execute(
+            select(func.count(BrokerExecution.id)).where(
+                BrokerExecution.user_id == int(user.id),
+                BrokerExecution.symbol == symbol,
+                func.lower(BrokerExecution.status).in_(open_statuses),
+            )
+        )).scalar_one() or 0) > 0
+        max_positions = max(1, int(profile_prefs.max_concurrent_positions or 1))
+        if duplicate_asset:
+            return BybitRouteResult(False, "An open execution already exists for this asset", error="duplicate_open_asset")
+        if bybit_open_count + mt5_open_count >= max_positions:
+            return BybitRouteResult(False, "User profile maximum concurrent positions reached", error="profile_max_concurrent_positions")
         state_row = await session.get(RuntimeState, _state_key(int(telegram_user_id)))
         value = dict(getattr(state_row, "value", {}) or {}) if state_row else {}
         delivery = (await session.execute(
@@ -152,7 +214,11 @@ async def route_signal_to_bybit(
     except BybitError:
         wallet_ok = quote_ok = reconciliation_ok = False
 
-    risk_pct = min(max(float(getattr(user, "max_risk_percentage", 1.0) or 1.0), 0.1), float(os.getenv("LIVE_MAX_RISK_PER_TRADE_PCT", "1.0")))
+    risk_pct = min(
+        max(float(getattr(user, "max_risk_percentage", 1.0) or 1.0), 0.1),
+        max(0.1, float(getattr(profile_prefs, "risk_per_trade_pct", 1.0) or 1.0)),
+        float(os.getenv("LIVE_MAX_RISK_PER_TRADE_PCT", "1.0")),
+    )
     risk_amount = wallet_equity * risk_pct / 100.0
     stop_distance = abs(entry - stop)
     quantity = risk_amount / stop_distance if stop_distance > 0 else 0.0

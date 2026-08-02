@@ -158,7 +158,13 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
     )
 
 
-async def update_lifecycle_observation(signal: dict, price: float) -> str:
+async def update_lifecycle_observation(
+    signal: dict,
+    price: float,
+    *,
+    high: float | None = None,
+    low: float | None = None,
+) -> str:
     """Create/update current lifecycle telemetry and return the persisted state."""
     if not _enabled("OUTCOME_LIFECYCLE_ENABLED", True):
         return ACTIVE_TRADE
@@ -173,9 +179,18 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
     stop = float(signal.get("stop_loss") or 0)
     direction = str(signal.get("direction") or "long")
     risk = abs(entry - stop)
-    signed_move = entry - float(price) if direction.lower() == "short" else float(price) - entry
-    pct = (signed_move / entry * 100.0) if entry > 0 else 0.0
-    r_value = (signed_move / risk) if risk > 0 else 0.0
+    observation_high = float(high) if high is not None else float(price)
+    observation_low = float(low) if low is not None else float(price)
+    if direction.lower() == "short":
+        favorable_move = entry - observation_low
+        adverse_move = entry - observation_high
+    else:
+        favorable_move = observation_high - entry
+        adverse_move = observation_low - entry
+    favorable_pct = (favorable_move / entry * 100.0) if entry > 0 else 0.0
+    adverse_pct = (adverse_move / entry * 100.0) if entry > 0 else 0.0
+    favorable_r = (favorable_move / risk) if risk > 0 else 0.0
+    adverse_r = (adverse_move / risk) if risk > 0 else 0.0
 
     async with get_session(priority=DBPriority.CRITICAL) as session:
         row = (await session.execute(
@@ -201,12 +216,12 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
         row.state = normalize_lifecycle_state(getattr(row, "state", None))
         row.last_price = float(price)
         row.last_checked_at = now
-        row.max_price_seen = max(float(row.max_price_seen or price), float(price))
-        row.min_price_seen = min(float(row.min_price_seen or price), float(price))
-        row.mfe_pct = max(float(row.mfe_pct or 0.0), pct, 0.0)
-        row.mae_pct = min(float(row.mae_pct or 0.0), pct, 0.0)
-        row.mfe_r = max(float(row.mfe_r or 0.0), r_value, 0.0)
-        row.mae_r = min(float(row.mae_r or 0.0), r_value, 0.0)
+        row.max_price_seen = max(float(row.max_price_seen or observation_high), observation_high)
+        row.min_price_seen = min(float(row.min_price_seen or observation_low), observation_low)
+        row.mfe_pct = max(float(row.mfe_pct or 0.0), favorable_pct, 0.0)
+        row.mae_pct = min(float(row.mae_pct or 0.0), adverse_pct, 0.0)
+        row.mfe_r = max(float(row.mfe_r or 0.0), favorable_r, 0.0)
+        row.mae_r = min(float(row.mae_r or 0.0), adverse_r, 0.0)
         row.updated_at = now
         await session.commit()
         return normalize_lifecycle_state(row.state)

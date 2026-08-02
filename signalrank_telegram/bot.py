@@ -87,6 +87,7 @@ async def _resend_unsent_signals_async():
         from services.trade_profiles import infer_trade_profile
         from services.user_intelligence import (
             get_user_trading_preferences,
+            personalize_signal_for_preferences,
             signal_matches_preferences,
         )
         import asyncio
@@ -490,6 +491,7 @@ async def _resend_unsent_signals_async():
                             skipped_already_delivered_count += 1
                             continue
 
+                        delivery_sig_dict = dict(sig_dict or {})
                         try:
                             prefs = user_prefs_cache.get(int(user_id))
                             if prefs is None:
@@ -515,6 +517,7 @@ async def _resend_unsent_signals_async():
                                     pref_reason,
                                 )
                                 continue
+                            delivery_sig_dict = personalize_signal_for_preferences(sig_dict, prefs)
                         except Exception as _profile_err:
                             logger.debug(
                                 "[resend] profile filter failed user=%s signal=%s err=%s",
@@ -541,9 +544,9 @@ async def _resend_unsent_signals_async():
 
                         # Format and send
                         display_tier = _display_tier_for_delivery(gate_tier)
-                        text = format_signal(sig_dict, user_tier=gate_tier, display_tier=display_tier)
+                        text = format_signal(delivery_sig_dict, user_tier=gate_tier, display_tier=display_tier)
                         if not text or not str(text).strip():
-                            diagnostics = signal_format_diagnostics(sig_dict)
+                            diagnostics = signal_format_diagnostics(delivery_sig_dict)
                             logger.error(
                                 "[resend] formatter_failed user=%s tier=%s details=%s",
                                 user_id, user_tier, diagnostics,
@@ -598,7 +601,7 @@ async def _resend_unsent_signals_async():
                             delivery_proof = await _deliver_or_update_signal_async(
                                 bot=bot,
                                 telegram_user_id=int(user_id),
-                                signal=dict(sig_dict or {}),
+                                signal=dict(delivery_sig_dict or {}),
                                 display_tier=str(display_tier),
                             )
                             confirmed = await _mark_delivery_with_telegram_proof(
@@ -905,6 +908,7 @@ from .extended_commands import (
     paper_positions_command,
     paper_performance_command,
     paper_history_command,
+    paper_close_all_command,
     paper_reset_command,
     paper_settings_command,
     paper_status_command,
@@ -1531,17 +1535,27 @@ async def _is_asset_delivery_locked(
         if not symbol:
             return False
 
-        # Owner/admin emergency bypass is intentionally checked before the
-        # position-manager lock so production verification cannot be blocked by
-        # stale historical rows.
-        if _env_true("OWNER_DELIVERY_BYPASS_ASSET_LOCK") or _env_true("DELIVERY_ASSET_LOCK_FAIL_OPEN_FOR_OWNER"):
+        # The product cooldown applies to every recipient, including owners and
+        # administrators. A diagnostic bypass is available only outside production
+        # and requires two explicit flags so it cannot silently contaminate public
+        # performance or paper/live execution samples.
+        runtime_env = str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV") or "development"
+        ).strip().lower()
+        diagnostic_bypass = (
+            runtime_env not in {"production", "prod"}
+            and _env_true("DIAGNOSTIC_DELIVERY_BYPASS")
+            and _env_true("OWNER_DELIVERY_BYPASS_ASSET_LOCK")
+        )
+        if diagnostic_bypass:
             try:
                 from config import ADMIN_IDS, OWNER_IDS
                 privileged = {int(x) for x in (OWNER_IDS or set())} | {int(x) for x in (ADMIN_IDS or set())}
                 if int(telegram_user_id) in privileged:
-                    logger.info(
-                        f"[asset_lock] owner/admin bypass user={telegram_user_id} asset={symbol} "
-                        f"signal={current_signal_id or ''}"
+                    logger.warning(
+                        "[asset_lock] non-production diagnostic bypass user=%s asset=%s signal=%s",
+                        telegram_user_id, symbol, current_signal_id or "",
                     )
                     return False
             except Exception:
@@ -1626,8 +1640,14 @@ async def _is_asset_delivery_locked(
         async with get_session(priority="interactive", label="delivery_asset_lock") as db_session:
             return await _check_with_session(db_session)
     except Exception as exc:
-        logger.debug(f"[asset_lock] check failed for user={telegram_user_id} asset={asset}: {exc}")
-        return False
+        logger.warning("[asset_lock] check failed user=%s asset=%s error=%s", telegram_user_id, asset, exc)
+        runtime_env = str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV") or "development"
+        ).strip().lower()
+        # Duplicate prevention fails closed in production. A database outage must
+        # not turn into repeated paid or copy-trade exposure.
+        return runtime_env in {"production", "prod"}
 
 
 async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = None) -> dict | None:
@@ -1730,7 +1750,20 @@ async def _load_signal_payload(signal_id: str, telegram_user_id: int | None = No
             "rr_ratio": getattr(signal_row, "rr_estimate", None),
             "regime": getattr(signal_row, "regime", None),
             "ml_probability": getattr(signal_row, "ml_probability", None),
+            "ml_probability_raw": getattr(signal_row, "ml_probability_raw", None),
+            "ml_probability_calibrated": getattr(signal_row, "ml_probability_calibrated", None),
+            "ml_calibration_version": getattr(signal_row, "ml_calibration_version", None),
+            "ml_calibration_validated": getattr(signal_row, "ml_calibration_validated", False),
+            "ml_calibration_validation_rows": getattr(signal_row, "ml_calibration_validation_rows", None),
+            "ml_calibration_brier": getattr(signal_row, "ml_calibration_brier", None),
+            "ml_calibration_ece": getattr(signal_row, "ml_calibration_ece", None),
+            "quality_gate_version": getattr(signal_row, "quality_gate_version", None),
+            "quality_gate_passed": getattr(signal_row, "quality_gate_passed", False),
+            "thesis_fingerprint": getattr(signal_row, "thesis_fingerprint", None),
+            "asset_discovery_provider": getattr(signal_row, "asset_discovery_provider", None),
+            "asset_class": getattr(signal_row, "asset_class", None),
             "strategy": getattr(signal_row, "strategy_name", None),
+            "strategy_name": getattr(signal_row, "strategy_name", None),
             "expires_at": getattr(signal_row, "expires_at", None),
             "created_at": getattr(signal_row, "created_at", None),
             "expired": getattr(signal_row, "expired", False),
@@ -2414,9 +2447,14 @@ async def _deliver_or_update_signal_async(
                     timeout=_asset_lock_timeout,
                 )
             except asyncio.TimeoutError:
-                _locked = False
+                _runtime_env = str(
+                    os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")
+                    or os.getenv("APP_ENV") or "development"
+                ).strip().lower()
+                _locked = _runtime_env in {"production", "prod"}
                 logger.warning(
-                    "[asset_lock] pre-send timeout fail-open user=%s asset=%s signal=%s timeout=%.1fs",
+                    "[asset_lock] pre-send timeout fail-%s user=%s asset=%s signal=%s timeout=%.1fs",
+                    "closed" if _locked else "open",
                     telegram_user_id,
                     signal_asset,
                     signal_id or signal.get('id'),
@@ -2435,7 +2473,19 @@ async def _deliver_or_update_signal_async(
                 )
                 return None
     except Exception as exc:
-        logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
+        _runtime_env = str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV") or "development"
+        ).strip().lower()
+        logger.warning(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
+        if _runtime_env in {"production", "prod"}:
+            await _persist_delivery_phase(
+                telegram_user_id=int(telegram_user_id),
+                signal_id=signal_id,
+                delivery_state="BLOCKED",
+                error="asset_lock_check_failed_closed",
+            )
+            return None
 
     send_timeout = max(3.0, _env_float_local("DELIVERY_SEND_TIMEOUT_SECONDS", 12.0))
     if _delivery_trace_enabled():
@@ -6079,6 +6129,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("paper_positions", _audit_handler("paper_positions", paper_positions_command)))
     application.add_handler(CommandHandler("paper_performance", _audit_handler("paper_performance", paper_performance_command)))
     application.add_handler(CommandHandler("paper_history", _audit_handler("paper_history", paper_history_command)))
+    application.add_handler(CommandHandler("paper_close_all", _audit_handler("paper_close_all", paper_close_all_command)))
     application.add_handler(CommandHandler("paper_reset", _audit_handler("paper_reset", paper_reset_command)))
     application.add_handler(CommandHandler("paper_settings", _audit_handler("paper_settings", paper_settings_command)))
     application.add_handler(CommandHandler("paper_status", _audit_handler("paper_status", paper_status_command)))
@@ -6729,16 +6780,18 @@ def run_bot() -> None:
             entry = 0.0
             sl = 0.0
             tp = 0.0
+            payload: dict = {}
 
             # Backward-compatible parser (legacy payload with all fields)
             if "|" in raw:
                 parts = raw.split("|")
                 signal_id, asset, direction = parts[0], parts[1], parts[2]
                 entry, sl, tp = float(parts[3]), float(parts[4]), float(parts[5])
+                payload = await _load_signal_payload(signal_id, telegram_user_id=int(user_id)) or {}
             else:
                 # Compact payload: mt5_trade_<signal_id>
                 signal_id = raw
-                payload = await _load_signal_payload(signal_id)
+                payload = await _load_signal_payload(signal_id, telegram_user_id=int(user_id))
                 if not payload:
                     await query.edit_message_text("\u274C Signal data unavailable for this trade.")
                     return
@@ -6764,6 +6817,7 @@ def run_bot() -> None:
 
             routed = await route_signal_to_mt5(
                 {
+                    **dict(payload or {}),
                     "signal_id": str(signal_id),
                     "asset": str(asset),
                     "direction": str(direction),
@@ -8065,7 +8119,13 @@ def run_bot() -> None:
                         )
                     )
 
-                    # 5) Backfill missing closed_at on clearly terminal statuses.
+                    # 5) Every Telegram-proof delivery must immediately have one
+                    # canonical outcome projection, even while it is still pending.
+                    from services.outcome_reconciliation import ensure_outcome_projections
+                    projection_result = await ensure_outcome_projections(session)
+                    logger.info("[integrity_backfill] outcome_projection=%s", projection_result.as_dict())
+
+                    # 6) Backfill missing closed_at on clearly terminal statuses.
                     await session.execute(
                         text(
                             """
@@ -9559,14 +9619,25 @@ def run_bot() -> None:
                 replace_existing=True,
                 max_instances=1,
             )
+            # Heavy repair sweep is maintenance-only. Continuous outcome
+            # projection reconciliation is worker-owned, so the front door no
+            # longer performs this every ten minutes while serving callbacks.
             scheduler.add_job(
                 data_integrity_backfill_job,
                 'interval',
-                minutes=10,
+                minutes=max(
+                    60,
+                    int(os.getenv('DATA_INTEGRITY_BACKFILL_INTERVAL_MINUTES', '360') or 360),
+                ),
                 id='data_integrity_backfill_job',
                 replace_existing=True,
                 max_instances=1,
-                next_run_time=now_utc_naive(),
+                next_run_time=(
+                    now_utc_naive()
+                    if str(os.getenv('DATA_INTEGRITY_BACKFILL_RUN_AT_STARTUP', '0')).strip().lower()
+                    in {'1', 'true', 'yes', 'on'}
+                    else None
+                ),
             )
             scheduler.add_job(
                 vip_scarcity_broadcast_job,

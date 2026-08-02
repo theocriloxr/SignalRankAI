@@ -23,6 +23,23 @@ def _enabled_safety_flags() -> SafetyFlags:
     )
 
 
+
+def _integrity_signal(**overrides):
+    from datetime import datetime, timezone
+    payload = {
+        "signal_id": "sig-7", "asset": "BTCUSDT", "asset_class": "crypto",
+        "direction": "long", "timeframe": "1h", "entry": 100.0,
+        "stop_loss": 95.0, "take_profit": [106.0, 110.0, 115.0],
+        "strategy_name": "ema_trend", "score": 88.0,
+        "quality_gate_passed": True, "ml_probability_calibrated": 0.67,
+        "ml_calibration_version": "isotonic:test", "ml_calibration_validated": True,
+        "ml_calibration_validation_rows": 250, "ml_calibration_brier": 0.16,
+        "ml_calibration_ece": 0.04, "asset_discovery_provider": "metaapi",
+        "generated_at": datetime.now(timezone.utc),
+    }
+    payload.update(overrides)
+    return payload
+
 def _allowed_request(**overrides) -> ExecutionRequest:
     values = {
         "user_id": 7,
@@ -273,6 +290,11 @@ async def _prime_guarded_router(monkeypatch, router) -> AsyncMock:
     )
     monkeypatch.setattr(
         router,
+        "_get_user_profile_policy",
+        AsyncMock(return_value={"allowed": True, "reason": "ok"}),
+    )
+    monkeypatch.setattr(
+        router,
         "_calculate_position_size",
         AsyncMock(return_value=0.2),
     )
@@ -387,14 +409,7 @@ async def test_router_submits_only_after_gate_and_durable_reservation(
     record = AsyncMock(return_value=None)
     monkeypatch.setattr(router, "_reserve_execution_once", reserve)
     monkeypatch.setattr(router, "_record_execution_reservation", record)
-    signal = {
-        "signal_id": "sig-7",
-        "asset": "BTCUSDT",
-        "direction": "long",
-        "entry": 100.0,
-        "stop_loss": 95.0,
-        "take_profit": 110.0,
-    }
+    signal = _integrity_signal()
 
     result = await router.route_signal(signal, 7, "auto")
 

@@ -140,6 +140,19 @@ def evaluate_financial_activation(
         and started_at <= now < expires_at
         and expires_at - started_at <= MAX_ACTIVATION_WINDOW
     )
+    integrity_certified = _bool(environ, "PRODUCTION_INTEGRITY_CERTIFIED")
+    integrity_report_id = _raw(environ, "PRODUCTION_INTEGRITY_CERTIFICATION_ID")
+    runtime_certification_id = _raw(environ, "LIVE_RUNTIME_CERTIFICATION_ID")
+    calibration_artifact_id = _raw(environ, "ML_CALIBRATION_ARTIFACT_ID")
+    copy_certification_id = _raw(environ, "COPY_TRADING_CERTIFICATION_ID")
+    provider_discovery_certification_id = _raw(environ, "ASSET_DISCOVERY_CERTIFICATION_ID")
+    freshness_certification_id = _raw(environ, "FRESHNESS_CERTIFICATION_ID")
+    profile_routing_certification_id = _raw(environ, "PROFILE_ROUTING_CERTIFICATION_ID")
+    paper_trading_certification_id = _raw(environ, "PAPER_TRADING_CERTIFICATION_ID")
+    outcome_tracker_certification_id = _raw(environ, "OUTCOME_TRACKER_CERTIFICATION_ID")
+    performance_truth_certification_id = _raw(environ, "PERFORMANCE_TRUTH_CERTIFICATION_ID")
+    shadow_tracking_certification_id = _raw(environ, "SHADOW_TRACKING_CERTIFICATION_ID")
+    engine_pulse_certification_id = _raw(environ, "ENGINE_PULSE_CERTIFICATION_ID")
     owner_scope_valid = bool(owner_id.isdigit() and allowed_users == (owner_id,))
     provider_scope_valid = bool(
         allowed_providers
@@ -159,6 +172,18 @@ def evaluate_financial_activation(
         ActivationCheck("provider_allowlist", (not live_execution_requested) or provider_scope_valid, "provider allowlist must contain only enabled mt5/bybit adapters"),
         ActivationCheck("symbol_allowlist", (not live_execution_requested) or bool(allowed_symbols), "at least one exact live symbol is required"),
         ActivationCheck("demo_certification", (not live_execution_requested) or _configured(_raw(environ, "DEMO_CERTIFICATION_REPORT_ID")), "a completed demo certification report ID is required"),
+        ActivationCheck("production_integrity_certification", (not live_execution_requested) or (integrity_certified and _configured(integrity_report_id)), "production-integrity certification and report ID are required"),
+        ActivationCheck("live_runtime_certification", (not live_execution_requested) or _configured(runtime_certification_id), "a post-deploy live-runtime certification ID is required"),
+        ActivationCheck("calibrated_model_artifact", (not live_execution_requested) or _configured(calibration_artifact_id), "live execution requires a persisted calibration artifact ID"),
+        ActivationCheck("freshness_certification", (not live_execution_requested) or _configured(freshness_certification_id), "live execution requires post-deploy signal freshness certification"),
+        ActivationCheck("profile_routing_certification", (not live_execution_requested) or _configured(profile_routing_certification_id), "live execution requires generation, delivery and execution profile-routing certification"),
+        ActivationCheck("paper_trading_certification", (not live_execution_requested) or _configured(paper_trading_certification_id), "live execution requires a completed paper-trading integrity certification"),
+        ActivationCheck("outcome_tracker_certification", (not live_execution_requested) or _configured(outcome_tracker_certification_id), "live execution requires TP/SL lifecycle and reconciliation certification"),
+        ActivationCheck("performance_truth_certification", (not live_execution_requested) or _configured(performance_truth_certification_id), "live execution requires proof-backed performance-ledger certification"),
+        ActivationCheck("shadow_tracking_certification", (not live_execution_requested) or _configured(shadow_tracking_certification_id), "live execution requires rejected-signal shadow tracking and false-negative certification"),
+        ActivationCheck("engine_pulse_certification", (not live_execution_requested) or _configured(engine_pulse_certification_id), "live execution requires reconciled Engine Pulse counter certification"),
+        ActivationCheck("copy_trading_certification", (not copy_trade) or _configured(copy_certification_id), "copy trading requires a dedicated certification ID"),
+        ActivationCheck("provider_discovery_certification", (not live_execution_requested) or (_configured(provider_discovery_certification_id) and not _bool(environ, "ALLOW_STATIC_ASSET_FALLBACK")), "live execution requires provider-backed asset discovery with static fallback disabled"),
         ActivationCheck("maximum_live_position_size", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_POSITION_SIZE")), "a positive maximum live position size is required"),
         ActivationCheck("maximum_daily_loss", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_DAILY_LOSS")), "a positive maximum daily loss is required"),
         ActivationCheck("maximum_total_exposure", (not live_execution_requested) or _positive_number(_raw(environ, "LIVE_MAX_TOTAL_EXPOSURE")), "a positive maximum total exposure is required"),

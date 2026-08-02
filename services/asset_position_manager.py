@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Outcome, Signal, SignalDelivery, User
@@ -128,6 +128,7 @@ async def get_user_asset_position_state(
                 Signal.direction,
                 Signal.timeframe,
                 SignalDelivery.sent_ok,
+                SignalDelivery.delivery_state,
                 Outcome.status,
                 Outcome.canonical_outcome,
             )
@@ -139,7 +140,12 @@ async def get_user_asset_position_state(
                 SignalDelivery.delivered_at >= cutoff,
                 Signal.asset == symbol,
                 SignalDelivery.signal_id != str(exclude_signal_id or "__none__"),
-                SignalDelivery.sent_ok.is_(True),
+                or_(
+                    SignalDelivery.sent_ok.is_(True),
+                    func.lower(SignalDelivery.delivery_state).in_(
+                        ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
+                    ),
+                ),
             )
             .order_by(SignalDelivery.delivered_at.desc())
             .limit(1)
@@ -148,9 +154,10 @@ async def get_user_asset_position_state(
     if row is None:
         return AssetPositionState(int(user.id), int(telegram_user_id), symbol, "NONE", reason="no_recent_position")
 
-    signal_id, delivered_at, direction, timeframe, sent_ok, status, canonical = row
+    signal_id, delivered_at, direction, timeframe, sent_ok, delivery_state, status, canonical = row
     outcome_status = _normalize_status(canonical or status)
-    state = _state_from_status(outcome_status)
+    delivery_state_norm = _normalize_status(delivery_state)
+    state = "CANDIDATE" if not bool(sent_ok) and delivery_state_norm in {"reserved", "sending"} else _state_from_status(outcome_status)
     age_hours = None
     if delivered_at is not None:
         try:
@@ -159,7 +166,10 @@ async def get_user_asset_position_state(
             age_hours = None
 
     locked = state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
-    if state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
+    if state == "CANDIDATE":
+        locked = True
+        reason = "delivery_reservation_active"
+    elif state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
         locked = True
         reason = "terminal_but_cooldown_active"
     elif state not in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < unresolved_h):

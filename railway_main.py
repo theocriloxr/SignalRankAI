@@ -2698,13 +2698,39 @@ async def _provider_coverage_readiness_check(*, production: bool) -> dict[str, o
             "detail": f"coverage_check_failed:{type(exc).__name__}",
             "coverage": coverage,
         }
-    complete = not missing
+    discovery: dict[str, object] = {}
+    discovery_complete = False
+    try:
+        from data.pair_discovery import get_asset_discovery_snapshot
+
+        discovery = dict(get_asset_discovery_snapshot(force_refresh=False) or {})
+        max_age = max(60, int(os.getenv("ASSET_DISCOVERY_MAX_SNAPSHOT_AGE_SECONDS", "7200") or 7200))
+        age = float(discovery.get("last_refresh_age_seconds") or 10**12)
+        providers = dict(discovery.get("providers") or {})
+        discovery_complete = bool(
+            int(discovery.get("total") or 0) > 0
+            and bool(providers.get("provider_backed"))
+            and int(discovery.get("untrusted_total") or 0) == 0
+            and age <= max_age
+        )
+        discovery["maximum_age_seconds"] = max_age
+        discovery["complete"] = discovery_complete
+    except Exception as exc:
+        discovery = {"complete": False, "error": type(exc).__name__}
+
+    complete = not missing and discovery_complete
+    detail_parts: list[str] = []
+    if missing:
+        detail_parts.append("missing_provider_classes:" + ",".join(sorted(missing)))
+    if not discovery_complete:
+        detail_parts.append("asset_discovery_unverified")
     return {
         "ok": complete if production else True,
         "required": production,
         "complete": complete,
-        "detail": "complete" if complete else ("missing:" + ",".join(sorted(missing))),
+        "detail": "complete" if complete else ";".join(detail_parts),
         "coverage": coverage,
+        "asset_discovery": discovery,
     }
 
 
@@ -2733,6 +2759,45 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         financial_activation = {"ok": False, "detail": type(exc).__name__}
     provider_coverage = await _provider_coverage_readiness_check(production=production)
     try:
+        from db.session import get_session
+        from services.outcome_reconciliation import outcome_projection_health
+        async with get_session(priority="interactive", label="readiness.outcome_projection") as _session:
+            outcome_projection = await outcome_projection_health(_session, days=30)
+            await _session.commit()
+    except Exception as exc:
+        outcome_projection = {
+            "ok": not production,
+            "detail": f"outcome_projection_check_failed:{type(exc).__name__}",
+        }
+    try:
+        from services.performance_ledger import performance_ledger_health
+        async with get_session(priority="interactive", label="readiness.performance_ledger") as _session:
+            performance_ledger = await performance_ledger_health(_session, days=30)
+            await _session.commit()
+        if not production:
+            performance_ledger = {**performance_ledger, "ok": True, "required": False}
+        else:
+            performance_ledger["required"] = True
+    except Exception as exc:
+        performance_ledger = {
+            "ok": not production,
+            "required": production,
+            "detail": f"performance_ledger_check_failed:{type(exc).__name__}",
+        }
+    try:
+        from engine.ml import get_model_integrity_status
+        ml_calibration = get_model_integrity_status(ensure_loaded=True)
+        if not production:
+            ml_calibration = {**ml_calibration, "ok": True, "required": False}
+        else:
+            ml_calibration["required"] = True
+    except Exception as exc:
+        ml_calibration = {
+            "ok": not production,
+            "required": production,
+            "detail": f"ml_calibration_check_failed:{type(exc).__name__}",
+        }
+    try:
         from core.version import (
             EXPECTED_RELEASE_COMMIT,
             GIT_COMMIT_SHA,
@@ -2756,6 +2821,9 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         },
         "financial_activation": financial_activation,
         "provider_coverage": provider_coverage,
+        "outcome_projection": outcome_projection,
+        "performance_ledger": performance_ledger,
+        "ml_calibration": ml_calibration,
     }
 
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
@@ -2768,8 +2836,8 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "detail": "distinct" if distinct_redis else ("shared_dev_override" if allow_shared_dev else "must_be_distinct"),
     }
 
-    shadow_required = _env_bool("SHADOW_OUTCOME_TRACKER_ENABLED", False) or _env_bool(
-        "WORKER_SHADOW_TRACKER_ENABLED", False
+    shadow_required = _env_bool("SHADOW_OUTCOME_TRACKER_ENABLED", True) or _env_bool(
+        "WORKER_SHADOW_TRACKER_ENABLED", True
     )
     if shadow_required:
         try:
@@ -2783,6 +2851,21 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
             }
         except Exception as exc:
             checks["shadow_tracker"] = {
+                "ok": False,
+                "detail": f"health_probe_failed:{type(exc).__name__}",
+            }
+    pulse_required = production or _env_bool("WORKER_ENGINE_PULSE_ENABLED", True)
+    if pulse_required:
+        try:
+            from engine.admin_pulse import _engine_pulse_health
+            pulse_health = _engine_pulse_health()
+            checks["engine_pulse"] = {
+                "ok": bool(pulse_health.get("proven")),
+                "detail": str(pulse_health.get("status") or "missing"),
+                **pulse_health,
+            }
+        except Exception as exc:
+            checks["engine_pulse"] = {
                 "ok": False,
                 "detail": f"health_probe_failed:{type(exc).__name__}",
             }

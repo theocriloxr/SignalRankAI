@@ -168,13 +168,25 @@ class Worker:
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
+
+        # Canonical delivery-to-outcome projection reconciliation belongs to
+        # the background worker, not the Telegram front door. This guarantees
+        # proof-backed deliveries receive a durable pending/terminal outcome
+        # row without adding database sweeps to interactive webhook latency.
+        if _env_bool("OUTCOME_RECONCILIATION_ENABLED", True):
+            _register_task(
+                "outcome_reconciliation",
+                lambda: self._outcome_reconciliation_loop(),
+                restart_on_failure=True,
+            )
+            logger.info("[worker] OutcomeReconciliation started")
         # Start shadow outcome tracker for ML-rejected signals
         # Shadow outcome tracking is an operational reliability loop, not an
         # analytics/training workload. Its explicit flag must therefore have
         # the same meaning in monolith and decomposed worker deployments.
         _enable_shadow = _env_bool_any(
             ("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"),
-            False,
+            True,
         )
         if _enable_shadow:
             try:
@@ -419,6 +431,69 @@ class Worker:
                     logger.info("[worker] decision log retry flushed=%s", flushed)
             except Exception as exc:
                 logger.debug("[worker] decision log retry deferred: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _outcome_reconciliation_loop(self) -> None:
+        """Continuously close proof-delivery gaps under one cluster lease."""
+        interval = max(
+            60.0,
+            _env_float("OUTCOME_RECONCILIATION_INTERVAL_SECONDS", 300.0, minimum=60.0),
+        )
+        initial_delay = _env_float(
+            "OUTCOME_RECONCILIATION_STARTUP_DELAY_SECONDS",
+            30.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+        while not self._stop.is_set():
+            try:
+                from core.job_leases import acquire_scheduler_job_lease
+                from services.outcome_reconciliation import ensure_outcome_projections
+                from services.performance_ledger import reconcile_all_performance_ledgers
+
+                with acquire_scheduler_job_lease(
+                    "outcome_reconciliation",
+                    lease_seconds=max(120, int(interval)),
+                ) as lease:
+                    if not lease.acquired:
+                        logger.info(
+                            "[outcome_reconciliation] skipped owner_elsewhere backend=%s scope=%s",
+                            lease.backend,
+                            lease.scope,
+                        )
+                    elif is_db_configured():
+                        async def _run() -> None:
+                            from db.priority import DBPriority
+
+                            async with get_session(
+                                priority=DBPriority.BACKGROUND,
+                                label="outcome_reconciliation",
+                            ) as session:
+                                result = await ensure_outcome_projections(session)
+                                performance_result = await reconcile_all_performance_ledgers(session)
+                                await session.commit()
+                                logger.info(
+                                    "[outcome_reconciliation] completed outcome=%s performance=%s",
+                                    result.as_dict(),
+                                    performance_result.as_dict(),
+                                )
+
+                        await run_with_db_retry(_run)
+            except Exception as exc:
+                logger.warning(
+                    "[outcome_reconciliation] iteration failed: %s",
+                    exc,
+                    exc_info=True,
+                )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:

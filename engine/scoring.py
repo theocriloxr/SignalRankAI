@@ -413,12 +413,15 @@ def _apply_score_soft_cap(raw_score: float) -> tuple[float, bool]:
         return capped, raw_score > 100.0
 
     knee = max(50.0, min(_env_float("SCORE_SOFT_CAP_KNEE", 90.0), 99.0))
-    ceiling = max(knee + 0.1, min(_env_float("SCORE_SOFT_CAP_CEILING", 97.0), 100.0))
-    scale = max(1.0, _env_float("SCORE_SOFT_CAP_SCALE", 25.0))
+    ceiling = max(knee + 0.1, min(_env_float("SCORE_SOFT_CAP_CEILING", 96.0), 99.0))
+    scale = max(10.0, _env_float("SCORE_SOFT_CAP_SCALE", 150.0))
     if raw_score <= knee:
         return raw_score, False
 
-    compressed = knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale)))
+    excess = raw_score - knee
+    # Rational compression preserves ordering far better than the previous
+    # exponential cap, which rounded almost every strong candidate to 97.0.
+    compressed = knee + ((ceiling - knee) * excess / (excess + scale))
     return min(compressed, ceiling), True
 
 

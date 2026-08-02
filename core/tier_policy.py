@@ -361,7 +361,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         # Safe public-testing and paper/education surfaces.
         "public_test_status": Tier.FREE, "paper_balance": Tier.FREE,
         "paper_positions": Tier.FREE, "paper_performance": Tier.FREE,
-        "paper_history": Tier.FREE, "paper_reset": Tier.FREE, "paper_settings": Tier.FREE,
+        "paper_history": Tier.FREE, "paper_close_all": Tier.FREE, "paper_reset": Tier.FREE, "paper_settings": Tier.FREE,
         "receipt": Tier.FREE, "receipts": Tier.FREE,
         "report_issue": Tier.FREE, "performance_truth": Tier.FREE,
         "payment_help": Tier.FREE, "refund_request": Tier.FREE,

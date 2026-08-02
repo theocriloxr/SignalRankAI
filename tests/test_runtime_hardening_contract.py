@@ -44,17 +44,20 @@ def test_worker_owned_outcomes_are_not_scheduled_twice():
 
 def test_release_guard_requires_explicit_evidence():
     source = text("core/release_guard.py")
-    for key in (
-        "stale_blocking_enabled",
-        "delivery_proof",
-        "outcome_tracker",
-        "performance_truth",
-        "no_secret_leakage",
-        "tests_passed",
-        "ohlc_pipeline",
-        "telegram_delivery_lifecycle",
-    ):
-        assert f'supplied.get("{key}", False)' in source
+    required = {
+        "stale_blocking_enabled": "FRESHNESS_CERTIFICATION_ID",
+        "delivery_proof": "DELIVERY_LIFECYCLE_CERTIFICATION_ID",
+        "outcome_tracker": "OUTCOME_TRACKER_CERTIFICATION_ID",
+        "shadow_tracking": "SHADOW_TRACKING_CERTIFICATION_ID",
+        "engine_pulse_integrity": "ENGINE_PULSE_CERTIFICATION_ID",
+        "performance_truth": "PERFORMANCE_TRUTH_CERTIFICATION_ID",
+        "no_secret_leakage": "SECRET_SCAN_CERTIFICATION_ID",
+        "tests_passed": "TEST_CERTIFICATION_ID",
+        "ohlc_pipeline": "OHLC_PIPELINE_CERTIFICATION_ID",
+        "telegram_delivery_lifecycle": "TELEGRAM_LIFECYCLE_CERTIFICATION_ID",
+    }
+    for key, certificate in required.items():
+        assert f'_evidence(supplied, "{key}", "{certificate}")' in source
 
 
 def test_safe_env_profiles_have_no_duplicates_or_unsafe_flags():

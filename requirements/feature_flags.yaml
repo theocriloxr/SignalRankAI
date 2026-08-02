@@ -1,5 +1,5 @@
 {
-  "count": 115,
+  "count": 120,
   "flags": [
     {
       "dangerous": false,
@@ -83,6 +83,14 @@
     },
     {
       "dangerous": false,
+      "name": "ALLOW_STATIC_ASSET_FALLBACK",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ALPHAVANTAGE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -124,6 +132,14 @@
     {
       "dangerous": false,
       "name": "AUTO_ANALYST_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "AUTO_EXECUTION_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -363,14 +379,6 @@
     },
     {
       "dangerous": false,
-      "name": "FX_DEFAULT_ENABLED",
-      "production_example_default": null,
-      "required_safe_default": null,
-      "rollback": "restore previous environment value and redeploy",
-      "safe_default_satisfied": null
-    },
-    {
-      "dangerous": false,
       "name": "FX_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -563,6 +571,14 @@
     },
     {
       "dangerous": false,
+      "name": "OUTCOME_CANDLE_RECONCILIATION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "OUTCOME_IDEMPOTENCY_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -572,6 +588,14 @@
     {
       "dangerous": false,
       "name": "OUTCOME_LIFECYCLE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OUTCOME_RECONCILIATION_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -636,6 +660,22 @@
     {
       "dangerous": false,
       "name": "PORTFOLIO_EXPOSURE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "PROFILE_DRIVEN_TIMEFRAMES_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "PROFILE_DRIVEN_UNIVERSE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

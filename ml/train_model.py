@@ -1009,11 +1009,67 @@ async def load_training_data_sync(lookback_days: int = 90):
     return await load_training_data(lookback_days)
 
 
+def _expected_calibration_error(probabilities, labels, bins: int = 10) -> float:
+    probs = np.asarray(probabilities, dtype=float)
+    truth = np.asarray(labels, dtype=float)
+    if len(probs) == 0:
+        return 1.0
+    edges = np.linspace(0.0, 1.0, max(2, int(bins)) + 1)
+    ece = 0.0
+    for idx in range(len(edges) - 1):
+        left, right = edges[idx], edges[idx + 1]
+        mask = (probs >= left) & ((probs < right) if idx < len(edges) - 2 else (probs <= right))
+        count = int(mask.sum())
+        if count <= 0:
+            continue
+        confidence = float(probs[mask].mean())
+        accuracy = float(truth[mask].mean())
+        ece += (count / len(probs)) * abs(confidence - accuracy)
+    return float(ece)
+
+
+def _temporal_three_way_indices(
+    row_count: int,
+    *,
+    ordered_indices=None,
+    train_ratio: float = 0.70,
+    calibration_ratio: float = 0.15,
+):
+    """Return non-overlapping model-fit, calibration and validation indices."""
+    n = int(row_count)
+    if n < 3:
+        raise ValueError("At least three rows are required for a three-way split")
+    ordered = np.asarray(
+        ordered_indices if ordered_indices is not None else np.arange(n),
+        dtype=int,
+    )
+    if len(ordered) != n:
+        raise ValueError("ordered_indices length must match row_count")
+    train_ratio = min(0.85, max(0.55, float(train_ratio)))
+    calibration_ratio = min(0.30, max(0.05, float(calibration_ratio)))
+    train_end = min(n - 2, max(1, int(n * train_ratio)))
+    calibration_end = min(n - 1, max(train_end + 1, int(n * (train_ratio + calibration_ratio))))
+    return ordered[:train_end], ordered[train_end:calibration_end], ordered[calibration_end:]
+
+
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
-    """Train XGBoost classifier and check for drift."""
+    """Train and calibrate an XGBoost classifier without validation leakage.
+
+    Rows are ordered chronologically and split into three non-overlapping
+    windows:
+
+    * model-fit window (oldest rows)
+    * calibration-fit window
+    * untouched validation window (newest rows)
+
+    The previous implementation fitted isotonic calibration and measured its
+    quality on the same holdout rows.  That made Brier/ECE metrics optimistic
+    and could incorrectly qualify a model for public probability display or
+    live execution.  Calibration evidence is now always measured out of sample.
+    """
     logger.info("Training XGBoost model...")
 
-    # Time-series split: train on past, validate on immediate future.
+    # Time-series split: model fit -> calibration fit -> untouched validation.
     n = len(X_train)
     if n < 20:
         raise ValueError("Insufficient rows for time-series training")
@@ -1023,12 +1079,22 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         ts_filled = ts.fillna(pd.Timestamp(now_utc_naive()))
         idx = np.argsort(ts_filled.values)
 
-    split = max(1, int(n * 0.8))
-    idx_tr = idx[:split]
-    idx_te = idx[split:] if split < n else idx[max(0, n - 1):]
+    train_ratio = min(0.85, max(0.55, float(os.getenv("ML_MODEL_FIT_RATIO", "0.70") or 0.70)))
+    calibration_ratio = min(
+        0.30,
+        max(0.05, float(os.getenv("ML_CALIBRATION_FIT_RATIO", "0.15") or 0.15)),
+    )
+    idx_tr, idx_cal, idx_te = _temporal_three_way_indices(
+        n,
+        ordered_indices=idx,
+        train_ratio=train_ratio,
+        calibration_ratio=calibration_ratio,
+    )
 
-    X_tr, X_te = X_train.iloc[idx_tr], X_train.iloc[idx_te]
-    y_tr, y_te = y_train.iloc[idx_tr], y_train.iloc[idx_te]
+    X_tr, X_cal, X_te = X_train.iloc[idx_tr], X_train.iloc[idx_cal], X_train.iloc[idx_te]
+    y_tr, y_cal, y_te = y_train.iloc[idx_tr], y_train.iloc[idx_cal], y_train.iloc[idx_te]
+    if len(np.unique(y_tr)) < 2:
+        raise ValueError("Model-fit window must contain both outcome classes")
     w_tr = None
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
@@ -1044,19 +1110,22 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         random_state=42,
         verbosity=1,
     )
-    model.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_te, y_te)], verbose=False)
+    model.fit(X_tr, y_tr, sample_weight=w_tr)
 
     # Evaluate
     y_pred = model.predict(X_te)
     y_proba = model.predict_proba(X_te)[:, 1]
-    calibration_x = []
-    calibration_y = []
+    calibration_x: list[float] = []
+    calibration_y: list[float] = []
+    calibrated_proba = np.asarray(y_proba, dtype=float)
     try:
-        if len(np.unique(y_proba)) >= 2 and len(np.unique(y_te)) >= 2:
+        calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
+        if len(np.unique(calibration_fit_proba)) >= 2 and len(np.unique(y_cal)) >= 2:
             calibrator = IsotonicRegression(out_of_bounds='clip')
-            calibrator.fit(y_proba, y_te)
+            calibrator.fit(calibration_fit_proba, y_cal)
             calibration_x = [float(x) for x in getattr(calibrator, 'X_thresholds_', [])]
             calibration_y = [float(y) for y in getattr(calibrator, 'y_thresholds_', [])]
+            calibrated_proba = np.asarray(calibrator.predict(y_proba), dtype=float)
     except Exception as exc:
         logger.warning("Calibration fitting skipped: %s", exc)
 
@@ -1106,13 +1175,46 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     importance = dict(zip(feature_cols, model.feature_importances_))
     logger.info(f"Top features: {sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]}")
 
+    validation_rows = int(len(X_te))
+    calibration_fit_rows = int(len(X_cal))
+    calibration_min_rows = max(20, int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100))
+    raw_brier = float(np.mean((np.asarray(y_proba, dtype=float) - np.asarray(y_te, dtype=float)) ** 2))
+    calibrated_brier = float(np.mean((calibrated_proba - np.asarray(y_te, dtype=float)) ** 2))
+    raw_ece = _expected_calibration_error(y_proba, y_te)
+    calibrated_ece = _expected_calibration_error(calibrated_proba, y_te)
+    max_brier = float(os.getenv("ML_MAX_CALIBRATION_BRIER", "0.25") or 0.25)
+    max_ece = float(os.getenv("ML_MAX_CALIBRATION_ECE", "0.10") or 0.10)
+    calibration_metrics = {
+        "validation_rows": validation_rows,
+        "calibration_fit_rows": calibration_fit_rows,
+        "positive_calibration_rows": int((np.asarray(y_cal) == 1).sum()),
+        "negative_calibration_rows": int((np.asarray(y_cal) == 0).sum()),
+        "positive_validation_rows": int((np.asarray(y_te) == 1).sum()),
+        "negative_validation_rows": int((np.asarray(y_te) == 0).sum()),
+        "raw_brier": raw_brier,
+        "calibrated_brier": calibrated_brier,
+        "raw_ece": raw_ece,
+        "calibrated_ece": calibrated_ece,
+        "minimum_validation_rows": calibration_min_rows,
+        "maximum_brier": max_brier,
+        "maximum_ece": max_ece,
+        "validated": bool(
+            calibration_x and calibration_y
+            and validation_rows >= calibration_min_rows
+            and len(np.unique(y_te)) >= 2
+            and calibrated_brier <= max_brier
+            and calibrated_ece <= max_ece
+        ),
+    }
     metrics = {
         "accuracy": float(acc),
         "auc": float(auc),
         "train_rows": int(len(X_tr)),
-        "validation_rows": int(len(X_te)),
+        "calibration_fit_rows": calibration_fit_rows,
+        "validation_rows": validation_rows,
         "positive_rows": int((y_train == 1).sum()),
         "negative_rows": int((y_train == 0).sum()),
+        "calibration": calibration_metrics,
     }
     return model, feature_cols, calibration_x, calibration_y, metrics
 
@@ -1150,6 +1252,8 @@ def save_model(
         "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
         "calibration_x": calibration_x or [],
         "calibration_y": calibration_y or [],
+        "metrics": dict((training_meta or {}).get("metrics") or {}),
+        "calibration_metrics": dict(((training_meta or {}).get("metrics") or {}).get("calibration") or {}),
         "training_meta": dict(training_meta or {}),
     }
 

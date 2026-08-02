@@ -202,6 +202,30 @@ async def paper_reset_command(update, context) -> None:
     await _reply(update, f"✅ Paper account reset to {_money(snapshot.starting_balance if snapshot else balance)}.")
 
 
+async def paper_close_all_command(update, context) -> None:
+    """Close all open virtual positions at fresh quotes after explicit confirmation."""
+    from core.paper_trading_service import paper_trading_service
+
+    uid = _telegram_user_id(update)
+    args = [str(x).strip().upper() for x in (getattr(context, "args", []) or [])]
+    if args != ["CONFIRM"]:
+        await _reply(
+            update,
+            "This closes every open virtual position at the latest trusted quote. "
+            "Usage: /paper_close_all CONFIRM",
+        )
+        return
+    result = await paper_trading_service.close_all_positions(uid)
+    await _reply(
+        update,
+        "📄 Paper close-all completed\n\n"
+        f"Open before command: {result['open']}\n"
+        f"Closed: {result['closed']}\n"
+        f"Still open (quote/DB failure): {result['failed']}\n\n"
+        "Run /paper_positions to verify, then /paper_reset <balance> CONFIRM when none remain.",
+    )
+
+
 async def paper_settings_command(update, context) -> None:
     from core.paper_trading_service import paper_trading_service
 

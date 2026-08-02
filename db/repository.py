@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from collections import deque
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -323,6 +323,36 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             asset = str(signal_data.get("asset") or "").strip().upper()
             timeframe = str(signal_data.get("timeframe") or "").strip().lower()
             direction = str(signal_data.get("direction") or "").strip().lower()
+            from core.production_integrity import signal_thesis_fingerprint
+            thesis_fingerprint = signal_thesis_fingerprint(signal_data)
+            # Serialize duplicate-thesis admission across engine replicas. This
+            # closes the race where two workers both observe no recent signal and
+            # persist near-identical BTC/SOL ideas seconds apart.
+            try:
+                if str(session.get_bind().dialect.name or "").lower() == "postgresql":
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
+                        {"fingerprint": thesis_fingerprint},
+                    )
+            except Exception as lock_error:
+                from core.env import runtime_environment_name
+                if runtime_environment_name("development") == "production":
+                    raise RuntimeError("signal_thesis_lock_unavailable") from lock_error
+                # Non-production SQLite/test environments still receive the
+                # deterministic recent-thesis query below.
+            thesis_cutoff = now_utc_naive() - timedelta(
+                hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4))
+            )
+            recent_thesis = (await session.execute(
+                select(Signal.signal_id).where(
+                    Signal.thesis_fingerprint == thesis_fingerprint,
+                    Signal.created_at >= thesis_cutoff,
+                    Signal.archived.is_(False),
+                    Signal.expired.is_(False),
+                ).limit(1)
+            )).scalar_one_or_none()
+            if recent_thesis is not None:
+                return None
             opposite = "short" if direction == "long" else ("long" if direction == "short" else "")
             if asset and timeframe and opposite:
                 conflict_q = (
@@ -343,6 +373,8 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             # Convert take_profit list to JSON string
             tp_json = json.dumps(signal_data.get('take_profit', []))
             
+            calibrated_probability = signal_data.get("ml_probability_calibrated")
+            calibration_version = signal_data.get("ml_calibration_version")
             signal = Signal(
                 asset=asset or signal_data.get('asset'),
                 timeframe=timeframe or signal_data.get('timeframe'),
@@ -355,8 +387,31 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 strategy_name=signal_data.get('strategy_name', 'unknown'),
                 strategy_group=signal_data.get('strategy_group', 'mixed'),
                 strength=signal_data.get('confidence', 0.7),
-                ml_probability=signal_data.get('ml_probability'),
-                fingerprint=f"{signal_data.get('asset')}_{signal_data.get('timeframe')}_{signal_data.get('direction')}_{int(signal_data.get('entry') or 0)}",
+                ml_probability=calibrated_probability if calibrated_probability is not None else signal_data.get('ml_probability'),
+                ml_probability_raw=signal_data.get('ml_probability_raw') or signal_data.get('ml_probability'),
+                ml_probability_calibrated=calibrated_probability,
+                ml_calibration_version=calibration_version,
+                ml_calibration_validated=bool(signal_data.get('ml_calibration_validated', False)),
+                ml_calibration_validation_rows=(
+                    int(signal_data.get('ml_calibration_validation_rows'))
+                    if signal_data.get('ml_calibration_validation_rows') is not None
+                    else None
+                ),
+                ml_calibration_brier=(
+                    float(signal_data.get('ml_calibration_brier'))
+                    if signal_data.get('ml_calibration_brier') is not None
+                    else None
+                ),
+                ml_calibration_ece=(
+                    float(signal_data.get('ml_calibration_ece'))
+                    if signal_data.get('ml_calibration_ece') is not None
+                    else None
+                ),
+                fingerprint=thesis_fingerprint,
+                thesis_fingerprint=thesis_fingerprint,
+                asset_discovery_provider=(str(signal_data.get("asset_discovery_provider") or "").strip()[:128] or None),
+                quality_gate_version=str(signal_data.get('quality_gate_version') or 'production-integrity-v1'),
+                quality_gate_passed=bool(signal_data.get('quality_gate_passed', False)),
                 created_at=now_utc_naive(),
             )
             

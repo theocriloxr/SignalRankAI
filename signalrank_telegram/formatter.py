@@ -6,6 +6,7 @@ import html
 import json
 import logging
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.production_integrity import probability_for_public_display
 from engine.signal_metrics import (
 	resolve_confidence_ratio,
 	resolve_confluence_percent,
@@ -444,11 +445,16 @@ def format_signal_admin(signal) -> str:
 	vip_msg = format_signal_vip(signal)
 	
 	# Add admin-specific info
+	_probability = probability_for_public_display(signal)
+	_probability_text = (
+		f"{_probability.label}: {_probability.probability * 100.0:.1f}%"
+		if _probability.probability is not None else "Model probability: uncalibrated/hidden"
+	)
 	admin_info = f"""
 
 ═══ ADMIN INFO ═══
 Score: {resolve_score_percent(signal) or signal.get('score')}/100
-ML Prob: {resolve_ml_probability(signal) or signal.get('ml_probability', 'N/A')}
+{_probability_text}
 Confluence: {signal.get('confluence_count', 0)}/{resolve_confluence_total(signal) or signal.get('confluence_total', 0)}
 Contributors: {', '.join(signal.get('contributors', [])[:3])}
 Created: {signal.get('created_at', 'N/A')}
@@ -1103,7 +1109,7 @@ def format_signal_vip_new(signal: dict) -> str:
 		conf_ratio = resolve_confidence_ratio(signal)
 		score_pct = conf_ratio * 100.0 if conf_ratio is not None else 0.0
 	confidence = int(score_pct)
-	ml_probability = resolve_ml_probability(signal)
+	ml_probability = probability_for_public_display(signal)
 	confluence = resolve_confluence_percent(signal)
 	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
 	regime = signal.get('regime', 'N/A')
@@ -1223,9 +1229,10 @@ def format_signal_vip_new(signal: dict) -> str:
 		lines.append("┃ R/R: N/A")
 	lines.append(f"┃ Confidence: {confidence}/100")
 	
-	_ml_pct = _normalize_ml_probability_pct(ml_probability)
-	if _ml_pct is not None:
-		lines.append(f"┃ ML Probability: {int(round(_ml_pct))}%")
+	if ml_probability.probability is not None:
+		lines.append(f"┃ {ml_probability.label}: {ml_probability.probability * 100.0:.1f}%")
+	else:
+		lines.append("┃ Model probability: uncalibrated/hidden")
 	
 	if confluence:
 		lines.append(f"┃ Confluence: {int(confluence)}%")

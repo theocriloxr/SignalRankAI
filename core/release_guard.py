@@ -39,6 +39,12 @@ def _flag(name: str, default: bool = False) -> bool:
     return env_bool(name, default)
 
 
+def _evidence(supplied: Mapping[str, Any], key: str, certification_env: str) -> bool:
+    if supplied.get(key) is True:
+        return True
+    return bool(str(os.getenv(certification_env) or "").strip())
+
+
 def _check_db_pool_safe() -> GuardCheck:
     """Verify the DB pool configuration is safe for Railway monolith."""
     try:
@@ -143,22 +149,32 @@ def evaluate_release(
         GuardCheck("financial_activation_contract", financial.ok, "live-money dependency graph is valid"),
         GuardCheck(
             "stale_blocking_enabled",
-            supplied.get("stale_blocking_enabled", False) is True,
+            _evidence(supplied, "stale_blocking_enabled", "FRESHNESS_CERTIFICATION_ID"),
             "final freshness gate requires explicit verification evidence",
         ),
         GuardCheck(
             "delivery_proof",
-            supplied.get("delivery_proof", False) is True,
+            _evidence(supplied, "delivery_proof", "DELIVERY_LIFECYCLE_CERTIFICATION_ID"),
             "delivery proof requires explicit end-to-end evidence",
         ),
         GuardCheck(
             "outcome_tracker",
-            supplied.get("outcome_tracker", False) is True,
+            _evidence(supplied, "outcome_tracker", "OUTCOME_TRACKER_CERTIFICATION_ID"),
             "outcome lifecycle requires explicit verification evidence",
         ),
         GuardCheck(
+            "shadow_tracking",
+            _evidence(supplied, "shadow_tracking", "SHADOW_TRACKING_CERTIFICATION_ID"),
+            "shadow rejected-signal tracking and false-negative classification require certification",
+        ),
+        GuardCheck(
+            "engine_pulse_integrity",
+            _evidence(supplied, "engine_pulse_integrity", "ENGINE_PULSE_CERTIFICATION_ID"),
+            "Engine Pulse counters, source attribution and reconciliation require certification",
+        ),
+        GuardCheck(
             "performance_truth",
-            supplied.get("performance_truth", False) is True,
+            _evidence(supplied, "performance_truth", "PERFORMANCE_TRUTH_CERTIFICATION_ID"),
             "provenance-separated metrics require explicit verification evidence",
         ),
         GuardCheck(
@@ -172,23 +188,50 @@ def evaluate_release(
         ),
         GuardCheck(
             "no_secret_leakage",
-            supplied.get("no_secret_leakage", False) is True,
+            _evidence(supplied, "no_secret_leakage", "SECRET_SCAN_CERTIFICATION_ID"),
             "secret scan/redaction requires explicit evidence",
         ),
         GuardCheck(
             "tests",
-            supplied.get("tests_passed", False) is True,
+            _evidence(supplied, "tests_passed", "TEST_CERTIFICATION_ID"),
             "test result requires explicit evidence",
         ),
         GuardCheck(
             "ohlc_pipeline",
-            supplied.get("ohlc_pipeline", False) is True,
+            _evidence(supplied, "ohlc_pipeline", "OHLC_PIPELINE_CERTIFICATION_ID"),
             "at least one asset must produce usable required OHLC",
         ),
         GuardCheck(
             "telegram_delivery_lifecycle",
-            supplied.get("telegram_delivery_lifecycle", False) is True,
+            _evidence(supplied, "telegram_delivery_lifecycle", "TELEGRAM_LIFECYCLE_CERTIFICATION_ID"),
             "Telegram send, proof, active message, and WATCHING_ENTRY require explicit evidence",
+        ),
+        GuardCheck(
+            "profile_routing",
+            _evidence(supplied, "profile_routing", "PROFILE_ROUTING_CERTIFICATION_ID"),
+            "profile-driven discovery, ranking, delivery, paper and broker routing require certification",
+        ),
+        GuardCheck(
+            "paper_trading_integrity",
+            _evidence(supplied, "paper_trading_integrity", "PAPER_TRADING_CERTIFICATION_ID"),
+            "freshness, one-asset exposure, close-all and ledger accounting require certification",
+        ),
+        GuardCheck(
+            "asset_discovery",
+            _evidence(supplied, "asset_discovery", "ASSET_DISCOVERY_CERTIFICATION_ID")
+            and not _flag("ALLOW_STATIC_ASSET_FALLBACK", False),
+            "dynamic provider-backed discovery must be certified and static fallback disabled",
+        ),
+        GuardCheck(
+            "ml_calibration",
+            _evidence(supplied, "ml_calibration", "ML_CALIBRATION_ARTIFACT_ID"),
+            "public probability and live execution require a persisted validated calibration artifact",
+        ),
+        GuardCheck(
+            "public_claim_evidence",
+            (not _flag("PUBLIC_WIN_RATE_MARKETING_ENABLED", False))
+            or _evidence(supplied, "public_claim_evidence", "PERFORMANCE_CLAIM_CERTIFICATION_ID"),
+            "a public win-rate claim requires a separately certified statistical report",
         ),
         # DB pool safety checks
         _check_db_pool_safe(),

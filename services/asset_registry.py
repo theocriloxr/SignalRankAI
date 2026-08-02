@@ -177,7 +177,13 @@ def discover_asset_universe(limit_per_class: int = 25) -> list[AssetProfile]:
                 continue
     except Exception:
         pass
-    if not symbols:
+    static_explicit = str(os.getenv("ALLOW_STATIC_ASSET_FALLBACK", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    # Never invent a tradable universe merely because the runtime is staging,
+    # development or temporarily offline. A deterministic static universe is
+    # available only as an explicit diagnostic opt-in and is rejected by the
+    # production-readiness/live-execution gates. Tests that need fixtures should
+    # inject provider results or set ALLOW_STATIC_ASSET_FALLBACK=1 themselves.
+    if not symbols and static_explicit:
         symbols = [
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "EURUSD", "GBPUSD", "USDJPY",
             "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "AAPL", "NVDA",

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict as DictType, List, Optional
 
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.production_integrity import probability_for_public_display
 from engine.signal_metrics import (
     resolve_confidence_ratio,
     resolve_confluence_percent,
@@ -354,7 +355,7 @@ def _freshness_text(signal: DictType[str, Any]) -> str:
 
 def _score_blurb(signal: DictType[str, Any]) -> str:
     score = resolve_score_percent(signal) or 0.0
-    ml_prob = resolve_ml_probability(signal)
+    probability = probability_for_public_display(signal)
     confluence = resolve_confluence_percent(signal)
     parts: List[str] = []
     strong_threshold = max(
@@ -368,8 +369,8 @@ def _score_blurb(signal: DictType[str, Any]) -> str:
         parts.append("strong setup")
     else:
         parts.append("qualified setup")
-    if ml_prob is not None:
-        parts.append(f"ML {ml_prob * 100.0:.0f}%")
+    if probability.probability is not None:
+        parts.append(f"calibrated {probability.probability * 100.0:.0f}%")
     if confluence is not None:
         parts.append(f"confluence {int(confluence)}")
     return " • ".join(parts)
@@ -574,14 +575,18 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Conviction Score: {score_val:.1f}%",
+        f"🤖 Signal Quality Score: {score_val:.1f}/100",
         f"⚠️ Volatility: {volatility}",
     ]
 
-    # Optional: ML probability
-    ml_prob = resolve_ml_probability(signal)
-    if ml_prob is not None:
-        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    # Public probability language is allowed only for a persisted calibration curve.
+    probability = probability_for_public_display(signal)
+    if probability.probability is not None:
+        lines.append(f"🧠 {probability.label}: {probability.probability * 100.0:.1f}%")
+    else:
+        raw_model_score = resolve_ml_probability(signal)
+        if raw_model_score is not None:
+            lines.append(f"🧠 Model Score (uncalibrated): {raw_model_score * 100.0:.1f}/100")
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
@@ -726,7 +731,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Conviction Score: {score_val:.1f}%",
+        f"🤖 Signal Quality Score: {score_val:.1f}/100",
     ]
 
     # Order Block — VIP exclusive
@@ -748,10 +753,14 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         vol_line += f" — {_h(str(regime))}"
     lines.append(vol_line)
 
-    # ML probability
-    ml_prob = resolve_ml_probability(signal)
-    if ml_prob is not None:
-        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    # Public probability language is allowed only for a persisted calibration curve.
+    probability = probability_for_public_display(signal)
+    if probability.probability is not None:
+        lines.append(f"🧠 {probability.label}: {probability.probability * 100.0:.1f}%")
+    else:
+        raw_model_score = resolve_ml_probability(signal)
+        if raw_model_score is not None:
+            lines.append(f"🧠 Model Score (uncalibrated): {raw_model_score * 100.0:.1f}/100")
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")

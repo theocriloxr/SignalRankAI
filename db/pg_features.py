@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import random
@@ -781,12 +782,36 @@ async def get_or_create_signal_impl(
 
     score = float(signal.get("score") or 0)
     regime: Any | None = signal.get("regime")
-    strength = float(signal.get("strength") or 0)
-    ml_probability_raw: Any | None = signal.get("ml_probability")
-    try:
-        ml_probability: float | None = float(ml_probability_raw) if ml_probability_raw is not None else None
-    except Exception:
-        ml_probability = None
+    strength = float(signal.get("strength") or signal.get("confidence") or 0)
+
+    def _optional_float(value: Any) -> float | None:
+        try:
+            parsed = float(value)
+            return parsed if parsed == parsed else None
+        except Exception:
+            return None
+
+    def _optional_int(value: Any) -> int | None:
+        try:
+            return int(value) if value is not None and str(value).strip() != "" else None
+        except Exception:
+            return None
+
+    raw_probability = _optional_float(signal.get("ml_probability_raw", signal.get("ml_probability")))
+    calibrated_probability = _optional_float(signal.get("ml_probability_calibrated"))
+    ml_probability = calibrated_probability if calibrated_probability is not None else raw_probability
+    calibration_version = str(signal.get("ml_calibration_version") or "").strip()[:64] or None
+    calibration_validated = bool(signal.get("ml_calibration_validated", False))
+    calibration_rows = _optional_int(signal.get("ml_calibration_validation_rows"))
+    calibration_brier = _optional_float(signal.get("ml_calibration_brier"))
+    calibration_ece = _optional_float(signal.get("ml_calibration_ece"))
+    quality_gate_version = str(signal.get("quality_gate_version") or "production-integrity-v1").strip()[:64]
+    quality_gate_passed = bool(signal.get("quality_gate_passed", False))
+    provider_value = signal.get("asset_discovery_provider")
+    if isinstance(provider_value, (list, tuple, set)):
+        provider_value = ",".join(str(item).strip() for item in provider_value if str(item).strip())
+    asset_discovery_provider = str(provider_value or "").strip()[:128] or None
+
     strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "unknown")[:64]
     strategy_group: str = str(signal.get("strategy_group") or "unknown")[:32]
 
@@ -802,83 +827,152 @@ async def get_or_create_signal_impl(
             "strategy_name": strategy_name,
         }
     )
+    from core.production_integrity import signal_thesis_fingerprint
+    thesis_payload = dict(signal)
+    thesis_payload.update(
+        {
+            "asset": asset,
+            "timeframe": timeframe,
+            "direction": direction,
+            "entry": entry,
+            "strategy_name": strategy_name,
+            "regime": regime,
+        }
+    )
+    thesis_fingerprint = str(signal.get("thesis_fingerprint") or signal_thesis_fingerprint(thesis_payload))[:64]
 
-    # Resolve expires_at before the dedupe update path so reused active
-    # signals keep the latest validity window.
-    _raw_expires = signal.get('expires_at')
+    # Serialize canonical-thesis admission across every engine replica. The
+    # main production write path is db.pg_compat -> db.pg_features, so this lock
+    # must live here rather than only in db.repository.persist_signal().
+    thesis_hours = max(1, int(os.getenv("SIGNAL_THESIS_DEDUP_HOURS", "4") or 4))
+    try:
+        dialect_name = str(session.get_bind().dialect.name or "").lower()
+        if dialect_name == "postgresql":
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
+                {"fingerprint": thesis_fingerprint},
+            )
+    except Exception as lock_error:
+        from core.env import runtime_environment_name
+        if runtime_environment_name("development") == "production":
+            raise RuntimeError("signal_thesis_lock_unavailable") from lock_error
+        logger.warning("[dedup] canonical thesis lock unavailable in non-production: %s", lock_error)
+
+    # Resolve expires_at before the dedupe update path so reused active signals
+    # keep the latest validity window without mutating already delivered levels.
+    _raw_expires = signal.get("expires_at")
     if isinstance(_raw_expires, datetime):
         signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
     else:
         signal_expires_at = now + timedelta(hours=12)
 
+    thesis_cutoff = now - timedelta(hours=thesis_hours)
     existing: Signal | None = None
-    # Thesis-level deduplication: match by the canonical fingerprint and active state.
-    # Price targets are intentionally excluded because they drift on every scan.
-    # When dedup_hours=0, skip dedupe and always insert a new signal row.
-    if cutoff is not None:
-        res: Result[Tuple[Signal]] = await session.execute(
-            select(Signal).where(
-                and_(
-                    Signal.fingerprint == fingerprint,
-                    Signal.asset == asset,
-                    Signal.timeframe == timeframe,
-                    Signal.direction == direction,
-                    Signal.strategy_group == strategy_group,
-                    Signal.created_at >= cutoff,
-                    Signal.expired.is_(False),
-                    Signal.archived.is_(False),
-                )
-            ).order_by(Signal.created_at.desc())
+    res = await session.execute(
+        select(Signal)
+        .where(
+            Signal.thesis_fingerprint == thesis_fingerprint,
+            Signal.created_at >= thesis_cutoff,
+            Signal.expired.is_(False),
+            Signal.archived.is_(False),
         )
-        for candidate in res.scalars().all():
-            outcome_res: Result[Tuple[Outcome]] = await session.execute(
-                select(Outcome)
-                .where(Outcome.signal_id == candidate.signal_id)
-                .limit(1)
-            )
-            outcome = outcome_res.scalar_one_or_none()
-            if outcome is None or str(getattr(outcome, "status", "") or "").lower() in {"active", "tp1", "tp2"}:
-                existing = candidate
-                break
+        .order_by(Signal.created_at.desc())
+    )
+    for candidate in res.scalars().all():
+        outcome_res: Result[Tuple[Outcome]] = await session.execute(
+            select(Outcome.status)
+            .where(Outcome.signal_id == candidate.signal_id)
+            .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
+            .limit(1)
+        )
+        outcome_status = str(outcome_res.scalar_one_or_none() or "").lower().strip()
+        if not outcome_status or outcome_status in {"active", "pending", "entered", "tp1", "tp2", "partial_win", "partial_win_be"}:
+            existing = candidate
+            break
+
     if existing is not None:
-        # Best-effort update score/strength and improve message freshness without
-        # creating a new signal row for the same trade thesis.
-        try:
-            existing.score = max(float(existing.score or 0), float(score or 0))
-            existing.strength = max(float(existing.strength or 0), float(strength or 0))
-            existing.entry = float(entry)
-            existing.stop_loss = float(stop_loss)
+        confirmed_delivery_count = int(
+            (
+                await session.execute(
+                    select(func.count(SignalDelivery.id)).where(
+                        SignalDelivery.signal_id == existing.signal_id,
+                        or_(
+                            SignalDelivery.sent_ok.is_(True),
+                            SignalDelivery.delivery_confirmed_at.is_not(None),
+                            func.lower(SignalDelivery.delivery_state) == "confirmed",
+                        ),
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
+        # Never rewrite entry/SL/TP after a user received the signal. Repricing a
+        # delivered row corrupts outcome truth and makes Telegram cards disagree
+        # with the canonical ledger. Before first delivery, the row may absorb a
+        # fresher version of the same thesis.
+        existing.score = max(float(existing.score or 0), score)
+        existing.strength = max(float(existing.strength or 0), strength)
+        if confirmed_delivery_count == 0:
+            existing.entry = entry
+            existing.stop_loss = stop_loss
             existing.take_profit = tp_str
-            existing.strategy_name = strategy_name
             existing.expires_at = signal_expires_at
-            existing.status = "active"
-            existing.trade_profile = trade_profile
-            existing.asset_class = asset_class
-            existing.target_model = target_model
-            existing.expected_duration = expected_duration
-        except Exception:
-            pass
+        elif existing.expires_at is None or (signal_expires_at and signal_expires_at > existing.expires_at):
+            existing.expires_at = signal_expires_at
+        existing.status = "active"
+        existing.trade_profile = trade_profile
+        existing.asset_class = asset_class
+        existing.target_model = target_model
+        existing.expected_duration = expected_duration
+        existing.thesis_fingerprint = thesis_fingerprint
+        existing.asset_discovery_provider = asset_discovery_provider or existing.asset_discovery_provider
+        existing.ml_probability_raw = raw_probability
+        existing.ml_probability_calibrated = calibrated_probability
+        existing.ml_probability = ml_probability
+        existing.ml_calibration_version = calibration_version
+        existing.ml_calibration_validated = calibration_validated
+        existing.ml_calibration_validation_rows = calibration_rows
+        existing.ml_calibration_brier = calibration_brier
+        existing.ml_calibration_ece = calibration_ece
+        existing.quality_gate_version = quality_gate_version
+        existing.quality_gate_passed = quality_gate_passed
         await session.flush()
-        # Debug log for dedup hit
-        try:
-            import logging
-            logging.getLogger(__name__).info(f"[dedup] Existing active thesis found: asset={asset} tf={timeframe} dir={direction} strat={strategy_group} fp={fingerprint} signal_id={existing.signal_id}")
-        except Exception:
-            pass
+        logger.info(
+            "[dedup] canonical thesis reused asset=%s tf=%s dir=%s thesis=%s signal_id=%s delivered=%s",
+            asset,
+            timeframe,
+            direction,
+            thesis_fingerprint,
+            existing.signal_id,
+            confirmed_delivery_count,
+        )
         return existing
 
-    # Debug log for new signal creation
-    try:
-        import logging
-        logging.getLogger(__name__).info(f"[dedup] Creating new signal: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
-    except Exception:
-        pass
+    logger.info(
+        "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
+        asset,
+        timeframe,
+        direction,
+        thesis_fingerprint,
+        fingerprint,
+    )
 
-    signal_near_ob: bool = bool(signal.get('is_near_order_block', False))
+    signal_near_ob: bool = bool(signal.get("is_near_order_block", False))
 
-    # One canonical active thesis per asset/timeframe. A newly accepted signal
-    # supersedes older unresolved rows in the same market bucket, including an
-    # opposing direction, so user-facing "active" lists cannot contradict.
+    # Supersede only unresolved rows in the exact asset/timeframe bucket. A
+    # materially different, older thesis stays immutable for audit/history.
+    confirmed_delivery_exists = (
+        select(SignalDelivery.id)
+        .where(
+            SignalDelivery.signal_id == Signal.signal_id,
+            or_(
+                SignalDelivery.sent_ok.is_(True),
+                SignalDelivery.delivery_confirmed_at.is_not(None),
+                func.lower(SignalDelivery.delivery_state) == "confirmed",
+            ),
+        )
+        .exists()
+    )
     await session.execute(
         update(Signal)
         .where(
@@ -886,64 +980,50 @@ async def get_or_create_signal_impl(
             Signal.timeframe == timeframe,
             Signal.expired.is_(False),
             Signal.archived.is_(False),
+            ~confirmed_delivery_exists,
         )
         .values(status="superseded", expired=True, archived=True)
     )
 
-    # Create Signal - try with ml_probability, fallback if column missing (migration pending)
-    try:
-        s = Signal(
-            asset=asset,
-            timeframe=timeframe,
-            direction=direction,
-            entry=entry,
-            stop_loss=stop_loss,
-            take_profit=tp_str,
-            rr_estimate=rr_estimate,
-            score=score,
-            regime=str(regime)[:32] if regime is not None else None,
-            ml_probability=ml_probability,
-            strategy_name=strategy_name,
-            strategy_group=strategy_group,
-            strength=strength,
-            fingerprint=fingerprint,
-            trade_profile=trade_profile,
-            asset_class=asset_class,
-            target_model=target_model,
-            expected_duration=expected_duration,
-            status="active",
-            created_at=now,
-            expires_at=signal_expires_at,
-            is_near_order_block=signal_near_ob,
-            performance_version=int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2),
-        )
-    except Exception:
-        # Fallback if new columns don't exist yet
-        s = Signal(
-            asset=asset,
-            timeframe=timeframe,
-            direction=direction,
-            entry=entry,
-            stop_loss=stop_loss,
-            take_profit=tp_str,
-            rr_estimate=rr_estimate,
-            score=score,
-            regime=str(regime)[:32] if regime is not None else None,
-            strategy_name=strategy_name,
-            strategy_group=strategy_group,
-            strength=strength,
-            fingerprint=fingerprint,
-            trade_profile=trade_profile,
-            asset_class=asset_class,
-            target_model=target_model,
-            expected_duration=expected_duration,
-            status="active",
-            created_at=now,
-        )
+    s = Signal(
+        asset=asset,
+        timeframe=timeframe,
+        direction=direction,
+        entry=entry,
+        stop_loss=stop_loss,
+        take_profit=tp_str,
+        rr_estimate=rr_estimate,
+        score=score,
+        regime=str(regime)[:32] if regime is not None else None,
+        ml_probability=ml_probability,
+        ml_probability_raw=raw_probability,
+        ml_probability_calibrated=calibrated_probability,
+        ml_calibration_version=calibration_version,
+        ml_calibration_validated=calibration_validated,
+        ml_calibration_validation_rows=calibration_rows,
+        ml_calibration_brier=calibration_brier,
+        ml_calibration_ece=calibration_ece,
+        quality_gate_version=quality_gate_version,
+        quality_gate_passed=quality_gate_passed,
+        strategy_name=strategy_name,
+        strategy_group=strategy_group,
+        strength=strength,
+        fingerprint=fingerprint,
+        thesis_fingerprint=thesis_fingerprint,
+        asset_discovery_provider=asset_discovery_provider,
+        trade_profile=trade_profile,
+        asset_class=asset_class,
+        target_model=target_model,
+        expected_duration=expected_duration,
+        status="active",
+        created_at=now,
+        expires_at=signal_expires_at,
+        is_near_order_block=signal_near_ob,
+        performance_version=int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2),
+    )
     session.add(s)
     await session.flush()
 
-    # Ensure strategy_stats has a row for this strategy.
     try:
         await _touch_strategy_stat(session, strategy_name=strategy_name, strategy_group=strategy_group)
     except Exception:
@@ -1050,6 +1130,27 @@ async def record_signal_delivery(
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
+                # Serialize per-user/per-asset delivery reservation across webhook,
+                # resend and multiple front-door replicas. The subsequent query also
+                # treats RESERVED/SENDING rows as active, so the lock remains useful
+                # after the first transaction commits but before Telegram confirms.
+                try:
+                    if str(session.get_bind().dialect.name or "").lower() == "postgresql":
+                        await session.execute(
+                            text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                            {"scope": f"delivery:{int(user.id)}:{str(sig.asset).upper()}"},
+                        )
+                except Exception as lock_error:
+                    from core.env import runtime_environment_name
+                    if runtime_environment_name("development") == "production":
+                        logger.warning(
+                            "[dedup] user-asset delivery lock unavailable; blocking user=%s asset=%s",
+                            user.id,
+                            sig.asset,
+                        )
+                        return False
+                    logger.warning("[dedup] user-asset delivery lock unavailable in non-production: %s", lock_error)
+
                 from services.asset_repeat_policy import get_asset_repeat_lock_hours
 
                 asset_cooldown_hours = get_asset_repeat_lock_hours(str(tier_s).split("_", 1)[0])
@@ -1103,7 +1204,12 @@ async def record_signal_delivery(
                         .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
                         .where(
                             SignalDelivery.user_id == user.id,
-                            SignalDelivery.sent_ok.is_(True),
+                            or_(
+                                SignalDelivery.sent_ok.is_(True),
+                                func.lower(SignalDelivery.delivery_state).in_(
+                                    ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
+                                ),
+                            ),
                             Signal.asset == sig.asset,
                             SignalDelivery.signal_id != str(signal_id),
                         )
@@ -1762,7 +1868,9 @@ async def queue_outcome_notifications_for_outcome(
 ) -> int:
     recipients = await list_delivery_recipients_for_signal(session, str(signal_id))
     count = 0
+    from core.outcome_ordering import outcome_stage_rank
     status_l = str(status or "").lower()[:16]
+    stage_rank = outcome_stage_rank(status_l)
     now = _utcnow()
     for telegram_user_id, tier_at_send in recipients:
         idempotency_key = f"outcome:{signal_id}:{int(telegram_user_id)}:{status_l}"
@@ -1779,6 +1887,7 @@ async def queue_outcome_notifications_for_outcome(
             telegram_user_id=int(telegram_user_id),
             tier_at_send=str(tier_at_send or "free")[:16],
             outcome_status=status_l,
+            stage_rank=stage_rank,
             idempotency_key=idempotency_key[:128],
             delivery_state="pending",
             updated_at=now,
@@ -2037,9 +2146,20 @@ async def list_signals_missing_outcomes(
     if _h > 0:
         min_created_at = now - timedelta(hours=_h)
 
+    proof_time = func.coalesce(
+        SignalDelivery.delivery_confirmed_at,
+        SignalDelivery.delivered_at_utc,
+        SignalDelivery.delivered_at,
+    )
     delivered_ids: Subquery = (
         select(SignalDelivery.signal_id)
-        .where(SignalDelivery.delivered_at >= start)
+        .where(
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
+            proof_time >= start,
+        )
         .distinct()
         .subquery()
     )
@@ -2055,7 +2175,16 @@ async def list_signals_missing_outcomes(
             select(Outcome.id)
             .where(
                 Outcome.signal_id == Signal.signal_id,
-                Outcome.status.in_(["tp1", "tp2"]),
+                func.lower(Outcome.status).in_([
+                    "pending",
+                    "watching_entry",
+                    "active",
+                    "entered",
+                    "tp1",
+                    "tp2",
+                    "partial_tp",
+                    "partial_win",
+                ]),
             )
             .exists()
         ),
@@ -2085,7 +2214,13 @@ async def list_pending_outcome_notifications(
             Outcome.closed_at.is_not(None),
             OutcomeNotification.delivery_state.in_(["pending", "failed"]),
         )
-        .order_by(Outcome.closed_at.asc(), OutcomeNotification.id.asc())
+        .order_by(
+            OutcomeNotification.signal_id.asc(),
+            OutcomeNotification.telegram_user_id.asc(),
+            OutcomeNotification.stage_rank.desc(),
+            Outcome.closed_at.desc(),
+            OutcomeNotification.id.asc(),
+        )
         .limit(max(1, int(limit)))
     )
     return list(res.all())
@@ -2124,6 +2259,23 @@ async def mark_outcome_notification_delivered(
     row.delivered_at = now
     row.last_error = None
     row.updated_at = now
+    # Once a stage is delivered, all lower pending stages for the same user and
+    # signal are obsolete. A terminal delivery supersedes every other pending
+    # stage, preventing TP1/TP2 alerts from appearing after TP3/SL.
+    from core.outcome_ordering import outcome_is_terminal
+    supersede = update(OutcomeNotification).where(
+        OutcomeNotification.signal_id == str(row.signal_id),
+        OutcomeNotification.telegram_user_id == int(row.telegram_user_id),
+        OutcomeNotification.id != int(row.id),
+        OutcomeNotification.delivery_state.in_(["pending", "failed", "sending"]),
+    )
+    if not outcome_is_terminal(row.outcome_status):
+        supersede = supersede.where(OutcomeNotification.stage_rank < int(row.stage_rank or 0))
+    await session.execute(supersede.values(
+        delivery_state="superseded",
+        last_error="superseded_by_monotonic_outcome_delivery",
+        updated_at=now,
+    ))
     await session.flush()
 
 
@@ -2136,6 +2288,30 @@ async def claim_outcome_notification_for_delivery(
     """Atomically reserve one pending/failed notification before Telegram I/O."""
     now = _utcnow()
     stale_cutoff = now - timedelta(seconds=max(60, int(stale_after_seconds or 300)))
+    candidate = (await session.execute(
+        select(OutcomeNotification).where(OutcomeNotification.id == int(notification_id)).limit(1)
+    )).scalar_one_or_none()
+    if candidate is None:
+        return False
+    delivered_rows = (await session.execute(
+        select(OutcomeNotification.outcome_status, OutcomeNotification.stage_rank).where(
+            OutcomeNotification.signal_id == str(candidate.signal_id),
+            OutcomeNotification.telegram_user_id == int(candidate.telegram_user_id),
+            OutcomeNotification.delivery_state == "delivered",
+        )
+    )).all()
+    from core.outcome_ordering import evaluate_outcome_delivery, outcome_is_terminal
+    decision = evaluate_outcome_delivery(
+        candidate.outcome_status,
+        highest_delivered_rank=max((int(rank or 0) for _, rank in delivered_rows), default=0),
+        terminal_already_delivered=any(outcome_is_terminal(status) for status, _ in delivered_rows),
+    )
+    if not decision.allowed:
+        candidate.delivery_state = "superseded"
+        candidate.last_error = decision.reason
+        candidate.updated_at = now
+        await session.flush()
+        return False
     stmt = (
         update(OutcomeNotification)
         .where(
@@ -3075,15 +3251,106 @@ async def queue_signal_to_global_pool(
     return True
 
 
+def _signal_policy_payload(signal: Signal) -> dict[str, Any]:
+    """Convert a persisted signal into the canonical policy-evaluation shape."""
+    take_profit: Any = getattr(signal, "take_profit", None)
+    if isinstance(take_profit, str):
+        try:
+            take_profit = json.loads(take_profit)
+        except Exception:
+            take_profit = []
+    if not isinstance(take_profit, (list, tuple)):
+        take_profit = [take_profit] if take_profit is not None else []
+    return {
+        "signal_id": str(getattr(signal, "signal_id", "") or ""),
+        "asset": str(getattr(signal, "asset", "") or ""),
+        "asset_class": getattr(signal, "asset_class", None),
+        "direction": str(getattr(signal, "direction", "") or ""),
+        "timeframe": str(getattr(signal, "timeframe", "") or ""),
+        "entry": getattr(signal, "entry", None),
+        "stop_loss": getattr(signal, "stop_loss", None),
+        "take_profit": list(take_profit),
+        "score": getattr(signal, "score", None),
+        "strategy_name": getattr(signal, "strategy_name", None),
+        "regime": getattr(signal, "regime", None),
+        "generated_at": getattr(signal, "created_at", None),
+        "created_at": getattr(signal, "created_at", None),
+        "expires_at": getattr(signal, "expires_at", None),
+        "quality_gate_passed": bool(getattr(signal, "quality_gate_passed", False)),
+        "quality_gate_version": getattr(signal, "quality_gate_version", None),
+        "ml_probability": getattr(signal, "ml_probability", None),
+        "ml_probability_raw": getattr(signal, "ml_probability_raw", None),
+        "ml_probability_calibrated": getattr(signal, "ml_probability_calibrated", None),
+        "ml_calibration_version": getattr(signal, "ml_calibration_version", None),
+        "ml_calibration_validated": bool(getattr(signal, "ml_calibration_validated", False)),
+        "ml_calibration_validation_rows": getattr(signal, "ml_calibration_validation_rows", None),
+        "ml_calibration_brier": getattr(signal, "ml_calibration_brier", None),
+        "ml_calibration_ece": getattr(signal, "ml_calibration_ece", None),
+        "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None),
+        "asset_discovery_provider": getattr(signal, "asset_discovery_provider", None),
+    }
+
+
+async def _profile_and_integrity_filter_available_signals(
+    session: AsyncSession,
+    telegram_user_id: int,
+    signals: list[Signal],
+) -> list[tuple[Signal, float]]:
+    """Apply the same profile, freshness and quality policy as live delivery.
+
+    Free-pool and paid "best signal" recovery paths historically bypassed the
+    main personalized delivery router.  That allowed stale or profile-mismatched
+    signals to be selected even though normal delivery would reject them.
+    """
+    from core.production_integrity import evaluate_signal_freshness
+    from core.signal_quality_gate import evaluate_signal_quality
+    from services.user_intelligence import (
+        get_user_trading_preferences,
+        personalize_signal_for_preferences,
+        signal_matches_preferences,
+    )
+
+    prefs = await get_user_trading_preferences(session, int(telegram_user_id))
+    require_quality = str(os.getenv("DELIVERY_REQUIRE_QUALITY_GATE", "1")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    eligible: list[tuple[Signal, float]] = []
+    for signal in signals:
+        if bool(getattr(signal, "archived", False)) or bool(getattr(signal, "expired", False)):
+            continue
+        payload = _signal_policy_payload(signal)
+        freshness = evaluate_signal_freshness(
+            timeframe=payload.get("timeframe"),
+            generated_at=payload.get("generated_at"),
+            expires_at=payload.get("expires_at"),
+            purpose="delivery",
+        )
+        if not freshness.ok:
+            continue
+        quality = evaluate_signal_quality(payload)
+        if require_quality and (
+            not bool(payload.get("quality_gate_passed"))
+            or not quality.ok
+        ):
+            continue
+        matches, _reason = signal_matches_preferences(payload, prefs)
+        if not matches:
+            continue
+        personalized = personalize_signal_for_preferences(payload, prefs)
+        rank = float(personalized.get("personalized_rank_score") or payload.get("score") or 0.0)
+        eligible.append((signal, rank))
+    return eligible
+
+
 async def get_random_available_signals_for_free_user(
     session: AsyncSession,
     telegram_user_id: int,
     limit: int = 2,
 ) -> list[Signal]:
-    """Get completely random signals that user hasn't received yet.
-    
-    Bot picks ANY random signals from available pool - no filtering by score,
-    quality, or any other criteria. Truly random selection.
+    """Get random *eligible* signals the user has not received yet.
+
+    Randomness is applied only after production integrity and the user's AI
+    trading profile have been enforced.
     
     Returns up to 'limit' random signals that:
     - Were created recently (last 24 hours)
@@ -3121,11 +3388,14 @@ async def get_random_available_signals_for_free_user(
     )
     locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
     
-    # Get signals with outcomes (resolved trades)
-    res_resolved: Result[Tuple[str]] = await session.execute(
-        select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
+    # Pending outcome projections are active signals, not resolved trades.
+    res_resolved = await session.execute(
+        select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None))
     )
-    resolved_signals: set[Any] = set(row[0] for row in res_resolved.all())
+    from core.signal_lifecycle import outcome_is_terminal
+    resolved_signals: set[Any] = {
+        row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])
+    }
     
     # Get all recent signals (not yet archived)
     # Note: archived filtering will be applied once migration 0009 runs
@@ -3139,7 +3409,7 @@ async def get_random_available_signals_for_free_user(
     all_recent: list[Signal] = list(res_signals.scalars().all())
     
     # Filter out already received and resolved trades
-    available: list[Signal] = [
+    prefiltered: list[Signal] = [
         s for s in all_recent
         if (
             s.signal_id not in already_received
@@ -3148,6 +3418,12 @@ async def get_random_available_signals_for_free_user(
             and float(getattr(s, "score", 0) or 0) >= float(min_score)
         )
     ]
+    policy_filtered = await _profile_and_integrity_filter_available_signals(
+        session,
+        int(telegram_user_id),
+        prefiltered,
+    )
+    available = [signal for signal, _rank in policy_filtered]
     
     # Truly random selection - bot picks any signals it wants
     if len(available) <= limit:
@@ -3193,11 +3469,14 @@ async def get_highest_scoring_available_signal_for_user(
     )
     locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
     
-    # Get signals with outcomes (resolved trades)
-    res_resolved: Result[Tuple[str]] = await session.execute(
-        select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
+    # Pending outcome projections are active signals, not resolved trades.
+    res_resolved = await session.execute(
+        select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None))
     )
-    resolved_signals: set[Any] = set(row[0] for row in res_resolved.all())
+    from core.signal_lifecycle import outcome_is_terminal
+    resolved_signals: set[Any] = {
+        row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])
+    }
     
     # Get highest scoring recent signal not yet delivered to user and still ongoing
     # Note: archived filtering will be applied once migration 0009 runs
@@ -3209,10 +3488,19 @@ async def get_highest_scoring_available_signal_for_user(
             Signal.signal_id.notin_(resolved_signals) if resolved_signals else True,
             ~Signal.asset.in_(locked_assets) if locked_assets else True,
         )
-        .order_by(Signal.score.desc())
-        .limit(1)
+        .order_by(Signal.score.desc(), Signal.created_at.desc())
+        .limit(100)
     )
-    return res_signal.scalar_one_or_none()
+    candidates = list(res_signal.scalars().all())
+    policy_filtered = await _profile_and_integrity_filter_available_signals(
+        session,
+        int(telegram_user_id),
+        candidates,
+    )
+    if not policy_filtered:
+        return None
+    policy_filtered.sort(key=lambda item: item[1], reverse=True)
+    return policy_filtered[0][0]
 
 
 async def queue_random_free_signals_for_all_users(

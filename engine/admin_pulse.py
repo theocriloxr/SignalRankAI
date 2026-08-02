@@ -200,6 +200,57 @@ def _deployment_window(lifetime: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _record_engine_pulse_health(
+    *,
+    status: str,
+    stats: dict[str, Any] | None = None,
+    error: str | None = None,
+    recipients: int = 0,
+) -> None:
+    payload = {
+        "status": str(status or "unknown"),
+        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+        "interval_seconds": max(60, int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600)),
+        "recipients": int(recipients or 0),
+        "error": str(error or "") or None,
+    }
+    if isinstance(stats, dict):
+        payload.update({
+            "scanned": int(stats.get("scanned") or 0),
+            "delivered": int(stats.get("delivered") or 0),
+            "accounted": int(stats.get("accounted") or 0),
+            "unaccounted": int(stats.get("unaccounted") or 0),
+            "db_signals": int((stats.get("sources") or {}).get("db_signals") or 0),
+            "db_deliveries": int((stats.get("sources") or {}).get("db_deliveries") or 0),
+            "generated_at": stats.get("generated_at"),
+        })
+        payload["counter_invariant_ok"] = int(payload["unaccounted"]) == 0
+    try:
+        from core.redis_state import state
+        state.set_sync("engine:pulse:health", json.dumps(payload, sort_keys=True))
+    except Exception:
+        logger.debug("[admin_pulse] unable to persist pulse health", exc_info=True)
+
+
+def _engine_pulse_health() -> dict[str, Any]:
+    try:
+        from core.redis_state import state
+        raw = state.get_sync("engine:pulse:health")
+        payload = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
+        heartbeat = datetime.fromisoformat(str(payload.get("heartbeat_at") or "").replace("Z", "+00:00"))
+        age_seconds = max(0.0, (datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc)).total_seconds())
+        interval = max(60, int(payload.get("interval_seconds") or 3600))
+        payload["heartbeat_age_seconds"] = age_seconds
+        payload["proven"] = (
+            str(payload.get("status") or "") == "healthy"
+            and bool(payload.get("counter_invariant_ok"))
+            and age_seconds <= max(900, interval * 2)
+        )
+        return payload
+    except Exception:
+        return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
+
+
 def _shadow_tracker_health() -> dict[str, Any]:
     try:
         from core.redis_state import state
@@ -323,7 +374,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                         text(
                             "SELECT COUNT(*) FROM signal_deliveries "
                             "WHERE sent_ok IS TRUE AND telegram_message_id IS NOT NULL "
-                            "AND COALESCE(delivery_confirmed_at, delivered_at_utc, delivered_at, last_attempt_at) >= :since"
+                            "AND COALESCE(delivery_confirmed_at, last_attempt_at) >= :since"
                         ),
                         params,
                     )
@@ -429,9 +480,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                             "SELECT COUNT(*), "
                             "SUM(CASE WHEN outcome_tracked_at IS NULL THEN 1 ELSE 0 END), "
                             "SUM(CASE WHEN outcome_tracked_at IS NOT NULL THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'false_negative' THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'correct_block' THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'partial_win' THEN 1 ELSE 0 END) "
+                            "SUM(CASE WHEN actual_outcome LIKE 'tp%' THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome IN ('sl','stop','stopped') THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome IN ('tp1','tp2','partial_win') THEN 1 ELSE 0 END) "
                             "FROM ml_rejected_signals WHERE created_at >= :since"
                         ),
                         params,
@@ -587,20 +638,23 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         logger.debug("[admin_pulse] no telegram token configured")
+        _record_engine_pulse_health(status="degraded", error="telegram_token_missing")
         return False
     try:
         from config import OWNER_IDS, ADMIN_IDS
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
         if not recipients:
             logger.debug("[admin_pulse] no recipients configured")
+            _record_engine_pulse_health(status="degraded", error="admin_recipients_missing")
             return False
 
         stats = await compute_engine_health(window_hours=window_hours)
         txt = (
             f"Engine Pulse ({window_hours}h)\n\n"
-            f"Scope: global | Window: trailing {window_hours}h | Unit: confirmed recipient deliveries\n\n"
-            f"Total Scanned: {stats.get('scanned', 0)}\n"
-            f"Delivered: {stats.get('delivered', 0)}\n"
+            f"Scope: global | Window: trailing {window_hours}h\n\n"
+            f"Decision rows evaluated: {stats.get('scanned', 0)}\n"
+            f"Signals generated: {(stats.get('sources') or {}).get('db_signals', 0)}\n"
+            f"Confirmed recipient deliveries: {stats.get('delivered', 0)}\n"
             f"Accounted: {stats.get('accounted', 0)}\n"
             f"Unaccounted: {stats.get('unaccounted', 0)}\n"
             "Rejected breakdown:\n"
@@ -678,18 +732,30 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
 
         import requests
 
+        sent = 0
         for rid in recipients:
             try:
-                requests.post(
+                response = requests.post(
                     f"https://api.telegram.org/bot{token}/sendMessage",
                     json={"chat_id": int(rid), "text": txt},
                     timeout=6,
                 )
+                if bool(getattr(response, "ok", False)):
+                    sent += 1
             except Exception:
                 continue
-        return True
+        invariant_ok = int(stats.get("unaccounted") or 0) == 0
+        status = "healthy" if invariant_ok and sent == len(recipients) else "degraded"
+        error = None if status == "healthy" else (
+            "counter_invariant_failed" if not invariant_ok else f"telegram_sent_{sent}_of_{len(recipients)}"
+        )
+        _record_engine_pulse_health(
+            status=status, stats=stats, error=error, recipients=sent
+        )
+        return status == "healthy"
     except Exception as exc:
         logger.error("[admin_pulse] send error: %s", exc)
+        _record_engine_pulse_health(status="error", error=f"{type(exc).__name__}:{exc}")
         return False
 
 

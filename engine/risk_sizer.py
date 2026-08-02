@@ -63,7 +63,8 @@ class SmartRiskSizer:
         # Extract ML probability
         if ml_probability is None:
             if signal is not None:
-                ml_probability = signal.get('ml_probability')
+                from engine.signal_metrics import resolve_ml_probability
+                ml_probability = resolve_ml_probability(signal)
             else:
                 ml_probability = None
         
