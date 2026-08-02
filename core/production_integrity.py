@@ -60,6 +60,39 @@ def canonical_timeframe(value: Any) -> str:
     return aliases.get(raw, raw or "1h")
 
 
+def canonical_strategy(value: Any) -> str:
+    return " ".join(str(value or "unknown").strip().lower().split()) or "unknown"
+
+
+def signal_thesis_scope(signal: Mapping[str, Any]) -> str:
+    """Return the stable semantic scope used for locks and near-entry comparison."""
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = canonical_direction(signal.get("direction"))
+    strategy = canonical_strategy(signal.get("strategy_name") or signal.get("strategy"))
+    return f"{asset}|{direction}|{strategy}"
+
+
+def semantic_entry_tolerance_pct() -> float:
+    return _env_float("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", 0.003, 0.0001, 0.05)
+
+
+def semantic_entry_gap(first: Any, second: Any) -> float | None:
+    try:
+        first_f = float(first)
+        second_f = float(second)
+    except Exception:
+        return None
+    if not math.isfinite(first_f) or not math.isfinite(second_f) or first_f <= 0 or second_f <= 0:
+        return None
+    return abs(first_f - second_f) / max(abs(first_f), abs(second_f), 1e-9)
+
+
+def semantic_entries_equivalent(first: Any, second: Any, *, tolerance: float | None = None) -> bool:
+    gap = semantic_entry_gap(first, second)
+    threshold = semantic_entry_tolerance_pct() if tolerance is None else max(0.0001, min(0.05, float(tolerance)))
+    return gap is not None and gap <= threshold
+
+
 _DEFAULT_MAX_AGE_SECONDS = {
     "1m": 120,
     "3m": 180,
@@ -159,10 +192,15 @@ def signal_thesis_fingerprint(signal: Mapping[str, Any]) -> str:
     """
     asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     direction = canonical_direction(signal.get("direction"))
-    strategy = str(signal.get("strategy_name") or signal.get("strategy") or "unknown").lower().strip()
+    strategy = canonical_strategy(signal.get("strategy_name") or signal.get("strategy"))
     regime = str(signal.get("regime") or signal.get("market_regime") or "unknown").lower().strip()
     entry = signal.get("entry") or signal.get("close_price")
-    parts = [asset, direction, strategy, regime, _entry_band(entry)]
+    # Regime and timeframe are intentionally excluded by default. Both can
+    # oscillate between adjacent engine cycles while the user-visible trade idea
+    # (asset, direction, strategy and entry band) remains unchanged.
+    parts = [asset, direction, strategy, _entry_band(entry)]
+    if _env_bool("THESIS_FINGERPRINT_INCLUDE_REGIME", False):
+        parts.append(regime)
     if _env_bool("THESIS_FINGERPRINT_INCLUDE_TIMEFRAME", False):
         parts.append(canonical_timeframe(signal.get("timeframe")))
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
@@ -307,12 +345,17 @@ __all__ = [
     "PublicClaimDecision",
     "calibration_evidence_valid",
     "canonical_direction",
+    "canonical_strategy",
     "canonical_timeframe",
     "evaluate_public_win_rate_claim",
     "evaluate_signal_freshness",
     "max_signal_age_seconds",
     "probability_for_public_display",
+    "semantic_entries_equivalent",
+    "semantic_entry_gap",
+    "semantic_entry_tolerance_pct",
     "signal_age_seconds",
     "signal_thesis_fingerprint",
+    "signal_thesis_scope",
     "wilson_lower_bound",
 ]

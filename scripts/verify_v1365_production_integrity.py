@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static and deterministic verifier for SignalRankAI v1.3.6.6.
+"""Static and deterministic verifier for SignalRankAI v1.3.6.7.
 
 This verifier intentionally does not activate live money or assert a win rate. It
 proves that the release contains the fail-closed controls required before runtime
@@ -51,8 +51,8 @@ def main() -> int:
     )
     from core.live_execution_integrity import evaluate_live_signal_admission
 
-    require(APP_VERSION == "1.3.6.6", "release version")
-    require(RELEASE_FINGERPRINT == "v1.3.6.6-production-integrity-hardening-20260802", "fingerprint")
+    require(APP_VERSION == "1.3.6.7", "release version")
+    require(RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802", "fingerprint")
     require((ROOT / "db/migrations/versions/0034_production_integrity.py").exists(), "migration 0034")
 
     for path in (
@@ -101,7 +101,7 @@ def main() -> int:
     require((railway.get("deploy") or {}).get("startCommand") == "bash start.sh", "neutral Railway start command")
     require("healthcheckPath" not in (railway.get("deploy") or {}), "role-specific healthcheck preserved")
 
-    print("overall=PASS release=v1.3.6.6 live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED")
+    print("overall=PASS release=v1.3.6.7 live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED")
     return 0
 
 

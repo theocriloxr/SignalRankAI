@@ -458,7 +458,10 @@ class Worker:
             try:
                 from core.job_leases import acquire_scheduler_job_lease
                 from services.outcome_reconciliation import ensure_outcome_projections
-                from services.performance_ledger import reconcile_all_performance_ledgers
+                from services.performance_ledger import (
+                    reconcile_all_performance_ledgers,
+                    repair_partial_exit_outcomes,
+                )
 
                 with acquire_scheduler_job_lease(
                     "outcome_reconciliation",
@@ -479,11 +482,13 @@ class Worker:
                                 label="outcome_reconciliation",
                             ) as session:
                                 result = await ensure_outcome_projections(session)
+                                repaired_partial_exits = await repair_partial_exit_outcomes(session)
                                 performance_result = await reconcile_all_performance_ledgers(session)
                                 await session.commit()
                                 logger.info(
-                                    "[outcome_reconciliation] completed outcome=%s performance=%s",
+                                    "[outcome_reconciliation] completed outcome=%s partial_exit_repairs=%s performance=%s",
                                     result.as_dict(),
+                                    repaired_partial_exits,
                                     performance_result.as_dict(),
                                 )
 

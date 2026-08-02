@@ -44,7 +44,7 @@ def test_background_jobs_are_bounded_leased_and_coalesced():
     source = (ROOT / "signalrank_telegram/bot.py").read_text("utf-8")
     for marker in (
         'RESEND_JOB_BUDGET_SECONDS", "20"',
-        'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20"',
+        'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "45"',
         'OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5"',
         'RESEND_MAX_USERS_PER_RUN", "6"',
         'RESEND_MAX_SIGNALS", "3"',

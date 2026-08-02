@@ -1505,7 +1505,11 @@ class PaperTradingService:
             return True
 
     async def close_all_positions(
-        self, telegram_user_id: int, *, reason: str = "MANUAL_CLOSE_ALL",
+        self,
+        telegram_user_id: int,
+        *,
+        reason: str = "MANUAL_CLOSE_ALL",
+        allow_last_mark_fallback: bool = False,
     ) -> dict[str, int]:
         """Close every open virtual position at a fresh live quote.
 
@@ -1518,14 +1522,19 @@ class PaperTradingService:
             if user is None:
                 return {"open": 0, "closed": 0, "failed": 0}
             rows = (await session.execute(
-                select(PaperPosition.position_id, PaperPosition.asset).where(
+                select(
+                    PaperPosition.position_id,
+                    PaperPosition.asset,
+                    PaperPosition.current_price,
+                    PaperPosition.updated_at,
+                ).where(
                     PaperPosition.user_id == int(user.id),
                     func.lower(PaperPosition.status) == "open",
                 )
             )).all()
         if not rows:
             return {"open": 0, "closed": 0, "failed": 0}
-        assets = sorted({str(asset) for _, asset in rows})
+        assets = sorted({str(asset) for _, asset, _current_price, _updated_at in rows})
         try:
             from engine.price_fetcher import get_live_price_batch
             prices = await get_live_price_batch(
@@ -1534,9 +1543,23 @@ class PaperTradingService:
         except Exception:
             logger.exception("[paper_close_all] quote batch failed user=%s", telegram_user_id)
             prices = {}
-        result = {"open": len(rows), "closed": 0, "failed": 0}
-        for position_id, asset in rows:
+        result = {"open": len(rows), "closed": 0, "failed": 0, "last_mark_fallback": 0}
+        max_last_mark_age = _env_int("PAPER_CLOSE_ALL_LAST_MARK_MAX_AGE_SECONDS", 300, 30, 3600)
+        now = now_utc_naive()
+        for position_id, asset, last_mark, last_updated_at in rows:
             price = _safe_float(prices.get(str(asset)))
+            if price <= 0 and allow_last_mark_fallback:
+                try:
+                    mark_age = (now - last_updated_at).total_seconds() if last_updated_at else float("inf")
+                except Exception:
+                    mark_age = float("inf")
+                if _safe_float(last_mark) > 0 and mark_age <= max_last_mark_age:
+                    price = _safe_float(last_mark)
+                    result["last_mark_fallback"] += 1
+                    logger.warning(
+                        "[paper_close_all] using fresh last mark position=%s asset=%s age_s=%.1f",
+                        position_id, asset, mark_age,
+                    )
             if price <= 0:
                 result["failed"] += 1
                 continue

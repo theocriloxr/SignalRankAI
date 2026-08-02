@@ -1,5 +1,5 @@
 {
-  "count": 119,
+  "count": 122,
   "flags": [
     {
       "dangerous": false,
@@ -67,6 +67,14 @@
     },
     {
       "dangerous": false,
+      "name": "ALLOW_ASSET_COOLDOWN_REDUCTION",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ALLOW_DOTENV",
       "production_example_default": null,
       "required_safe_default": null,
@@ -84,6 +92,14 @@
     {
       "dangerous": false,
       "name": "ALLOW_STATIC_ASSET_FALLBACK",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -572,6 +588,14 @@
     {
       "dangerous": false,
       "name": "OUTCOME_CANDLE_RECONCILIATION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OUTCOME_DUPLICATE_NOTIFICATION_SUPPRESSION_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

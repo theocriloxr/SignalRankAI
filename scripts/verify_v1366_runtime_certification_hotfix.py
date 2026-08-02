@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Source-level verifier for the v1.3.6.6 runtime certification hotfix."""
+"""Source-level verifier for the v1.3.6.7 runtime certification hotfix."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -23,10 +23,10 @@ def check(name: str, condition: bool) -> None:
 
 
 def main() -> None:
-    check("release version", APP_VERSION == "1.3.6.6")
+    check("release version", APP_VERSION == "1.3.6.7")
     check(
         "release fingerprint",
-        RELEASE_FINGERPRINT == "v1.3.6.6-runtime-certification-hotfix-20260802",
+        RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802",
     )
 
     sql = str(
@@ -78,7 +78,7 @@ def main() -> None:
     )
 
     print(
-        "overall=PASS release=v1.3.6.6 "
+        "overall=PASS release=v1.3.6.7 "
         "live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED"
     )
 

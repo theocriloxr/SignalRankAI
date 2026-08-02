@@ -322,17 +322,27 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
         async with get_session() as session:
             asset = str(signal_data.get("asset") or "").strip().upper()
             timeframe = str(signal_data.get("timeframe") or "").strip().lower()
-            direction = str(signal_data.get("direction") or "").strip().lower()
-            from core.production_integrity import signal_thesis_fingerprint
+            from core.production_integrity import (
+                canonical_direction,
+                semantic_entries_equivalent,
+                signal_thesis_fingerprint,
+                signal_thesis_scope,
+            )
+            direction = canonical_direction(signal_data.get("direction"))
             thesis_fingerprint = signal_thesis_fingerprint(signal_data)
             # Serialize duplicate-thesis admission across engine replicas. This
             # closes the race where two workers both observe no recent signal and
             # persist near-identical BTC/SOL ideas seconds apart.
             try:
                 if str(session.get_bind().dialect.name or "").lower() == "postgresql":
+                    semantic_scope = f"signal-thesis:{signal_thesis_scope(signal_data)}"
                     await session.execute(
                         text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                         {"fingerprint": thesis_fingerprint},
+                    )
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                        {"scope": semantic_scope},
                     )
             except Exception as lock_error:
                 from core.env import runtime_environment_name
@@ -353,6 +363,31 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             )).scalar_one_or_none()
             if recent_thesis is not None:
                 return None
+            try:
+                semantic_tolerance = max(0.0001, min(0.05, float(
+                    os.getenv("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", "0.003") or 0.003
+                )))
+            except Exception:
+                semantic_tolerance = 0.003
+            strategy_name = str(signal_data.get("strategy_name") or signal_data.get("strategy") or "unknown").lower().strip()
+            semantic_candidates = (await session.execute(
+                select(Signal).where(
+                    Signal.asset == asset,
+                    Signal.direction == direction,
+                    func.lower(Signal.strategy_name) == strategy_name,
+                    Signal.created_at >= thesis_cutoff,
+                    Signal.archived.is_(False),
+                    Signal.expired.is_(False),
+                ).order_by(Signal.created_at.desc())
+            )).scalars().all()
+            entry_value = float(signal_data.get("entry") or 0)
+            for candidate in semantic_candidates:
+                if semantic_entries_equivalent(
+                    getattr(candidate, "entry", None),
+                    entry_value,
+                    tolerance=semantic_tolerance,
+                ):
+                    return None
             opposite = "short" if direction == "long" else ("long" if direction == "short" else "")
             if asset and timeframe and opposite:
                 conflict_q = (

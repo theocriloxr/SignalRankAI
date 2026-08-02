@@ -208,14 +208,20 @@ async def paper_close_all_command(update, context) -> None:
 
     uid = _telegram_user_id(update)
     args = [str(x).strip().upper() for x in (getattr(context, "args", []) or [])]
-    if args != ["CONFIRM"]:
+    force = args == ["FORCE", "CONFIRM"]
+    if args not in (["CONFIRM"], ["FORCE", "CONFIRM"]):
         await _reply(
             update,
             "This closes every open virtual position at the latest trusted quote. "
-            "Usage: /paper_close_all CONFIRM",
+            "Usage: /paper_close_all CONFIRM\n"
+            "Recovery fallback: /paper_close_all FORCE CONFIRM uses only a paper position's fresh last mark when a live quote is unavailable.",
         )
         return
-    result = await paper_trading_service.close_all_positions(uid)
+    result = await paper_trading_service.close_all_positions(
+        uid,
+        allow_last_mark_fallback=force,
+        reason="MANUAL_CLOSE_ALL_FORCE" if force else "MANUAL_CLOSE_ALL",
+    )
     await _reply(
         update,
         "📄 Paper close-all completed\n\n"

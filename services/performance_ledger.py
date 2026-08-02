@@ -24,18 +24,28 @@ from db.models import (
     Signal,
     SignalDelivery,
     SignalLifecycle,
+    MLPastTrainingData,
     User,
     UserSignalMonitoring,
 )
 from core.env import runtime_environment_name
-from core.production_integrity import evaluate_public_win_rate_claim, signal_thesis_fingerprint
+from core.production_integrity import (
+    evaluate_public_win_rate_claim,
+    semantic_entries_equivalent,
+    signal_thesis_fingerprint,
+    signal_thesis_scope,
+)
+from core.partial_exit_accounting import result_from_signal
 from utils.timeutils import now_utc_naive
 
 
-PERFORMANCE_POLICY_VERSION = "proof-ledger-v1"
+PERFORMANCE_POLICY_VERSION = "proof-ledger-v2-partial-exit"
 PERFORMANCE_DOMAIN = "live_user_delivery"
 COMPLETED_BUCKETS = frozenset({"STOPPED_AT_TP1", "STOPPED_AT_TP2", "TP3", "SL", "BREAKEVEN", "TIME_STOP"})
-NON_TRADE_BUCKETS = frozenset({"MISSED_ENTRY", "EXPIRED", "CANCELLED", "TRACKING_FAILED", "PROVIDER_UNAVAILABLE"})
+NON_TRADE_BUCKETS = frozenset({
+    "MISSED_ENTRY", "EXPIRED", "CANCELLED", "TRACKING_FAILED",
+    "PROVIDER_UNAVAILABLE", "DUPLICATE_EXCLUDED",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +89,34 @@ def _classify(
         if stage in {1, 2} and final_r is not None:
             return f"STOPPED_AT_TP{stage}", final_r, "user_monitoring_stop", True, None
 
-    final_status = _status(getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None))
+    raw_status = _status(getattr(outcome, "status", None))
+    canonical_status = _status(getattr(outcome, "canonical_outcome", None))
+    lifecycle_highest = int(getattr(lifecycle, "highest_tp_hit", 0) or 0)
+    outcome_meta = dict(getattr(outcome, "meta", {}) or {}) if outcome is not None else {}
+    highest_tp = max(lifecycle_highest, int(outcome_meta.get("tp_hit_index") or 0))
+    terminal_event_type = _status(
+        getattr(lifecycle, "terminal_event_type", None)
+        or outcome_meta.get("terminal_event_type")
+    )
+    protected_exit_evidence = terminal_event_type == "breakeven_stop" and highest_tp > 0
+
+    # A protected exit after TP1/TP2 is a partial result, not a full stop. Older
+    # rows often contain r_multiple=-1 because the tracker persisted the original
+    # SL price even though the lifecycle terminal event was breakeven_stop. Rebuild
+    # the realized result from the immutable signal plan and highest TP evidence.
+    if protected_exit_evidence or raw_status in {"partial_win_be", "partial_win"} or (
+        canonical_status == "partial_win" and highest_tp > 0
+    ):
+        stage = 2 if highest_tp >= 2 else (1 if highest_tp >= 1 else 0)
+        partial = result_from_signal(signal, stage, residual_exit_r=0.0) if stage else None
+        final_r = _decimal(partial.realized_r if partial is not None else getattr(outcome, "r_multiple", None))
+        if stage in {1, 2} and final_r is not None:
+            return f"STOPPED_AT_TP{stage}", final_r, "lifecycle_partial_exit", True, None
+        if final_r is not None:
+            return "BREAKEVEN", final_r, "lifecycle_partial_exit", True, None
+        return "BREAKEVEN", None, "lifecycle_partial_exit", False, "partial_exit_missing_realized_r"
+
+    final_status = canonical_status or raw_status
     final_r = _decimal(getattr(outcome, "r_multiple", None))
     mappings = {
         "tp": "TP3", "tp3": "TP3", "win": "TP3",
@@ -108,6 +145,112 @@ def _classify(
 
 def _snapshot_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+async def repair_partial_exit_outcomes(
+    session,
+    *,
+    days: int | None = None,
+    limit: int | None = None,
+) -> int:
+    """Repair historical TP1/TP2 protected exits and their ML labels.
+
+    v1.3.6.6 correctly persisted lifecycle ``partial_win_be`` states but older
+    accounting stored the original SL as -1R. This bounded, idempotent repair is
+    run by the worker before performance reconciliation. Explicit human outcome
+    corrections are never overwritten.
+    """
+    days = max(1, int(days or os.getenv("PARTIAL_EXIT_REPAIR_DAYS", "365") or 365))
+    limit = max(1, min(10000, int(limit or os.getenv("PARTIAL_EXIT_REPAIR_LIMIT", "2000") or 2000)))
+    cutoff = now_utc_naive() - timedelta(days=days)
+    rows = (await session.execute(
+        select(Outcome, Signal, SignalLifecycle)
+        .join(Signal, Signal.signal_id == Outcome.signal_id)
+        .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Outcome.signal_id)
+        .where(
+            Outcome.closed_at.is_not(None),
+            Outcome.closed_at >= cutoff,
+            Outcome.corrected_at.is_(None),
+            (
+                func.lower(Outcome.status).in_(("partial_win_be", "partial_win"))
+                | (
+                    (func.lower(Outcome.canonical_outcome) == "partial_win")
+                    & (SignalLifecycle.highest_tp_hit > 0)
+                )
+                | (
+                    (func.lower(SignalLifecycle.terminal_event_type) == "breakeven_stop")
+                    & (SignalLifecycle.highest_tp_hit > 0)
+                )
+            ),
+        )
+        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
+        .limit(limit)
+    )).all()
+    signal_ids = [str(signal.signal_id) for _outcome, signal, _lifecycle in rows]
+    training_by_signal: dict[str, MLPastTrainingData] = {}
+    if signal_ids:
+        training_rows = list((await session.execute(
+            select(MLPastTrainingData).where(MLPastTrainingData.signal_id.in_(signal_ids))
+        )).scalars().all())
+        training_by_signal = {str(row.signal_id): row for row in training_rows}
+
+    changed = 0
+    for outcome, signal, lifecycle in rows:
+        meta = dict(getattr(outcome, "meta", {}) or {})
+        highest_tp = max(
+            int(getattr(lifecycle, "highest_tp_hit", 0) or 0),
+            int(meta.get("tp_hit_index") or 0),
+        )
+        stage = 2 if highest_tp >= 2 else (1 if highest_tp >= 1 else 0)
+        if stage <= 0:
+            continue
+        result = result_from_signal(signal, stage, residual_exit_r=0.0)
+        if result is None:
+            continue
+        target_r = float(result.realized_r)
+        target_pct = float(result.realized_percent)
+        already_current = (
+            str(getattr(outcome, "calculation_policy_version", "") or "") == result.policy_version
+            and abs(float(getattr(outcome, "r_multiple", 0.0) or 0.0) - target_r) < 1e-9
+        )
+        if already_current:
+            continue
+        outcome.status = "partial_win_be"
+        outcome.canonical_outcome = "partial_win"
+        outcome.r_multiple = target_r
+        outcome.percent = target_pct
+        outcome.pnl_pct = target_pct
+        outcome.calculation_policy_version = result.policy_version
+        outcome.terminal_version = int(getattr(outcome, "terminal_version", 0) or 0) + 1
+        meta.update({
+            "tp_hit_index": stage,
+            "tp1_hit": True,
+            "tp2_hit": bool(stage >= 2),
+            "reversed_after_tp": True,
+            "partial_exit_policy": result.policy_version,
+            "partial_exit_realized_r": target_r,
+            "partial_exit_realized_percent": target_pct,
+            "partial_exit_fractions": list(result.fractions),
+            "partial_exit_tp_r_multiples": list(result.tp_r_multiples),
+            "systemic_repair": "v1.3.6.7_partial_exit_accounting",
+        })
+        outcome.meta = meta
+        training = training_by_signal.get(str(signal.signal_id))
+        if training is not None:
+            training.outcome_status = "win" if target_r > 0 else "breakeven"
+            training.outcome_r_multiple = target_r
+            training.outcome_percent = target_pct
+            training_meta = dict(getattr(training, "outcome_meta", {}) or {})
+            training_meta.update({
+                "raw_r_multiple": target_r,
+                "training_r_multiple": target_r,
+                "partial_exit_policy": result.policy_version,
+                "systemic_repair": "v1.3.6.7_partial_exit_accounting",
+            })
+            training.outcome_meta = training_meta
+        changed += 1
+    await session.flush()
+    return changed
 
 
 async def reconcile_user_performance_ledger(
@@ -171,11 +314,54 @@ async def reconcile_user_performance_ledger(
         )
     existing_by_signal = {str(entry.signal_id): entry for entry in existing_entries}
     upsert_by_signal: dict[str, dict[str, Any]] = {}
+    try:
+        duplicate_window = timedelta(hours=max(1, int(os.getenv("SIGNAL_THESIS_DEDUP_HOURS", "4") or 4)))
+    except Exception:
+        duplicate_window = timedelta(hours=4)
+    canonical_thesis_deliveries: dict[str, list[tuple[float, datetime, str, str]]] = {}
 
     for delivery, signal, outcome, lifecycle, monitoring in rows:
         bucket, final_r, source, included, exclusion = _classify(
             signal=signal, outcome=outcome, lifecycle=lifecycle, monitoring=monitoring,
         )
+        thesis_payload = {
+            "asset": signal.asset,
+            "direction": signal.direction,
+            "strategy_name": signal.strategy_name,
+            "regime": signal.regime,
+            "entry": signal.entry,
+            "timeframe": signal.timeframe,
+        }
+        current_thesis_fingerprint = signal_thesis_fingerprint(thesis_payload)
+        delivery_time = delivery.delivery_confirmed_at or delivery.delivered_at
+        semantic_key = signal_thesis_scope(thesis_payload)
+        try:
+            signal_entry = float(signal.entry or 0.0)
+        except Exception:
+            signal_entry = 0.0
+        duplicate_of = None
+        duplicate_fingerprint = None
+        if delivery_time is not None and signal_entry > 0:
+            for prior_entry, prior_time, prior_signal_id, prior_fingerprint in canonical_thesis_deliveries.get(semantic_key, []):
+                delta = delivery_time - prior_time
+                if delta.total_seconds() < 0 or delta > duplicate_window:
+                    continue
+                if semantic_entries_equivalent(prior_entry, signal_entry):
+                    duplicate_of = prior_signal_id
+                    duplicate_fingerprint = prior_fingerprint
+                    break
+        if duplicate_of is not None:
+            bucket = "DUPLICATE_EXCLUDED"
+            final_r = None
+            source = "delivery_integrity"
+            included = False
+            exclusion = f"duplicate_thesis_delivery_within_cooldown:{duplicate_of}"
+            current_thesis_fingerprint = duplicate_fingerprint or current_thesis_fingerprint
+        elif delivery_time is not None and signal_entry > 0:
+            canonical_thesis_deliveries.setdefault(semantic_key, []).append(
+                (signal_entry, delivery_time, str(signal.signal_id), current_thesis_fingerprint)
+            )
+
         payload = {
             "delivery_id": int(delivery.id),
             "bucket": bucket,
@@ -186,7 +372,16 @@ async def reconcile_user_performance_ledger(
         }
         canonical_signal_id = str(signal.signal_id)
         existing = existing_by_signal.get(canonical_signal_id)
-        if existing is not None and existing.finalized_at is not None:
+        # Finalized rows are immutable within one accounting policy, but a new
+        # audited policy version must be allowed to repair historical systemic
+        # misclassification. Explicit human corrections remain immutable.
+        if (
+            existing is not None
+            and existing.finalized_at is not None
+            and str(existing.calculation_policy_version or "") == PERFORMANCE_POLICY_VERSION
+        ):
+            continue
+        if existing is not None and existing.corrected_at is not None:
             continue
         now = now_utc_naive()
         snapshot_hash = _snapshot_hash(payload)
@@ -205,14 +400,10 @@ async def reconcile_user_performance_ledger(
             "delivery_id": int(delivery.id),
             "delivery_confirmed_at": delivery.delivery_confirmed_at,
             "asset": str(signal.asset),
-            "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None) or signal_thesis_fingerprint({
-                "asset": signal.asset,
-                "direction": signal.direction,
-                "strategy_name": signal.strategy_name,
-                "regime": signal.regime,
-                "entry": signal.entry,
-                "timeframe": signal.timeframe,
-            }),
+            # Always recompute with the current semantic policy so legacy rows
+            # whose stored fingerprint included volatile regime/timeframe values
+            # are grouped correctly during historical repair.
+            "thesis_fingerprint": current_thesis_fingerprint,
             "timeframe": str(signal.timeframe or ""),
             "direction": str(signal.direction or ""),
             "primary_bucket": bucket,
@@ -256,8 +447,12 @@ async def reconcile_user_performance_ledger(
                 "row_version": PerformanceLedgerEntry.row_version + 1,
             },
             where=and_(
-                PerformanceLedgerEntry.finalized_at.is_(None),
+                PerformanceLedgerEntry.corrected_at.is_(None),
                 PerformanceLedgerEntry.snapshot_hash.is_distinct_from(excluded.snapshot_hash),
+                (
+                    PerformanceLedgerEntry.finalized_at.is_(None)
+                    | (PerformanceLedgerEntry.calculation_policy_version != PERFORMANCE_POLICY_VERSION)
+                ),
             ),
         )
         await session.execute(statement)
@@ -267,7 +462,14 @@ async def reconcile_user_performance_ledger(
             existing = existing_by_signal.get(str(values["signal_id"]))
             if existing is None:
                 session.add(PerformanceLedgerEntry(**values))
-            elif existing.finalized_at is None and existing.snapshot_hash != values["snapshot_hash"]:
+            elif (
+                existing.corrected_at is None
+                and existing.snapshot_hash != values["snapshot_hash"]
+                and (
+                    existing.finalized_at is None
+                    or str(existing.calculation_policy_version or "") != PERFORMANCE_POLICY_VERSION
+                )
+            ):
                 for key, value in values.items():
                     if key not in {"ledger_id", "user_id", "signal_id", "domain", "environment", "created_at"}:
                         setattr(existing, key, value)
@@ -557,6 +759,7 @@ async def get_user_performance_report(
         "cancelled": buckets.get("CANCELLED", 0),
         "tracking_failed": buckets.get("TRACKING_FAILED", 0),
         "provider_unavailable": buckets.get("PROVIDER_UNAVAILABLE", 0),
+        "duplicate_deliveries_excluded": buckets.get("DUPLICATE_EXCLUDED", 0),
         "stopped_at_tp1": buckets.get("STOPPED_AT_TP1", 0),
         "stopped_at_tp2": buckets.get("STOPPED_AT_TP2", 0),
         "net_r": float(metrics.net_r),
@@ -707,6 +910,7 @@ __all__ = [
     "get_user_performance_report",
     "reconcile_user_performance_ledger",
     "reconcile_all_performance_ledgers",
+    "repair_partial_exit_outcomes",
     "performance_ledger_health",
     "PerformanceReconciliationResult",
 ]

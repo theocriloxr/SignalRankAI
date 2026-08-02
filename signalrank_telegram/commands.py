@@ -5799,6 +5799,7 @@ async def performance_command(update, context) -> None:
 		f"Active / pending entry: {buckets.get('ACTIVE', 0)} / {buckets.get('PENDING_ENTRY', 0)}",
 		f"Missed / expired / cancelled: {buckets.get('MISSED_ENTRY', 0)} / {buckets.get('EXPIRED', 0)} / {buckets.get('CANCELLED', 0)}",
 		f"Tracking failed / provider unavailable: {buckets.get('TRACKING_FAILED', 0)} / {buckets.get('PROVIDER_UNAVAILABLE', 0)}",
+		f"Duplicate thesis deliveries excluded: {buckets.get('DUPLICATE_EXCLUDED', 0)}",
 		"",
 		f"Net R: {float(report.get('net_r') or 0):+.2f}R",
 		f"Average R: {'n/a' if avg_r is None else f'{float(avg_r):+.2f}R'}",

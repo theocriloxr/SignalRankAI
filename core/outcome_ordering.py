@@ -23,7 +23,10 @@ _STAGE_RANKS = {
     "cancelled": 30,
     "closed": 30,
 }
-_TERMINAL = {"tp3", "sl", "stop", "stopped", "missed", "expired", "cancelled", "closed"}
+_TERMINAL = {
+    "tp3", "sl", "stop", "stopped", "partial_win", "partial_win_be", "breakeven", "be",
+    "missed", "expired", "cancelled", "closed",
+}
 
 
 def canonical_outcome_status(value: Any) -> str:

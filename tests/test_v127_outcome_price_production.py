@@ -145,7 +145,7 @@ def test_command_error_classifier_separates_sql_defects_from_pressure() -> None:
 def test_ops_health_uses_valid_redis_timeout_and_proof_backed_filter() -> None:
     source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
     start = source.index("async def ops_health_command")
-    end = source.index("from .user_prefs", start)
+    end = source.index("async def notify_command", start)
     block = source[start:end]
     assert "socket_timeout=3" in block
     assert "socket_timeout_seconds" not in block
@@ -191,5 +191,5 @@ def test_webhook_timeout_is_retryable_without_dual_queue_fallback() -> None:
 def test_version_fingerprint() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6.6-production-integrity-hardening-20260802"
+    assert APP_VERSION == "1.3.6.7"
+    assert RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802"

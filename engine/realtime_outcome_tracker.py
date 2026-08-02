@@ -1038,7 +1038,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
     try:
         from core.signal_lifecycle import outcome_transition_allowed
         from db.session import get_session
-        from db.models import Outcome, Signal
+        from db.models import Outcome, Signal, SignalLifecycle
         from db.priority import DBPriority
         from db.pg_features import (
             queue_outcome_notifications_for_outcome,
@@ -1061,6 +1061,10 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
 
         # Fetch signal data for ML training data logging BEFORE creating session
         signal_data = None
+        lifecycle_tp_hit_index = 0
+        lifecycle_terminal_evidence: Dict[str, Any] = {}
+        lifecycle_closed_at = None
+        lifecycle_terminal_event_type = None
         existing_outcome_meta: Dict[str, Any] = {}
         try:
             async with _session_scope(get_session, priority=DBPriority.CRITICAL) as _session:
@@ -1073,10 +1077,21 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 )
                 existing_outcome = outcome_result.scalar_one_or_none()
                 existing_outcome_meta = dict(getattr(existing_outcome, "meta", {}) or {})
+                lifecycle_result = await _session.execute(
+                    select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id)
+                )
+                lifecycle_row = lifecycle_result.scalar_one_or_none()
+                lifecycle_tp_hit_index = int(getattr(lifecycle_row, "highest_tp_hit", 0) or 0)
+                lifecycle_terminal_evidence = dict(getattr(lifecycle_row, "terminal_evidence", {}) or {})
+                lifecycle_closed_at = getattr(lifecycle_row, "closed_at", None)
+                lifecycle_terminal_event_type = getattr(lifecycle_row, "terminal_event_type", None)
         except Exception:
             pass
 
-        tp_hit_index = int(existing_outcome_meta.get("tp_hit_index") or 0)
+        tp_hit_index = max(
+            int(existing_outcome_meta.get("tp_hit_index") or 0),
+            int(lifecycle_tp_hit_index or 0),
+        )
         if status_l.startswith("tp") and status_l != "tp":
             try:
                 tp_hit_index = max(tp_hit_index, int(status_l[2:]))
@@ -1121,6 +1136,24 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         except Exception:
             pass
 
+        # Canonical protected-exit accounting. A breakeven_stop after TP1/TP2
+        # realizes the planned partial closes and a zero-R remainder; it must not
+        # be persisted as -1R merely because the original SL price is supplied to
+        # the terminal lifecycle event.
+        partial_result = None
+        if status_l == "partial_win_be" and signal_data is not None and tp_hit_index > 0:
+            try:
+                from core.partial_exit_accounting import result_from_signal
+                partial_result = result_from_signal(signal_data, tp_hit_index, residual_exit_r=0.0)
+                if partial_result is not None:
+                    r_mult = float(partial_result.realized_r)
+                    pct = float(partial_result.realized_percent)
+            except Exception as partial_error:
+                logger.warning(
+                    "[partial_exit_accounting] failed signal=%s highest_tp=%s error=%s",
+                    str(signal_id)[:8], tp_hit_index, partial_error,
+                )
+
         async with _session_scope(get_session, priority=DBPriority.CRITICAL) as session:
             # Serialize outcome projection changes. Lifecycle is authoritative,
             # and this guard prevents stale/replayed writers from downgrading it.
@@ -1159,7 +1192,18 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 "tp1_hit": bool(tp_hit_index >= 1),
                 "tp2_hit": bool(tp_hit_index >= 2),
                 "tp3_hit": bool(tp_hit_index >= 3),
-                "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0),
+                "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0) or bool(status_l == "partial_win_be" and tp_hit_index > 0),
+                "partial_exit_policy": getattr(partial_result, "policy_version", None),
+                "partial_exit_realized_r": getattr(partial_result, "realized_r", None),
+                "partial_exit_realized_percent": getattr(partial_result, "realized_percent", None),
+                "partial_exit_fractions": list(getattr(partial_result, "fractions", ()) or ()),
+                "partial_exit_tp_r_multiples": list(getattr(partial_result, "tp_r_multiples", ()) or ()),
+                "terminal_event_type": lifecycle_terminal_event_type,
+                "outcome_event_time": lifecycle_closed_at.isoformat() if lifecycle_closed_at else now.isoformat(),
+                "observation_provider": lifecycle_terminal_evidence.get("observation_provider"),
+                "observation_high": lifecycle_terminal_evidence.get("observation_high"),
+                "observation_low": lifecycle_terminal_evidence.get("observation_low"),
+                "observation_range_time": lifecycle_terminal_evidence.get("observation_range_time"),
                 "mfe_pct": float(excursion.get("mfe_pct", existing_outcome_meta.get("mfe_pct", 0.0)) or 0.0),
                 "mae_pct": float(excursion.get("mae_pct", existing_outcome_meta.get("mae_pct", 0.0)) or 0.0),
             }

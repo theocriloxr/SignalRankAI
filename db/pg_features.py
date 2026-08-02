@@ -827,7 +827,12 @@ async def get_or_create_signal_impl(
             "strategy_name": strategy_name,
         }
     )
-    from core.production_integrity import signal_thesis_fingerprint
+    from core.production_integrity import (
+        semantic_entries_equivalent,
+        semantic_entry_gap,
+        signal_thesis_fingerprint,
+        signal_thesis_scope,
+    )
     thesis_payload = dict(signal)
     thesis_payload.update(
         {
@@ -848,9 +853,17 @@ async def get_or_create_signal_impl(
     try:
         dialect_name = str(session.get_bind().dialect.name or "").lower()
         if dialect_name == "postgresql":
+            # Lock both the exact fingerprint and the semantic asset/direction/
+            # strategy scope. Hidden regime changes or adjacent timeframe scans
+            # must not admit two near-identical user-visible trade ideas.
+            semantic_scope = f"signal-thesis:{signal_thesis_scope(thesis_payload)}"
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                 {"fingerprint": thesis_fingerprint},
+            )
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                {"scope": semantic_scope},
             )
     except Exception as lock_error:
         from core.env import runtime_environment_name
@@ -889,6 +902,51 @@ async def get_or_create_signal_impl(
         if not outcome_status or outcome_status in {"active", "pending", "entered", "tp1", "tp2", "partial_win", "partial_win_be"}:
             existing = candidate
             break
+
+    if existing is None:
+        try:
+            semantic_tolerance = max(
+                0.0001,
+                min(0.05, float(os.getenv("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", "0.003") or 0.003)),
+            )
+        except Exception:
+            semantic_tolerance = 0.003
+        semantic_rows = (
+            await session.execute(
+                select(Signal)
+                .where(
+                    Signal.asset == asset,
+                    Signal.direction == direction,
+                    func.lower(Signal.strategy_name) == strategy_name.lower(),
+                    Signal.created_at >= thesis_cutoff,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+                .order_by(Signal.created_at.desc())
+            )
+        ).scalars().all()
+        for candidate in semantic_rows:
+            candidate_entry = getattr(candidate, "entry", None)
+            relative_gap = semantic_entry_gap(candidate_entry, entry)
+            if relative_gap is None or not semantic_entries_equivalent(
+                candidate_entry, entry, tolerance=semantic_tolerance
+            ):
+                continue
+            outcome_status = str((await session.execute(
+                select(Outcome.status)
+                .where(Outcome.signal_id == candidate.signal_id)
+                .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
+                .limit(1)
+            )).scalar_one_or_none() or "").lower().strip()
+            if not outcome_status or outcome_status in {
+                "active", "pending", "entered", "tp1", "tp2", "partial_win", "partial_win_be"
+            }:
+                existing = candidate
+                logger.info(
+                    "[dedup] semantic thesis reused asset=%s dir=%s strategy=%s gap_pct=%.5f signal_id=%s",
+                    asset, direction, strategy_name, relative_gap * 100.0, candidate.signal_id,
+                )
+                break
 
     if existing is not None:
         confirmed_delivery_count = int(
@@ -1084,9 +1142,6 @@ async def record_signal_delivery(
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
     tier_base: str = tier_s.split("_", 1)[0].strip().lower()
     monitoring_tier: bool = tier_base in {"owner", "admin"}
-    monitoring_bypass_dedupe: bool = str(
-        os.getenv("OWNER_ADMIN_BYPASS_DELIVERY_DEDUPE") or "0"
-    ).strip().lower() in {"1", "true", "yes", "y", "on"}
 
     # Central hard daily cap. Every delivery path reserves through this
     # function, so enforce limits here instead of relying on each caller.
@@ -1125,164 +1180,171 @@ async def record_signal_delivery(
         market_cutoff = max(market_cutoff, dedupe_reset_at) if market_cutoff else dedupe_reset_at
 
 
-    if cutoff is not None and (not monitoring_tier or not monitoring_bypass_dedupe):
-        try:
-            res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
-            sig: Signal | None = res_sig.scalar_one_or_none()
-            if sig:
-                # Serialize per-user/per-asset delivery reservation across webhook,
-                # resend and multiple front-door replicas. The subsequent query also
-                # treats RESERVED/SENDING rows as active, so the lock remains useful
-                # after the first transaction commits but before Telegram confirms.
-                try:
-                    if str(session.get_bind().dialect.name or "").lower() == "postgresql":
-                        await session.execute(
-                            text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
-                            {"scope": f"delivery:{int(user.id)}:{str(sig.asset).upper()}"},
-                        )
-                except Exception as lock_error:
-                    from core.env import runtime_environment_name
-                    if runtime_environment_name("development") == "production":
-                        logger.warning(
-                            "[dedup] user-asset delivery lock unavailable; blocking user=%s asset=%s",
-                            user.id,
-                            sig.asset,
-                        )
-                        return False
-                    logger.warning("[dedup] user-asset delivery lock unavailable in non-production: %s", lock_error)
-
-                from services.asset_repeat_policy import get_asset_repeat_lock_hours
-
-                asset_cooldown_hours = get_asset_repeat_lock_hours(str(tier_s).split("_", 1)[0])
-                try:
-                    unresolved_block_hours = float(
-                        (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
+    try:
+        res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+        sig: Signal | None = res_sig.scalar_one_or_none()
+        if sig is None:
+            logger.warning("[dedup] signal missing; blocking delivery user=%s signal=%s", user.id, signal_id)
+            return False
+        if sig:
+            # Serialize per-user/per-asset delivery reservation across webhook,
+            # resend and multiple front-door replicas. The subsequent query also
+            # treats RESERVED/SENDING rows as active, so the lock remains useful
+            # after the first transaction commits but before Telegram confirms.
+            try:
+                if str(session.get_bind().dialect.name or "").lower() == "postgresql":
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                        {"scope": f"delivery:{int(user.id)}:{str(sig.asset).upper()}"},
                     )
-                except Exception:
-                    unresolved_block_hours = 168.0
-                unresolved_block_hours = max(0.0, float(unresolved_block_hours))
-
-                from services.asset_position_manager import get_user_asset_position_state
-
-                position_state = await get_user_asset_position_state(
-                    session,
-                    telegram_user_id=int(telegram_user_id),
-                    asset=str(sig.asset),
-                    cooldown_hours=float(asset_cooldown_hours),
-                    unresolved_block_hours=float(unresolved_block_hours),
-                    exclude_signal_id=str(signal_id),
-                )
-                if position_state.is_locked:
-                    logger.info(
-                        "[asset_position] blocked user=%s asset=%s state=%s prev_signal=%s prev_direction=%s "
-                        "new_direction=%s age_h=%s reason=%s",
+            except Exception as lock_error:
+                from core.env import runtime_environment_name
+                if runtime_environment_name("development") == "production":
+                    logger.warning(
+                        "[dedup] user-asset delivery lock unavailable; blocking user=%s asset=%s",
                         user.id,
                         sig.asset,
-                        position_state.state,
-                        position_state.signal_id,
-                        position_state.direction,
-                        sig.direction,
-                        f"{position_state.age_hours:.2f}" if position_state.age_hours is not None else "n/a",
-                        position_state.reason,
                     )
                     return False
+                logger.warning("[dedup] user-asset delivery lock unavailable in non-production: %s", lock_error)
 
-                # Same-asset exposure gate:
-                # Block any new signal for the same user+asset for the configured proof-backed lock,
-                # and keep blocking while the previous asset exposure is unresolved.
-                latest_asset_row = (
-                    await session.execute(
-                        select(
-                            SignalDelivery.signal_id,
-                            SignalDelivery.delivered_at,
-                            SignalDelivery.tier_at_send,
-                            Signal.direction,
-                            Outcome.status,
-                        )
-                        .select_from(SignalDelivery)
-                        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
-                        .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
-                        .where(
-                            SignalDelivery.user_id == user.id,
-                            or_(
-                                SignalDelivery.sent_ok.is_(True),
-                                func.lower(SignalDelivery.delivery_state).in_(
-                                    ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
-                                ),
-                            ),
-                            Signal.asset == sig.asset,
-                            SignalDelivery.signal_id != str(signal_id),
-                        )
-                        .order_by(SignalDelivery.delivered_at.desc())
-                        .limit(1)
+            from services.asset_repeat_policy import get_asset_repeat_lock_hours
+
+            asset_cooldown_hours = get_asset_repeat_lock_hours(str(tier_s).split("_", 1)[0])
+            try:
+                unresolved_block_hours = float(
+                    (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
+                )
+            except Exception:
+                unresolved_block_hours = 168.0
+            unresolved_block_hours = max(0.0, float(unresolved_block_hours))
+
+            from services.asset_position_manager import get_user_asset_position_state
+
+            position_state = await get_user_asset_position_state(
+                session,
+                telegram_user_id=int(telegram_user_id),
+                asset=str(sig.asset),
+                cooldown_hours=float(asset_cooldown_hours),
+                unresolved_block_hours=float(unresolved_block_hours),
+                exclude_signal_id=str(signal_id),
+            )
+            if position_state.is_locked:
+                logger.info(
+                    "[asset_position] blocked user=%s asset=%s state=%s prev_signal=%s prev_direction=%s "
+                    "new_direction=%s age_h=%s reason=%s",
+                    user.id,
+                    sig.asset,
+                    position_state.state,
+                    position_state.signal_id,
+                    position_state.direction,
+                    sig.direction,
+                    f"{position_state.age_hours:.2f}" if position_state.age_hours is not None else "n/a",
+                    position_state.reason,
+                )
+                return False
+
+            # Same-asset exposure gate:
+            # Block any new signal for the same user+asset for the configured proof-backed lock,
+            # and keep blocking while the previous asset exposure is unresolved.
+            latest_asset_row = (
+                await session.execute(
+                    select(
+                        SignalDelivery.signal_id,
+                        SignalDelivery.delivered_at,
+                        SignalDelivery.tier_at_send,
+                        Signal.direction,
+                        Outcome.status,
                     )
-                ).first()
+                    .select_from(SignalDelivery)
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user.id,
+                        or_(
+                            SignalDelivery.sent_ok.is_(True),
+                            func.lower(SignalDelivery.delivery_state).in_(
+                                ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
+                            ),
+                        ),
+                        Signal.asset == sig.asset,
+                        SignalDelivery.signal_id != str(signal_id),
+                    )
+                    .order_by(SignalDelivery.delivered_at.desc())
+                    .limit(1)
+                )
+            ).first()
 
-                if latest_asset_row is not None:
-                    prev_signal_id, prev_delivered_at, prev_tier_at_send, prev_direction, prev_status = latest_asset_row
-                    now_dt = _utcnow()
-                    age_hours = 9999.0
+            if latest_asset_row is not None:
+                prev_signal_id, prev_delivered_at, prev_tier_at_send, prev_direction, prev_status = latest_asset_row
+                now_dt = _utcnow()
+                age_hours = 9999.0
+                try:
+                    age_hours = max(0.0, (now_dt - prev_delivered_at).total_seconds() / 3600.0)
+                except Exception:
+                    pass
+
+                resolved_statuses = {
+                    "tp",
+                    "tp3",
+                    "sl",
+                    "invalid",
+                    "invalidated",
+                    "expired",
+                    "time_stop",
+                    "cancel",
+                    "cancelled",
+                    "partial_win",
+                    "partial_win_be",
+                    "breakeven",
+                    "be",
+                }
+                is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
+
+                should_block_asset = (
+                    (age_hours < float(asset_cooldown_hours))
+                    or ((not is_resolved) and (age_hours < unresolved_block_hours))
+                )
+                if should_block_asset:
                     try:
-                        age_hours = max(0.0, (now_dt - prev_delivered_at).total_seconds() / 3600.0)
+                        import logging
+                        logging.getLogger(__name__).info(
+                            f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
+                            f"prev_direction={prev_direction} new_direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
+                            f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
+                        )
                     except Exception:
                         pass
+                    return False
 
-                    resolved_statuses = {
-                        "tp",
-                        "tp3",
-                        "sl",
-                        "invalid",
-                        "invalidated",
-                        "expired",
-                        "time_stop",
-                        "cancel",
-                        "cancelled",
-                    }
-                    is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
-
-                    should_block_asset = (
-                        (age_hours < float(asset_cooldown_hours))
-                        or ((not is_resolved) and (age_hours < unresolved_block_hours))
+            if market_cutoff is not None:
+                res_market: Result[Tuple[int]] = await session.execute(
+                    select(func.count(SignalDelivery.id))
+                    .select_from(SignalDelivery)
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user.id,
+                        SignalDelivery.sent_ok.is_(True),
+                        Signal.asset == sig.asset,
+                        Signal.timeframe == sig.timeframe,
+                        Signal.direction == sig.direction,
+                        Signal.strategy_group == sig.strategy_group,
+                        Signal.strategy_name == sig.strategy_name,
+                        SignalDelivery.delivered_at >= market_cutoff,
                     )
-                    if should_block_asset:
-                        try:
-                            import logging
-                            logging.getLogger(__name__).info(
-                                f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
-                                f"prev_direction={prev_direction} new_direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
-                                f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
-                            )
-                        except Exception:
-                            pass
-                        return False
-
-                if market_cutoff is not None:
-                    res_market: Result[Tuple[int]] = await session.execute(
-                        select(func.count(SignalDelivery.id))
-                        .select_from(SignalDelivery)
-                        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
-                        .where(
-                            SignalDelivery.user_id == user.id,
-                            SignalDelivery.sent_ok.is_(True),
-                            Signal.asset == sig.asset,
-                            Signal.timeframe == sig.timeframe,
-                            Signal.direction == sig.direction,
-                            Signal.strategy_group == sig.strategy_group,
-                            Signal.strategy_name == sig.strategy_name,
-                            SignalDelivery.delivered_at >= market_cutoff,
+                )
+                if int(res_market.scalar() or 0) > 0:
+                    try:
+                        import logging
+                        logging.getLogger(__name__).info(
+                            f"[dedup] Market cooldown hit: user={user.id} asset={sig.asset} tf={sig.timeframe} "
+                            f"dir={sig.direction} strat={sig.strategy_group}/{sig.strategy_name}"
                         )
-                    )
-                    if int(res_market.scalar() or 0) > 0:
-                        try:
-                            import logging
-                            logging.getLogger(__name__).info(
-                                f"[dedup] Market cooldown hit: user={user.id} asset={sig.asset} tf={sig.timeframe} "
-                                f"dir={sig.direction} strat={sig.strategy_group}/{sig.strategy_name}"
-                            )
-                        except Exception:
-                            pass
-                        return False
+                    except Exception:
+                        pass
+                    return False
 
+            if cutoff is not None:
                 # Thesis delivery dedupe: regenerated signal ids and tiny price
                 # changes should not reach the same user as a new signal.
                 res_u: Result[Tuple[int]] = await session.execute(
@@ -1308,11 +1370,11 @@ async def record_signal_delivery(
                     except Exception:
                         pass
                     return False
-        except Exception as exc:
-            # Dedupe is a safety-critical gate. Failing open caused repeated and
-            # opposite-direction same-asset deliveries during Railway DB pressure.
-            logger.warning("[dedup] safety query failed; blocking delivery user=%s signal=%s error=%s", user.id, signal_id, exc)
-            return False
+    except Exception as exc:
+        # Dedupe is a safety-critical gate. Failing open caused repeated and
+        # opposite-direction same-asset deliveries during Railway DB pressure.
+        logger.warning("[dedup] safety query failed; blocking delivery user=%s signal=%s error=%s", user.id, signal_id, exc)
+        return False
 
     existing_delivery_res = await session.execute(
         select(SignalDelivery)
@@ -1726,8 +1788,9 @@ async def upsert_outcome(
     status_l = str(status or "pending").strip().lower()[:32]
     terminal_statuses = {
         "tp", "tp3", "win", "sl", "loss", "stop", "stop_loss",
-        "be", "breakeven", "break_even", "time_stop", "expired",
-        "missed_entry", "cancel", "cancelled", "tracking_failed", "invalid",
+        "be", "breakeven", "break_even", "partial_win", "partial_win_be",
+        "time_stop", "expired", "missed_entry", "cancel", "cancelled",
+        "tracking_failed", "invalid",
         "invalidated",
     }
     incoming_terminal = status_l in terminal_statuses
@@ -2393,14 +2456,38 @@ async def get_outcome_for_signal(session: AsyncSession, signal_id: str) -> Outco
 
 
 async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: str) -> list[tuple[int, str]]:
-    """Return list of (telegram_user_id, tier_at_send) for users who received this signal."""
-    res: Result[Tuple[int, str]] = await session.execute(
-        select(User.telegram_user_id, SignalDelivery.tier_at_send)
+    """Return confirmed recipients, excluding legacy duplicate-thesis deliveries.
+
+    v1.3.6.6 could deliver near-identical signals to owner/admin users because
+    privileged paths bypassed the asset lock. Future delivery is now blocked at
+    reservation and pre-send time; this read-side guard prevents those historical
+    duplicate rows from producing duplicate terminal notifications.
+    """
+    current_signal = (
+        await session.execute(
+            select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
+        )
+    ).scalar_one_or_none()
+    delivery_time_expr = func.coalesce(
+        SignalDelivery.delivery_confirmed_at,
+        SignalDelivery.delivered_at_utc,
+        SignalDelivery.delivered_at,
+    )
+    res = await session.execute(
+        select(
+            User.id,
+            User.telegram_user_id,
+            SignalDelivery.tier_at_send,
+            delivery_time_expr.label("proof_time"),
+        )
         .select_from(SignalDelivery)
         .join(User, User.id == SignalDelivery.user_id)
         .outerjoin(
             UserSignalMonitoring,
-            and_(UserSignalMonitoring.user_id == SignalDelivery.user_id, UserSignalMonitoring.signal_id == SignalDelivery.signal_id),
+            and_(
+                UserSignalMonitoring.user_id == SignalDelivery.user_id,
+                UserSignalMonitoring.signal_id == SignalDelivery.signal_id,
+            ),
         )
         .where(
             SignalDelivery.signal_id == str(signal_id),
@@ -2412,7 +2499,84 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
         )
         .order_by(User.telegram_user_id.asc())
     )
-    return [(int(uid), str(tier)) for (uid, tier) in (res.all() or [])]
+    recipient_rows = list(res.all() or [])
+    if not recipient_rows or current_signal is None or not _env_bool(
+        "OUTCOME_DUPLICATE_NOTIFICATION_SUPPRESSION_ENABLED", True
+    ):
+        return [(int(row[1]), str(row[2])) for row in recipient_rows]
+
+    try:
+        window_hours = max(1, int(os.getenv("SIGNAL_THESIS_DEDUP_HOURS", "4") or 4))
+    except Exception:
+        window_hours = 4
+    from core.production_integrity import semantic_entries_equivalent
+
+    proof_times = [row[3] for row in recipient_rows if row[3] is not None]
+    if not proof_times:
+        return [(int(row[1]), str(row[2])) for row in recipient_rows]
+    earliest_cutoff = min(proof_times) - timedelta(hours=window_hours)
+    latest_current = max(proof_times)
+    user_ids = [int(row[0]) for row in recipient_rows]
+    prior_rows = (
+        await session.execute(
+            select(
+                SignalDelivery.user_id,
+                SignalDelivery.signal_id,
+                delivery_time_expr.label("proof_time"),
+                Signal.entry,
+            )
+            .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+            .where(
+                SignalDelivery.user_id.in_(user_ids),
+                SignalDelivery.signal_id != str(signal_id),
+                SignalDelivery.sent_ok.is_(True),
+                SignalDelivery.telegram_chat_id.is_not(None),
+                SignalDelivery.telegram_message_id.is_not(None),
+                func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
+                delivery_time_expr >= earliest_cutoff,
+                delivery_time_expr <= latest_current,
+                Signal.asset == current_signal.asset,
+                Signal.direction == current_signal.direction,
+                func.lower(Signal.strategy_name) == str(current_signal.strategy_name or "").lower(),
+            )
+            .order_by(delivery_time_expr.asc(), SignalDelivery.id.asc())
+        )
+    ).all()
+    prior_by_user: dict[int, list[tuple[str, datetime, float]]] = {}
+    for user_id, prior_signal_id, proof_time, prior_entry in prior_rows:
+        if proof_time is None:
+            continue
+        try:
+            entry_value = float(prior_entry or 0)
+        except Exception:
+            continue
+        prior_by_user.setdefault(int(user_id), []).append(
+            (str(prior_signal_id), proof_time, entry_value)
+        )
+
+    try:
+        current_entry = float(current_signal.entry or 0)
+    except Exception:
+        current_entry = 0.0
+    eligible: list[tuple[int, str]] = []
+    for user_id, telegram_user_id, tier, current_time in recipient_rows:
+        duplicate_of = None
+        if current_time is not None and current_entry > 0:
+            for prior_signal_id, prior_time, prior_entry in prior_by_user.get(int(user_id), []):
+                delta = current_time - prior_time
+                if delta.total_seconds() <= 0 or delta > timedelta(hours=window_hours):
+                    continue
+                if semantic_entries_equivalent(prior_entry, current_entry):
+                    duplicate_of = prior_signal_id
+                    break
+        if duplicate_of:
+            logger.info(
+                "[outcome_notify] suppressed duplicate thesis recipient=%s signal=%s duplicate_of=%s asset=%s",
+                int(telegram_user_id), str(signal_id), duplicate_of, current_signal.asset,
+            )
+            continue
+        eligible.append((int(telegram_user_id), str(tier)))
+    return eligible
 
 
 async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:

@@ -12,8 +12,8 @@ READINESS = (ROOT / "railway_main.py").read_text(encoding="utf-8")
 def test_v132_release_identity_is_exact():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6.6-production-integrity-hardening-20260802"
+    assert APP_VERSION == "1.3.6.7"
+    assert RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802"
 
 
 def test_signal_and_monitor_keyboards_have_durable_navigation():
@@ -99,7 +99,7 @@ def test_delivery_recovery_runs_frequently_and_is_not_suppressed_by_fanout():
     assert 'MONITOR_REFRESH_INTERVAL_SECONDS", "120"' in BOT
     assert 'RESEND_UNSENT_INTERVAL_SECONDS", os.getenv("RESEND_INTERVAL_SECONDS", "60")' in BOT
     assert 'RESEND_JOB_BUDGET_SECONDS", "20"' in BOT
-    assert 'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20"' in BOT
+    assert 'OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "45"' in BOT
 
 
 def test_all_production_profiles_enable_global_automatic_delivery_contract():

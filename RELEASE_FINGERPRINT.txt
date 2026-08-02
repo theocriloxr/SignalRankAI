@@ -1,1 +1,1 @@
-v1.3.6.6-runtime-certification-hotfix-20260802
+v1.3.6.7-integrity-accounting-dedup-hotfix-20260802

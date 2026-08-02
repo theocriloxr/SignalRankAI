@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-def test_asset_repeat_policy_defaults_to_four_hours_and_can_be_overridden(monkeypatch):
+def test_asset_repeat_policy_defaults_to_four_hours_and_reductions_require_audited_flags(monkeypatch):
     from services.asset_repeat_policy import get_asset_repeat_lock_hours
 
     for name in (
@@ -12,6 +12,8 @@ def test_asset_repeat_policy_defaults_to_four_hours_and_can_be_overridden(monkey
         "VIP_ASSET_COOLDOWN_HOURS",
         "PREMIUM_ASSET_COOLDOWN_HOURS",
         "FREE_ASSET_COOLDOWN_HOURS",
+        "ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES",
+        "ALLOW_ASSET_COOLDOWN_REDUCTION",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -23,6 +25,10 @@ def test_asset_repeat_policy_defaults_to_four_hours_and_can_be_overridden(monkey
     assert get_asset_repeat_lock_hours("free") == 6.0
 
     monkeypatch.setenv("PREMIUM_ASSET_COOLDOWN_HOURS", "2.5")
+    assert get_asset_repeat_lock_hours("premium") == 6.0
+    monkeypatch.setenv("ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES", "1")
+    assert get_asset_repeat_lock_hours("premium") == 6.0
+    monkeypatch.setenv("ALLOW_ASSET_COOLDOWN_REDUCTION", "1")
     assert get_asset_repeat_lock_hours("premium") == 2.5
     assert get_asset_repeat_lock_hours("free") == 6.0
 

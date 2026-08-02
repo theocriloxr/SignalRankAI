@@ -19,22 +19,22 @@ def main() -> int:
     from scripts.schema_audit import audit_outcome_projection_contract, audit_versions
     from scripts.validate_env_contract import validate
 
-    require(APP_VERSION == "1.3.6.6", "runtime version")
+    require(APP_VERSION == "1.3.6.7", "runtime version")
     require(
-        RELEASE_FINGERPRINT == "v1.3.6.6-production-integrity-hardening-20260802",
+        RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802",
         "release fingerprint",
     )
     migrations = audit_versions(ROOT)
     require(migrations["ok"] is True, "migration graph")
     require(migrations["heads"] == ["0034_production_integrity"], "migration head")
     require(audit_outcome_projection_contract(ROOT)["ok"] is True, "outcome projection guard")
-    profile = ROOT / "SignalRankAI_v1.3.6.6_Railway.env.example"
+    profile = ROOT / "SignalRankAI_v1.3.6.7_Railway.env.example"
     require(profile.exists(), "production profile")
     require(validate(profile) == [], "production environment contract")
     source = (ROOT / "db/pg_features.py").read_text()
     require("pg_advisory_xact_lock" in source, "outcome advisory lock")
     require("on_conflict_do_update" not in source[source.index("async def upsert_outcome"):], "no fragile outcome ON CONFLICT")
-    print("PASS v1.3.6.6 production cutover verification")
+    print("PASS v1.3.6.7 production cutover verification")
     return 0
 
 

@@ -1536,35 +1536,14 @@ async def _is_asset_delivery_locked(
             return False
 
         # The product cooldown applies to every recipient, including owners and
-        # administrators. A diagnostic bypass is available only outside production
-        # and requires two explicit flags so it cannot silently contaminate public
-        # performance or paper/live execution samples.
-        runtime_env = str(
-            os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")
-            or os.getenv("APP_ENV") or "development"
-        ).strip().lower()
-        diagnostic_bypass = (
-            runtime_env not in {"production", "prod"}
-            and _env_true("DIAGNOSTIC_DELIVERY_BYPASS")
-            and _env_true("OWNER_DELIVERY_BYPASS_ASSET_LOCK")
-        )
-        if diagnostic_bypass:
-            try:
-                from config import ADMIN_IDS, OWNER_IDS
-                privileged = {int(x) for x in (OWNER_IDS or set())} | {int(x) for x in (ADMIN_IDS or set())}
-                if int(telegram_user_id) in privileged:
-                    logger.warning(
-                        "[asset_lock] non-production diagnostic bypass user=%s asset=%s signal=%s",
-                        telegram_user_id, symbol, current_signal_id or "",
-                    )
-                    return False
-            except Exception:
-                pass
-
-        hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
-        # Let Railway env shorten the lock during verification. 4h is the canonical proof-backed
-        # product default, but do not force it here.
-        hours = max(0, hours)
+        # administrators. Product delivery paths never bypass this guard; explicit
+        # diagnostics must use isolated test helpers that do not create delivery
+        # proof, performance, paper, copy, or live-execution evidence.
+        if lock_hours is None:
+            from services.asset_repeat_policy import get_asset_repeat_lock_hours
+            hours = float(get_asset_repeat_lock_hours())
+        else:
+            hours = max(0.0, float(lock_hours))
         if hours <= 0:
             return False
         cutoff = now_utc_naive() - timedelta(hours=hours)
@@ -7192,12 +7171,11 @@ def run_bot() -> None:
             )
             from datetime import datetime
             _outcome_limit = max(1, min(50, int(os.getenv("OUTCOME_NOTIFICATION_MAX_OUTCOMES_PER_RUN", "5") or 5)))
-            _outcome_budget_seconds = max(10.0, float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "20") or 20))
+            _outcome_budget_seconds = max(10.0, float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "45") or 20))
             # The budget governs delivery work, not the prerequisite DB snapshot.
             # Starting it before `_fetch()` caused every run to expire before the
             # first recipient whenever Postgres was briefly slow.
             _outcome_deadline = float("inf")
-            _outcome_budget_exhausted = False
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
                 async with get_session(priority="background", label="signalrank_telegram_bot") as session:
@@ -7228,7 +7206,6 @@ def run_bot() -> None:
 
             for oc, sig, recipients in pending:
                 if time.monotonic() >= _outcome_deadline:
-                    _outcome_budget_exhausted = True
                     logger.info("[outcome] job budget exhausted before next outcome; deferring remaining work")
                     break
                 status = str(getattr(oc, 'status', '') or '').lower()
@@ -7333,6 +7310,26 @@ def run_bot() -> None:
                 quiet_deferred_count = 0
                 eligible_count = 0
 
+                # Parse the outcome stage once per outcome. This must happen before
+                # stored-price fallback selection; the former code referenced
+                # tp_level_num before assignment and silently lost TP evidence.
+                tp_level_num = 0
+                if status in ("tp1", "partial_tp"):
+                    tp_level_num = 1
+                elif status == "tp2":
+                    tp_level_num = 2
+                elif status in {"tp3", "tp"}:
+                    tp_level_num = 3
+                elif status in {"partial_win_be", "partial_win"}:
+                    try:
+                        _status_meta = getattr(oc, "meta", {}) or {}
+                        if isinstance(_status_meta, str):
+                            import json as _json
+                            _status_meta = _json.loads(_status_meta)
+                        tp_level_num = max(0, min(2, int((_status_meta or {}).get("tp_hit_index") or 0)))
+                    except Exception:
+                        tp_level_num = 0
+
                 # Outcome notifications must use the price evidence captured by the
                 # lifecycle/outcome tracker. Fetching a fresh OHLC series here used
                 # most of the front-door job budget and repeatedly deferred every
@@ -7404,11 +7401,10 @@ def run_bot() -> None:
                     except Exception as exc:
                         logger.debug("[outcome] bounded market price fallback unavailable asset=%s err=%s", asset, exc)
 
+                # Once an outcome starts, finish its recipient set. Applying the
+                # global budget inside this loop repeatedly stranded the first
+                # recipient at sent=0 and retried the same terminal event forever.
                 for telegram_user_id, tier_at_send, prefs in recipients:
-                    if time.monotonic() >= _outcome_deadline:
-                        _outcome_budget_exhausted = True
-                        logger.info("[outcome] job budget exhausted; deferring remaining recipients ref=%s", ref_short)
-                        break
                     try:
                         if isinstance(prefs, dict) and not prefs.get('tp_sl_enabled', True):
                             continue
@@ -7418,7 +7414,8 @@ def run_bot() -> None:
                             qs = int(qs)
                             qe = int(qe)
                             if qs == qe:
-                                # Quiet all day
+                                # Quiet all day: keep the durable notification pending.
+                                quiet_deferred_count += 1
                                 continue
                             if qs < qe:
                                 if qs <= now_hour < qe:
@@ -7437,28 +7434,9 @@ def run_bot() -> None:
                     from signalrank_telegram.access import resolve_user_tier
                     user_tier = resolve_user_tier(telegram_user_id).lower()
                     
-                    # Parse which TP was hit (TP1, TP2, TP3)
-                    tp_level_num = 0
-                    if status in ("tp1", "partial_tp"):
-                        tp_level_num = 1
-                    elif status == "tp2":
-                        tp_level_num = 2
-                    elif status in {"tp3", "tp"}:
-                        tp_level_num = 3
-
-                    # Fetch the delivered signal for this user and signal_id
-                    delivered_signal = None
-                    try:
-                        from db.session import get_session
-                        from db.pg_features import get_delivered_signal_by_ref
-                        async def _fetch_delivered():
-                            async with get_session() as session:
-                                return await get_delivered_signal_by_ref(session, int(telegram_user_id), str(ref))
-                        delivered_signal = run_sync(_fetch_delivered())
-                    except Exception:
-                        delivered_signal = None
-
-                    signal_data = dict(delivered_signal.__dict__ if delivered_signal else sig.__dict__)
+                    # Signal plan is global and immutable after confirmed delivery;
+                    # avoid one blocking database round-trip per recipient.
+                    signal_data = dict(sig.__dict__)
                     signal_data.setdefault("asset", asset)
                     signal_data.setdefault("symbol", asset)
                     signal_data.setdefault("timeframe", timeframe or "1h")
@@ -7473,80 +7451,88 @@ def run_bot() -> None:
                     # Outcome notification logic by tier
                     notify = False
                     msg = None
-                    def _format_sl_closed_message() -> str:
+                    def _format_terminal_close_message(*, protected_stage: int = 0) -> str:
                         try:
                             entry_v = float(signal_data.get("entry") or 0)
                             sl_v = float(signal_data.get("stop_loss") or 0)
                         except Exception:
                             entry_v, sl_v = 0.0, 0.0
-                        actual_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                        outcome_meta = dict(getattr(oc, "meta", {}) or {})
+                        actual_pct = float(getattr(oc, "percent", 0) or 0.0)
                         planned_pct = abs(((entry_v - sl_v) / entry_v) * 100.0) if entry_v and sl_v else 0.0
-                        risk_pct = planned_pct if planned_pct > 0 else actual_pct
+                        observed_price = current_market_price or outcome_meta.get("close_price") or outcome_meta.get("last_event_price")
+                        provider = str(outcome_meta.get("observation_provider") or "stored lifecycle evidence")
+                        closed_at = getattr(oc, "closed_at", None)
+                        event_time = outcome_meta.get("outcome_event_time") or (closed_at.isoformat() if closed_at else "unknown")
+                        notification_time = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                        historical = False
+                        try:
+                            delay_limit = max(60, int(os.getenv("OUTCOME_NOTIFICATION_HISTORICAL_AFTER_SECONDS", "300") or 300))
+                            if closed_at is not None:
+                                historical = (datetime.utcnow() - closed_at.replace(tzinfo=None)).total_seconds() > delay_limit
+                        except Exception:
+                            historical = False
+                        identity = (
+                            f"<b>{asset} {str(direction or '').upper()} • {timeframe}</b>\n"
+                            f"Signal ID: <code>{ref}</code>\n"
+                        )
+                        evidence = (
+                            f"Entry: <b>{entry_v:g}</b> | Invalidation: <b>{sl_v:g}</b>\n"
+                            f"Observed: <b>{float(observed_price):g}</b> | Provider: <b>{provider}</b>\n"
+                            if observed_price is not None else
+                            f"Entry: <b>{entry_v:g}</b> | Invalidation: <b>{sl_v:g}</b>\n"
+                            f"Provider: <b>{provider}</b>\n"
+                        )
+                        timing = (
+                            f"Outcome time: <code>{event_time}</code>\n"
+                            f"Notification time: <code>{notification_time}</code>\n"
+                            f"Historical reconciliation: <b>{'Yes' if historical else 'No'}</b>"
+                        )
+                        if protected_stage > 0:
+                            realized_r = getattr(oc, "r_multiple", None)
+                            realized_text = "n/a" if realized_r is None else f"{float(realized_r):+.2f}R"
+                            return (
+                                "✅ <b>Protected Exit</b>\n"
+                                + identity
+                                + f"Highest TP reached: <b>TP{protected_stage}</b>\n"
+                                + f"Final realized result: <b>{realized_text}</b>\n"
+                                + evidence
+                                + timing
+                            )
+                        risk_pct = planned_pct if planned_pct > 0 else abs(actual_pct)
                         extra = ""
-                        if actual_pct > 0 and risk_pct > 0 and actual_pct > (risk_pct + 0.25):
-                            extra = f"Market move at close: <b>-{actual_pct:.2f}%</b>\n"
+                        if abs(actual_pct) > 0 and risk_pct > 0 and abs(actual_pct) > (risk_pct + 0.25):
+                            extra = f"Market move at close: <b>{actual_pct:+.2f}%</b>\n"
                         return (
-                            "\u00E2\u009D\u0152 <b>Trade Closed</b>\n"
-                            f"<b>{asset}</b> hit Stop Loss.\n"
-                            f"Planned risk: <b>-{risk_pct:.2f}%</b>\n"
-                            f"{extra}"
-                            "Status: Awaiting next high-probability setup."
+                            "❌ <b>Trade Closed</b>\n"
+                            + identity
+                            + "Final outcome: <b>Stop Loss before TP1</b>\n"
+                            + f"Planned risk: <b>-{risk_pct:.2f}%</b>\n"
+                            + extra
+                            + evidence
+                            + timing
                         )
 
-                    if user_tier in ("owner", "admin", "vip"):
-                        if tp_level_num in (1, 2, 3):
-                            notify = True
-                            msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
-                        elif status == "sl":
-                            notify = True
-                            _entry_v = float(signal_data.get("entry") or 0)
-                            _sl_v = float(signal_data.get("stop_loss") or 0)
-                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
-                            if _risk_pct <= 0 and _entry_v and _sl_v:
-                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
-                            msg = (
-                                "\u274C <b>Trade Closed</b>\n"
-                                f"<b>{asset}</b> hit Stop Loss.\n"
-                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
-                                "Status: Awaiting next high-probability setup."
-                            )
-                            msg = _format_sl_closed_message()
-                    elif user_tier == "premium":
-                        if tp_level_num in (1, 2, 3):
-                            notify = True
-                            msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
-                        elif status == "sl":
-                            notify = True
-                            _entry_v = float(signal_data.get("entry") or 0)
-                            _sl_v = float(signal_data.get("stop_loss") or 0)
-                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
-                            if _risk_pct <= 0 and _entry_v and _sl_v:
-                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
-                            msg = (
-                                "\u274C <b>Trade Closed</b>\n"
-                                f"<b>{asset}</b> hit Stop Loss.\n"
-                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
-                                "Status: Awaiting next high-probability setup."
-                            )
-                            msg = _format_sl_closed_message()
-                    elif str(tier_at_send).lower() == "free":
-                        if tp_level_num > 0 or status == "tp":
-                            notify = True
-                            msg = _tier_notifier.format_tp_hit_notification(signal_data, "free", tp_level_num or 1, float(getattr(oc, "percent", 0) or 0), current_market_price)
-                        elif status == "sl":
-                            notify = True
-                            _entry_v = float(signal_data.get("entry") or 0)
-                            _sl_v = float(signal_data.get("stop_loss") or 0)
-                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
-                            if _risk_pct <= 0 and _entry_v and _sl_v:
-                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
-                            msg = (
-                                "\u274C <b>Trade Closed</b>\n"
-                                f"<b>{asset}</b> hit Stop Loss.\n"
-                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
-                                "Status: Awaiting next high-probability setup."
-                            )
-                            msg = _format_sl_closed_message()
+
+                    if status in {"partial_win_be", "partial_win"}:
+                        notify = True
+                        msg = _format_terminal_close_message(protected_stage=tp_level_num)
+                    elif tp_level_num in (1, 2, 3):
+                        notify = True
+                        display_outcome_tier = (
+                            user_tier if user_tier in {"owner", "admin", "vip", "premium"}
+                            else "free"
+                        )
+                        msg = _tier_notifier.format_tp_hit_notification(
+                            signal_data,
+                            display_outcome_tier,
+                            tp_level_num,
+                            float(getattr(oc, "percent", 0) or 0),
+                            current_market_price,
+                        )
+                    elif status == "sl":
+                        notify = True
+                        msg = _format_terminal_close_message()
 
                     if notify and msg:
                         eligible_count += 1
@@ -7599,11 +7585,6 @@ def run_bot() -> None:
                                     await session.commit()
 
                             run_sync(_mark_notification_delivered(int(notification_id)))
-                            try:
-                                import asyncio
-                                run_sync(asyncio.sleep(0.5))
-                            except Exception:
-                                pass
                             sent_count += 1
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
@@ -7628,8 +7609,11 @@ def run_bot() -> None:
                 if len(recipients or []) == 0:
                     # No recipients for this signal; avoid permanent retry loop.
                     mark_notified = True
-                elif eligible_count == 0 and quiet_deferred_count == 0:
-                    # No tier-qualified recipients and no quiet-hour deferrals.
+                elif quiet_deferred_count == 0 and failed_count == 0:
+                    # Every non-quiet recipient either received this outcome in this
+                    # run, was already durably delivered by an earlier run, or was
+                    # not eligible. Mark the global outcome handled so successful
+                    # sends do not remain in the unnotified queue forever.
                     mark_notified = True
 
                 if mark_notified:
@@ -7659,7 +7643,8 @@ def run_bot() -> None:
 
     def send_outcome_notifications():
         from core.job_leases import acquire_scheduler_job_lease
-        lease_seconds = max(30, int(os.getenv("OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS", "45") or 45))
+        configured_budget = max(10, int(float(os.getenv("OUTCOME_NOTIFICATION_JOB_BUDGET_SECONDS", "45") or 45)))
+        lease_seconds = max(60, configured_budget + 30, int(os.getenv("OUTCOME_NOTIFICATION_JOB_LEASE_SECONDS", "75") or 75))
         with acquire_scheduler_job_lease("outcome_notifications", lease_seconds=lease_seconds) as lease:
             if not lease.acquired:
                 logger.info(

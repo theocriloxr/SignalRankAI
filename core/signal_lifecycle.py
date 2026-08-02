@@ -168,7 +168,7 @@ _OUTCOME_PROGRESS = {
     "tp": 3,
 }
 _TERMINAL_OUTCOMES = frozenset(
-    {"tp", "tp3", "sl", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid", "invalidated"}
+    {"tp", "tp3", "sl", "partial_win", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid", "invalidated"}
 )
 
 

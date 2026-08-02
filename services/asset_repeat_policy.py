@@ -25,13 +25,36 @@ def _env_float(name: str) -> float | None:
     return value if math.isfinite(value) else None
 
 
-def get_asset_repeat_lock_hours(tier: str | None = None) -> float:
-    """Return the configured proof-backed same-asset lock duration.
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
-    One global four-hour default applies to every tier.  Optional tier-specific
-    variables remain supported for explicit business-policy overrides, but they
-    are not silently assigned longer historical defaults.
+
+def get_asset_repeat_lock_hours(tier: str | None = None) -> float:
+    """Return the proof-backed same-asset lock duration for every tier.
+
+    The global four-hour product rule is authoritative. Tier-specific values are
+    ignored unless ``ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES=1``. Even then, they can
+    only make the lock stricter unless an additional audited reduction switch is
+    enabled. This prevents owner/admin environment leftovers from silently
+    disabling the product safety gate.
     """
+
+    global_candidates: Iterable[float | None] = (
+        _env_float("DELIVERY_SAME_ASSET_COOLDOWN_HOURS"),
+        _env_float("ASSET_REPEAT_LOCK_HOURS"),
+        DEFAULT_ASSET_REPEAT_LOCK_HOURS,
+    )
+    base = DEFAULT_ASSET_REPEAT_LOCK_HOURS
+    for value in global_candidates:
+        if value is not None:
+            base = max(0.0, float(value))
+            break
+
+    if not _env_bool("ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES", False):
+        return base
 
     tier_name = str(tier or "").strip().lower().split("_", 1)[0]
     tier_env = {
@@ -41,17 +64,13 @@ def get_asset_repeat_lock_hours(tier: str | None = None) -> float:
         "premium": "PREMIUM_ASSET_COOLDOWN_HOURS",
         "free": "FREE_ASSET_COOLDOWN_HOURS",
     }.get(tier_name)
-
-    candidates: Iterable[float | None] = (
-        _env_float(tier_env) if tier_env else None,
-        _env_float("DELIVERY_SAME_ASSET_COOLDOWN_HOURS"),
-        _env_float("ASSET_REPEAT_LOCK_HOURS"),
-        DEFAULT_ASSET_REPEAT_LOCK_HOURS,
-    )
-    for value in candidates:
-        if value is not None:
-            return max(0.0, float(value))
-    return DEFAULT_ASSET_REPEAT_LOCK_HOURS
+    override = _env_float(tier_env) if tier_env else None
+    if override is None:
+        return base
+    override = max(0.0, float(override))
+    if _env_bool("ALLOW_ASSET_COOLDOWN_REDUCTION", False):
+        return override
+    return max(base, override)
 
 
 def canonical_delivery_cooldown_key(user_id: int, asset: str) -> str:

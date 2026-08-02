@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_release_identity_and_single_migration_head() -> None:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6.6"
-    assert RELEASE_FINGERPRINT == "v1.3.6.6-production-integrity-hardening-20260802"
+    assert APP_VERSION == "1.3.6.7"
+    assert RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
     assert audit["heads"] == ["0034_production_integrity"]
