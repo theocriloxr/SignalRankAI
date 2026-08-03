@@ -8,13 +8,13 @@ from payments.paystack_events import paystack_recovery_configuration
 @pytest.mark.parametrize(
     ("secret", "public", "expected_reason"),
     [
-        ("", "", "paystack_key_pair_incomplete"),
-        ("sk_test_secret", "", "paystack_key_pair_incomplete"),
-        ("sk_test_secret", "pk_live_public", "paystack_key_pair_mode_mismatch"),
-        ("sk_live_secret", "pk_test_public", "paystack_key_pair_mode_mismatch"),
+        ("", "", "paystack_secret_missing"),
+        ("sk_test_secret", "", "configured"),
+        ("sk_test_secret", "pk_live_public", "configured"),
+        ("sk_live_secret", "pk_test_public", "configured"),
     ],
 )
-def test_recovery_rejects_incomplete_or_mismatched_keys(
+def test_recovery_requires_only_the_secret_for_replay(
     monkeypatch,
     secret: str,
     public: str,
@@ -24,7 +24,10 @@ def test_recovery_rejects_incomplete_or_mismatched_keys(
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", secret)
     monkeypatch.setenv("PAYSTACK_PUBLIC_KEY", public)
 
-    assert paystack_recovery_configuration() == (False, expected_reason)
+    if expected_reason == "configured":
+        assert paystack_recovery_configuration() == (True, expected_reason)
+    else:
+        assert paystack_recovery_configuration() == (False, expected_reason)
 
 
 @pytest.mark.parametrize(
@@ -38,6 +41,14 @@ def test_recovery_accepts_matching_key_modes(monkeypatch, secret: str, public: s
     monkeypatch.setenv("PAYMENTS_ENABLED", "true")
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", secret)
     monkeypatch.setenv("PAYSTACK_PUBLIC_KEY", public)
+
+    assert paystack_recovery_configuration() == (True, "configured")
+
+
+def test_recovery_allows_secret_only_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("PAYMENTS_ENABLED", "1")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_live_secret")
+    monkeypatch.delenv("PAYSTACK_PUBLIC_KEY", raising=False)
 
     assert paystack_recovery_configuration() == (True, "configured")
 

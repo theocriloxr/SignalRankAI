@@ -291,6 +291,19 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		from paystack.paystack import generate_paystack_link
+
+		def _checkout_button(label: str, *, price: int, tier: str, duration: str, duration_days: int) -> InlineKeyboardButton:
+			link = generate_paystack_link(
+				user_id=user_id,
+				price=price,
+				tier=tier,
+				duration=duration,
+				duration_days=duration_days,
+			)
+			if is_valid_paystack_checkout_url(link):
+				return InlineKeyboardButton(label, url=link)
+			return InlineKeyboardButton(label, callback_data="payment_unavailable")
+
 		_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 		rows = []
 		if vip_sold_out:
@@ -298,24 +311,46 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
 		else:
 			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
-			vip_link = generate_paystack_link(user_id=user_id, price=vip_price, tier="VIP", duration="MONTHLY", duration_days=30)
-			if is_valid_paystack_checkout_url(vip_link):
-				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
-				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
+			seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
+			rows.append([
+				_checkout_button(
+					f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})",
+					price=vip_price,
+					tier="VIP",
+					duration="MONTHLY",
+					duration_days=30,
+				),
+			])
 		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
-		prem_month = generate_paystack_link(user_id=user_id, price=prem_month_price, tier="PREMIUM", duration="MONTHLY", duration_days=30)
-		prem_qtr = generate_paystack_link(user_id=user_id, price=prem_qtr_price, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
-		prem_year = generate_paystack_link(user_id=user_id, price=prem_year_price, tier="PREMIUM", duration="YEARLY", duration_days=365)
-		if is_valid_paystack_checkout_url(prem_month):
-			rows.append([InlineKeyboardButton(f"⭐ Premium Monthly — ₦{prem_month_price:,}", url=prem_month)])
-		if is_valid_paystack_checkout_url(prem_qtr):
-			rows.append([InlineKeyboardButton(f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}", url=prem_qtr)])
-		if is_valid_paystack_checkout_url(prem_year):
-			rows.append([InlineKeyboardButton(f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}", url=prem_year)])
-		else:
-			rows.append([InlineKeyboardButton("⚠️ Checkout temporarily unavailable",callback_data="payment_unavailable",)])
+		rows.append([
+			_checkout_button(
+				f"⭐ Premium Monthly — ₦{prem_month_price:,}",
+				price=prem_month_price,
+				tier="PREMIUM",
+				duration="MONTHLY",
+				duration_days=30,
+			),
+		])
+		rows.append([
+			_checkout_button(
+				f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}",
+				price=prem_qtr_price,
+				tier="PREMIUM",
+				duration="QUARTERLY",
+				duration_days=90,
+			),
+		])
+		rows.append([
+			_checkout_button(
+				f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}",
+				price=prem_year_price,
+				tier="PREMIUM",
+				duration="YEARLY",
+				duration_days=365,
+			),
+		])
 		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
 			rows.append([
@@ -374,7 +409,7 @@ async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 		"• Advanced profile filters: scalp, day, swing, position\n\n"
 		"Best practice: start Premium, upgrade to VIP when you need faster workflow and automation-grade alerts.\n\n"
 		"⚠️ <i>No guaranteed profits. Educational only. Trade responsibly.</i>\n\n"
-		"Tap a plan below to subscribe via Paystack."
+		"Tap a plan below to open checkout, or use Support if a payment link is unavailable."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
 	return msg, keyboard
@@ -697,6 +732,15 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			except Exception:
 				pass
 			return
+	if data == "payment_unavailable":
+		try:
+			await query.answer(
+				"Checkout is temporarily unavailable in this environment. Use Support if you need a payment link.",
+				show_alert=True,
+			)
+		except Exception:
+			pass
+		return
 	if data == "vip_sold_out":
 		try:
 			await query.answer("VIP is currently sold out. Join the waitlist to be notified.", show_alert=True)

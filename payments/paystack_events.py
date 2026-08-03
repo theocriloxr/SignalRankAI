@@ -29,7 +29,7 @@ class PaystackInboxError(RuntimeError):
 
 
 def paystack_recovery_configuration() -> tuple[bool, str]:
-    """Validate that recovery has a complete key pair in one Paystack mode."""
+    """Validate that recovery has the Paystack secret required for replay."""
     enabled = str(os.getenv("PAYMENTS_ENABLED", "0") or "0").strip().lower() in {
         "1", "true", "yes", "on",
     }
@@ -37,14 +37,9 @@ def paystack_recovery_configuration() -> tuple[bool, str]:
         return False, "payments_disabled"
 
     secret = str(os.getenv("PAYSTACK_SECRET_KEY", "") or "").strip()
-    public = str(os.getenv("PAYSTACK_PUBLIC_KEY", "") or "").strip()
-    if not secret or not public:
-        return False, "paystack_key_pair_incomplete"
+    if not secret:
+        return False, "paystack_secret_missing"
 
-    matching_test = secret.startswith("sk_test_") and public.startswith("pk_test_")
-    matching_live = secret.startswith("sk_live_") and public.startswith("pk_live_")
-    if not (matching_test or matching_live):
-        return False, "paystack_key_pair_mode_mismatch"
     return True, "configured"
 
 
