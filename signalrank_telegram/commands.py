@@ -314,6 +314,8 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			rows.append([InlineKeyboardButton(f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}", url=prem_qtr)])
 		if is_valid_paystack_checkout_url(prem_year):
 			rows.append([InlineKeyboardButton(f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}", url=prem_year)])
+		else:
+			rows.append([InlineKeyboardButton("⚠️ Checkout temporarily unavailable",callback_data="payment_unavailable",)])
 		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
 			rows.append([
