@@ -3577,7 +3577,13 @@ async def get_random_available_signals_for_free_user(
     res_resolved = await session.execute(
         select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None))
     )
-    from core.signal_lifecycle import outcome_is_terminal
+    from core.outcome_ordering import outcome_is_terminal
+
+    def test_outcome_terminal_import_for_available_signal_queries() -> None:
+        assert outcome_is_terminal("tp3") is True
+        assert outcome_is_terminal("sl") is True
+        assert outcome_is_terminal("partial_win_be") is True
+        assert outcome_is_terminal("pending") is False
     resolved_signals: set[Any] = {
         row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])
     }
@@ -3658,7 +3664,13 @@ async def get_highest_scoring_available_signal_for_user(
     res_resolved = await session.execute(
         select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None))
     )
-    from core.signal_lifecycle import outcome_is_terminal
+    from core.outcome_ordering import outcome_is_terminal
+
+    def test_outcome_terminal_import_for_available_signal_queries() -> None:
+        assert outcome_is_terminal("tp3") is True
+        assert outcome_is_terminal("sl") is True
+        assert outcome_is_terminal("partial_win_be") is True
+        assert outcome_is_terminal("pending") is False
     resolved_signals: set[Any] = {
         row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])
     }

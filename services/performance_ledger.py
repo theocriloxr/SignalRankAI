@@ -768,9 +768,27 @@ async def reconcile_all_performance_ledgers(
         for record in retry_batch
     ]
     remaining = max(0, limit_users - len(work_rows))
-    page_rows = await _page(cursor_before, remaining)
     wrapped = False
-    exhausted = not bool(page_rows) and not bool(retry_batch)
+    page_rows: list[tuple[int, int]] = []
+    exhausted = False
+
+    if remaining > 0:
+        # Fetch one additional row so exhaustion can be detected without requiring
+        # another complete reconciliation cycle.
+        probe_rows = await _page(cursor_before, remaining + 1)
+        has_more_rows = len(probe_rows) > remaining
+        page_rows = probe_rows[:remaining]
+
+        exhausted = not bool(retry_batch) and not has_more_rows
+
+        # Do not immediately restart from user zero inside the same cycle.
+        # Finish the current traversal and reset the saved cursor for the next one.
+        if not page_rows and cursor_before > 0 and wrap_cursor:
+            wrapped = True
+            cursor_before = 0
+            exhausted = not bool(retry_batch)
+    else:
+        exhausted = False
     if not page_rows and remaining > 0 and cursor_before > 0 and wrap_cursor:
         wrapped = True
         cursor_before = 0
