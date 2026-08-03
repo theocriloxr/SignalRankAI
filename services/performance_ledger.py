@@ -464,6 +464,14 @@ async def reconcile_user_performance_ledger(
             "delivery_id": int(delivery.id),
             "bucket": bucket,
             "final_r": str(final_r) if final_r is not None else None,
+            "included": bool(included),
+            "exclusion_reason": exclusion,
+            "outcome_source": source,
+            "highest_tp": int(getattr(lifecycle, "highest_tp_hit", 0) or 0),
+            "canonical_outcome": _status(
+                getattr(outcome, "canonical_outcome", None)
+                or getattr(outcome, "status", None)
+            ) or None,
             "outcome_id": getattr(outcome, "id", None),
             "monitoring_id": getattr(monitoring, "id", None),
             "policy": PERFORMANCE_POLICY_VERSION,
@@ -477,14 +485,12 @@ async def reconcile_user_performance_ledger(
         )
         if human_corrected:
             continue
-        if (
-            existing is not None
-            and existing.finalized_at is not None
-            and str(existing.calculation_policy_version or "") == PERFORMANCE_POLICY_VERSION
-        ):
-            continue
+
         now = now_utc_naive()
         snapshot_hash = _snapshot_hash(payload)
+
+        # A finalized row may become stale when its canonical Outcome or lifecycle
+        # evidence is repaired later. Only skip when the projection still matches.
         if existing is not None and existing.snapshot_hash == snapshot_hash:
             continue
         outcome_completed_at = getattr(outcome, "closed_at", None) or getattr(monitoring, "stopped_at", None)

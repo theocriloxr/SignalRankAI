@@ -422,6 +422,22 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "version": Tier.OWNER, "correct_signal": Tier.OWNER,
         "provider_status": Tier.OWNER, "broadcast": Tier.OWNER,
         "owner_test_delivery": Tier.OWNER,
+        "performance_rebuild": Tier.OWNER,
+        "performance_audit": Tier.OWNER,
+        "outcome_rebuild": Tier.OWNER,
+        "outcome_audit": Tier.OWNER,
+        "dedup_audit": Tier.OWNER,
+        "notification_audit": Tier.OWNER,
+        "paper_audit": Tier.OWNER,
+        "queue_status": Tier.OWNER,
+        "queue_replay": Tier.OWNER,
+        "dead_letter_status": Tier.OWNER,
+        "dead_letter_replay": Tier.OWNER,
+        "ledger_audit": Tier.OWNER,
+        "payment_reconcile": Tier.OWNER,
+        "release_status": Tier.OWNER,
+        "kill_switch": Tier.OWNER,
+        "system_health": Tier.ADMIN,
     }
 )
 

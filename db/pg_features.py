@@ -1927,9 +1927,16 @@ async def upsert_outcome(
             mutable_meta.pop("notified_at", None)
             oc.meta = mutable_meta
             if queue_notifications and oc.closed_at is not None:
-                await queue_outcome_notifications_for_outcome(
-                    session, int(getattr(oc, "id")), signal_id_str, new_status
-                )
+                # Notification creation has its own savepoint. A duplicate outbox row,
+                # malformed recipient or notification failure must not abort the canonical
+                # Outcome transaction.
+                async with session.begin_nested():
+                    await queue_outcome_notifications_for_outcome(
+                        session,
+                        int(getattr(oc, "id")),
+                        signal_id_str,
+                        new_status,
+                    )
         except Exception:
             logger.exception("[outcome_immutability] notification queue failed signal=%s", signal_id_str)
 

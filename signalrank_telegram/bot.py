@@ -929,6 +929,18 @@ from .owner_commands import (
     performance_audit_command,
     outcome_rebuild_command,
     outcome_audit_command,
+    dedup_audit_command,
+    notification_audit_command,
+    paper_audit_command,
+    queue_status_command,
+    queue_replay_command,
+    dead_letter_status_command,
+    dead_letter_replay_command,
+    ledger_audit_command,
+    payment_reconcile_command,
+    system_health_command,
+    release_status_command,
+    kill_switch_command,
 )
 
 from .extended_commands import (
@@ -6307,6 +6319,18 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
     application.add_handler(CommandHandler("outcome_rebuild", _audit_handler("outcome_rebuild", outcome_rebuild_command)))
     application.add_handler(CommandHandler("outcome_audit", _audit_handler("outcome_audit", outcome_audit_command)))
+    application.add_handler(CommandHandler("dedup_audit", _audit_handler("dedup_audit", dedup_audit_command)))
+    application.add_handler(CommandHandler("notification_audit", _audit_handler("notification_audit", notification_audit_command)))
+    application.add_handler(CommandHandler("paper_audit", _audit_handler("paper_audit", paper_audit_command)))
+    application.add_handler(CommandHandler("queue_status", _audit_handler("queue_status", queue_status_command)))
+    application.add_handler(CommandHandler("queue_replay", _audit_handler("queue_replay", queue_replay_command)))
+    application.add_handler(CommandHandler("dead_letter_status", _audit_handler("dead_letter_status", dead_letter_status_command)))
+    application.add_handler(CommandHandler("dead_letter_replay", _audit_handler("dead_letter_replay", dead_letter_replay_command)))
+    application.add_handler(CommandHandler("ledger_audit", _audit_handler("ledger_audit", ledger_audit_command)))
+    application.add_handler(CommandHandler("payment_reconcile", _audit_handler("payment_reconcile", payment_reconcile_command)))
+    application.add_handler(CommandHandler("system_health", _audit_handler("system_health", system_health_command)))
+    application.add_handler(CommandHandler("release_status", _audit_handler("release_status", release_status_command)))
+    application.add_handler(CommandHandler("kill_switch", _audit_handler("kill_switch", kill_switch_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 

@@ -485,7 +485,10 @@ class Worker:
                                 priority=DBPriority.BACKGROUND,
                                 label="outcome_reconciliation",
                             ) as session:
-                                result = await ensure_outcome_projections(session)
+                                result = await ensure_outcome_projections(
+                                    session,
+                                    queue_notifications=False,
+                                )
                                 outbox_repair = await repair_outcome_notification_outbox(session)
                                 repaired_partial_exits = await repair_partial_exit_outcomes(session)
                                 performance_result = await reconcile_all_performance_ledgers(session)

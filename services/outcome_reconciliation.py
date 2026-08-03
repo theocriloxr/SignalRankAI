@@ -243,6 +243,7 @@ async def ensure_outcome_projections(
     *,
     days: int | None = None,
     limit: int | None = None,
+    queue_notifications: bool = True,
 ) -> OutcomeReconciliationResult:
     """Create missing projections and repair lifecycle/outcome disagreements."""
     days = max(1, int(days or os.getenv("OUTCOME_RECONCILIATION_DAYS", "30") or 30))
@@ -259,7 +260,22 @@ async def ensure_outcome_projections(
     }
     for signal, lifecycle, outcome in rows:
         examined += 1
+
+        # Capture primitive values before opening the savepoint. ORM objects may be
+        # expired after a savepoint rollback and must not be accessed in the except
+        # handler.
         signal_id = str(getattr(signal, "signal_id", "") or "")
+        lifecycle_state_for_log = (
+            str(getattr(lifecycle, "state", "") or "")
+            if lifecycle is not None
+            else ""
+        )
+        existing_status_for_log = (
+            str(getattr(outcome, "status", "") or "")
+            if outcome is not None
+            else ""
+        )
+
         try:
             # A savepoint keeps a malformed historical row from aborting every
             # remaining signal in the recovery batch.
@@ -327,7 +343,7 @@ async def ensure_outcome_projections(
                     vip_fill_outcome="pending",
                     sentiment_outcome="pending",
                     meta=meta,
-                    queue_notifications=True,
+                    queue_notifications=queue_notifications,
                 )
                 if outcome is None:
                     if lifecycle_status:
@@ -340,7 +356,11 @@ async def ensure_outcome_projections(
                 # ``upsert_outcome`` only queues when it detects a changed row.
                 # This idempotent call also repairs terminal rows that predate the
                 # outbox or were closed during the v1.3.6.8 persistence outage.
-                if terminal and getattr(projected_outcome, "closed_at", None) is not None:
+                if (
+                    queue_notifications
+                    and terminal
+                    and getattr(projected_outcome, "closed_at", None) is not None
+                ):
                     await queue_outcome_notifications_for_outcome(
                         session,
                         int(getattr(projected_outcome, "id")),
@@ -350,10 +370,11 @@ async def ensure_outcome_projections(
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_reconciliation] signal repair failed signal=%s lifecycle=%s existing=%s error=%s",
+                "[outcome_reconciliation] signal repair failed "
+                "signal=%s lifecycle=%s existing=%s error=%s",
                 signal_id,
-                getattr(lifecycle, "state", None) if lifecycle else None,
-                getattr(outcome, "status", None) if outcome is not None else None,
+                lifecycle_state_for_log,
+                existing_status_for_log,
                 exc,
             )
     await session.flush()
@@ -378,21 +399,26 @@ async def repair_outcome_notification_outbox(
     )).scalars().all())
     queued = failed = 0
     for outcome in outcomes:
+        outcome_id = int(getattr(outcome, "id"))
+        outcome_signal_id = str(getattr(outcome, "signal_id", "") or "")
+        outcome_status = str(getattr(outcome, "status", "") or "")
+
         try:
             async with session.begin_nested():
                 queued += await queue_outcome_notifications_for_outcome(
                     session,
-                    int(outcome.id),
-                    str(outcome.signal_id),
-                    str(outcome.status),
+                    outcome_id,
+                    outcome_signal_id,
+                    outcome_status,
                 )
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_outbox_repair] failed outcome_id=%s signal=%s status=%s error=%s",
-                getattr(outcome, "id", None),
-                getattr(outcome, "signal_id", None),
-                getattr(outcome, "status", None),
+                "[outcome_outbox_repair] failed "
+                "outcome_id=%s signal=%s status=%s error=%s",
+                outcome_id,
+                outcome_signal_id,
+                outcome_status,
                 exc,
             )
     await session.flush()
