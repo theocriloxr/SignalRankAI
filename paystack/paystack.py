@@ -5,7 +5,7 @@ import os
 import hmac
 import hashlib
 import logging
-
+from urllib.parse import urlparse
 
 from config import config
 PAYSTACK_SECRET_KEY: str | None = config.PAYSTACK_SECRET_KEY
@@ -35,6 +35,25 @@ DURATIONS = {
     'VIP_WEEKLY': 7,
     'WEEKLY_PLAN': WEEKLY_PLAN['duration_days']
 }
+
+def is_valid_paystack_checkout_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+
+    hostname = str(parsed.hostname or "").lower()
+
+    return (
+        parsed.scheme == "https"
+        and (
+            hostname == "paystack.com"
+            or hostname.endswith(".paystack.com")
+        )
+    )
 
 def verify_payment(reference, user_id):
     from core.redis_state import state
@@ -142,7 +161,7 @@ def generate_paystack_link(
     secret: str | None = os.getenv('PAYSTACK_SECRET_KEY')
     if not secret:
         # Fail closed: don't emit fake links.
-        return "PAYSTACK_SECRET_KEY is not configured."
+        return None
 
     amount_ngn = int(price)
     from payments.paystack_policy import evaluate_paystack_operation
@@ -206,11 +225,18 @@ def generate_paystack_link(
         data = resp.json() if resp.content else {}
         if resp.status_code >= 400 or not bool(data.get('status')):
             logging.warning(f"Paystack init failed: status={resp.status_code} body={data}")
-            return "Paystack checkout init failed. Please try again."
-        auth_url = ((data.get('data') or {}).get('authorization_url') or '').strip()
-        if not auth_url:
-            return "Paystack did not return a checkout URL."
+            return None
+        auth_url = str(
+            ((data.get("data") or {}).get("authorization_url") or "")
+        ).strip()
+
+        if not is_valid_paystack_checkout_url(auth_url):
+            logging.error(
+                "Paystack returned invalid checkout URL user=%s",
+                user_id,
+            )
+            return None
         return auth_url
     except Exception as exc:
         logging.warning(f"Paystack init exception: {exc}")
-        return "Paystack checkout init error. Please try again."
+        return No

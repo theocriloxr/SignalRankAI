@@ -11,6 +11,7 @@ from engine.market_state import get_market_state_async
 from engine.strategies.signal_generator import SignalGenerator
 from data.news import get_news_sentiment, fetch_news_headlines
 import inspect
+from urllib.parse import urlparse
 from core.redis_state import KillSwitchState, state
 from core.command_limits import (
 	REQUIRE_TIER_RATE_LIMIT,
@@ -279,6 +280,13 @@ def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
 	return f"💎 VIP Monthly — {price} | 🟢 {seats_left} seats left"
 
 
+def is_valid_paystack_checkout_url(url: str | None) -> bool:
+	if not url:
+		return False
+	parsed = urlparse(str(url))
+	return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -291,7 +299,7 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 		else:
 			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
 			vip_link = generate_paystack_link(user_id=user_id, price=vip_price, tier="VIP", duration="MONTHLY", duration_days=30)
-			if vip_link:
+			if is_valid_paystack_checkout_url(vip_link):
 				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
 				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
 		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
@@ -300,11 +308,11 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 		prem_month = generate_paystack_link(user_id=user_id, price=prem_month_price, tier="PREMIUM", duration="MONTHLY", duration_days=30)
 		prem_qtr = generate_paystack_link(user_id=user_id, price=prem_qtr_price, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
 		prem_year = generate_paystack_link(user_id=user_id, price=prem_year_price, tier="PREMIUM", duration="YEARLY", duration_days=365)
-		if prem_month:
+		if is_valid_paystack_checkout_url(prem_month):
 			rows.append([InlineKeyboardButton(f"⭐ Premium Monthly — ₦{prem_month_price:,}", url=prem_month)])
-		if prem_qtr:
+		if is_valid_paystack_checkout_url(prem_qtr):
 			rows.append([InlineKeyboardButton(f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}", url=prem_qtr)])
-		if prem_year:
+		if is_valid_paystack_checkout_url(prem_year):
 			rows.append([InlineKeyboardButton(f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}", url=prem_year)])
 		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
