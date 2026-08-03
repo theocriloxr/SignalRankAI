@@ -26,6 +26,65 @@ from db.pg_features import queue_outcome_notifications_for_outcome, upsert_outco
 _PROOF_STATES = ("sent", "delivered", "confirmed", "reconciled", "updated")
 logger = logging.getLogger(__name__)
 
+_SYSTEM_CORRECTION_ACTORS = {
+    "system",
+    "worker",
+    "migration",
+    "backfill",
+    "reconciliation",
+    "outcome_reconciliation",
+    "outcome_tracker",
+    "auto_repair",
+}
+
+
+def _is_human_corrected(outcome: Outcome | None) -> bool:
+    """Return True only for corrections that require human protection."""
+
+    if outcome is None:
+        return False
+
+    meta = dict(getattr(outcome, "meta", {}) or {})
+
+    # Explicit metadata always wins.
+    if bool(meta.get("human_correction")):
+        return True
+
+    actor = str(
+        getattr(outcome, "corrected_by", "") or ""
+    ).strip().lower()
+
+    # Current system repairs use actors such as:
+    # system:v1.3.6.9-outcome-reconciliation
+    if actor.startswith("system:"):
+        return False
+
+    if actor in _SYSTEM_CORRECTION_ACTORS:
+        return False
+
+    # Preserve explicitly identified owner/admin/manual corrections.
+    if actor.startswith(("owner:", "admin:", "human:", "manual:")):
+        return True
+
+    if actor in {"owner", "admin", "human", "manual"}:
+        return True
+
+    # Numeric actors are normally Telegram user IDs.
+    if actor.isdigit():
+        return True
+
+    provenance = str(
+        getattr(outcome, "provenance", "") or ""
+    ).strip().lower()
+
+    corrected_at = getattr(outcome, "corrected_at", None)
+
+    # Unknown old audited corrections should fail safely and remain protected.
+    return bool(
+        actor
+        or corrected_at is not None
+        or provenance == "audited_correction"
+    )
 
 @dataclass(frozen=True, slots=True)
 class OutcomeReconciliationResult:
@@ -291,23 +350,16 @@ async def ensure_outcome_projections(
 
                 # Never overwrite an explicit human/audited correction during an
                 # automated replay.  Those rows require operator review instead.
-                existing_meta = dict(getattr(outcome, "meta", {}) or {}) if outcome is not None else {}
-                human_corrected = bool(
-                    outcome is not None
-                    and (
-                        getattr(outcome, "corrected_at", None) is not None
-                        or str(getattr(outcome, "corrected_by", "") or "").strip()
-                        or str(getattr(outcome, "provenance", "") or "").lower() == "audited_correction"
-                        or existing_meta.get("human_correction")
-                    )
-                )
+                human_corrected = _is_human_corrected(outcome)
                 if human_corrected:
                     unchanged += 1
                     logger.warning(
-                        "[outcome_reconciliation] skipped corrected row signal=%s existing=%s expected=%s",
+                        "[outcome_reconciliation] skipped human-corrected row "
+                        "signal=%s existing=%s expected=%s corrected_by=%s",
                         signal_id,
                         current_status,
                         status,
+                        getattr(outcome, "corrected_by", None),
                     )
                     continue
 
@@ -398,6 +450,7 @@ async def repair_outcome_notification_outbox(
         .limit(limit)
     )).scalars().all())
     queued = failed = 0
+    
     for outcome in outcomes:
         outcome_id = int(getattr(outcome, "id"))
         outcome_signal_id = str(getattr(outcome, "signal_id", "") or "")

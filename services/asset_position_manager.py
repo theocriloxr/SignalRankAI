@@ -119,6 +119,17 @@ async def get_user_asset_position_state(
         float(unresolved_block_hours if unresolved_block_hours is not None else _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0)),
     )
     cutoff = _utcnow() - timedelta(hours=max(cooldown_h, unresolved_h))
+    reservation_ttl_seconds = max(
+        30.0,
+        _env_float(
+            "DELIVERY_INFLIGHT_RETRY_SECONDS",
+            300.0,
+        ),
+    )
+
+    reservation_cutoff = _utcnow() - timedelta(
+        seconds=reservation_ttl_seconds
+    )
 
     row = (
         await session.execute(
@@ -142,9 +153,33 @@ async def get_user_asset_position_state(
                 SignalDelivery.signal_id != str(exclude_signal_id or "__none__"),
                 or_(
                     SignalDelivery.sent_ok.is_(True),
-                    func.lower(SignalDelivery.delivery_state).in_(
-                        ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
+
+                    # Reserved/sending rows lock the asset only while the reservation
+                    # is genuinely recent.
+                    and_(
+                        func.lower(
+                            SignalDelivery.delivery_state
+                        ).in_(("reserved", "sending")),
+                        func.coalesce(
+                            SignalDelivery.last_attempt_at,
+                            SignalDelivery.dispatch_started_at,
+                            SignalDelivery.delivered_at,
+                        ) >= reservation_cutoff,
                     ),
+
+                    # These states may represent a send that reached Telegram and must
+                    # remain protected until proof reconciliation resolves it.
+                    func.lower(
+                        SignalDelivery.delivery_state
+                    ).in_((
+                        "sent",
+                        "delivered",
+                        "confirmed",
+                        "updated",
+                        "proof_pending",
+                        "ambiguous",
+                        "reconciled",
+                    )),
                 ),
             )
             .order_by(SignalDelivery.delivered_at.desc())

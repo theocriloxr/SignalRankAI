@@ -161,7 +161,8 @@ _inflight_update_tasks: set[asyncio.Task] = set()
 _webhook_dispatch_queue: asyncio.Queue | None = None
 _webhook_dispatch_workers: list[asyncio.Task] = []
 _webhook_enqueue_started_at: dict[str, float] = {}
-_webhook_dispatch_latency_window_s = deque(maxlen=2000)
+# (recorded_at_monotonic, latency_seconds)
+_webhook_dispatch_latency_samples = deque(maxlen=2000)
 _scheduler_instance: AsyncIOScheduler | None = None
 _lifespan_heartbeat_task: asyncio.Task | None = None
 _monitor_tasks: list[asyncio.Task] = []
@@ -229,12 +230,49 @@ def _emit_slo_alert(kind: str, message: str) -> None:
     logger.warning("[slo] %s", message)
 
 
-def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
+def _record_dispatch_latency(
+    update_id: str,
+    started_at: float | None,
+) -> None:
     if started_at is None:
         return
-    elapsed = max(0.0, time.monotonic() - started_at)
-    _webhook_dispatch_latency_window_s.append(elapsed)
+
+    elapsed = max(
+        0.0,
+        time.monotonic() - started_at,
+    )
+
+    _webhook_dispatch_latency_samples.append(
+        (time.monotonic(), elapsed)
+    )
     webhook_dispatch_latency_seconds.observe(elapsed)
+
+
+def _recent_webhook_dispatch_latencies() -> list[float]:
+    now = time.monotonic()
+    window_seconds = max(
+        60.0,
+        float(
+            os.getenv(
+                "WEBHOOK_DISPATCH_SLO_WINDOW_SECONDS",
+                "900",
+            )
+            or 900
+        ),
+    )
+    cutoff = now - window_seconds
+
+    while (
+        _webhook_dispatch_latency_samples
+        and _webhook_dispatch_latency_samples[0][0] < cutoff
+    ):
+        _webhook_dispatch_latency_samples.popleft()
+
+    return [
+        latency
+        for _recorded_at, latency
+        in _webhook_dispatch_latency_samples
+    ]
 
 
 def _extract_chat_id(payload: dict | None) -> int:
@@ -1637,8 +1675,23 @@ async def lifespan(_: FastAPI):
                         f"webhook queue utilization high: utilization={queue_util:.2f} size={queue_size}",
                     )
 
-                lat_p99 = _percentile(_webhook_dispatch_latency_window_s, 99.0)
-                if lat_p99 is not None and lat_p99 > 5.0:
+                lat_p99 = _percentile(
+                    _recent_webhook_dispatch_latencies(),
+                    99.0,
+                )
+
+                p99_threshold = max(
+                    1.0,
+                    float(
+                        os.getenv(
+                            "WEBHOOK_DISPATCH_P99_SLO_SECONDS",
+                            "5",
+                        )
+                        or 5
+                    ),
+                )
+
+                if lat_p99 is not None and lat_p99 > p99_threshold:
                     _emit_slo_alert(
                         "webhook_dispatch_latency",
                         f"webhook dispatch latency p99 breached: p99_s={lat_p99:.3f}",

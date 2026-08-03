@@ -156,6 +156,48 @@ def _get_providers_for_asset(asset: str) -> List[str]:
         providers = ["twelvedata", "polygon", "yahoo"]
     return [provider for provider in providers if _provider_is_configured(provider)]
 
+def _max_live_quote_source_age_seconds(
+    asset_class: str,
+) -> float:
+    asset_class_l = str(
+        asset_class or ""
+    ).strip().lower()
+
+    defaults = {
+        "crypto": 15.0,
+        "forex": 30.0,
+        "fx": 30.0,
+        "commodity": 60.0,
+        "index": 60.0,
+        "stock": 60.0,
+        "equity": 60.0,
+    }
+
+    default = defaults.get(asset_class_l, 60.0)
+
+    env_suffix = {
+        "forex": "FX",
+        "fx": "FX",
+        "stock": "STOCK",
+        "equity": "STOCK",
+        "commodity": "COMMODITY",
+        "index": "INDEX",
+        "crypto": "CRYPTO",
+    }.get(asset_class_l, "DEFAULT")
+
+    try:
+        return max(
+            1.0,
+            float(
+                os.getenv(
+                    f"LIVE_QUOTE_MAX_SOURCE_AGE_{env_suffix}_SECONDS",
+                    str(default),
+                )
+                or default
+            ),
+        )
+    except (TypeError, ValueError):
+        return default
 
 # ============================================================================
 # Price Fetching Functions
@@ -1249,6 +1291,37 @@ async def get_live_price_result(
                 )
                 continue
 
+            source_age = result.source_age_seconds()
+            maximum_source_age = _max_live_quote_source_age_seconds(
+                result.asset_class
+            )
+
+            if (
+                source_age is None
+                or float(source_age) > float(maximum_source_age)
+            ):
+                try:
+                    _get_breaker(provider).record_failure()
+                except Exception:
+                    pass
+
+                failures.append(
+                    _typed_failure(
+                        symbol,
+                        provider,
+                        "stale_source_timestamp",
+                    )
+                )
+
+                logger.warning(
+                    "[price] provider stale symbol=%s provider=%s "
+                    "source_age_s=%.3f max_age_s=%.3f",
+                    symbol,
+                    provider,
+                    float(source_age or 0.0),
+                    maximum_source_age,
+                )
+                continue
             logger.info(
                 "[price] %s price=%s provider=%s latency_ms=%s source_age_ms=%s request_id=%s",
                 symbol,

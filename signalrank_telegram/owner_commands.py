@@ -1265,21 +1265,30 @@ async def outcome_rebuild_command(update: Update, context: ContextTypes.DEFAULT_
         )
         return
 
-    # Phase 1: canonical Outcome recovery.
-    async with get_session() as session:
+    # Phase 1: canonical outcome recovery.
+    async with get_session(
+        label="owner.outcome_rebuild_projection"
+    ) as session:
         result = await ensure_outcome_projections(
             session,
             queue_notifications=False,
         )
+
         if action == "apply":
             await session.commit()
         else:
             await session.rollback()
 
-    # Phase 2: notification outbox recovery in an independent transaction.
-    # An outbox failure can no longer erase a repaired Outcome.
-    async with get_session() as session:
-        outbox = await repair_outcome_notification_outbox(session)
+    # Phase 2: notification-outbox recovery.
+    # Failure here cannot roll back canonical Outcome repairs.
+    async with get_session(
+        label="owner.outcome_rebuild_outbox"
+    ) as session:
+        outbox = await repair_outcome_notification_outbox(
+            session,
+            limit=500,
+        )
+
         if action == "apply":
             await session.commit()
         else:

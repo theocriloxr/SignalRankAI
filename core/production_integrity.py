@@ -150,23 +150,73 @@ def evaluate_signal_freshness(
     *,
     timeframe: Any,
     generated_at: datetime | None,
+    expires_at: datetime | None = None,
     delivered_at: datetime | None = None,
     now: datetime | None = None,
     purpose: str = "delivery",
     explicit_age_seconds: float | None = None,
 ) -> FreshnessDecision:
     maximum = max_signal_age_seconds(timeframe, purpose=purpose)
+
+    # Use the historical delivery time when validating an old delivery.
+    # Otherwise use the supplied `now` or the current UTC time.
+    reference_time = (
+        _as_utc_naive(delivered_at or now)
+        or datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+
+    normalized_expiry = _as_utc_naive(expires_at)
+
     age = explicit_age_seconds
     if age is None:
-        age = signal_age_seconds(generated_at, now=delivered_at or now)
-    if age is None:
-        if _env_bool(f"{str(purpose).upper()}_REQUIRE_GENERATED_AT", True):
-            return FreshnessDecision(False, None, maximum, "generated_at_missing")
-        return FreshnessDecision(True, None, maximum, "generated_at_unavailable_allowed")
-    if float(age) > float(maximum):
-        return FreshnessDecision(False, float(age), maximum, "signal_stale")
-    return FreshnessDecision(True, float(age), maximum, "fresh")
+        age = signal_age_seconds(
+            generated_at,
+            now=reference_time,
+        )
 
+    # An explicit database expiry is authoritative even when the normal
+    # timeframe age threshold has not yet been exceeded.
+    if normalized_expiry is not None and reference_time >= normalized_expiry:
+        return FreshnessDecision(
+            False,
+            float(age) if age is not None else None,
+            maximum,
+            "signal_expired",
+        )
+
+    if age is None:
+        if _env_bool(
+            f"{str(purpose).upper()}_REQUIRE_GENERATED_AT",
+            True,
+        ):
+            return FreshnessDecision(
+                False,
+                None,
+                maximum,
+                "generated_at_missing",
+            )
+
+        return FreshnessDecision(
+            True,
+            None,
+            maximum,
+            "generated_at_unavailable_allowed",
+        )
+
+    if float(age) > float(maximum):
+        return FreshnessDecision(
+            False,
+            float(age),
+            maximum,
+            "signal_stale",
+        )
+
+    return FreshnessDecision(
+        True,
+        float(age),
+        maximum,
+        "fresh",
+    )
 
 def _entry_band(entry: Any) -> str:
     try:
