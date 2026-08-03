@@ -239,4 +239,4 @@ def generate_paystack_link(
         return auth_url
     except Exception as exc:
         logging.warning(f"Paystack init exception: {exc}")
-        return No
+        return None
