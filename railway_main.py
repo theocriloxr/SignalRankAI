@@ -2944,6 +2944,35 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
     except Exception:
         checks["resource_guard"] = {"ok": True, "detail": "not_loaded"}
 
+    # Environment-parity capability report: typed, redacted decisions shared
+    # with the bot and worker startups. Never includes secret material.
+    try:
+        from core.capability_resolver import resolve_capabilities
+
+        capability_report = resolve_capabilities().as_dict()
+        checks["capability"] = {
+            "ok": capability_report.get("readiness") == "pass",
+            "detail": capability_report.get("readiness") or "pass",
+            **capability_report,
+        }
+        logger.info(
+            "[capability] resolved environment=%s role=%s payments_mode=%s "
+            "payments_enabled=%s recovery=%s telegram_mode=%s trading=%s "
+            "payout=%s readiness=%s reasons=%s",
+            capability_report.get("environment"),
+            capability_report.get("service_role"),
+            capability_report.get("payments_mode"),
+            capability_report.get("payments_enabled"),
+            capability_report.get("paystack_recovery_enabled"),
+            capability_report.get("telegram_mode"),
+            capability_report.get("trading_mode"),
+            capability_report.get("payout_mode"),
+            capability_report.get("readiness"),
+            list(capability_report.get("safe_reasons") or []),
+        )
+    except Exception as _cap_err:
+        logger.debug("[capability] startup diagnostic unavailable: %s", _cap_err)
+
     ready = all(
         bool(value.get("ok"))
         for value in checks.values()

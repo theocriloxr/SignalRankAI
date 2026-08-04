@@ -157,6 +157,22 @@ def test_provider_coverage_gate_is_nonblocking_in_staging_and_fail_closed_in_pro
     monkeypatch.delenv("METAAPI_ACCOUNT_ID", raising=False)
     monkeypatch.setattr(live_price, "_get_providers_for_asset", lambda symbol: ["yahoo"])
 
+    # Deterministic discovery state: the readiness gate must fail closed on an
+    # unverified discovery snapshot regardless of any local DB state (the shared
+    # local database may already hold a populated snapshot, which previously made
+    # this branch environment-dependent).
+    import data.pair_discovery as pair_discovery
+    monkeypatch.setattr(
+        pair_discovery,
+        "get_asset_discovery_snapshot",
+        lambda force_refresh=False: {
+            "total": 0,
+            "last_refresh_age_seconds": 10**12,
+            "untrusted_total": 1,
+            "providers": {"provider_backed": False},
+        },
+    )
+
     staging = asyncio.run(helper(production=False))
     production = asyncio.run(helper(production=True))
     assert staging["ok"] is True
@@ -167,7 +183,6 @@ def test_provider_coverage_gate_is_nonblocking_in_staging_and_fail_closed_in_pro
 
     monkeypatch.setenv("META_API_MARKET_DATA_ACCOUNT_ID", "dedicated-account")
     monkeypatch.setattr(live_price, "_get_providers_for_asset", lambda symbol: ["metaapi", "yahoo"])
-    import data.pair_discovery as pair_discovery
     monkeypatch.setattr(
         pair_discovery,
         "get_asset_discovery_snapshot",

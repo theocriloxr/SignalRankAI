@@ -2060,3 +2060,42 @@ async def kill_switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"enabled={bool(getattr(status, 'enabled', True))}\n"
         f"reason={str(getattr(status, 'reason', '') or 'none')}"
     )
+
+
+async def capabilities_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner/admin environment-parity capability report.
+
+    Returns the same redacted capability decisions the services log at startup:
+    environment, service role, payments mode, telegram mode, trading and payout
+    modes, migration head, readiness and safe reasons. Never exposes secrets.
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_admin_or_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Admin or owner access required.")
+        return
+
+    try:
+        from core.capability_resolver import migration_revisions, resolve_capabilities
+
+        capability = resolve_capabilities()
+        expected_head, _current = migration_revisions()
+        lines = [
+            "🧭 Capability report",
+            f"environment={capability.environment}",
+            f"service_role={capability.service_role}",
+            f"payments_mode={capability.payments_mode} enabled={capability.payments_enabled}",
+            f"payments_public_enabled={capability.payments_public_enabled}",
+            f"paystack_recovery_enabled={capability.paystack_recovery_enabled}",
+            f"telegram_mode={capability.telegram_mode}",
+            f"trading_mode={capability.trading_mode}",
+            f"payout_mode={capability.payout_mode}",
+            f"migration_expected={expected_head or 'unavailable'}",
+            f"readiness={capability.readiness}",
+        ]
+        if capability.safe_reasons:
+            lines.append("safe_reasons=" + ",".join(capability.safe_reasons))
+        await update.message.reply_text("\n".join(lines))
+    except Exception as exc:
+        _owner_logger.warning("[capabilities] command failed: %s", exc)
+        await update.message.reply_text("⚠️ Capability report is temporarily unavailable.")

@@ -973,6 +973,7 @@ from .owner_commands import (
     system_health_command,
     release_status_command,
     kill_switch_command,
+    capabilities_command,
 )
 
 from .extended_commands import (
@@ -6387,6 +6388,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("system_health", _audit_handler("system_health", system_health_command)))
     application.add_handler(CommandHandler("release_status", _audit_handler("release_status", release_status_command)))
     application.add_handler(CommandHandler("kill_switch", _audit_handler("kill_switch", kill_switch_command)))
+    application.add_handler(CommandHandler("capabilities", _audit_handler("capabilities", capabilities_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 

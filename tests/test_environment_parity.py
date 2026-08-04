@@ -200,3 +200,48 @@ def test_parity_health_script_runs() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert '"environment"' in result.stdout
+
+
+def test_capabilities_owner_command_renders_redacted_report(monkeypatch) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from signalrank_telegram.owner_commands import capabilities_command
+
+    async def _run() -> str:
+        class _Message:
+            def __init__(self):
+                self.text = ""
+
+            async def reply_text(self, text):
+                self.text = text
+                return None
+
+        message = _Message()
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=1),
+            message=message,
+        )
+        context = SimpleNamespace()
+
+        import signalrank_telegram.owner_commands as oc
+
+        async def _is_admin_or_owner(user_id: int) -> bool:
+            return True
+
+        # monkeypatch restores the real guard after the test (no pollution).
+        monkeypatch.setattr(oc, "_is_admin_or_owner", _is_admin_or_owner)
+        await capabilities_command(update, context)
+        return message.text
+
+    text = asyncio.run(_run())
+    assert "Capability report" in text
+    assert "environment=" in text
+    assert "payments_mode=" in text
+    assert "telegram_mode=" in text
+    assert "trading_mode=" in text
+    assert "migration_expected=" in text
+    # No secrets may leak into the rendered report.
+    assert "sk_" not in text
+    assert "pk_" not in text
+    assert "TOKEN" not in text

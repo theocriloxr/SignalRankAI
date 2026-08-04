@@ -110,6 +110,31 @@ class Worker:
         return task
 
     async def run(self) -> None:
+        # Environment-parity startup diagnostic: typed, redacted capability
+        # decisions shared with the front door and readiness checks. Never logs
+        # secrets (bot tokens, Paystack keys, DB credentials).
+        try:
+            from core.capability_resolver import resolve_capabilities
+
+            capability = resolve_capabilities().as_dict()
+            logger.info(
+                "[capability] resolved environment=%s role=%s payments_mode=%s "
+                "payments_enabled=%s recovery=%s telegram_mode=%s trading=%s "
+                "payout=%s readiness=%s reasons=%s",
+                capability.get("environment"),
+                capability.get("service_role"),
+                capability.get("payments_mode"),
+                capability.get("payments_enabled"),
+                capability.get("paystack_recovery_enabled"),
+                capability.get("telegram_mode"),
+                capability.get("trading_mode"),
+                capability.get("payout_mode"),
+                capability.get("readiness"),
+                list(capability.get("safe_reasons") or []),
+            )
+        except Exception as _cap_err:
+            logger.debug("[capability] startup diagnostic unavailable: %s", _cap_err)
+
         heartbeat_interval_s = max(60, int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "300") or 300))
         managed_tasks: dict[str, dict[str, object]] = {}
         running_on_railway = _is_railway_runtime()
