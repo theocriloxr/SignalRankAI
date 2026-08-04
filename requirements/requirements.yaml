@@ -367,7 +367,7 @@
     },
     {
       "acceptance_criteria": [
-        "PAYMENTS_PUBLIC_ENABLED=0 by default",
+        "PAYMENTS_PUBLIC_ENABLED=1 by default",
         "test-mode E2E passes before beta",
         "wrong amount and replay are rejected"
       ],

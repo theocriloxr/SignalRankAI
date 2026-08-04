@@ -2629,7 +2629,7 @@ def _production_cutover_check() -> dict[str, object]:
     ):
         violations.append("missing_or_placeholder:META_API_TOKEN")
 
-    if _env_bool("PAYMENTS_ENABLED", False) or _env_bool("PAYMENTS_PUBLIC_ENABLED", False):
+    if _env_bool("PAYMENTS_ENABLED", False) or _env_bool("PAYMENTS_PUBLIC_ENABLED", True):
         paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
         paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
         if _is_unconfigured_runtime_value(paystack_secret) or not paystack_secret.startswith("sk_live_"):

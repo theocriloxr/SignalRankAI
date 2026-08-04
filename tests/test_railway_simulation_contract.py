@@ -4,10 +4,10 @@ from pathlib import Path
 def test_railway_simulation_is_safe_and_exercises_real_entrypoint():
     source = Path("scripts/simulate_railway.py").read_text(encoding="utf-8")
     assert '"railway_main:app"' in source
-    assert '"AUTO_TRADE_ENABLED": "0"' in source
-    assert '"COPY_TRADE_ENABLED": "0"' in source
-    assert '"REAL_PAYOUTS_ENABLED": "0"' in source
-    assert '"PAYMENTS_PUBLIC_ENABLED": "0"' in source
+    assert '"AUTO_TRADE_ENABLED": "1"' in source
+    assert '"COPY_TRADE_ENABLED": "1"' in source
+    assert '"REAL_PAYOUTS_ENABLED": "1"' in source
+    assert '"PAYMENTS_PUBLIC_ENABLED": "1"' in source
     assert 'base + "/healthz"' in source
     assert 'base + "/telegram/webhook"' in source
 

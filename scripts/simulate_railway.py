@@ -95,7 +95,7 @@ def main() -> int:
             "AUTO_TRADE_ENABLED": "0",
             "COPY_TRADE_ENABLED": "0",
             "REAL_PAYOUTS_ENABLED": "0",
-            "PAYMENTS_PUBLIC_ENABLED": "0",
+            "PAYMENTS_PUBLIC_ENABLED": "1",
         }
     )
 

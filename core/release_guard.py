@@ -181,7 +181,7 @@ def evaluate_release(
             "payments_configured",
             not flags.payments_enabled
             or _flag("PAYMENTS_PUBLIC_TEST_MODE", False)
-            or not _flag("PAYMENTS_PUBLIC_ENABLED", False)
+            or not _flag("PAYMENTS_PUBLIC_ENABLED", True)
             or (str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().startswith("sk_live_")
                 and str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().startswith("pk_live_")),
             "public payments require a live Paystack key pair",

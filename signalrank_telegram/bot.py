@@ -3,6 +3,9 @@ import threading
 from core.redis_state import state, mark_signal_delivered_sync
 from core.telemetry import observe_signal_dispatch
 from apscheduler.schedulers.background import BackgroundScheduler
+from .commands import subscription_checkout_callback
+from telegram.ext import CallbackQueryHandler
+
 
 
 async def _handle_unknown_command(update, context):
@@ -6333,7 +6336,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("kill_switch", _audit_handler("kill_switch", kill_switch_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
-
+    application.add_handler(CallbackQueryHandler(subscription_checkout_callback,pattern=(r"^subscribe:"r"(premium_monthly|premium_quarterly|"r"premium_yearly|vip_monthly)$"),),group=0,)
     # MT5 commands (Premium+)
     from .commands import (
         mt5_link_command, mt5_status_command,
@@ -6705,6 +6708,9 @@ def run_bot() -> None:
         query = update.callback_query
         await query.answer("Saving monitoring choice...", show_alert=False)
         data = str(query.data or "")
+        if data.startswith("subscribe:"):
+    # The payment handler owns acknowledgement.
+            return
         parts = data.split("_", 3)
         if len(parts) != 4:
             await query.answer("Invalid monitoring action.", show_alert=True)

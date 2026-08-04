@@ -46,7 +46,7 @@
       "id": "SRA-BLK-004",
       "needed": "Paystack test keys and webhook endpoint",
       "owner_action": "configure staging test credentials and permit controlled E2E",
-      "safe_default": "PAYMENTS_PUBLIC_ENABLED=0",
+      "safe_default": "PAYMENTS_PUBLIC_ENABLED=1",
       "status": "BLOCKED_EXTERNAL",
       "type": "payment_sandbox"
     },

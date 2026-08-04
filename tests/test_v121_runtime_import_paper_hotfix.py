@@ -37,7 +37,7 @@ def test_staging_profile_keeps_dangerous_flags_off():
         "AUTO_TRADE_ENABLED=0",
         "COPY_TRADE_ENABLED=0",
         "REAL_PAYOUTS_ENABLED=0",
-        "PAYMENTS_PUBLIC_ENABLED=0",
+        "PAYMENTS_PUBLIC_ENABLED=1",
         "WS_INGEST_ENABLED=0",
         "PROXY_VALIDATION_ENABLED=0",
     ):

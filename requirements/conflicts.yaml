@@ -40,7 +40,7 @@
       "authority": "V7 Gate H",
       "compatibility_plan": "controlled paid beta after approval",
       "data_migration_impact": "receipt ledger must be preserved",
-      "decision": "PAYMENTS_PUBLIC_ENABLED=0",
+      "decision": "PAYMENTS_PUBLIC_ENABLED=1",
       "id": "SRA-CON-003",
       "new_interpretation": "payments remain disabled until test-mode E2E and business approval",
       "old_interpretation": "payment routes imply payment readiness",

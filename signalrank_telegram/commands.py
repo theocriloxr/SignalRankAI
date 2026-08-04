@@ -28,6 +28,11 @@ from .mt5_commands import mt5_link_command, mt5_status_command
 from .utils import tier_rank, _effective_tier, _public_guard
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
+import logging
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+
+from paystack.paystack import generate_paystack_link
 
 TIER_RANKS: dict[str, int] = {
 	tier: canonical_tier_rank(tier)
@@ -35,6 +40,59 @@ TIER_RANKS: dict[str, int] = {
 }
 FREE_PROOF_FEED_LIMIT = 5
 
+_PAYMENT_PLANS = {
+    "premium_monthly": {
+        "tier": "PREMIUM",
+        "duration": "MONTHLY",
+        "duration_days": 30,
+        "price_env": "PREMIUM_MONTHLY_PRICE_NGN",
+        "default_price": 24000,
+        "label": "Premium Monthly",
+    },
+    "premium_quarterly": {
+        "tier": "PREMIUM",
+        "duration": "QUARTERLY",
+        "duration_days": 90,
+        "price_env": "PREMIUM_QUARTERLY_PRICE_NGN",
+        "default_price": 56000,
+        "label": "Premium Quarterly",
+    },
+    "premium_yearly": {
+        "tier": "PREMIUM",
+        "duration": "YEARLY",
+        "duration_days": 365,
+        "price_env": "PREMIUM_YEARLY_PRICE_NGN",
+        "default_price": 192000,
+        "label": "Premium Yearly",
+    },
+    "vip_monthly": {
+        "tier": "VIP",
+        "duration": "MONTHLY",
+        "duration_days": 30,
+        "price_env": "VIP_MONTHLY_PRICE_NGN",
+        "default_price": 40000,
+        "label": "VIP Monthly",
+    },
+}
+
+def _is_valid_paystack_checkout_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+
+    hostname = str(parsed.hostname or "").lower()
+
+    return (
+        parsed.scheme == "https"
+        and (
+            hostname == "paystack.com"
+            or hostname.endswith(".paystack.com")
+        )
+    )
 
 def _railway_env_hint(feature: str, missing: list[str]) -> str:
 	missing_list = ", ".join(missing)
@@ -250,6 +308,106 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 	except Exception:
 		return None
 
+async def subscription_checkout_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+
+    data = str(query.data or "")
+    user_id = int(query.from_user.id)
+
+    if not data.startswith("subscribe:"):
+        return
+
+    plan_code = data.split(":", 1)[1].strip()
+    plan = _PAYMENT_PLANS.get(plan_code)
+
+    if plan is None:
+        await query.answer(
+            "This subscription plan is invalid.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer("Preparing secure checkout…")
+
+    price_ngn = int(
+        os.getenv(
+            plan["price_env"],
+            str(plan["default_price"]),
+        )
+    )
+
+    if price_ngn <= 0:
+        await query.message.reply_text(
+            "This plan is currently unavailable."
+        )
+        return
+
+    logging.info(
+        "[payment_callback] initializing user=%s plan=%s amount_ngn=%s",
+        user_id,
+        plan_code,
+        price_ngn,
+    )
+
+    try:
+        checkout_url = await asyncio.to_thread(
+            generate_paystack_link,
+            user_id=user_id,
+            price=price_ngn,
+            tier=plan["tier"],
+            duration=plan["duration"],
+            duration_days=plan["duration_days"],
+            plan_name=plan["label"],
+            plan_code=plan_code,
+        )
+    except Exception:
+        logging.exception(
+            "[payment_callback] initialization failed "
+            "user=%s plan=%s",
+            user_id,
+            plan_code,
+        )
+        await query.message.reply_text(
+            "Checkout could not be created. Please try again shortly."
+        )
+        return
+
+    if not _is_valid_paystack_checkout_url(checkout_url):
+        logging.warning(
+            "[payment_callback] unavailable user=%s plan=%s",
+            user_id,
+            plan_code,
+        )
+        await query.message.reply_text(
+            "Checkout is temporarily unavailable. "
+            "Please contact @theocrilox."
+        )
+        return
+
+    await query.message.reply_text(
+        f"Your secure {plan['label']} checkout is ready:",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "💳 Continue to Paystack",
+                        url=checkout_url,
+                    )
+                ]
+            ]
+        ),
+    )
+
+    logging.info(
+        "[payment_callback] checkout ready user=%s plan=%s",
+        user_id,
+        plan_code,
+    )
 
 async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 	vip_used = 0
@@ -286,6 +444,48 @@ def is_valid_paystack_checkout_url(url: str | None) -> bool:
 	parsed = urlparse(str(url))
 	return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
+def _build_plan_keyboard(*, vip_available: bool = True) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                "💎 Premium Monthly — ₦24,000",
+                callback_data="subscribe:premium_monthly",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "💎 Premium Quarterly — ₦56,000",
+                callback_data="subscribe:premium_quarterly",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "💎 Premium Yearly — ₦192,000",
+                callback_data="subscribe:premium_yearly",
+            )
+        ],
+    ]
+
+    if vip_available:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "👑 VIP Monthly — ₦40,000",
+                    callback_data="subscribe:vip_monthly",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "🆘 Payment Support",
+                url="https://t.me/theocrilox",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
 
 async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
 	try:
