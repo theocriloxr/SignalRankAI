@@ -162,14 +162,58 @@ def outcome_status_for_lifecycle(value: SignalLifecycle | str | None) -> str | N
 _OUTCOME_PROGRESS = {
     "": 0,
     "pending": 0,
-    "tp1": 1,
-    "tp2": 2,
-    "tp3": 3,
-    "tp": 3,
+    "entry": 1,
+    "entered": 1,
+    "active": 1,
+    "watching": 1,
+    "tp1": 2,
+    "tp2": 3,
+    "tp3": 4,
+    "tp": 4,
+    "sl": 4,
+    "stop": 4,
+    "stopped": 4,
+    "partial_win": 4,
+    "partial_win_be": 4,
+    "breakeven": 4,
+    "be": 4,
+    "time_stop": 4,
+    "missed_entry": 4,
+    "missed": 4,
+    "expired": 4,
+    "cancel": 4,
+    "cancelled": 4,
+    "invalid": 4,
+    "invalidated": 4,
 }
+
+# Explicit transition table. Terminal outcomes (and their aliases) only
+# transition to themselves; monotonic TP milestones may progress forward.
+# `tp1 -> stop` is allowed by the public plan (residual stop after partial
+# close); regressions such as `stop -> pending` and `tp3 -> tp1` are blocked.
 _TERMINAL_OUTCOMES = frozenset(
-    {"tp", "tp3", "sl", "partial_win", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid", "invalidated"}
+    {
+        "tp", "tp3", "sl", "stop", "stopped", "partial_win", "partial_win_be",
+        "breakeven", "be", "time_stop", "missed_entry", "missed", "expired",
+        "cancel", "cancelled", "invalid", "invalidated",
+    }
 )
+
+# Non-terminal progressive milestones that may advance forward.
+_PROGRESSIVE_OUTCOMES = frozenset({"entry", "entered", "active", "watching", "tp1", "tp2"})
+
+# Transitions explicitly permitted from each non-terminal progressive state.
+# Anything not listed is rejected (regression or impossible replay).
+_ALLOWED_OUTCOME_TARGETS: dict[str, frozenset[str]] = {
+    "": frozenset({"pending", "entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid"}),
+    "pending": frozenset({"pending", "entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid"}),
+    "entry": frozenset({"entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "expired"}),
+    "entered": frozenset({"entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "expired"}),
+    "active": frozenset({"entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "expired"}),
+    "watching": frozenset({"entry", "entered", "active", "watching", "tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win_be", "time_stop", "expired"}),
+    "tp1": frozenset({"tp1", "tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win", "partial_win_be", "breakeven", "be", "time_stop", "expired"}),
+    "tp2": frozenset({"tp2", "tp3", "tp", "sl", "stop", "stopped", "partial_win", "partial_win_be", "breakeven", "be", "time_stop", "expired"}),
+}
 
 
 def is_terminal_outcome(value: str | None) -> bool:
@@ -177,7 +221,7 @@ def is_terminal_outcome(value: str | None) -> bool:
 
 
 def outcome_transition_allowed(current: str | None, target: str | None) -> bool:
-    """Prevent outcome replay/reordering from downgrading authoritative truth."""
+    """Explicit monotonic transition table for durable outcome truth."""
     current_l = str(current or "").strip().lower()
     target_l = str(target or "").strip().lower()
     if not target_l:
@@ -188,6 +232,10 @@ def outcome_transition_allowed(current: str | None, target: str | None) -> bool:
         return False
     if target_l in _TERMINAL_OUTCOMES:
         return True
+    allowed = _ALLOWED_OUTCOME_TARGETS.get(current_l)
+    if allowed is not None:
+        return target_l in allowed
+    # Unknown non-terminal state: allow only forward progress by rank.
     return _OUTCOME_PROGRESS.get(target_l, 0) >= _OUTCOME_PROGRESS.get(current_l, 0)
 
 

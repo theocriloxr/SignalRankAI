@@ -238,7 +238,7 @@ async def test_admin_pulse_uses_db_evidence_when_global_stats_are_zero(monkeypat
                 return _Result([(3,)])
             if "FROM decision_log" in sql and "GROUP BY" in sql:
                 return _Result([("rejected", 2), ("issued", 1)])
-            if "FROM signal_deliveries" in sql and "delivered_at" in sql:
+            if "FROM signal_deliveries" in sql and "sent_ok IS TRUE" in sql:
                 return _Result([(2,)])
             if "FROM signals" in sql:
                 return _Result([(4,)])

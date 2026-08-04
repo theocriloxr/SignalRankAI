@@ -25,21 +25,24 @@ async def test_redis_stream_timeout_is_an_idle_poll_not_worker_failure() -> None
 
 
 def test_resend_lock_is_stable_and_isolated_by_railway_environment(monkeypatch) -> None:
-    from signalrank_telegram.bot import _resend_advisory_lock
+    # The resend job's cross-replica lease is scoped by project + environment +
+    # job name. The scope must be stable for a given environment and different
+    # between environments so staging and production never contend.
+    from core.job_leases import scheduler_job_scope
 
-    monkeypatch.delenv("RESEND_JOB_LOCK_ID", raising=False)
-    monkeypatch.delenv("RESEND_JOB_LOCK_SCOPE", raising=False)
+    monkeypatch.delenv("RESEND_UNSENT_SIGNALS_LOCK_SCOPE", raising=False)
     monkeypatch.setenv("RAILWAY_PROJECT_ID", "project")
     monkeypatch.setenv("RAILWAY_SERVICE_ID", "service")
-    monkeypatch.setenv("RAILWAY_ENVIRONMENT_ID", "staging")
-    staging_first = _resend_advisory_lock()
-    staging_second = _resend_advisory_lock()
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
+    staging_first = scheduler_job_scope("resend_unsent_signals")
+    staging_second = scheduler_job_scope("resend_unsent_signals")
 
-    monkeypatch.setenv("RAILWAY_ENVIRONMENT_ID", "production")
-    production = _resend_advisory_lock()
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    production = scheduler_job_scope("resend_unsent_signals")
 
     assert staging_first == staging_second
-    assert staging_first[0] != production[0]
+    assert staging_first != production
+    assert "resend_unsent_signals" in staging_first
 
 
 def test_startup_jobs_do_not_ignore_operational_guards() -> None:

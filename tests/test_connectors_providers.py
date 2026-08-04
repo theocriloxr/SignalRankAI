@@ -26,15 +26,22 @@ class TestProviderAdapters(unittest.TestCase):
 
         async def run_test():
             import os
+            prev = os.environ.get("POLYGON_API_KEY")
             os.environ["POLYGON_API_KEY"] = "fake"
-            with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
-                async def wrapper(fn, **k):
-                    return await fn()
-                with patch("utils.httpx_client.retry_async", new=wrapper):
-                    from data.connectors.polygon_adapter import _async_get_candles
-                    out = await _async_get_candles("TESTSYM", "1h")
-                    self.assertIsInstance(out, list)
-                    self.assertGreaterEqual(len(out), 1)
+            try:
+                with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
+                    async def wrapper(fn, **k):
+                        return await fn()
+                    with patch("utils.httpx_client.retry_async", new=wrapper):
+                        from data.connectors.polygon_adapter import _async_get_candles
+                        out = await _async_get_candles("TESTSYM", "1h")
+                        self.assertIsInstance(out, list)
+                        self.assertGreaterEqual(len(out), 1)
+            finally:
+                if prev is None:
+                    os.environ.pop("POLYGON_API_KEY", None)
+                else:
+                    os.environ["POLYGON_API_KEY"] = prev
 
         asyncio.run(run_test())
 
@@ -44,15 +51,22 @@ class TestProviderAdapters(unittest.TestCase):
 
         async def run_test():
             import os
+            prev = os.environ.get("TWELVEDATA_API_KEY")
             os.environ["TWELVEDATA_API_KEY"] = "fake"
-            with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
-                async def wrapper(fn, **k):
-                    return await fn()
-                with patch("utils.httpx_client.retry_async", new=wrapper):
-                    from data.connectors.twelvedata_adapter import _async_get_candles
-                    out = await _async_get_candles("TEST", "1h")
-                    self.assertIsInstance(out, list)
-                    self.assertGreaterEqual(len(out), 1)
+            try:
+                with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
+                    async def wrapper(fn, **k):
+                        return await fn()
+                    with patch("utils.httpx_client.retry_async", new=wrapper):
+                        from data.connectors.twelvedata_adapter import _async_get_candles
+                        out = await _async_get_candles("TEST", "1h")
+                        self.assertIsInstance(out, list)
+                        self.assertGreaterEqual(len(out), 1)
+            finally:
+                if prev is None:
+                    os.environ.pop("TWELVEDATA_API_KEY", None)
+                else:
+                    os.environ["TWELVEDATA_API_KEY"] = prev
 
         asyncio.run(run_test())
 

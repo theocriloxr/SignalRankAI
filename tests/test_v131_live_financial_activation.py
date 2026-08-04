@@ -89,8 +89,8 @@ def _full_env() -> dict[str, str]:
 
 
 def test_version_and_migration_head():
-    assert APP_VERSION == "1.3.6.7"
-    assert RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802"
+    assert APP_VERSION == "1.3.6.9"
+    assert RELEASE_FINGERPRINT == "v1.3.6.9-outcome-delivery-recovery-hotfix-20260803"
     assert audit_versions(ROOT)["heads"] == ["0034_production_integrity"]
 
 

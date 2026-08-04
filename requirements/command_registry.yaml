@@ -10,7 +10,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6099"
+        "signalrank_telegram/bot.py:6143"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -25,7 +25,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6200"
+        "signalrank_telegram/bot.py:6244"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -40,7 +40,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6250"
+        "signalrank_telegram/bot.py:6294"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -55,7 +55,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6252"
+        "signalrank_telegram/bot.py:6296"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -70,7 +70,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6251"
+        "signalrank_telegram/bot.py:6295"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -85,7 +85,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6254"
+        "signalrank_telegram/bot.py:6298"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -100,7 +100,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6249"
+        "signalrank_telegram/bot.py:6293"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -115,7 +115,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6253"
+        "signalrank_telegram/bot.py:6297"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -137,7 +137,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6357"
+        "signalrank_telegram/bot.py:6432"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -152,7 +152,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6359"
+        "signalrank_telegram/bot.py:6434"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -167,7 +167,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6358"
+        "signalrank_telegram/bot.py:6433"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -189,7 +189,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6234"
+        "signalrank_telegram/bot.py:6278"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -211,7 +211,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6139"
+        "signalrank_telegram/bot.py:6183"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -233,7 +233,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6140"
+        "signalrank_telegram/bot.py:6184"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -255,7 +255,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6233"
+        "signalrank_telegram/bot.py:6277"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -277,7 +277,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6232"
+        "signalrank_telegram/bot.py:6276"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -292,7 +292,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6228"
+        "signalrank_telegram/bot.py:6272"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -309,7 +309,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6229"
+        "signalrank_telegram/bot.py:6273"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -331,7 +331,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6231"
+        "signalrank_telegram/bot.py:6275"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -346,7 +346,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6230"
+        "signalrank_telegram/bot.py:6274"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -361,7 +361,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6168"
+        "signalrank_telegram/bot.py:6212"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -376,7 +376,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6197"
+        "signalrank_telegram/bot.py:6241"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -391,7 +391,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6204"
+        "signalrank_telegram/bot.py:6248"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -406,7 +406,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6220"
+        "signalrank_telegram/bot.py:6264"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -421,7 +421,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6195"
+        "signalrank_telegram/bot.py:6239"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -436,7 +436,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6196"
+        "signalrank_telegram/bot.py:6240"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -451,7 +451,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6235"
+        "signalrank_telegram/bot.py:6279"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -466,7 +466,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6125"
+        "signalrank_telegram/bot.py:6169"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -481,7 +481,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6106"
+        "signalrank_telegram/bot.py:6150"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -496,7 +496,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6127"
+        "signalrank_telegram/bot.py:6171"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -511,7 +511,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6126"
+        "signalrank_telegram/bot.py:6170"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -526,7 +526,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6105"
+        "signalrank_telegram/bot.py:6149"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -541,7 +541,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6361"
+        "signalrank_telegram/bot.py:6436"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -556,7 +556,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6273"
+        "signalrank_telegram/bot.py:6317"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -571,7 +571,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6298"
+        "signalrank_telegram/bot.py:6358"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -586,7 +586,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6146"
+        "signalrank_telegram/bot.py:6190"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -609,7 +609,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6148"
+        "signalrank_telegram/bot.py:6192"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -632,7 +632,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6154"
+        "signalrank_telegram/bot.py:6198"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -655,7 +655,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6147"
+        "signalrank_telegram/bot.py:6191"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -678,7 +678,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6153"
+        "signalrank_telegram/bot.py:6197"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -701,7 +701,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6152"
+        "signalrank_telegram/bot.py:6196"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -724,7 +724,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6150"
+        "signalrank_telegram/bot.py:6194"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -747,7 +747,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6149"
+        "signalrank_telegram/bot.py:6193"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -770,7 +770,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6151"
+        "signalrank_telegram/bot.py:6195"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -789,7 +789,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6285"
+        "signalrank_telegram/bot.py:6345"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -804,7 +804,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6123"
+        "signalrank_telegram/bot.py:6167"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -819,7 +819,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6270"
+        "signalrank_telegram/bot.py:6314"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -834,7 +834,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6201"
+        "signalrank_telegram/bot.py:6245"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -849,7 +849,52 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6187"
+        "signalrank_telegram/bot.py:6231"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dead_letter_replay",
+      "canonical_name": "dead_letter_replay",
+      "fallback_handlers": [],
+      "handler": "dead_letter_replay_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6328"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dead_letter_status",
+      "canonical_name": "dead_letter_status",
+      "fallback_handlers": [],
+      "handler": "dead_letter_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6327"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dedup_audit",
+      "canonical_name": "dedup_audit",
+      "fallback_handlers": [],
+      "handler": "dedup_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6322"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -864,7 +909,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6188"
+        "signalrank_telegram/bot.py:6232"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -879,7 +924,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6193"
+        "signalrank_telegram/bot.py:6237"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -896,7 +941,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6265"
+        "signalrank_telegram/bot.py:6309"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -911,7 +956,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6267"
+        "signalrank_telegram/bot.py:6311"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -926,7 +971,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6263"
+        "signalrank_telegram/bot.py:6307"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -941,7 +986,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6264"
+        "signalrank_telegram/bot.py:6308"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -956,7 +1001,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6101"
+        "signalrank_telegram/bot.py:6145"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -971,7 +1016,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6293"
+        "signalrank_telegram/bot.py:6353"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -986,7 +1031,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6178"
+        "signalrank_telegram/bot.py:6222"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1001,7 +1046,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6177"
+        "signalrank_telegram/bot.py:6221"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1016,7 +1061,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6191"
+        "signalrank_telegram/bot.py:6235"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1031,7 +1076,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6294"
+        "signalrank_telegram/bot.py:6354"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1046,7 +1091,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6100"
+        "signalrank_telegram/bot.py:6144"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1061,7 +1106,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6203"
+        "signalrank_telegram/bot.py:6247"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1078,8 +1123,8 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6206",
-        "signalrank_telegram/bot.py:6218"
+        "signalrank_telegram/bot.py:6250",
+        "signalrank_telegram/bot.py:6262"
       ],
       "status": "IMPLEMENTED_WITH_FAIL_CLOSED_FALLBACK",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1094,7 +1139,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6360"
+        "signalrank_telegram/bot.py:6435"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1111,7 +1156,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6266"
+        "signalrank_telegram/bot.py:6310"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1126,7 +1171,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6190"
+        "signalrank_telegram/bot.py:6234"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1141,7 +1186,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6141"
+        "signalrank_telegram/bot.py:6185"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1156,7 +1201,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6143"
+        "signalrank_telegram/bot.py:6187"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1171,7 +1216,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6144"
+        "signalrank_telegram/bot.py:6188"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1186,7 +1231,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6145"
+        "signalrank_telegram/bot.py:6189"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1201,7 +1246,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6142"
+        "signalrank_telegram/bot.py:6186"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1216,7 +1261,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6098"
+        "signalrank_telegram/bot.py:6142"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1231,7 +1276,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6165"
+        "signalrank_telegram/bot.py:6209"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1246,7 +1291,22 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6161"
+        "signalrank_telegram/bot.py:6205"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.kill_switch",
+      "canonical_name": "kill_switch",
+      "fallback_handlers": [],
+      "handler": "kill_switch_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6333"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1261,7 +1321,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6221"
+        "signalrank_telegram/bot.py:6265"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1276,7 +1336,22 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6302"
+        "signalrank_telegram/bot.py:6362"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ledger_audit",
+      "canonical_name": "ledger_audit",
+      "fallback_handlers": [],
+      "handler": "ledger_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6329"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1291,7 +1366,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6172"
+        "signalrank_telegram/bot.py:6216"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1306,7 +1381,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6174"
+        "signalrank_telegram/bot.py:6218"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1321,7 +1396,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6133"
+        "signalrank_telegram/bot.py:6177"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1336,7 +1411,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6169"
+        "signalrank_telegram/bot.py:6213"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1355,7 +1430,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6288"
+        "signalrank_telegram/bot.py:6348"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1374,7 +1449,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6284"
+        "signalrank_telegram/bot.py:6344"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1389,7 +1464,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6289"
+        "signalrank_telegram/bot.py:6349"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1408,7 +1483,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6287"
+        "signalrank_telegram/bot.py:6347"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1423,7 +1498,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6199"
+        "signalrank_telegram/bot.py:6243"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1438,7 +1513,22 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6296"
+        "signalrank_telegram/bot.py:6356"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.notification_audit",
+      "canonical_name": "notification_audit",
+      "fallback_handlers": [],
+      "handler": "notification_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6323"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1453,7 +1543,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6202"
+        "signalrank_telegram/bot.py:6246"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1468,7 +1558,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6194"
+        "signalrank_telegram/bot.py:6238"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1483,7 +1573,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6185"
+        "signalrank_telegram/bot.py:6229"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1498,7 +1588,37 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6160"
+        "signalrank_telegram/bot.py:6204"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.outcome_audit",
+      "canonical_name": "outcome_audit",
+      "fallback_handlers": [],
+      "handler": "outcome_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6321"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.outcome_rebuild",
+      "canonical_name": "outcome_rebuild",
+      "fallback_handlers": [],
+      "handler": "outcome_rebuild_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6320"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1513,7 +1633,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6269"
+        "signalrank_telegram/bot.py:6313"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1528,7 +1648,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6198"
+        "signalrank_telegram/bot.py:6242"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1543,7 +1663,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6268"
+        "signalrank_telegram/bot.py:6312"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1558,7 +1678,22 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6115"
+        "signalrank_telegram/bot.py:6159"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_audit",
+      "canonical_name": "paper_audit",
+      "fallback_handlers": [],
+      "handler": "paper_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6324"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1573,7 +1708,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6107"
+        "signalrank_telegram/bot.py:6151"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1588,7 +1723,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6111"
+        "signalrank_telegram/bot.py:6155"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1603,7 +1738,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6110"
+        "signalrank_telegram/bot.py:6154"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1618,7 +1753,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6109"
+        "signalrank_telegram/bot.py:6153"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1633,7 +1768,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6108"
+        "signalrank_telegram/bot.py:6152"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1648,7 +1783,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6112"
+        "signalrank_telegram/bot.py:6156"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1663,7 +1798,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6117"
+        "signalrank_telegram/bot.py:6161"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1678,7 +1813,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6113"
+        "signalrank_telegram/bot.py:6157"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1693,7 +1828,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6116"
+        "signalrank_telegram/bot.py:6160"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1708,7 +1843,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6114"
+        "signalrank_telegram/bot.py:6158"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1723,7 +1858,22 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6121"
+        "signalrank_telegram/bot.py:6165"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.payment_reconcile",
+      "canonical_name": "payment_reconcile",
+      "fallback_handlers": [],
+      "handler": "payment_reconcile_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6330"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1740,7 +1890,37 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6130"
+        "signalrank_telegram/bot.py:6174"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.performance_audit",
+      "canonical_name": "performance_audit",
+      "fallback_handlers": [],
+      "handler": "performance_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6319"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.performance_rebuild",
+      "canonical_name": "performance_rebuild",
+      "fallback_handlers": [],
+      "handler": "performance_rebuild_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6318"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1757,7 +1937,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6128"
+        "signalrank_telegram/bot.py:6172"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1774,7 +1954,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6181"
+        "signalrank_telegram/bot.py:6225"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1789,7 +1969,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6173"
+        "signalrank_telegram/bot.py:6217"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1804,7 +1984,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6155"
+        "signalrank_telegram/bot.py:6199"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1819,7 +1999,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6131"
+        "signalrank_telegram/bot.py:6175"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1834,7 +2014,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6132"
+        "signalrank_telegram/bot.py:6176"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1849,7 +2029,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6158"
+        "signalrank_telegram/bot.py:6202"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1864,7 +2044,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6129"
+        "signalrank_telegram/bot.py:6173"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1879,7 +2059,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6271"
+        "signalrank_telegram/bot.py:6315"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1894,7 +2074,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6103"
+        "signalrank_telegram/bot.py:6147"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1909,7 +2089,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6272"
+        "signalrank_telegram/bot.py:6316"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1926,7 +2106,37 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6134"
+        "signalrank_telegram/bot.py:6178"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.queue_replay",
+      "canonical_name": "queue_replay",
+      "fallback_handlers": [],
+      "handler": "queue_replay_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6326"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.queue_status",
+      "canonical_name": "queue_status",
+      "fallback_handlers": [],
+      "handler": "queue_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6325"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1941,7 +2151,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6183"
+        "signalrank_telegram/bot.py:6227"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1956,7 +2166,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6118"
+        "signalrank_telegram/bot.py:6162"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1971,7 +2181,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6119"
+        "signalrank_telegram/bot.py:6163"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -1986,7 +2196,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6297"
+        "signalrank_telegram/bot.py:6357"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2001,7 +2211,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6226"
+        "signalrank_telegram/bot.py:6270"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2016,7 +2226,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6227"
+        "signalrank_telegram/bot.py:6271"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2031,7 +2241,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6122"
+        "signalrank_telegram/bot.py:6166"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2048,7 +2258,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6182"
+        "signalrank_telegram/bot.py:6226"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2063,7 +2273,22 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6104"
+        "signalrank_telegram/bot.py:6148"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.release_status",
+      "canonical_name": "release_status",
+      "fallback_handlers": [],
+      "handler": "release_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6332"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2078,7 +2303,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6179"
+        "signalrank_telegram/bot.py:6223"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2093,7 +2318,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6120"
+        "signalrank_telegram/bot.py:6164"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2108,7 +2333,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6225"
+        "signalrank_telegram/bot.py:6269"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2123,7 +2348,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6167"
+        "signalrank_telegram/bot.py:6211"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2138,7 +2363,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6184"
+        "signalrank_telegram/bot.py:6228"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2153,7 +2378,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6290"
+        "signalrank_telegram/bot.py:6350"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2168,7 +2393,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6291"
+        "signalrank_telegram/bot.py:6351"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2183,7 +2408,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6224"
+        "signalrank_telegram/bot.py:6268"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2198,7 +2423,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6292"
+        "signalrank_telegram/bot.py:6352"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2215,7 +2440,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6137"
+        "signalrank_telegram/bot.py:6181"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2230,7 +2455,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6159"
+        "signalrank_telegram/bot.py:6203"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2245,7 +2470,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6189"
+        "signalrank_telegram/bot.py:6233"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2262,7 +2487,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6135"
+        "signalrank_telegram/bot.py:6179"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2277,7 +2502,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6157"
+        "signalrank_telegram/bot.py:6201"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2292,7 +2517,7 @@
       "registration": "runtime_static",
       "role_scope": "VIP",
       "sources": [
-        "signalrank_telegram/bot.py:6166"
+        "signalrank_telegram/bot.py:6210"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2307,7 +2532,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6096"
+        "signalrank_telegram/bot.py:6140"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2322,7 +2547,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6164"
+        "signalrank_telegram/bot.py:6208"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2337,7 +2562,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6097"
+        "signalrank_telegram/bot.py:6141"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2354,7 +2579,7 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6138"
+        "signalrank_telegram/bot.py:6182"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2369,7 +2594,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6102"
+        "signalrank_telegram/bot.py:6146"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2384,7 +2609,22 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6186"
+        "signalrank_telegram/bot.py:6230"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.system_health",
+      "canonical_name": "system_health",
+      "fallback_handlers": [],
+      "handler": "system_health_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6331"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2399,7 +2639,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6124"
+        "signalrank_telegram/bot.py:6168"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2414,7 +2654,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6295"
+        "signalrank_telegram/bot.py:6355"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2429,7 +2669,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6222"
+        "signalrank_telegram/bot.py:6266"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2444,7 +2684,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6223"
+        "signalrank_telegram/bot.py:6267"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2459,7 +2699,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6262"
+        "signalrank_telegram/bot.py:6306"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2474,7 +2714,7 @@
       "registration": "runtime_static",
       "role_scope": "FREE",
       "sources": [
-        "signalrank_telegram/bot.py:6156"
+        "signalrank_telegram/bot.py:6200"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2489,7 +2729,7 @@
       "registration": "runtime_static",
       "role_scope": "OWNER",
       "sources": [
-        "signalrank_telegram/bot.py:6275"
+        "signalrank_telegram/bot.py:6335"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2504,7 +2744,7 @@
       "registration": "runtime_static",
       "role_scope": "ADMIN",
       "sources": [
-        "signalrank_telegram/bot.py:6192"
+        "signalrank_telegram/bot.py:6236"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
@@ -2521,18 +2761,18 @@
       "registration": "runtime_static",
       "role_scope": "PREMIUM",
       "sources": [
-        "signalrank_telegram/bot.py:6136"
+        "signalrank_telegram/bot.py:6180"
       ],
       "status": "IMPLEMENTED",
       "timeout_policy": "bounded_by_audit_handler"
     }
   ],
-  "count": 158,
+  "count": 174,
   "duplicates": [],
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "kind": "command_registry",
-  "registration_count": 159,
+  "registration_count": 175,
   "repository_identity": "resolved_in_release_manifest",
   "schema_version": 1,
   "source": "signalrank_telegram/bot.py",

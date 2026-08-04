@@ -189,20 +189,30 @@ def score_signal(signal):
     if confidence is not None and confidence < confidence_min:
         return 0.0
 
-    # Safely convert and normalize entry, stop, and target fields
+    # Safely convert and normalize entry, stop, and target fields. Missing
+    # stop/target values are NEVER defaulted to entry (that fabricates
+    # Entry == Stop == Target and a fake R:R=0). Geometry is resolved through
+    # the canonical validator; unbuildable geometry is rejected explicitly.
     try:
-        entry = float(signal.get("entry")) if signal.get("entry") is not None else None
-        stop = float(signal.get("stop") or signal.get("stop_loss")) if (signal.get("stop") or signal.get("stop_loss")) is not None else None
-        target_parsed = _extract_target_price(signal)
-        target = float(target_parsed) if target_parsed is not None else entry
+        from engine.trade_geometry import build_trade_geometry, validate_trade_geometry
+
+        geometry = build_trade_geometry(signal)
+        if not geometry.ok:
+            print(
+                f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | "
+                f"Reason: {geometry.reason} | Entry: {signal.get('entry')}, "
+                f"Stop: {signal.get('stop') or signal.get('stop_loss')}"
+            )
+            return 0.0
+        entry = float(geometry.entry)
+        stop = float(geometry.stop)
+        targets = tuple(geometry.targets)
+        target = targets[0] if targets else None
+        rr = float(geometry.rr)
     except Exception:
         entry = None
         stop = None
         target = None
-
-    if entry is not None and stop is not None and target is not None and abs(entry - stop) > 0:
-        rr = abs(target - entry) / abs(entry - stop)
-    else:
         rr = 0.0
 
     rr_component = rr_score(rr)

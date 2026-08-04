@@ -6385,6 +6385,21 @@ def run_bot() -> None:
     except Exception as _cb_ack_err:
         logger.warning("[bot] failed to register callback ack guard: %s", _cb_ack_err)
 
+    # Subscription checkout callbacks (focused, registered before generic callbacks)
+    from signalrank_telegram.payment_handler import subscription_checkout_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_subscribe
+    application.add_handler(
+        _CQH_subscribe(
+            subscription_checkout_callback,
+            pattern=(
+                r"^subscribe:"
+                r"(premium_monthly|premium_quarterly|"
+                r"premium_yearly|vip_monthly)$"
+            ),
+        )
+    )
+    logger.info("[bot] subscription checkout callback registered before generic callbacks")
+
     # Subscription cancellation confirmation callbacks
     from .commands import cancel_confirm_callback, cancel_nevermind_callback
     from telegram.ext import CallbackQueryHandler as _CQH_cancel

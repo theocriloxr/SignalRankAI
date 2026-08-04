@@ -55,6 +55,13 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _set_cooldown(provider: str, seconds: float) -> None:
     try:
         _PROVIDER_COOLDOWN[provider] = time.monotonic() + max(0.0, float(seconds or 0.0))

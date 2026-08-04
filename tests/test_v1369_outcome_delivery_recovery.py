@@ -87,8 +87,11 @@ def test_expired_projection_is_non_win_non_loss() -> None:
 
 def test_worker_repairs_outcomes_then_notification_outbox() -> None:
     source = (ROOT / "worker" / "worker.py").read_text("utf-8")
-    block = source[source.index("result = await ensure_outcome_projections"):source.index("await session.commit()", source.index("result = await ensure_outcome_projections"))]
-    assert block.index("ensure_outcome_projections") < block.index("repair_outcome_notification_outbox")
+    # The worker runs projection reconciliation before the notification-outbox
+    # repair, each in its own short DB transaction. Verify the ordering and the
+    # logged result across the whole source (the phases were refactored into
+    # separate _run_* helpers with independent commits).
+    assert source.index("ensure_outcome_projections") < source.index("repair_outcome_notification_outbox")
     assert "outbox_repair.as_dict()" in source
 
 

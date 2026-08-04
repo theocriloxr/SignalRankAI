@@ -2,8 +2,210 @@
 
 import os
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, Tuple, Optional
+
+logger = logging.getLogger(__name__)
+
+
+async def subscription_checkout_callback(update, context) -> None:
+    """Handle ``subscribe:<plan_code>`` plan-selection callbacks.
+
+    Exactly one Paystack transaction is initialized per tap. The callback is
+    acknowledged immediately, the plan is validated against the server-side
+    catalogue, and every outcome (success or failure) is surfaced as a visible
+    Telegram message — never only via ``query.answer()``.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    query = getattr(update, "callback_query", None)
+    if query is None:
+        return
+    data = str(getattr(query, "data", "") or "")
+    if not data.startswith("subscribe:"):
+        return
+
+    user = getattr(update, "effective_user", None)
+    telegram_user_id = int(user.id) if user is not None else None
+    logger.info(
+        "[payment_callback_received] user=%s data=%s",
+        telegram_user_id,
+        data[:64],
+    )
+
+    plan_code = data.split(":", 1)[1].strip().lower() if ":" in data else ""
+    from payments.plan_catalogue import get_plan
+
+    plan = get_plan(plan_code)
+    if plan is None:
+        try:
+            await query.answer("Unknown plan. Please open /upgrade again.", show_alert=True)
+        except Exception:
+            pass
+        try:
+            if query.message is not None:
+                await query.message.reply_text(
+                    "❌ That plan is no longer available. Please open /upgrade to see current plans."
+                )
+        except Exception:
+            pass
+        return
+    logger.info("[payment_plan_validated] user=%s plan=%s", telegram_user_id, plan.code)
+
+    if telegram_user_id is None:
+        try:
+            await query.answer("Could not identify your Telegram account.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    # Immediate acknowledgement — the bot must answer callbacks quickly.
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+    # VIP seat capacity gate.
+    if plan.tier == "VIP":
+        try:
+            from signalrank_telegram.commands import _get_live_vip_seat_state
+
+            _, _, vip_sold_out = await _get_live_vip_seat_state()
+            if vip_sold_out:
+                text = (
+                    "💎 VIP is currently sold out.\n\n"
+                    "Join the waitlist with /upgrade and we will notify you when a seat opens."
+                )
+                try:
+                    if query.message is not None:
+                        await query.message.reply_text(text)
+                except Exception:
+                    pass
+                return
+        except Exception as exc:
+            logger.debug("[vip_capacity_check_failed] %s", type(exc).__name__)
+
+    # Existing entitlement check — avoid selling what the user already has.
+    try:
+        from db.repository import get_active_subscription
+        from db.session import get_session
+
+        async with get_session(label="paystack.eligibility", timeout_seconds=8.0) as session:
+            existing = await get_active_subscription(
+                session, telegram_user_id=int(telegram_user_id), tier=plan.tier
+            )
+            await session.commit()
+        if existing is not None:
+            expiry = getattr(existing, "expires_at", None)
+            expiry_text = (
+                expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else "active"
+            )
+            text = (
+                f"✅ You already have an active {plan.tier} subscription until {expiry_text}.\n"
+                "No need to pay again — use /status to check your account."
+            )
+            try:
+                if query.message is not None:
+                    await query.message.reply_text(text)
+            except Exception:
+                pass
+            return
+    except Exception as exc:
+        logger.debug("[subscription_eligibility_check_failed] %s", type(exc).__name__)
+
+    # Real saved email when available.
+    email: str | None = None
+    try:
+        from db.session import get_session
+        from db.repository import get_or_create_user
+
+        async with get_session(label="paystack.email_resolve", timeout_seconds=8.0) as session:
+            user_row = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+            email = getattr(user_row, "email", None) or None
+            await session.commit()
+    except Exception:
+        email = None
+
+    from paystack.paystack import initialize_paystack_checkout
+
+    result = await initialize_paystack_checkout(
+        int(telegram_user_id),
+        plan.code,
+        email=email,
+    )
+    if not result.ok:
+        logger.warning(
+            "[paystack_checkout_failed] user=%s plan=%s mode=%s reason=%s",
+            telegram_user_id, plan.code, result.mode, result.reason,
+        )
+        text = (
+            "❌ Checkout could not be started right now.\n\n"
+            "Please try again in a moment, or contact Support: @theocrilox."
+        )
+        try:
+            if query.message is not None:
+                await query.message.reply_text(text)
+        except Exception:
+            pass
+        return
+
+    if not result.authorization_url:
+        logger.error(
+            "[paystack_checkout_failed] missing_url user=%s plan=%s",
+            telegram_user_id, plan.code,
+        )
+        try:
+            if query.message is not None:
+                await query.message.reply_text(
+                    "❌ The payment provider returned an invalid checkout link. "
+                    "Please contact Support: @theocrilox."
+                )
+        except Exception:
+            pass
+        return
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💳 Continue to Paystack", url=result.authorization_url),
+    ]])
+    text = (
+        f"🚀 <b>{plan.label} checkout ready</b>\n\n"
+        f"• Plan: {plan.label}\n"
+        f"• Amount: ₦{plan.price_ngn:,} (NGN)\n"
+        f"• Duration: {plan.duration_days} days\n\n"
+        "Tap <b>Continue to Paystack</b> to complete your payment. "
+        "Your subscription activates automatically once payment is confirmed."
+    )
+    try:
+        if query.message is not None:
+            await query.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        pass
+    logger.info(
+        "[paystack_checkout_initialized] user=%s plan=%s reference=%s mode=%s",
+        telegram_user_id, plan.code, result.reference, result.mode,
+    )
+
+
+async def handle_subscription_callback_fallback(update, context) -> None:
+    """Defensive fallback: subscription callbacks must never 404 silently."""
+    query = getattr(update, "callback_query", None)
+    if query is None:
+        return
+    data = str(getattr(query, "data", "") or "")
+    if not data.startswith("subscribe:"):
+        return
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    try:
+        if query.message is not None:
+            await query.message.reply_text(
+                "This payment button is outdated. Please send /upgrade to get fresh checkout buttons."
+            )
+    except Exception:
+        pass
 
 async def verify_payment_and_upgrade_tier(
     user_id: int,

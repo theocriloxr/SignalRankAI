@@ -1,12 +1,17 @@
 
-import requests
-from payments.models import WEEKLY_PLAN
+import asyncio
 import os
 import hmac
 import hashlib
 import logging
+import uuid
+from dataclasses import dataclass
 from urllib.parse import urlparse
+from typing import Any, Mapping
 
+import httpx
+
+from payments.models import WEEKLY_PLAN
 from config import config
 PAYSTACK_SECRET_KEY: str | None = config.PAYSTACK_SECRET_KEY
 PAYSTACK_WEBHOOK_SECRET: str | None = config.PAYSTACK_WEBHOOK_SECRET
@@ -142,6 +147,171 @@ def verify_webhook_signature(request_body: bytes | str, signature: str | None) -
     return verify_paystack_event_signature(request_body, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
+@dataclass(frozen=True)
+class CheckoutInitializationResult:
+    """Type-safe result of a checkout initialization.
+
+    ``ok=True`` means ``authorization_url`` is a validated Paystack HTTPS
+    checkout URL. A blocked policy or failed init returns ``ok=False`` with a
+    machine-readable ``reason`` — never a sentence disguised as a URL.
+    """
+
+    ok: bool
+    authorization_url: str | None = None
+    reference: str | None = None
+    mode: str = "unknown"
+    reason: str | None = None
+
+
+def _new_reference() -> str:
+    """Server-side reference: never supplied by the browser."""
+    return f"sra-{uuid.uuid4().hex[:24]}"
+
+
+async def initialize_paystack_checkout(
+    telegram_user_id: int,
+    plan_code: str,
+    *,
+    email: str | None = None,
+    extra_count: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> CheckoutInitializationResult:
+    """Initialize exactly one Paystack checkout for a validated plan.
+
+    The plan price is read from the authoritative catalogue (never from the
+    client). A pending checkout row is persisted *before* the Paystack URL is
+    returned so the webhook can later require the stored reference/plan.
+    """
+    from payments.plan_catalogue import get_plan
+    from payments.payment_config import resolve_paystack_configuration
+
+    env = environ if environ is not None else os.environ
+    plan = get_plan(plan_code, env)
+    if plan is None:
+        return CheckoutInitializationResult(False, mode="unknown", reason="unknown_plan_code")
+
+    cfg = resolve_paystack_configuration(env)
+    if not cfg.checkout_policy_allowed:
+        logging.info(
+            "[paystack_checkout_policy] allowed=false mode=%s reason=%s plan=%s user=%s",
+            cfg.key_mode, cfg.checkout_policy_reason, plan.code, telegram_user_id,
+        )
+        return CheckoutInitializationResult(
+            False, mode=cfg.key_mode, reason=cfg.checkout_policy_reason or "checkout_policy_blocked",
+        )
+
+    from payments.paystack_policy import evaluate_paystack_operation
+    policy = evaluate_paystack_operation(
+        telegram_user_id=int(telegram_user_id),
+        amount_ngn=float(plan.price_ngn),
+        environ=env,
+    )
+    if not policy.allowed:
+        logging.warning(
+            "[paystack_checkout_policy] blocked user=%s plan=%s amount=%s mode=%s reason=%s",
+            telegram_user_id, plan.code, plan.price_ngn, policy.mode, policy.reason,
+        )
+        return CheckoutInitializationResult(False, mode=policy.mode, reason=policy.reason)
+
+    secret: str | None = str(env.get("PAYSTACK_SECRET_KEY") or "").strip() or None
+    if not secret:
+        return CheckoutInitializationResult(False, mode=cfg.key_mode, reason="paystack_secret_missing")
+
+    # Amount conversion happens exactly once, here, in kobo.
+    amount_kobo: int = plan.price_kobo()
+    reference: str = _new_reference()
+
+    metadata: dict[str, Any] = {
+        "telegram_user_id": int(telegram_user_id),
+        "plan_code": plan.code,
+        "tier": plan.tier,
+        "duration": plan.duration,
+        "duration_days": int(plan.duration_days),
+        "amount_ngn": int(plan.price_ngn),
+        "paystack_mode": policy.mode,
+        "guarded_staging_live": policy.reason == "guarded_live_staging",
+    }
+    if extra_count:
+        metadata["duration"] = "EXTRA"
+        metadata["extra_count"] = int(extra_count)
+
+    # Persist the pending checkout before exposing the URL to the user. The
+    # webhook requires this stored reference and intended plan for activation.
+    try:
+        from db.pg_features import record_payment_event
+        from db.session import get_session
+        async with get_session(label="paystack.checkout.pending", timeout_seconds=8.0) as session:
+            await record_payment_event(
+                session,
+                telegram_user_id=int(telegram_user_id),
+                paystack_reference=reference,
+                amount_ngn=int(plan.price_ngn),
+                currency="NGN",
+                kind="checkout_pending",
+                tier=str(plan.tier).lower(),
+                duration_days=int(plan.duration_days),
+                plan_code=plan.code,
+                meta={"status": "pending", "mode": policy.mode},
+            )
+            await session.commit()
+        logging.info(
+            "[paystack_checkout_initialize_started] user=%s plan=%s reference=%s mode=%s",
+            telegram_user_id, plan.code, reference, policy.mode,
+        )
+    except Exception as exc:
+        logging.warning(
+            "[paystack_checkout_pending_persist_failed] user=%s plan=%s err=%s",
+            telegram_user_id, plan.code, type(exc).__name__,
+        )
+        return CheckoutInitializationResult(False, mode=policy.mode, reason="pending_checkout_persist_failed")
+
+    resolved_email = str(email or "").strip() or f"user{int(telegram_user_id)}@signalrank.ai"
+    payload: dict[str, Any] = {
+        "email": resolved_email,
+        "amount": int(amount_kobo),
+        "reference": reference,
+        "metadata": metadata,
+    }
+
+    callback_url: str | None = env.get("PAYSTACK_CALLBACK_URL") or env.get("PUBLIC_BASE_URL")
+    if callback_url:
+        payload["callback_url"] = callback_url
+
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(PAYSTACK_INIT_URL, json=payload, headers=headers)
+            data = resp.json() if resp.content else {}
+        if resp.status_code >= 400 or not bool(data.get("status")):
+            logging.warning(
+                "[paystack_checkout_initialize_failed] status=%s user=%s plan=%s reference=%s",
+                resp.status_code, telegram_user_id, plan.code, reference,
+            )
+            return CheckoutInitializationResult(False, reference=reference, mode=policy.mode, reason="paystack_init_failed")
+        auth_url = str(((data.get("data") or {}).get("authorization_url") or "")).strip()
+        if not is_valid_paystack_checkout_url(auth_url):
+            logging.error(
+                "[paystack_checkout_initialize_failed] invalid_url user=%s plan=%s reference=%s",
+                telegram_user_id, plan.code, reference,
+            )
+            return CheckoutInitializationResult(False, reference=reference, mode=policy.mode, reason="invalid_checkout_url")
+        logging.info(
+            "[paystack_checkout_initialize_succeeded] user=%s plan=%s reference=%s mode=%s",
+            telegram_user_id, plan.code, reference, policy.mode,
+        )
+        return CheckoutInitializationResult(True, authorization_url=auth_url, reference=reference, mode=policy.mode)
+    except Exception as exc:
+        logging.warning(
+            "[paystack_checkout_initialize_failed] exception=%s user=%s plan=%s",
+            type(exc).__name__, telegram_user_id, plan.code,
+        )
+        return CheckoutInitializationResult(False, reference=reference, mode=policy.mode, reason="paystack_init_exception")
+
+
 def generate_paystack_link(
     user_id,
     price,
@@ -152,40 +322,48 @@ def generate_paystack_link(
     plan_name=None,
     plan_code=None,
 ):
-    """Create a Paystack checkout session and return a short, working URL.
+    """Legacy synchronous wrapper retained for compatibility.
 
-    Uses Paystack Transaction Initialize API and returns `authorization_url`.
-    Metadata fields are aligned with the FastAPI webhook extractor in web/app.py.
+    Returns a validated Paystack ``authorization_url`` string, or ``None`` on
+    any failure. Never returns an error sentence in place of a URL.
     """
+    code = str(plan_code or "").strip()
+    if not code:
+        # Map legacy tier/duration args onto a plan code when possible.
+        code = f"{str(tier or '').lower()}_{str(duration or '').lower()}".strip("_") or ""
 
-    secret: str | None = os.getenv('PAYSTACK_SECRET_KEY')
+    async def _run() -> CheckoutInitializationResult:
+        if code and code in {"premium_monthly", "premium_quarterly", "premium_yearly", "vip_monthly"}:
+            return await initialize_paystack_checkout(
+                int(user_id), code, extra_count=extra_count,
+            )
+        # Legacy flows: build metadata directly (extra signals / weekly plan).
+        return await _legacy_initialize(user_id, price, tier, duration, duration_days, extra_count, plan_name, code)
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = asyncio.run_coroutine_threadsafe(_run(), loop).result(timeout=30)
+    except RuntimeError:
+        result = asyncio.run(_run())
+    if result.ok:
+        return result.authorization_url
+    return None
+
+
+async def _legacy_initialize(user_id, price, tier, duration, duration_days, extra_count, plan_name, plan_code) -> CheckoutInitializationResult:
+    """Backend for legacy ``generate_paystack_link`` calls (weekly plan / extras)."""
+    from payments.payment_config import resolve_paystack_configuration
+    cfg = resolve_paystack_configuration()
+    secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip() or None
     if not secret:
-        # Fail closed: don't emit fake links.
-        return None
-
+        return CheckoutInitializationResult(False, mode=cfg.key_mode, reason="paystack_secret_missing")
     amount_ngn = int(price)
-    from payments.paystack_policy import evaluate_paystack_operation
-    policy = evaluate_paystack_operation(
-        telegram_user_id=int(user_id),
-        amount_ngn=amount_ngn,
-    )
-    if not policy.allowed:
-        logging.warning(
-            "Paystack checkout blocked user=%s amount_ngn=%s mode=%s reason=%s",
-            user_id, amount_ngn, policy.mode, policy.reason,
-        )
-        return f"Paystack checkout blocked: {policy.reason}."
-    amount_kobo: int = max(100, amount_ngn) * 100
-
-    metadata: dict[str, int] = {
+    reference: str = _new_reference()
+    metadata: dict[str, Any] = {
         "telegram_user_id": int(user_id),
         "amount_ngn": int(amount_ngn),
-        "paystack_mode": policy.mode,
-        "guarded_staging_live": policy.reason == "guarded_live_staging",
+        "paystack_mode": cfg.key_mode,
     }
-    if plan_code:
-        metadata["plan_code"] = str(plan_code)
-
     if plan_name == "Weekly Plan":
         metadata["tier"] = "WEEKLY_PLAN"
         metadata["duration"] = "WEEKLY"
@@ -200,43 +378,32 @@ def generate_paystack_link(
             metadata["duration"] = duration
         if duration_days is not None:
             metadata["duration_days"] = int(duration_days)
-
-    payload = {
+    amount_kobo: int = max(100, amount_ngn) * 100
+    payload: dict[str, Any] = {
         "email": f"user{int(user_id)}@signalrank.ai",
         "amount": int(amount_kobo),
+        "reference": reference,
         "metadata": metadata,
     }
-
-    # Optional: set subscription plan code (Paystack will use it if enabled)
     if plan_code:
         payload["plan"] = str(plan_code)
-
     callback_url: str | None = os.getenv("PAYSTACK_CALLBACK_URL") or os.getenv("PUBLIC_BASE_URL")
     if callback_url:
         payload["callback_url"] = callback_url
-
     headers: dict[str, str] = {
-        'Authorization': f'Bearer {secret}',
-        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
     }
-
     try:
-        resp: requests.Response = requests.post(PAYSTACK_INIT_URL, json=payload, headers=headers, timeout=20)
-        data = resp.json() if resp.content else {}
-        if resp.status_code >= 400 or not bool(data.get('status')):
-            logging.warning(f"Paystack init failed: status={resp.status_code} body={data}")
-            return None
-        auth_url = str(
-            ((data.get("data") or {}).get("authorization_url") or "")
-        ).strip()
-
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(PAYSTACK_INIT_URL, json=payload, headers=headers)
+            data = resp.json() if resp.content else {}
+        if resp.status_code >= 400 or not bool(data.get("status")):
+            return CheckoutInitializationResult(False, reference=reference, mode=cfg.key_mode, reason="paystack_init_failed")
+        auth_url = str(((data.get("data") or {}).get("authorization_url") or "")).strip()
         if not is_valid_paystack_checkout_url(auth_url):
-            logging.error(
-                "Paystack returned invalid checkout URL user=%s",
-                user_id,
-            )
-            return None
-        return auth_url
+            return CheckoutInitializationResult(False, reference=reference, mode=cfg.key_mode, reason="invalid_checkout_url")
+        return CheckoutInitializationResult(True, authorization_url=auth_url, reference=reference, mode=cfg.key_mode)
     except Exception as exc:
-        logging.warning(f"Paystack init exception: {exc}")
-        return None
+        logging.warning("Paystack init exception: %s", type(exc).__name__)
+        return CheckoutInitializationResult(False, reference=reference, mode=cfg.key_mode, reason="paystack_init_exception")

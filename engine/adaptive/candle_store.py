@@ -19,7 +19,32 @@ logger = logging.getLogger(__name__)
 _MAX_QUEUE = max(100, int(os.getenv("ADAPTIVE_CANDLE_QUEUE_MAX", "2000") or 2000))
 _QUEUE: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=_MAX_QUEUE)
 _LAST_SNAPSHOT: dict[tuple[str, str], tuple[int, float]] = {}
+_DROPPED: int = 0
 _LOCK = threading.Lock()
+
+
+def _drop_count() -> int:
+    return int(_DROPPED)
+
+
+def _coalesce_replace(item: dict[str, Any]) -> bool:
+    """Replace an older pending snapshot for the same (asset, timeframe) key.
+
+    Returns True when an existing entry was replaced in place; False when the
+    item must be freshly enqueued. Keeping the queue bounded and newest-first
+    per key prevents unbounded growth from fast producers.
+    """
+    key = (str(item.get("asset") or "").upper(), str(item.get("timeframe") or "").lower())
+    queue_items = list(_QUEUE.queue)
+    for index, existing in enumerate(queue_items):
+        existing_key = (
+            str(existing.get("asset") or "").upper(),
+            str(existing.get("timeframe") or "").lower(),
+        )
+        if existing_key == key:
+            _QUEUE.queue[index] = item
+            return True
+    return False
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -34,6 +59,16 @@ def _capture_db_priority() -> str:
     return value if value in {"interactive", "critical", "background", "analytics"} else "background"
 
 
+def _current_queue_max() -> int:
+    """Read the bounded-queue cap at call time so runtime config changes apply.
+
+    The hard Queue(maxsize) is sized generously at import; the effective bound
+    is enforced on enqueue so operators can tighten or relax pressure without
+    a restart. Keeps the queue bounded under fast producers.
+    """
+    return max(10, int(os.getenv("ADAPTIVE_CANDLE_QUEUE_MAX", str(_MAX_QUEUE)) or _MAX_QUEUE))
+
+
 def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     """Queue only the changed candle suffix without blocking strategy evaluation.
 
@@ -45,6 +80,7 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     """
     if not _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
         return 0
+    global _DROPPED
     queued = 0
     max_per_tf = max(10, min(500, int(os.getenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", "200") or 200)))
     now = time.monotonic()
@@ -91,13 +127,43 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
             "timeframe": key[1],
             "provider": str(tf_data.get("source") or tf_data.get("provider") or "unknown")[:64],
             "candles": rows_to_queue,
+            "_enqueued_at": now,
         }
         try:
-            _QUEUE.put_nowait(payload)
-            queued += 1
+            with _LOCK:
+                if not _coalesce_replace(payload):
+                    if _QUEUE.qsize() >= _current_queue_max():
+                        _DROPPED += 1
+                        try:
+                            state.set_sync("adaptive:candle_capture:backpressure", "1", ex=300)
+                            state.set_sync("adaptive:candle_capture:dropped", str(_DROPPED), ex=3600)
+                        except Exception:
+                            pass
+                        logger.warning(
+                            "[adaptive_candles] queue full; snapshot dropped asset=%s tf=%s dropped_total=%s",
+                            asset, timeframe, _DROPPED,
+                        )
+                        break
+                    try:
+                        _QUEUE.put_nowait(payload)
+                        queued += 1
+                    except queue.Full:
+                        _DROPPED += 1
+                        try:
+                            state.set_sync("adaptive:candle_capture:backpressure", "1", ex=300)
+                            state.set_sync("adaptive:candle_capture:dropped", str(_DROPPED), ex=3600)
+                        except Exception:
+                            pass
+                        logger.warning(
+                            "[adaptive_candles] queue full; snapshot dropped asset=%s tf=%s dropped_total=%s",
+                            asset, timeframe, _DROPPED,
+                        )
+                        break
         except queue.Full:
+            _DROPPED += 1
             try:
                 state.set_sync("adaptive:candle_capture:backpressure", "1", ex=300)
+                state.set_sync("adaptive:candle_capture:dropped", str(_DROPPED), ex=3600)
             except Exception:
                 pass
             logger.warning("[adaptive_candles] queue full; snapshot dropped asset=%s tf=%s", asset, timeframe)
@@ -107,6 +173,22 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
 
 def queue_depth() -> int:
     return int(_QUEUE.qsize())
+
+
+def queue_metrics() -> dict[str, Any]:
+    """Queue depth, oldest-item age and total drop count for observability."""
+    now = time.monotonic()
+    queue_items = list(_QUEUE.queue)
+    ages: list[float] = []
+    for item in queue_items:
+        enqueued_at = float(item.get("_enqueued_at") or now)
+        ages.append(max(0.0, now - enqueued_at))
+    return {
+        "depth": len(queue_items),
+        "max": int(_MAX_QUEUE),
+        "oldest_age_seconds": round(max(ages), 3) if ages else 0.0,
+        "dropped_total": int(_DROPPED),
+    }
 
 
 def _take_batch(max_items: int) -> list[dict[str, Any]]:

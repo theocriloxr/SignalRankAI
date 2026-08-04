@@ -1,5 +1,5 @@
 {
-  "count": 122,
+  "count": 123,
   "flags": [
     {
       "dangerous": false,
@@ -317,6 +317,14 @@
       "dangerous": false,
       "name": "DEPLOYMENT_MUTATION_TESTS_ENABLED",
       "production_example_default": "0",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "DURABLE_EVENT_STREAM_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null

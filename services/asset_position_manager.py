@@ -18,15 +18,24 @@ TERMINAL_OUTCOMES = {
     "sl",
     "loss",
     "stop_loss",
+    "stop",
+    "stopped",
     "invalid",
     "invalidated",
     "expired",
     "time_stop",
     "cancel",
     "cancelled",
+    # Protected/partial exits are terminal: they close the position and must
+    # release the asset lock instead of leaving it unresolved forever.
+    "partial_win",
+    "partial_win_be",
+    "breakeven",
+    "break_even",
+    "be",
 }
 
-PROGRESS_OUTCOMES = {"tp1", "tp2", "partial_tp", "breakeven", "risk_free", "pending"}
+PROGRESS_OUTCOMES = {"tp1", "tp2", "partial_tp", "risk_free", "pending"}
 POSITION_STATES = {
     "NONE",
     "CANDIDATE",
@@ -82,7 +91,7 @@ def _state_from_status(status: str | None) -> str:
     s = _normalize_status(status)
     if s in {"tp3", "tp", "win"}:
         return "TP3"
-    if s in {"sl", "loss", "stop_loss"}:
+    if s in {"sl", "loss", "stop_loss", "stop", "stopped"}:
         return "STOPPED"
     if s in {"expired", "time_stop"}:
         return "EXPIRED"
@@ -90,8 +99,12 @@ def _state_from_status(status: str | None) -> str:
         return "CANCELLED"
     if s == "tp2":
         return "TP2"
-    if s in {"tp1", "partial_tp", "breakeven", "risk_free"}:
+    if s in {"tp1", "partial_tp", "risk_free"}:
         return "TP1"
+    # Protected/partial exits map to STOPPED so the asset lock is released
+    # after the normal cooldown instead of being held as "unresolved".
+    if s in {"partial_win", "partial_win_be", "breakeven", "break_even", "be"}:
+        return "STOPPED"
     return "ACTIVE"
 
 

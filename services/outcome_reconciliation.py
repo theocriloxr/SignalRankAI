@@ -433,22 +433,96 @@ async def ensure_outcome_projections(
     return OutcomeReconciliationResult(examined, created, projected, repaired, unchanged, failed)
 
 
+def build_outbox_repair_query(*, cutoff: datetime, limit: int, after_id: int = 0, after_closed_at=None):
+    """Set-based repair candidate query using NOT EXISTS.
+
+    Excludes outcomes that already have a notification row for the same
+    (outcome_id, outcome_status), permanently suppressed duplicate theses, and
+    signals with no delivered qualifying recipient. Uses a stable keyset cursor
+    (closed_at, id) so bounded batches never re-scan the same rows.
+    """
+    from db.models import OutcomeNotification, SignalDelivery
+
+    # An outcome already has outbox coverage for its current status when any
+    # notification row exists with the same outcome_id and status. Pending rows
+    # are also coverage: duplicates are invalid and must not be re-created.
+    existing_notification = (
+        select(OutcomeNotification.id)
+        .where(
+            OutcomeNotification.outcome_id == Outcome.id,
+            OutcomeNotification.outcome_status == func.lower(func.coalesce(Outcome.status, "")),
+        )
+        .limit(1)
+    )
+
+    # Signals with zero proof-backed delivery rows cannot have recipients.
+    has_delivery_recipient = (
+        select(SignalDelivery.id)
+        .where(
+            SignalDelivery.signal_id == Outcome.signal_id,
+            SignalDelivery.sent_ok.is_(True),
+        )
+        .limit(1)
+    )
+
+    cursor = [Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff]
+    if after_id > 0:
+        if after_closed_at is not None:
+            cursor.append(
+                or_(
+                    Outcome.closed_at > after_closed_at,
+                    and_(Outcome.closed_at == after_closed_at, Outcome.id > after_id),
+                )
+            )
+        else:
+            cursor.append(Outcome.id > after_id)
+
+    return (
+        select(Outcome)
+        .where(
+            *cursor,
+            ~existing_notification.exists(),
+            has_delivery_recipient.exists(),
+        )
+        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
+        .limit(max(1, min(10000, int(limit))))
+    )
+
+
 async def repair_outcome_notification_outbox(
     session,
     *,
     days: int | None = None,
     limit: int | None = None,
 ) -> OutcomeOutboxRepairResult:
-    """Idempotently recreate missing recipient outbox rows for closed outcomes."""
+    """Idempotently recreate missing recipient outbox rows for closed outcomes.
+
+    The candidate query is set-based (NOT EXISTS + keyset cursor): outcomes that
+    already have coverage for their current status, or whose signals have no
+    delivered recipients, are excluded in SQL instead of being scanned row by
+    row and discovered as already-processed.
+    """
     days = max(1, int(days or os.getenv("OUTCOME_OUTBOX_REPAIR_DAYS", "30") or 30))
     limit = max(1, min(10000, int(limit or os.getenv("OUTCOME_OUTBOX_REPAIR_LIMIT", "2000") or 2000)))
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-    outcomes = list((await session.execute(
-        select(Outcome)
-        .where(Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff)
-        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
-        .limit(limit)
-    )).scalars().all())
+    outcomes: list[Outcome] = []
+    after_id = 0
+    after_closed_at = None
+    while len(outcomes) < limit:
+        page = list((await session.execute(
+            build_outbox_repair_query(
+                cutoff=cutoff,
+                limit=min(limit - len(outcomes), 500),
+                after_id=after_id,
+                after_closed_at=after_closed_at,
+            )
+        )).scalars().all())
+        if not page:
+            break
+        outcomes.extend(page)
+        last = page[-1]
+        after_id = int(getattr(last, "id") or 0)
+        after_closed_at = getattr(last, "closed_at", None)
     queued = failed = 0
     
     for outcome in outcomes:

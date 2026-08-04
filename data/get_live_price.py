@@ -12,7 +12,7 @@ import os
 import logging
 import asyncio
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Iterable
 from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timezone
@@ -1341,6 +1341,60 @@ async def get_live_price_result(
     reasons = ",".join(f"{item.provider}:{item.reason}" for item in failures[-5:]) or "no_provider_attempted"
     logger.warning("[price] All providers failed for %s reasons=%s", symbol, reasons)
     return LivePriceFailure(symbol, "all", f"all_providers_failed:{reasons}")
+
+
+def production_asset_allowlist() -> Optional[frozenset[str]]:
+    """Return the configured production asset allowlist, or None when absent.
+
+    This is a safe temporary deployment control (``PRODUCTION_ASSET_ALLOWLIST``
+    as a comma-separated uppercase symbol list). When present, the scan and
+    delivery universe is filtered to it. It is intentionally NOT a permanent
+    product policy — an empty/missing value keeps current behaviour.
+    """
+    raw = str(os.getenv("PRODUCTION_ASSET_ALLOWLIST", "") or "").strip()
+    if not raw:
+        return None
+    tokens = {
+        str(item).strip().upper()
+        for item in raw.replace(";", ",").split(",")
+        if str(item).strip()
+    }
+    if not tokens:
+        return None
+    return frozenset(tokens)
+
+
+def asset_allowlist_exclusion_reason(symbol: str) -> Optional[str]:
+    """Return the exclusion reason for an asset when an allowlist is active."""
+    allowlist = production_asset_allowlist()
+    if allowlist is None:
+        return None
+    canonical = str(symbol or "").upper().strip()
+    if not canonical:
+        return "asset_not_in_production_allowlist"
+    if canonical not in allowlist:
+        return f"asset_not_in_production_allowlist:{canonical}"
+    return None
+
+
+def filter_scan_universe_to_allowlist(assets: Iterable[str]) -> list[str]:
+    """Filter an iterable of asset symbols to the production allowlist.
+
+    Returns (included, excluded) as a single list of included symbols; the
+    per-asset exclusion reasons are available via ``asset_allowlist_exclusion_reason``.
+    """
+    allowlist = production_asset_allowlist()
+    out: list[str] = []
+    seen: set[str] = set()
+    for asset in assets:
+        canonical = str(asset or "").upper().strip()
+        if not canonical or canonical in seen:
+            continue
+        if allowlist is not None and canonical not in allowlist:
+            continue
+        seen.add(canonical)
+        out.append(canonical)
+    return out
 
 
 async def get_live_price_quote(

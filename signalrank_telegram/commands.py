@@ -288,77 +288,54 @@ def is_valid_paystack_checkout_url(url: str | None) -> bool:
 
 
 async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
+	"""Deterministic plan-selection keyboard.
+
+	Buttons carry internal ``subscribe:<plan_code>`` callback data. No Paystack
+	transaction is initialized while rendering the menu — checkout starts only
+	when a plan button is actually tapped.
+	"""
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		from paystack.paystack import generate_paystack_link
+		from payments.plan_catalogue import build_plan_catalogue, PlanCatalogueError
 
-		def _checkout_button(label: str, *, price: int, tier: str, duration: str, duration_days: int) -> InlineKeyboardButton:
-			link = generate_paystack_link(
-				user_id=user_id,
-				price=price,
-				tier=tier,
-				duration=duration,
-				duration_days=duration_days,
-			)
-			if is_valid_paystack_checkout_url(link):
-				return InlineKeyboardButton(label, url=link)
-			return InlineKeyboardButton(label, callback_data="payment_unavailable")
+		try:
+			plans = build_plan_catalogue()
+		except PlanCatalogueError as catalogue_error:
+			logger.warning("[upgrade_menu_rendered] plan_count=0 reason=%s", catalogue_error)
+			return None
 
 		_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 		rows = []
+		vip_plan = plans.get("vip_monthly")
 		if vip_sold_out:
 			rows.append([InlineKeyboardButton("💎 VIP Sold Out", callback_data="vip_sold_out")])
 			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
-		else:
-			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
+		elif vip_plan is not None:
 			seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
 			rows.append([
-				_checkout_button(
-					f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})",
-					price=vip_price,
-					tier="VIP",
-					duration="MONTHLY",
-					duration_days=30,
+				InlineKeyboardButton(
+					f"💎 {vip_plan.label} — ₦{vip_plan.price_ngn:,} ({seat_label})",
+					callback_data="subscribe:vip_monthly",
 				),
 			])
-		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
-		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
-		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
-		rows.append([
-			_checkout_button(
-				f"⭐ Premium Monthly — ₦{prem_month_price:,}",
-				price=prem_month_price,
-				tier="PREMIUM",
-				duration="MONTHLY",
-				duration_days=30,
-			),
-		])
-		rows.append([
-			_checkout_button(
-				f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}",
-				price=prem_qtr_price,
-				tier="PREMIUM",
-				duration="QUARTERLY",
-				duration_days=90,
-			),
-		])
-		rows.append([
-			_checkout_button(
-				f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}",
-				price=prem_year_price,
-				tier="PREMIUM",
-				duration="YEARLY",
-				duration_days=365,
-			),
-		])
+		for code in ("premium_monthly", "premium_quarterly", "premium_yearly"):
+			plan = plans.get(code)
+			if plan is None:
+				continue
+			label = f"⭐ {plan.label} — ₦{plan.price_ngn:,}"
+			if code == "premium_yearly":
+				label = f"🔥 {plan.label} (Best Value) — ₦{plan.price_ngn:,}"
+			rows.append([InlineKeyboardButton(label, callback_data=f"subscribe:{code}")])
 		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
 			rows.append([
 				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
 				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
 			])
+		logger.info("[upgrade_menu_rendered] plan_count=%s", len(plans))
 		return InlineKeyboardMarkup(rows)
-	except Exception:
+	except Exception as _keyboard_error:
+		logger.warning("[upgrade_menu_rendered] plan_count=0 reason=%s", type(_keyboard_error).__name__)
 		return None
 
 

@@ -145,5 +145,7 @@ def test_v125_profile_contains_guarded_live_paystack_settings():
 def test_version_fingerprint_is_v125():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6.7"
-    assert RELEASE_FINGERPRINT == "v1.3.6.7-integrity-accounting-dedup-hotfix-20260802"
+    # The fingerprint tracks the current checked-out release (moved to 1.3.6.9
+    # by a later committed release bump).
+    assert APP_VERSION == "1.3.6.9"
+    assert RELEASE_FINGERPRINT == "v1.3.6.9-outcome-delivery-recovery-hotfix-20260803"

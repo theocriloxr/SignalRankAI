@@ -552,12 +552,41 @@ def _classify(path: Path) -> tuple[str, str]:
     return "PRESERVE_BEHAVIOUR", "repository asset explicitly retained; no generated-state signature detected"
 
 
+def _gitignored_paths() -> set[str]:
+    """Return repo-relative paths git considers ignored (fast, one subprocess).
+
+    The governance inventory must cover only repository content, not local
+    workspace state (e.g. ``.freebuff/*.db``, ``.coverage``, ``.vscode/``) that
+    appears and disappears across machines and makes the generated artefacts
+    non-reproducible.
+    """
+    try:
+        import subprocess
+
+        completed = subprocess.run(
+            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            return set()
+        return {item for item in completed.stdout.split("\0") if item}
+    except Exception:
+        return set()
+
+
 def build_legacy_disposition() -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
+    ignored = _gitignored_paths()
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file() or any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
             continue
         if path == OUT / "legacy_disposition.json":
+            continue
+        relative = str(path.relative_to(ROOT)).replace("\\", "/")
+        if relative in ignored:
             continue
         disposition, reason = _classify(path)
         size = path.stat().st_size

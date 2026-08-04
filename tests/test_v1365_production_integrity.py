@@ -346,7 +346,11 @@ def test_delivery_dedup_serializes_user_asset_and_blocks_reservations():
     position_source = Path("services/asset_position_manager.py").read_text(encoding="utf-8")
     assert 'f"delivery:{int(user.id)}:{str(sig.asset).upper()}"' in pg_source
     assert 'delivery_reservation_active' in position_source
-    assert '"reserved", "sending", "sent", "delivered", "confirmed", "updated"' in position_source
+    # Reserved/sending rows hold the asset lock; confirmed states release it.
+    assert '"reserved", "sending"' in position_source
+    assert '"delivered"' in position_source
+    assert '"confirmed"' in position_source
+    assert '"updated"' in position_source
 
 
 def test_supersede_does_not_mutate_confirmed_delivered_signal_rows():

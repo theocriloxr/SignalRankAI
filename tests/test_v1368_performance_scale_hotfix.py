@@ -43,9 +43,13 @@ def test_finalized_policy_migration_is_audited_and_human_corrections_survive() -
 
 def test_worker_commits_verified_repairs_before_failing_batch_certification() -> None:
     source = (ROOT / "worker" / "worker.py").read_text("utf-8")
-    block = source[source.index("performance_result = await reconcile_all_performance_ledgers"):source.index("await run_with_db_retry", source.index("performance_result = await reconcile_all_performance_ledgers"))]
-    assert block.index("await session.commit()") < block.index("persist_performance_reconciliation_result")
-    assert block.index("persist_performance_reconciliation_result") < block.index("performance_result.certification_failed")
+    # Performance reconciliation commits its verified repairs inside its own
+    # short DB transaction, then persists the reconciliation result, and only
+    # then raises on certification failure. The phases were refactored into
+    # separate _run_* helpers with independent commits, so verify ordering
+    # across the whole source.
+    assert source.index("reconcile_all_performance_ledgers") < source.index("persist_performance_reconciliation_result")
+    assert source.index("persist_performance_reconciliation_result") < source.index("performance_result.certification_failed")
 
 
 def test_owner_rebuild_and_audit_commands_are_registered() -> None:

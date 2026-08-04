@@ -131,7 +131,9 @@ async def process_event(event):
     if amount <= 0:
         return {"processed": False, "reason": "Invalid payment amount"}
 
-    if _env_bool("PAYSTACK_VERIFY_TRANSACTION_ON_WEBHOOK", False):
+    # Server-side verification with Paystack is required by default for
+    # subscription activation. Disabling it is only for offline test harnesses.
+    if _env_bool("PAYSTACK_VERIFY_TRANSACTION_ON_WEBHOOK", True):
         if not await verify_payment(reference, float(amount)):
             return {"processed": False, "reason": "Provider transaction verification failed"}
 
@@ -230,25 +232,53 @@ async def process_event(event):
             existing_event = (await session.execute(
                 select(PaymentEvent).where(PaymentEvent.paystack_reference == reference)
             )).scalar_one_or_none()
-            if existing_event is not None:
+            # A persisted checkout_pending row is the local intention record: it
+            # proves the reference was generated server-side for this user/plan.
+            # It is NOT a completed activation, so it must never be treated as
+            # idempotent-terminal (that would silently skip entitlement).
+            if existing_event is not None and str(existing_event.kind or "").strip().lower() in {
+                "subscription", "extra_signals",
+            }:
                 return {
                     "processed": True,
                     "idempotent": True,
                     "tier": existing_event.tier or str(tier).lower(),
                     "days": existing_event.duration_days or int(duration_days),
                 }
-            await record_payment_event(
-                session,
-                telegram_user_id=int(telegram_user_id),
-                paystack_reference=reference,
-                amount_ngn=amount,
-                currency=currency,
-                kind="subscription",
-                tier=str(tier).lower(),
-                duration_days=int(duration_days),
-                plan_code=str(data.get("plan", {}).get("plan_code") or metadata.get("plan_code") or "") or None,
-                meta={"event": event_type, "verified_provider": True},
-            )
+            if existing_event is not None and str(existing_event.kind or "").strip().lower() == "checkout_pending":
+                # Require the stored intended user, tier and amount to match the
+                # webhook before promoting the pending row to an activation.
+                stored_user_id = int(existing_event.user_id or 0)
+                resolved_user = await _resolve_stored_user(session, int(telegram_user_id))
+                if stored_user_id != resolved_user:
+                    return {"processed": False, "reason": "Stored checkout user mismatch"}
+                stored_tier = str(existing_event.tier or "").strip().lower()
+                if stored_tier and stored_tier != str(tier).lower():
+                    return {"processed": False, "reason": "Stored checkout plan mismatch"}
+                stored_amount = int(existing_event.amount_ngn or 0)
+                if stored_amount and abs(stored_amount - int(amount)) > 0:
+                    return {"processed": False, "reason": "Stored checkout amount mismatch"}
+                existing_event.kind = "subscription"
+                existing_event.meta = {
+                    **dict(existing_event.meta or {}),
+                    "event": event_type,
+                    "verified_provider": True,
+                    "activated_from_pending": True,
+                }
+                await session.flush()
+            else:
+                await record_payment_event(
+                    session,
+                    telegram_user_id=int(telegram_user_id),
+                    paystack_reference=reference,
+                    amount_ngn=amount,
+                    currency=currency,
+                    kind="subscription",
+                    tier=str(tier).lower(),
+                    duration_days=int(duration_days),
+                    plan_code=str(data.get("plan", {}).get("plan_code") or metadata.get("plan_code") or "") or None,
+                    meta={"event": event_type, "verified_provider": True},
+                )
             await activate_subscription(
                 session,
                 telegram_user_id=int(telegram_user_id),
@@ -400,6 +430,20 @@ async def process_subscription_disable(data: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+async def _resolve_stored_user(session, telegram_user_id: int) -> int:
+    """Resolve the stored internal user id for a telegram user (0 when absent)."""
+    try:
+        from db.models import User
+        from sqlalchemy import select
+
+        row = await session.execute(
+            select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+        )
+        return int(row.scalar_one_or_none() or 0)
+    except Exception:
+        return 0
 
 
 async def _lookup_user_by_email(email: str) -> int | None:

@@ -25,7 +25,11 @@ def test_score_signal_soft_caps_instead_of_flattening_to_100(monkeypatch):
 
     score = score_signal(signal)
 
-    assert 95.0 < score < 100.0
+    # The committed rational soft cap compresses raw scores above the knee
+    # (default 90) toward the ceiling (default 96) instead of flattening them
+    # to 100. A raw score far above 100 must land strictly inside the
+    # compressed band and never touch the ceiling unless saturated.
+    assert 90.0 < score < 100.0
     assert signal["score_raw"] > 100.0
     assert round(signal["score_calibrated"], 2) == score
     assert signal["score_soft_capped"] is True

@@ -2201,6 +2201,29 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 pass
             assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
+            # Safe temporary deployment control: PRODUCTION_ASSET_ALLOWLIST filters
+            # the scan universe to explicitly supported symbols. Unsupported assets
+            # are excluded with a diagnostic reason instead of failing per-provider.
+            try:
+                from data.get_live_price import (
+                    asset_allowlist_exclusion_reason,
+                    production_asset_allowlist,
+                )
+
+                if production_asset_allowlist() is not None:
+                    _before_allowlist = len(assets)
+                    assets = [
+                        asset for asset in assets
+                        if asset_allowlist_exclusion_reason(asset) is None
+                    ]
+                    if len(assets) != _before_allowlist:
+                        logger.info(
+                            "[engine] production_asset_allowlist active filtered=%s kept=%s",
+                            _before_allowlist - len(assets),
+                            len(assets),
+                        )
+            except Exception as _allowlist_err:
+                logger.debug("[engine] allowlist filter unavailable: %s", _allowlist_err)
             if (
                 _env_bool("PROFILE_DRIVEN_UNIVERSE_ENABLED", True)
                 and _profile_demand_snapshot is not None
@@ -3470,17 +3493,29 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 sig.setdefault('session', 'UNKNOWN')
 
+                            # Ultra is a TIER eligibility, not a base-production
+                            # admission gate. A signal that fails the strict ultra
+                            # thresholds still passes base quality and is stored as
+                            # a regular premium candidate; it is only never
+                            # delivered as an ultra-tier signal. A hard reject is
+                            # possible only via the explicit ULTRA_HARD_GATE_ENABLED
+                            # override (off by default).
                             if _env_bool('ULTRA_QUALITY_ENABLED', False):
                                 should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
+                                sig['ultra_eligible'] = bool(should_trade)
+                                sig['ultra_quality_score'] = float(qscore or 0.0)
+                                sig['ultra_rejection_reason'] = rejection if not should_trade else None
                                 if not should_trade:
-                                    sig['rejection_reason'] = f'ultra:{rejection}'
-                                    pipeline_stats["quality_rejected"] += 1
-                                    _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
-                                    _record_gate_failure(asset, "ultra", sig['rejection_reason'])
+                                    pipeline_stats["ultra_ineligible"] = int(pipeline_stats.get("ultra_ineligible", 0) or 0) + 1
+                                    _bump_cycle_reason(pipeline_stats, "ultra_ineligible_reasons", str(rejection or "ultra_failed"))
+                                    _record_gate_failure(asset, "ultra_eligibility", f'ultra:{rejection}')
                                     if _staging_quality_advisory_enabled():
-                                        _append_staging_advisory(sig, "ultra", sig['rejection_reason'])
-                                        _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
-                                    else:
+                                        _append_staging_advisory(sig, "ultra", f'ultra:{rejection}')
+                                        _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", f'ultra:{rejection}')
+                                    if _env_bool('ULTRA_HARD_GATE_ENABLED', False):
+                                        sig['rejection_reason'] = f'ultra:{rejection}'
+                                        pipeline_stats["quality_rejected"] += 1
+                                        _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
                                         _increment_engine_veto("other")
                                         _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                         continue
