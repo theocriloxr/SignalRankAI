@@ -1,5 +1,5 @@
 {
-  "file_count": 1227,
+  "file_count": 1231,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -451,11 +451,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 169,
+      "line_count": 191,
       "path": "configs/env/production.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "193e85b2d61ff534b74bbd84d51e920c40a9e92866ddeff3294972f8d287241a",
-      "size_bytes": 5111
+      "sha256": "38adaa493dad9ab996b41498727eed7fd563145de753bef0d008f308ff30ab0e",
+      "size_bytes": 6268
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -491,11 +491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 279,
+      "line_count": 289,
       "path": "configs/env/railway-staging.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c574ce6a8de2732ff2945618e9ebc78aaa7c1605c54fa24c27be8bd1c8326d6d",
-      "size_bytes": 9090
+      "sha256": "fa8bcd743b37ff815a3b174a87bac913740af53c327a4d912bc32245b45c315f",
+      "size_bytes": 9562
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -595,6 +595,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 314,
+      "path": "core/capability_resolver.py",
+      "reason": "production/build source",
+      "sha256": "66f1f06051a3e69efb05e1de9d027c61e218848363e524d4afa800e576d198a3",
+      "size_bytes": 12336
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 80,
       "path": "core/circuit_breaker.py",
       "reason": "production/build source",
@@ -635,11 +643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 149,
+      "line_count": 157,
       "path": "core/env.py",
       "reason": "production/build source",
-      "sha256": "819276520420eaef54a1ab344f931fb4713b845c7bebaf8bab3bba3c99449fd5",
-      "size_bytes": 5139
+      "sha256": "5215cbf46e791b199fa1bbce53e78e54a2fffbed0b230a4a50805e7ee0588552",
+      "size_bytes": 5357
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4798,7 +4806,7 @@
       "line_count": 290,
       "path": "requirements/callback_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "2b3f4ae4e7267ebb471665ae2c94c4ab6965ffb11a0901ec6b5ddb6d98c9a326",
+      "sha256": "b6b811e427031fd7c43c28a6dc35adb902051e3c4621d943333f7e1af280ba82",
       "size_bytes": 10250
     },
     {
@@ -4806,7 +4814,7 @@
       "line_count": 2783,
       "path": "requirements/command_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "b9675db0b973adc06d5afa3db83c1f3ee0afd55a6d57f5a1757d92389d1d2548",
+      "sha256": "f91822c6dec07bdc646fa777fdbc2bba2356e29d030e2f5008df3a3a67a1ad7c",
       "size_bytes": 88037
     },
     {
@@ -4827,11 +4835,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 13466,
+      "line_count": 13514,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e27965b933f8024f540922bb58e28e5a87de8c6c2b972864a1455e0ced355013",
-      "size_bytes": 415472
+      "sha256": "4d7ea5fdc3de18dec9e229aae0d8940e3fdad65004dfae593d9d45337f608ef8",
+      "size_bytes": 417445
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -4846,8 +4854,8 @@
       "line_count": 998,
       "path": "requirements/feature_flags.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e6b2c2df3740fedd12dc1a328c5a6e79dc24ef2cdacc26648edfcfec69536340",
-      "size_bytes": 34390
+      "sha256": "cf606faca7dca302c5bc822baf8e0bd70c8ca6e969af27fe7bbe353c24f35b79",
+      "size_bytes": 34388
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5416,6 +5424,14 @@
       "reason": "production/build source",
       "sha256": "69c2abfa98dce12f9043710d85866be487ef81bd376e4fc5ebe2d0c42b73818d",
       "size_bytes": 3922
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 122,
+      "path": "scripts/verify_environment_parity.py",
+      "reason": "production/build source",
+      "sha256": "feee956d9d7b6ac3644b55dc743e0f3238639c856acbb9752f6d1673b296951e",
+      "size_bytes": 4705
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6115,11 +6131,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 10106,
+      "line_count": 10162,
       "path": "signalrank_telegram/bot.py",
       "reason": "production/build source",
-      "sha256": "e1950abcda003a23c8fffb66e166ba7879166b9e9c0bdfa477c51aeb41bc4b66",
-      "size_bytes": 491704
+      "sha256": "2b28f73e10e821aaa77ea5e78ae80f6ae7d67e0fa43aff1c4355bd7fede35a1a",
+      "size_bytes": 494258
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8011,6 +8027,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 202,
+      "path": "tests/test_environment_parity.py",
+      "reason": "automated test evidence",
+      "sha256": "bbf37f3381ab49cc8a678404b73fdfdda44970d512e2949ec60467447f08e2f7",
+      "size_bytes": 6769
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 81,
       "path": "tests/test_execution_safety.py",
       "reason": "automated test evidence",
@@ -8939,6 +8963,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 243,
+      "path": "tests/test_telegram_feature_registry.py",
+      "reason": "automated test evidence",
+      "sha256": "d2cf902ad7eb52b0a602691f05fcc0832d842827122f3c805c1de6b74b0275e1",
+      "size_bytes": 9451
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 35,
       "path": "tests/test_telegram_webhook_registration_contract.py",
       "reason": "automated test evidence",
@@ -9831,7 +9863,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 260,
-    "PRESERVE_BEHAVIOUR": 758,
-    "TEST_ONLY": 208
+    "PRESERVE_BEHAVIOUR": 760,
+    "TEST_ONLY": 210
   }
 }

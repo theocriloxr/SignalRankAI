@@ -97,19 +97,27 @@ class SafetyFlags:
     chat_mt5_credentials_enabled: bool = False
 
     @classmethod
-    def from_env(cls) -> "SafetyFlags":
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "SafetyFlags":
+        source = environ if environ is not None else os.environ
+
+        def _flag(name: str, default: bool = False) -> bool:
+            raw = source.get(name)
+            if raw is None:
+                return bool(default)
+            return str(raw).strip().lower() in TRUE_VALUES
+
         return cls(
-            real_execution_enabled=env_bool("REAL_EXECUTION_ENABLED", False),
-            auto_execution_enabled=env_bool("AUTO_EXECUTION_ENABLED", False),
-            auto_trade_enabled=env_bool("AUTO_TRADE_ENABLED", False),
-            copy_trade_enabled=env_bool("COPY_TRADE_ENABLED", False),
-            mt5_live_accounts_enabled=env_bool("MT5_ALLOW_LIVE_ACCOUNTS", False),
-            bybit_execution_enabled=env_bool("BYBIT_EXECUTION_ENABLED", False),
-            real_payouts_enabled=env_bool("REAL_PAYOUTS_ENABLED", False),
-            payments_enabled=env_bool("PAYMENTS_ENABLED", False),
-            telegram_rich_messages_enabled=env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False),
-            vip_webhook_dispatch_enabled=env_bool("VIP_WEBHOOK_DISPATCH_ENABLED", False),
-            chat_mt5_credentials_enabled=env_bool("CHAT_MT5_CREDENTIALS_ENABLED", False),
+            real_execution_enabled=_flag("REAL_EXECUTION_ENABLED"),
+            auto_execution_enabled=_flag("AUTO_EXECUTION_ENABLED"),
+            auto_trade_enabled=_flag("AUTO_TRADE_ENABLED"),
+            copy_trade_enabled=_flag("COPY_TRADE_ENABLED"),
+            mt5_live_accounts_enabled=_flag("MT5_ALLOW_LIVE_ACCOUNTS"),
+            bybit_execution_enabled=_flag("BYBIT_EXECUTION_ENABLED"),
+            real_payouts_enabled=_flag("REAL_PAYOUTS_ENABLED"),
+            payments_enabled=_flag("PAYMENTS_ENABLED"),
+            telegram_rich_messages_enabled=_flag("TELEGRAM_RICH_MESSAGES_ENABLED"),
+            vip_webhook_dispatch_enabled=_flag("VIP_WEBHOOK_DISPATCH_ENABLED"),
+            chat_mt5_credentials_enabled=_flag("CHAT_MT5_CREDENTIALS_ENABLED"),
         )
 
     def enabled_names(self) -> tuple[str, ...]:

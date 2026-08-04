@@ -779,7 +779,39 @@ TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # s
 # Build the Telegram Application only when a token is provided and not in DRY_RUN.
 # DRY_RUN defaults to "0" (disabled) \u2014 signals are sent for real unless you
 # explicitly set DRY_RUN=1 in your Railway variables.
-_token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
+# Environment-parity: staging resolves its own STAGING_TELEGRAM_BOT_TOKEN so it
+# never registers the production bot's webhook; production uses TELEGRAM_BOT_TOKEN.
+try:
+    from core.capability_resolver import telegram_mode as _resolve_telegram_mode
+
+    _telegram_mode = _resolve_telegram_mode()
+except Exception:
+    _telegram_mode = "no_token"
+
+if _telegram_mode == "staging_bot":
+    # Staging uses its own isolated bot. Never fall back to the shared
+    # production token: doing so would let staging overwrite the production
+    # webhook. A missing staging token disables the bot with a warning.
+    _token = str(os.getenv("STAGING_TELEGRAM_BOT_TOKEN") or "").strip()
+    if not _token:
+        try:
+            logging.getLogger(__name__).warning(
+                "[bot] staging mode without STAGING_TELEGRAM_BOT_TOKEN; "
+                "Telegram bot disabled to protect the production webhook."
+            )
+        except Exception:
+            pass
+elif _telegram_mode == "misconfigured":
+    _token = None
+    try:
+        logging.getLogger(__name__).warning(
+            "[bot] telegram_mode=misconfigured (wrong token present for this "
+            "environment); Telegram bot disabled."
+        )
+    except Exception:
+        pass
+else:
+    _token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
 _dry_run_env = str(os.getenv('DRY_RUN', '0') or '0').strip().lower() in {'1', 'true', 'yes'}
 if _token and not _dry_run_env:
     application = Application.builder()
@@ -5913,6 +5945,30 @@ def run_bot() -> None:
 
     async def _post_init(app):
         """Publish role-correct Telegram command scopes without blocking startup."""
+        # Environment-parity startup diagnostic: typed, redacted capability
+        # decisions shared with the worker and readiness checks. Never logs
+        # secrets (bot tokens, Paystack keys, DB credentials).
+        try:
+            from core.capability_resolver import resolve_capabilities
+
+            capability = resolve_capabilities().as_dict()
+            logger.info(
+                "[capability] resolved environment=%s role=%s payments_mode=%s "
+                "payments_enabled=%s recovery=%s telegram_mode=%s trading=%s "
+                "payout=%s readiness=%s reasons=%s",
+                capability.get("environment"),
+                capability.get("service_role"),
+                capability.get("payments_mode"),
+                capability.get("payments_enabled"),
+                capability.get("paystack_recovery_enabled"),
+                capability.get("telegram_mode"),
+                capability.get("trading_mode"),
+                capability.get("payout_mode"),
+                capability.get("readiness"),
+                list(capability.get("safe_reasons") or []),
+            )
+        except Exception as _cap_err:
+            logger.debug("[capability] startup diagnostic unavailable: %s", _cap_err)
         try:
             from telegram import (
                 BotCommand,
