@@ -52,6 +52,7 @@ def runtime_environment_name(default: str = "dev") -> str:
     """
     raw = str(
         os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT_ID")
         or os.getenv("RAILWAY_ENVIRONMENT")
         or os.getenv("APP_ENV")
         or os.getenv("ENVIRONMENT")

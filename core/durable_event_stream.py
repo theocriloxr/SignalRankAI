@@ -25,8 +25,21 @@ def _safe_partition_count(value: int | None = None) -> int:
     return max(1, min(1024, int(raw)))
 
 
+def _payload_hash(payload: Mapping[str, Any]) -> str:
+    canonical = json.dumps(dict(payload), sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class EventEnvelope:
+    """Immutable, versioned event envelope carrying full provenance context.
+
+    New identity fields appended at the end with defaults keep the original
+    positional constructor contract backward compatible. The ``payload_hash``
+    is computed lazily from the canonical payload serialization so every
+    envelope is tamper-evident at rest and in transit.
+    """
+
     event_type: str
     payload: Mapping[str, Any]
     partition_key: str
@@ -41,6 +54,16 @@ class EventEnvelope:
     causation_id: str | None = None
     idempotency_key: str | None = None
     producer: str = "unknown"
+    aggregate_type: str | None = None
+    aggregate_id: str | None = None
+    organization_id: str | None = None
+    strategy_id: str | None = None
+    provider: str | None = None
+    venue: str | None = None
+    trace_id: str | None = None
+    deployment_id: str | None = None
+    producer_service: str | None = None
+    payload_hash: str = ""
 
     def __post_init__(self) -> None:
         if not str(self.event_type or "").strip():
@@ -49,6 +72,12 @@ class EventEnvelope:
             raise ValueError("partition_key is required")
         if int(self.schema_version) < 1:
             raise ValueError("schema_version must be >= 1")
+        if not str(self.payload_hash or "").strip():
+            object.__setattr__(self, "payload_hash", _payload_hash(self.payload))
+
+    def verify_payload_hash(self) -> bool:
+        """Return True when the stored hash matches the current payload."""
+        return _payload_hash(self.payload) == str(self.payload_hash)
 
     def as_stream_fields(self) -> dict[str, str]:
         body = asdict(self)

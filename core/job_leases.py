@@ -38,9 +38,14 @@ def scheduler_job_scope(job_name: str) -> str:
     return f"{project}:{environment}:{str(job_name).strip().lower()}"
 
 
-def _lock_id(scope: str) -> int:
+def lock_id_for_scope(scope: str) -> int:
+    """Stable 63-bit advisory-lock id for a scope string."""
     digest = hashlib.sha256(f"signalrank:scheduler:{scope}".encode("utf-8")).digest()
     return max(1, int.from_bytes(digest[:8], "big") & ((1 << 63) - 1))
+
+
+def _lock_id(scope: str) -> int:
+    return lock_id_for_scope(scope)
 
 
 @contextmanager
@@ -144,5 +149,6 @@ def acquire_scheduler_job_lease(
 __all__ = [
     "SchedulerJobLease",
     "acquire_scheduler_job_lease",
+    "lock_id_for_scope",
     "scheduler_job_scope",
 ]

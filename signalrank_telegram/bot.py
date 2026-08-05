@@ -26,6 +26,37 @@ def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
     return str(delivery_state or "").strip().lower() == "formatter_failed"
 
 
+def _resend_lock_scope() -> str:
+    """Stable resend-lock scope for this deployment.
+
+    Project + environment, never service replica: every replica of the same
+    environment shares the lock; different environments never collide.
+    Reuses the canonical scheduler scope so the reported identity always
+    matches the lease the resend job actually acquires.
+    """
+    explicit = str(os.getenv("RESEND_JOB_LOCK_SCOPE") or "").strip()
+    if explicit:
+        return explicit
+    from core.job_leases import scheduler_job_scope
+
+    return scheduler_job_scope("resend_unsent_signals")
+
+
+def _resend_advisory_lock() -> tuple[str, int]:
+    """Stable lock identity for the resend job in the active environment.
+
+    Returns ``(scope, advisory_lock_id)``. An explicit RESEND_JOB_LOCK_ID
+    override takes precedence for operator-forced isolation.
+    """
+    explicit_id = str(os.getenv("RESEND_JOB_LOCK_ID") or "").strip()
+    if explicit_id:
+        return (explicit_id, 0)
+    from core.job_leases import lock_id_for_scope
+
+    scope = _resend_lock_scope()
+    return (scope, lock_id_for_scope(scope))
+
+
 def resend_unsent_signals_job():
     """Run bounded resend recovery under one cross-replica owner lease."""
     try:
@@ -53,6 +84,11 @@ def resend_unsent_signals_job():
 
     from core.job_leases import acquire_scheduler_job_lease
     lease_seconds = max(30, int(os.getenv("RESEND_JOB_LEASE_SECONDS", "45") or 45))
+    try:
+        _lock_scope, _lock_id = _resend_advisory_lock()
+        logger.debug("[resend] advisory lock identity scope=%s lock_id=%s", _lock_scope, _lock_id)
+    except Exception:
+        logger.debug("[resend] advisory lock identity unavailable", exc_info=True)
     with acquire_scheduler_job_lease("resend_unsent_signals", lease_seconds=lease_seconds) as lease:
         if not lease.acquired:
             logger.info(

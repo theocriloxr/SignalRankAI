@@ -41,6 +41,9 @@ EXCLUDED_PARTS = {
     ".ruff_cache",
     "artifacts",
     "node_modules",
+    # Local agent/app state, not repository content. Without this the active
+    # .freebuff desktop database makes generated governance non-deterministic.
+    ".freebuff",
 }
 TEXT_EXTENSIONS = {
     ".py", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
