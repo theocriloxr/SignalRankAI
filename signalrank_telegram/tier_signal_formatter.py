@@ -628,9 +628,10 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     elif len(tp_levels) == 1:
         lines.append(f"✅ TP: {_h(_fmt_price_clean(tp_levels[0], asset))}")
 
-    # R/R ratio — canonical TP-identified values, never a bare generic ratio.
-    rr_tp1 = _safe_float(signal.get("rr_tp1")) or _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
-    rr_tp_last = _safe_float(signal.get("rr_tp3")) or _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    # R/R ratio — canonical TP-identified values from the rendered ladder,
+    # never a bare generic ratio.
+    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
         lines.append(
             f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
@@ -738,11 +739,11 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     delivered_time = _signal_delivery_time(signal)
 
     # R/R — use actual target-derived RR, not merely profile minimum.
-    # Persisted canonical values (rr_tp1/rr_tp3) win; otherwise compute from
-    # the exact TP ladder rendered in this message so display stays consistent.
+    # Compute from the exact TP ladder rendered in this message so the display
+    # is always internally consistent (canonical post-geometry calculation).
     rr = _best_rr(signal, entry, sl, tp_levels)
-    rr_tp1 = _safe_float(signal.get("rr_tp1")) or _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
-    rr_tp_last = _safe_float(signal.get("rr_tp3")) or _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
 
     lines = [
         "🚨 <b>VIP SIGNAL DETECTED</b> 🚨",
@@ -771,7 +772,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             or signal.get("setup_rationale")
         )
         if tl:
-            lines.append(f"🧱 Setup: {_h(str(tl)[:100])}")
+            # Never leak a bare generic R:R into the Setup line either.
+            lines.append(f"🧱 Setup: {_h(_strip_embedded_rr(str(tl)[:100]))}")
 
     # Volatility with regime context
     regime = signal.get("regime") or signal.get("market_regime", "")

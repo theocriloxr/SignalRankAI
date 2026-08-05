@@ -66,6 +66,13 @@ class PaperPositionSize:
     def fees(self) -> Decimal:
         return self.entry_fee
 
+    @property
+    def leverage(self) -> Decimal:
+        """Notional/equity leverage (1.0 for cash spot; venue/contract-aware later)."""
+        if self.available_cash_before <= 0:
+            return Decimal("0")
+        return (self.notional / self.available_cash_before).quantize(MONEY_QUANTUM, rounding=ROUND_DOWN)
+
 
 def calculate_paper_position_size(
     *,
@@ -119,7 +126,9 @@ def calculate_paper_position_size(
     )
     capped = quantity < risk_quantity - tolerance_d
     if capped:
-        cap_reason = "available_virtual_cash" if quantity < cash_quantity - tolerance_d else "configured_notional_cap"
+        # The binding constraint is the configured notional cap when it is
+        # smaller than the fee-adjusted cash ceiling; otherwise virtual cash.
+        cap_reason = "configured_notional_cap" if affordable == configured_cap else "available_virtual_cash"
     else:
         cap_reason = "none"
     return PaperPositionSize(
