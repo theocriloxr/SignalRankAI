@@ -11,6 +11,7 @@ from typing import Any, Dict as DictType, List, Optional
 
 from core.tier_constants import TIER_SCORE_THRESHOLDS
 from core.production_integrity import probability_for_public_display
+from core.geometry_calculation import calculate_trade_geometry
 from engine.signal_metrics import (
     resolve_confidence_ratio,
     resolve_confluence_percent,
@@ -239,16 +240,36 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
-def _compute_rr(entry: Any, stop_loss: Any, take_profit: Any) -> Optional[float]:
-    entry_f = _safe_float(entry)
-    stop_f = _safe_float(stop_loss)
-    tp_f = _safe_float(take_profit)
-    if entry_f is None or stop_f is None or tp_f is None:
+def _compute_rr(entry: Any, stop_loss: Any, take_profit: Any, direction: Any = "long") -> Optional[float]:
+    """R:R through the canonical post-geometry calculation (single source of truth)."""
+    result = calculate_trade_geometry(entry, stop_loss, [take_profit], direction)
+    if not result.ok or result.rr_tp1 is None:
         return None
-    risk = abs(entry_f - stop_f)
-    if risk <= 0:
+    try:
+        return float(result.rr_tp1)
+    except Exception:
         return None
-    return abs(tp_f - entry_f) / risk
+
+
+def _strip_embedded_rr(text: str) -> str:
+    """Remove bare R:R expressions so only canonical TP-identified values remain."""
+    import re
+
+    cleaned = re.sub(r"\bR\s*:\s*R\s*[:=]?\s*[\d.]+\b", "", str(text or ""))
+    return cleaned.strip(" ;,•|")
+
+
+def _why_with_canonical_rr(why: str, rr_tp1: Optional[float], rr_tp_last: Optional[float], tp_count: int) -> str:
+    """Append canonical, target-identified R:R to a Why explanation.
+
+    Never a bare generic 'R:R=3.74' — the value is always tied to its target.
+    """
+    text = _strip_embedded_rr(why)
+    if rr_tp1 is None or rr_tp_last is None or int(tp_count or 0) < 2:
+        return text
+    return (
+        f"{text} • TP1 R:R 1:{float(rr_tp1):.2f} • TP{min(3, int(tp_count))} R:R 1:{float(rr_tp_last):.2f}"
+    )
 
 
 def _expected_move_pct(entry: Any, target: Any, direction: str) -> Optional[float]:
@@ -607,13 +628,15 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     elif len(tp_levels) == 1:
         lines.append(f"✅ TP: {_h(_fmt_price_clean(tp_levels[0], asset))}")
 
-    # R/R ratio — actual target-derived RR, not merely profile minimum
-    rr = _best_rr(signal, entry, sl, tp_levels)
-    if rr is not None:
-        lines.append(f"⚖️ Risk/Reward: 1:{float(rr):.1f}")
-        profile_min_rr = _safe_float(signal.get("profile_min_rr") or signal.get("min_rr"))
-        if profile_min_rr and abs(float(profile_min_rr) - float(rr)) > 0.05:
-            lines.append(f"📏 Profile minimum: 1:{float(profile_min_rr):.2f}")
+    # R/R ratio — canonical TP-identified values, never a bare generic ratio.
+    rr_tp1 = _safe_float(signal.get("rr_tp1")) or _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _safe_float(signal.get("rr_tp3")) or _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
+        lines.append(
+            f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
+        )
+    elif rr_tp1 is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{float(rr_tp1):.1f}")
 
     if expected_profit is not None:
         lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
@@ -714,8 +737,12 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     generated_time = _signal_generated_time(signal)
     delivered_time = _signal_delivery_time(signal)
 
-    # R/R — use actual target-derived RR, not merely profile minimum
+    # R/R — use actual target-derived RR, not merely profile minimum.
+    # Persisted canonical values (rr_tp1/rr_tp3) win; otherwise compute from
+    # the exact TP ladder rendered in this message so display stays consistent.
     rr = _best_rr(signal, entry, sl, tp_levels)
+    rr_tp1 = _safe_float(signal.get("rr_tp1")) or _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _safe_float(signal.get("rr_tp3")) or _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
 
     lines = [
         "🚨 <b>VIP SIGNAL DETECTED</b> 🚨",
@@ -801,7 +828,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             f"{strategy} supports this {direction_text} setup on {timeframe_text}; "
             f"risk and confluence checks passed for the {regime_text} regime."
         )
-    lines.append(f"Why: {_h(str(why)[:180])}")
+    lines.append(f"Why: {_h(_why_with_canonical_rr(str(why)[:180], rr_tp1, rr_tp_last, len(tp_levels)))}")
 
     lines += [
         "",
@@ -823,12 +850,12 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
                 line += f" {note}"
             lines.append(line)
 
-    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None)
-    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
         lines.append(
             f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
         )
+    elif rr_tp1 is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{float(rr_tp1):.1f}")
     elif rr:
         try:
             rr_val = float(rr)

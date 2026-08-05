@@ -96,6 +96,7 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     """
     kind = str(kind or "").lower().strip()
     binance_enabled = _env_enabled("BINANCE_MARKET_DATA_ENABLED", False)
+    hyperliquid_enabled = _env_enabled("HYPERLIQUID_MARKET_DATA_ENABLED", False)
     crypto: List[Tuple[str, Callable]] = [
         ("okx_connector", getattr(c, "okx_get_candles", None)),
         ("bybit_connector", getattr(c, "bybit_get_candles", None)),
@@ -114,6 +115,21 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     ]
     if binance_enabled:
         crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
+    if hyperliquid_enabled:
+        # Venue, not an asset class: public market data only, fail-closed.
+        crypto.append(("hyperliquid_connector", getattr(c, "hyperliquid_get_candles", None)))
+
+    if kind in {"crypto_perpetual", "crypto_futures", "crypto_options", "derivative", "future", "option"}:
+        derivative_providers: List[Tuple[str, Callable]] = [
+            ("deribit_connector", getattr(c, "deribit_get_candles", None)),
+            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
+            ("okx_connector", getattr(c, "okx_get_candles", None)),
+        ]
+        if hyperliquid_enabled:
+            derivative_providers.append(("hyperliquid_connector", getattr(c, "hyperliquid_get_candles", None)))
+        if binance_enabled and kind != "crypto_options":
+            derivative_providers.append(("binance_connector", getattr(c, "binance_get_candles", None)))
+        return derivative_providers
 
     if kind in {"crypto_perpetual", "crypto_futures", "crypto_options", "derivative", "future", "option"}:
         derivative_providers: List[Tuple[str, Callable]] = [

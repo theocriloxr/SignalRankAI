@@ -808,6 +808,15 @@ class PaperTradingService:
                 return
             signal_ref = str(candidate.get("display_id") or candidate.get("signal_id") or "")
             if decision == "OPENED":
+                try:
+                    from core.paper_sizing import paper_risk_report_text
+
+                    risk_report = paper_risk_report_text(sizing) if sizing is not None else (
+                        f"Requested risk budget: {float(risk_pct or 0):.2f}%\n"
+                        f"Actual stop risk: unavailable\nPosition-size cap: unknown"
+                    )
+                except Exception:
+                    risk_report = f"Requested risk budget: {float(risk_pct or 0):.2f}%\nActual stop risk: unavailable\nPosition-size cap: unknown"
                 text = (
                     "📄 Paper Trade Opened\n\n"
                     f"Asset: {candidate.get('asset')}\n"
@@ -815,7 +824,7 @@ class PaperTradingService:
                     f"📌 Signal ID: {signal_ref}\n\n"
                     f"Virtual fill: {float(fill or 0):.8g}\n"
                     f"Virtual size: {float(getattr(sizing, 'quantity', 0) or 0):.8g}\n"
-                    f"Risk: {float(risk_pct or 0):.2f}%\n"
+                    f"{risk_report}\n"
                     f"Stop Loss: {float(stop or 0):.8g}\n"
                     f"Selected target: {float(target or 0):.8g}\n"
                     f"Entry fee: ${float(getattr(sizing, 'entry_fee', 0) or 0):.4f}\n"
@@ -1193,6 +1202,20 @@ class PaperTradingService:
                                                 "score": candidate.get("score"), "price_source": "live",
                                                 "confirmed_at": str(candidate.get("confirmed_at") or ""),
                                                 "risk_pct": float(effective_risk_pct),
+                                                "requested_risk_pct": float(sizing.requested_risk_pct),
+                                                "requested_risk_amount": float(sizing.risk_amount),
+                                                "actual_risk_pct": float(sizing.actual_risk_pct),
+                                                "actual_risk_amount": float(sizing.actual_risk_amount),
+                                                "risk_per_unit": float(sizing.risk_per_unit),
+                                                "uncapped_quantity": float(sizing.uncapped_quantity),
+                                                "size_cap_applied": bool(sizing.size_cap_applied),
+                                                "size_cap_reason": sizing.size_cap_reason,
+                                                "available_cash_before": float(sizing.available_cash_before),
+                                                "available_cash_after": float(sizing.available_cash_after),
+                                                "margin_required": float(sizing.margin_required),
+                                                "leverage": 1.0,
+                                                "fees": float(sizing.fees),
+                                                "slippage": float(_safe_float(account.slippage_bps) / 10000.0 * live),
                                                 "user_trade_profile": getattr(profile_prefs, "trade_profile", "all") if profile_prefs is not None else "all",
                                                 "user_risk_profile": getattr(profile_prefs, "risk_profile", "balanced") if profile_prefs is not None else "balanced",
                                                 "profile_verified": profile_prefs is not None,
@@ -1225,7 +1248,15 @@ class PaperTradingService:
                                             session, account=account, user=user, candidate=candidate,
                                             decision="OPENED", reason="eligible_confirmed_delivery", retryable=False,
                                             market_price=market_price, sizing=sizing, finalized=True,
-                                            meta={"position_id": position.position_id},
+                                            meta={
+                                                "position_id": position.position_id,
+                                                "requested_risk_pct": float(sizing.requested_risk_pct),
+                                                "actual_risk_pct": float(sizing.actual_risk_pct),
+                                                "actual_risk_amount": float(sizing.actual_risk_amount),
+                                                "risk_per_unit": float(sizing.risk_per_unit),
+                                                "size_cap_applied": bool(sizing.size_cap_applied),
+                                                "size_cap_reason": sizing.size_cap_reason,
+                                            },
                                         )
                                         execution_evidence = await get_execution_evidence(
                                             session,

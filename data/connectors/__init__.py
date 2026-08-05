@@ -25,6 +25,12 @@ from .alpaca_adapter import get_candles as alpaca_get_candles
 from .tradier_adapter import get_candles as tradier_get_candles
 from .stooq_adapter import get_candles as stooq_get_candles
 from .nasdaq_data_link_adapter import get_candles as nasdaq_data_link_get_candles
+from .hyperliquid_adapter import (
+	get_candles as hyperliquid_get_candles,
+	get_funding as hyperliquid_get_funding,
+	get_mark_price as hyperliquid_get_mark_price,
+	get_order_book as hyperliquid_get_order_book,
+)
 
 __all__ = [
 	"Connector",
@@ -52,4 +58,8 @@ __all__ = [
 	"tradier_get_candles",
 	"stooq_get_candles",
 	"nasdaq_data_link_get_candles",
+	"hyperliquid_get_candles",
+	"hyperliquid_get_funding",
+	"hyperliquid_get_mark_price",
+	"hyperliquid_get_order_book",
 ]

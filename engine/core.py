@@ -203,6 +203,28 @@ except Exception:
 _ml_rejection_tracker = MLRejectionTracker()
 
 
+def classify_signal_store_error(exc: BaseException) -> str:
+    """Classify a signal-storage exception (Phase 19).
+
+    Returns one of: ``signal_reused`` (active-thesis dedup), ``signal_duplicate_blocked``
+    (constraint race / unique violation) or ``signal_storage_unexpected_failure``.
+    Expected deduplication must never be reported as a storage failure.
+    """
+    try:
+        from sqlalchemy.exc import IntegrityError as _IntegrityError
+    except Exception:
+        _IntegrityError = None
+    try:
+        from db.pg_features import SignalDedupBlocked as _SignalDedupBlocked
+    except Exception:
+        _SignalDedupBlocked = None
+    if _SignalDedupBlocked is not None and isinstance(exc, _SignalDedupBlocked):
+        return "signal_reused"
+    if _IntegrityError is not None and isinstance(exc, _IntegrityError):
+        return "signal_duplicate_blocked"
+    return "signal_storage_unexpected_failure"
+
+
 def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
     """Compatibility wrapper: return True when a signal thesis is already locked."""
     try:
@@ -4040,28 +4062,49 @@ def main_loop(DRY_RUN: bool = False):
                                 _cycle_cooldown.add(_asset_tf_key)
                                 _cycle_asset_cooldown.add(_asset_name)
                                 pipeline_stats["stored"] += 1
+                                pipeline_stats["signal_created"] = int(pipeline_stats.get("signal_created", 0) or 0) + 1
                             else:
                                 pipeline_stats["store_failed"] += 1
                         except Exception as e:
-                            pipeline_stats["store_failed"] += 1
-                            try:
-                                _tp = sig.get("take_profit") or sig.get("targets") or []
-                                _tp1 = _tp[0] if isinstance(_tp, (list, tuple)) and _tp else sig.get("tp1")
-                            except Exception:
-                                _tp1 = sig.get("tp1")
-                            logger.exception(
-                                "store_signal failed asset=%s direction=%s timeframe=%s score=%s fingerprint=%s entry=%s stop_loss=%s tp1=%s exception_type=%s message=%s",
-                                sig.get("asset") or sig.get("symbol"),
-                                sig.get("direction"),
-                                sig.get("timeframe"),
-                                sig.get("score"),
-                                sig.get("fingerprint") or sig.get("signal_fingerprint"),
-                                sig.get("entry"),
-                                sig.get("stop_loss") or sig.get("stop"),
-                                _tp1,
-                                type(e).__name__,
-                                str(e),
-                            )
+                            # Phase 19: an active-thesis dedup or a constraint race
+                            # is a normal deduplication outcome, not a storage
+                            # failure. Reuse the existing signal and never log it
+                            # as a stack-trace error or count it under store_failed.
+                            storage_outcome = classify_signal_store_error(e)
+                            if storage_outcome in ("signal_reused", "signal_duplicate_blocked"):
+                                pipeline_stats[storage_outcome] = int(pipeline_stats.get(storage_outcome, 0) or 0) + 1
+                                logger.info(
+                                    "[engine] %s asset=%s direction=%s timeframe=%s score=%s fingerprint=%s (expected dedup, not a storage failure)",
+                                    storage_outcome,
+                                    sig.get("asset") or sig.get("symbol"),
+                                    sig.get("direction"),
+                                    sig.get("timeframe"),
+                                    sig.get("score"),
+                                    sig.get("fingerprint") or sig.get("signal_fingerprint"),
+                                )
+                            else:
+                                pipeline_stats["store_failed"] += 1
+                                pipeline_stats["signal_storage_unexpected_failure"] = int(
+                                    pipeline_stats.get("signal_storage_unexpected_failure", 0) or 0
+                                ) + 1
+                                try:
+                                    _tp = sig.get("take_profit") or sig.get("targets") or []
+                                    _tp1 = _tp[0] if isinstance(_tp, (list, tuple)) and _tp else sig.get("tp1")
+                                except Exception:
+                                    _tp1 = sig.get("tp1")
+                                logger.exception(
+                                    "store_signal failed asset=%s direction=%s timeframe=%s score=%s fingerprint=%s entry=%s stop_loss=%s tp1=%s exception_type=%s message=%s",
+                                    sig.get("asset") or sig.get("symbol"),
+                                    sig.get("direction"),
+                                    sig.get("timeframe"),
+                                    sig.get("score"),
+                                    sig.get("fingerprint") or sig.get("signal_fingerprint"),
+                                    sig.get("entry"),
+                                    sig.get("stop_loss") or sig.get("stop"),
+                                    _tp1,
+                                    type(e).__name__,
+                                    str(e),
+                                )
 
 
                     # Always emit gate telemetry after each asset. Previously this
