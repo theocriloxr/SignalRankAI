@@ -17,10 +17,36 @@ from utils import httpx_client
 logger = logging.getLogger(__name__)
 
 
+def _resolved_api_key() -> str:
+    """Massive (formerly Polygon.io) credential consolidation.
+
+    One resolved secret: ``MASSIVE_API_KEY`` wins, ``POLYGON_API_KEY`` is the
+    backward-compatible alias.  Never require both variables.
+    """
+    return (
+        (os.getenv("MASSIVE_API_KEY") or "").strip()
+        or (os.getenv("POLYGON_API_KEY") or "").strip()
+    )
+
+
+def _resolved_base_url() -> str:
+    return (
+        (os.getenv("MASSIVE_API_BASE_URL") or "").strip()
+        or "https://api.polygon.io"
+    )
+
+
+def _enabled() -> bool:
+    raw = os.getenv("MASSIVE_MARKET_DATA_ENABLED")
+    if raw is None:
+        return True  # polygon behaviour unchanged unless explicitly disabled
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
-    api_key = (os.getenv("POLYGON_API_KEY") or "").strip()
-    if not api_key:
-        logger.debug("polygon_adapter: POLYGON_API_KEY not set")
+    api_key = _resolved_api_key()
+    if not api_key or not _enabled():
+        logger.debug("polygon_adapter: massive/polygon disabled or key not set")
         return []
     if httpx is None:
         return []
@@ -36,7 +62,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     end_date = datetime.now()
     start_date = end_date - timedelta(days=200 if timespan == 'day' else 30)
-    url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
+    url = f"{_resolved_base_url()}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
     request_timeout = 2.5
 

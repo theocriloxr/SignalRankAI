@@ -1,5 +1,5 @@
 {
-  "count": 23,
+  "count": 33,
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "kind": "provider_registry",
@@ -404,7 +404,7 @@
       "connector_attr": "get_candles",
       "connector_module": "data.connectors.polygon_adapter",
       "default_enabled": true,
-      "display_name": "Polygon",
+      "display_name": "Massive (formerly Polygon.io)",
       "docs_url": "https://polygon.io/docs/rest",
       "enabled_env": null,
       "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
@@ -422,6 +422,7 @@
       "regional_caveat": null,
       "release_policy": "disabled or best-effort until exact environment/plan certification passes",
       "required_env": [
+        "MASSIVE_API_KEY",
         "POLYGON_API_KEY"
       ],
       "required_env_all": [],
@@ -998,6 +999,392 @@
       ],
       "sample_symbol": "AAPL",
       "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.coingecko_adapter",
+      "default_enabled": true,
+      "display_name": "CoinGecko / GeckoTerminal",
+      "docs_url": "https://docs.coingecko.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "coingecko",
+      "market_types": [
+        "spot",
+        "dex_pool"
+      ],
+      "notes": "Keyless public discovery/context; free API honestly serves 1h/1d only (finer granularity fails closed). Never the final execution quote.",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "discovery",
+        "metadata",
+        "last_resort_fallback"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.coinmetrics_adapter",
+      "default_enabled": true,
+      "display_name": "Coin Metrics Community",
+      "docs_url": "https://docs.coinmetrics.io/api/v4",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "coinmetrics",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "Community API is keyless; Pro API activates via COIN_METRICS_API_KEY.",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "historical",
+        "network_metrics",
+        "public"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "onchain_pool",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.defillama_adapter",
+      "default_enabled": true,
+      "display_name": "DefiLlama",
+      "docs_url": "https://defillama.com/docs/api",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "defillama",
+      "market_types": [
+        "dex_pool",
+        "stablecoin",
+        "yield_pool"
+      ],
+      "notes": "Context/discovery only; no candle endpoint, never execution truth.",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "on_chain",
+        "discovery",
+        "context"
+      ],
+      "sample_symbol": "USDCUSDT",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "interest_rate",
+        "macro"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.fred_adapter",
+      "default_enabled": true,
+      "display_name": "FRED",
+      "docs_url": "https://fred.stlouisfed.org/docs/api/fred/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "fred",
+      "market_types": [
+        "yield_series",
+        "rate_series",
+        "analysis"
+      ],
+      "notes": "Vintage-aware macro context; dormant without FRED_API_KEY.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "FRED_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "macro",
+        "point_in_time"
+      ],
+      "sample_symbol": "DGS10",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "macro",
+        "interest_rate"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.trading_economics_adapter",
+      "default_enabled": false,
+      "display_name": "Trading Economics",
+      "docs_url": "https://docs.tradingeconomics.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "trading_economics",
+      "market_types": [
+        "calendar",
+        "indicator",
+        "analysis"
+      ],
+      "notes": "Consensus-vs-actual calendar; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "TRADING_ECONOMICS_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "economic_calendar",
+        "macro"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_perpetual"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.coinglass_adapter",
+      "default_enabled": false,
+      "display_name": "CoinGlass",
+      "docs_url": "https://docs.coinglass.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "coinglass",
+      "market_types": [
+        "perpetual"
+      ],
+      "notes": "Capabilities reflect the subscribed plan; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "COINGLASS_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "derivatives_intelligence",
+        "funding",
+        "open_interest"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "onchain_pool"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.dune_adapter",
+      "default_enabled": false,
+      "display_name": "Dune",
+      "docs_url": "https://docs.dune.com/api-reference/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "dune",
+      "market_types": [
+        "on_chain"
+      ],
+      "notes": "Scheduled SQL queries; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "DUNE_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "on_chain",
+        "analytics"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "crypto_perpetual"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.kaiko_adapter",
+      "default_enabled": false,
+      "display_name": "Kaiko",
+      "docs_url": "https://docs.kaiko.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "kaiko",
+      "market_types": [
+        "spot",
+        "perpetual"
+      ],
+      "notes": "Institutional normalized data; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "KAIKO_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "institutional",
+        "reference_data"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "onchain_pool"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.glassnode_adapter",
+      "default_enabled": false,
+      "display_name": "Glassnode",
+      "docs_url": "https://docs.glassnode.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "glassnode",
+      "market_types": [
+        "on_chain"
+      ],
+      "notes": "Paid on-chain API; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "GLASSNODE_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "on_chain",
+        "institutional"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "onchain_pool"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": null,
+      "connector_module": "data.connectors.cryptoquant_adapter",
+      "default_enabled": false,
+      "display_name": "CryptoQuant",
+      "docs_url": "https://docs.cryptoquant.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "cryptoquant",
+      "market_types": [
+        "on_chain"
+      ],
+      "notes": "Institutional on-chain; dormant without credentials.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "CRYPTOQUANT_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "on_chain",
+        "institutional"
+      ],
+      "sample_symbol": null,
+      "sample_timeframe": "1h",
       "sandbox": false,
       "timeframes": [
         "1d"

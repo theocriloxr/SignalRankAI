@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
-  "variable_count": 1121,
+  "variable_count": 1126,
   "variables": [
     {
       "declared_defaults": {},
@@ -2520,7 +2520,7 @@
       "name": "CRYPTO_MARKET_DATA_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/connector_registry.py:147",
+        "data/connector_registry.py:150",
         "data/fetcher.py:2610"
       ],
       "required_by_code": true,
@@ -5652,6 +5652,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {},
+      "name": "LIVE_EXECUTION_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "data/provider_activation.py:185"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         ".env.example": "1"
       },
@@ -5881,6 +5891,36 @@
       "production_example_default": null,
       "read_locations": [
         "data/market_data.py:1002"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "MASSIVE_API_BASE_URL",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/polygon_adapter.py:34"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "MASSIVE_API_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/polygon_adapter.py:27"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {},
+      "name": "MASSIVE_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/polygon_adapter.py:40"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8482,8 +8522,10 @@
       },
       "name": "PAPER_TRADING_ENABLED",
       "production_example_default": "1",
-      "read_locations": [],
-      "required_by_code": false,
+      "read_locations": [
+        "data/provider_activation.py:189"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -8999,7 +9041,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:70",
-        "data/connectors/polygon_adapter.py:21",
+        "data/connectors/polygon_adapter.py:28",
         "data/get_live_price.py:1134",
         "data/get_live_price.py:133",
         "data/get_live_price.py:341",
@@ -9811,8 +9853,10 @@
       },
       "name": "REAL_EXECUTION_ENABLED",
       "production_example_default": "0",
-      "read_locations": [],
-      "required_by_code": false,
+      "read_locations": [
+        "data/provider_activation.py:183"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -12354,6 +12398,16 @@
       "production_example_default": null,
       "read_locations": [
         "signalrank_telegram/bot.py:6075"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "TESTNET_EXECUTION_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "data/provider_activation.py:187"
       ],
       "required_by_code": true,
       "sensitive": false

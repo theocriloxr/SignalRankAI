@@ -1,5 +1,5 @@
 {
-  "count": 123,
+  "count": 126,
   "flags": [
     {
       "dangerous": false,
@@ -467,6 +467,14 @@
     },
     {
       "dangerous": false,
+      "name": "LIVE_EXECUTION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "MARKET_ALTERNATIVE_SIGNALS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -476,6 +484,14 @@
     {
       "dangerous": false,
       "name": "MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "MASSIVE_MARKET_DATA_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -908,6 +924,14 @@
     {
       "dangerous": false,
       "name": "TELEGRAM_SEND_SUCCESS_LOG_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "TESTNET_EXECUTION_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

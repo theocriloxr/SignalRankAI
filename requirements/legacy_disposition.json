@@ -1,5 +1,5 @@
 {
-  "file_count": 1251,
+  "file_count": 1270,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -27,11 +27,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 157,
+      "line_count": 254,
       "path": ".env.providers.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "95c96157b93fd05f4a5267680883f5d0857c2acf4fcbac321f818108d433cc51",
-      "size_bytes": 5193
+      "sha256": "d1b1c757370ea262ea415b5ee41ecf52f4c42e8a97a703c9b23533815bd2f1e6",
+      "size_bytes": 8378
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1043,19 +1043,27 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 310,
+      "line_count": 313,
       "path": "data/connector_registry.py",
       "reason": "production/build source",
-      "sha256": "3737a5ed933481e288d4c04bedbff5d6a1206dd4097a7f121b496144de5e9881",
-      "size_bytes": 13643
+      "sha256": "eefd4cc1b77762d14dd42034d14e47c694f0b9bf4ec26db98ae1ac9014264d66",
+      "size_bytes": 14135
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 65,
+      "line_count": 107,
       "path": "data/connectors/__init__.py",
       "reason": "production/build source",
-      "sha256": "06ca0c78a05b7152a21df6ca74df11b24a2f48f09d069005e65e7b5b9e304e32",
-      "size_bytes": 2551
+      "sha256": "2a21c6f986fbb9b0a29c46f95799686583af46e432053a67117806bfb2bdd0b0",
+      "size_bytes": 4129
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 70,
+      "path": "data/connectors/_common.py",
+      "reason": "production/build source",
+      "sha256": "35ab4cee3e0c08cee1a2cd6dac4b5c8b67f8c3993da4d4edf156c1a27cff8b46",
+      "size_bytes": 1993
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1107,6 +1115,30 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 238,
+      "path": "data/connectors/coingecko_adapter.py",
+      "reason": "production/build source",
+      "sha256": "8876d8cba95599193f811d5d07800c4463b46cae56b6d0891d0b523c79e08fb9",
+      "size_bytes": 8388
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 99,
+      "path": "data/connectors/coinglass_adapter.py",
+      "reason": "production/build source",
+      "sha256": "3bce4a1fdf737a0f2890682aae8371d9ba9c489cf107fff6019135c6a9d821a3",
+      "size_bytes": 3316
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 150,
+      "path": "data/connectors/coinmetrics_adapter.py",
+      "reason": "production/build source",
+      "sha256": "22efd8f94169341854fa988189382e305b5d3792be169c65c504948e512f5789",
+      "size_bytes": 5047
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 155,
       "path": "data/connectors/cryptocompare_adapter.py",
       "reason": "production/build source",
@@ -1115,11 +1147,35 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 70,
+      "path": "data/connectors/cryptoquant_adapter.py",
+      "reason": "production/build source",
+      "sha256": "79217d56c9768c99e77d04a3f4aaf35bacdc982ab99132a8f3aaf0eb629f6db5",
+      "size_bytes": 2133
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 117,
+      "path": "data/connectors/defillama_adapter.py",
+      "reason": "production/build source",
+      "sha256": "84a5f8983ebf07537e60bc11ec45fc4f07fe22598e2abb7600c425a98966e8eb",
+      "size_bytes": 4041
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 121,
       "path": "data/connectors/deribit_adapter.py",
       "reason": "production/build source",
       "sha256": "4ca86845c2f3d2a655b667d435ef7fd38d39ee2f2ba01b3c1baf515d87a20ab7",
       "size_bytes": 4162
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 73,
+      "path": "data/connectors/dune_adapter.py",
+      "reason": "production/build source",
+      "sha256": "199b30930d2b14b056e8639f3b09c2d7ba02f32d494da6aa2e6c4a0758331fa1",
+      "size_bytes": 2071
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1163,11 +1219,35 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 105,
+      "path": "data/connectors/fred_adapter.py",
+      "reason": "production/build source",
+      "sha256": "c0aaf960c59de0b4d10e49af86c86c395a994158d9dcbc5505b6b175a1b73a7c",
+      "size_bytes": 3110
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 66,
+      "path": "data/connectors/glassnode_adapter.py",
+      "reason": "production/build source",
+      "sha256": "60ae85d94566e1df034aac3b5b0622519331ddca8a01972e6a18b40eb7996648",
+      "size_bytes": 2035
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 268,
       "path": "data/connectors/hyperliquid_adapter.py",
       "reason": "production/build source",
       "sha256": "9007ecb7a208b1563e7d0a3f3e0f88f1de3ea6fad6885c72a69bbd0212fc8a86",
       "size_bytes": 9000
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 90,
+      "path": "data/connectors/kaiko_adapter.py",
+      "reason": "production/build source",
+      "sha256": "7077bdeccf3777d7c02c3c23fbbbb9b2db07798152999bd480a0daa66df2d4ac",
+      "size_bytes": 2554
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1219,11 +1299,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 84,
+      "line_count": 110,
       "path": "data/connectors/polygon_adapter.py",
       "reason": "production/build source",
-      "sha256": "1f38b5039df388d0b48f3b87ef16a59639b79104feb5e83e87cb769a5f1b35a9",
-      "size_bytes": 2875
+      "sha256": "ab9c658586b4c133ed9ba6a723c45a5b879535e2fd8166b78463ac6e95592fb5",
+      "size_bytes": 3647
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1248,6 +1328,14 @@
       "reason": "production/build source",
       "sha256": "bb50a486543a78ef62e45e069091a3644c6990d9e13450b6f401f107c74a9d64",
       "size_bytes": 2932
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 84,
+      "path": "data/connectors/trading_economics_adapter.py",
+      "reason": "production/build source",
+      "sha256": "08e469a3e6a43a2e89b99eeb2aa4eed67d42434d4aad24591008bf9703d694c6",
+      "size_bytes": 2575
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1323,6 +1411,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 477,
+      "path": "data/instrument_discovery.py",
+      "reason": "production/build source",
+      "sha256": "aa45601ef8c1afdaac319077b7e5c7e7ad74a5f8250a96b19b1fca4f489c417c",
+      "size_bytes": 18363
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 1332,
       "path": "data/market_data.py",
       "reason": "production/build source",
@@ -1355,11 +1451,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 378,
+      "line_count": 199,
+      "path": "data/provider_activation.py",
+      "reason": "production/build source",
+      "sha256": "59ca9c0935ca63d0f9a69ca38f9d7dd90c3d539798f8413fc22b8a2b9a0a72fe",
+      "size_bytes": 7614
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 455,
       "path": "data/provider_catalog.py",
       "reason": "production/build source",
-      "sha256": "242c0b0150b0ac214ed05d5c3e33631222d577ed54bbd8c951a69091a8ca56f5",
-      "size_bytes": 18247
+      "sha256": "8721043ac035931540265fbe5bb005678030b615205082294f49cdf65ba47433",
+      "size_bytes": 22905
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2643,6 +2747,30 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 78,
+      "path": "docs/providers/DYNAMIC_INSTRUMENT_REGISTRY.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "231ea26f2daa820e6827b134fbaee657998197734ce421f4e45fe0ac68e671b4",
+      "size_bytes": 2496
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 61,
+      "path": "docs/providers/PROVIDER_ACTIVATION_GUIDE.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "157bf59e33c608291f3f656eed40bc6ce5c563b437e6f4b61d846b794cd18c1a",
+      "size_bytes": 2475
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 53,
+      "path": "docs/providers/PROVIDER_ACTIVATION_MATRIX.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "b5d0bbf731d0d37b4e133b94359340a762c5e7ab6d230a582cee757b7f5bc43d",
+      "size_bytes": 2926
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 44,
       "path": "docs/providers/PROVIDER_CAPABILITY_MATRIX.md",
       "reason": "documentation/specification/evidence",
@@ -2659,6 +2787,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 49,
+      "path": "docs/providers/PROVIDER_COST_LADDER.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "d9a38155ec9ff9bb8f21efe496b7844d25296ebd1516225f152694926fd68c12",
+      "size_bytes": 3149
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 61,
       "path": "docs/providers/PROVIDER_ENV_INVENTORY_EXISTING.md",
       "reason": "documentation/specification/evidence",
@@ -2667,11 +2803,19 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 79,
+      "line_count": 103,
       "path": "docs/providers/PROVIDER_ENV_MANIFEST_NEW.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "8cd4a2a590ca159e7945dafffa55f52e8da6be8cdf8e11152e75d4f30618f146",
-      "size_bytes": 8460
+      "sha256": "51f5816ed18cbb5a167a4ce8d838d016103362dba683bd955bcd73529515b826",
+      "size_bytes": 11695
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 32,
+      "path": "docs/providers/PROVIDER_LICENSING_MATRIX.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "80a428cfb1a4dee0d5cab69376f69809e6880321aed230e206515bac17feecb9",
+      "size_bytes": 3084
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5019,11 +5163,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 13447,
+      "line_count": 13501,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "a1f489e380790ee69770ae554a871bc5d762275e56f46dd8af0bee77101a7f0b",
-      "size_bytes": 414925
+      "sha256": "fa34d281c3a2e70f7e8a63b313cd8cd56c46d3d4ad3d301057c17b1708ee81d6",
+      "size_bytes": 416391
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5035,11 +5179,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 998,
+      "line_count": 1022,
       "path": "requirements/feature_flags.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e6b2c2df3740fedd12dc1a328c5a6e79dc24ef2cdacc26648edfcfec69536340",
-      "size_bytes": 34390
+      "sha256": "4336d151c9bfe26df4ad08ca85b60b0dff7f15ca4bc9a6f4231f8fa934a1d4a3",
+      "size_bytes": 35214
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5059,11 +5203,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1014,
+      "line_count": 1401,
       "path": "requirements/provider_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "0e59e71676946f198303c17d6019c0326e1d3d45eb73a3a54a8b9d9877ddb75d",
-      "size_bytes": 29614
+      "sha256": "8040cd5f00f5bc28a3c5b04fe0c6e6d7f4d477f7f7b7365dfbbb4092e4cc0324",
+      "size_bytes": 41851
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9459,6 +9603,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 463,
+      "path": "tests/test_v22_provider_expansion.py",
+      "reason": "automated test evidence",
+      "sha256": "caebdf584ae88a5297ac5bf2486d48bf6a1fb6b93e34232f6138783ac07b933f",
+      "size_bytes": 20399
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 116,
       "path": "tests/test_v7_governance_contract.py",
       "reason": "automated test evidence",
@@ -10022,8 +10174,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 275,
-    "PRESERVE_BEHAVIOUR": 767,
-    "TEST_ONLY": 208
+    "DOCUMENTATION_ONLY": 280,
+    "PRESERVE_BEHAVIOUR": 780,
+    "TEST_ONLY": 209
   }
 }

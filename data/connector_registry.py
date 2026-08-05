@@ -59,7 +59,7 @@ def _env_enabled(name: str, default: bool = True) -> bool:
 
 _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "twelvedata_connector": ("TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY"),
-    "polygon_connector": ("POLYGON_API_KEY",),
+    "polygon_connector": ("MASSIVE_API_KEY", "POLYGON_API_KEY"),  # Massive (formerly Polygon.io) consolidated secret
     "tiingo_connector": ("TIINGO_API_KEY",),
     "fmp_connector": ("FMP_API_KEY",),
     "alphavantage_connector": ("ALPHAVANTAGE_API_KEY", "ALPHA_VANTAGE_API_KEY"),
@@ -112,6 +112,9 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
             or getattr(c, "cryptocompare_get_candles", None),
         ),
         ("kucoin_connector", getattr(c, "kucoin_get_candles", None)),
+        # Public keyless discovery/fallback sources (never execution quotes).
+        ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
+        ("coinmetrics_connector", getattr(c, "coinmetrics_get_candles", None)),
     ]
     if binance_enabled:
         crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
@@ -226,15 +229,15 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
         if fn is not None and _provider_configured(name):
             providers.append((name, _wrap_callable(fn)))
 
-    # Final legacy safety net in same priority shape.
+    # Final legacy safety net in same priority shape. The legacy CoinGecko
+    # fallback is skipped when the adapter is already in the chain to avoid
+    # double-fetching the same public endpoint.
     try:
         from data import providers as legacy
         if kind == "crypto":
-            providers.extend(
-                [
-                    ("coingecko_legacy", _wrap_callable(legacy.fetch_coingecko_candles)),
-                ]
-            )
+            existing = {name for name, _ in providers}
+            if "coingecko_connector" not in existing:
+                providers.append(("coingecko_legacy", _wrap_callable(legacy.fetch_coingecko_candles)))
         else:
             existing = {name.replace("_connector", "").replace("_legacy", "") for name, _ in providers}
             legacy_candidates = [

@@ -77,3 +77,27 @@ Legend:
 `TWELVEDATA_API_KEY`, `FINNHUB_API_KEY`, `OANDA_API_KEY`, `COINGECKO_API_KEY`,
 `NASDAQ_DATA_LINK_*`, `EODHD_*`, `MARKETSTACK_API_KEY`, `TIINGO_API_KEY`,
 `FMP_API_KEY`, `TRADIER_*`, `CRYPTOCOMPARE_API_KEY`.
+
+## v2.2 additions (adapters implemented 2026-08-05)
+
+| Variable | Provider | Service | Secret | Req/Opt | Default | Already existed? | Canonical replacement | Activation effect | Railway env |
+|---|---|---|---|---|---|---|---|---|---|
+| `MASSIVE_API_KEY` | Massive (Polygon.io) | all | **yes** | opt | — | alias | `POLYGON_API_KEY` | One consolidated secret; MASSIVE wins, POLYGON alias kept. Credentials alone never enable execution | all |
+| `MASSIVE_API_BASE_URL` | Massive | all | no | opt | api.massive.com | no | — | Overrides REST base URL | all |
+| `MASSIVE_MARKET_DATA_ENABLED` | Massive | all | no | opt | 1 | no | — | Gates polygon adapter candles | all |
+| `COINGECKO_ENABLED` / `COINGECKO_ACCESS_MODE` | CoinGecko | all | no | opt | 1 / keyless | yes (partial legacy) | `COINGECKO_API_KEY` legacy alias | Keyless public discovery + last-resort candles; `pro` upgrades base URL | all |
+| `COINGECKO_PRO_API_KEY` / `COINGECKO_DEMO_API_KEY` | CoinGecko | all | **yes** | opt | — | no | — | Upgrade to Pro/Demo endpoints; never activates execution | all |
+| `COINGECKO_USE_FOR_EXECUTION_QUOTE` | CoinGecko | all | no | opt | 0 | no | — | Must stay 0 (context only) | all |
+| `GECKOTERMINAL_API_URL` | GeckoTerminal | all | no | opt | api.geckoterminal.com/api/v2 | no | — | DEX pool metadata base URL | all |
+| `COIN_METRICS_ENABLED` / `COIN_METRICS_ACCESS_MODE` | Coin Metrics | all | no | opt | 1 / community | no | — | Keyless Community market candles + network metrics | all |
+| `COIN_METRICS_API_KEY` | Coin Metrics | all | **yes** | opt | — | no | — | Upgrades to Pro API; never activates execution | all |
+| `DEFILLAMA_ENABLED` / `DEFILLAMA_PRO_ENABLED` | DefiLlama | all | no | opt | 1 / 0 | no | — | Keyless TVL/stablecoin/yield context + discovery | all |
+| `FRED_ENABLED` / `FRED_API_KEY` | FRED | engine | **yes** | opt | 1 / — | no | — | Dormant without key; macro series + vintages | engine |
+| `TRADING_ECONOMICS_ENABLED` / `TRADING_ECONOMICS_API_KEY` | Trading Economics | engine | **yes** | opt | 0 / — | no | — | Dormant without key; economic calendar | engine |
+| `COINGLASS_ENABLED` / `COINGLASS_API_KEY` | CoinGlass | engine | **yes** | opt | 0 / — | no | — | Dormant without key; funding/OI/liquidations | engine |
+| `DUNE_ENABLED` / `DUNE_API_KEY` | Dune | worker | **yes** | opt | 0 / — | no | — | Dormant without key; scheduled SQL results | worker |
+| `KAIKO_ENABLED` / `KAIKO_API_KEY` / `KAIKO_REGION` | Kaiko | engine | **yes** | opt | 0 / — / us | no | — | Dormant without key; institutional data | engine |
+| `GLASSNODE_ENABLED` / `GLASSNODE_API_KEY` | Glassnode | worker | **yes** | opt | 0 / — | no | — | Dormant without key; on-chain metrics | worker |
+| `CRYPTOQUANT_ENABLED` / `CRYPTOQUANT_API_KEY` | CryptoQuant | worker | **yes** | opt | 0 / — | no | — | Dormant without key; on-chain metrics | worker |
+| `EXECUTION_AUTO_ENABLE_FROM_CREDENTIALS` | global | all | no | opt | 0 | no | — | Must stay 0; credentials never enable execution | all |
+| `EXECUTION_REQUIRE_EXPLICIT_ENABLE` / `EXECUTION_REQUIRE_PROVIDER_CERTIFICATION` / `EXECUTION_REQUIRE_USER_OPT_IN` | global | all | no | opt | 1 | no | — | Guarded execution gates | all |

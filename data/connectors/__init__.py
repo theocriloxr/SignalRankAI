@@ -31,6 +31,31 @@ from .hyperliquid_adapter import (
 	get_mark_price as hyperliquid_get_mark_price,
 	get_order_book as hyperliquid_get_order_book,
 )
+from .coingecko_adapter import (
+	get_candles as coingecko_get_candles,
+	get_price as coingecko_get_price,
+	discover_instruments as coingecko_discover_instruments,
+)
+from .coinmetrics_adapter import (
+	get_candles as coinmetrics_get_candles,
+	get_network_metric as coinmetrics_get_network_metric,
+)
+from .defillama_adapter import (
+	discover_instruments as defillama_discover_instruments,
+	get_stablecoin_totals as defillama_stablecoin_totals,
+	get_protocols_tvl as defillama_protocols_tvl,
+)
+from .fred_adapter import fetch_series as fred_fetch_series
+from .trading_economics_adapter import fetch_calendar as trading_economics_fetch_calendar
+from .coinglass_adapter import (
+	get_funding as coinglass_get_funding,
+	get_open_interest as coinglass_get_open_interest,
+	get_liquidations as coinglass_get_liquidations,
+)
+from .dune_adapter import query_result as dune_query_result
+from .kaiko_adapter import get_ohlcv as kaiko_get_ohlcv
+from .glassnode_adapter import onchain_metric as glassnode_onchain_metric
+from .cryptoquant_adapter import onchain_metric as cryptoquant_onchain_metric
 
 __all__ = [
 	"Connector",
@@ -62,4 +87,21 @@ __all__ = [
 	"hyperliquid_get_funding",
 	"hyperliquid_get_mark_price",
 	"hyperliquid_get_order_book",
+	"coingecko_get_candles",
+	"coingecko_get_price",
+	"coingecko_discover_instruments",
+	"coinmetrics_get_candles",
+	"coinmetrics_get_network_metric",
+	"defillama_discover_instruments",
+	"defillama_stablecoin_totals",
+	"defillama_protocols_tvl",
+	"fred_fetch_series",
+	"trading_economics_fetch_calendar",
+	"coinglass_get_funding",
+	"coinglass_get_open_interest",
+	"coinglass_get_liquidations",
+	"dune_query_result",
+	"kaiko_get_ohlcv",
+	"glassnode_onchain_metric",
+	"cryptoquant_onchain_metric",
 ]
