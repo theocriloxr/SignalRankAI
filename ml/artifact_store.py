@@ -81,11 +81,21 @@ async def persist_active_model_artifact(
                 )
             )
             await session.commit()
+        # A candidate artifact is NOT the active champion: make the role
+        # explicit so logs can never imply promotion happened.
+        role = (
+            "champion"
+            if str(normalized_model_name).lower() in {"champion", "active", "primary", "production"}
+            else "candidate"
+        )
         logger.info(
-            "[ml_artifact] persisted active model name=%s version=%s hash=%s",
+            "[ml_artifact] persisted model artifact name=%s version=%s hash=%s role=%s "
+            "champion_unchanged=%s",
             normalized_model_name,
             payload.get("version"),
             _payload_hash(payload),
+            role,
+            str(role != "champion").lower(),
         )
         return True
     except Exception as exc:

@@ -975,6 +975,21 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     if not _env_bool("PRODUCTION_QUALITY_GUARD_ENABLED", True):
         return True, ""
 
+    # Pre-scoring geometry validation (staging-certification requirement):
+    # zero-risk geometry (Entry == Stop == Target) and wrong-side stops/targets
+    # are rejected here, before scoring, ML validation and persistence, with an
+    # auditable reason instead of being reported as merely "poor R".
+    try:
+        from core.geometry_calculation import validate_trade_geometry
+
+        _geometry_ok, _geometry_reason = validate_trade_geometry(signal)
+        if not _geometry_ok:
+            signal["final_rejection_stage"] = "geometry_validation"
+            signal["final_rejection_reason"] = _geometry_reason
+            return False, _geometry_reason
+    except Exception as _geometry_exc:  # noqa: BLE001 - gate must stay up
+        logger.debug("geometry validation unavailable: %s", _geometry_exc)
+
     asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     asset_class = _asset_class_key(asset)
     score = _signal_display_score(signal)
@@ -4021,6 +4036,24 @@ def main_loop(DRY_RUN: bool = False):
                                         meta={"error_type": type(_pex).__name__},
                                     )
                                     continue
+
+                            # ── Geometry pre-storage guard (staging certification) ────────
+                            # Zero-risk geometry (Entry == Stop == Target) must never be
+                            # persisted: reject with an auditable reason before storage.
+                            try:
+                                from core.geometry_calculation import validate_trade_geometry
+
+                                _g_ok, _g_reason = validate_trade_geometry(sig)
+                                if not _g_ok:
+                                    pipeline_stats["skipped_invalid_geometry"] = int(
+                                        pipeline_stats.get("skipped_invalid_geometry", 0) or 0
+                                    ) + 1
+                                    sig["final_rejection_stage"] = "geometry_validation"
+                                    sig["final_rejection_reason"] = _g_reason
+                                    _log_decision("skipped", sig, reason=_g_reason)
+                                    continue
+                            except Exception as _g_exc:  # noqa: BLE001 - guard must stay up
+                                logger.debug("geometry pre-storage guard unavailable: %s", _g_exc)
 
                             # Stamp created_at
                             # store_signal_compat sets it on the DB row but doesn't write it back

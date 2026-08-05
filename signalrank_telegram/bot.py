@@ -685,14 +685,20 @@ async def _resend_unsent_signals_async():
                     except Exception as send_err:
                         failed_count += 1
                         _err_text = str(send_err or "")
-                        if "bot was blocked by the user" in _err_text.lower():
-                            logger.info(f"[resend] User {user_id} blocked bot; suppressing retries for signal {signal_id}")
+                        if any(token in _err_text.lower() for token in ("bot was blocked", "chat not found", "user is deactivated", "chat not accessible")):
+                            logger.info(f"[resend] User {user_id} terminally unreachable ({_err_text[:80]}); marking + suppressing retries for signal {signal_id}")
+                            try:
+                                from db.staging_remediation import mark_telegram_unreachable
+
+                                mark_telegram_unreachable(int(user_id), "telegram_permanent_error")
+                            except Exception:
+                                pass
                             try:
                                 await _mark_delivery_with_telegram_proof(
                                     telegram_user_id=int(user_id),
                                     signal_id=str(signal_id),
                                     proof=None,
-                                    error="telegram_bot_blocked",
+                                    error="telegram_unreachable",
                                     delivery_state="blocked",
                                 )
                             except Exception:
@@ -3107,11 +3113,18 @@ async def _build_monitor_snapshot(
     )
     from core.signal_identity import public_signal_id
     display_id = public_signal_id(payload)
+    # Canonical monitor view: the text is derived from the DB lifecycle state
+    # (is_active / lifecycle_state) — never independently inferred. A terminal
+    # or expired signal must never say "continuing automatically".
     monitoring_status = str(getattr(monitoring_row, "status", "auto_continue") or "auto_continue")
     if monitoring_status == "stopped":
         monitoring_text = f"Stopped at TP{int(getattr(monitoring_row, 'stopped_at_stage', 0) or 0)}"
     elif monitoring_status == "access_revoked":
         monitoring_text = "Stopped because access was revoked"
+    elif not is_active:
+        monitoring_text = "Completed"
+    elif str(state_value or "").upper() in {"PENDING_ENTRY", "PENDING", "WAITING_ENTRY"}:
+        monitoring_text = "Waiting for entry"
     else:
         monitoring_text = "Continuing automatically"
     lines = [

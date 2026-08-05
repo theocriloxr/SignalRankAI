@@ -201,9 +201,40 @@ async def _fetch_yfinance_with_timeout(asset: str, tf: str, limit: int) -> list:
         return []
 
 
+#: TradingView is optional enrichment ONLY. A rate-limit or timeout opens the
+#: circuit so the engine is never blocked; calls are skipped while it is open.
+_TV_CIRCUIT_OPEN_UNTIL: float = 0.0
+_TV_CIRCUIT_OPEN_SECONDS = float(os.getenv("TRADINGVIEW_CIRCUIT_OPEN_SECONDS", "300") or 300)
+_TV_ENRICHMENT_CACHE: dict[tuple[str, str], dict] = {}
+
+
+def _tradingview_circuit_open() -> bool:
+    import time as _time
+
+    return _TV_CIRCUIT_OPEN_UNTIL > _time.monotonic()
+
+
+def _open_tradingview_circuit(reason: str) -> None:
+    import time as _time
+
+    global _TV_CIRCUIT_OPEN_UNTIL
+    _TV_CIRCUIT_OPEN_UNTIL = _time.monotonic() + float(_TV_CIRCUIT_OPEN_SECONDS)
+    logger.info(
+        "[tradingview] optional_enrichment_circuit_open reason=%s circuit_open_seconds=%s",
+        reason, _TV_CIRCUIT_OPEN_SECONDS,
+    )
+
+
 async def _tradingview_indicators(asset: str, tf: str) -> dict:
+    """Optional TradingView indicator enrichment (never required)."""
     if not _env_bool("TRADINGVIEW_ENABLED", True):
         return {}
+    if _tradingview_circuit_open():
+        return {}
+    cache_key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
+    cached = _TV_ENRICHMENT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         from tradingview_ta import TA_Handler, Interval
     except Exception:
@@ -248,8 +279,18 @@ async def _tradingview_indicators(asset: str, tf: str) -> dict:
         )
         indicators = getattr(analysis, "indicators", None)
         if isinstance(indicators, dict):
+            _TV_ENRICHMENT_CACHE[cache_key] = indicators
             return indicators
-    except Exception:
+    except asyncio.TimeoutError:
+        # Rate limit / slow upstream: open the circuit, do NOT retry this cycle.
+        _open_tradingview_circuit("timeout_or_rate_limit")
+        return {}
+    except Exception as exc:
+        text = str(exc or "").lower()
+        if any(token in text for token in ("rate", "429", "too many", "limit")):
+            _open_tradingview_circuit("rate_limit_evidence")
+        else:
+            logger.debug("[tradingview] optional_enrichment_unavailable: %s", text[:120])
         return {}
     return {}
 

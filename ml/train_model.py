@@ -105,7 +105,24 @@ def _promotion_quality_gate(
     )
     accuracy = float(metrics.get("accuracy", 0.0) or 0.0)
     auc = float(metrics.get("auc", 0.0) or 0.0)
-    return accuracy >= min_accuracy and auc >= min_auc, min_accuracy, min_auc
+    # Imbalance-aware promotion gate (staging-certification requirement): raw
+    # accuracy is never trading accuracy.  A majority-class model (e.g. the
+    # staging candidate [[56,0],[13,2]]) must fail on the gates below.
+    balanced_acc = float(metrics.get("balanced_accuracy", accuracy) or 0.0)
+    positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
+    pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
+    expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
+    majority_baseline = float(metrics.get("majority_baseline_accuracy", 1.0) or 1.0)
+    ok = (
+        accuracy >= min_accuracy
+        and auc >= min_auc
+        and auc > majority_baseline
+        and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
+        and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
+        and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
+        and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
+    )
+    return ok, min_accuracy, min_auc
 
 
 def _offline_bootstrap_allowed() -> bool:
@@ -1159,10 +1176,19 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     except Exception:
         auc = 0.5
 
-    logger.info(f"Test Accuracy: {acc:.4f}")
+    logger.info(f"Test Accuracy (classification only, NOT trading accuracy): {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
     logger.info(f"Confusion Matrix:\n{confusion_matrix(y_te, y_pred)}")
     logger.info(f"Classification Report:\n{classification_report(y_te, y_pred, zero_division=0)}")
+    try:
+        from ml.metrics import evaluate_classification, render_metrics_log
+
+        _full_report = evaluate_classification(y_te, y_pred, y_proba)
+        _full_metrics = _full_report.to_dict()
+        logger.info("[%s]", render_metrics_log(_full_report))
+    except Exception as _metrics_exc:  # noqa: BLE001 - full metrics are additive
+        _full_metrics = {}
+        logger.debug("full metrics unavailable: %s", _metrics_exc)
 
     # Drift detection: compare with last run (if available)
     drift_path = Path(__file__).parent / "ml_drift.json"
@@ -1239,6 +1265,22 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         "positive_rows": int((y_train == 1).sum()),
         "negative_rows": int((y_train == 0).sum()),
         "calibration": calibration_metrics,
+        "balanced_accuracy": _full_metrics.get("balanced_accuracy"),
+        "mcc": _full_metrics.get("mcc"),
+        "positive_precision": _full_metrics.get("positive_precision"),
+        "positive_recall": _full_metrics.get("positive_recall"),
+        "positive_f1": _full_metrics.get("positive_f1"),
+        "negative_precision": _full_metrics.get("negative_precision"),
+        "negative_recall": _full_metrics.get("negative_recall"),
+        "pr_auc": _full_metrics.get("pr_auc"),
+        "brier": _full_metrics.get("brier"),
+        "ece": _full_metrics.get("ece"),
+        "log_loss": _full_metrics.get("log_loss"),
+        "coverage": _full_metrics.get("coverage"),
+        "selective_accuracy": _full_metrics.get("selective_accuracy"),
+        "majority_baseline_accuracy": _full_metrics.get("majority_baseline_accuracy"),
+        "expected_r": _full_metrics.get("expected_r"),
+        "confusion": _full_metrics.get("confusion"),
     }
     return model, feature_cols, calibration_x, calibration_y, metrics
 

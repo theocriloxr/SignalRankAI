@@ -215,6 +215,61 @@ def geometry_from_signal(signal: Mapping[str, Any]) -> GeometryResult:
     )
 
 
+def validate_trade_geometry(
+    signal: Mapping[str, Any],
+    *,
+    minimum_tick_distance: Any = None,
+) -> tuple[bool, str]:
+    """Pre-scoring geometry validator with staging-certification reason codes.
+
+    Returns ``(ok, reason)``.  Reason codes:
+
+    - ``invalid_geometry:missing``
+    - ``invalid_geometry:non_finite``
+    - ``invalid_geometry:zero_risk_distance``      (entry == stop)
+    - ``invalid_geometry:long_stop_not_below_entry``
+    - ``invalid_geometry:short_stop_not_above_entry``
+    - ``invalid_geometry:target_wrong_side``
+    - ``invalid_geometry:non_monotonic_targets``   (tp2 >= tp1, tp3 >= tp2 for long)
+
+    This must run BEFORE scoring, ML validation and persistence so zero-risk
+    geometry (e.g. Entry == Stop == Target) is never reported as merely
+    "poor R".
+    """
+    result = geometry_from_signal(signal)
+    if not result.ok:
+        legacy = result.reason
+        mapping = {
+            "missing_trade_geometry": "invalid_geometry:missing",
+            "non_finite_trade_geometry": "invalid_geometry:non_finite",
+            "zero_risk_distance": "invalid_geometry:zero_risk_distance",
+            "invalid_long_geometry": "invalid_geometry:long_stop_not_below_entry",
+            "invalid_short_geometry": "invalid_geometry:short_stop_not_above_entry",
+            "unsupported_direction": "invalid_geometry:missing",
+        }
+        return False, mapping.get(legacy, f"invalid_geometry:{legacy}")
+
+    if minimum_tick_distance is not None:
+        min_d = decimal_value(minimum_tick_distance)
+        if min_d is not None and min_d > 0 and result.risk_distance is not None:
+            if result.risk_distance <= min_d:
+                return False, "invalid_geometry:zero_risk_distance"
+
+    targets = result.targets
+    if len(targets) > 1:
+        if result.direction == "long":
+            ok = all(
+                targets[i] >= targets[i - 1] for i in range(1, len(targets))
+            )
+        else:
+            ok = all(
+                targets[i] <= targets[i - 1] for i in range(1, len(targets))
+            )
+        if not ok:
+            return False, "invalid_geometry:non_monotonic_targets"
+    return True, ""
+
+
 def enrich_signal_geometry(signal: Mapping[str, Any]) -> dict[str, Any]:
     """Return a copy of *signal* with canonical geometry fields attached.
 
@@ -250,4 +305,5 @@ __all__ = [
     "enrich_signal_geometry",
     "geometry_from_signal",
     "parse_targets",
+    "validate_trade_geometry",
 ]

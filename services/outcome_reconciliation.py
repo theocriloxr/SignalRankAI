@@ -324,12 +324,30 @@ async def ensure_outcome_projections(
                 if outcome is not None and current_status in terminal_statuses:
                     meta.update({
                         "audited_correction": True,
-                        "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
+                        "corrected_by": "system:v1.4.0-outcome-reconciliation",
                         "correction_reason": (
                             "repair lifecycle/outcome disagreement or missing terminal timestamp "
                             "after v1.3.6.8 outcome persistence failure"
                         ),
                     })
+                    try:
+                        from db.staging_remediation import record_outcome_correction
+
+                        record_outcome_correction(
+                            signal_id=signal_id,
+                            original_outcome=str(current_status or "unknown"),
+                            corrected_outcome=str(canonical or status or "unknown"),
+                            reason="lifecycle_outcome_disagreement_repair",
+                            evidence={
+                                "expected": str(status or ""),
+                                "existing": str(current_status or ""),
+                                "corrected_by": meta.get("corrected_by"),
+                                "r_multiple": r_multiple,
+                            },
+                            source="system_reconciliation",
+                        )
+                    except Exception as _corr_exc:  # noqa: BLE001 - corrections are additive
+                        logger.debug("outcome correction record skipped signal=%s: %s", signal_id, _corr_exc)
 
                 projected_outcome = await upsert_outcome(
                     session,

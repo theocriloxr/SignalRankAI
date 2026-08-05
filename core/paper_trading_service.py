@@ -136,6 +136,27 @@ def canonical_direction(value: Any) -> str:
     return "long" if text in {"long", "buy", "bull", "bullish"} else "short"
 
 
+def position_max_age_hours(timeframe: str | None = None) -> float:
+    """Policy max age (hours) for an open paper position before it is stale.
+
+    Per-timeframe conservative defaults; override with
+    ``PAPER_POSITION_MAX_AGE_HOURS``.  Prevents orphaned positions from
+    blocking new signals forever.
+    """
+    explicit = os.getenv("PAPER_POSITION_MAX_AGE_HOURS")
+    if explicit:
+        try:
+            return max(1.0, float(explicit))
+        except (TypeError, ValueError):
+            pass
+    tf = str(timeframe or "").lower().strip()
+    defaults = {
+        "1m": 4.0, "3m": 6.0, "5m": 12.0, "15m": 18.0, "30m": 24.0,
+        "1h": 48.0, "2h": 72.0, "4h": 120.0, "1d": 336.0, "1w": 720.0,
+    }
+    return defaults.get(tf, 72.0)
+
+
 def canonical_asset_class(asset: str, value: Any = None) -> str:
     text = str(value or "").strip().lower()
     aliases = {
@@ -418,6 +439,46 @@ class PaperTradingService:
                 )
             ).scalars().all()
             return [self._position_dict(row) for row in rows]
+
+    async def stale_positions(
+        self,
+        *,
+        max_age_hours: float | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Open paper positions older than the policy max-age for their timeframe.
+
+        Orphaned positions must not block new signals forever
+        (active-position-blocking remediation): they are reported stale for
+        owner review / policy-based closure instead of silently locking assets.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        async with get_session(priority=_paper_worker_priority(), label="paper.stale_positions", timeout_seconds=_paper_db_timeout(8.0)) as session:
+            rows = (
+                await session.execute(
+                    select(PaperPosition)
+                    .where(PaperPosition.status == "open")
+                    .order_by(PaperPosition.opened_at.asc())
+                    .limit(max(1, min(500, int(limit))))
+                )
+            ).scalars().all()
+        out: list[dict[str, Any]] = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            opened_at = getattr(row, "opened_at", None)
+            if opened_at is None:
+                continue
+            opened = opened_at.replace(tzinfo=timezone.utc) if opened_at.tzinfo is None else opened_at
+            age_h = (now - opened).total_seconds() / 3600.0
+            policy_h = float(max_age_hours) if max_age_hours else position_max_age_hours(getattr(row, "timeframe", None))
+            if age_h > policy_h:
+                item = self._position_dict(row)
+                item["age_hours"] = round(age_h, 2)
+                item["max_age_hours"] = policy_h
+                item["stale_reason"] = "position_max_age_exceeded"
+                out.append(item)
+        return out
 
     @staticmethod
     def _position_dict(row: PaperPosition) -> dict[str, Any]:

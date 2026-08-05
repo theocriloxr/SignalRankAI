@@ -1297,6 +1297,15 @@ async def lifespan(_: FastAPI):
     ownership = _railway_process_ownership()
     _validate_production_runtime_contract()
     _log_railway_env_readiness()
+    try:
+        from core.version import get_version_banner
+        from core.startup_diagnostics import render_startup_diagnostics
+
+        logger.info("[%s]", get_version_banner())
+        for line in render_startup_diagnostics().splitlines():
+            logger.info(line)
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never block startup
+        logger.debug("[startup_diagnostics] unavailable: %s", exc)
     logger.info(
         "[runtime_ownership] mode=%s decomposed=%s http=%s telegram=%s scheduler=%s engine=%s worker=%s startup_ops=%s",
         ownership.mode.value,

@@ -1658,6 +1658,18 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         row.last_error = "monitoring_stopped_or_access_revoked"
                         row.updated_at = _utc_now_naive()
                         await session.commit()
+                        # Terminal suppression so pending queries never rescan this
+                        # notification every cycle (notification_terminal_suppressed).
+                        try:
+                            from db.staging_remediation import upsert_terminal_suppression
+
+                            upsert_terminal_suppression(
+                                f"outcome_notification:{getattr(row, 'id', '')}",
+                                canonical_notification_id=int(getattr(row, "id", 0) or 0),
+                                reason="recipient_not_allowed_terminal",
+                            )
+                        except Exception as _sup_exc:  # noqa: BLE001 - additive
+                            logger.debug("terminal suppression skipped id=%s: %s", getattr(row, "id", ""), _sup_exc)
                         continue
 
                     tier_at_send = str(getattr(row, "tier_at_send", "free") or "free").lower()
