@@ -4,6 +4,12 @@ These requirements cannot be truthfully completed or proven inside a source
 archive. They require access to real infrastructure, credentials, contracts,
 market activity, or third-party review.
 
+> Deployment remediation update: repository-side automation for the staging
+> database migration, shared database reference, ordered service upload and log
+> evidence is now included in `scripts/railway_finish_staging.ps1`. Running that
+> command still requires the owner's authenticated Railway session and therefore
+> remains an external action.
+
 ## Railway and database
 
 - Access to the user's Railway staging and production projects.

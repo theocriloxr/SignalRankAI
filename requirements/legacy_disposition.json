@@ -1,5 +1,5 @@
 {
-  "file_count": 1338,
+  "file_count": 1346,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -267,6 +267,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 62,
+      "path": "DEPLOYMENT_REMEDIATION_REPORT_V151.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "909ab2587f218a4fcccff09029ec9d195acc932a385a944228fd48f927e928ca",
+      "size_bytes": 2183
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 40,
       "path": "DEPLOY_DIAGNOSTIC_ENV.md",
       "reason": "documentation/specification/evidence",
@@ -514,6 +522,14 @@
       "size_bytes": 47057
     },
     {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 36,
+      "path": "PACKAGE_MANIFEST_V151.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "b0b97e2e285f5f235abaadddd8838829498a0a4f8880f03f19d6189ed1110f4f",
+      "size_bytes": 1337
+    },
+    {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 76,
       "path": "PERFECT_BOT_FIX_PLAN.md",
@@ -595,11 +611,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 65,
+      "line_count": 75,
       "path": "README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "abde6fef62c18c19997ca3ebb9c51a318036d1ee60f9b64aa909f50a071d3727",
-      "size_bytes": 2810
+      "sha256": "2b41f0eb9d0dae8e822f5d0da534fa454c29c1ddd53574c4f84757bab4a706a0",
+      "size_bytes": 3154
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -4539,6 +4555,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 105,
+      "path": "docs/STAGING_TERMINAL_COMPLETION.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "3a8d9cfe65731d096820ff490af14e8dbb1661c498302fc7ec0704b1f57c3349",
+      "size_bytes": 3217
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 129,
       "path": "docs/STALE_SIGNAL_DELIVERY_HARDENING_REPORT_2026-07-02.md",
       "reason": "documentation/specification/evidence",
@@ -6883,6 +6907,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 146,
+      "path": "scripts/assert_database_schema.py",
+      "reason": "production/build source",
+      "sha256": "1da64c6e14bb0536a2abdef01979af9abfdb41db4bbfd090983b1b95d0f76d07",
+      "size_bytes": 4931
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 591,
       "path": "scripts/asset_capability_audit.py",
       "reason": "production/build source",
@@ -6931,11 +6963,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 189,
+      "line_count": 199,
       "path": "scripts/controlled_migrate.py",
       "reason": "production/build source",
-      "sha256": "b7831d9e4a50f2810a35466d8b3349356f20c30f9b519b93b80ee55a6cb74b2c",
-      "size_bytes": 6936
+      "sha256": "e4a0718e295bf807f761e06919fc438eb520e2b3aeb774153639b7729067efe7",
+      "size_bytes": 7366
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 69,
+      "path": "scripts/database_identity.py",
+      "reason": "production/build source",
+      "sha256": "f05cb5b01a18e80e88338f99c03babd6828427192d21dcc4c49b56010481f22c",
+      "size_bytes": 2232
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7083,6 +7123,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 287,
+      "path": "scripts/railway_finish_staging.ps1",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "08507a69519adf359d055ec77d17cafbe6b6f27750d6bfc0a64f2bac26772913",
+      "size_bytes": 11405
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 18,
       "path": "scripts/railway_simulation_entry.py",
       "reason": "production/build source",
@@ -7203,6 +7251,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 226,
+      "path": "scripts/staging_migrate_and_bootstrap.py",
+      "reason": "production/build source",
+      "sha256": "55bf94fa783746c0b824847de6dd1bc8536b07d53a7b09636c902da8437bbff0",
+      "size_bytes": 8009
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 20,
       "path": "scripts/staging_predeploy_v142.sh",
       "reason": "configuration, data, or product asset retained",
@@ -7219,11 +7275,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 29,
+      "line_count": 26,
       "path": "scripts/staging_predeploy_v151.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c8f5eec4d955d8f42b6bb7ccc151c7a2734af0d6e8faa253b9277b3d035596fb",
-      "size_bytes": 1128
+      "sha256": "c20b6d9e9dbe7f973566ef5c8718dce9f8d55765582f0faf83b78a3ec25641f7",
+      "size_bytes": 853
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8179,11 +8235,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 114,
+      "line_count": 125,
       "path": "start.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0097c64ee35ab7f84a1920eeaad2b2d82d2e79169c7a75efceed1854a5851b1e",
-      "size_bytes": 4382
+      "sha256": "fc8b4270e90c466d86db797ef9c3fdfbef8dfc237663112fc17f42ec170c7b5d",
+      "size_bytes": 5159
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8920,6 +8976,14 @@
       "reason": "automated test evidence",
       "sha256": "3cb7127d968b04595c4d4a69ba888850900352e0205fd84e4c5223ef6d4ebd38",
       "size_bytes": 1335
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 82,
+      "path": "tests/test_deployment_schema_completion_v151.py",
+      "reason": "automated test evidence",
+      "sha256": "283e23633e9d4a02870d4f9c52653e7f0de00cf53e4cfc65564c1f70e5652cb7",
+      "size_bytes": 3275
     },
     {
       "disposition": "TEST_ONLY",
@@ -10718,8 +10782,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 299,
-    "PRESERVE_BEHAVIOUR": 823,
-    "TEST_ONLY": 215
+    "DOCUMENTATION_ONLY": 301,
+    "PRESERVE_BEHAVIOUR": 828,
+    "TEST_ONLY": 216
   }
 }

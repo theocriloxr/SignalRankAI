@@ -105,12 +105,22 @@ def _expected_head() -> str:
 
 
 def _database_url() -> str:
-    from config import resolve_database_url
+    # The advisory lock, pre/post revision reads and Alembic itself must target
+    # the exact same direct database.  Using DATABASE_URL for the lock while
+    # Alembic uses DATABASE_MIGRATION_URL can migrate one database while
+    # verifying another.
+    from db.database_urls import normalize_sync_postgres_url
 
-    url = str(resolve_database_url(async_driver=False) or "").strip()
-    if not url:
-        raise RuntimeError("DATABASE_URL is not configured")
-    return url
+    raw = (
+        _value("DATABASE_MIGRATION_URL")
+        or _value("DATABASE_DIRECT_URL")
+        or _value("DATABASE_URL")
+    )
+    if not raw:
+        raise RuntimeError(
+            "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured"
+        )
+    return normalize_sync_postgres_url(raw)
 
 
 def migrate() -> dict[str, Any]:

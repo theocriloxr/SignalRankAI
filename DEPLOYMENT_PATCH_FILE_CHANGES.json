@@ -1,0 +1,23 @@
+{
+  "changed": [
+    "BLOCKED_EXTERNAL_REQUIREMENTS_V151.md",
+    "README.md",
+    "requirements/legacy_disposition.json",
+    "scripts/controlled_migrate.py",
+    "scripts/staging_predeploy_v151.sh",
+    "start.sh"
+  ],
+  "added": [
+    "DEPLOYMENT_PATCH_FILE_CHANGES.json",
+    "DEPLOYMENT_REMEDIATION_REPORT_V151.md",
+    "artifacts/v151-deployment-patch/pytest.log",
+    "artifacts/v151-deployment-patch/validation.json",
+    "docs/STAGING_TERMINAL_COMPLETION.md",
+    "scripts/assert_database_schema.py",
+    "scripts/database_identity.py",
+    "scripts/railway_finish_staging.ps1",
+    "scripts/staging_migrate_and_bootstrap.py",
+    "tests/test_deployment_schema_completion_v151.py"
+  ],
+  "removed": []
+}

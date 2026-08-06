@@ -63,3 +63,13 @@ Read `docs/UNIFIED_PLATFORM_IMPLEMENTATION.md`,
 `docs/CANONICAL_BILLING_V151.md`, `docs/ACCOUNT_EMAIL_MFA_V150.md` and
 `docs/DEPLOYMENT_V151.md` before deploying.
 Configure migrations on exactly one service.
+
+## August 2026 staging database remediation
+
+For a staging deployment that reports `0034_production_integrity` while this
+release expects `0038_account_security_product`, use the guarded terminal
+workflow documented in `docs/STAGING_TERMINAL_COMPLETION.md`:
+
+```powershell
+.\scripts\railway_finish_staging.ps1 -AcknowledgeStagingMigration
+```

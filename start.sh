@@ -46,6 +46,17 @@ if [ -n "${DATABASE_URL:-}" ]; then
     python -m alembic current 2>&1 | sed 's/^/[boot] alembic_current=/' || true
 fi
 
+# Every database-backed role must prove schema compatibility before it starts.
+# Readiness protects HTTP routing, but dedicated engine/worker roles have no
+# HTTP health endpoint; without this gate they can loop forever against stale
+# tables and columns. The gate is read-only and never runs migrations.
+if { [ -n "${DATABASE_URL:-}" ] || [ -n "${DATABASE_PRIVATE_URL:-}" ] || [ -n "${DATABASE_PUBLIC_URL:-}" ] || [ -n "${POSTGRES_URL:-}" ]; } && [ "${DATABASE_SCHEMA_GATE_ENABLED:-true}" != "false" ] && [ "${DATABASE_SCHEMA_GATE_ENABLED:-1}" != "0" ]; then
+    if ! python scripts/assert_database_schema.py; then
+        echo "[FATAL] Database schema admission failed; run the one-owner staging/production migration before starting services." >&2
+        exit 78
+    fi
+fi
+
 _start_frontdoor() {
     export RUN_MODE="frontdoor"
     export DECOMPOSED_TOPOLOGY_ENABLED="1"

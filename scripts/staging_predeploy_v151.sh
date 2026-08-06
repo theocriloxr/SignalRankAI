@@ -3,27 +3,24 @@
 set -euo pipefail
 
 export ENVIRONMENT="${ENVIRONMENT:-staging}"
-if [[ "${ENVIRONMENT,,}" == "production" && "${ALLOW_PRODUCTION_PREDEPLOY:-0}" != "1" ]]; then
-  echo "Refusing production predeploy without ALLOW_PRODUCTION_PREDEPLOY=1" >&2
+if [[ "${ENVIRONMENT,,}" == "production" ]]; then
+  echo "Refusing production execution; use scripts/controlled_migrate.py" >&2
   exit 64
 fi
-if [[ -z "${DATABASE_MIGRATION_URL:-}" ]]; then
-  echo "DATABASE_MIGRATION_URL is required and must be the direct PostgreSQL URL" >&2
+if [[ -z "${DATABASE_MIGRATION_URL:-}" && -z "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_MIGRATION_URL or DATABASE_URL is required" >&2
   exit 65
 fi
-
-expected_head="0038_account_security_product"
-mapfile -t heads < <(python -m alembic heads | awk '{print $1}')
-if [[ "${#heads[@]}" -ne 1 || "${heads[0]}" != "$expected_head" ]]; then
-  printf 'Unexpected repository migration heads: %s (expected one head: %s)\n' "${heads[*]:-none}" "$expected_head" >&2
+if [[ "${STAGING_MIGRATION_ACKNOWLEDGED:-0}" != "1" ]]; then
+  echo "STAGING_MIGRATION_ACKNOWLEDGED=1 is required" >&2
   exit 66
 fi
 
-python -m alembic upgrade head
-if ! python -m alembic current | grep -q "$expected_head"; then
-  echo "Database migration did not reach $expected_head" >&2
-  exit 67
+args=(--top "${BOOTSTRAP_DISCOVERY_TOP:-100}")
+if [[ "${BOOTSTRAP_DISCOVER:-1}" == "1" ]]; then
+  args+=(--discover)
 fi
-
-python -m tools.bootstrap_ecosystem ${BOOTSTRAP_DISCOVER:+--discover} --top "${BOOTSTRAP_DISCOVERY_TOP:-100}"
-python -m tools.staging_certification
+if [[ "${SKIP_STAGING_CERTIFICATION:-0}" == "1" ]]; then
+  args+=(--skip-certification)
+fi
+python scripts/staging_migrate_and_bootstrap.py "${args[@]}"
