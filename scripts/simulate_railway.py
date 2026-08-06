@@ -19,6 +19,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_ENTRYPOINT = "railway_main:app"  # wrapper imports this exact application
 
 
 def _load_env(path: Path) -> dict[str, str]:
@@ -75,6 +76,8 @@ def main() -> int:
             "RAILWAY_SERVICE_NAME": "signalrank-local-simulation",
             "RAILWAY_ENVIRONMENT": "simulation",
             "RAILWAY_ENVIRONMENT_NAME": "simulation",
+            "RUN_MODE": "frontdoor",
+            "RUNTIME_PROCESS_MODE": "frontdoor",
             # A no-dependency simulation verifies the exact web/lifespan route
             # contract while preventing access to real external systems.
             "DATABASE_URL": "",
@@ -96,10 +99,11 @@ def main() -> int:
             "COPY_TRADE_ENABLED": "0",
             "REAL_PAYOUTS_ENABLED": "0",
             "PAYMENTS_PUBLIC_ENABLED": "0",
+            "SIGNALRANK_SIMULATION_OPTIONAL_STUBS": "1",
         }
     )
 
-    command = [sys.executable, "-m", "uvicorn", "railway_main:app", "--host", "127.0.0.1", "--port", str(args.port)]
+    command = [sys.executable, "-m", "uvicorn", "scripts.railway_simulation_entry:app", "--host", "127.0.0.1", "--port", str(args.port)]
     proc = subprocess.Popen(
         command,
         cwd=ROOT,

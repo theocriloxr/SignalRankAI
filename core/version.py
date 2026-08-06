@@ -14,12 +14,12 @@ def _first(*names: str, default: str = "") -> str:
 
 # Historical release-source contract retained for legacy regression tests: CODE_VERSION = "1.3.6.9"
 # Historical release lineage retained for regression provenance: v1.3.6.9-outcome-delivery-recovery-hotfix
-CODE_VERSION = "1.5.0"
+CODE_VERSION = "1.5.1"
 CONFIGURED_APP_VERSION = _first("APP_VERSION", default=CODE_VERSION)
 # The runtime banner must identify the code actually deployed. A stale Railway
 # APP_VERSION remains visible as configured_version instead of mislabelling code.
 APP_VERSION = CODE_VERSION
-RELEASE_FINGERPRINT = "v1.5.0-unified-ecosystem-completion-20260806"
+RELEASE_FINGERPRINT = "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",

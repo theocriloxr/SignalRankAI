@@ -71,6 +71,14 @@ def _allowed_ids(env: Mapping[str, str]) -> set[int]:
     return _parse_ids(raw)
 
 
+def _allowed_canonical_user_ids(env: Mapping[str, str]) -> set[int]:
+    return _parse_ids(
+        env.get("PAYSTACK_LIVE_STAGING_ALLOWED_CANONICAL_USER_IDS")
+        or env.get("FULL_SYSTEM_TEST_CANONICAL_USER_IDS")
+        or ""
+    )
+
+
 def _max_amount(env: Mapping[str, str]) -> float:
     try:
         return max(1.0, float(env.get("PAYSTACK_LIVE_STAGING_MAX_AMOUNT_NGN") or 56000))
@@ -91,7 +99,7 @@ def live_staging_mode_valid(environ: Mapping[str, str] | None = None) -> bool:
         and is_paystack_live_staging_ack_valid(env.get("PAYSTACK_LIVE_STAGING_ACK"))
         and _clean_key(env.get("PAYSTACK_SECRET_KEY")).startswith("sk_live_")
         and _clean_key(env.get("PAYSTACK_PUBLIC_KEY")).startswith("pk_live_")
-        and bool(_allowed_ids(env))
+        and bool(_allowed_ids(env) or _allowed_canonical_user_ids(env))
     )
 
 
@@ -106,6 +114,7 @@ class PaystackOperationDecision:
 def evaluate_paystack_operation(
     *,
     telegram_user_id: int | None = None,
+    canonical_user_id: int | None = None,
     amount_ngn: float | int | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> PaystackOperationDecision:
@@ -134,15 +143,23 @@ def evaluate_paystack_operation(
     if not live_staging_mode_valid(env):
         return PaystackOperationDecision(False, "live", "live_staging_ack_or_configuration_invalid", _max_amount(env))
 
-    allowed = _allowed_ids(env)
-    if telegram_user_id is None:
-        return PaystackOperationDecision(False, "live", "telegram_user_id_required", _max_amount(env))
-    try:
-        user_id = int(telegram_user_id)
-    except (TypeError, ValueError):
-        return PaystackOperationDecision(False, "live", "telegram_user_id_invalid", _max_amount(env))
-    if user_id not in allowed:
-        return PaystackOperationDecision(False, "live", "telegram_user_not_allowlisted", _max_amount(env))
+    allowed_telegram = _allowed_ids(env)
+    allowed_canonical = _allowed_canonical_user_ids(env)
+    identity_allowed = False
+    if telegram_user_id is not None:
+        try:
+            identity_allowed = int(telegram_user_id) in allowed_telegram
+        except (TypeError, ValueError):
+            return PaystackOperationDecision(False, "live", "telegram_user_id_invalid", _max_amount(env))
+    if canonical_user_id is not None:
+        try:
+            identity_allowed = identity_allowed or int(canonical_user_id) in allowed_canonical
+        except (TypeError, ValueError):
+            return PaystackOperationDecision(False, "live", "canonical_user_id_invalid", _max_amount(env))
+    if telegram_user_id is None and canonical_user_id is None:
+        return PaystackOperationDecision(False, "live", "user_identity_required", _max_amount(env))
+    if not identity_allowed:
+        return PaystackOperationDecision(False, "live", "user_not_allowlisted", _max_amount(env))
 
     limit = _max_amount(env)
     if amount_ngn is not None:

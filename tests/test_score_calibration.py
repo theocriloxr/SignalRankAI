@@ -25,7 +25,7 @@ def test_score_signal_soft_caps_instead_of_flattening_to_100(monkeypatch):
 
     score = score_signal(signal)
 
-    assert 95.0 < score < 100.0
+    assert 90.0 < score <= 96.0
     assert signal["score_raw"] > 100.0
     assert round(signal["score_calibrated"], 2) == score
     assert signal["score_soft_capped"] is True

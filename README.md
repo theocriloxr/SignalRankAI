@@ -47,7 +47,7 @@ python -m scripts.wfo_run --input-dir ./raw_orderbooks --assets BTCUSDT --timefr
 - `scripts/wfo_run.py` now auto-detects candle, tick, and orderbook snapshots by filename and schema.
 - Orderbook inputs are registered via `register_orderbook_dataframe()` automatically when `bids`/`asks` or common book columns are present.
 
-## Unified web, mobile and Telegram platform (v1.5.0)
+## Unified web, mobile and Telegram platform (v1.5.1)
 
 - Web/PWA: `/app`
 - Unified API: `/api/v1/platform`
@@ -55,10 +55,11 @@ python -m scripts.wfo_run --input-dir ./raw_orderbooks --assets BTCUSDT --timefr
 - Current migration head: `0038_account_security_product`
 - Telegram bridge: `/app`, `/login_code`, `/link`, `/devices`, `/security`
 - Account flows: email verification, magic login, password reset and TOTP MFA
-- Product APIs: portfolio, performance, billing, alerts, support and organizations
+- Product APIs: portfolio, performance, server-priced canonical billing, alerts, support and organizations
 - Ecosystem bootstrap: `python -m tools.bootstrap_ecosystem --discover`
 - Staging certification: `python -m tools.staging_certification`
 
 Read `docs/UNIFIED_PLATFORM_IMPLEMENTATION.md`,
-`docs/ACCOUNT_EMAIL_MFA_V150.md` and `docs/DEPLOYMENT_V150.md` before deploying.
+`docs/CANONICAL_BILLING_V151.md`, `docs/ACCOUNT_EMAIL_MFA_V150.md` and
+`docs/DEPLOYMENT_V151.md` before deploying.
 Configure migrations on exactly one service.

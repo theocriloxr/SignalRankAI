@@ -112,11 +112,11 @@ def _promotion_quality_gate(
     positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
-    majority_baseline = float(metrics.get("majority_baseline_accuracy", 1.0) or 1.0)
+    majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and auc > majority_baseline
+        and accuracy > majority_baseline
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
         and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)

@@ -45,7 +45,15 @@ def test_deployed_ml_quality_gate_accepts_only_candidate_above_threshold(monkeyp
     monkeypatch.delenv("ML_MIN_PROMOTION_AUC", raising=False)
     monkeypatch.delenv("ML_MIN_PROMOTION_ACCURACY", raising=False)
     accepted, _, _ = _promotion_quality_gate(
-        {"accuracy": 0.61, "auc": 0.68},
+        {
+            "accuracy": 0.66,
+            "auc": 0.68,
+            "majority_baseline_accuracy": 0.58,
+            "balanced_accuracy": 0.63,
+            "positive_recall": 0.42,
+            "pr_auc": 0.48,
+            "expected_r": 0.18,
+        },
         deployed_runtime=True,
     )
     assert accepted is True

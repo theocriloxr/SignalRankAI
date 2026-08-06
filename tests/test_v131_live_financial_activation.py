@@ -89,9 +89,9 @@ def _full_env() -> dict[str, str]:
 
 
 def test_version_and_migration_head():
-    assert APP_VERSION == "1.3.6.9"
-    assert RELEASE_FINGERPRINT == "v1.3.6.9-outcome-delivery-recovery-hotfix-20260803"
-    assert audit_versions(ROOT)["heads"] == ["0034_production_integrity"]
+    assert APP_VERSION == "1.5.1"
+    assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
+    assert audit_versions(ROOT)["heads"] == ["0038_account_security_product"]
 
 
 def test_financial_flags_off_are_safe():

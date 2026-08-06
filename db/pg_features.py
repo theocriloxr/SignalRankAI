@@ -2648,7 +2648,8 @@ async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:
 async def record_payment_event(
     session: AsyncSession,
     *,
-    telegram_user_id: int,
+    telegram_user_id: int | None = None,
+    user_id: int | None = None,
     paystack_reference: str,
     amount_ngn: int,
     currency: str | None = None,
@@ -2668,7 +2669,17 @@ async def record_payment_event(
     if existing is not None:
         return existing
 
-    user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    user: User | None = None
+    if user_id is not None:
+        user = (await session.execute(select(User).where(User.id == int(user_id)))).scalar_one_or_none()
+        if user is None:
+            raise ValueError("canonical_user_not_found")
+        if telegram_user_id is not None and user.telegram_user_id not in {None, int(telegram_user_id)}:
+            raise ValueError("canonical_and_telegram_identity_mismatch")
+    elif telegram_user_id is not None:
+        user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    else:
+        raise ValueError("payment_user_identity_required")
     pe = PaymentEvent(
         user_id=user.id,
         kind=str(kind or "subscription")[:32],

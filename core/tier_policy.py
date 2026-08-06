@@ -13,7 +13,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping
 
-POLICY_VERSION = "unified-platform-v1.4.2"
+POLICY_VERSION = "unified-platform-v1.5.1"
 CATALOGUE_VERSION = POLICY_VERSION
 
 

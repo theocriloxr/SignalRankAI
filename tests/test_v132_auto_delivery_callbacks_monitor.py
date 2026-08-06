@@ -12,8 +12,8 @@ READINESS = (ROOT / "railway_main.py").read_text(encoding="utf-8")
 def test_v132_release_identity_is_exact():
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
 
-    assert APP_VERSION == "1.3.6.9"
-    assert RELEASE_FINGERPRINT == "v1.3.6.9-outcome-delivery-recovery-hotfix-20260803"
+    assert APP_VERSION == "1.5.1"
+    assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
 
 
 def test_signal_and_monitor_keyboards_have_durable_navigation():

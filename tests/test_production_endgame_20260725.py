@@ -198,4 +198,4 @@ def test_canonical_migration_head_is_active_guard_reconcile():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["0034_production_integrity"]
+    assert script.get_heads() == ["0038_account_security_product"]

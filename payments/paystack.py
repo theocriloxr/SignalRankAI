@@ -107,9 +107,15 @@ async def process_event(event):
     if currency != "NGN":
         return {"processed": False, "reason": "Unsupported payment currency"}
     
-    telegram_user_id = metadata.get("telegram_user_id")
-    if not telegram_user_id:
-        return {"processed": False, "reason": "No telegram_user_id in metadata"}
+    raw_telegram_user_id = metadata.get("telegram_user_id")
+    raw_user_id = metadata.get("user_id")
+    try:
+        telegram_user_id = int(raw_telegram_user_id) if raw_telegram_user_id not in {None, ""} else None
+        canonical_user_id = int(raw_user_id) if raw_user_id not in {None, ""} else None
+    except (TypeError, ValueError):
+        return {"processed": False, "reason": "Invalid payment user identity"}
+    if telegram_user_id is None and canonical_user_id is None:
+        return {"processed": False, "reason": "No canonical user identity in metadata"}
     
     tier = metadata.get("tier", "").upper()
     duration_days = metadata.get("duration_days")
@@ -137,7 +143,8 @@ async def process_event(event):
 
     from payments.paystack_policy import evaluate_paystack_operation
     paystack_policy = evaluate_paystack_operation(
-        telegram_user_id=int(telegram_user_id),
+        telegram_user_id=telegram_user_id,
+        canonical_user_id=canonical_user_id,
         amount_ngn=float(amount),
     )
     if not paystack_policy.allowed:
@@ -145,6 +152,22 @@ async def process_event(event):
             "processed": False,
             "reason": f"Paystack runtime policy blocked event: {paystack_policy.reason}",
         }
+
+    product_id = str(metadata.get("product_id") or "").strip().lower() or None
+    if product_id:
+        try:
+            from db.session import get_session
+            from payments.catalog import resolve_checkout_product
+            async with get_session(label="payment.catalog_validation", timeout_seconds=10.0) as session:
+                product = await resolve_checkout_product(session, product_id, currency=currency)
+                await session.rollback()
+        except Exception as exc:
+            return {"processed": False, "reason": f"Payment product validation failed: {type(exc).__name__}"}
+        if int(product.price_ngn) != int(amount):
+            return {"processed": False, "reason": "Payment amount does not match product catalog"}
+        tier = product.tier.upper()
+        duration_days = int(product.duration_days)
+        duration = ""
 
     # Validate catalog-backed metadata when a product duration is supplied.
     # Unknown/legacy plans remain processable only when they carry an explicit
@@ -168,6 +191,8 @@ async def process_event(event):
     
     # Handle extra signals purchase
     if duration == "EXTRA" or metadata.get("extra_count"):
+        if telegram_user_id is None:
+            return {"processed": False, "reason": "Extra signals require a linked Telegram identity"}
         try:
             extra_count = int(metadata.get("extra_count", 1))
         except (TypeError, ValueError):
@@ -239,19 +264,25 @@ async def process_event(event):
                 }
             await record_payment_event(
                 session,
-                telegram_user_id=int(telegram_user_id),
+                telegram_user_id=telegram_user_id,
+                user_id=canonical_user_id,
                 paystack_reference=reference,
                 amount_ngn=amount,
                 currency=currency,
                 kind="subscription",
                 tier=str(tier).lower(),
                 duration_days=int(duration_days),
-                plan_code=str(data.get("plan", {}).get("plan_code") or metadata.get("plan_code") or "") or None,
+                plan_code=str(
+                    (data.get("plan", {}).get("plan_code") if isinstance(data.get("plan"), dict) else data.get("plan"))
+                    or metadata.get("plan_code")
+                    or ""
+                ) or None,
                 meta={"event": event_type, "verified_provider": True},
             )
-            await activate_subscription(
+            subscription = await activate_subscription(
                 session,
-                telegram_user_id=int(telegram_user_id),
+                telegram_user_id=telegram_user_id,
+                user_id=canonical_user_id,
                 tier=tier,
                 duration_days=int(duration_days),
                 paystack_reference=reference,
@@ -260,23 +291,41 @@ async def process_event(event):
                     "amount_ngn": amount,
                     "currency": str(data.get("currency") or "NGN"),
                     "event": event_type,
+                    "product_id": product_id,
                 },
+            )
+            from db.models import User
+            if canonical_user_id is not None:
+                payment_user = (await session.execute(select(User).where(User.id == int(canonical_user_id)))).scalar_one()
+            else:
+                payment_user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one()
+            from payments.durable_receipts import create_payment_receipt
+            await create_payment_receipt(
+                session,
+                user=payment_user,
+                subscription=subscription,
+                payment_reference=reference,
+                plan=product_id or str(tier).lower(),
+                amount_ngn=amount,
+                currency=currency,
+                product_id=product_id,
             )
             # Record conversion in the same transaction. Referral rewards are
             # granted by qualified signups; payment conversion is analytics-only
             # and must never run a competing reward manager.
-            from db.pg_features import record_referral_conversion
-            conversion = await record_referral_conversion(
-                session,
-                referred_telegram_user_id=int(telegram_user_id),
-                payment_reference=reference,
-            )
-            logger.info(
-                "[paystack_referral_conversion] telegram_user_id=%s reference=%s result=%s",
-                telegram_user_id,
-                reference,
-                conversion,
-            )
+            if telegram_user_id is not None:
+                from db.pg_features import record_referral_conversion
+                conversion = await record_referral_conversion(
+                    session,
+                    referred_telegram_user_id=int(telegram_user_id),
+                    payment_reference=reference,
+                )
+                logger.info(
+                    "[paystack_referral_conversion] telegram_user_id=%s reference=%s result=%s",
+                    telegram_user_id,
+                    reference,
+                    conversion,
+                )
             await session.commit()
     except Exception as e:
         # The payment_events unique reference is the authoritative concurrency
@@ -285,8 +334,10 @@ async def process_event(event):
             return {"processed": True, "idempotent": True, "tier": str(tier).lower(), "days": int(duration_days)}
         return {"processed": False, "reason": str(e)}
     
-    # Send Telegram confirmation (MarkdownV2 escaped)
+    # Send Telegram confirmation when the canonical account has a linked bot identity.
     try:
+        if telegram_user_id is None:
+            raise RuntimeError("telegram_identity_not_linked")
         from signalrank_telegram.bot import application
         bot = application.bot
         from datetime import datetime, timedelta

@@ -109,5 +109,5 @@ def test_new_runtime_secrets_remain_unset_in_example() -> None:
 
 def test_code_version_advanced_to_150() -> None:
     text = (ROOT / "core/version.py").read_text()
-    assert 'CODE_VERSION = "1.5.0"' in text
+    assert 'CODE_VERSION = "1.5.1"' in text
     assert "unified-ecosystem-completion" in text

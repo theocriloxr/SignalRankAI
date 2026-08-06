@@ -33,8 +33,10 @@ EXPECTED_MATRIX = {
     "FREE": (0, False, 3, 80.0, 10, 1, 7),
     "PREMIUM": (1, True, 15, 80.0, 0, 2, 30),
     "VIP": (2, True, 30, 80.0, 0, 3, 365),
-    "ADMIN": (3, False, 100, 0.0, 0, 3, 3650),
-    "OWNER": (4, False, 100, 0.0, 0, 3, 3650),
+    "PROFESSIONAL": (3, True, 100, 75.0, 0, 3, 1825),
+    "INSTITUTIONAL": (4, True, 1000, 0.0, 0, 3, 3650),
+    "ADMIN": (5, False, 100, 0.0, 0, 3, 3650),
+    "OWNER": (6, False, 100, 0.0, 0, 3, 3650),
 }
 
 

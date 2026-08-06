@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import signal
@@ -160,6 +161,34 @@ def _run_step(
     )
 
 
+
+def _aggregate_pytest_results(results: Sequence[StepResult]) -> dict[str, int]:
+    """Aggregate pytest summaries from completed batch logs.
+
+    The certification report should expose exact pass/skip/failure counts rather
+    than requiring operators to parse twenty log files manually. Missing or
+    unparsable summaries are counted separately and never treated as passing.
+    """
+    totals = {"passed": 0, "skipped": 0, "failed": 0, "errors": 0, "unparsed_batches": 0}
+    for result in results:
+        if not (result.name.startswith("full_pytest_batch_") or result.name == "hermetic_system_suite"):
+            continue
+        log_path = ROOT / result.log_path
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            totals["unparsed_batches"] += 1
+            continue
+        summary = next((line for line in reversed(lines) if re.search(r"\d+ passed", line)), "")
+        if not summary:
+            totals["unparsed_batches"] += 1
+            continue
+        for key in ("passed", "skipped", "failed", "errors"):
+            match = re.search(rf"(\d+) {key}", summary)
+            if match:
+                totals[key] += int(match.group(1))
+    return totals
+
 def _partition_pytest_files(batch_count: int) -> list[list[str]]:
     """Partition the complete test-file inventory into deterministic batches.
 
@@ -255,7 +284,7 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             # and container runtimes. It still covers every test_*.py file.
             steps.append((
                 "full_pytest_batch_01",
-                [python, "-m", "pytest", "-q"],
+                [python, "scripts/pytest_hard_exit.py", "-q"],
             ))
         else:
             # Run every test file, but isolate teardown into deterministic batches.
@@ -263,12 +292,12 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             for index, files in enumerate(batches, start=1):
                 steps.append((
                     f"full_pytest_batch_{index:02d}",
-                    [python, "-m", "pytest", "-q", *files],
+                    [python, "scripts/pytest_hard_exit.py", "-q", *files],
                 ))
     else:
         steps.append((
             "hermetic_system_suite",
-            [python, "-m", "pytest", "-q", *HERMETIC_TEST_FILES],
+            [python, "scripts/pytest_hard_exit.py", "-q", *HERMETIC_TEST_FILES],
         ))
     return steps
 
@@ -355,6 +384,7 @@ def main() -> int:
     result_by_name = {result.name: result for result in results}
     ordered_results = [result_by_name[name] for name in expected_names if name in result_by_name]
     results = ordered_results
+    pytest_results = _aggregate_pytest_results(results)
     report = {
         "evidence_scope": "LOCAL_WITH_LIVE_PROVIDER_CALLS" if args.live_providers else "HERMETIC_LOCAL_ONLY",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -363,6 +393,7 @@ def main() -> int:
         "live_provider_calls_requested": args.live_providers,
         "ok": bool(results) and all(result.ok for result in results) and len(results) == len(expected_steps),
         "steps": [asdict(result) for result in results],
+        "pytest_results": pytest_results,
         "not_proven_by_this_command": [
             "Railway deployment",
             "Telegram network delivery",

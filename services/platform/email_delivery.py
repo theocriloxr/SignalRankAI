@@ -65,6 +65,14 @@ def render_account_email(template: str, context: Mapping[str, Any]) -> tuple[str
             f"{app_name} security alert",
             str(context.get("message") or "A security-sensitive change occurred on your account."),
         ),
+        "payment_receipt": (
+            f"Your {app_name} payment receipt {context.get('receipt_number') or ''}".strip(),
+            str(context.get("message") or (
+                f"Payment confirmed for {context.get('plan') or 'subscription'}.\n"
+                f"Amount: {context.get('currency') or 'NGN'} {context.get('amount') or 0}\n"
+                f"Reference: {context.get('payment_reference') or 'N/A'}"
+            )),
+        ),
     }
     subject, body = templates.get(str(template), (f"{app_name} notification", str(context.get("message") or "")))
     escaped = (

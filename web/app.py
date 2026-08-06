@@ -172,6 +172,11 @@ class ExchangeBrokerLinkRequest(BrokerPermissionRequest):
     sandbox: bool = False
 
 
+class PaystackCheckoutRequest(BaseModel):
+    product_id: str
+    currency: str = "NGN"
+
+
 class PayoutAccountLinkRequest(BaseModel):
     account_number: str
     bank_code: str
@@ -789,11 +794,37 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
         "processing_status": inbox.get("status"),
     }
 
-@app.post("/paystack/charge")
-async def paystack_charge_create(user_id: int = Depends(verify_api_key)):
-    """Create Paystack charge (for manual payments)."""
-    # Implementation stub - use client-side Paystack popup instead
-    raise HTTPException(501, "Use client-side Paystack integration")
+@app.post("/paystack/charge", status_code=201)
+async def paystack_charge_create(
+    req: PaystackCheckoutRequest,
+    telegram_user_id: int = Depends(verify_api_key),
+):
+    """Legacy authenticated checkout route backed by the canonical catalogue."""
+    from payments.catalog import ProductCatalogueError, resolve_checkout_product
+    from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout
+
+    async with get_session(label="legacy.billing.checkout.catalog", timeout_seconds=10.0) as session:
+        account = (await session.execute(
+            select(User).where(User.telegram_user_id == int(telegram_user_id))
+        )).scalar_one_or_none()
+        if account is None:
+            raise HTTPException(404, "Account not found")
+        if not account.primary_email or account.email_verified_at is None:
+            raise HTTPException(409, "Verify your app email before checkout")
+        try:
+            product = await resolve_checkout_product(session, req.product_id, currency=req.currency)
+        except ProductCatalogueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        await session.rollback()
+    try:
+        return await initialize_paystack_checkout(
+            product=product,
+            canonical_user_id=int(account.id),
+            telegram_user_id=int(telegram_user_id),
+            email=str(account.primary_email),
+        )
+    except CheckoutInitializationError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 # === Paystack Utilities ===

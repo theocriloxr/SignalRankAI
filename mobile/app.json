@@ -3,7 +3,7 @@
     "name": "SignalRankAI",
     "slug": "signalrankai",
     "scheme": "signalrank",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "runtimeVersion": {"policy": "fingerprint"},
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",

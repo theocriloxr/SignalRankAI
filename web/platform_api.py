@@ -116,6 +116,11 @@ class PushDeviceRequest(BaseModel):
     app_version: str | None = Field(default=None, max_length=32)
 
 
+class CheckoutCreateRequest(BaseModel):
+    product_id: str = Field(min_length=3, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]+$")
+    currency: str = Field(default="NGN", pattern=r"^NGN$")
+
+
 class WatchlistCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
@@ -1587,6 +1592,74 @@ async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str,
     data["claim_certified"] = False
     data["disclaimer"] = "User-level proof-backed history; not a guaranteed future win rate."
     return {"summary": data, "breakdown": [dict(row) for row in breakdown]}
+
+
+@router.get("/billing/products")
+async def billing_products(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Return current public checkout products from the server catalogue."""
+    from payments.catalog import ProductCatalogueError, resolve_checkout_product
+    products: list[dict[str, Any]] = []
+    async with get_session(label="platform.billing.products", timeout_seconds=10.0) as session:
+        rows = (await session.execute(text(
+            "SELECT product_id FROM subscription_products WHERE active=TRUE ORDER BY product_id"
+        ))).all()
+        for row in rows:
+            try:
+                product = await resolve_checkout_product(session, str(row[0]), currency="NGN")
+            except ProductCatalogueError:
+                continue
+            products.append({
+                "product_id": product.product_id,
+                "tier": product.tier,
+                "display_name": product.display_name,
+                "duration_days": product.duration_days,
+                "currency": product.currency,
+                "price_ngn": product.price_ngn,
+            })
+        await session.rollback()
+    return {"products": products}
+
+
+@router.post("/billing/checkout", status_code=201)
+async def create_billing_checkout(
+    payload: CheckoutCreateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Initialize a server-priced Paystack checkout for any canonical account."""
+    uid = int(user["id"])
+    async with get_session(label="platform.billing.checkout.catalog", timeout_seconds=10.0) as session:
+        account = (
+            await session.execute(
+                text(
+                    "SELECT id,primary_email,email_verified_at,telegram_user_id,account_status "
+                    "FROM users WHERE id=:uid"
+                ),
+                {"uid": uid},
+            )
+        ).mappings().first()
+        if not account or str(account.get("account_status") or "active") != "active":
+            raise HTTPException(status_code=403, detail="Account unavailable")
+        if not account.get("primary_email") or account.get("email_verified_at") is None:
+            raise HTTPException(status_code=409, detail="Verify an email address before checkout")
+        try:
+            from payments.catalog import ProductCatalogueError, resolve_checkout_product
+            product = await resolve_checkout_product(session, payload.product_id, currency=payload.currency)
+        except ProductCatalogueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await session.rollback()
+
+    try:
+        from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout
+        checkout = await initialize_paystack_checkout(
+            product=product,
+            canonical_user_id=uid,
+            telegram_user_id=(int(account["telegram_user_id"]) if account.get("telegram_user_id") is not None else None),
+            email=str(account["primary_email"]),
+        )
+    except CheckoutInitializationError as exc:
+        logger.warning("[billing_checkout] user=%s product=%s blocked=%s", uid, payload.product_id, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return checkout
 
 
 @router.get("/billing")

@@ -1,5 +1,5 @@
 {
-  "count": 126,
+  "count": 135,
   "flags": [
     {
       "dangerous": false,
@@ -331,6 +331,38 @@
     },
     {
       "dangerous": false,
+      "name": "DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "DYNAMIC_INSTRUMENT_SEARCH_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "DYNAMIC_UNIVERSE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EMAIL_DELIVERY_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ENDGAME_FEATURES_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -459,6 +491,14 @@
     },
     {
       "dangerous": false,
+      "name": "LEGACY_USERDASH_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -509,6 +549,14 @@
       "dangerous": false,
       "name": "ML_DRIFT_MONITOR_ENABLED",
       "production_example_default": "0",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "ML_LEGACY_RETRAIN_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null
@@ -684,6 +732,14 @@
     {
       "dangerous": false,
       "name": "PAYSTACK_LIVE_STAGING_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "PAYSTACK_TRANSFERS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -891,6 +947,14 @@
     },
     {
       "dangerous": false,
+      "name": "STAGING_ALLOWLIST_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "STOCKS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -956,6 +1020,14 @@
     {
       "dangerous": false,
       "name": "VIP_WEBHOOK_DISPATCH_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "WEBHOOK_DELIVERY_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

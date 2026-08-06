@@ -71,6 +71,7 @@ def test_quality_gate_blocks_low_gemini_score_when_present():
             "rr_ratio": 2.5,
             "entry": 1.1,
             "stop_loss": 1.095,
+            "take_profit": [1.1125, 1.1175, 1.1225],
             "gemini_review_score": 6.5,
             "adx": 30,
             "mtf_4h_trend": 1,

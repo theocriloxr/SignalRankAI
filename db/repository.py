@@ -95,8 +95,15 @@ async def count_active_vip_users(
 
 
 def normalize_tier(tier: str) -> str:
+    """Normalize customer subscription tiers without confusing them with roles."""
     t = (tier or "").strip().lower()
-    if t in {"vip", "owner", "admin"}:
+    if t in {"owner", "admin", "elite"}:
+        return "vip"
+    if t in {"institutional", "enterprise"}:
+        return "institutional"
+    if t in {"professional", "professional_monthly"}:
+        return "professional"
+    if t == "vip":
         return "vip"
     if t in {"premium", "pro"}:
         return "premium"
@@ -143,11 +150,13 @@ async def get_or_create_user(
 
 async def activate_subscription(
     session: AsyncSession,
-    telegram_user_id: int,
+    telegram_user_id: int | None,
     tier: str,
     duration_days: int,
     paystack_reference: Optional[str],
     meta: Dict[str, Any],
+    *,
+    user_id: int | None = None,
 ) -> Subscription:
     # Legacy subscription-reference idempotency remains for older rows. New
     # webhook idempotency is enforced by payment_events, which permits each
@@ -160,13 +169,23 @@ async def activate_subscription(
         if existing is not None:
             return existing
 
-    user = await get_or_create_user(session, telegram_user_id)
+    user: User | None = None
+    if user_id is not None:
+        user = (await session.execute(select(User).where(User.id == int(user_id)))).scalar_one_or_none()
+        if user is None:
+            raise ValueError("canonical_user_not_found")
+        if telegram_user_id is not None and user.telegram_user_id not in {None, int(telegram_user_id)}:
+            raise ValueError("canonical_and_telegram_identity_mismatch")
+    elif telegram_user_id is not None:
+        user = await get_or_create_user(session, int(telegram_user_id))
+    else:
+        raise ValueError("subscription_user_identity_required")
 
     now = now_utc_naive()
     tier_norm = normalize_tier(tier)
     add_days = max(int(duration_days), 1)
 
-    tier_order = {"free": 0, "premium": 1, "vip": 2, "elite": 3}
+    tier_order = {"free": 0, "premium": 1, "vip": 2, "professional": 3, "institutional": 4}
     active_rows = list((await session.execute(
         select(Subscription)
         .where(

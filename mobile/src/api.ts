@@ -180,3 +180,27 @@ export async function completePasswordReset(token: string, newPassword: string):
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.detail || 'Password reset failed');
 }
+
+export type BillingProduct = {
+  product_id: string;
+  tier: string;
+  display_name: string;
+  duration_days: number;
+  currency: string;
+  price_ngn: number;
+};
+
+export async function getBillingProducts(): Promise<{products: BillingProduct[]}> {
+  return api('/billing/products');
+}
+
+export async function createBillingCheckout(productId: string): Promise<{authorization_url: string; reference: string}> {
+  return api('/billing/checkout', {
+    method: 'POST',
+    body: JSON.stringify({product_id: productId, currency: 'NGN'}),
+  });
+}
+
+export async function getBilling(): Promise<{subscriptions: any[]; receipts: any[]}> {
+  return api('/billing');
+}
