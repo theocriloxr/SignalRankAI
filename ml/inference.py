@@ -12,7 +12,12 @@ try:
 except Exception:  # pragma: no cover
     psycopg2 = None
 
-from ml.schema_version import migrate_feature_payload, normalize_model_payload
+from ml.schema_version import (
+    CRITICAL_FEATURES_V3,
+    migrate_feature_payload,
+    normalize_model_payload,
+    strict_feature_schema_enabled,
+)
 
 try:
     import xgboost as xgb  # type: ignore
@@ -227,7 +232,12 @@ class MLFilter:
         
         try:
             # Map input features to model's expected feature order
-            normalized = migrate_feature_payload(features if isinstance(features, dict) else {}, list(self.feature_cols or []))
+            normalized = migrate_feature_payload(
+                features if isinstance(features, dict) else {},
+                list(self.feature_cols or []),
+                strict=strict_feature_schema_enabled() and int(self.schema_version or 1) >= 3,
+                critical_features=CRITICAL_FEATURES_V3,
+            )
             feature_vector = []
             for col in (self.feature_cols or []):
                 feature_vector.append(float(normalized.get(col, 0.0)))

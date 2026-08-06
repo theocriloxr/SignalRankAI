@@ -30,7 +30,7 @@ from core.signal_identity import signal_id_line
 
 TIER_RANKS: dict[str, int] = {
 	tier: canonical_tier_rank(tier)
-	for tier in ("FREE", "PREMIUM", "VIP", "ADMIN", "OWNER")
+	for tier in ("FREE", "PREMIUM", "VIP", "PROFESSIONAL", "INSTITUTIONAL", "ADMIN", "OWNER")
 }
 FREE_PROOF_FEED_LIMIT = 5
 
@@ -5292,6 +5292,190 @@ from core.performance import strategy_stats
 
 # /start or welcome message
 
+
+async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Create a short-lived, single-use link into the unified app account."""
+    if update.effective_user is None or update.message is None:
+        return
+    try:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        from services.platform.identity import create_telegram_activation
+
+        tg = update.effective_user
+        display_name = " ".join(filter(None, [tg.first_name, tg.last_name])).strip() or None
+        async with get_session() as session:
+            activation = await create_telegram_activation(
+                session,
+                telegram_user_id=int(tg.id),
+                username=tg.username,
+                display_name=display_name,
+            )
+            await session.commit()
+        base_url = str(
+            os.getenv("APP_BASE_URL")
+            or os.getenv("STAGING_APP_BASE_URL")
+            or os.getenv("WEBHOOK_BASE_URL")
+            or ""
+        ).rstrip("/")
+        if not base_url:
+            await update.message.reply_text(
+                "The SignalRank app URL has not been configured on this deployment. "
+                "Set APP_BASE_URL and try again."
+            )
+            return
+        activation_url = f"{base_url}/activate?token={activation.token}"
+        await update.message.reply_text(
+            "📱 *Open your SignalRankAI account*\n\n"
+            "This secure link connects your existing Telegram account to the web and mobile app. "
+            "Your subscription, signals, paper portfolio and preferences remain attached.\n\n"
+            f"One-time code: `{activation.code}`\n"
+            f"Expires: {activation.expires_at.strftime('%H:%M UTC')}\n\n"
+            "SignalRankAI will never send you a permanent password in Telegram.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Open SignalRankAI App", url=activation_url)]]
+            ),
+        )
+    except Exception as exc:
+        logger.exception("[app_command] activation failed: %s", exc)
+        await update.message.reply_text("App activation is temporarily unavailable. Please try again shortly.")
+
+
+async def login_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Issue a short-lived app activation code for users unable to open links."""
+    if update.effective_user is None or update.message is None:
+        return
+    try:
+        from services.platform.identity import create_telegram_activation
+
+        tg = update.effective_user
+        display_name = " ".join(filter(None, [tg.first_name, tg.last_name])).strip() or None
+        async with get_session() as session:
+            activation = await create_telegram_activation(
+                session,
+                telegram_user_id=int(tg.id),
+                username=tg.username,
+                display_name=display_name,
+            )
+            await session.commit()
+        await update.message.reply_text(
+            "🔐 *SignalRankAI one-time app code*\n\n"
+            f"`{activation.code}`\n\n"
+            "It expires in a few minutes and can only be used once. "
+            "Open the app, choose *Activate from Telegram*, and enter this code.",
+            parse_mode="Markdown",
+        )
+    except Exception as exc:
+        logger.exception("[login_code] generation failed: %s", exc)
+        await update.message.reply_text("A login code could not be generated right now.")
+
+
+async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Link an app-created canonical account to the current Telegram identity."""
+    if update.effective_user is None or update.message is None:
+        return
+    code = " ".join(getattr(context, "args", []) or []).strip()
+    if not code:
+        await update.message.reply_text(
+            "To connect Telegram to an account created in the app:\n"
+            "1. Open App → Account → Connect Telegram.\n"
+            "2. Copy the one-time code.\n"
+            "3. Send `/link CODE` here.",
+            parse_mode="Markdown",
+        )
+        return
+    try:
+        from services.platform.identity import complete_telegram_link_request
+
+        tg = update.effective_user
+        display_name = " ".join(filter(None, [tg.first_name, tg.last_name])).strip() or None
+        async with get_session() as session:
+            result = await complete_telegram_link_request(
+                session,
+                token_or_code=code,
+                telegram_user_id=int(tg.id),
+                username=tg.username,
+                display_name=display_name,
+            )
+            await session.commit()
+        if result.status == "linked":
+            await update.message.reply_text(
+                "✅ Telegram is now linked to your SignalRankAI account.\n\n"
+                "Your tier, signals, watchlists, paper portfolio and settings now use the same canonical account."
+            )
+        else:
+            await update.message.reply_text(
+                "🛡️ Both accounts contain existing identity or trading history, so SignalRankAI did not merge them automatically. "
+                "A secure account-merge review has been opened to prevent subscription, paper-trade or referral data loss."
+            )
+    except Exception as exc:
+        logger.warning("[link_command] failed user=%s err=%s", update.effective_user.id, exc)
+        message = str(exc)
+        if "expired" in message:
+            text_value = "That Telegram link code has expired. Generate a new one from the app."
+        elif "already" in message:
+            text_value = "That Telegram link code was already used. Generate a new one from the app."
+        else:
+            text_value = "The account could not be linked. Check the one-time code or generate a new one from the app."
+        await update.message.reply_text(text_value)
+
+
+async def devices_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show active app sessions without exposing refresh tokens or secrets."""
+    if update.effective_user is None or update.message is None:
+        return
+    try:
+        from sqlalchemy import text
+        from services.platform.identity import ensure_telegram_user
+
+        async with get_session() as session:
+            uid = await ensure_telegram_user(
+                session,
+                telegram_user_id=int(update.effective_user.id),
+                username=update.effective_user.username,
+            )
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT session_id,created_at,last_used_at,expires_at,revoked_at "
+                        "FROM user_sessions WHERE user_id=:uid ORDER BY created_at DESC LIMIT 10"
+                    ),
+                    {"uid": uid},
+                )
+            ).mappings().all()
+            await session.commit()
+        if not rows:
+            await update.message.reply_text("No web or mobile sessions are active. Use /app to activate app access.")
+            return
+        lines = ["📱 *Your SignalRankAI sessions*"]
+        for row in rows:
+            status = "Revoked" if row["revoked_at"] else "Active"
+            lines.append(
+                f"• `{str(row['session_id'])[:8]}` — {status}\n"
+                f"  Last used: {row['last_used_at']}"
+            )
+        lines.append("\nUse the app Security page to revoke individual devices, or /security for account guidance.")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as exc:
+        logger.exception("[devices_command] failed: %s", exc)
+        await update.message.reply_text("Session information is unavailable right now.")
+
+
+async def security_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+    await update.message.reply_text(
+        "🛡️ *SignalRankAI account security*\n\n"
+        "• Use /app for a single-use activation link.\n"
+        "• SignalRankAI never sends permanent passwords in Telegram.\n"
+        "• Never share exchange keys, wallet private keys or one-time codes.\n"
+        "• Connected exchange keys must have withdrawals disabled.\n"
+        "• Review and revoke devices from the app Security page.\n"
+        "• Live execution remains disabled unless separately certified and explicitly enabled.",
+        parse_mode="Markdown",
+    )
+
+
 async def start_command(update, context):
 	# ── Diagnostic entry log — visible in Railway logs ───────────────────────
 	try:
@@ -5331,6 +5515,38 @@ async def start_command(update, context):
 			ref_token = str(context.args[0])
 	except Exception:
 		ref_token = None
+
+	# App-created accounts use a Telegram deep link of the form
+	# /start link_<single-use-code>. Resolve it before legacy user creation so
+	# we do not manufacture a duplicate Telegram-only canonical account.
+	if ref_token and str(ref_token).startswith("link_"):
+		code = str(ref_token)[5:].strip()
+		try:
+			from services.platform.identity import complete_telegram_link_request
+			display_name = " ".join(filter(None, [update.effective_user.first_name, update.effective_user.last_name])).strip() or None
+			async with get_session(priority="interactive", label="telegram_deep_link") as session:
+				result = await complete_telegram_link_request(
+					session,
+					token_or_code=code,
+					telegram_user_id=int(user_id),
+					username=username,
+					display_name=display_name,
+				)
+				await session.commit()
+			if result.status == "linked":
+				await update.message.reply_text(
+					"✅ Telegram is now linked to your SignalRankAI account. Your bot and app data now use one canonical account."
+				)
+			else:
+				await update.message.reply_text(
+					"🛡️ Existing history was detected on both accounts. A secure merge review was opened instead of overwriting data."
+				)
+		except Exception as exc:
+			logger.warning("[telegram_deep_link] account link failed user=%s err=%s", user_id, exc)
+			await update.message.reply_text(
+				"This account-link code is invalid, expired, or already used. Generate a new code from the app."
+			)
+		return
 
 	is_new = False
 	referral_outcome = None

@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "SignalRankAI",
+    "slug": "signalrankai",
+    "scheme": "signalrank",
+    "version": "1.4.2",
+    "runtimeVersion": {"policy": "fingerprint"},
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      ["expo-secure-store", {"configureAndroidBackup": true, "faceIDPermission": "Allow SignalRankAI to protect your trading account with Face ID."}],
+      ["expo-notifications", {"color": "#64f0b4", "defaultChannel": "signals"}]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.signalrank.app",
+      "config": {"usesNonExemptEncryption": false}
+    },
+    "android": {
+      "package": "ai.signalrank.app",
+      "adaptiveIcon": {"backgroundColor": "#080b10"}
+    },
+    "web": {"bundler": "metro"},
+    "extra": {
+      "apiUrl": "${EXPO_PUBLIC_API_URL}",
+      "eas": {"projectId": "${EXPO_PUBLIC_EAS_PROJECT_ID}"}
+    }
+  }
+}

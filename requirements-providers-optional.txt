@@ -1,0 +1,18 @@
+# Optional native provider SDKs. SignalRankAI's canonical adapters use guarded
+# HTTP/WebSocket contracts so these are not required in every service image.
+# Pin exact versions in the deployment lockfile after compatibility validation.
+ccxt
+coinbase-advanced-py
+python-okx
+hyperliquid-python-sdk
+alpaca-py
+massive
+finnhub-python
+tradingeconomics
+dune-client
+coinmetrics-api-client
+quandl
+oandapyV20
+cryptofeed
+fredapi
+pandas-datareader

@@ -22,10 +22,12 @@ RETRAIN_LOOKBACK_DAYS = int(os.getenv("ML_RETRAIN_LOOKBACK_DAYS", "90"))
 from ml.schema_version import (
     MODEL_FORMAT_VERSION,
     get_current_schema_version,
-    get_feature_columns,
+    get_legacy_retrain_feature_columns,
 )
 
-FEATURE_COLS = get_feature_columns()
+# This module is intentionally legacy-only. The governed v3 pipeline lives in
+# ml.train_model and must not receive synthetic zeroes for unavailable features.
+FEATURE_COLS = get_legacy_retrain_feature_columns()
 
 
 async def collect_training_data() -> list:

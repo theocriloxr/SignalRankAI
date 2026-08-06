@@ -2231,12 +2231,61 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 pass
             _discovered_assets: List[str] = []
-            try:
-                _discovered_assets = [
-                    _normalize_asset_symbol(s) for s in (list(get_all_trending_pairs() or []))
-                ]
-            except Exception:
-                pass
+            _universe_source = "legacy_provider_discovery"
+            _dynamic_universe_enabled = _env_bool("DYNAMIC_UNIVERSE_ENABLED", True)
+            _allow_static_fallback = _env_bool("ALLOW_STATIC_ASSET_FALLBACK", False)
+            if _dynamic_universe_enabled:
+                try:
+                    from data.database_universe import load_database_universe
+                    from db.session import get_session as _get_universe_session
+                    from utils.async_runner import run_sync as _run_universe_sync
+
+                    async def _fetch_database_universe():
+                        async with _get_universe_session(
+                            priority="background",
+                            label="engine.database_universe",
+                            timeout_seconds=4.0,
+                        ) as _universe_session:
+                            requested_classes = (
+                                list(getattr(_profile_demand_snapshot, "asset_classes", ()) or ())
+                                if _profile_demand_snapshot is not None else []
+                            )
+                            return await load_database_universe(
+                                _universe_session,
+                                asset_classes=requested_classes,
+                                limit=max(20, _env_int("ENGINE_DATABASE_UNIVERSE_LIMIT", 250)),
+                            )
+
+                    _discovered_assets = [
+                        _normalize_asset_symbol(s)
+                        for s in list(_run_universe_sync(
+                            _fetch_database_universe(),
+                            timeout=float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "7") or 7),
+                        ) or [])
+                    ]
+                    _universe_source = "database_registry"
+                except Exception as _database_universe_error:
+                    logger.warning(
+                        "[engine] database universe unavailable err_type=%s error=%s",
+                        type(_database_universe_error).__name__,
+                        str(_database_universe_error)[:160],
+                    )
+            if not _discovered_assets and (not _dynamic_universe_enabled or _allow_static_fallback):
+                try:
+                    _discovered_assets = [
+                        _normalize_asset_symbol(s) for s in (list(get_all_trending_pairs() or []))
+                    ]
+                    _universe_source = "legacy_provider_discovery_fallback"
+                except Exception:
+                    pass
+            logger.info(
+                "[engine] universe_source=%s discovered=%s managed=%s pinned=%s static_fallback=%s",
+                _universe_source,
+                len(_discovered_assets),
+                len(_managed_assets),
+                len(_saved_assets),
+                _allow_static_fallback,
+            )
             assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
             if (
                 _env_bool("PROFILE_DRIVEN_UNIVERSE_ENABLED", True)

@@ -1,0 +1,13 @@
+{
+  "name": "SignalRankAI",
+  "short_name": "SignalRank",
+  "description": "Unified trading intelligence, signal monitoring and paper portfolio platform.",
+  "start_url": "/app",
+  "scope": "/app",
+  "display": "standalone",
+  "background_color": "#080b10",
+  "theme_color": "#0b0f14",
+  "icons": [
+    {"src":"/app-assets/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

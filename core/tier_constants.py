@@ -95,6 +95,18 @@ TIER_SIGNAL_DEPTH: Final[dict[str, dict]] = {
         "show_sl": True,
         "detail_level": "full",
     },
+    "professional": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "professional",
+    },
+    "institutional": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "institutional",
+    },
     "owner": {
         "max_tp_level": 3,
         "show_tp3": True,
@@ -167,24 +179,32 @@ TIER_FEATURES: Final[dict[str, set[str]]] = {
 }
 
 TIER_PRICES_NGN: Final[dict[str, int]] = {
-    "premium": int(_os.getenv("PREMIUM_PRICE_NGN", "5000") or 5000),
-    "vip": int(_os.getenv("VIP_PRICE_NGN", "15000") or 15000),
+    "premium": int(_os.getenv("PREMIUM_PRICE_NGN", "24000") or 24000),
+    "vip": int(_os.getenv("VIP_PRICE_NGN", "40000") or 40000),
+    "professional": int(_os.getenv("PROFESSIONAL_PRICE_NGN", "0") or 0),
+    "institutional": int(_os.getenv("INSTITUTIONAL_PRICE_NGN", "0") or 0),
 }
 
 TIER_PRICES_USD: Final[dict[str, float]] = {
-    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "10.0") or 10.0),
+    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "15.0") or 15.0),
     "vip": float(_os.getenv("VIP_PRICE_USD", "30.0") or 30.0),
+    "professional": float(_os.getenv("PROFESSIONAL_PRICE_USD", "0") or 0),
+    "institutional": float(_os.getenv("INSTITUTIONAL_PRICE_USD", "0") or 0),
 }
 
 TIER_BILLING_PERIODS: Final[dict[str, str]] = {
     "premium": "monthly",
     "vip": "monthly",
+    "professional": "monthly_or_contract",
+    "institutional": "contract",
 }
 
 TIER_DISPLAY_NAMES: Final[dict[str, str]] = {
     "free": "Free",
     "premium": "Premium",
     "vip": "VIP",
+    "professional": "Professional",
+    "institutional": "Institutional",
     "admin": "Admin",
     "owner": "Owner",
 }
@@ -193,6 +213,8 @@ TIER_EMOJIS: Final[dict[str, str]] = {
     "free": "",
     "premium": "",
     "vip": "",
+    "professional": "",
+    "institutional": "",
     "admin": "",
     "owner": "",
 }
@@ -201,6 +223,8 @@ TIER_ASSET_COOLDOWN_HOURS: Final[dict[str, int]] = {
     "free": int(_os.getenv("FREE_ASSET_COOLDOWN_HOURS", "12") or 12),
     "premium": int(_os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "12") or 12),
     "vip": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "professional": int(_os.getenv("PROFESSIONAL_ASSET_COOLDOWN_HOURS", "6") or 6),
+    "institutional": int(_os.getenv("INSTITUTIONAL_ASSET_COOLDOWN_HOURS", "1") or 1),
     "admin": int(_os.getenv("ADMIN_ASSET_COOLDOWN_HOURS", "12") or 12),
     "owner": int(_os.getenv("OWNER_ASSET_COOLDOWN_HOURS", "12") or 12),
 }

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="description" content="SignalRankAI unified trading intelligence dashboard" />
+  <link rel="manifest" href="/app/manifest.webmanifest" />
+  <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/app-assets/styles.css" />
+  <title>SignalRankAI</title>
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <header class="topbar">
+    <a class="brand" href="/app" aria-label="SignalRankAI home">
+      <span class="brand-mark">SR</span>
+      <span><strong>SignalRank</strong><small>Trading Intelligence</small></span>
+    </a>
+    <nav id="sessionNav" hidden>
+      <button data-view="overview">Overview</button>
+      <button data-view="signals">Signals</button>
+      <button data-view="markets">Markets</button>
+      <button data-view="paper">Paper</button>
+      <button data-view="journal">Journal</button>
+      <button data-view="account">Account</button>
+      <button id="logoutButton" class="ghost">Log out</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="authShell" class="auth-shell">
+      <div class="hero-card">
+        <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
+        <h1>Your SignalRankAI data follows you.</h1>
+        <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and future execution connections.</p>
+        <ul class="feature-list">
+          <li>Verified signal history and outcomes</li>
+          <li>Paper portfolio and risk dashboard</li>
+          <li>Provider-discovered market search</li>
+          <li>Cross-channel preferences and security</li>
+        </ul>
+      </div>
+
+      <div class="auth-card">
+        <div class="tabs" role="tablist">
+          <button id="loginTab" class="active" role="tab">Log in</button>
+          <button id="registerTab" role="tab">Create account</button>
+          <button id="activateTab" role="tab">Activate from Telegram</button>
+        </div>
+
+        <form id="loginForm" class="stack">
+          <h2>Welcome back</h2>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit" class="primary">Log in securely</button>
+        </form>
+
+        <form id="registerForm" class="stack" hidden>
+          <h2>Create your SignalRank account</h2>
+          <label>Display name<input name="display_name" autocomplete="name" maxlength="160" /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <small>Use at least 10 characters and three character types.</small>
+          <button type="submit" class="primary">Create account</button>
+        </form>
+
+        <form id="activateForm" class="stack" hidden>
+          <h2>Bring your Telegram account into the app</h2>
+          <p>In the SignalRankAI bot, send <code>/app</code> or <code>/login_code</code>. Enter the one-time code or open the secure link.</p>
+          <label>One-time token or code<input id="activationCredential" name="token_or_code" autocomplete="one-time-code" required /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <button type="submit" class="primary">Activate app access</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="appShell" hidden>
+      <div class="dashboard-header">
+        <div>
+          <p class="eyebrow">SIGNALRANKAI COMMAND CENTRE</p>
+          <h1 id="welcomeTitle">Dashboard</h1>
+          <p id="accountSubtitle"></p>
+        </div>
+        <span id="tierBadge" class="tier-badge">FREE</span>
+      </div>
+
+      <section id="overviewView" class="view">
+        <div id="summaryCards" class="card-grid"></div>
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><h2>Latest signals</h2><button data-view="signals" class="link-button">View all</button></div>
+            <div id="latestSignals" class="data-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><h2>Paper positions</h2><button data-view="paper" class="link-button">Open paper desk</button></div>
+            <div id="overviewPositions" class="data-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="signalsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
+        <div class="filters"><input id="signalAssetFilter" placeholder="Filter by asset" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
+        <div id="signalsTable" class="table-wrap"></div>
+      </section>
+
+      <section id="marketsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">DYNAMIC PROVIDER REGISTRY</p><h2>Market explorer</h2></div></div>
+        <div class="filters"><input id="marketSearch" placeholder="Search BTC, gold, EURUSD, AAPL…" /><select id="assetClassFilter"><option value="">All classes</option><option value="crypto_spot">Crypto</option><option value="forex">Forex</option><option value="equity">Stocks</option><option value="commodity_spot">Commodities</option><option value="index">Indices</option></select><button id="searchMarkets" class="primary">Search</button></div>
+        <div id="marketResults" class="market-grid"></div>
+      </section>
+
+      <section id="paperView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">SIMULATED CAPITAL</p><h2>Paper trading</h2></div></div>
+        <div id="paperAccount" class="card-grid"></div>
+        <div id="paperPositions" class="table-wrap"></div>
+      </section>
+
+      <section id="journalView" class="view" hidden>
+        <div class="split-grid">
+          <article class="panel"><h2>Trading journal</h2><form id="journalForm" class="stack-form"><label>Title<input name="title" maxlength="180" /></label><label>Notes<textarea name="notes" rows="7" maxlength="20000" required></textarea></label><label>Emotion<input name="emotion" maxlength="64" /></label><label>Mistake category<input name="mistake_category" maxlength="96" /></label><label>Plan adherence %<input name="plan_adherence" type="number" min="0" max="100" /></label><label>Result (R)<input name="result_r" type="number" step="0.01" /></label><label>Tags<input name="tags" placeholder="discipline, breakout, london" /></label><button class="primary" type="submit">Save journal entry</button></form></article>
+          <article class="panel"><h2>Recent entries</h2><div id="journalEntries" class="data-list"></div></article>
+        </div>
+      </section>
+
+      <section id="accountView" class="view" hidden>
+        <div class="two-column">
+          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel"><h2>Security and sessions</h2><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
+        </div>
+        <article class="panel"><h2>Notification preferences</h2><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><button class="primary" type="submit">Save preferences</button></form></article>
+        <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
+      </section>
+    </section>
+  </main>
+
+  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
+  <script src="/app-assets/app.js" defer></script>
+</body>
+</html>

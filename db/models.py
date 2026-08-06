@@ -42,7 +42,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    telegram_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
     username: Mapped[Optional[str]] = mapped_column(String(64))
     tier: Mapped[str] = mapped_column(String(16), index=True, default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
@@ -74,6 +74,18 @@ class User(Base):
     locale: Mapped[Optional[str]] = mapped_column(String(16))
     time_format: Mapped[str] = mapped_column(String(8), default="12h", nullable=False)
     dca_profile: Mapped[Optional[str]] = mapped_column(String(32))
+    # Unified platform identity fields (migration 0036). Existing users.id stays
+    # canonical so Telegram, web and mobile retain the same trading history.
+    public_user_id: Mapped[Optional[str]] = mapped_column(String(36), unique=True, index=True)
+    primary_email: Mapped[Optional[str]] = mapped_column(String(320), index=True)
+    primary_phone: Mapped[Optional[str]] = mapped_column(String(32))
+    display_name: Mapped[Optional[str]] = mapped_column(String(160))
+    country: Mapped[Optional[str]] = mapped_column(String(2))
+    preferred_currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    account_status: Mapped[str] = mapped_column(String(24), default="active", nullable=False, index=True)
+    onboarding_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class Subscription(Base):

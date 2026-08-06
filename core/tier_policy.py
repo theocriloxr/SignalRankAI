@@ -13,13 +13,16 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping
 
-POLICY_VERSION = "phase4-pass5-v1"
+POLICY_VERSION = "unified-platform-v1.4.2"
+CATALOGUE_VERSION = POLICY_VERSION
 
 
 class Tier(StrEnum):
     FREE = "FREE"
     PREMIUM = "PREMIUM"
     VIP = "VIP"
+    PROFESSIONAL = "PROFESSIONAL"
+    INSTITUTIONAL = "INSTITUTIONAL"
     ADMIN = "ADMIN"
     OWNER = "OWNER"
 
@@ -28,6 +31,8 @@ TIER_ORDER: tuple[Tier, ...] = (
     Tier.FREE,
     Tier.PREMIUM,
     Tier.VIP,
+    Tier.PROFESSIONAL,
+    Tier.INSTITUTIONAL,
     Tier.ADMIN,
     Tier.OWNER,
 )
@@ -51,6 +56,11 @@ def _env_int(name: str, default: int) -> int:
         return max(0, int(float(os.getenv(name, str(default)) or default)))
     except Exception:
         return int(default)
+
+
+def is_valid_tier(value: Tier | str | None) -> bool:
+    raw = str(value or "").strip().upper()
+    return raw in {tier.value for tier in Tier}
 
 
 def normalize_tier(value: Tier | str | None) -> Tier:
@@ -128,6 +138,31 @@ _VIP_FEATURES = _PREMIUM_FEATURES | frozenset(
         "priority_support",
     }
 )
+_PROFESSIONAL_FEATURES = _VIP_FEATURES | frozenset(
+    {
+        "rest_api",
+        "websocket_api",
+        "outbound_webhooks",
+        "strategy_lab",
+        "batch_backtesting",
+        "advanced_exports",
+        "team_workspace",
+        "service_accounts",
+        "higher_rate_limits",
+    }
+)
+_INSTITUTIONAL_FEATURES = _PROFESSIONAL_FEATURES | frozenset(
+    {
+        "organization_tenancy",
+        "institutional_sso",
+        "white_label",
+        "dedicated_quotas",
+        "compliance_exports",
+        "sla_reporting",
+        "custom_integrations",
+        "data_residency_controls",
+    }
+)
 
 
 def _policies() -> Mapping[Tier, TierEntitlements]:
@@ -179,6 +214,36 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             features=_VIP_FEATURES,
             support_level="priority",
         ),
+        Tier.PROFESSIONAL: TierEntitlements(
+            tier=Tier.PROFESSIONAL,
+            purchasable=True,
+            daily_signal_limit=_env_int("PROFESSIONAL_SIGNAL_DAILY_LIMIT", 100),
+            minimum_signal_score=75.0,
+            delivery_delay_minutes=0,
+            delivery_priority="professional",
+            max_tp_levels=3,
+            history_days=1825,
+            analytics_level="professional",
+            allowed_asset_classes=all_assets,
+            allowed_profiles=all_profiles,
+            features=_PROFESSIONAL_FEATURES,
+            support_level="professional",
+        ),
+        Tier.INSTITUTIONAL: TierEntitlements(
+            tier=Tier.INSTITUTIONAL,
+            purchasable=True,
+            daily_signal_limit=_env_int("INSTITUTIONAL_SIGNAL_DAILY_LIMIT", 1000),
+            minimum_signal_score=0.0,
+            delivery_delay_minutes=0,
+            delivery_priority="institutional",
+            max_tp_levels=3,
+            history_days=3650,
+            analytics_level="institutional",
+            allowed_asset_classes=all_assets,
+            allowed_profiles=all_profiles,
+            features=_INSTITUTIONAL_FEATURES,
+            support_level="dedicated",
+        ),
         Tier.ADMIN: TierEntitlements(
             tier=Tier.ADMIN,
             purchasable=False,
@@ -191,7 +256,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             analytics_level="internal",
             allowed_asset_classes=all_assets,
             allowed_profiles=all_profiles,
-            features=_VIP_FEATURES | frozenset({"internal_operations", "audited_controls"}),
+            features=_INSTITUTIONAL_FEATURES | frozenset({"internal_operations", "audited_controls"}),
             support_level="internal",
         ),
         Tier.OWNER: TierEntitlements(
@@ -249,6 +314,23 @@ FEATURE_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "ai_coaching": Tier.VIP,
         "risk_sizing": Tier.VIP,
         "priority_support": Tier.VIP,
+        "rest_api": Tier.PROFESSIONAL,
+        "websocket_api": Tier.PROFESSIONAL,
+        "outbound_webhooks": Tier.PROFESSIONAL,
+        "strategy_lab": Tier.PROFESSIONAL,
+        "batch_backtesting": Tier.PROFESSIONAL,
+        "advanced_exports": Tier.PROFESSIONAL,
+        "team_workspace": Tier.PROFESSIONAL,
+        "service_accounts": Tier.PROFESSIONAL,
+        "higher_rate_limits": Tier.PROFESSIONAL,
+        "organization_tenancy": Tier.INSTITUTIONAL,
+        "institutional_sso": Tier.INSTITUTIONAL,
+        "white_label": Tier.INSTITUTIONAL,
+        "dedicated_quotas": Tier.INSTITUTIONAL,
+        "compliance_exports": Tier.INSTITUTIONAL,
+        "sla_reporting": Tier.INSTITUTIONAL,
+        "custom_integrations": Tier.INSTITUTIONAL,
+        "data_residency_controls": Tier.INSTITUTIONAL,
         "internal_operations": Tier.ADMIN,
         "audited_controls": Tier.ADMIN,
     }
@@ -268,6 +350,13 @@ FEATURE_VALUE = MappingProxyType(
         "execution_preflight": "execution-grade preflight; activation still requires every safety gate",
         "webhook_api": "controlled webhook and API workflow",
         "advanced_profiles": "more precise horizon and profile personalization",
+        "rest_api": "scoped REST API access",
+        "websocket_api": "real-time WebSocket streams",
+        "outbound_webhooks": "signed outbound webhooks",
+        "strategy_lab": "the governed strategy research laboratory",
+        "organization_tenancy": "secure multi-user organization workspaces",
+        "institutional_sso": "institutional single sign-on",
+        "white_label": "contract-governed white-label delivery",
         "internal_operations": "audited internal operations",
     }
 )
@@ -357,6 +446,9 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "referral_leaderboard": Tier.FREE, "referral_rewards": Tier.FREE,
         "support": Tier.FREE, "status": Tier.FREE, "liveprice": Tier.FREE,
         "market": Tier.FREE, "myid": Tier.FREE, "account": Tier.FREE,
+        "app": Tier.FREE, "open_app": Tier.FREE, "login_code": Tier.FREE,
+    "link": Tier.FREE,
+        "devices": Tier.FREE, "security": Tier.FREE,
         "leaderboard": Tier.FREE, "tiers": Tier.FREE, "unlock": Tier.FREE,
         # Safe public-testing and paper/education surfaces.
         "public_test_status": Tier.FREE, "paper_balance": Tier.FREE,
@@ -538,6 +630,7 @@ __all__ = [
     "COMMAND_FEATURE",
     "COMMAND_MINIMUM_TIER",
     "FEATURE_MINIMUM_TIER",
+    "CATALOGUE_VERSION",
     "NON_BYPASSABLE_SAFETY_GATES",
     "POLICY_VERSION",
     "TIER_ORDER",
@@ -548,6 +641,7 @@ __all__ = [
     "evaluate_command_access",
     "evaluate_feature_access",
     "get_entitlements",
+    "is_valid_tier",
     "normalize_tier",
     "policy_snapshot",
     "tier_rank",

@@ -28,6 +28,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("about", "Platform features and your verified signal totals", "FREE", "Getting started"),
     CommandSpec("status", "Subscription, tier, and account status", "FREE", "Account"),
     CommandSpec("account", "Open your account controls", "FREE", "Account"),
+    CommandSpec("app", "Open or activate your unified web and mobile account", "FREE", "Account"),
+    CommandSpec("login_code", "Generate a one-time app activation code", "FREE", "Account"),
+    CommandSpec("link", "Link an app-created account to Telegram", "FREE", "Account"),
+    CommandSpec("devices", "Review signed-in application sessions", "FREE", "Account"),
+    CommandSpec("security", "Review account security guidance", "FREE", "Account"),
     CommandSpec("pricing", "View current plans and prices", "FREE", "Account"),
     CommandSpec("upgrade", "Subscribe or change plan", "FREE", "Account"),
     CommandSpec("tiers", "Compare Free, Premium, and VIP access", "FREE", "Account"),
@@ -137,7 +142,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
 
 def normalized_tier(tier: str | None) -> str:
     value = str(tier or "FREE").strip().upper()
-    return value if value in {"FREE", "PREMIUM", "VIP", "ADMIN", "OWNER"} else "FREE"
+    return value if value in {"FREE", "PREMIUM", "VIP", "PROFESSIONAL", "INSTITUTIONAL", "ADMIN", "OWNER"} else "FREE"
 
 
 def visible_commands(tier: str | None, *, botfather_only: bool = False) -> list[CommandSpec]:

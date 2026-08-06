@@ -2312,6 +2312,30 @@ async def _database_readiness_check() -> dict[str, object]:
                                   AND column_name = 'performance_version'
                             ) AS signals_performance_version,
                             EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'instruments'
+                            ) AS instruments_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'subscription_entitlements'
+                            ) AS subscription_entitlements_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'auth_identities'
+                            ) AS auth_identities_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'journal_entries'
+                            ) AS journal_entries_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'api_keys'
+                            ) AS api_keys_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'webhook_deliveries'
+                            ) AS webhook_deliveries_table,
+                            EXISTS (
                                 SELECT 1
                                 FROM pg_index AS i
                                 JOIN pg_class AS idx ON idx.oid = i.indexrelid
@@ -2376,6 +2400,23 @@ async def _database_readiness_check() -> dict[str, object]:
                 "revision": deployed,
             }
 
+        table_flags = {
+            "instruments": bool(row.get("instruments_table")),
+            "subscription_entitlements": bool(row.get("subscription_entitlements_table")),
+            "auth_identities": bool(row.get("auth_identities_table")),
+            "journal_entries": bool(row.get("journal_entries_table")),
+            "api_keys": bool(row.get("api_keys_table")),
+            "webhook_deliveries": bool(row.get("webhook_deliveries_table")),
+        }
+        missing_tables = sorted(name for name, present in table_flags.items() if not present)
+        if missing_tables:
+            return {
+                "ok": False,
+                "detail": "required_ecosystem_tables_missing",
+                "missing": missing_tables,
+                "revision": deployed,
+            }
+
         if not bool(row.get("active_guard_present")):
             return {
                 "ok": False,
@@ -2406,6 +2447,7 @@ async def _database_readiness_check() -> dict[str, object]:
             "revision": deployed,
             "expected_revision": expected_heads[0],
             "critical_schema": column_flags,
+            "required_ecosystem_tables": table_flags,
             "active_signal_guard": True,
             "outcome_projection_guard": True,
             "outcome_duplicate_groups": 0,

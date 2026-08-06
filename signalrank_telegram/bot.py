@@ -926,6 +926,11 @@ from .commands import (
     mission_command,
     myid_command,
     account_command,
+    app_command,
+    login_code_command,
+    link_command,
+    devices_command,
+    security_command,
     dashboard_command,
     liveprice_command,
     portfolio_command,
@@ -6310,6 +6315,12 @@ def run_bot() -> None:
 
         application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_unavailable)))
 
+    application.add_handler(CommandHandler("app", _audit_handler("app", app_command)))
+    application.add_handler(CommandHandler("open_app", _audit_handler("open_app", app_command)))
+    application.add_handler(CommandHandler("login_code", _audit_handler("login_code", login_code_command)))
+    application.add_handler(CommandHandler("link", _audit_handler("link", link_command)))
+    application.add_handler(CommandHandler("devices", _audit_handler("devices", devices_command)))
+    application.add_handler(CommandHandler("security", _audit_handler("security", security_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))

@@ -2105,6 +2105,33 @@ async def mark_signal_delivery_result(
             **dict(telegram_api_result or {}),
         }
         row.telegram_api_result = merged_api_result
+        try:
+            from services.platform.webhooks import queue_user_webhook_event
+            await queue_user_webhook_event(
+                session,
+                user_id=int(user.id),
+                event_type="signal.delivered",
+                event_id=f"delivery:{getattr(row, 'id', signal_id)}",
+                payload={
+                    "signal_id": str(signal_id),
+                    "asset": str(getattr(signal_row, "asset", "") or ""),
+                    "direction": str(getattr(signal_row, "direction", "") or ""),
+                    "timeframe": str(getattr(signal_row, "timeframe", "") or ""),
+                    "strategy": str(getattr(signal_row, "strategy_name", "") or ""),
+                    "score": float(getattr(signal_row, "score", 0.0) or 0.0),
+                    "delivered_at": now.isoformat(),
+                    "delivery_id": int(getattr(row, "id", 0) or 0),
+                },
+            )
+        except Exception as webhook_exc:
+            # Telegram proof remains authoritative; a webhook queue issue may
+            # not erase a confirmed user delivery.
+            logger.warning(
+                "[webhook_queue_failed] event=signal.delivered user=%s signal=%s err=%s",
+                user.id,
+                signal_id,
+                webhook_exc,
+            )
 
         edited_old_signal_id = str(merged_api_result.get("edited_old_signal_id") or "").strip()
         if edited_old_signal_id and edited_old_signal_id != str(signal_id):

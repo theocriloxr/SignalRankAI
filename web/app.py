@@ -27,7 +27,8 @@ import json
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends, Header, Request
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response, FileResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -71,6 +72,31 @@ try:
 except Exception as exc:  # pragma: no cover - optional during minimal boots
     logger.debug("versioned API router unavailable during import: %s", type(exc).__name__)
 
+# Unified Telegram/web/mobile identity and product API.
+try:
+    from web.platform_api import router as platform_api_router
+
+    app.include_router(platform_api_router, prefix="/api/v1")
+except Exception as exc:  # pragma: no cover - schema may be behind during migration
+    logger.warning("[web] platform API router unavailable: %s", type(exc).__name__)
+
+_PLATFORM_DIR = os.path.join(os.path.dirname(__file__), "platform_app")
+if os.path.isdir(_PLATFORM_DIR):
+    app.mount("/app-assets", StaticFiles(directory=_PLATFORM_DIR), name="platform-assets")
+
+    @app.get("/app", include_in_schema=False)
+    @app.get("/activate", include_in_schema=False)
+    async def platform_application() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "index.html"))
+
+    @app.get("/app/manifest.webmanifest", include_in_schema=False)
+    async def platform_manifest() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "manifest.webmanifest"), media_type="application/manifest+json")
+
+    @app.get("/app/service-worker.js", include_in_schema=False)
+    async def platform_service_worker() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "service-worker.js"), media_type="application/javascript", headers={"Service-Worker-Allowed": "/app"})
+
 # Preserve the dedicated Paystack ingress router as a compatibility alias.
 # The inline routes below remain available for existing clients; this mounts
 # the canonical raw-body/background-task handler at `/webhook/paystack`.
@@ -81,13 +107,26 @@ try:
 except Exception as exc:  # pragma: no cover - optional during minimal boots
     logger.debug("Paystack ingress router unavailable during import: %s", type(exc).__name__)
 
-# CORS for Telegram web apps (future)
+# CORS is explicit and environment-driven. Wildcards are never combined with
+# credential cookies. Telegram Mini Apps and the first-party app domains are
+# allowed by default.
+_app_origins = {
+    "https://t.me",
+    "https://telegram.org",
+    str(os.getenv("APP_BASE_URL") or "").rstrip("/"),
+    str(os.getenv("STAGING_APP_BASE_URL") or "").rstrip("/"),
+}
+_app_origins.update(
+    origin.strip().rstrip("/")
+    for origin in str(os.getenv("APP_ALLOWED_ORIGINS") or "").split(",")
+    if origin.strip()
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://t.me", "https://telegram.org"],
+    allow_origins=sorted(origin for origin in _app_origins if origin),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID", "X-CSRF-Token"],
 )
 
 # Keep dependency resolution under our control so callers receive a stable
@@ -219,33 +258,83 @@ async def verify_api_key(
         logger.warning("[auth] token verification unavailable: %s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
 
-def rate_limit_key(request: Request) -> str:
-    """Rate limit key: IP + user-agent fingerprint."""
-    client_ip = request.client.host
-    user_agent_hash = hashlib.md5(str(request.headers.get("user-agent", "")).encode()).hexdigest()[:8]
-    return f"api_rate:{client_ip}:{user_agent_hash}"
+def _request_client_ip(request: Request) -> str:
+    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",", 1)[0].strip()
+    if forwarded:
+        return forwarded
+    return str(getattr(getattr(request, "client", None), "host", None) or "unknown")
 
-async def rate_limit(request: Request, user_id: int):
-    """Rate limit: 10 req/min per IP."""
-    key = rate_limit_key(request)
-    now = time.time()
-    
+
+def rate_limit_key(request: Request, category: str = "general") -> str:
+    """Rate-limit key without storing raw IP or user-agent values."""
+    fingerprint = "|".join(
+        [
+            _request_client_ip(request),
+            str(request.headers.get("user-agent") or ""),
+            str(category or "general"),
+        ]
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:32]
+    return f"api_rate:{category}:{digest}"
+
+
+def _route_rate_policy(request: Request) -> tuple[str, int, int]:
+    path = request.url.path
+    if path.startswith("/api/v1/platform/auth/"):
+        return "platform_auth", int(os.getenv("APP_AUTH_RATE_LIMIT_PER_MINUTE", "20")), 60
+    if path.startswith("/api/v1/platform/professional/"):
+        return "professional_api", int(os.getenv("PROFESSIONAL_API_RATE_LIMIT_PER_MINUTE", "600")), 60
+    if path.startswith("/api/v1/platform/"):
+        return "platform_api", int(os.getenv("APP_API_RATE_LIMIT_PER_MINUTE", "240")), 60
+    if path.startswith("/app") or path.startswith("/app-assets"):
+        return "platform_static", int(os.getenv("APP_STATIC_RATE_LIMIT_PER_MINUTE", "600")), 60
+    return "general", int(os.getenv("GENERAL_API_RATE_LIMIT_PER_MINUTE", "120")), 60
+
+
+async def rate_limit(request: Request, user_id: int = 0) -> None:
+    """Route-aware fixed-window limit backed by Redis.
+
+    The old global 10 requests/minute policy made the PWA unusable because one
+    dashboard boot performs several authorized reads. Authentication remains
+    stricter, while Professional API traffic receives its own auditable budget.
+    """
+    del user_id
+    category, limit, window_seconds = _route_rate_policy(request)
+    key = rate_limit_key(request, category)
+    limiter_id = int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:15], 16)
     try:
-        pipe = state.pipeline()
-        pipe.get(key)
-        pipe.incr(key)
-        pipe.expire(key, 60)
-        hits, _, _ = await state.execute_pipeline(pipe)
-        
-        if int(hits or 0) > 10:
-            raise HTTPException(429, "Rate limit exceeded. Try again in 1 minute.")
+        if await state.rate_limited(limiter_id, limit=max(1, int(limit)), window_seconds=window_seconds):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Try again shortly.",
+                headers={"Retry-After": str(window_seconds)},
+            )
     except HTTPException:
-        # Preserve the policy response for callers; do not silently turn a
-        # rate-limit violation into an allowed request.
         raise
     except Exception as exc:
-        logger.debug("[rate_limit] backend unavailable: %s", type(exc).__name__)
-        pass
+        # Availability is preferred to silently blocking every client when the
+        # Redis limiter is unavailable; the outage remains observable.
+        logger.warning("[rate_limit] backend unavailable category=%s err=%s", category, type(exc).__name__)
+
+@app.middleware("http")
+async def platform_csrf_middleware(request: Request, call_next):
+    """Double-submit CSRF protection for cookie-authenticated mutations.
+
+    Mobile/API bearer clients are not cookie-authenticated and therefore do not
+    need a CSRF token. Public unauthenticated registration/login requests have no
+    existing authority to forge and are also exempt.
+    """
+    unsafe = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+    platform_path = request.url.path.startswith("/api/v1/platform/")
+    bearer = str(request.headers.get("authorization") or "").lower().startswith("bearer ")
+    has_auth_cookie = bool(request.cookies.get("sr_access") or request.cookies.get("sr_refresh"))
+    if unsafe and platform_path and has_auth_cookie and not bearer:
+        supplied = str(request.headers.get("x-csrf-token") or "")
+        expected = str(request.cookies.get("sr_csrf") or "")
+        if not supplied or not expected or not hmac.compare_digest(supplied, expected):
+            return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"})
+    return await call_next(request)
+
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):

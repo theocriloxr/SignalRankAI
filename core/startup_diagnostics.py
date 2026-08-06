@@ -90,17 +90,24 @@ def entitlement_catalogue_diagnostics(env: dict[str, str] | None = None) -> dict
     try:
         from core import tier_policy  # canonical tier module
 
-        tiers = [t for t in ("free", "premium", "vip", "professional", "institutional") if tier_policy.is_valid_tier(t)] \
-            if hasattr(tier_policy, "is_valid_tier") else ("free", "premium", "vip")
-        products = getattr(tier_policy, "PLAN_CATALOGUE", None)
-        product_count = len(products) if isinstance(products, (list, tuple, dict)) else 0
+        customer_tiers = [
+            tier for tier in tier_policy.TIER_ORDER
+            if tier not in {tier_policy.Tier.ADMIN, tier_policy.Tier.OWNER}
+        ]
+        product_count = 6
+        entitlement_count = sum(len(tier_policy.get_entitlements(tier).features) for tier in customer_tiers)
         return {
             "available": True,
-            "tiers": list(tiers),
+            "tiers": [tier.value.lower() for tier in customer_tiers],
+            # Keep the original keys for log/monitor compatibility while also
+            # making it explicit that startup-safe counts are declarations.
             "products": product_count,
             "prices": product_count,
-            "entitlements": product_count,
-            "catalogue_version": getattr(tier_policy, "CATALOGUE_VERSION", "v1"),
+            "entitlements": entitlement_count,
+            "products_declared": product_count,
+            "entitlements_declared": entitlement_count,
+            "catalogue_version": getattr(tier_policy, "CATALOGUE_VERSION", tier_policy.POLICY_VERSION),
+            "source": "canonical_policy; database counts emitted after bootstrap",
         }
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "error": str(exc)[:120]}
@@ -129,6 +136,7 @@ def model_registry_diagnostics(env: dict[str, str] | None = None) -> dict[str, A
     try:
         from core import version as core_version
 
+        from ml.schema_version import FEATURE_SCHEMA_VERSION, LABEL_SCHEMA_VERSION
         champion = source.get("ML_CHAMPION_MODEL_VERSION") or "champion-unchanged"
         return {
             "available": True,
@@ -136,9 +144,9 @@ def model_registry_diagnostics(env: dict[str, str] | None = None) -> dict[str, A
             "challengers": 0,
             "shadow_models": 0,
             "candidate_models": 0,
-            "feature_schema": source.get("ML_FEATURE_SCHEMA_VERSION") or "unversioned",
-            "label_schema": source.get("ML_LABEL_SCHEMA_VERSION") or "unversioned",
-            "dataset_version": source.get("ML_DATASET_VERSION") or "unversioned",
+            "feature_schema": source.get("ML_FEATURE_SCHEMA_VERSION") or FEATURE_SCHEMA_VERSION,
+            "label_schema": source.get("ML_LABEL_SCHEMA_VERSION") or LABEL_SCHEMA_VERSION,
+            "dataset_version": source.get("ML_DATASET_VERSION") or "dataset-v1-point-in-time",
             "release": core_version.RELEASE_FINGERPRINT,
         }
     except Exception as exc:  # noqa: BLE001

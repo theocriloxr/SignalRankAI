@@ -27,9 +27,9 @@ def _render_upgrade_sql() -> str:
     return proc.stdout
 
 
-def test_v104_is_the_sole_migration_head() -> None:
+def test_unified_platform_is_the_sole_migration_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0034_production_integrity"]
+    assert script.get_heads() == ["0037_unified_product_workspaces"]
 
 
 def test_clean_upgrade_contains_all_signal_runtime_columns_before_head() -> None:

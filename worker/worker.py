@@ -153,8 +153,22 @@ class Worker:
                 logger.error("[worker] failed to start task %s: %s", name, exc, exc_info=True)
 
         _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
+        if _env_bool("ECOSYSTEM_BOOTSTRAP_ON_START", True):
+            _register_task(
+                "ecosystem_bootstrap",
+                lambda: self._ecosystem_bootstrap_once(),
+                restart_on_failure=False,
+            )
+        if _env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+            _register_task(
+                "instrument_discovery",
+                lambda: self._instrument_discovery_loop(),
+                restart_on_failure=True,
+            )
         if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
             _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
+        if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
+            _register_task("webhook_delivery", lambda: self._webhook_delivery_loop(), restart_on_failure=True)
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
@@ -399,6 +413,94 @@ class Worker:
                 with contextlib.suppress(BaseException):
                     await task
                 logger.info("[worker] task stopped: %s", name)
+
+    async def _ecosystem_bootstrap_once(self) -> None:
+        """Seed catalogue/model/strategy metadata after migrations are current."""
+        if not is_db_configured():
+            logger.info("[ecosystem_bootstrap] skipped database_not_configured")
+            return
+        from db.ecosystem_bootstrap import seed_all
+        async with get_session(
+            priority="background",
+            label="worker.ecosystem_bootstrap",
+            timeout_seconds=15.0,
+            drop_if_busy=False,
+        ) as session:
+            result = await seed_all(session)
+            await session.commit()
+        logger.info("[ecosystem_bootstrap] completed result=%s", result)
+
+    async def _instrument_discovery_loop(self) -> None:
+        """Persist public provider listings without holding DB sessions over I/O."""
+        interval = max(300.0, _env_float("DYNAMIC_UNIVERSE_REFRESH_SECONDS", 900.0, minimum=300.0))
+        top = max(10, int(os.getenv("INSTRUMENT_DISCOVERY_TOP", "150") or 150))
+        while not self._stop.is_set():
+            provider_rows: dict[str, list[dict]] = {}
+            provider_results: dict[str, dict] = {}
+            try:
+                from data.connectors.coingecko_adapter import discover_instruments as coingecko_discover
+                from data.connectors.defillama_adapter import discover_instruments as defillama_discover
+                from data.instrument_discovery import DynamicInstrumentRegistry
+                from db.ecosystem_bootstrap import persist_instrument_registry, record_discovery_run
+
+                providers = {
+                    "coingecko": coingecko_discover,
+                    "defillama": defillama_discover,
+                }
+                registry = DynamicInstrumentRegistry()
+                for provider, discover in providers.items():
+                    try:
+                        rows = await asyncio.wait_for(
+                            asyncio.to_thread(discover, top=top),
+                            timeout=max(5.0, _env_float("INSTRUMENT_DISCOVERY_PROVIDER_TIMEOUT_SECONDS", 20.0, minimum=5.0)),
+                        )
+                        payload = list(rows or [])
+                        provider_rows[provider] = payload
+                        provider_results[provider] = registry.ingest(provider, payload).to_dict()
+                    except Exception as exc:
+                        provider_results[provider] = {
+                            "provider": provider,
+                            "state": "failed",
+                            "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                        }
+                if is_db_configured():
+                    async with get_session(
+                        priority="background",
+                        label="worker.instrument_discovery.persist",
+                        timeout_seconds=15.0,
+                        drop_if_busy=False,
+                    ) as session:
+                        persisted = await persist_instrument_registry(session, registry, provider_rows=provider_rows)
+                        for provider, result in provider_results.items():
+                            await record_discovery_run(session, provider, result)
+                        await session.commit()
+                    logger.info(
+                        "[instrument_discovery] providers=%s persisted=%s",
+                        provider_results,
+                        persisted,
+                    )
+            except Exception as exc:
+                logger.warning("[instrument_discovery] cycle failed err=%s", exc, exc_info=True)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _webhook_delivery_loop(self) -> None:
+        from services.platform.webhooks import deliver_webhook_batch
+
+        interval = max(2.0, _env_float("WEBHOOK_DELIVERY_INTERVAL_SECONDS", 5.0, minimum=1.0))
+        while not self._stop.is_set():
+            try:
+                result = await deliver_webhook_batch()
+                if int(result.get("claimed") or 0):
+                    logger.info("[webhook_delivery] %s", result)
+            except Exception as exc:
+                logger.warning("[webhook_delivery] cycle failed: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
     async def _expiry_loop(self) -> None:
         # Runs periodically; safe no-op when DATABASE_URL not configured.

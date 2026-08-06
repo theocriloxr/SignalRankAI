@@ -13,6 +13,7 @@ import argparse
 import asyncio
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import importlib
 import json
 from pathlib import Path
 import socket
@@ -96,7 +97,10 @@ async def _call_connector(spec: ProviderSpec, *, timeout: float, limit: int) -> 
 
 async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: int) -> ProviderCertification:
     tested_at = datetime.now(timezone.utc).isoformat()
-    implemented = bool(spec.connector_module and spec.connector_attr)
+    # Context/discovery providers may intentionally expose no candle callable.
+    # Importable provider modules are still implemented; candle certification is
+    # only applicable when connector_attr is declared.
+    implemented = bool(spec.connector_module)
     configured = spec.configured()
     enabled = spec.enabled()
 
@@ -120,10 +124,47 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
         return result
 
     try:
-        spec.resolve_connector()
+        module = importlib.import_module(str(spec.connector_module))
+        if spec.connector_attr:
+            spec.resolve_connector()
     except Exception as exc:
         result.certification_status = CertificationStatus.FAILED.value
         result.error = f"connector import failed: {type(exc).__name__}: {exc}"
+        return result
+
+    # Discovery, macro, on-chain and calendar providers are analysis-only and
+    # do not normalize OHLC candles. Their module contract and health function
+    # can still be certified without pretending they are quote providers.
+    if not spec.connector_attr:
+        health = getattr(module, "health", None)
+        if callable(health):
+            try:
+                health_payload = health() or {}
+                result.validation = {"valid": True, "provider_health": health_payload}
+            except Exception as exc:  # noqa: BLE001
+                result.certification_status = CertificationStatus.FAILED.value
+                result.error = f"health contract failed: {type(exc).__name__}: {exc}"
+                return result
+        else:
+            result.validation = {"valid": True, "contract": "module_import"}
+
+        if not live:
+            result.certification_status = CertificationStatus.IMPLEMENTED_AND_MOCK_VERIFIED.value
+            return result
+        if not enabled:
+            result.certification_status = CertificationStatus.DISABLED.value
+            result.error = f"disabled by {spec.enabled_env or 'catalog policy'}"
+            return result
+        if not configured:
+            required_parts = []
+            if spec.required_env:
+                required_parts.append("one of [" + ", ".join(spec.required_env) + "]")
+            required_parts.extend("one of [" + ", ".join(group) + "]" for group in spec.required_env_all)
+            result.certification_status = CertificationStatus.BLOCKED_MISSING_CREDENTIAL.value
+            result.error = "missing " + " and ".join(required_parts or ["required provider configuration"])
+            return result
+        result.certification_status = CertificationStatus.ANALYSIS_ONLY.value
+        result.error = "context/discovery provider; candle certification is not applicable"
         return result
 
     synthetic = [

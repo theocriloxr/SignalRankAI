@@ -1,63 +1,42 @@
-from flask import Flask, request, render_template, redirect, url_for, session, abort
-from utils.async_runner import run_sync
+"""Compatibility redirect for the retired insecure numeric-ID dashboard.
+
+The previous implementation accepted an arbitrary integer user ID as a login.
+That is an IDOR/account-takeover vulnerability and is intentionally removed.
+All users must authenticate through the unified FastAPI platform application.
+"""
+from __future__ import annotations
+
 import os
-from db.session import get_session
-from db.pg_features import list_signals_sent_today
-from signalrank_telegram.access import resolve_user_tier
+from flask import Flask, abort, redirect
 
 app = Flask(__name__)
-app.secret_key = os.getenv("WEB_SECRET_KEY", "changeme")
+
+
+def _platform_url() -> str:
+    base = str(
+        os.getenv("APP_BASE_URL")
+        or os.getenv("STAGING_APP_BASE_URL")
+        or os.getenv("WEBHOOK_BASE_URL")
+        or "/app"
+    ).rstrip("/")
+    return base if base.endswith("/app") else f"{base}/app"
+
 
 @app.route("/")
-def index():
-    if "user_id" not in session:
-        return redirect(url_for("login"))
-    return redirect(url_for("dashboard"))
-
 @app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        user_id = request.form.get("user_id")
-        # In production, use a secure token or Telegram login widget
-        if user_id and user_id.isdigit():
-            session["user_id"] = int(user_id)
-            return redirect(url_for("dashboard"))
-        return render_template("login.html", error="Invalid user ID")
-    return render_template("login.html")
+@app.route("/dashboard")
+def retired_dashboard():
+    if str(os.getenv("LEGACY_USERDASH_ENABLED", "0")).lower() in {"1", "true", "yes", "on"}:
+        # Even when the compatibility process is left running, it never accepts
+        # legacy user-id credentials; it only redirects to secure authentication.
+        return redirect(_platform_url(), code=302)
+    return redirect(_platform_url(), code=302)
+
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect(url_for("login"))
+    return redirect(_platform_url(), code=302)
 
-@app.route("/dashboard")
-def dashboard():
-    user_id = session.get("user_id")
-    if not user_id:
-        return redirect(url_for("login"))
-    # Only show this user's signals
-    signals = []
-    tier = resolve_user_tier(user_id)
-    try:
-        if ENGINE is not None:
-            import asyncio
-            async def fetch():
-                async with get_session() as s:
-                    rows = await list_signals_sent_today(s, telegram_user_id=int(user_id))
-                    await s.commit()
-                    return rows
-            signals = run_sync(fetch())
-    except Exception:
-        signals = []
-    # Determine feature access by tier
-    tier_norm = str(tier).strip().lower()
-    show_advanced = tier_norm in ("premium", "vip", "admin", "owner")
-    return render_template(
-        "dashboard.html",
-        signals=signals,
-        tier=tier,
-        show_advanced=show_advanced
-    )
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=int(os.getenv("PORT", "5000")))
