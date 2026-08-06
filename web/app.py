@@ -54,12 +54,13 @@ from core.telemetry import (
     prometheus_metrics_text,
 )
 from core.tier_policy import tier_rank
+from core.version import CODE_VERSION
 from payments.paystack import process_event as process_paystack_event
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SignalRankAI API", version="1.0.0")
+app = FastAPI(title="SignalRankAI API", version=CODE_VERSION)
 _tracer = init_tracer("signalrankai-web")
 
 # The versioned API router is mounted on the canonical FastAPI application so

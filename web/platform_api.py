@@ -28,18 +28,30 @@ from services.platform.identity import (
     AuthenticationError,
     IdentityConflict,
     authenticate_email_password,
+    begin_totp_setup,
+    complete_mfa_login,
+    complete_password_reset,
     complete_telegram_activation,
-    create_telegram_link_request,
+    consume_magic_login,
     create_email_account,
+    create_mfa_login_challenge,
     create_session_tokens,
+    create_telegram_link_request,
     decode_access_token,
+    disable_totp,
+    enable_totp,
     ensure_telegram_user,
+    mfa_status,
+    request_email_verification,
+    request_magic_login,
+    request_password_reset,
     revoke_all_sessions,
     revoke_session,
     rotate_refresh_token,
     user_snapshot,
     validate_telegram_login_payload,
     validate_telegram_mini_app_init_data,
+    verify_email_challenge,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +170,64 @@ class SupportTicketCreateRequest(BaseModel):
     message: str = Field(min_length=3, max_length=20000)
 
 
+class SupportMessageCreateRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=20000)
+
+
+class EmailRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
+    device_id: str | None = Field(default=None, max_length=64)
+
+
+class PasswordResetCompleteRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    new_password: str = Field(min_length=10, max_length=256)
+
+
+class MFACompleteRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    code: str = Field(min_length=6, max_length=32)
+    client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
+    device_id: str | None = Field(default=None, max_length=64)
+
+
+class MFACodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=32)
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=160)
+    country: str | None = Field(default=None, min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$")
+    timezone: str | None = Field(default=None, max_length=64)
+    locale: str | None = Field(default=None, max_length=16)
+    preferred_currency: str | None = Field(default=None, min_length=3, max_length=8, pattern=r"^[A-Za-z0-9]+$")
+    max_risk_percentage: float | None = Field(default=None, ge=0.1, le=10.0)
+    max_daily_drawdown_pct: float | None = Field(default=None, ge=0.5, le=50.0)
+    marketing_consent: bool | None = None
+
+
+class OrganizationInviteRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    role: str = Field(default="viewer", pattern=r"^(administrator|trader|analyst|risk_manager|viewer|developer|billing|auditor)$")
+
+
+class OrganizationInvitationAcceptRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+
+
+class AlertCreateRequest(BaseModel):
+    instrument_id: str | None = Field(default=None, max_length=128)
+    asset: str | None = Field(default=None, max_length=32)
+    alert_type: str = Field(pattern=r"^(price_above|price_below|signal_generated|entry_triggered|outcome|provider_status)$")
+    condition: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] = Field(default_factory=lambda: ["telegram", "web"], max_length=5)
+
+
 
 def _assert_feature(user: dict[str, Any], feature: str) -> None:
     decision = evaluate_feature_access(str(user.get("tier") or "free"), feature)
@@ -235,6 +305,11 @@ def _client_ip(request: Request) -> str | None:
     if forwarded:
         return forwarded.split(",", 1)[0].strip()
     return request.client.host if request.client else None
+
+
+def _app_base_url(request: Request) -> str:
+    configured = str(os.getenv("APP_BASE_URL") or os.getenv("STAGING_APP_BASE_URL") or "").strip().rstrip("/")
+    return configured or str(request.base_url).rstrip("/")
 
 
 def _cookie_secure() -> bool:
@@ -358,7 +433,7 @@ async def _create_login_response(
 async def capabilities() -> dict[str, Any]:
     return {
         "account_model": "canonical_user_multi_identity",
-        "login_methods": ["email_password", "telegram_activation", "telegram_login", "telegram_mini_app"],
+        "login_methods": ["email_password", "email_magic_link", "telegram_activation", "telegram_login", "telegram_mini_app", "totp_mfa"],
         "planned_login_methods": ["google", "apple", "passkey", "institutional_sso"],
         "clients": ["telegram", "web", "pwa", "android", "ios", "api"],
         "live_execution_enabled": False,
@@ -377,6 +452,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                 password=payload.password,
                 display_name=payload.display_name,
             )
+            await request_email_verification(session, user_id=user_id, base_url=_app_base_url(request))
             await session.commit()
     except IdentityConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -396,6 +472,16 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     try:
         async with get_session() as session:
             user_id = await authenticate_email_password(session, email=payload.email, password=payload.password)
+            status = await mfa_status(session, user_id=user_id)
+            if status["enabled"]:
+                challenge = await create_mfa_login_challenge(session, user_id=user_id)
+                await session.commit()
+                return {
+                    "authenticated": False,
+                    "mfa_required": True,
+                    "mfa_token": challenge.token,
+                    "expires_at": challenge.expires_at.isoformat(),
+                }
             await session.commit()
     except (AuthenticationError, ValueError) as exc:
         raise HTTPException(status_code=401, detail="Invalid credentials") from exc
@@ -1217,6 +1303,512 @@ async def create_support_ticket(
         )
         await session.commit()
     return {"ticket_id": ticket_id, "status": "open", "priority": priority}
+
+
+@router.post("/auth/mfa/complete")
+async def mfa_login_complete(
+    payload: MFACompleteRequest,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            user_id = await complete_mfa_login(
+                session,
+                token=payload.token,
+                code=payload.code,
+                ip_address=_client_ip(request),
+            )
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return await _create_login_response(
+        response,
+        request,
+        user_id=user_id,
+        client_type=payload.client_type,
+        device_id=payload.device_id,
+    )
+
+
+@router.post("/auth/magic-link/request", status_code=202)
+async def magic_link_request(payload: EmailRequest, request: Request) -> dict[str, Any]:
+    # Always return the same response to avoid account enumeration.
+    try:
+        async with get_session() as session:
+            await request_magic_login(session, email=payload.email, base_url=_app_base_url(request))
+            await session.commit()
+    except ValueError:
+        pass
+    return {"accepted": True, "message": "If the account exists, a sign-in link has been queued."}
+
+
+@router.post("/auth/magic-link/complete")
+async def magic_link_complete(
+    payload: TokenRequest,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            user_id = await consume_magic_login(session, token=payload.token, ip_address=_client_ip(request))
+            status = await mfa_status(session, user_id=user_id)
+            if status["enabled"]:
+                challenge = await create_mfa_login_challenge(session, user_id=user_id)
+                await session.commit()
+                return {
+                    "authenticated": False,
+                    "mfa_required": True,
+                    "mfa_token": challenge.token,
+                    "expires_at": challenge.expires_at.isoformat(),
+                }
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return await _create_login_response(
+        response,
+        request,
+        user_id=user_id,
+        client_type=payload.client_type,
+        device_id=payload.device_id,
+    )
+
+
+@router.post("/auth/password-reset/request", status_code=202)
+async def password_reset_request(payload: EmailRequest, request: Request) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            await request_password_reset(session, email=payload.email, base_url=_app_base_url(request))
+            await session.commit()
+    except ValueError:
+        pass
+    return {"accepted": True, "message": "If the account exists, reset instructions have been queued."}
+
+
+@router.post("/auth/password-reset/complete")
+async def password_reset_complete(payload: PasswordResetCompleteRequest, request: Request) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            await complete_password_reset(
+                session,
+                token=payload.token,
+                new_password=payload.new_password,
+                ip_address=_client_ip(request),
+            )
+            await session.commit()
+    except (AuthenticationError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"reset": True, "message": "Password changed. Sign in again on every device."}
+
+
+@router.post("/auth/email-verification/request", status_code=202)
+async def email_verification_request(
+    request: Request,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            await request_email_verification(session, user_id=int(user["id"]), base_url=_app_base_url(request))
+            await session.commit()
+    except AuthenticationError as exc:
+        if str(exc) == "email_already_verified":
+            return {"accepted": True, "already_verified": True}
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"accepted": True}
+
+
+@router.post("/auth/email-verification/complete")
+async def email_verification_complete(payload: TokenRequest, request: Request) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            user_id = await verify_email_challenge(session, token=payload.token, ip_address=_client_ip(request))
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"verified": True, "user_id": user_id}
+
+
+@router.get("/security/mfa")
+async def get_mfa_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        status = await mfa_status(session, user_id=int(user["id"]))
+        await session.rollback()
+    return status
+
+
+@router.post("/security/mfa/setup")
+async def setup_mfa(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        setup = await begin_totp_setup(
+            session,
+            user_id=int(user["id"]),
+            account_label=str(user.get("primary_email") or user.get("public_user_id") or user["id"]),
+        )
+        await session.commit()
+    return {"secret": setup.secret, "provisioning_uri": setup.provisioning_uri, "expires_at": setup.expires_at.isoformat()}
+
+
+@router.post("/security/mfa/enable")
+async def confirm_mfa(payload: MFACodeRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            recovery_codes = await enable_totp(session, user_id=int(user["id"]), code=payload.code)
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"enabled": True, "recovery_codes": recovery_codes, "warning": "Store these once-only codes offline. They will not be shown again."}
+
+
+@router.post("/security/mfa/disable")
+async def remove_mfa(payload: MFACodeRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    try:
+        async with get_session() as session:
+            await disable_totp(session, user_id=int(user["id"]), code=payload.code)
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"enabled": False}
+
+
+@router.patch("/profile")
+async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    values = payload.model_dump(exclude_unset=True)
+    if not values:
+        return {"user": user}
+    assignments: list[str] = []
+    params: dict[str, Any] = {"uid": int(user["id"])}
+    allowed = {
+        "display_name", "timezone", "locale", "max_risk_percentage",
+        "max_daily_drawdown_pct", "marketing_consent",
+    }
+    for key, value in values.items():
+        if key not in allowed and key not in {"country", "preferred_currency"}:
+            continue
+        if key == "country" and value:
+            value = str(value).upper()
+        if key == "preferred_currency" and value:
+            value = str(value).upper()
+        assignments.append(f"{key}=:{key}")
+        params[key] = value
+    if not assignments:
+        return {"user": user}
+    async with get_session() as session:
+        await session.execute(text("UPDATE users SET " + ",".join(assignments) + ",updated_at=NOW() WHERE id=:uid"), params)
+        updated = await user_snapshot(session, int(user["id"]))
+        await session.commit()
+    return {"user": updated}
+
+
+@router.delete("/devices/{session_id}")
+async def revoke_device_session(session_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if str(session_id) == str(user.get("session_id") or ""):
+        raise HTTPException(status_code=409, detail="Use logout to revoke the current session")
+    async with get_session() as session:
+        revoked = await revoke_session(session, session_id=session_id, user_id=int(user["id"]), reason="device_revoked")
+        await session.commit()
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"revoked": True}
+
+
+@router.delete("/watchlists/{watchlist_id}")
+async def delete_watchlist(watchlist_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        result = await session.execute(
+            text("DELETE FROM watchlists WHERE watchlist_id=:id AND user_id=:uid"),
+            {"id": watchlist_id, "uid": int(user["id"])},
+        )
+        await session.commit()
+    if not result.rowcount:
+        raise HTTPException(status_code=404, detail="Watchlist not found")
+    return {"deleted": True}
+
+
+@router.delete("/watchlists/{watchlist_id}/items/{instrument_id}")
+async def remove_watchlist_item(
+    watchlist_id: str,
+    instrument_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                "DELETE FROM watchlist_items wi USING watchlists w WHERE wi.watchlist_id=w.watchlist_id "
+                "AND wi.watchlist_id=:watchlist_id AND wi.instrument_id=:instrument_id AND w.user_id=:uid"
+            ),
+            {"watchlist_id": watchlist_id, "instrument_id": instrument_id, "uid": int(user["id"])},
+        )
+        await session.commit()
+    if not result.rowcount:
+        raise HTTPException(status_code=404, detail="Watchlist item not found")
+    return {"deleted": True}
+
+
+@router.get("/portfolio")
+async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    uid = int(user["id"])
+    async with get_session() as session:
+        account = (await session.execute(text("SELECT id,cash_balance,realized_pnl,currency FROM paper_accounts WHERE user_id=:uid"), {"uid": uid})).mappings().first()
+        exposures = (await session.execute(text(
+            "SELECT asset,asset_class,direction,COUNT(*) AS positions,COALESCE(SUM(notional),0) AS notional,"
+            "COALESCE(SUM(unrealized_pnl),0) AS unrealized_pnl FROM paper_positions "
+            "WHERE user_id=:uid AND status='open' GROUP BY asset,asset_class,direction ORDER BY ABS(SUM(notional)) DESC"
+        ), {"uid": uid})).mappings().all()
+        equity_curve = (await session.execute(text(
+            "SELECT created_at,balance_after,entry_type,amount FROM paper_ledger_entries WHERE user_id=:uid ORDER BY created_at DESC LIMIT 250"
+        ), {"uid": uid})).mappings().all()
+        await session.rollback()
+    cash = float((account or {}).get("cash_balance") or 0)
+    unrealized = sum(float(row.get("unrealized_pnl") or 0) for row in exposures)
+    return {"account": dict(account or {}), "equity": cash + unrealized, "exposures": [dict(row) for row in exposures], "equity_curve": [dict(row) for row in reversed(equity_curve)]}
+
+
+@router.get("/performance")
+async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    uid = int(user["id"])
+    async with get_session() as session:
+        summary = (await session.execute(text(
+            "SELECT COUNT(*) FILTER (WHERE included) AS signals,"
+            "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('win','tp1','tp2','tp3','partial_win','partial_win_be')) AS wins,"
+            "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('loss','sl')) AS losses,"
+            "COALESCE(AVG(final_realized_r) FILTER (WHERE included),0) AS average_r,"
+            "COALESCE(SUM(final_realized_r) FILTER (WHERE included),0) AS total_r "
+            "FROM performance_ledger_entries WHERE user_id=:uid"
+        ), {"uid": uid})).mappings().first()
+        breakdown = (await session.execute(text(
+            "SELECT asset,timeframe,COUNT(*) AS signals,COALESCE(AVG(final_realized_r),0) AS average_r,"
+            "COALESCE(SUM(final_realized_r),0) AS total_r FROM performance_ledger_entries "
+            "WHERE user_id=:uid AND included GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
+        ), {"uid": uid})).mappings().all()
+        await session.rollback()
+    data = dict(summary or {})
+    total = int(data.get("signals") or 0)
+    data["win_rate"] = (int(data.get("wins") or 0) / total) if total else None
+    data["claim_certified"] = False
+    data["disclaimer"] = "User-level proof-backed history; not a guaranteed future win rate."
+    return {"summary": data, "breakdown": [dict(row) for row in breakdown]}
+
+
+@router.get("/billing")
+async def billing(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    uid = int(user["id"])
+    async with get_session() as session:
+        subscriptions = (await session.execute(text(
+            "SELECT id,tier,status,started_at,expires_at,paystack_reference,bonus_days FROM subscriptions "
+            "WHERE user_id=:uid ORDER BY started_at DESC LIMIT 100"
+        ), {"uid": uid})).mappings().all()
+        receipts = (await session.execute(text(
+            "SELECT receipt_number,provider,payment_reference,plan,amount,currency,status,payment_date,subscription_start,subscription_end "
+            "FROM payment_receipts WHERE user_id=:uid ORDER BY payment_date DESC LIMIT 100"
+        ), {"uid": uid})).mappings().all()
+        await session.rollback()
+    return {"subscriptions": [dict(row) for row in subscriptions], "receipts": [dict(row) for row in receipts]}
+
+
+@router.get("/notifications")
+async def notification_center(
+    unread_only: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    condition = " AND read_at IS NULL" if unread_only else ""
+    async with get_session() as session:
+        rows = (await session.execute(text(
+            "SELECT notification_id,event_type,title,body,severity,channel_data,read_at,created_at "
+            "FROM notification_events WHERE user_id=:uid" + condition + " ORDER BY created_at DESC LIMIT :limit"
+        ), {"uid": int(user["id"]), "limit": int(limit)})).mappings().all()
+        await session.rollback()
+    return {"notifications": [dict(row) for row in rows]}
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        result = await session.execute(text(
+            "UPDATE notification_events SET read_at=COALESCE(read_at,NOW()) WHERE notification_id=:id AND user_id=:uid"
+        ), {"id": notification_id, "uid": int(user["id"])})
+        await session.commit()
+    if not result.rowcount:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"read": True}
+
+
+async def _organization_role(session: Any, organization_id: str, user_id: int) -> str | None:
+    row = (await session.execute(text(
+        "SELECT role FROM organization_members WHERE organization_id=:org AND user_id=:uid AND status='active'"
+    ), {"org": organization_id, "uid": int(user_id)})).first()
+    return str(row[0]) if row else None
+
+
+@router.get("/organizations/{organization_id}/members")
+async def organization_members(organization_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        role = await _organization_role(session, organization_id, int(user["id"]))
+        if not role:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        rows = (await session.execute(text(
+            "SELECT m.user_id,m.role,m.status,m.joined_at,u.public_user_id,u.display_name,u.primary_email "
+            "FROM organization_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=:org ORDER BY m.joined_at"
+        ), {"org": organization_id})).mappings().all()
+        await session.rollback()
+    return {"role": role, "members": [dict(row) for row in rows]}
+
+
+@router.post("/organizations/{organization_id}/invitations", status_code=201)
+async def create_organization_invitation(
+    organization_id: str,
+    payload: OrganizationInviteRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    from services.platform.identity import canonical_email
+    from services.platform.email_delivery import queue_account_email
+    email = canonical_email(payload.email)
+    token = "sri_" + secrets.token_urlsafe(40)
+    token_hash = __import__("hashlib").sha256(token.encode()).hexdigest()
+    invitation_id = str(uuid4())
+    expires_at = datetime.utcnow() + timedelta(days=7)
+    async with get_session() as session:
+        role = await _organization_role(session, organization_id, int(user["id"]))
+        if role not in {"owner", "administrator"}:
+            raise HTTPException(status_code=403, detail="Organization administrator required")
+        await session.execute(text(
+            "INSERT INTO organization_invitations(invitation_id,organization_id,email,role,token_hash,invited_by,expires_at) "
+            "VALUES(:id,:org,:email,:role,:token_hash,:uid,:expires)"
+        ), {"id": invitation_id, "org": organization_id, "email": email, "role": payload.role, "token_hash": token_hash, "uid": int(user["id"]), "expires": expires_at})
+        link = f"{_app_base_url(request)}/app?organization_invite={token}"
+        await queue_account_email(session, recipient=email, template="organization_invite", context={"link": link, "expires_minutes": 10080}, idempotency_key=f"org-invite:{invitation_id}")
+        await session.execute(text(
+            "INSERT INTO organization_audit_events(audit_id,organization_id,actor_user_id,event_type,metadata) "
+            "VALUES(gen_random_uuid()::text,:org,:uid,'member.invited',CAST(:metadata AS JSONB))"
+        ), {"org": organization_id, "uid": int(user["id"]), "metadata": json.dumps({"email": email, "role": payload.role})})
+        await session.commit()
+    return {"invitation_id": invitation_id, "expires_at": expires_at.isoformat()}
+
+
+@router.post("/organizations/invitations/accept")
+async def accept_organization_invitation(
+    payload: OrganizationInvitationAcceptRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    token_hash = __import__("hashlib").sha256(payload.token.encode()).hexdigest()
+    async with get_session() as session:
+        row = (await session.execute(text(
+            "SELECT invitation_id,organization_id,email,role,status,expires_at FROM organization_invitations "
+            "WHERE token_hash=:token_hash FOR UPDATE"
+        ), {"token_hash": token_hash})).mappings().first()
+        if not row or row["status"] != "pending" or row["expires_at"] <= datetime.utcnow():
+            raise HTTPException(status_code=422, detail="Invalid or expired invitation")
+        if str(user.get("primary_email") or "").lower() != str(row["email"]).lower():
+            raise HTTPException(status_code=403, detail="Invitation email does not match this account")
+        await session.execute(text(
+            "INSERT INTO organization_members(organization_id,user_id,role,status) VALUES(:org,:uid,:role,'active') "
+            "ON CONFLICT(organization_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='active'"
+        ), {"org": row["organization_id"], "uid": int(user["id"]), "role": row["role"]})
+        await session.execute(text(
+            "UPDATE organization_invitations SET status='accepted',accepted_by=:uid,accepted_at=NOW() WHERE invitation_id=:id"
+        ), {"uid": int(user["id"]), "id": row["invitation_id"]})
+        await session.commit()
+    return {"accepted": True, "organization_id": row["organization_id"]}
+
+
+@router.get("/support/tickets/{ticket_id}")
+async def support_ticket_detail(ticket_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        ticket = (await session.execute(text(
+            "SELECT ticket_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets "
+            "WHERE ticket_id=:ticket_id AND user_id=:uid"
+        ), {"ticket_id": ticket_id, "uid": int(user["id"])})).mappings().first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        messages = (await session.execute(text(
+            "SELECT message_id,author_user_id,author_role,message,created_at FROM support_messages "
+            "WHERE ticket_id=:ticket_id ORDER BY created_at"
+        ), {"ticket_id": ticket_id})).mappings().all()
+        await session.rollback()
+    return {"ticket": dict(ticket), "messages": [dict(row) for row in messages]}
+
+
+@router.post("/support/tickets/{ticket_id}/messages", status_code=201)
+async def add_support_message(
+    ticket_id: str,
+    payload: SupportMessageCreateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    message_id = str(uuid4())
+    async with get_session() as session:
+        ticket = (await session.execute(text(
+            "SELECT status FROM support_tickets WHERE ticket_id=:ticket_id AND user_id=:uid FOR UPDATE"
+        ), {"ticket_id": ticket_id, "uid": int(user["id"])})).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        if str(ticket[0]) == "closed":
+            raise HTTPException(status_code=409, detail="Ticket is closed")
+        await session.execute(text(
+            "INSERT INTO support_messages(message_id,ticket_id,author_user_id,author_role,message) "
+            "VALUES(:message_id,:ticket_id,:uid,'user',:message)"
+        ), {"message_id": message_id, "ticket_id": ticket_id, "uid": int(user["id"]), "message": payload.message.strip()})
+        await session.execute(text("UPDATE support_tickets SET updated_at=NOW() WHERE ticket_id=:ticket_id"), {"ticket_id": ticket_id})
+        await session.commit()
+    return {"message_id": message_id}
+
+
+@router.get("/alerts")
+async def list_alerts(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        rows = (await session.execute(text(
+            "SELECT alert_id,instrument_id,asset,alert_type,condition,channels,active,last_triggered_at,created_at "
+            "FROM user_alerts WHERE user_id=:uid ORDER BY created_at DESC"
+        ), {"uid": int(user["id"])})).mappings().all()
+        await session.rollback()
+    return {"alerts": [dict(row) for row in rows]}
+
+
+@router.post("/alerts", status_code=201)
+async def create_alert(payload: AlertCreateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    channels = sorted({str(channel).lower() for channel in payload.channels if str(channel).lower() in {"telegram", "web", "email", "push", "webhook"}})
+    if not channels:
+        raise HTTPException(status_code=422, detail="At least one supported channel is required")
+    alert_id = str(uuid4())
+    async with get_session() as session:
+        await session.execute(text(
+            "INSERT INTO user_alerts(alert_id,user_id,instrument_id,asset,alert_type,condition,channels) "
+            "VALUES(:id,:uid,:instrument,:asset,:type,CAST(:condition AS JSONB),CAST(:channels AS JSONB))"
+        ), {"id": alert_id, "uid": int(user["id"]), "instrument": payload.instrument_id, "asset": (payload.asset or "").upper() or None, "type": payload.alert_type, "condition": json.dumps(payload.condition), "channels": json.dumps(channels)})
+        await session.commit()
+    return {"alert_id": alert_id, "active": True}
+
+
+@router.delete("/alerts/{alert_id}")
+async def delete_alert(alert_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        result = await session.execute(text("UPDATE user_alerts SET active=FALSE,updated_at=NOW() WHERE alert_id=:id AND user_id=:uid"), {"id": alert_id, "uid": int(user["id"])})
+        await session.commit()
+    if not result.rowcount:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"disabled": True}
+
+
+@router.post("/analytics/events", status_code=202)
+async def analytics_event(request: Request, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    payload = await request.json()
+    event_name = str(payload.get("event_name") or "").strip().lower()
+    if not event_name or len(event_name) > 96:
+        raise HTTPException(status_code=422, detail="Invalid event name")
+    properties = dict(payload.get("properties") or {})
+    # Prevent clients from sending secrets or arbitrary massive payloads.
+    for forbidden in ("password", "token", "secret", "api_key", "private_key"):
+        properties.pop(forbidden, None)
+    encoded = json.dumps(properties, separators=(",", ":"), default=str)
+    if len(encoded) > 12000:
+        raise HTTPException(status_code=413, detail="Analytics payload too large")
+    async with get_session() as session:
+        await session.execute(text(
+            "INSERT INTO analytics_events(event_id,user_id,event_name,source,session_id,properties) "
+            "VALUES(gen_random_uuid()::text,:uid,:event_name,'app',:session_id,CAST(:properties AS JSONB))"
+        ), {"uid": int(user["id"]), "event_name": event_name, "session_id": user.get("session_id"), "properties": encoded})
+        await session.commit()
+    return {"accepted": True}
 
 
 __all__ = ["ACCESS_COOKIE", "REFRESH_COOKIE", "SESSION_COOKIE", "current_user", "router"]

@@ -1,6 +1,6 @@
 """staging certification ecosystem (v1.4.0)
 
-Revision ID: 0035_staging_certification_ecosystem
+Revision ID: 0035_staging_certification
 Revises: 0034_production_integrity
 Create Date: 2026-08-05
 
@@ -9,7 +9,7 @@ rerunnable and backward compatible for rolling deployments.  One head.
 """
 from alembic import op
 
-revision = "0035_staging_certification_ecosystem"
+revision = "0035_staging_certification"
 down_revision = "0034_production_integrity"
 branch_labels = None
 depends_on = None

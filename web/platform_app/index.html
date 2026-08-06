@@ -22,7 +22,10 @@
       <button data-view="signals">Signals</button>
       <button data-view="markets">Markets</button>
       <button data-view="paper">Paper</button>
+      <button data-view="portfolio">Portfolio</button>
+      <button data-view="performance">Performance</button>
       <button data-view="journal">Journal</button>
+      <button data-view="support">Support</button>
       <button data-view="account">Account</button>
       <button id="logoutButton" class="ghost">Log out</button>
     </nav>
@@ -73,6 +76,10 @@
           <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
           <button type="submit" class="primary">Activate app access</button>
         </form>
+
+        <div class="auth-links"><button id="magicLinkButton" class="link-button" type="button">Email me a sign-in link</button><button id="forgotPasswordButton" class="link-button" type="button">Reset password</button></div>
+        <form id="mfaForm" class="stack" hidden><h2>Two-factor authentication</h2><p>Enter your authenticator code or a recovery code.</p><input type="hidden" name="token" /><label>Security code<input name="code" autocomplete="one-time-code" required /></label><button class="primary">Complete sign in</button></form>
+        <form id="passwordResetForm" class="stack" hidden><h2>Choose a new password</h2><input type="hidden" name="token" /><label>New password<input name="new_password" type="password" minlength="10" autocomplete="new-password" required /></label><button class="primary">Reset password</button></form>
       </div>
     </section>
 
@@ -118,6 +125,16 @@
         <div id="paperPositions" class="table-wrap"></div>
       </section>
 
+      <section id="portfolioView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">UNIFIED EXPOSURE</p><h2>Portfolio</h2></div></div>
+        <div id="portfolioSummary" class="card-grid"></div><div id="portfolioExposures" class="table-wrap"></div>
+      </section>
+
+      <section id="performanceView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">PROOF-BACKED HISTORY</p><h2>Performance</h2></div></div>
+        <div id="performanceSummary" class="card-grid"></div><p class="muted">Historical outcomes are not guarantees of future performance.</p><div id="performanceBreakdown" class="table-wrap"></div>
+      </section>
+
       <section id="journalView" class="view" hidden>
         <div class="split-grid">
           <article class="panel"><h2>Trading journal</h2><form id="journalForm" class="stack-form"><label>Title<input name="title" maxlength="180" /></label><label>Notes<textarea name="notes" rows="7" maxlength="20000" required></textarea></label><label>Emotion<input name="emotion" maxlength="64" /></label><label>Mistake category<input name="mistake_category" maxlength="96" /></label><label>Plan adherence %<input name="plan_adherence" type="number" min="0" max="100" /></label><label>Result (R)<input name="result_r" type="number" step="0.01" /></label><label>Tags<input name="tags" placeholder="discipline, breakout, london" /></label><button class="primary" type="submit">Save journal entry</button></form></article>
@@ -125,12 +142,17 @@
         </div>
       </section>
 
+      <section id="supportView" class="view" hidden>
+        <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
+      </section>
+
       <section id="accountView" class="view" hidden>
         <div class="two-column">
-          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
-          <article class="panel"><h2>Security and sessions</h2><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
+          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
         </div>
         <article class="panel"><h2>Notification preferences</h2><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><button class="primary" type="submit">Save preferences</button></form></article>
+        <article class="panel"><h2>Billing history</h2><div id="billingHistory" class="data-list"></div></article>
         <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
       </section>
     </section>

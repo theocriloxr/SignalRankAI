@@ -170,6 +170,9 @@ class Worker:
         if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
             _register_task("webhook_delivery", lambda: self._webhook_delivery_loop(), restart_on_failure=True)
 
+        if _env_bool("EMAIL_DELIVERY_ENABLED", True):
+            _register_task("email_delivery", lambda: self._email_delivery_loop(), restart_on_failure=True)
+
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
         # Default to ON in all deployments so every generated signal is tracked.
@@ -497,6 +500,22 @@ class Worker:
                     logger.info("[webhook_delivery] %s", result)
             except Exception as exc:
                 logger.warning("[webhook_delivery] cycle failed: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _email_delivery_loop(self) -> None:
+        from services.platform.email_delivery import deliver_email_outbox_batch
+
+        interval = max(5.0, _env_float("EMAIL_DELIVERY_INTERVAL_SECONDS", 15.0, minimum=2.0))
+        while not self._stop.is_set():
+            try:
+                result = await deliver_email_outbox_batch()
+                if int(result.get("claimed") or 0):
+                    logger.info("[email_delivery] %s", result)
+            except Exception as exc:
+                logger.warning("[email_delivery] cycle failed: %s", type(exc).__name__)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:

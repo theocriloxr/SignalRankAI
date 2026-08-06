@@ -86,6 +86,12 @@ class User(Base):
     onboarding_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    risk_profile: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    privacy_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    terms_version: Mapped[Optional[str]] = mapped_column(String(32))
+    terms_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class Subscription(Base):

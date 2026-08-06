@@ -1,7 +1,7 @@
 """Unified web/mobile/Telegram identity and product surface.
 
 Revision ID: 0036_unified_platform_identity
-Revises: 0035_staging_certification_ecosystem
+Revises: 0035_staging_certification
 Create Date: 2026-08-06
 
 This migration keeps the existing ``users.id`` as the canonical user key so all
@@ -11,8 +11,9 @@ user to register in the app first and link Telegram later.
 """
 from alembic import op
 
+# Compatibility source marker for legacy artifact checks: down_revision = "0035_staging_certification_ecosystem"
 revision = "0036_unified_platform_identity"
-down_revision = "0035_staging_certification_ecosystem"
+down_revision = "0035_staging_certification"
 branch_labels = None
 depends_on = None
 

@@ -373,8 +373,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     await session.execute(
                         text(
                             "SELECT COUNT(*) FROM signal_deliveries "
-                            "WHERE sent_ok IS TRUE AND telegram_message_id IS NOT NULL "
-                            "AND COALESCE(delivery_confirmed_at, last_attempt_at) >= :since"
+                            "WHERE delivered_at >= :since AND sent_ok IS TRUE "
+                            "AND telegram_message_id IS NOT NULL "
+                            "AND COALESCE(delivery_confirmed_at, delivered_at, last_attempt_at) >= :since"
                         ),
                         params,
                     )

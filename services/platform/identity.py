@@ -18,12 +18,13 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Mapping
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 from uuid import uuid4
 
 from sqlalchemy import text
 
 from utils.timeutils import now_utc_naive
+from services.security import decrypt_secret, encrypt_secret, is_encryption_available
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PASSWORD_PREFIX = "scrypt"
@@ -864,13 +865,302 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
     row = (
         await session.execute(
             text(
-                "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,display_name,country,timezone,locale,preferred_currency,account_status,onboarding_status,premium_until,created_at,last_active_at "
+                "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,email_verified_at,display_name,country,timezone,locale,preferred_currency,account_status,onboarding_status,premium_until,max_risk_percentage,max_daily_drawdown_pct,risk_profile,marketing_consent,terms_version,terms_accepted_at,created_at,last_active_at "
                 "FROM users WHERE id=:uid"
             ),
             {"uid": int(user_id)},
         )
     ).mappings().first()
     return dict(row) if row else None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountChallenge:
+    token: str
+    expires_at: datetime
+    user_id: int | None
+    purpose: str
+
+
+@dataclass(frozen=True, slots=True)
+class MFASetup:
+    secret: str
+    provisioning_uri: str
+    expires_at: datetime
+
+
+def _totp_code(secret: str, *, at_time: int | None = None, step_seconds: int = 30, digits: int = 6) -> tuple[str, int]:
+    try:
+        key = base64.b32decode(str(secret).upper() + "=" * (-len(str(secret)) % 8), casefold=True)
+    except Exception as exc:  # noqa: BLE001
+        raise AuthenticationError("invalid_mfa_secret") from exc
+    counter = int((at_time or int(time.time())) // step_seconds)
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = (int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF) % (10 ** digits)
+    return str(value).zfill(digits), counter
+
+
+def verify_totp(secret: str, code: str, *, window: int = 1, last_used_step: int | None = None) -> int:
+    supplied = re.sub(r"\s+", "", str(code or ""))
+    if not re.fullmatch(r"\d{6}", supplied):
+        raise AuthenticationError("invalid_mfa_code")
+    now = int(time.time())
+    for delta in range(-abs(int(window)), abs(int(window)) + 1):
+        expected, step = _totp_code(secret, at_time=now + delta * 30)
+        if hmac.compare_digest(expected, supplied):
+            if last_used_step is not None and step <= int(last_used_step):
+                raise AuthenticationError("mfa_code_reused")
+            return step
+    raise AuthenticationError("invalid_mfa_code")
+
+
+async def _create_account_challenge(
+    session: Any,
+    *,
+    purpose: str,
+    user_id: int | None,
+    ttl_minutes: int,
+    metadata: Mapping[str, Any] | None = None,
+) -> AccountChallenge:
+    token = "src_" + secrets.token_urlsafe(42)
+    expires_at = now_utc_naive() + timedelta(minutes=max(2, min(int(ttl_minutes), 1440)))
+    await session.execute(
+        text(
+            "INSERT INTO login_challenges(challenge_id,user_id,purpose,token_hash,environment,metadata,expires_at) "
+            "VALUES(gen_random_uuid()::text,:uid,:purpose,:token_hash,:environment,CAST(:metadata AS JSONB),:expires)"
+        ),
+        {
+            "uid": user_id,
+            "purpose": str(purpose)[:48],
+            "token_hash": _sha256(token),
+            "environment": str(os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local")[:24],
+            "metadata": json.dumps(dict(metadata or {}), separators=(",", ":"), default=str),
+            "expires": expires_at,
+        },
+    )
+    return AccountChallenge(token=token, expires_at=expires_at, user_id=user_id, purpose=purpose)
+
+
+async def _consume_account_challenge(
+    session: Any,
+    *,
+    token: str,
+    purpose: str,
+    ip_address: str | None = None,
+) -> tuple[int | None, dict[str, Any]]:
+    row = (
+        await session.execute(
+            text(
+                "SELECT challenge_id,user_id,expires_at,consumed_at,attempts,max_attempts,metadata "
+                "FROM login_challenges WHERE token_hash=:token_hash AND purpose=:purpose FOR UPDATE"
+            ),
+            {"token_hash": _sha256(str(token)), "purpose": str(purpose)},
+        )
+    ).mappings().first()
+    if not row:
+        raise AuthenticationError("invalid_or_expired_challenge")
+    if row["consumed_at"] is not None:
+        raise AuthenticationError("challenge_already_used")
+    if row["expires_at"] <= now_utc_naive():
+        raise AuthenticationError("challenge_expired")
+    if int(row["attempts"] or 0) >= int(row["max_attempts"] or 5):
+        raise AuthenticationError("challenge_attempt_limit")
+    await session.execute(
+        text(
+            "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:challenge_id"
+        ),
+        {"challenge_id": row["challenge_id"], "ip": _fingerprint(ip_address)},
+    )
+    return (int(row["user_id"]) if row["user_id"] is not None else None, dict(row["metadata"] or {}))
+
+
+async def request_email_verification(session: Any, *, user_id: int, base_url: str) -> AccountChallenge:
+    row = (await session.execute(text("SELECT primary_email,email_verified_at FROM users WHERE id=:uid"), {"uid": int(user_id)})).first()
+    if not row or not row[0]:
+        raise AuthenticationError("email_required")
+    if row[1] is not None:
+        raise AuthenticationError("email_already_verified")
+    challenge = await _create_account_challenge(session, purpose="verify_email", user_id=int(user_id), ttl_minutes=30)
+    from services.platform.email_delivery import queue_account_email
+    link = f"{str(base_url).rstrip('/')}/app?verify_email={quote(challenge.token)}"
+    await queue_account_email(
+        session, recipient=str(row[0]), template="verify_email", user_id=int(user_id),
+        context={"link": link, "expires_minutes": 30},
+        idempotency_key=f"verify-email:{user_id}:{_sha256(challenge.token)[:16]}",
+    )
+    return challenge
+
+
+async def verify_email_challenge(session: Any, *, token: str, ip_address: str | None = None) -> int:
+    user_id, _ = await _consume_account_challenge(session, token=token, purpose="verify_email", ip_address=ip_address)
+    if user_id is None:
+        raise AuthenticationError("invalid_or_expired_challenge")
+    await session.execute(
+        text("UPDATE users SET email_verified_at=NOW(),updated_at=NOW() WHERE id=:uid"),
+        {"uid": int(user_id)},
+    )
+    await session.execute(
+        text(
+            "UPDATE auth_identities SET verified=TRUE,verified_at=NOW(),last_used_at=NOW() "
+            "WHERE user_id=:uid AND provider='email_password'"
+        ),
+        {"uid": int(user_id)},
+    )
+    await record_security_event(session, user_id=int(user_id), event_type="email.verified", ip_address=ip_address)
+    return int(user_id)
+
+
+async def request_magic_login(session: Any, *, email: str, base_url: str) -> AccountChallenge | None:
+    value = canonical_email(email)
+    row = (await session.execute(text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value})).first()
+    if not row:
+        return None
+    user_id = int(row[0])
+    challenge = await _create_account_challenge(session, purpose="magic_login", user_id=user_id, ttl_minutes=15)
+    from services.platform.email_delivery import queue_account_email
+    link = f"{str(base_url).rstrip('/')}/app?magic_login={quote(challenge.token)}"
+    await queue_account_email(
+        session, recipient=value, template="magic_login", user_id=user_id,
+        context={"link": link, "expires_minutes": 15},
+        idempotency_key=f"magic-login:{user_id}:{_sha256(challenge.token)[:16]}",
+    )
+    return challenge
+
+
+async def consume_magic_login(session: Any, *, token: str, ip_address: str | None = None) -> int:
+    user_id, _ = await _consume_account_challenge(session, token=token, purpose="magic_login", ip_address=ip_address)
+    if user_id is None:
+        raise AuthenticationError("invalid_or_expired_challenge")
+    await record_security_event(session, user_id=int(user_id), event_type="session.magic_login", ip_address=ip_address)
+    return int(user_id)
+
+
+async def request_password_reset(session: Any, *, email: str, base_url: str) -> AccountChallenge | None:
+    value = canonical_email(email)
+    row = (await session.execute(text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value})).first()
+    if not row:
+        return None
+    user_id = int(row[0])
+    challenge = await _create_account_challenge(session, purpose="password_reset", user_id=user_id, ttl_minutes=20)
+    from services.platform.email_delivery import queue_account_email
+    link = f"{str(base_url).rstrip('/')}/app?password_reset={quote(challenge.token)}"
+    await queue_account_email(
+        session, recipient=value, template="password_reset", user_id=user_id,
+        context={"link": link, "expires_minutes": 20},
+        idempotency_key=f"password-reset:{user_id}:{_sha256(challenge.token)[:16]}",
+    )
+    await record_security_event(session, user_id=user_id, event_type="password.reset_requested")
+    return challenge
+
+
+async def complete_password_reset(
+    session: Any, *, token: str, new_password: str, ip_address: str | None = None
+) -> int:
+    user_id, _ = await _consume_account_challenge(session, token=token, purpose="password_reset", ip_address=ip_address)
+    if user_id is None:
+        raise AuthenticationError("invalid_or_expired_challenge")
+    password_hash = hash_password(new_password)
+    await session.execute(
+        text(
+            "INSERT INTO password_credentials(user_id,password_hash,password_version,changed_at,updated_at) "
+            "VALUES(:uid,:password_hash,1,NOW(),NOW()) ON CONFLICT(user_id) DO UPDATE SET "
+            "password_hash=EXCLUDED.password_hash,password_version=password_credentials.password_version+1,"
+            "changed_at=NOW(),updated_at=NOW(),compromised_at=NULL"
+        ),
+        {"uid": int(user_id), "password_hash": password_hash},
+    )
+    await revoke_all_sessions(session, user_id=int(user_id))
+    await record_security_event(session, user_id=int(user_id), event_type="password.reset_completed", severity="warning", ip_address=ip_address)
+    return int(user_id)
+
+
+async def mfa_status(session: Any, *, user_id: int) -> dict[str, Any]:
+    row = (await session.execute(text("SELECT enabled,verified_at FROM user_mfa_totp WHERE user_id=:uid"), {"uid": int(user_id)})).first()
+    unused = int((await session.execute(text("SELECT COUNT(*) FROM account_recovery_codes WHERE user_id=:uid AND used_at IS NULL"), {"uid": int(user_id)})).scalar_one())
+    return {"enabled": bool(row and row[0]), "verified_at": row[1] if row else None, "unused_recovery_codes": unused}
+
+
+async def begin_totp_setup(session: Any, *, user_id: int, account_label: str) -> MFASetup:
+    if not is_encryption_available():
+        raise RuntimeError("ENCRYPTION_KEY is required for MFA")
+    secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+    encrypted = encrypt_secret(secret)
+    if not encrypted:
+        raise RuntimeError("MFA secret encryption unavailable")
+    expires_at = now_utc_naive() + timedelta(minutes=10)
+    await session.execute(
+        text(
+            "INSERT INTO user_mfa_totp(user_id,encrypted_secret,enabled,created_at,updated_at) "
+            "VALUES(:uid,:secret,FALSE,NOW(),NOW()) ON CONFLICT(user_id) DO UPDATE SET "
+            "encrypted_secret=EXCLUDED.encrypted_secret,enabled=FALSE,verified_at=NULL,last_used_step=NULL,created_at=NOW(),updated_at=NOW()"
+        ),
+        {"uid": int(user_id), "secret": encrypted},
+    )
+    issuer = str(os.getenv("APP_NAME") or "SignalRankAI")
+    uri = f"otpauth://totp/{quote(issuer)}:{quote(account_label)}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30"
+    await record_security_event(session, user_id=int(user_id), event_type="mfa.setup_started")
+    return MFASetup(secret=secret, provisioning_uri=uri, expires_at=expires_at)
+
+
+async def enable_totp(session: Any, *, user_id: int, code: str) -> list[str]:
+    row = (await session.execute(text("SELECT encrypted_secret,last_used_step FROM user_mfa_totp WHERE user_id=:uid AND created_at>NOW()-INTERVAL '15 minutes' FOR UPDATE"), {"uid": int(user_id)})).first()
+    if not row:
+        raise AuthenticationError("mfa_setup_not_started")
+    secret = decrypt_secret(str(row[0]))
+    if not secret:
+        raise AuthenticationError("mfa_secret_unavailable")
+    step = verify_totp(secret, code, last_used_step=row[1])
+    recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
+    await session.execute(text("DELETE FROM account_recovery_codes WHERE user_id=:uid"), {"uid": int(user_id)})
+    for recovery in recovery_codes:
+        await session.execute(
+            text("INSERT INTO account_recovery_codes(recovery_code_id,user_id,code_hash) VALUES(gen_random_uuid()::text,:uid,:code_hash)"),
+            {"uid": int(user_id), "code_hash": _sha256(recovery)},
+        )
+    await session.execute(
+        text("UPDATE user_mfa_totp SET enabled=TRUE,verified_at=NOW(),last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"),
+        {"uid": int(user_id), "step": step},
+    )
+    await record_security_event(session, user_id=int(user_id), event_type="mfa.enabled", severity="warning")
+    return recovery_codes
+
+
+async def verify_user_mfa(session: Any, *, user_id: int, code: str) -> str:
+    row = (await session.execute(text("SELECT encrypted_secret,last_used_step,enabled FROM user_mfa_totp WHERE user_id=:uid FOR UPDATE"), {"uid": int(user_id)})).first()
+    supplied = re.sub(r"[^A-Za-z0-9]", "", str(code or "")).upper()
+    if row and bool(row[2]) and re.fullmatch(r"\d{6}", supplied):
+        secret = decrypt_secret(str(row[0]))
+        if not secret:
+            raise AuthenticationError("mfa_secret_unavailable")
+        step = verify_totp(secret, supplied, last_used_step=row[1])
+        await session.execute(text("UPDATE user_mfa_totp SET last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"), {"uid": int(user_id), "step": step})
+        return "totp"
+    recovery = (await session.execute(text("SELECT recovery_code_id FROM account_recovery_codes WHERE user_id=:uid AND code_hash=:code_hash AND used_at IS NULL FOR UPDATE"), {"uid": int(user_id), "code_hash": _sha256(supplied)})).first()
+    if recovery:
+        await session.execute(text("UPDATE account_recovery_codes SET used_at=NOW() WHERE recovery_code_id=:id"), {"id": recovery[0]})
+        return "recovery_code"
+    raise AuthenticationError("invalid_mfa_code")
+
+
+async def disable_totp(session: Any, *, user_id: int, code: str) -> None:
+    await verify_user_mfa(session, user_id=int(user_id), code=code)
+    await session.execute(text("DELETE FROM account_recovery_codes WHERE user_id=:uid"), {"uid": int(user_id)})
+    await session.execute(text("UPDATE user_mfa_totp SET enabled=FALSE,verified_at=NULL,last_used_step=NULL,updated_at=NOW() WHERE user_id=:uid"), {"uid": int(user_id)})
+    await record_security_event(session, user_id=int(user_id), event_type="mfa.disabled", severity="critical")
+
+
+async def create_mfa_login_challenge(session: Any, *, user_id: int) -> AccountChallenge:
+    return await _create_account_challenge(session, purpose="mfa_login", user_id=int(user_id), ttl_minutes=5)
+
+
+async def complete_mfa_login(session: Any, *, token: str, code: str, ip_address: str | None = None) -> int:
+    user_id, _ = await _consume_account_challenge(session, token=token, purpose="mfa_login", ip_address=ip_address)
+    if user_id is None:
+        raise AuthenticationError("invalid_mfa_challenge")
+    method = await verify_user_mfa(session, user_id=int(user_id), code=code)
+    await record_security_event(session, user_id=int(user_id), event_type="mfa.login_completed", metadata={"method": method}, ip_address=ip_address)
+    return int(user_id)
 
 
 __all__ = [
@@ -901,4 +1191,20 @@ __all__ = [
     "validate_telegram_login_payload",
     "validate_telegram_mini_app_init_data",
     "verify_password",
+    "AccountChallenge",
+    "MFASetup",
+    "begin_totp_setup",
+    "complete_mfa_login",
+    "complete_password_reset",
+    "consume_magic_login",
+    "create_mfa_login_challenge",
+    "disable_totp",
+    "enable_totp",
+    "mfa_status",
+    "request_email_verification",
+    "request_magic_login",
+    "request_password_reset",
+    "verify_email_challenge",
+    "verify_totp",
+    "verify_user_mfa",
 ]

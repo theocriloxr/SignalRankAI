@@ -324,7 +324,7 @@ async def ensure_outcome_projections(
                 if outcome is not None and current_status in terminal_statuses:
                     meta.update({
                         "audited_correction": True,
-                        "corrected_by": "system:v1.4.0-outcome-reconciliation",
+                        "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
                         "correction_reason": (
                             "repair lifecycle/outcome disagreement or missing terminal timestamp "
                             "after v1.3.6.8 outcome persistence failure"

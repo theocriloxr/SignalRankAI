@@ -8,6 +8,10 @@ export type SessionPayload = {
   access_token?: string;
   refresh_token?: string;
   user?: Record<string, unknown>;
+  authenticated?: boolean;
+  mfa_required?: boolean;
+  mfa_token?: string;
+  expires_at?: string;
 };
 
 export async function storeSession(payload: SessionPayload): Promise<void> {
@@ -59,8 +63,33 @@ export async function login(email: string, password: string): Promise<SessionPay
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.detail || 'Login failed');
+  if (!payload.mfa_required) await storeSession(payload);
+  return payload;
+}
+
+export async function completeMfa(token: string, code: string): Promise<SessionPayload> {
+  const response = await fetch(`${API_URL}/api/v1/platform/auth/mfa/complete`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({token, code, client_type: 'mobile'}),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || 'MFA verification failed');
   await storeSession(payload);
   return payload;
+}
+
+export async function requestMagicLink(email: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/platform/auth/magic-link/request`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email}),
+  });
+  if (!response.ok) throw new Error('Could not request sign-in link');
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/platform/auth/password-reset/request`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email}),
+  });
+  if (!response.ok) throw new Error('Could not request password reset');
 }
 
 export async function register(displayName: string, email: string, password: string): Promise<SessionPayload> {
@@ -109,4 +138,45 @@ export async function createTelegramLink(): Promise<{code: string; expires_at: s
 
 export async function createJournalEntry(input: {title?: string; notes: string; emotion?: string; tags?: string[]}): Promise<{journal_entry_id: string}> {
   return api('/journal', {method: 'POST', body: JSON.stringify(input)});
+}
+
+
+export async function updateProfile(input: Record<string, unknown>): Promise<{user: Record<string, unknown>}> {
+  return api('/profile', {method: 'PATCH', body: JSON.stringify(input)});
+}
+
+export async function mfaStatus(): Promise<{enabled: boolean; unused_recovery_codes: number}> {
+  return api('/security/mfa');
+}
+
+export async function beginMfaSetup(): Promise<{secret: string; provisioning_uri: string; expires_at: string}> {
+  return api('/security/mfa/setup', {method: 'POST', body: '{}'});
+}
+
+export async function enableMfa(code: string): Promise<{enabled: boolean; recovery_codes: string[]}> {
+  return api('/security/mfa/enable', {method: 'POST', body: JSON.stringify({code})});
+}
+
+export async function disableMfa(code: string): Promise<{enabled: boolean}> {
+  return api('/security/mfa/disable', {method: 'POST', body: JSON.stringify({code})});
+}
+
+export async function completeMagicLogin(token: string): Promise<SessionPayload> {
+  const response = await fetch(`${API_URL}/api/v1/platform/auth/magic-link/complete`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({token, client_type: 'mobile'}),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || 'Sign-in link is invalid or expired');
+  if (!payload.mfa_required) await storeSession(payload);
+  return payload;
+}
+
+export async function completePasswordReset(token: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/platform/auth/password-reset/complete`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({token, new_password: newPassword}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || 'Password reset failed');
 }
