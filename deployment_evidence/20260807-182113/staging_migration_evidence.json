@@ -1,0 +1,7 @@
+{
+  "environment": "staging",
+  "error": "RuntimeError: ecosystem bootstrap failed",
+  "evidence_type": "staging_integration",
+  "finished_at": "2026-08-07T17:22:57.920412+00:00",
+  "status": "BLOCKED"
+}

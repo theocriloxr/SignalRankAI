@@ -56,12 +56,22 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
               duration_days=EXCLUDED.duration_days, active=TRUE
         """), {"product_id": product_id, "tier": tier, "display_name": name, "duration_days": days})
         # Contract/contact-sales prices remain zero and are not public checkout products.
+        # Explicit PostgreSQL casts are required here for asyncpg.  The same
+        # bind parameter is used both as an INSERT projection and in the
+        # NOT EXISTS predicate; without a cast PostgreSQL can infer conflicting
+        # TEXT/VARCHAR types for the generated positional parameter.
         await session.execute(text("""
             INSERT INTO subscription_prices(product_id,currency,price_kobo,effective_from)
-            SELECT :product_id,'NGN',:price_kobo,TIMESTAMP '2026-08-06 00:00:00'
+            SELECT
+              CAST(:product_id AS VARCHAR(64)),
+              CAST('NGN' AS VARCHAR(8)),
+              CAST(:price_kobo AS BIGINT),
+              TIMESTAMP '2026-08-06 00:00:00'
             WHERE NOT EXISTS (
               SELECT 1 FROM subscription_prices
-              WHERE product_id=:product_id AND currency='NGN' AND effective_until IS NULL
+              WHERE product_id=CAST(:product_id AS VARCHAR(64))
+                AND currency=CAST('NGN' AS VARCHAR(8))
+                AND effective_until IS NULL
             )
         """), {"product_id": product_id, "price_kobo": max(0, price_ngn) * 100})
 
