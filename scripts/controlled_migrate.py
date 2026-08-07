@@ -104,12 +104,12 @@ def _expected_head() -> str:
     return heads[0]
 
 
-def _database_url() -> str:
+def _database_urls() -> tuple[str, str]:
     # The advisory lock, pre/post revision reads and Alembic itself must target
     # the exact same direct database.  Using DATABASE_URL for the lock while
     # Alembic uses DATABASE_MIGRATION_URL can migrate one database while
     # verifying another.
-    from db.database_urls import normalize_sync_postgres_url
+    from db.database_urls import normalize_psycopg2_dsn, normalize_sync_postgres_url
 
     raw = (
         _value("DATABASE_MIGRATION_URL")
@@ -120,7 +120,7 @@ def _database_url() -> str:
         raise RuntimeError(
             "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured"
         )
-    return normalize_sync_postgres_url(raw)
+    return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
 
 
 def migrate() -> dict[str, Any]:
@@ -133,9 +133,9 @@ def migrate() -> dict[str, Any]:
     from alembic.config import Config
 
     expected = _expected_head()
-    db_url = _database_url()
+    db_url, db_dsn = _database_urls()
     started_at = datetime.now(timezone.utc)
-    with closing(psycopg2.connect(db_url, connect_timeout=10)) as connection:
+    with closing(psycopg2.connect(db_dsn, connect_timeout=10)) as connection:
         connection.autocommit = True
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_lock(%s)", (LOCK_ID,))

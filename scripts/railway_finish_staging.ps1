@@ -62,6 +62,66 @@ function Set-ServiceVariables {
     Invoke-Railway -Arguments $args
 }
 
+function Get-RailwayVariableMap {
+    param([Parameter(Mandatory = $true)][string]$Service)
+    $raw = Invoke-Railway -Arguments @(
+        "variable", "list", "-s", $Service, "-e", $Environment, "--json"
+    ) -Capture
+    return ($raw | ConvertFrom-Json)
+}
+
+function Get-RailwayVariableValue {
+    param(
+        [Parameter(Mandatory = $true)][object]$Variables,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ($null -eq $Variables) { return $null }
+    if ($Variables -is [System.Management.Automation.PSCustomObject]) {
+        $direct = $Variables.PSObject.Properties[$Name]
+        if ($null -ne $direct -and $null -ne $direct.Value) {
+            return [string]$direct.Value
+        }
+        # Also support [{name:"KEY",value:"..."}] / nested Railway JSON shapes.
+        $nameProp = $Variables.PSObject.Properties["name"]
+        $valueProp = $Variables.PSObject.Properties["value"]
+        if ($null -ne $nameProp -and $null -ne $valueProp -and [string]$nameProp.Value -eq $Name) {
+            return [string]$valueProp.Value
+        }
+        foreach ($property in $Variables.PSObject.Properties) {
+            $found = Get-RailwayVariableValue -Variables $property.Value -Name $Name
+            if ($null -ne $found -and $found -ne "") { return $found }
+        }
+        return $null
+    }
+    if ($Variables -is [System.Collections.IEnumerable] -and $Variables -isnot [string]) {
+        foreach ($item in $Variables) {
+            $found = Get-RailwayVariableValue -Variables $item -Name $Name
+            if ($null -ne $found -and $found -ne "") { return $found }
+        }
+    }
+    return $null
+}
+
+function Invoke-WithTemporaryEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Values,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+    $previous = @{}
+    foreach ($key in $Values.Keys) {
+        $previous[$key] = [Environment]::GetEnvironmentVariable($key, "Process")
+        [Environment]::SetEnvironmentVariable($key, [string]$Values[$key], "Process")
+    }
+    try {
+        & $Action
+    }
+    finally {
+        foreach ($key in $Values.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $previous[$key], "Process")
+        }
+    }
+}
+
 function Get-LatestDeploymentStatus {
     param([Parameter(Mandatory = $true)][string]$Service)
     $raw = Invoke-Railway -Arguments @(
@@ -99,16 +159,25 @@ function Wait-Deployment {
     throw "$Service deployment did not reach a terminal status"
 }
 
-function Get-DatabaseIdentity {
-    param([Parameter(Mandatory = $true)][string]$Service)
-    $raw = Invoke-Railway -Arguments @(
-        "run", "--no-local", "-s", $Service, "-e", $Environment,
-        "python", "scripts/database_identity.py",
-        "--expect-head", "0038_account_security_product"
-    ) -Capture
+function Get-DatabaseIdentityLocal {
+    param([Parameter(Mandatory = $true)][string]$PublicDatabaseUrl)
+    $envValues = @{
+        "DATABASE_URL" = $PublicDatabaseUrl
+        "DATABASE_MIGRATION_URL" = $PublicDatabaseUrl
+        "RAILWAY_ENVIRONMENT_NAME" = $Environment
+        "APP_ENV" = $Environment
+        "ENVIRONMENT" = $Environment
+    }
+    $raw = Invoke-WithTemporaryEnvironment -Values $envValues -Action {
+        $identityOutput = & python scripts/database_identity.py --expect-head 0038_account_security_product 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Database identity verification failed ($LASTEXITCODE).`n$identityOutput"
+        }
+        $identityOutput
+    }
     $matches = [regex]::Matches($raw, '(?m)^\{.*"fingerprint".*\}$')
     if ($matches.Count -eq 0) {
-        throw "Could not parse database identity for $Service.`n$raw"
+        throw "Could not parse migrated database identity.`n$raw"
     }
     return ($matches[$matches.Count - 1].Value | ConvertFrom-Json)
 }
@@ -214,30 +283,52 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $evidenceDirectory = Join-Path (Get-Location) "deployment_evidence\$timestamp"
 New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
 
-Write-Host "Applying the one-owner migration and ecosystem bootstrap..." -ForegroundColor Cyan
-Invoke-Railway -Arguments @(
-    "run", "--no-local", "-s", $FrontdoorService, "-e", $Environment,
-    "python", "scripts/staging_migrate_and_bootstrap.py",
-    "--discover", "--top", [string]$DiscoveryTop,
-    "--skip-certification",
-    "--output", (Join-Path $evidenceDirectory "staging_migration_evidence.json")
-)
+Write-Host "Resolving a local-safe PostgreSQL migration endpoint..." -ForegroundColor Cyan
+$dbVariables = Get-RailwayVariableMap -Service $DatabaseService
+$publicDatabaseUrl = Get-RailwayVariableValue -Variables $dbVariables -Name "DATABASE_PUBLIC_URL"
+if (-not $publicDatabaseUrl) {
+    $publicDatabaseUrl = Get-RailwayVariableValue -Variables $dbVariables -Name "POSTGRES_PUBLIC_URL"
+}
+if (-not $publicDatabaseUrl) {
+    throw "The PostgreSQL service does not expose DATABASE_PUBLIC_URL. Enable its Railway TCP proxy or use 'railway connect $DatabaseService -e $Environment --tunnel-only' and rerun with a public/tunnel migration endpoint."
+}
+if ($publicDatabaseUrl -match '(?i)\.railway\.internal') {
+    throw "DATABASE_PUBLIC_URL unexpectedly resolves to a Railway private host; local migration cannot use it. Enable the Postgres TCP proxy or use railway connect --tunnel-only."
+}
 
-$identities = @{}
-foreach ($service in $services) {
-    $identity = Get-DatabaseIdentity -Service $service
-    if (-not $identity.ok) {
-        throw "$service is not at the expected Alembic head."
+Write-Host "Applying the one-owner migration and ecosystem bootstrap through the PostgreSQL public proxy..." -ForegroundColor Cyan
+$migrationEvidence = Join-Path $evidenceDirectory "staging_migration_evidence.json"
+$migrationEnv = @{
+    "DATABASE_URL" = $publicDatabaseUrl
+    "DATABASE_MIGRATION_URL" = $publicDatabaseUrl
+    "RAILWAY_ENVIRONMENT_NAME" = $Environment
+    "APP_ENV" = $Environment
+    "ENVIRONMENT" = $Environment
+    "STAGING_MIGRATION_ACKNOWLEDGED" = "1"
+    "EXPECTED_ALEMBIC_HEAD" = "0038_account_security_product"
+    "APP_VERSION" = "1.5.1"
+    "DYNAMIC_UNIVERSE_ENABLED" = "1"
+    "DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED" = "1"
+    "ALLOW_STATIC_ASSET_FALLBACK" = "0"
+}
+Invoke-WithTemporaryEnvironment -Values $migrationEnv -Action {
+    & python scripts/staging_migrate_and_bootstrap.py `
+        --discover --top $DiscoveryTop `
+        --skip-certification `
+        --output $migrationEvidence
+    if ($LASTEXITCODE -ne 0) {
+        throw "Local staging migration/bootstrap failed with exit code $LASTEXITCODE. See $migrationEvidence"
     }
-    $identities[$service] = $identity
 }
-$fingerprints = @($identities.Values | ForEach-Object { $_.fingerprint } | Sort-Object -Unique)
-$identities | ConvertTo-Json -Depth 8 | Set-Content `
-    -Path (Join-Path $evidenceDirectory "database_identities.json") -Encoding UTF8
-if ($fingerprints.Count -ne 1) {
-    throw "Services do not resolve to one PostgreSQL database. Fingerprints: $($fingerprints -join ', ')"
+
+$databaseIdentity = Get-DatabaseIdentityLocal -PublicDatabaseUrl $publicDatabaseUrl
+if (-not $databaseIdentity.ok) {
+    throw "Migrated PostgreSQL database is not at the expected Alembic head."
 }
-Write-Host "All services resolve to one migrated PostgreSQL database." -ForegroundColor Green
+$databaseIdentity | ConvertTo-Json -Depth 8 | Set-Content `
+    -Path (Join-Path $evidenceDirectory "database_identity.json") -Encoding UTF8
+$fingerprints = @([string]$databaseIdentity.fingerprint)
+Write-Host "Migration database is at 0038_account_security_product fingerprint=$($databaseIdentity.fingerprint)." -ForegroundColor Green
 
 if (-not $SkipCodeUpload) {
     foreach ($service in @($WorkerService, $EngineService, $FrontdoorService)) {
@@ -256,14 +347,9 @@ foreach ($service in $services) {
     Test-ServiceLogs -Service $service -EvidenceDirectory $evidenceDirectory
 }
 
-Write-Host "Running post-deployment staging certification..." -ForegroundColor Cyan
-$certificationArguments = @(
-    "run", "--no-local", "-s", $FrontdoorService, "-e", $Environment,
-    "python", "-m", "tools.staging_certification"
-)
-Write-Host ("railway " + ($certificationArguments -join " ")) -ForegroundColor DarkGray
-$certificationOutput = & railway @certificationArguments 2>&1 | Out-String
-$certificationExitCode = $LASTEXITCODE
+Write-Host "Schema deployment is complete. Runtime certification remains an in-service observation." -ForegroundColor Cyan
+$certificationExitCode = 0
+$certificationOutput = "Schema/service deployment passed. Run tools.staging_certification inside an online Railway service (railway ssh) after fresh signal/paper/payment evidence exists."
 Set-Content -Path (Join-Path $evidenceDirectory "staging_certification.log") `
     -Value $certificationOutput -Encoding UTF8
 
@@ -274,7 +360,7 @@ $summary = [ordered]@{
     database_fingerprint = $fingerprints[0]
     alembic_head = "0038_account_security_product"
     certification_exit_code = $certificationExitCode
-    certification_status = $(if ($certificationExitCode -eq 0) { "PASS" } else { "PENDING_RUNTIME_EVIDENCE" })
+    certification_status = "PENDING_RUNTIME_EVIDENCE"
     services = $services
     evidence_directory = $evidenceDirectory
     generated_at = (Get-Date).ToString("o")

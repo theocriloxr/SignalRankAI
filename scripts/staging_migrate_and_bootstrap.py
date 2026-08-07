@@ -54,8 +54,8 @@ def _expected_head() -> str:
     return str(heads[0])
 
 
-def _migration_url() -> str:
-    from db.database_urls import normalize_sync_postgres_url
+def _migration_urls() -> tuple[str, str]:
+    from db.database_urls import normalize_psycopg2_dsn, normalize_sync_postgres_url
 
     raw = (
         _value("DATABASE_MIGRATION_URL")
@@ -64,7 +64,7 @@ def _migration_url() -> str:
     )
     if not raw:
         raise RuntimeError("DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is missing")
-    return normalize_sync_postgres_url(raw)
+    return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
 
 
 def _run(command: list[str], *, env: dict[str, str]) -> dict[str, Any]:
@@ -105,12 +105,12 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
             f"EXPECTED_ALEMBIC_HEAD={configured_expected} does not match repository head {expected}"
         )
 
-    migration_url = _migration_url()
+    migration_url, migration_dsn = _migration_urls()
     started_at = datetime.now(timezone.utc)
     before: str | None = None
     after: str | None = None
 
-    with closing(psycopg2.connect(migration_url, connect_timeout=15)) as connection:
+    with closing(psycopg2.connect(migration_dsn, connect_timeout=15)) as connection:
         connection.autocommit = True
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_lock(%s)", (LOCK_ID,))
@@ -146,7 +146,7 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
 
     runtime_env = os.environ.copy()
     # Bootstrap must target the exact database just migrated, not a stale runtime URL.
-    runtime_env["DATABASE_URL"] = migration_url
+    runtime_env["DATABASE_URL"] = migration_dsn
     runtime_env["DATABASE_MIGRATION_URL"] = migration_url
 
     schema = _run(

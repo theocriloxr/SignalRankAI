@@ -42,10 +42,11 @@ def test_staging_migration_is_guarded_locked_and_verified():
 
 def test_production_migration_lock_uses_direct_migration_database():
     source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
-    database_url = source[source.index("def _database_url"):source.index("def migrate")]
+    database_url = source[source.index("def _database_urls"):source.index("def migrate")]
     assert 'DATABASE_MIGRATION_URL' in database_url
     assert 'DATABASE_DIRECT_URL' in database_url
     assert 'normalize_sync_postgres_url' in database_url
+    assert 'normalize_psycopg2_dsn' in database_url
 
 
 def test_railway_completion_script_enforces_common_db_and_safe_flags():
@@ -70,7 +71,7 @@ def test_railway_completion_script_enforces_common_db_and_safe_flags():
 
 def test_railway_completion_migrates_before_uploading_services():
     source = (ROOT / "scripts" / "railway_finish_staging.ps1").read_text(encoding="utf-8")
-    migration = source.index('"python", "scripts/staging_migrate_and_bootstrap.py"')
+    migration = source.index('& python scripts/staging_migrate_and_bootstrap.py')
     upload = source.index('"up", "-s", $service')
     assert migration < upload
 
@@ -80,3 +81,20 @@ def test_staging_shell_entrypoint_delegates_to_guarded_python_command():
     assert "STAGING_MIGRATION_ACKNOWLEDGED=1 is required" in source
     assert "staging_migrate_and_bootstrap.py" in source
     assert "alembic upgrade head" not in source
+
+
+def test_railway_completion_uses_public_db_for_local_migration_only():
+    source = (ROOT / "scripts" / "railway_finish_staging.ps1").read_text(encoding="utf-8")
+    assert 'DATABASE_PUBLIC_URL' in source
+    assert 'railway run' not in source
+    assert 'publicDatabaseUrl' in source
+    assert 'DATABASE_URL=$dbReference' in source
+    assert 'railway\\.internal' in source
+
+
+def test_staging_migration_separates_sqlalchemy_url_from_psycopg2_dsn():
+    source = (ROOT / "scripts" / "staging_migrate_and_bootstrap.py").read_text(encoding="utf-8")
+    assert 'normalize_sync_postgres_url' in source
+    assert 'normalize_psycopg2_dsn' in source
+    assert 'psycopg2.connect(migration_dsn' in source
+    assert 'cfg.set_main_option("sqlalchemy.url", migration_url)' in source

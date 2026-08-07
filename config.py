@@ -235,6 +235,10 @@ def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
 		return ""
 	if raw.startswith("postgresql+asyncpg://"):
 		return raw if async_driver else raw.replace("postgresql+asyncpg://", "postgresql://", 1)
+	if raw.startswith("postgresql+psycopg2://"):
+		return raw.replace("postgresql+psycopg2://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
+	if raw.startswith("postgresql+psycopg://"):
+		return raw.replace("postgresql+psycopg://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
 	if raw.startswith("postgres://"):
 		return raw.replace("postgres://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
 	if raw.startswith("postgresql://"):

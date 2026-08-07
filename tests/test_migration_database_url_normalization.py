@@ -38,3 +38,23 @@ def test_quoted_railway_value_is_unwrapped():
 
 def test_non_postgres_url_is_preserved():
     assert normalize_sync_postgres_url("sqlite:///local.db") == "sqlite:///local.db"
+
+from db.database_urls import normalize_psycopg2_dsn
+
+
+def test_sqlalchemy_driver_url_is_stripped_for_raw_psycopg2():
+    assert normalize_psycopg2_dsn(
+        "postgresql+psycopg2://user:password@localhost/db?sslmode=require"
+    ) == "postgresql://user:password@localhost/db?sslmode=require"
+
+
+def test_async_url_is_stripped_for_raw_psycopg2():
+    assert normalize_psycopg2_dsn(
+        "postgresql+asyncpg://user:password@localhost/db"
+    ) == "postgresql://user:password@localhost/db"
+
+
+def test_postgres_alias_is_canonicalized_for_raw_psycopg2():
+    assert normalize_psycopg2_dsn(
+        "postgres://user:password@localhost/db"
+    ) == "postgresql://user:password@localhost/db"
