@@ -384,6 +384,24 @@ class TestInstrumentDiscovery:
                                  "market_status": "suspended"}])
         assert r3.updated == 1
 
+    def test_self_pair_is_rejected(self):
+        reg = self._registry()
+        result = reg.ingest("coingecko", [{
+            "provider_symbol": "USDT", "base": "USDT", "quote": "USDT",
+            "asset_class": "crypto", "instrument_type": "stablecoin",
+        }])
+        assert result.mapping_failures == 1
+        assert reg.count() == 0
+
+    def test_explicit_non_tradable_row_is_not_in_active_universe(self):
+        reg = self._registry()
+        reg.ingest("provider", [{
+            "provider_symbol": "ABCUSDT", "base": "ABC", "quote": "USDT",
+            "asset_class": "crypto", "instrument_type": "spot", "tradable": False,
+        }])
+        assert reg.count() == 1
+        assert reg.universe() == ()
+
     def test_xaut_and_xau_stay_separate(self):
         reg = self._registry()
         reg.ingest("coingecko", [{"provider_symbol": "XAUTUSDT", "base": "XAUT", "quote": "USDT",

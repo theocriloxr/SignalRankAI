@@ -4,19 +4,19 @@ These requirements cannot be truthfully completed or proven inside a source
 archive. They require access to real infrastructure, credentials, contracts,
 market activity, or third-party review.
 
-> Deployment remediation update: repository-side automation for the staging
-> database migration, shared database reference, ordered service upload and log
-> evidence is now included in `scripts/railway_finish_staging.ps1`. Running that
-> command still requires the owner's authenticated Railway session and therefore
-> remains an external action.
+> R4 update: owner-provided 2026-08-07 terminal evidence proves the real staging
+> PostgreSQL database is already at `0038_account_security_product` and passed
+> required-schema admission. R4 closes the subsequent bootstrap/source gaps and
+> provides executable structural, runtime and soak certification commands. Live
+> Railway execution and third-party events still require the owner's accounts.
 
 ## Railway and database
 
 - Access to the user's Railway staging and production projects.
 - Push the exact release commit to the branch used by all services.
-- Apply `0038_account_security_product` to the real staging PostgreSQL database
-  through exactly one migration owner.
-- Run tier, entitlement, provider, and instrument bootstrap against staging.
+- Staging migration to `0038_account_security_product`: **observed complete on 2026-08-07**.
+- Run the R4 tier, entitlement, provider, and instrument bootstrap against staging
+  and retain its structural proof artifact.
 - Confirm all services report the same exact 40-character commit SHA.
 - Capture deployment IDs, readiness results, and rollback evidence.
 
@@ -79,8 +79,8 @@ Source code cannot prove a 60–75% win rate. Required evidence includes:
 
 Before production promotion, capture all of the following:
 
-1. All three services on one exact release SHA.
-2. PostgreSQL at `0038_account_security_product`.
+1. All three services on one exact R4 release SHA/patch marker.
+2. PostgreSQL at `0038_account_security_product` (**staging schema already proven; re-prove after R4 upload**).
 3. Readiness passing with no schema mismatch.
 4. Non-zero products, prices, entitlements, provider mappings, and instruments.
 5. Engine logging `universe_source=database_registry`.

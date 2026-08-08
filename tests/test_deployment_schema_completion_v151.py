@@ -98,3 +98,53 @@ def test_staging_migration_separates_sqlalchemy_url_from_psycopg2_dsn():
     assert 'normalize_psycopg2_dsn' in source
     assert 'psycopg2.connect(migration_dsn' in source
     assert 'cfg.set_main_option("sqlalchemy.url", migration_url)' in source
+
+
+def test_staging_migration_requires_database_backed_structural_proof():
+    source = (ROOT / "scripts" / "staging_migrate_and_bootstrap.py").read_text(encoding="utf-8")
+    assert "staging_runtime_proof.py" in source
+    assert "post-bootstrap staging structural proof failed" in source
+
+
+def test_railway_completion_requires_r4_source_and_structural_proof():
+    source = (ROOT / "scripts" / "railway_finish_staging.ps1").read_text(encoding="utf-8")
+    assert "patch=deployment-final-r4" in source
+    assert "staging_runtime_proof.py" in source
+    assert "staging_structural_proof.json" in source
+
+
+def test_staging_runtime_proof_covers_end_to_end_evidence():
+    source = (ROOT / "scripts" / "staging_runtime_proof.py").read_text(encoding="utf-8")
+    for required in (
+        "active_products",
+        "active_prices",
+        "feature_entitlements",
+        "tradable_instruments",
+        "provider_mappings",
+        "confirmed_telegram_deliveries",
+        "recent_paper_positions",
+        "recent_payment_receipts",
+        "recent_sent_emails",
+        "duplicate_delivery_groups",
+        "duplicate_paper_position_groups",
+    ):
+        assert required in source
+
+
+def test_runtime_certification_script_requires_real_recent_delivery_and_paper_proof():
+    source = (ROOT / "scripts" / "railway_certify_staging_runtime.ps1").read_text(encoding="utf-8")
+    assert "--require-runtime" in source
+    assert "--require-payment" in source
+    assert "--require-email" in source
+    assert "patch=deployment-final-r4" in source
+    assert "metrics" in source and "--since" in source
+
+
+def test_r4_soak_certification_contract():
+    text = Path("scripts/railway_certify_staging_soak.ps1").read_text(encoding="utf-8")
+    assert '"--since", $hoursToken' in text
+    assert '"metrics", "--all"' in text
+    assert "patch=deployment-final-r4" in text
+    assert "alembic_current=0038_account_security_product" in text
+    assert "AmbiguousParameterError" in text
+    assert "staging_soak_summary.json" in text

@@ -164,6 +164,13 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
     if bootstrap["returncode"] != 0:
         raise RuntimeError("ecosystem bootstrap failed")
 
+    structural_proof = _run(
+        [sys.executable, str(ROOT / "scripts" / "staging_runtime_proof.py"), "--window-hours", "6"],
+        env=runtime_env,
+    )
+    if structural_proof["returncode"] != 0:
+        raise RuntimeError("post-bootstrap staging structural proof failed")
+
     certification: dict[str, Any] | None = None
     if run_certification:
         certification = _run(
@@ -183,6 +190,7 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
         "advisory_lock_id": LOCK_ID,
         "schema_check": schema,
         "bootstrap": bootstrap,
+        "structural_proof": structural_proof,
         "certification": certification,
         "certification_passed": certification is None or certification["returncode"] == 0,
     }

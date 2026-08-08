@@ -1,4 +1,4 @@
-"""Idempotent v1.4.1 ecosystem catalogue and instrument bootstrap.
+"""Idempotent v1.5.1 ecosystem catalogue and instrument bootstrap.
 
 This module deliberately performs no work at import time. Railway should run
 ``python -m tools.bootstrap_ecosystem`` from a single migration/bootstrap owner
@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import text
+from sqlalchemy import BigInteger, String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.tier_policy import TIER_ORDER, Tier, get_entitlements
 from data.instrument_discovery import DynamicInstrumentRegistry
 from ml.schema_version import get_feature_columns
 
-CATALOGUE_VERSION = "unified-platform-v1"
+CATALOGUE_VERSION = "unified-platform-v1.5.1"
 FEATURE_SCHEMA_VERSION = "feature-schema-v3"
 LABEL_SCHEMA_VERSION = "label-schema-v1"
 DATASET_VERSION = "dataset-v1-point-in-time"
@@ -56,24 +56,30 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
               duration_days=EXCLUDED.duration_days, active=TRUE
         """), {"product_id": product_id, "tier": tier, "display_name": name, "duration_days": days})
         # Contract/contact-sales prices remain zero and are not public checkout products.
-        # Explicit PostgreSQL casts are required here for asyncpg.  The same
-        # bind parameter is used both as an INSERT projection and in the
-        # NOT EXISTS predicate; without a cast PostgreSQL can infer conflicting
-        # TEXT/VARCHAR types for the generated positional parameter.
-        await session.execute(text("""
-            INSERT INTO subscription_prices(product_id,currency,price_kobo,effective_from)
-            SELECT
-              CAST(:product_id AS VARCHAR(64)),
-              CAST('NGN' AS VARCHAR(8)),
-              CAST(:price_kobo AS BIGINT),
-              TIMESTAMP '2026-08-06 00:00:00'
-            WHERE NOT EXISTS (
-              SELECT 1 FROM subscription_prices
-              WHERE product_id=CAST(:product_id AS VARCHAR(64))
-                AND currency=CAST('NGN' AS VARCHAR(8))
-                AND effective_until IS NULL
-            )
-        """), {"product_id": product_id, "price_kobo": max(0, price_ngn) * 100})
+        # Keep one active release price per product.  Explicit SQLAlchemy bind
+        # types avoid asyncpg/PostgreSQL parameter ambiguity, and the two-step
+        # history-preserving upsert is safely rerunnable.
+        price_params = {"product_id": product_id, "price_kobo": max(0, price_ngn) * 100}
+        close_previous_price = text("""
+            UPDATE subscription_prices
+            SET effective_until=NOW()
+            WHERE product_id=:product_id
+              AND currency='NGN'
+              AND effective_until IS NULL
+              AND effective_from<>TIMESTAMP '2026-08-06 00:00:00'
+        """).bindparams(bindparam("product_id", type_=String(64)))
+        upsert_release_price = text("""
+            INSERT INTO subscription_prices(product_id,currency,price_kobo,effective_from,effective_until)
+            VALUES (:product_id,'NGN',:price_kobo,TIMESTAMP '2026-08-06 00:00:00',NULL)
+            ON CONFLICT (product_id,currency,effective_from) DO UPDATE SET
+              price_kobo=EXCLUDED.price_kobo,
+              effective_until=NULL
+        """).bindparams(
+            bindparam("product_id", type_=String(64)),
+            bindparam("price_kobo", type_=BigInteger()),
+        )
+        await session.execute(close_previous_price, price_params)
+        await session.execute(upsert_release_price, price_params)
 
     entitlement_rows = 0
     for tier in TIER_ORDER:
@@ -98,6 +104,12 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
             "organization.enabled": (policy.has("organization_tenancy"), None, None, 40),
             "white_label.enabled": (policy.has("white_label"), None, None, 40),
         }
+        # Persist every canonical tier feature as an auditable entitlement row
+        # in addition to the operational control keys above.  This keeps the DB
+        # catalogue aligned with the 146 feature grants declared by tier_policy.
+        for feature_name in sorted(policy.features):
+            base[f"feature.{feature_name}"] = (True, None, None, 20)
+
         configuration = {
             "policy_version": CATALOGUE_VERSION,
             "features": sorted(policy.features),
@@ -127,7 +139,14 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
                 "configuration": _json(configuration),
             })
             entitlement_rows += 1
-    return {"products": len(products), "prices": len(products), "entitlements": entitlement_rows}
+    feature_entitlements = sum(len(get_entitlements(tier).features) for tier in TIER_ORDER if tier not in {Tier.ADMIN, Tier.OWNER})
+    return {
+        "products": len(products),
+        "prices": len(products),
+        "entitlements": entitlement_rows,
+        "feature_entitlements": feature_entitlements,
+        "control_entitlements": entitlement_rows - feature_entitlements,
+    }
 
 
 async def seed_ml_governance(session: AsyncSession) -> dict[str, int]:
@@ -317,6 +336,74 @@ async def record_discovery_run(session: AsyncSession, provider: str, result: Map
         "state": str(result.get("state") or "ok"),
         "reason": str(result.get("reason") or "")[:255] or None,
     })
+
+
+async def verify_ecosystem_bootstrap(
+    session: AsyncSession,
+    *,
+    require_instruments: bool = False,
+) -> dict[str, Any]:
+    """Read back the persisted catalogue and fail closed on partial bootstrap.
+
+    The source declarations are not accepted as proof here: counts come from
+    PostgreSQL after the seed statements have executed in the current
+    transaction.
+    """
+
+    async def scalar(sql: str) -> int:
+        value = await session.scalar(text(sql))
+        return int(value or 0)
+
+    counts = {
+        "active_products": await scalar("SELECT COUNT(*) FROM subscription_products WHERE active=TRUE"),
+        "active_prices": await scalar("SELECT COUNT(*) FROM subscription_prices WHERE effective_until IS NULL"),
+        "feature_entitlements": await scalar("SELECT COUNT(*) FROM subscription_entitlements WHERE entitlement_key LIKE 'feature.%' AND enabled=TRUE"),
+        "control_entitlements": await scalar("SELECT COUNT(*) FROM subscription_entitlements WHERE entitlement_key NOT LIKE 'feature.%'"),
+        "feature_definitions": await scalar("SELECT COUNT(*) FROM feature_definitions WHERE feature_version='3'"),
+        "label_versions": await scalar("SELECT COUNT(*) FROM label_versions"),
+        "dataset_versions": await scalar("SELECT COUNT(*) FROM dataset_versions"),
+        "model_registry": await scalar("SELECT COUNT(*) FROM model_registry"),
+        "strategy_versions": await scalar("SELECT COUNT(*) FROM strategy_versions"),
+        "instruments": await scalar("SELECT COUNT(*) FROM instruments WHERE active=TRUE"),
+        "tradable_instruments": await scalar("SELECT COUNT(*) FROM instruments WHERE active=TRUE AND tradable=TRUE"),
+        "provider_mappings": await scalar("SELECT COUNT(*) FROM provider_instruments WHERE data_enabled=TRUE"),
+    }
+    expected_feature_entitlements = sum(
+        len(get_entitlements(tier).features)
+        for tier in TIER_ORDER
+        if tier not in {Tier.ADMIN, Tier.OWNER}
+    )
+    expected_control_entitlements = 16 * len(
+        [tier for tier in TIER_ORDER if tier not in {Tier.ADMIN, Tier.OWNER}]
+    )
+    expected_feature_definitions = len(get_feature_columns())
+    blockers: list[str] = []
+    minimums = {
+        "active_products": 6,
+        "active_prices": 6,
+        "feature_entitlements": expected_feature_entitlements,
+        "control_entitlements": expected_control_entitlements,
+        "feature_definitions": expected_feature_definitions,
+        "label_versions": 1,
+        "dataset_versions": 1,
+        "model_registry": 1,
+        "strategy_versions": 15,
+    }
+    for key, minimum in minimums.items():
+        if counts[key] < minimum:
+            blockers.append(f"{key}:{counts[key]}<{minimum}")
+    if require_instruments and counts["tradable_instruments"] < 1:
+        blockers.append("tradable_instruments:0<1")
+    if require_instruments and counts["provider_mappings"] < 1:
+        blockers.append("provider_mappings:0<1")
+    return {
+        "ok": not blockers,
+        "catalogue_version": CATALOGUE_VERSION,
+        "counts": counts,
+        "minimums": minimums,
+        "require_instruments": bool(require_instruments),
+        "blockers": blockers,
+    }
 
 
 async def seed_all(session: AsyncSession) -> dict[str, Any]:

@@ -211,6 +211,9 @@ function Test-ServiceLogs {
     if (-not $logs.Contains('alembic_current=0038_account_security_product')) {
         throw "$Service did not prove alembic_current=0038_account_security_product in its latest logs"
     }
+    if (-not $logs.Contains('patch=deployment-final-r4')) {
+        throw "$Service did not prove the deployment-final-r4 source patch in its latest logs"
+    }
 }
 
 if ($Environment.ToLowerInvariant() -in @("production", "prod")) {
@@ -338,7 +341,7 @@ if (-not $SkipCodeUpload) {
     }
 } else {
     foreach ($service in @($WorkerService, $EngineService, $FrontdoorService)) {
-        Invoke-Railway -Arguments @("redeploy", "-s", $service, "-e", $Environment, "-y")
+        Invoke-Railway -Arguments @("redeploy", "-s", $service, "-y")
         Wait-Deployment -Service $service
     }
 }
@@ -347,7 +350,17 @@ foreach ($service in $services) {
     Test-ServiceLogs -Service $service -EvidenceDirectory $evidenceDirectory
 }
 
-Write-Host "Schema deployment is complete. Runtime certification remains an in-service observation." -ForegroundColor Cyan
+Write-Host "Running database-backed structural staging proof..." -ForegroundColor Cyan
+$structuralProofPath = Join-Path $evidenceDirectory "staging_structural_proof.json"
+Invoke-WithTemporaryEnvironment -Values $migrationEnv -Action {
+    & python scripts/staging_runtime_proof.py --window-hours 6 --output $structuralProofPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Structural staging proof failed with exit code $LASTEXITCODE. See $structuralProofPath"
+    }
+}
+$structuralProof = Get-Content -Raw -Path $structuralProofPath | ConvertFrom-Json
+
+Write-Host "Schema, bootstrap, source patch and service deployment are complete. Fresh runtime proof remains event-dependent." -ForegroundColor Cyan
 $certificationExitCode = 0
 $certificationOutput = "Schema/service deployment passed. Run tools.staging_certification inside an online Railway service (railway ssh) after fresh signal/paper/payment evidence exists."
 Set-Content -Path (Join-Path $evidenceDirectory "staging_certification.log") `
@@ -361,10 +374,12 @@ $summary = [ordered]@{
     alembic_head = "0038_account_security_product"
     certification_exit_code = $certificationExitCode
     certification_status = "PENDING_RUNTIME_EVIDENCE"
+    structural_proof_status = [string]$structuralProof.status
+    structural_proof = $structuralProofPath
     services = $services
     evidence_directory = $evidenceDirectory
     generated_at = (Get-Date).ToString("o")
-    note = "Infrastructure/schema deployment completed. Fresh-signal, paper-position, payment and soak evidence remain runtime observations."
+    note = "Infrastructure/schema/bootstrap/source-patch deployment completed and structurally proven. Fresh-signal, confirmed-delivery, paper-position, payment/email and soak evidence remain runtime observations."
 }
 $summary | ConvertTo-Json -Depth 8 | Set-Content `
     -Path (Join-Path $evidenceDirectory "deployment_summary.json") -Encoding UTF8

@@ -18,7 +18,18 @@ async def load_database_universe(
     The query deliberately avoids driver-specific array casts so it behaves
     consistently with asyncpg, psycopg and test databases.
     """
-    wanted = sorted({str(x).strip().lower() for x in (asset_classes or ()) if str(x).strip()})
+    aliases = {
+        "fx": "forex",
+        "stock": "equity",
+        "stocks": "equity",
+        "indices": "index",
+        "futures": "future",
+    }
+    wanted = sorted({
+        aliases.get(str(x).strip().lower(), str(x).strip().lower())
+        for x in (asset_classes or ())
+        if str(x).strip()
+    })
     params: dict[str, object] = {"limit": max(1, min(int(limit), 2000))}
     class_clause = ""
     if wanted:

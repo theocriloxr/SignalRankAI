@@ -351,6 +351,12 @@ class DynamicInstrumentRegistry:
             if not provider_symbol or not base:
                 return None
             quote = str(data.get("quote") or "USDT").strip().upper() or None
+            # A provider metadata row such as a stablecoin definition can map to
+            # USDT/USDT after default quote inference.  That is not a tradable
+            # market and previously polluted the canonical universe as USDTUSDT.
+            if quote and base == quote:
+                logger.debug("instrument mapping rejected self-pair provider=%s symbol=%s", provider, provider_symbol)
+                return None
             instrument_type = str(data.get("instrument_type") or "spot").lower()
             asset_class = cls._asset_class_for(data, instrument_type)
             kind = _KIND_MAP.get(instrument_type, InstrumentKind.SPOT)
@@ -362,9 +368,10 @@ class DynamicInstrumentRegistry:
                 settlement=str(data.get("settlement") or quote or "").upper() or None,
             )
             market_status = str(data.get("market_status") or "active").lower()
+            explicitly_tradable = bool(data.get("tradable", True))
             status = (
                 InstrumentStatus.ACTIVE
-                if market_status in {"active", "open", "trading", ""}
+                if explicitly_tradable and market_status in {"active", "open", "trading", ""}
                 else (
                     InstrumentStatus.SUSPENDED
                     if market_status in {"suspended", "halted", "closed"}

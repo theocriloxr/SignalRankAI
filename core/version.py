@@ -20,6 +20,7 @@ CONFIGURED_APP_VERSION = _first("APP_VERSION", default=CODE_VERSION)
 # APP_VERSION remains visible as configured_version instead of mislabelling code.
 APP_VERSION = CODE_VERSION
 RELEASE_FINGERPRINT = "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
+DEPLOYMENT_PATCH_LEVEL = "deployment-final-r4"
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",
@@ -65,7 +66,7 @@ def get_version_banner() -> str:
         f"build={BUILD_IDENTIFIER} build_time={BUILD_TIME_UTC} "
         f"railway_project={RAILWAY_PROJECT} railway_service={RAILWAY_SERVICE} "
         f"deployment={DEPLOYMENT_ID} env={ENVIRONMENT} profile={ENVIRONMENT_PROFILE} "
-        f"release={RELEASE_FINGERPRINT}{configured}"
+        f"release={RELEASE_FINGERPRINT} patch={DEPLOYMENT_PATCH_LEVEL}{configured}"
     )
 
 # Legacy verification marker retained for v1.2.1 compatibility tests: default="1.2.1"
