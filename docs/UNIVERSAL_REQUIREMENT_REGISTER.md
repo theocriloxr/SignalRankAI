@@ -33,6 +33,9 @@ This register reconciles the repository, the supplied v5 completion prompt, hist
 | SR-OBS-001 | Health/readiness, structured metrics, provider/DB/Redis/delivery diagnostics | web health and observability scripts | VERIFIED_LOCAL | Railway metrics/alerts/soak |
 | SR-SEC-001 | Secrets, webhook auth, RBAC, replay, IDOR and log-redaction controls | security tests/configuration | VERIFIED_LOCAL | Staging penetration/dependency evidence |
 | SR-TEST-001 | Complete local orchestrator runs static, env, schema, governance, Railway simulation, fan-out, provider and integration checks | `scripts/run_complete_system_test.py`, `artifacts/complete-system-test-final/` | VERIFIED_LOCAL | Live Railway and external integrations remain separate |
+| SR-CI-001 | Weekly evidence review produces immutable, anonymized JSON/Markdown research artifacts | `services/continuous_improvement/`, `tools/continuous_improvement_review.py` | VERIFIED_LOCAL | Scheduled staging run and retention proof |
+| SR-CI-002 | OpenAI review is optional, aggregate-only, structured, bounded, and disabled by default | continuous-improvement reviewer and `services/codex_governance.py` | VERIFIED_LOCAL | Configured staging API request |
+| SR-CI-003 | Recommendations and Codex tasks cannot autonomously modify or deploy production | recommendation, experiment, promotion and handoff contracts | VERIFIED_LOCAL | Human approval workflow exercise |
 | SR-REL-001 | Clean-room deploy, Railway staging, owner proof and 24–72 hour soak precede public release | deployment/runbooks | LIVE_PROOF_REQUIRED | Owner permissions and credentials |
 
 ## Unresolved business decisions

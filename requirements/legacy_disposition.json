@@ -1,5 +1,5 @@
 {
-  "file_count": 1361,
+  "file_count": 1374,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2396,10 +2396,18 @@
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 36,
+      "path": "docs/CONTINUOUS_IMPROVEMENT.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "f3762d6cd7d65be6d6ca529212a3789b116d713ca6ce4f630a8aca276c72e23e",
+      "size_bytes": 2141
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 38,
       "path": "docs/CROSS_CHAT_DECISION_LEDGER.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "2ec2a03e3369ac19a7e84a4daf1c711676a160d110a4e4b9f5460487f53f4b35",
-      "size_bytes": 4653
+      "sha256": "044d54eed58d231d71c127e761505e072c56cfb85e88b16a6823e8a97396ec42",
+      "size_bytes": 5100
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -2544,6 +2552,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "22cd05ed2e191d47e119acea85f4bce01f533beec3c6f2138231ca100844f7e9",
       "size_bytes": 8130
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 29,
+      "path": "docs/FINAL_SIGNALRANK_COMPLETION_MATRIX.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "54db1b539795bbba9d51ddd14ced047fff39151994f18300e93a07d6c039bea5",
+      "size_bytes": 3233
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -3307,11 +3323,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 44,
+      "line_count": 47,
       "path": "docs/UNIVERSAL_REQUIREMENT_REGISTER.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "ab785b91a5ca12fb22b681e5edffc97cae472c0d10f4fdd2d0588c6958e2d173",
-      "size_bytes": 6381
+      "sha256": "414903c0d066f33f7efde4d0685324acca8117ed5ec23caef6d95c894aaece36",
+      "size_bytes": 7057
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6563,6 +6579,78 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 5,
+      "path": "services/continuous_improvement/__init__.py",
+      "reason": "production/build source",
+      "sha256": "34d8f6c9b31c2d31499aa6c62d6c3f50b1b312dd5de49c59725bac362d3b5b29",
+      "size_bytes": 230
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 38,
+      "path": "services/continuous_improvement/audit_store.py",
+      "reason": "production/build source",
+      "sha256": "7f36677d3fb251f46b7104679cb7312813b5615f939b1063a5265cd012e4d728",
+      "size_bytes": 1424
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 24,
+      "path": "services/continuous_improvement/codex_handoff.py",
+      "reason": "production/build source",
+      "sha256": "cabba91f3b37ca08b0f535664f7479caa5ab48e7f934f3a8c90254ac611f6384",
+      "size_bytes": 957
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 36,
+      "path": "services/continuous_improvement/collector.py",
+      "reason": "production/build source",
+      "sha256": "fd0fa1db6c7d14154a716021ba9dacff97c3688b2186d0746b5a9ce0d0529307",
+      "size_bytes": 1308
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 59,
+      "path": "services/continuous_improvement/experiment_manager.py",
+      "reason": "production/build source",
+      "sha256": "c33e387d06aa18ec25336010a8381f8b2be7d824b3ecb6c5cc517dad63797d4e",
+      "size_bytes": 2179
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 29,
+      "path": "services/continuous_improvement/promotion_gate.py",
+      "reason": "production/build source",
+      "sha256": "9ec6beda7d2c0100bab2d031d448e72abd48591e41d7c36236ca49f5e8761879",
+      "size_bytes": 924
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 62,
+      "path": "services/continuous_improvement/recommendation_schema.py",
+      "reason": "production/build source",
+      "sha256": "dddc6bba5d449c582ae477d80854d4ea167bf2838dbde91e8e5fa0bfe9189851",
+      "size_bytes": 1834
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 55,
+      "path": "services/continuous_improvement/reviewer.py",
+      "reason": "production/build source",
+      "sha256": "b58657987984bc382428ecd3dbeec0ec83fa56d5b7ab49d2e0242cc39fadc7c7",
+      "size_bytes": 2302
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 58,
+      "path": "services/continuous_improvement/weekly_review.py",
+      "reason": "production/build source",
+      "sha256": "cacd5c1ddc18f37c119bbf59f19782df0fbe5beb00c7c3bd8b6f73ebd75bd946",
+      "size_bytes": 2368
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 353,
       "path": "services/dead_letter_queue.py",
       "reason": "production/build source",
@@ -8779,6 +8867,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 124,
+      "path": "tests/test_continuous_improvement_v8.py",
+      "reason": "automated test evidence",
+      "sha256": "fa0d5bf70b0ea04cd1e6046e3c49756fa3ea2ff81c4c6cf9bd8db0f006da1b67",
+      "size_bytes": 5115
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 22,
       "path": "tests/test_db_session_labels.py",
       "reason": "automated test evidence",
@@ -10595,6 +10691,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 37,
+      "path": "tools/continuous_improvement_review.py",
+      "reason": "production/build source",
+      "sha256": "b004755438a116c62bd165372736d24ad0a2f0b42d660e41f58cf1793b06c566",
+      "size_bytes": 1244
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 44,
       "path": "tools/list_pending_account_merges.py",
       "reason": "production/build source",
@@ -10902,8 +11006,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 306,
-    "PRESERVE_BEHAVIOUR": 836,
-    "TEST_ONLY": 218
+    "DOCUMENTATION_ONLY": 308,
+    "PRESERVE_BEHAVIOUR": 846,
+    "TEST_ONLY": 219
   }
 }

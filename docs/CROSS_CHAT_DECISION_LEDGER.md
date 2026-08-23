@@ -30,6 +30,8 @@ This file is the self-contained historical decision source for an implementation
 | SCD-022 | Real execution, copy trading and Smart DCA remain gated by consent, account/spec/risk truth, idempotency, kill switch and separate approval. | Feature-presence-as-release |
 | SCD-023 | The system must recover safely from DB pressure, Redis loss, provider outage, process restart and uncertain Telegram sends. | Happy-path readiness |
 | SCD-024 | The implementation agent must keep working on unblocked tasks, request permissions in one queue and defend completion with reproducible evidence. | Plan-only/premature completion |
+| SCD-025 | V8 is authoritative over preserved V7/adaptive appendices; newer verified repository/runtime evidence remains stronger than historical completion claims. | Equal treatment of historical prompt layers |
+| SCD-026 | Continuous improvement may aggregate, review, recommend, experiment and create Codex tasks, but cannot autonomously apply code, deploy, change risk, or activate financial features. | Unsafe production self-modification |
 
 ## Historical incidents that remain regression contracts
 
