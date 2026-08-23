@@ -63,7 +63,7 @@ def test_push_tokens_are_application_encrypted() -> None:
 def test_bidirectional_telegram_linking_exists() -> None:
     identity = (ROOT / "services/platform/identity.py").read_text()
     api = (ROOT / "web/platform_api.py").read_text()
-    commands = (ROOT / "signalrank_telegram/commands.py").read_text()
+    commands = (ROOT / "signalrank_telegram/commands.py").read_text(encoding="utf-8")
     assert "create_telegram_link_request" in identity
     assert "complete_telegram_link_request" in identity
     assert '/account/telegram-link' in api
@@ -92,7 +92,7 @@ def test_product_workspace_migration_is_head_successor() -> None:
 
 def test_professional_api_and_webhook_worker_are_wired() -> None:
     api = (ROOT / "web/platform_api.py").read_text()
-    worker = (ROOT / "worker/worker.py").read_text()
+    worker = (ROOT / "worker/worker.py").read_text(encoding="utf-8")
     delivery = (ROOT / "db/pg_features.py").read_text()
     assert '/professional/signals' in api
     assert '/api-keys' in api

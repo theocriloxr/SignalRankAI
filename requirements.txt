@@ -41,3 +41,4 @@ google-genai>=0.1.0
 
 # Parquet support for orderbook/WFO import-export
 pyarrow>=15.0
+Pillow>=10.0

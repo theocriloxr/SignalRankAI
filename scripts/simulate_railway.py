@@ -100,20 +100,25 @@ def main() -> int:
             "REAL_PAYOUTS_ENABLED": "0",
             "PAYMENTS_PUBLIC_ENABLED": "0",
             "SIGNALRANK_SIMULATION_OPTIONAL_STUBS": "1",
+            "PYTHONIOENCODING": "utf-8",
         }
     )
 
     command = [sys.executable, "-m", "uvicorn", "scripts.railway_simulation_entry:app", "--host", "127.0.0.1", "--port", str(args.port)]
+    log_path = ROOT / ".pytest-tmp" / "railway-simulation.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Write child output continuously. Waiting to drain a PIPE until shutdown
+    # can deadlock verbose Windows startups once the small pipe buffer fills.
+    log_handle = log_path.open("w", encoding="utf-8")
     proc = subprocess.Popen(
         command,
         cwd=ROOT,
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log_handle,
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
     )
-    logs: list[str] = []
     base = f"http://127.0.0.1:{args.port}"
     deadline = time.monotonic() + max(5.0, args.timeout)
     try:
@@ -154,17 +159,14 @@ def main() -> int:
         except Exception:
             proc.terminate()
         try:
-            output, _ = proc.communicate(timeout=8)
+            proc.wait(timeout=8)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except Exception:
                 proc.kill()
-            output, _ = proc.communicate(timeout=5)
-        logs.extend((output or "").splitlines())
-        log_path = ROOT / ".pytest-tmp" / "railway-simulation.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("\n".join(logs) + "\n", encoding="utf-8")
+            proc.wait(timeout=5)
+        log_handle.close()
         print(f"[railway_simulation] log={log_path}")
 
 

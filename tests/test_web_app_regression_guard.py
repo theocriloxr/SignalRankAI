@@ -13,7 +13,10 @@ def test_web_app_is_fastapi_and_exposes_security_routes() -> None:
     from web.app import app
 
     assert isinstance(app, FastAPI)
-    paths = {getattr(route, "path", "") for route in app.routes}
+    # FastAPI 0.135+ may retain included routers lazily as `_IncludedRouter`
+    # objects without a direct `path`. OpenAPI is the stable public view of
+    # the fully expanded HTTP surface across supported FastAPI releases.
+    paths = set(app.openapi()["paths"])
     assert "/broker/validate-api-permissions" in paths
     assert "/broker/exchange/link" in paths
     assert "/api/v1/signals" in paths

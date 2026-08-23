@@ -74,7 +74,7 @@ def test_platform_routes_include_recovery_mfa_and_product_completion() -> None:
 
 
 def test_worker_owns_transactional_email_outbox() -> None:
-    text = (ROOT / "worker/worker.py").read_text()
+    text = (ROOT / "worker/worker.py").read_text(encoding="utf-8")
     assert "EMAIL_DELIVERY_ENABLED" in text
     assert "deliver_email_outbox_batch" in text
 

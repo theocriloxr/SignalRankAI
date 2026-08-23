@@ -45,7 +45,8 @@ def test_access_token_tampering_is_rejected(monkeypatch: pytest.MonkeyPatch) -> 
     assert claims["user_id"] == 42
     assert claims["sid"] == "session-1"
     head, body, signature = token.split(".")
-    tampered = f"{head}.{body}.{signature[:-1]}A"
+    replacement = "A" if signature[-1] != "A" else "B"
+    tampered = f"{head}.{body}.{signature[:-1]}{replacement}"
     with pytest.raises(AuthenticationError):
         decode_access_token(tampered)
 
