@@ -122,3 +122,64 @@ def test_review_artifacts_are_json_and_human_readable(tmp_path) -> None:
     json_path, markdown_path = write_review_artifacts(report, tmp_path)
     assert json.loads(json_path.read_text(encoding="utf-8"))["guardrail"].startswith("recommendations_only")
     assert "owner approval required" in markdown_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_legacy_ai_feedback_records_proposal_without_runtime_mutation(monkeypatch) -> None:
+    from worker import ai_feedback
+
+    writes: dict[str, str] = {}
+
+    monkeypatch.setenv("ML_PROB_THRESHOLD", "0.30")
+    with pytest.MonkeyPatch.context() as nested:
+        from core import redis_state
+
+        nested.setattr(
+            redis_state.state,
+            "set_sync",
+            lambda key, value, ex=None: writes.__setitem__(str(key), str(value)),
+        )
+        assert await ai_feedback.apply_recommendation({"new_threshold": 0.42, "reason": "test"}) is True
+
+    assert ai_feedback.os.environ["ML_PROB_THRESHOLD"] == "0.30"
+    assert "ENGINE_BASE_THRESHOLD" not in writes
+    proposal = json.loads(writes["signalrankai:continuous_improvement:last_parameter_proposal"])
+    assert proposal["auto_apply"] is False
+    assert proposal["requires_owner_approval"] is True
+
+
+@pytest.mark.asyncio
+async def test_scheduled_review_is_due_checked_and_never_mutates_production(monkeypatch, tmp_path) -> None:
+    from services.continuous_improvement import scheduler
+
+    writes: dict[str, str] = {}
+    monkeypatch.setattr(scheduler.state, "get_sync", lambda _key: "0")
+    monkeypatch.setattr(scheduler.state, "set_sync", lambda key, value, ex=None: writes.__setitem__(key, value))
+    monkeypatch.setenv("CONTINUOUS_IMPROVEMENT_ARTIFACT_DIR", str(tmp_path))
+
+    report = ReviewReport(
+        review_id="review-scheduled",
+        period_start="2026-08-16T00:00:00+00:00",
+        period_end="2026-08-23T00:00:00+00:00",
+        code_sha="a" * 40,
+        dataset_hash="b" * 64,
+        summary={},
+    )
+
+    async def _run(**_kwargs):
+        return report, (tmp_path / "review.json", tmp_path / "review.md")
+
+    monkeypatch.setattr(scheduler, "run_weekly_review", _run)
+    result = await scheduler.run_scheduled_review_once(now=2_000_000.0)
+    assert result["review_id"] == "review-scheduled"
+    assert result["production_mutation"] is False
+    assert scheduler._LAST_RUN_KEY in writes
+
+
+def test_worker_registers_review_only_in_analytics_ownership_lane() -> None:
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "worker" / "worker.py").read_text(encoding="utf-8")
+    block = source.split('"continuous_improvement_review"', 1)[0][-500:]
+    assert "_analytics_work_allowed_in_worker()" in block
+    assert 'CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED' in block

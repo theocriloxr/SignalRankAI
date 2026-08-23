@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
-  "variable_count": 1200,
+  "variable_count": 1206,
   "variables": [
     {
       "declared_defaults": {},
@@ -423,7 +423,7 @@
       "name": "ADAPTIVE_LEARNING_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:654"
+        "worker/worker.py:669"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -755,7 +755,7 @@
       "name": "AI_FEEDBACK_LAST_RUN",
       "production_example_default": null,
       "read_locations": [
-        "worker/ai_feedback.py:276"
+        "worker/ai_feedback.py:285"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2487,6 +2487,76 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "artifacts/continuous-improvement"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_ARTIFACT_DIR",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/scheduler.py:32"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_OPENAI_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/scheduler.py:33"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "3600"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_POLL_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/scheduler.py:51"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "604800"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_REVIEW_INTERVAL_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/scheduler.py:28"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "300"
+      },
+      "name": "CONTINUOUS_IMPROVEMENT_STARTUP_DELAY_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/scheduler.py:52"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "0",
         "configs/env/hermetic-test.env.example": "0",
         "configs/env/production.env.example": "0",
@@ -3460,7 +3530,7 @@
       "name": "DECISION_LOG_RETRY_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:546"
+        "worker/worker.py:561"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5934,7 +6004,7 @@
       "name": "INSTRUMENT_DISCOVERY_TOP",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:439"
+        "worker/worker.py:454"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6600,7 +6670,7 @@
       "name": "ML_BASELINE_FEATURE_STATS_PATH",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:755"
+        "worker/worker.py:770"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6684,7 +6754,7 @@
       "name": "ML_DRIFT_CHECK_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:735"
+        "worker/worker.py:750"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6732,7 +6802,7 @@
       "name": "ML_DRIFT_NOTIFICATION_DEDUPE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:875"
+        "worker/worker.py:890"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6742,7 +6812,7 @@
       "name": "ML_DRIFT_PSI_THRESHOLD",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:736"
+        "worker/worker.py:751"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6752,7 +6822,7 @@
       "name": "ML_DRIFT_RETRAIN_ON_DETECT",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:737"
+        "worker/worker.py:752"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6812,7 +6882,7 @@
       "name": "ML_LIVE_FEATURE_STATS_PATH",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:756"
+        "worker/worker.py:771"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12828,7 +12898,7 @@
         "web/platform_api.py:555",
         "web/platform_api.py:587",
         "worker/market_monitor.py:182",
-        "worker/worker.py:850"
+        "worker/worker.py:865"
       ],
       "required_by_code": true,
       "sensitive": true

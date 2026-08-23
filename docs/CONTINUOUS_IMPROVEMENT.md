@@ -27,9 +27,13 @@ python -m tools.continuous_improvement_review --days 7 --external-openai
 
 JSON and Markdown evidence is written under `artifacts/continuous-improvement/`. The output includes the code SHA, period, dataset hash, incidents, recommendations, and external-review status.
 
+The analytics runtime role schedules this same implementation weekly when `CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED=1`. The scheduler uses a durable last-run cursor, starts after the configured delay, and never runs in the front-door or engine ownership lanes. `/codex_audit` remains the owner/admin interactive evidence-review surface.
+
 ## Promotion safety
 
 Experiments cannot skip states. Every transition requires an evidence ID. Production eligibility additionally requires owner approval plus tests, walk-forward, shadow, paper, staging-soak, and rollback evidence. Eligibility is not activation: the independent release guard remains authoritative.
+
+The legacy `worker.ai_feedback.apply_recommendation` name is retained for compatibility, but it records a proposal only. It cannot update `ENGINE_BASE_THRESHOLD`, `ML_PROB_THRESHOLD`, or another live runtime setting.
 
 ## Privacy and cost
 

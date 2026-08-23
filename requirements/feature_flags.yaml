@@ -1,5 +1,5 @@
 {
-  "count": 135,
+  "count": 137,
   "flags": [
     {
       "dangerous": false,
@@ -212,6 +212,22 @@
     {
       "dangerous": false,
       "name": "CHAT_MT5_CREDENTIALS_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CONTINUOUS_IMPROVEMENT_OPENAI_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

@@ -223,30 +223,39 @@ Example: {{"new_threshold": 0.35, "reason": "Low win rate suggests we are taking
 
 
 async def apply_recommendation(recommendation: dict) -> bool:
-    """Apply the AI's recommended threshold via Redis."""
+    """Record a proposal without changing runtime or production configuration.
+
+    The historical function name is retained for import compatibility. AI
+    recommendations are advisory and must pass experiment and owner approval
+    gates before a normal, audited configuration deployment.
+    """
     try:
         new_threshold = float(recommendation.get("new_threshold", 0.30))
-        
-        # Clamp to safe bounds
         new_threshold = max(0.15, min(0.60, new_threshold))
-        
         reason = str(recommendation.get("reason", "unknown"))
-        
-        # Store in Redis
+        proposal = {
+            "kind": "parameter",
+            "parameter": "ML_PROB_THRESHOLD",
+            "proposed_value": new_threshold,
+            "reason": reason,
+            "status": "proposed",
+            "requires_owner_approval": True,
+            "auto_apply": False,
+            "created_at": now_utc_naive().isoformat(),
+        }
         try:
             from core.redis_state import state
-            if state.has_redis_sync():
-                redis = state.get_redis_sync()
-                if redis:
-                    redis.set("ENGINE_BASE_THRESHOLD", str(new_threshold))
-                    logger.info(f"[AI Ops] Gemini adjusted threshold to {new_threshold}. Reason: {reason}")
-                    return True
+            state.set_sync(
+                "signalrankai:continuous_improvement:last_parameter_proposal",
+                json.dumps(proposal),
+                ex=2592000,
+            )
         except Exception as e:
-            logger.warning(f"[ai_feedback] Redis update failed: {e}")
-        
-        # Fallback: update environment variable
-        os.environ["ML_PROB_THRESHOLD"] = str(new_threshold)
-        logger.info(f"[AI Ops] Adjusted ML_PROB_THRESHOLD env to {new_threshold}. Reason: {reason}")
+            logger.warning(f"[ai_feedback] proposal persistence unavailable: {e}")
+        logger.info(
+            "[ai_feedback] parameter proposal recorded value=%s auto_apply=0 owner_approval=required",
+            new_threshold,
+        )
         return True
         
     except Exception as e:
@@ -293,7 +302,7 @@ async def run_ai_feedback(force: bool = False) -> dict:
     recommendation = await get_gemini_recommendation(stats)
     logger.info(f"[ai_feedback] Recommendation: {recommendation}")
     
-    # Apply recommendation
+    # Record recommendation only. This never mutates the active threshold.
     success = await apply_recommendation(recommendation)
     
     # Update last run timestamp
@@ -308,6 +317,8 @@ async def run_ai_feedback(force: bool = False) -> dict:
     
     return {
         "success": success,
+        "status": "proposal_recorded" if success else "proposal_failed",
+        "auto_applied": False,
         "stats": {
             "win_rate": stats.win_rate,
             "total_trades": stats.total_trades,

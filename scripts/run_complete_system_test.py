@@ -78,6 +78,36 @@ HERMETIC_TEST_FILES = (
 )
 
 
+def _popen_group_kwargs() -> dict[str, object]:
+    """Return platform-correct flags for creating an isolated process group."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Best-effort, bounded termination of a step and all of its descendants."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        # Python has no Windows equivalent of killpg. taskkill /T targets the
+        # process tree created by pytest (including leaked service children).
+        completed = subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+        if completed.returncode != 0 and process.poll() is None:
+            process.kill()
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def _run_step(
     name: str,
     command: Sequence[str],
@@ -117,7 +147,7 @@ def _run_step(
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    start_new_session=True,
+                    **_popen_group_kwargs(),
                 )
                 deadline = time.monotonic() + max(30, timeout_seconds)
                 while process.poll() is None and time.monotonic() < deadline:
@@ -126,10 +156,7 @@ def _run_step(
                     exit_code = 124
                     log_handle.write(f"\nTIMEOUT after {timeout_seconds}s; terminating process group\n")
                     log_handle.flush()
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                    _terminate_process_tree(process)
                     try:
                         process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
@@ -141,9 +168,11 @@ def _run_step(
                 log_handle.write(f"\nORCHESTRATOR_ERROR type={type(exc).__name__}\n")
                 if process is not None and process.poll() is None:
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                        _terminate_process_tree(process)
+                    except Exception as cleanup_exc:
+                        log_handle.write(
+                            f"PROCESS_TREE_CLEANUP_ERROR type={type(cleanup_exc).__name__}\n"
+                        )
         if exit_code == 0:
             break
         if attempt < max_attempts:

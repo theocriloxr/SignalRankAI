@@ -55,6 +55,22 @@ def test_orchestrator_streams_step_output_to_log(tmp_path):
     assert "captured-output" in (tmp_path / "sample.log").read_text(encoding="utf-8")
 
 
+def test_orchestrator_timeout_is_portable_and_bounded(tmp_path):
+    import sys
+    from scripts.run_complete_system_test import _run_step
+
+    result = _run_step(
+        "timeout",
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        tmp_path,
+        {"COMPLETE_SYSTEM_STEP_TIMEOUT_SECONDS": "1"},
+    )
+    assert result.ok is False
+    assert result.exit_code == 124
+    assert result.duration_seconds < 45
+    assert "TIMEOUT" in (tmp_path / "timeout.log").read_text(encoding="utf-8")
+
+
 def test_full_orchestrator_batches_cover_each_test_file_once():
     from scripts.run_complete_system_test import ROOT, _partition_pytest_files
 

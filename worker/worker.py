@@ -334,6 +334,21 @@ class Worker:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start drift monitor loop: %s", e)
+        if (
+            _analytics_work_allowed_in_worker()
+            and _env_bool("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True)
+        ):
+            try:
+                from services.continuous_improvement.scheduler import continuous_improvement_loop
+
+                _register_task(
+                    "continuous_improvement_review",
+                    lambda: continuous_improvement_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] ContinuousImprovementReview started in analytics ownership lane")
+            except Exception as e:
+                logger.warning("[worker] Failed to start continuous-improvement review loop: %s", e)
         import time
         last_heartbeat = time.time()
         try:
