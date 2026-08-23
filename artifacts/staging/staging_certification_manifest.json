@@ -1,0 +1,15 @@
+{
+  "schema_version": "signalrankai.staging_certification.v1",
+  "generated_at": "2026-08-23T16:25:00Z",
+  "verdict": "STAGING_ONLY",
+  "branch": "fix/remaining-staging-blockers",
+  "tested_and_deployed_commit": "c27f155735b7aac25ebe61ff242fda69e66b06ce",
+  "structural_certification": "PASS",
+  "runtime_certification": "BLOCKED",
+  "services": {"frontdoor": "bountiful-miracle", "engine": "striking-optimism", "worker": "SignalRankAI"},
+  "infrastructure": {"postgres": "online", "pgbouncer_replicas": "3/3 online", "state_redis": "online", "delivery_redis": "online", "schema_head": "0038_account_security_product"},
+  "public_checks": {"healthz": 200, "readyz": 200, "metrics_prometheus": 200, "release_guard_route": 404},
+  "evidence": ["deployment_evidence/20260823-171231/deployment_summary.json", "deployment_evidence/20260823-171231/staging_structural_proof.json", "deployment_evidence/runtime-20260823-172916/runtime_proof.json"],
+  "blocking_gates": ["confirmed staging Telegram delivery", "eligible auto-paper opening", "Paystack test lifecycle", "backup/restore drill", "continuous 24-hour soak", "owner Telegram acceptance"],
+  "dangerous_capabilities": {"real_execution": false, "copy_trading": false, "smart_dca": false, "real_payouts": false, "public_payments": false, "public_performance_marketing": false}
+}

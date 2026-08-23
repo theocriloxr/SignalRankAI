@@ -1,5 +1,5 @@
 {
-  "file_count": 1385,
+  "file_count": 1389,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2274,6 +2274,14 @@
       "size_bytes": 1902
     },
     {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 66,
+      "path": "deployment_evidence/runtime-20260823-172916/runtime_proof.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "c37bc922e493184db2beb5a278bc6794fc68b5bb36ca945e6322d1b32f5bad57",
+      "size_bytes": 1855
+    },
+    {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 61,
       "path": "DEPLOYMENT_FINAL_R4_VALIDATION.md",
@@ -2483,11 +2491,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 38,
+      "line_count": 42,
       "path": "docs/CROSS_CHAT_DECISION_LEDGER.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "044d54eed58d231d71c127e761505e072c56cfb85e88b16a6823e8a97396ec42",
-      "size_bytes": 5100
+      "sha256": "4ab5445c7dc817538093264451c053c6fb74304f3866c89230f4c45255575abb",
+      "size_bytes": 5700
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -2856,6 +2864,22 @@
       "reason": "documentation/specification/evidence",
       "sha256": "1210743219af6c675a99d7a6110dd0e2987508e0332be285e48283df422e4b47",
       "size_bytes": 2404
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 18,
+      "path": "docs/operations/CONNECTED_ACCESS_INVENTORY.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "5b4db0944b39fc6b55e36f1e84e2c989ea7341e26b74cb0a8b88afeedab9eae9",
+      "size_bytes": 1216
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 25,
+      "path": "docs/operations/HUMAN_ACTIONS.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "533de67378121c9b8f8995a24c65c1c1263a6c60ffc2d7c4fdca111c1562eb90",
+      "size_bytes": 1811
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -3403,11 +3427,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 47,
+      "line_count": 52,
       "path": "docs/UNIVERSAL_REQUIREMENT_REGISTER.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "414903c0d066f33f7efde4d0685324acca8117ed5ec23caef6d95c894aaece36",
-      "size_bytes": 7057
+      "sha256": "b852612531abb7a8ca9efde6852940a9f282173733214f0ae260e1d587242005",
+      "size_bytes": 8028
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10443,6 +10467,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 56,
+      "path": "tests/test_v81_connected_staging_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "b37885a4332938fac05bbf717bcb075c0b888cf96c2d500ce6f3e614b8dbb882",
+      "size_bytes": 2209
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 19,
       "path": "tests/test_volume_delta.py",
       "reason": "automated test evidence",
@@ -11094,8 +11126,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 5,
-    "DOCUMENTATION_ONLY": 308,
-    "PRESERVE_BEHAVIOUR": 853,
-    "TEST_ONLY": 219
+    "DOCUMENTATION_ONLY": 310,
+    "PRESERVE_BEHAVIOUR": 854,
+    "TEST_ONLY": 220
   }
 }

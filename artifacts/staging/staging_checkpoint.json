@@ -1,0 +1,20 @@
+{
+  "schema_version": "signalrankai.staging_checkpoint.v1",
+  "generated_at": "2026-08-23T16:25:00Z",
+  "environment": "staging",
+  "branch": "fix/remaining-staging-blockers",
+  "deployed_commit": "c27f155735b7aac25ebe61ff242fda69e66b06ce",
+  "application_version": "1.5.1",
+  "release_fingerprint": "v1.5.1-unified-ecosystem-completion-full-suite-20260806",
+  "schema_head": "0038_account_security_product",
+  "status": "RUNTIME_CERTIFICATION_PENDING",
+  "completed": ["three-role parity", "staging identity repair", "fail-closed flags", "schema and seed", "structural proof", "public health probes", "delivery persistence repair"],
+  "catalogue_counts": {"tradable_instruments": 281, "provider_mappings": 310, "strategy_versions": 15, "active_products": 6, "active_prices": 6, "feature_entitlements": 146, "control_entitlements": 80},
+  "runtime_window_hours": 6,
+  "runtime_observed": {"recent_signals": 194, "confirmed_telegram_deliveries": 9, "recent_outcomes": 2, "recent_paper_positions": 0, "duplicate_delivery_groups": 0, "duplicate_paper_position_groups": 0},
+  "blockers": ["runtime:no_recent_paper_position", "security:staging_APP_AUTH_SECRET_absent", "certification:paystack_test_e2e_missing", "certification:24_hour_soak_missing"],
+  "resume": {"first_command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\railway_certify_staging_runtime.ps1 -Environment staging -WindowHours 6", "human_checkpoint": "docs/operations/HUMAN_ACTIONS.md"},
+  "production_mutation": false,
+  "real_execution": false,
+  "public_payments": false
+}

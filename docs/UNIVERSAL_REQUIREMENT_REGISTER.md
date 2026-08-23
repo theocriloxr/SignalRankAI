@@ -38,6 +38,11 @@ This register reconciles the repository, the supplied v5 completion prompt, hist
 | SR-CI-003 | Recommendations and Codex tasks cannot autonomously modify or deploy production | recommendation, experiment, promotion and handoff contracts | VERIFIED_LOCAL | Human approval workflow exercise |
 | SR-REL-001 | Clean-room deploy, Railway staging, owner proof and 24–72 hour soak precede public release | deployment/runbooks | LIVE_PROOF_REQUIRED | Owner permissions and credentials |
 
+| SR-V81-001 | Connected staging operations are autonomous when access is verified; production writes require literal `PROMOTE_TO_PRODUCTION` | `docs/operations/CONNECTED_ACCESS_INVENTORY.md`, staging/release manifests | IMPLEMENTED | Production remains prohibited |
+| SR-V81-002 | Resumable access, human-action, checkpoint, certification and promotion artifacts exist without secrets | `docs/operations/`, `artifacts/staging/`, `artifacts/release/` | VERIFIED_LOCAL | Refresh after each staging evidence change |
+| SR-V81-003 | Optional outbound webhook failure cannot abort confirmed Telegram delivery truth | `services/platform/webhooks.py`, `db/pg_features.py`, regression tests | VERIFIED_LOCAL | Fresh post-fix staging delivery receipt |
+| SR-V81-004 | Staging identity, commit parity, schema, registries, roles, Redis and health are connected-evidence requirements | Railway staging evidence 2026-08-23 | IMPLEMENTED | Telegram/paper/payment/soak gates remain |
+
 ## Unresolved business decisions
 
 - Exact current weekly/monthly subscription prices.

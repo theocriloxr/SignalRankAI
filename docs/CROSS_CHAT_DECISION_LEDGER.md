@@ -33,6 +33,10 @@ This file is the self-contained historical decision source for an implementation
 | SCD-025 | V8 is authoritative over preserved V7/adaptive appendices; newer verified repository/runtime evidence remains stronger than historical completion claims. | Equal treatment of historical prompt layers |
 | SCD-026 | Continuous improvement may aggregate, review, recommend, experiment and create Codex tasks, but cannot autonomously apply code, deploy, change risk, or activate financial features. | Unsafe production self-modification |
 
+| SCD-027 | V8.1 authorizes connected, reversible staging operations but never production mutation; production requires literal `PROMOTE_TO_PRODUCTION`. | V8 local-only execution boundary and vague continuation phrases |
+| SCD-028 | Optional professional webhook delivery is subordinate to canonical Telegram proof and must be transactionally isolated. | Staging `AmbiguousParameterError` that aborted confirmed delivery persistence |
+| SCD-029 | Healthy deployment plus generated signals is insufficient when confirmed delivery and paper evidence are zero. | Source/deploy-only completion claims |
+
 ## Historical incidents that remain regression contracts
 
 Database pool exhaustion; broadcasts failing; generated signals not received; callbacks not responding; provider outages; yfinance timestamp issues; CoinGecko instability; WebSocket restart loops; stored-only exposure contamination; Redis-empty mass expiry; synthetic ML contamination; TradingView route interception; waitlist import failures; Bybit category errors; derivative-as-spot errors; unsafe MT5 fallback sizing; Smart DCA state/account/Redis defects; fan-out N+1 queries; queue expiry; local `telegram` package shadowing; inconsistent UTC timestamps; and weakened token-rotation tests.
