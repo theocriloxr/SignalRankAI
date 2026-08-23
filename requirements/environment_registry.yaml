@@ -1506,8 +1506,8 @@
       "name": "ASSET_REPEAT_LOCK_HOURS",
       "production_example_default": "4",
       "read_locations": [
-        "db/pg_features.py:3597",
-        "db/pg_features.py:3684"
+        "db/pg_features.py:3600",
+        "db/pg_features.py:3687"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3983,7 +3983,7 @@
       "name": "DELIVERY_REQUIRE_QUALITY_GATE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3537"
+        "db/pg_features.py:3540"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4921,7 +4921,7 @@
         "services/platform/identity.py:102",
         "services/platform/identity.py:522",
         "services/platform/identity.py:937",
-        "services/platform/webhooks.py:87"
+        "services/platform/webhooks.py:88"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10421,7 +10421,7 @@
         "services/platform/identity.py:102",
         "services/platform/identity.py:522",
         "services/platform/identity.py:937",
-        "services/platform/webhooks.py:87",
+        "services/platform/webhooks.py:88",
         "signalrank_telegram/bot.py:1715",
         "signalrank_telegram/bot.py:2521",
         "signalrank_telegram/bot.py:2547"
@@ -10723,8 +10723,8 @@
       "name": "REFERRALS_PER_REWARD",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2968",
-        "db/pg_features.py:3136"
+        "db/pg_features.py:2971",
+        "db/pg_features.py:3139"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10734,8 +10734,8 @@
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2969",
-        "db/pg_features.py:3137"
+        "db/pg_features.py:2972",
+        "db/pg_features.py:3140"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10745,7 +10745,7 @@
       "name": "REFERRAL_MONTHLY_CAP_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3171"
+        "db/pg_features.py:3174"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12189,7 +12189,7 @@
       "name": "SIGNAL_THESIS_DEDUP_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2557",
+        "db/pg_features.py:2560",
         "db/pg_features.py:866",
         "services/performance_ledger.py:401"
       ],
@@ -13347,7 +13347,7 @@
       "name": "TIME_STOP",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2841"
+        "db/pg_features.py:2844"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14014,7 +14014,7 @@
       "name": "WEBHOOK_ALLOWED_HOSTS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/webhooks.py:99"
+        "services/platform/webhooks.py:100"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14177,7 +14177,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/webhook_generator.py:34",
-        "services/platform/webhooks.py:231"
+        "services/platform/webhooks.py:232"
       ],
       "required_by_code": true,
       "sensitive": false

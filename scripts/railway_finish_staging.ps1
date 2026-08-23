@@ -175,7 +175,9 @@ function Get-DatabaseIdentityLocal {
         }
         $identityOutput
     }
-    $matches = [regex]::Matches($raw, '(?m)^\{.*"fingerprint".*\}$')
+    # Railway/PTY hosts may hard-wrap a one-line JSON object. Match the flat
+    # identity object across line breaks instead of depending on terminal rows.
+    $matches = [regex]::Matches($raw, '(?s)\{[^{}]*"fingerprint"[^{}]*\}')
     if ($matches.Count -eq 0) {
         throw "Could not parse migrated database identity.`n$raw"
     }

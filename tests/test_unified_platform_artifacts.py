@@ -94,8 +94,12 @@ def test_professional_api_and_webhook_worker_are_wired() -> None:
     api = (ROOT / "web/platform_api.py").read_text()
     worker = (ROOT / "worker/worker.py").read_text(encoding="utf-8")
     delivery = (ROOT / "db/pg_features.py").read_text()
+    webhooks = (ROOT / "services/platform/webhooks.py").read_text()
     assert '/professional/signals' in api
     assert '/api-keys' in api
     assert '/webhooks' in api
     assert 'WEBHOOK_DELIVERY_ENABLED' in worker
     assert 'queue_user_webhook_event' in delivery
+    assert 'CAST(:event_id AS VARCHAR(64))' in webhooks
+    assert 'CAST(:event_id AS TEXT)' in webhooks
+    assert 'async with session.begin_nested()' in delivery

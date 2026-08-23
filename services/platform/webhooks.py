@@ -52,8 +52,9 @@ async def queue_user_webhook_event(
         text(
             "INSERT INTO webhook_deliveries("
             "webhook_delivery_id,webhook_endpoint_id,event_id,event_type,payload,idempotency_key"
-            ") SELECT gen_random_uuid()::text,we.webhook_endpoint_id,:event_id,:event_type,CAST(:payload AS JSONB),"
-            "(:event_id || ':' || we.webhook_endpoint_id) "
+            ") SELECT gen_random_uuid()::text,we.webhook_endpoint_id,CAST(:event_id AS VARCHAR(64)),"
+            "CAST(:event_type AS VARCHAR(96)),CAST(:payload AS JSONB),"
+            "(CAST(:event_id AS TEXT) || ':' || CAST(we.webhook_endpoint_id AS TEXT)) "
             "FROM webhook_endpoints we WHERE we.user_id=:uid AND we.active=TRUE "
             "AND (we.subscribed_events @> CAST(:event_match AS JSONB) OR we.subscribed_events @> '[\"*\"]'::jsonb) "
             "ON CONFLICT(webhook_endpoint_id,idempotency_key) DO NOTHING"

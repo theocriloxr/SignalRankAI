@@ -85,11 +85,11 @@ $envValues = @{
     "ENVIRONMENT" = $Environment
 }
 $proofPath = Join-Path $evidence "runtime_proof.json"
-$args = @("scripts/staging_runtime_proof.py","--window-hours",[string]$WindowHours,"--require-runtime","--output",$proofPath)
-if ($RequirePayment) { $args += "--require-payment" }
-if ($RequireEmail) { $args += "--require-email" }
+$proofArguments = @("scripts/staging_runtime_proof.py","--window-hours",[string]$WindowHours,"--require-runtime","--output",$proofPath)
+if ($RequirePayment) { $proofArguments += "--require-payment" }
+if ($RequireEmail) { $proofArguments += "--require-email" }
 Invoke-WithEnv -Values $envValues -Action {
-    & python @args
+    & python @proofArguments
     if ($LASTEXITCODE -ne 0) { throw "Runtime proof is not complete. See $proofPath" }
 }
 

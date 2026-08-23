@@ -92,6 +92,12 @@ def test_railway_completion_uses_public_db_for_local_migration_only():
     assert 'railway\\.internal' in source
 
 
+def test_railway_completion_identity_parser_tolerates_pty_wrapping():
+    source = (ROOT / "scripts" / "railway_finish_staging.ps1").read_text(encoding="utf-8")
+    assert '(?s)\\{[^{}]*"fingerprint"[^{}]*\\}' in source
+    assert '(?m)^\\{.*"fingerprint".*\\}$' not in source
+
+
 def test_staging_migration_separates_sqlalchemy_url_from_psycopg2_dsn():
     source = (ROOT / "scripts" / "staging_migrate_and_bootstrap.py").read_text(encoding="utf-8")
     assert 'normalize_sync_postgres_url' in source
@@ -138,6 +144,8 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "--require-email" in source
     assert "patch=deployment-final-r4" in source
     assert "metrics" in source and "--since" in source
+    assert "$proofArguments" in source
+    assert "& python @args" not in source
 
 
 def test_r4_soak_certification_contract():
