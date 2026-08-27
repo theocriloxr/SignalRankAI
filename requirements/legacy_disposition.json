@@ -1,5 +1,5 @@
 {
-  "file_count": 1389,
+  "file_count": 1406,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2194,28 +2194,12 @@
       "size_bytes": 209
     },
     {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 44,
-      "path": "deployment_evidence/20260823-170520/staging_migration_evidence.json",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "28ebe90980849ec62eaa579ae7f19adbb39aacd5d12c29417fa484d92b0c91f0",
-      "size_bytes": 7019
-    },
-    {
       "disposition": "DELETE_GENERATED_ONLY",
       "line_count": null,
       "path": "deployment_evidence/20260823-171231/bountiful-miracle.log",
       "reason": "generated/local artefact excluded from clean release package",
       "sha256": "70bf561e8760d444e14a97ec1bbd454fb06593e1f355ea237822138cbf87ef32",
       "size_bytes": 13336
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 11,
-      "path": "deployment_evidence/20260823-171231/database_identity.json",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "1590fe5d26831f30f1596ff79c572c79209f372b73ac30c0acc75bae4a9c52b4",
-      "size_bytes": 400
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2243,14 +2227,6 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 44,
-      "path": "deployment_evidence/20260823-171231/staging_migration_evidence.json",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "b3df56bfc9d6712440899fdbac1e9c05650f49c034a0d0a8dad0d8b16e6a0efb",
-      "size_bytes": 7011
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 64,
       "path": "deployment_evidence/20260823-171231/staging_structural_proof.json",
       "reason": "configuration, data, or product asset retained",
@@ -2267,19 +2243,179 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 67,
-      "path": "deployment_evidence/runtime-20260823-172002/runtime_proof.json",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "658ffa73babc048f3e99fada597dac46fe9934ac7785c6d68928729312a97084",
-      "size_bytes": 1902
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 66,
       "path": "deployment_evidence/runtime-20260823-172916/runtime_proof.json",
       "reason": "configuration, data, or product asset retained",
       "sha256": "c37bc922e493184db2beb5a278bc6794fc68b5bb36ca945e6322d1b32f5bad57",
       "size_bytes": 1855
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 64,
+      "path": "deployment_evidence/runtime-20260824-082006/runtime_proof.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "ea66aa2c109e44ebed815f200b03d7f7533bc3249a512b3e3e90bba933a5cda9",
+      "size_bytes": 1811
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-082006/SignalRankAI.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "5933ab286733dd2ecd58a89ba67fcc778fa43b602eff783086d70ecde21a12a1",
+      "size_bytes": 331191
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-082339/bountiful-miracle.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "f2737ec5fe879666426092bc2d3ecbfeabb4ac010548f210250e56ebda85ed8c",
+      "size_bytes": 333847
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 64,
+      "path": "deployment_evidence/runtime-20260824-082339/runtime_proof.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "ad173454d09c5635740232357d1019f9851a88703f4367c3bbc64361de4aacc5",
+      "size_bytes": 1811
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-082339/SignalRankAI.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "5f99d7636ca801a8bd29312dcccfc93fa4013c992c72adf29fd9121b37704a27",
+      "size_bytes": 327004
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-082339/striking-optimism.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "1467a1eddad09b96a7d3ba2e32b13803cfc5a62056209ad2b44724a3f03b30de",
+      "size_bytes": 343045
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-083139/bountiful-miracle.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "4d503a11625c4aca1c9320d9d1cc3c51ce7fb2e4ab29c218c5e12cd496a916cd",
+      "size_bytes": 333781
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 180,
+      "path": "deployment_evidence/runtime-20260824-083139/metrics_1h.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "a73cbc0557bc5f4d99f6cdb27af34083f55fa4fea782c82257c9e9afb4ad05eb",
+      "size_bytes": 4312
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 9,
+      "path": "deployment_evidence/runtime-20260824-083139/runtime_certification_summary.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "1e94723310dc86e99a7e60a54c1c75c09835cb898e84c9203fb0d2f11ff06fb9",
+      "size_bytes": 353
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 64,
+      "path": "deployment_evidence/runtime-20260824-083139/runtime_proof.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "772d74b62cec478e772812e535ca1b0f283948a9e382bb53cd67d2c54acc67b0",
+      "size_bytes": 1811
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 272,
+      "path": "deployment_evidence/runtime-20260824-083139/service_status.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "728209d2639eb1a92edf296e7a7c2ebb8b8771ca58236a3a1d3aa9a6c4c2af6a",
+      "size_bytes": 6681
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-083139/SignalRankAI.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "d1f00afc12eb5add9b0354a8bbd902ca48431abcbf8fc908583cec195d3e1058",
+      "size_bytes": 331983
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/runtime-20260824-083139/striking-optimism.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "00efae9f6840fe37b3b38265096eea4c8466616f6fbd0e8d01a5e78d41a410b0",
+      "size_bytes": 342523
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/soak-20260824-073500/bountiful-miracle-soak.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "c3ebde4fb5fdc437a6db972159e7e69a39bc569a7fc0706611b1b8574565f2e4",
+      "size_bytes": 333939
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 168,
+      "path": "deployment_evidence/soak-20260824-073500/railway_metrics.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "c2b99dd05f1d49b3eabab874c397af7b36cd454a47171834c3c8731626f251a0",
+      "size_bytes": 4054
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 272,
+      "path": "deployment_evidence/soak-20260824-073500/railway_service_status.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "728209d2639eb1a92edf296e7a7c2ebb8b8771ca58236a3a1d3aa9a6c4c2af6a",
+      "size_bytes": 6681
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/soak-20260824-073500/SignalRankAI-soak.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "b2d02b53bbdf715936a91dc6661f7e781fefdfbc8d3a2078422e92c74d40ae75",
+      "size_bytes": 330785
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 30,
+      "path": "deployment_evidence/soak-20260824-073500/staging_soak_summary.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "6cd722e90d0c4f5b8787781ee9ec0653d25de4395f6270e6c93793ed3aa2c8f6",
+      "size_bytes": 2306
+    },
+    {
+      "disposition": "DELETE_GENERATED_ONLY",
+      "line_count": null,
+      "path": "deployment_evidence/soak-20260824-073500/striking-optimism-soak.log",
+      "reason": "generated/local artefact excluded from clean release package",
+      "sha256": "cb35ec686454c81139fb246f7ce45f49175165271a18b8657aabeffd37131d0a",
+      "size_bytes": 343191
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 272,
+      "path": "deployment_evidence/soak-20260824-073846/railway_service_status.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "728209d2639eb1a92edf296e7a7c2ebb8b8771ca58236a3a1d3aa9a6c4c2af6a",
+      "size_bytes": 6681
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 272,
+      "path": "deployment_evidence/soak-20260824-073934/railway_service_status.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "728209d2639eb1a92edf296e7a7c2ebb8b8771ca58236a3a1d3aa9a6c4c2af6a",
+      "size_bytes": 6681
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6179,19 +6315,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 131,
+      "line_count": 139,
       "path": "scripts/railway_certify_staging_runtime.ps1",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5921c2908c8c187111f819a37c34a7a8152b84d0b05903f0eae128825a7baa63",
-      "size_bytes": 6177
+      "sha256": "cd732aaebe630a355a5cb8b596abd1ca6c32bbd6673ea6b07fae7defa3eb6f96",
+      "size_bytes": 6623
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 120,
+      "line_count": 147,
       "path": "scripts/railway_certify_staging_soak.ps1",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0df3b7e5e97c373ccad668c590549b66828f65d6070fc67fdc6b7d427735b3af",
-      "size_bytes": 4480
+      "sha256": "ad2007c9b758e3502a285ba937cc29b522ffe426c66988e24ff4e864bb0c08a8",
+      "size_bytes": 5865
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9051,11 +9187,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 158,
+      "line_count": 171,
       "path": "tests/test_deployment_schema_completion_v151.py",
       "reason": "automated test evidence",
-      "sha256": "6145470f1db6312bcb4623f6f7b71e2cd33adabad1d177c5a1813fe052cacb0c",
-      "size_bytes": 6482
+      "sha256": "0a6ed1fdcaacf7e0fb00b5a23e3a0ef20037cb89d54f793d1f6214bec37e9635",
+      "size_bytes": 7178
     },
     {
       "disposition": "TEST_ONLY",
@@ -11125,9 +11261,9 @@
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
   "summary": {
-    "DELETE_GENERATED_ONLY": 5,
+    "DELETE_GENERATED_ONLY": 15,
     "DOCUMENTATION_ONLY": 310,
-    "PRESERVE_BEHAVIOUR": 854,
+    "PRESERVE_BEHAVIOUR": 861,
     "TEST_ONLY": 220
   }
 }

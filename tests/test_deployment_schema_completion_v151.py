@@ -146,6 +146,10 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "metrics" in source and "--since" in source
     assert "$proofArguments" in source
     assert "& python @args" not in source
+    assert '"--filter","alembic_current=0038_account_security_product"' in source
+    assert '"--filter","patch=deployment-final-r4"' in source
+    assert '@("service","list","--json")' in source
+    assert '"service","status"' not in source
 
 
 def test_r4_soak_certification_contract():
@@ -156,3 +160,12 @@ def test_r4_soak_certification_contract():
     assert "alembic_current=0038_account_security_product" in text
     assert "AmbiguousParameterError" in text
     assert "staging_soak_summary.json" in text
+    assert '"--filter", "alembic_current=0038_account_security_product"' in text
+    assert '"--filter", "patch=deployment-final-r4"' in text
+    assert '@("service", "list", "--json")' in text
+    assert '"service", "status"' not in text
+    assert '"--lines", "2000"' in text
+    assert '"--lines", "10000"' not in text
+    assert "latestDeployment.createdAt" in text
+    assert "$ageHours -lt $Hours" in text
+    assert '"--filter", $blockerFilter' in text

@@ -1,0 +1,64 @@
+{
+  "alembic_current": "0038_account_security_product",
+  "blockers": [],
+  "catalogue_counts": {
+    "active_instruments": 281,
+    "active_prices": 6,
+    "active_products": 6,
+    "auth_identities": 6,
+    "canonical_users": 6,
+    "control_entitlements": 80,
+    "feature_definitions": 35,
+    "feature_entitlements": 146,
+    "provider_mappings": 310,
+    "strategy_versions": 15,
+    "tradable_instruments": 281
+  },
+  "catalogue_minimums": {
+    "active_prices": 6,
+    "active_products": 6,
+    "control_entitlements": 80,
+    "feature_definitions": 35,
+    "feature_entitlements": 146,
+    "provider_mappings": 1,
+    "strategy_versions": 15,
+    "tradable_instruments": 1
+  },
+  "database": {
+    "name": "railway",
+    "server_address": "10.184.179.227/32",
+    "server_port": 5432,
+    "user": "postgres"
+  },
+  "evidence_type": "staging_database_runtime_proof",
+  "expected_head": "0038_account_security_product",
+  "generated_at": "2026-08-24T07:23:39.385608+00:00",
+  "required_tables": {
+    "auth_identities": true,
+    "email_outbox": true,
+    "instruments": true,
+    "payment_receipts": true,
+    "provider_instruments": true,
+    "subscription_entitlements": true,
+    "subscription_prices": true,
+    "subscription_products": true,
+    "user_sessions": true,
+    "webhook_deliveries": true
+  },
+  "runtime": {
+    "confirmed_telegram_deliveries": 14,
+    "duplicate_delivery_groups": 0,
+    "duplicate_paper_position_groups": 0,
+    "recent_outcomes": 7,
+    "recent_paper_positions": 3,
+    "recent_payment_receipts": 0,
+    "recent_sent_emails": 0,
+    "recent_signals": 1107
+  },
+  "status": "PASS",
+  "tradable_instruments_by_asset_class": {
+    "crypto": 281
+  },
+  "users_public_user_id": true,
+  "window_hours": 24
+}

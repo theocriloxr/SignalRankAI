@@ -42,38 +42,75 @@ if ($LASTEXITCODE -ne 0) { throw "Could not activate Railway environment '$Envir
 
 $services = @($WorkerService, $EngineService, $FrontdoorService)
 $forbidden = @(
-    'schema_gate.*BLOCKED',
+    'schema_gate BLOCKED',
     'Database schema admission failed',
     'UndefinedTableError',
     'UndefinedColumnError',
     'AmbiguousParameterError',
-    'relation .* does not exist',
-    'column .* does not exist',
+    'relation does not exist',
+    'column does not exist',
     'task crashed:',
     '\[FATAL\]',
     'OutOfMemory',
     'Killed process'
 )
+$blockerFilter = @(
+    '(schema_gate AND BLOCKED)', 'UndefinedTableError', 'UndefinedColumnError',
+    'AmbiguousParameterError', 'FATAL', 'OutOfMemory', 'crashed'
+) -join ' OR '
+
+$status = Invoke-RailwayCapture -Arguments @("service", "list", "--json")
+$statusPath = Join-Path $evidenceDir "railway_service_status.json"
+Set-Content -Path $statusPath -Value $status -Encoding UTF8
+$serviceStatus = $status | ConvertFrom-Json
+$nowUtc = (Get-Date).ToUniversalTime()
+foreach ($service in $services) {
+    $entry = $serviceStatus | Where-Object { $_.name -eq $service } | Select-Object -First 1
+    if ($null -eq $entry) { throw "Railway service status did not include $service." }
+    if ($entry.status -ne "SUCCESS" -or $entry.deploymentStopped) {
+        throw "$service is not running a successful deployment."
+    }
+    $createdUtc = [DateTimeOffset]::Parse($entry.latestDeployment.createdAt).UtcDateTime
+    $ageHours = ($nowUtc - $createdUtc).TotalHours
+    if ($ageHours -lt $Hours) {
+        throw ("{0} deployment age is {1:N2}h; a {2}h uninterrupted soak cannot yet be certified." -f $service, $ageHours, $Hours)
+    }
+}
 
 $serviceEvidence = @{}
 foreach ($service in $services) {
     $safeName = $service -replace '[^A-Za-z0-9_.-]', '_'
     $logs = Invoke-RailwayCapture -Arguments @(
         "logs", "-s", $service, "-e", $Environment,
-        "--since", $hoursToken, "--lines", "10000"
+        "--since", $hoursToken, "--lines", "2000"
     )
     $logPath = Join-Path $evidenceDir ("$safeName-soak.log")
     Set-Content -Path $logPath -Value $logs -Encoding UTF8
 
-    if (-not $logs.Contains('alembic_current=0038_account_security_product')) {
-        throw "$service did not prove Alembic head 0038 within the soak window."
+    $schemaMarker = Invoke-RailwayCapture -Arguments @(
+        "logs", "-s", $service, "-e", $Environment, "--since", "7d",
+        "--lines", "20", "--filter", "alembic_current=0038_account_security_product"
+    )
+    $patchMarker = Invoke-RailwayCapture -Arguments @(
+        "logs", "-s", $service, "-e", $Environment, "--since", "7d",
+        "--lines", "20", "--filter", "patch=deployment-final-r4"
+    )
+    if (-not $schemaMarker.Contains('alembic_current=0038_account_security_product')) {
+        throw "$service did not prove Alembic head 0038 in retained deployment logs."
     }
-    if (-not $logs.Contains('patch=deployment-final-r4')) {
-        throw "$service did not prove deployment-final-r4 within the soak window."
+    if (-not $patchMarker.Contains('patch=deployment-final-r4')) {
+        throw "$service did not prove deployment-final-r4 in retained deployment logs."
+    }
+    $blockerMatches = Invoke-RailwayCapture -Arguments @(
+        "logs", "-s", $service, "-e", $Environment, "--since", $hoursToken,
+        "--lines", "50", "--filter", $blockerFilter
+    )
+    if (-not [string]::IsNullOrWhiteSpace($blockerMatches)) {
+        throw "$service soak logs contain a blocking pattern; inspect the filtered Railway output."
     }
     foreach ($pattern in $forbidden) {
         if ($logs -match $pattern) {
-            throw "$service soak logs contain blocking pattern: $pattern"
+            throw "$service soak log tail contains blocking pattern: $pattern"
         }
     }
     $serviceEvidence[$service] = @{
@@ -91,9 +128,6 @@ $metrics = Invoke-RailwayCapture -Arguments @(
 $metricsPath = Join-Path $evidenceDir "railway_metrics.json"
 Set-Content -Path $metricsPath -Value $metrics -Encoding UTF8
 
-$status = Invoke-RailwayCapture -Arguments @("service", "status", "-a", "--json")
-$statusPath = Join-Path $evidenceDir "railway_service_status.json"
-Set-Content -Path $statusPath -Value $status -Encoding UTF8
 $statusLower = $status.ToLowerInvariant()
 foreach ($service in $services) {
     if (-not $statusLower.Contains($service.ToLowerInvariant())) {

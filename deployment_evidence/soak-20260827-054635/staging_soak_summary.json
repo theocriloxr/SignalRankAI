@@ -1,0 +1,30 @@
+﻿{
+    "evidence_type":  "staging_soak_certification",
+    "generated_at_utc":  "2026-08-27T05:47:07.5428252Z",
+    "environment":  "staging",
+    "requested_window_hours":  24,
+    "status":  "PASS",
+    "services":  {
+                     "bountiful-miracle":  {
+                                               "alembic_head_proven":  true,
+                                               "log_path":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\soak-20260827-054635\\bountiful-miracle-soak.log",
+                                               "patch_proven":  true,
+                                               "blocker_scan":  "PASS"
+                                           },
+                     "striking-optimism":  {
+                                               "alembic_head_proven":  true,
+                                               "log_path":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\soak-20260827-054635\\striking-optimism-soak.log",
+                                               "patch_proven":  true,
+                                               "blocker_scan":  "PASS"
+                                           },
+                     "SignalRankAI":  {
+                                          "alembic_head_proven":  true,
+                                          "log_path":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\soak-20260827-054635\\SignalRankAI-soak.log",
+                                          "patch_proven":  true,
+                                          "blocker_scan":  "PASS"
+                                      }
+                 },
+    "metrics_path":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\soak-20260827-054635\\railway_metrics.json",
+    "service_status_path":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\soak-20260827-054635\\railway_service_status.json",
+    "note":  "PASS certifies blocker-free Railway logs/status over the requested lookback. It does not independently prove trading profitability, provider SLAs, payments, email, legal approval, or backup/restore success."
+}

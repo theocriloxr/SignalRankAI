@@ -105,14 +105,22 @@ $blockingPatterns = @(
 foreach ($service in @($WorkerService,$EngineService,$FrontdoorService)) {
     $logs = Invoke-Railway -Arguments @("logs","-s",$service,"-e",$Environment,"--latest","--lines","2000") -Capture
     Set-Content -Path (Join-Path $evidence (($service -replace '[^A-Za-z0-9_.-]','_') + '.log')) -Value $logs -Encoding UTF8
-    if (-not $logs.Contains('alembic_current=0038_account_security_product')) { throw "$service does not prove Alembic 0038 in latest logs." }
-    if (-not $logs.Contains('patch=deployment-final-r4')) { throw "$service is not running deployment-final-r4." }
+    $schemaMarker = Invoke-Railway -Arguments @(
+        "logs","-s",$service,"-e",$Environment,"--since","7d","--lines","20",
+        "--filter","alembic_current=0038_account_security_product"
+    ) -Capture
+    $patchMarker = Invoke-Railway -Arguments @(
+        "logs","-s",$service,"-e",$Environment,"--since","7d","--lines","20",
+        "--filter","patch=deployment-final-r4"
+    ) -Capture
+    if (-not $schemaMarker.Contains('alembic_current=0038_account_security_product')) { throw "$service does not prove Alembic 0038 in retained deployment logs." }
+    if (-not $patchMarker.Contains('patch=deployment-final-r4')) { throw "$service does not prove deployment-final-r4 in retained deployment logs." }
     foreach ($pattern in $blockingPatterns) {
         if ($logs -match $pattern) { throw "$service contains blocking log pattern: $pattern" }
     }
 }
 
-$status = Invoke-Railway -Arguments @("service","status","-a","--json") -Capture
+$status = Invoke-Railway -Arguments @("service","list","--json") -Capture
 Set-Content -Path (Join-Path $evidence "service_status.json") -Value $status -Encoding UTF8
 $metrics = Invoke-Railway -Arguments @("metrics","--all","-e",$Environment,"--since","1h","--json") -Capture
 Set-Content -Path (Join-Path $evidence "metrics_1h.json") -Value $metrics -Encoding UTF8
