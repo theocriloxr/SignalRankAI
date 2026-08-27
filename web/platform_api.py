@@ -313,7 +313,14 @@ def _client_ip(request: Request) -> str | None:
 
 
 def _app_base_url(request: Request) -> str:
-    configured = str(os.getenv("APP_BASE_URL") or os.getenv("STAGING_APP_BASE_URL") or "").strip().rstrip("/")
+    configured = str(
+        os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("APP_BASE_URL")
+        or os.getenv("STAGING_APP_BASE_URL")
+        or ""
+    ).strip().rstrip("/")
+    if configured and not configured.startswith(("http://", "https://")):
+        configured = f"https://{configured}"
     return configured or str(request.base_url).rstrip("/")
 
 

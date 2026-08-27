@@ -196,3 +196,36 @@ def test_runtime_diagnostics_probe_the_launching_container() -> None:
     source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     assert "DEPLOYMENT_DIAGNOSTICS_BASE_URL" in source
     assert 'base_url = f"http://127.0.0.1:{port}"' in source
+
+
+def test_railway_app_links_prefer_the_current_service_domain() -> None:
+    command_source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
+    platform_source = (ROOT / "web" / "platform_api.py").read_text(encoding="utf-8")
+    for source in (command_source, platform_source):
+        railway = source.index('os.getenv("RAILWAY_PUBLIC_DOMAIN")')
+        configured = source.index('os.getenv("APP_BASE_URL")', railway)
+        assert railway < configured
+        assert 'f"https://{base_url}"' in source or 'f"https://{configured}"' in source
+
+
+def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
+    source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    guard = source.index("[dedup] exact active bucket reused")
+    insert = source.index("s = Signal(", guard)
+    assert guard < insert
+    for predicate in (
+        "Signal.asset == asset",
+        "Signal.direction == direction",
+        "Signal.timeframe == timeframe",
+        "Signal.expired.is_(False)",
+        "Signal.archived.is_(False)",
+    ):
+        assert predicate in source[guard - 900 : insert]
+
+
+def test_tradingview_metals_use_oanda_and_optional_failures_are_not_errors() -> None:
+    source = (ROOT / "strategies" / "tradingview.py").read_text(encoding="utf-8")
+    assert 'asset_upper in {"XAUUSD", "XAGUSD"}' in source
+    assert "exchange = 'OANDA'" in source
+    assert 'logger.error(f"[tradingview] rate_limit_exhausted' not in source
+    assert 'logger.error(f"[tradingview] error fetching analysis' not in source

@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,22 @@ SKIP_FILES = {
     "docs/REPOSITORY_PROOF_MANIFEST.md",
 }
 ENV_RE = re.compile(r"(?:os\.getenv|os\.environ\.get)\(\s*['\"]([A-Z][A-Z0-9_]*)['\"]")
+
+
+def _repository_files(root: Path) -> list[Path]:
+    """Return version-controlled files, excluding local/generated state."""
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-files", "-z"], cwd=root, stderr=subprocess.DEVNULL
+        )
+        paths = [root / item for item in output.decode("utf-8", errors="surrogateescape").split("\0") if item]
+        return sorted(path for path in paths if path.is_file())
+    except Exception:
+        return sorted(
+            path
+            for path in root.rglob("*")
+            if path.is_file() and not any(part in SKIP_PARTS for part in path.relative_to(root).parts)
+        )
 
 
 @dataclass(slots=True)
@@ -69,13 +86,9 @@ def generate(root: Path = ROOT) -> dict[str, Any]:
         tests[test_path.relative_to(root).as_posix()] = test_path.read_text(encoding="utf-8-sig", errors="replace")
 
     records: list[FileProof] = []
-    for path in sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file()
-        and str(p.relative_to(root)).replace("\\", "/") not in SKIP_FILES
-        and not any(part in SKIP_PARTS for part in p.relative_to(root).parts)
-    ):
+    for path in _repository_files(root):
+        if str(path.relative_to(root)).replace("\\", "/") in SKIP_FILES:
+            continue
         rel = path.relative_to(root)
         raw = path.read_bytes()
         text: str | None = None

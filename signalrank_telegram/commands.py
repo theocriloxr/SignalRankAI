@@ -5312,11 +5312,14 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             await session.commit()
         base_url = str(
-            os.getenv("APP_BASE_URL")
+            os.getenv("RAILWAY_PUBLIC_DOMAIN")
+            or os.getenv("APP_BASE_URL")
             or os.getenv("STAGING_APP_BASE_URL")
             or os.getenv("WEBHOOK_BASE_URL")
             or ""
         ).rstrip("/")
+        if base_url and not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
         if not base_url:
             await update.message.reply_text(
                 "The SignalRank app URL has not been configured on this deployment. "

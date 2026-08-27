@@ -1020,6 +1020,34 @@ async def get_or_create_signal_impl(
         )
         return existing
 
+    # The database's final admission rule is stricter than semantic-thesis
+    # matching: only one unresolved row may exist for an exact
+    # asset/direction/timeframe bucket. Reuse that canonical row before INSERT
+    # so an older delivered thesis cannot surface as a noisy unique violation.
+    exact_active = (
+        await session.execute(
+            select(Signal)
+            .where(
+                Signal.asset == asset,
+                Signal.direction == direction,
+                Signal.timeframe == timeframe,
+                Signal.expired.is_(False),
+                Signal.archived.is_(False),
+            )
+            .order_by(Signal.created_at.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+    if exact_active is not None:
+        logger.info(
+            "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
+            asset,
+            timeframe,
+            direction,
+            exact_active.signal_id,
+        )
+        return exact_active
+
     logger.info(
         "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
         asset,

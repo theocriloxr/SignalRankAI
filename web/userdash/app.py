@@ -14,11 +14,14 @@ app = Flask(__name__)
 
 def _platform_url() -> str:
     base = str(
-        os.getenv("APP_BASE_URL")
+        os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("APP_BASE_URL")
         or os.getenv("STAGING_APP_BASE_URL")
         or os.getenv("WEBHOOK_BASE_URL")
         or "/app"
     ).rstrip("/")
+    if base != "/app" and not base.startswith(("http://", "https://")):
+        base = f"https://{base}"
     return base if base.endswith("/app") else f"{base}/app"
 
 

@@ -142,6 +142,9 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
         if asset_upper.endswith(('USDT', 'BUSD', 'USDC', 'BTC', 'ETH')):
             exchange = 'BINANCE'
             symbol = asset_upper  # TradingView expects full pair, e.g., BTCUSDT
+        elif asset_upper in {"XAUUSD", "XAGUSD"}:
+            exchange = 'OANDA'
+            symbol = asset_upper
         elif len(asset_upper) == 6 and asset_upper.isalpha():
             # Forex pair (e.g., EURUSD, GBPUSD)
             exchange = 'FX_IDC'
@@ -181,11 +184,11 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
                         time.sleep(rl_delay)
                         continue
                     else:
-                        logger.error(f"[tradingview] rate_limit_exhausted symbol={symbol} retries={max_rl_retries}")
+                        logger.warning(f"[tradingview] rate_limit_exhausted symbol={symbol} retries={max_rl_retries}")
                         _open_circuit("rate_limit_exhausted")
                         return signals
                 else:
-                    logger.error(f"[tradingview] error fetching analysis for {symbol}: {e}", exc_info=True)
+                    logger.warning(f"[tradingview] unavailable symbol={symbol} exchange={exchange}: {e}")
                     analysis = None
                     break
         # Fallback: some TradingView listings require base-only symbol (rare). Try that once.

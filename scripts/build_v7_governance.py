@@ -558,7 +558,11 @@ def _classify(path: Path) -> tuple[str, str]:
 
 def build_legacy_disposition() -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
-    for path in sorted(ROOT.rglob("*")):
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z"], cwd=ROOT, stderr=subprocess.DEVNULL
+    ).decode("utf-8", errors="surrogateescape").split("\0")
+    for relative in sorted(item for item in tracked if item):
+        path = ROOT / relative
         if not path.is_file() or any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
             continue
         if path == OUT / "legacy_disposition.json":
@@ -584,7 +588,7 @@ def build_legacy_disposition() -> dict[str, Any]:
         "file_count": len(entries),
         "summary": dict(Counter(item["disposition"] for item in entries)),
         "files": entries,
-        "scope_note": "Every repository file outside ignored caches/environments is hashed and dispositioned. UNKNOWN_REQUIRES_REVIEW remains a release blocker until explicitly resolved.",
+        "scope_note": "Every Git-tracked repository file outside ignored caches/environments is hashed and dispositioned. UNKNOWN_REQUIRES_REVIEW remains a release blocker until explicitly resolved.",
     })
     return payload
 

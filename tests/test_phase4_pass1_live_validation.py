@@ -39,9 +39,11 @@ def test_time_to_telegraph_allows_fresh_signal(monkeypatch):
     assert result.state == "LIVE_QUEUE_CHECK_PASSED"
 
 
-def test_live_price_provider_routing_stock_not_fx():
+def test_live_price_provider_routing_stock_not_fx(monkeypatch):
     from data.get_live_price import _get_providers_for_asset
 
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
     providers = _get_providers_for_asset("META")
     assert providers[0] == "yahoo"
     assert "binance" not in providers[:1]

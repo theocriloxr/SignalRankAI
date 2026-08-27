@@ -114,3 +114,9 @@ def test_generated_v7_governance_is_current():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_legacy_disposition_is_scoped_to_git_tracked_files():
+    source = (ROOT / "scripts" / "build_v7_governance.py").read_text(encoding="utf-8")
+    assert '["git", "ls-files", "-z"]' in source
+    assert "for relative in sorted(item for item in tracked if item)" in source
