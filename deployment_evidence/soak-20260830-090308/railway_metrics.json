@@ -1,0 +1,168 @@
+﻿{
+  "environment": "staging",
+  "project": "trading-bot-account2",
+  "services": [
+    {
+      "cpu": {
+        "current": 0.0074627477777777776,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.1
+      },
+      "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+      "memory": {
+        "current_mb": 544.409649152,
+        "limit_mb": 8192.0,
+        "utilization_pct": 6.6
+      },
+      "name": "SignalRankAI",
+      "network": {
+        "egress_mb": 1.172897792,
+        "ingress_mb": 7.206759424
+      }
+    },
+    {
+      "cpu": {
+        "current": 0.001792913611111111,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "1488765d-749c-4415-8ac3-52d346591879",
+      "memory": {
+        "current_mb": 1662.970232832,
+        "limit_mb": 8192.0,
+        "utilization_pct": 20.3
+      },
+      "name": "Postgres-R8Lr",
+      "network": {
+        "egress_mb": 0.008516608,
+        "ingress_mb": 0.011173888
+      },
+      "volumes": [
+        {
+          "current_mb": 3278.7496960000003,
+          "limit_mb": 5000.0,
+          "mount_path": "/var/lib/postgresql/data",
+          "name": "postgres-volume-pf45"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "current": 0.001525998888888889,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+      "memory": {
+        "current_mb": 404.532232192,
+        "limit_mb": 8192.0,
+        "utilization_pct": 4.9
+      },
+      "name": "striking-optimism",
+      "network": {
+        "egress_mb": 0.909953024,
+        "ingress_mb": 1.394819072
+      }
+    },
+    {
+      "cpu": {
+        "current": 0.0008982369444444445,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+      "memory": {
+        "current_mb": 431.61747456,
+        "limit_mb": 8192.0,
+        "utilization_pct": 5.3
+      },
+      "name": "bountiful-miracle",
+      "network": {
+        "egress_mb": 0.138958848,
+        "ingress_mb": 0.40157696
+      }
+    },
+    {
+      "cpu": {
+        "current": 0.0002942558333333333,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+      "memory": {
+        "current_mb": 7.05691648,
+        "limit_mb": 8192.0,
+        "utilization_pct": 0.1
+      },
+      "name": "Redis-_-ro",
+      "network": {
+        "egress_mb": 0.0,
+        "ingress_mb": 0.0
+      },
+      "volumes": [
+        {
+          "current_mb": 150.224896,
+          "limit_mb": 5000.0,
+          "mount_path": "/data",
+          "name": "redis-volume-zzhR"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "current": 0.00015443472222222225,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+      "memory": {
+        "current_mb": 9.084338176,
+        "limit_mb": 8192.0,
+        "utilization_pct": 0.1
+      },
+      "name": "Redis",
+      "network": {
+        "egress_mb": 0.0,
+        "ingress_mb": 0.0
+      },
+      "volumes": [
+        {
+          "current_mb": 642.00704,
+          "limit_mb": 5000.0,
+          "mount_path": "/data",
+          "name": "redis-volume"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "current": 0.000023966944444444445,
+        "limit": 8.0,
+        "unit": "vCPU",
+        "utilization_pct": 0.0
+      },
+      "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+      "memory": {
+        "current_mb": 18.085838848,
+        "limit_mb": 8192.0,
+        "utilization_pct": 0.2
+      },
+      "name": "PgBouncer",
+      "network": {
+        "egress_mb": 0.0,
+        "ingress_mb": 0.0
+      }
+    }
+  ],
+  "window": {
+    "since": "2026-08-27T09:03:56.703736400+00:00",
+    "until": "2026-08-30T09:04:00.666323500+00:00"
+  }
+}
+
