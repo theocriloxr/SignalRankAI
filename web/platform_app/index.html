@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f14" />
+  <meta name="theme-color" content="#0b1722" />
   <meta name="description" content="SignalRankAI unified trading intelligence dashboard" />
   <link rel="manifest" href="/app/manifest.webmanifest" />
   <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
@@ -20,6 +20,7 @@
     <nav id="sessionNav" hidden>
       <button data-view="overview">Overview</button>
       <button data-view="signals">Signals</button>
+      <button data-view="evidence">Evidence</button>
       <button data-view="markets">Markets</button>
       <button data-view="paper">Paper</button>
       <button data-view="portfolio">Portfolio</button>
@@ -94,6 +95,12 @@
       </div>
 
       <section id="overviewView" class="view">
+        <div class="regime-strip" aria-label="Market operating state">
+          <div><small>Operating mode</small><strong>PAPER</strong></div>
+          <div><small>Decision standard</small><strong>EVIDENCE FIRST</strong></div>
+          <div><small>Confirmation</small><strong>COMPLETED CANDLES</strong></div>
+          <div><small>Execution</small><strong class="cyan">DISABLED</strong></div>
+        </div>
         <div id="summaryCards" class="card-grid"></div>
         <div class="two-column">
           <article class="panel">
@@ -111,6 +118,53 @@
         <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
         <div class="filters"><input id="signalAssetFilter" placeholder="Filter by asset" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
         <div id="signalsTable" class="table-wrap"></div>
+      </section>
+
+      <section id="evidenceView" class="view" hidden>
+        <div class="evidence-heading">
+          <div><p class="eyebrow">CANDLE EVIDENCE · NOT PROOF</p><h2>Market evidence workspace</h2></div>
+          <div class="integrity-stamp"><span>NO FUTURE DATA USED</span><small id="evidenceFreshness">Awaiting signal data</small></div>
+        </div>
+        <div class="evidence-workspace">
+          <article class="evidence-canvas" aria-label="Candlestick anatomy demonstration">
+            <div class="canvas-toolbar"><span id="evidenceAsset">LATEST SIGNAL</span><span id="evidenceTimeframe">—</span><span class="paper-chip">PAPER MODE</span></div>
+            <div class="candle-stage">
+              <div class="price-grid" aria-hidden="true"></div>
+              <div class="level-zone"><span>KEY LEVEL CONTEXT</span></div>
+              <div class="candle-diagram" aria-label="Selected candle with body and wicks">
+                <span class="wick upper"></span><span class="candle-body"></span><span class="wick lower"></span>
+                <span class="callout upper-label">UPPER WICK · REJECTION</span>
+                <span class="callout close-label">CLOSE · CONTROL AT FINISH</span>
+                <span class="callout lower-label">LOWER WICK · REJECTION</span>
+              </div>
+              <div class="next-candle"><span>?</span><small>NEXT CANDLE<br>PENDING</small></div>
+            </div>
+            <div class="volume-track"><span>RELATIVE VOLUME</span><i style="--volume:72%"></i><strong>CONTEXT REQUIRED</strong></div>
+            <p class="canvas-note">A wick records rejection, not a guaranteed reversal. Location, close quality, participation and completed follow-through determine its weight.</p>
+          </article>
+          <aside class="evidence-spine">
+            <div class="spine-step observed"><b>01</b><div><small>REJECTION</small><strong>Observed</strong><p>Measure wick against the full range.</p></div></div>
+            <div class="spine-step observed"><b>02</b><div><small>CLOSE</small><strong>Observed</strong><p>Locate the close within the range.</p></div></div>
+            <div class="spine-step observed"><b>03</b><div><small>LEVEL</small><strong>Contextual</strong><p>Compare with past-only support or resistance.</p></div></div>
+            <div class="spine-step observed"><b>04</b><div><small>VOLUME</small><strong>Contextual</strong><p>Compare with the prior-period median.</p></div></div>
+            <div class="spine-step pending"><b>05</b><div><small>CONFIRMATION</small><strong>Pending</strong><p>Wait for the next candle to close.</p></div></div>
+          </aside>
+          <aside class="evidence-verdict">
+            <p class="eyebrow">CURRENT VERDICT</p><h3>AWAITING CONFIRMATION</h3>
+            <dl><div><dt>Evidence state</dt><dd>Observed</dd></div><div><dt>Prediction claim</dt><dd>None</dd></div><div><dt>Live execution</dt><dd>Disabled</dd></div></dl>
+            <div class="risk-rule"><strong>Invalidation first</strong><p>Every thesis must state the completed-candle condition that makes it wrong.</p></div>
+          </aside>
+        </div>
+        <article class="evidence-ledger">
+          <div class="panel-heading"><div><p class="eyebrow">CHRONOLOGICAL AUDIT TRAIL</p><h2>Evidence ledger</h2></div></div>
+          <div id="evidenceLedger" class="ledger-grid">
+            <div class="ledger-row"><b>01</b><strong>Rejection</strong><p>Wick geometry is measured as evidence, never a reversal guarantee.</p><span class="cyan">OBSERVED</span></div>
+            <div class="ledger-row"><b>02</b><strong>Close location</strong><p>The close shows who controlled the end of the completed period.</p><span class="cyan">OBSERVED</span></div>
+            <div class="ledger-row"><b>03</b><strong>Key-level context</strong><p>Support and resistance use only candles known at assessment time.</p><span class="cyan">CONTEXT</span></div>
+            <div class="ledger-row"><b>04</b><strong>Relative volume</strong><p>Participation is compared with a prior-period median.</p><span class="cyan">CONTEXT</span></div>
+            <div class="ledger-row"><b>05</b><strong>Next candle</strong><p>No conclusion is recorded until the following candle is final.</p><span class="pending-text">PENDING</span></div>
+          </div>
+        </article>
       </section>
 
       <section id="marketsView" class="view" hidden>

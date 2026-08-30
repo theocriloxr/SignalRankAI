@@ -13,6 +13,12 @@ Key differences from main strategies:
 
 from .base import BaseStrategy
 from .dynamic_targets import calculate_dynamic_targets
+from core.candle_evidence import assess_candle_evidence
+
+
+def _evidence(candles, direction):
+    """Return auditable price-action evidence; never a standalone prediction."""
+    return assess_candle_evidence(candles, direction=direction).as_dict()
 
 
 def fallback_strategies(asset, timeframe, market_data):
@@ -108,6 +114,7 @@ class SimplePriceActionStrategy(BaseStrategy):
                 signal_quality=confidence
             )
             
+            evidence = _evidence(candles, 'LONG')
             return {
                 'direction': 'LONG',
                 'entry': close,
@@ -116,7 +123,8 @@ class SimplePriceActionStrategy(BaseStrategy):
                 'targets': levels['tp_levels'],
                 'confidence': confidence,
                 'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"Price {close:.4f} above SMA20 {sma_20:.4f}, green candle. Basic trend follow. R:R={levels['rr_ratio']:.2f}"
+                'candle_evidence': evidence,
+                'reasoning': f"Price {close:.4f} above SMA20 {sma_20:.4f}. Candle evidence (not proof): {evidence['summary']} R:R={levels['rr_ratio']:.2f}"
             }
         
         # SHORT: Price below SMA20 AND red candle (close < open)
@@ -132,6 +140,7 @@ class SimplePriceActionStrategy(BaseStrategy):
                 signal_quality=confidence
             )
             
+            evidence = _evidence(candles, 'SHORT')
             return {
                 'direction': 'SHORT',
                 'entry': close,
@@ -140,7 +149,8 @@ class SimplePriceActionStrategy(BaseStrategy):
                 'targets': levels['tp_levels'],
                 'confidence': confidence,
                 'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"Price {close:.4f} below SMA20 {sma_20:.4f}, red candle. Basic trend follow. R:R={levels['rr_ratio']:.2f}"
+                'candle_evidence': evidence,
+                'reasoning': f"Price {close:.4f} below SMA20 {sma_20:.4f}. Candle evidence (not proof): {evidence['summary']} R:R={levels['rr_ratio']:.2f}"
             }
         
         return None
