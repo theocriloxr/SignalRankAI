@@ -15,6 +15,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # These proof/attempt columns were historically added by startup repair
+    # code instead of the canonical Alembic chain.  Add them here before any
+    # later migration creates indexes or queries against them.
+    op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS sent_ok BOOLEAN NOT NULL DEFAULT FALSE")
+    op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1")
+    op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMP")
+    op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_error TEXT")
     op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_state VARCHAR(16) NOT NULL DEFAULT 'reserved'")
     op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMP")
     op.execute("ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_send_started_at TIMESTAMP")
@@ -27,6 +34,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Keep base delivery-attempt columns on downgrade because older runtime
+    # releases may already depend on them and removing audit state is unsafe.
     op.execute("DROP INDEX IF EXISTS ix_signal_deliveries_telegram_msg")
     op.execute("DROP INDEX IF EXISTS ix_signal_deliveries_state")
     op.execute("ALTER TABLE signal_deliveries DROP COLUMN IF EXISTS telegram_api_result")

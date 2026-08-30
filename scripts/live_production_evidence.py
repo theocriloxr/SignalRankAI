@@ -82,6 +82,12 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _safe_error(exc: BaseException) -> str:
+    """Return only the exception type; exception messages may embed secrets."""
+
+    return type(exc).__name__
+
+
 def _asset_class(asset: str) -> str:
     try:
         from data.fetcher import get_asset_type
@@ -115,25 +121,53 @@ def _wilson_interval(wins: int, total: int, z: float = 1.96) -> tuple[float, flo
 
 
 def check_environment() -> Check:
-    required = ["DATABASE_URL", "TELEGRAM_BOT_TOKEN", "OWNER_IDS", "ENCRYPTION_KEY"]
-    redis_ok = bool(os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL"))
-    missing = [key for key in required if not os.getenv(key)]
-    if not redis_ok:
-        missing.append("REDIS_URL or REDIS_PRIVATE_URL")
+    required = [
+        "DATABASE_URL",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET",
+        "OWNER_IDS",
+        "ENCRYPTION_KEY",
+    ]
+    missing = [key for key in required if not str(os.getenv(key) or "").strip()]
+    if not str(os.getenv("WEBHOOK_DOMAIN") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip():
+        missing.append("WEBHOOK_DOMAIN or RAILWAY_PUBLIC_DOMAIN")
+
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or os.getenv("REDIS_PRIVATE_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    if not state_url:
+        missing.append("STATE_REDIS_URL or REDIS_URL")
+    if not delivery_url:
+        missing.append("DELIVERY_REDIS_URL")
+    elif state_url and state_url == delivery_url and _bool_env("REQUIRE_DISTINCT_DELIVERY_REDIS", True):
+        missing.append("distinct DELIVERY_REDIS_URL")
+
     provider_keys = {
         "polygon": bool(os.getenv("POLYGON_API_KEY")),
         "twelvedata": bool(os.getenv("TWELVEDATA_API_KEY")),
         "alphavantage": bool(os.getenv("ALPHAVANTAGE_API_KEY")),
         "fmp": bool(os.getenv("FMP_API_KEY")),
-        "binance": True,
-        "bybit": True,
+        "binance_public": True,
+        "bybit_public": True,
+        "coinbase_public": True,
+        "okx_public": True,
     }
     return Check(
         name="environment",
         ok=not missing,
         status="PASS" if not missing else "FAIL",
         detail="required Railway env present" if not missing else "missing=" + ",".join(missing),
-        data={"providers_configured": provider_keys},
+        data={
+            "providers_configured": provider_keys,
+            "state_redis_configured": bool(state_url),
+            "delivery_redis_configured": bool(delivery_url),
+            "redis_distinct": bool(state_url and delivery_url and state_url != delivery_url),
+        },
     )
 
 
@@ -146,7 +180,7 @@ async def check_postgres() -> Check:
             row = (await session.execute(text("SELECT 1"))).first()
             delivery_row = (await session.execute(text("SELECT COUNT(*) FROM signal_deliveries"))).first()
             signal_row = (await session.execute(text("SELECT COUNT(*) FROM signals"))).first()
-            await session.commit()
+            await session.rollback()
         return Check(
             name="postgres",
             ok=bool(row and row[0] == 1),
@@ -158,24 +192,82 @@ async def check_postgres() -> Check:
             },
         )
     except Exception as exc:
-        return Check(name="postgres", ok=False, status="FAIL", detail=type(exc).__name__ + ": " + str(exc)[:300])
+        return Check(name="postgres", ok=False, status="FAIL", detail=_safe_error(exc))
 
 
 async def check_redis() -> Check:
-    redis_url = os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL")
-    if not redis_url:
-        return Check(name="redis", ok=False, status="FAIL", detail="REDIS_URL/REDIS_PRIVATE_URL not configured")
-    try:
-        import redis.asyncio as redis
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or os.getenv("REDIS_PRIVATE_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    if not state_url or not delivery_url:
+        return Check(
+            name="redis_topology",
+            ok=False,
+            status="FAIL",
+            detail="state and delivery Redis URLs are both required",
+        )
+    if state_url == delivery_url and _bool_env("REQUIRE_DISTINCT_DELIVERY_REDIS", True):
+        return Check(
+            name="redis_topology",
+            ok=False,
+            status="FAIL",
+            detail="state and delivery Redis must be distinct",
+        )
 
-        client = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5)
-        key = "signalrank:live_evidence:ping"
-        await client.set(key, "1", ex=60)
-        value = await client.get(key)
-        await client.aclose()
-        return Check(name="redis", ok=value == "1", status="PASS" if value == "1" else "FAIL", detail="Redis read/write succeeded")
-    except Exception as exc:
-        return Check(name="redis", ok=False, status="FAIL", detail=type(exc).__name__ + ": " + str(exc)[:300])
+    import redis.asyncio as redis
+
+    async def _ping(label: str, url: str) -> dict[str, Any]:
+        started = time.perf_counter()
+        client = None
+        try:
+            client = redis.from_url(
+                url,
+                decode_responses=True,
+                max_connections=1,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+            )
+            key = f"signalrank:live_evidence:{label}:ping"
+            await client.set(key, "1", ex=60)
+            value = await client.get(key)
+            return {
+                "ok": value == "1",
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "error": _safe_error(exc),
+            }
+        finally:
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+
+    state_result, delivery_result = await asyncio.gather(
+        _ping("state", state_url),
+        _ping("delivery", delivery_url),
+    )
+    ok = bool(state_result.get("ok") and delivery_result.get("ok"))
+    return Check(
+        name="redis_topology",
+        ok=ok,
+        status="PASS" if ok else "FAIL",
+        detail="both Redis services read/write succeeded" if ok else "one or more Redis checks failed",
+        data={
+            "state": state_result,
+            "delivery": delivery_result,
+            "distinct": state_url != delivery_url,
+        },
+    )
 
 
 async def check_health_url() -> Check:
@@ -183,32 +275,52 @@ async def check_health_url() -> Check:
         os.getenv("PUBLIC_BASE_URL")
         or os.getenv("RAILWAY_PUBLIC_DOMAIN")
         or os.getenv("RAILWAY_STATIC_URL")
+        or os.getenv("WEBHOOK_DOMAIN")
         or ""
     ).strip()
     if not base:
-        return Check(name="railway_health_url", ok=False, status="SKIP", detail="PUBLIC_BASE_URL/RAILWAY_PUBLIC_DOMAIN not configured")
+        return Check(name="railway_health_url", ok=False, status="SKIP", detail="public base URL not configured")
     if not base.startswith(("http://", "https://")):
         base = "https://" + base
-    url = base.rstrip("/") + "/health"
+
     try:
         import requests
 
-        res = await asyncio.to_thread(requests.get, url, timeout=10)
-        ok = 200 <= int(res.status_code) < 300
-        body: dict[str, Any]
-        try:
-            body = dict(res.json())
-        except Exception:
-            body = {"text": res.text[:300]}
+        def _get(path: str) -> tuple[int, dict[str, Any]]:
+            response = requests.get(base.rstrip("/") + path, timeout=10)
+            try:
+                payload = dict(response.json())
+            except Exception:
+                payload = {}
+            return int(response.status_code), payload
+
+        health_status, health = await asyncio.to_thread(_get, "/healthz")
+        ready_status, ready = await asyncio.to_thread(_get, "/readyz")
+        health_ok = health_status == 200 and str(health.get("status") or "").lower() in {"ok", "healthy"}
+        ready_ok = (
+            ready_status == 200
+            and str(ready.get("status") or "").lower() in {"ready", "ok", "healthy"}
+            and ready.get("ready") is not False
+        )
+        ok = health_ok and ready_ok
         return Check(
             name="railway_health_url",
             ok=ok,
             status="PASS" if ok else "FAIL",
-            detail=f"GET /health status={res.status_code}",
-            data={"url": url, "body": body},
+            detail=f"healthz={health_status};readyz={ready_status}",
+            data={
+                "health_status": str(health.get("status") or ""),
+                "ready_status": str(ready.get("status") or ""),
+                "ready": ready.get("ready"),
+            },
         )
     except Exception as exc:
-        return Check(name="railway_health_url", ok=False, status="FAIL", detail=type(exc).__name__ + ": " + str(exc)[:300], data={"url": url})
+        return Check(
+            name="railway_health_url",
+            ok=False,
+            status="FAIL",
+            detail=_safe_error(exc),
+        )
 
 
 async def check_outcome_coverage(days: int, min_coverage: float, min_tracked: int) -> Check:
@@ -230,7 +342,7 @@ async def check_outcome_coverage(days: int, min_coverage: float, min_tracked: in
         )
         async with get_session() as session:
             rows = (await session.execute(query, {"since": since})).fetchall()
-            await session.commit()
+            await session.rollback()
 
         delivered = 0
         wins = 0
@@ -281,7 +393,7 @@ async def check_outcome_coverage(days: int, min_coverage: float, min_tracked: in
             },
         )
     except Exception as exc:
-        return Check(name="outcome_coverage_expected_win_rate", ok=False, status="FAIL", detail=type(exc).__name__ + ": " + str(exc)[:300])
+        return Check(name="outcome_coverage_expected_win_rate", ok=False, status="FAIL", detail=_safe_error(exc))
 
 
 async def check_provider_smoke(enabled: bool) -> Check:
@@ -306,7 +418,7 @@ async def check_provider_smoke(enabled: bool) -> Check:
     try:
         from data.fetcher import get_candles, is_market_open, market_closed_reason
     except Exception as exc:
-        return Check(name="provider_ohlc_smoke", ok=False, status="FAIL", detail="fetcher import failed: " + str(exc)[:300])
+        return Check(name="provider_ohlc_smoke", ok=False, status="FAIL", detail="fetcher import failed: " + _safe_error(exc))
 
     for symbol, expected_class in assets:
         started = time.perf_counter()
@@ -340,7 +452,7 @@ async def check_provider_smoke(enabled: bool) -> Check:
             results[symbol] = {
                 "ok": False,
                 "asset_class": expected_class,
-                "error": type(exc).__name__ + ": " + str(exc)[:240],
+                "error": _safe_error(exc),
             }
 
     all_ok = ok_count == len(assets) and bool(assets)
@@ -374,13 +486,13 @@ async def check_broker_sandbox() -> Check:
                     text("SELECT COUNT(*) FROM runtime_state WHERE key LIKE 'broker_exchange:%'")
                 )
             ).first()
-            await session.commit()
+            await session.rollback()
         mt5_count = int(mt5_row[0] or 0) if mt5_row else 0
         exchange_count = int(exchange_row[0] or 0) if exchange_row else 0
         linked = (mt5_count + exchange_count) > 0
         data.update({"mt5_credentials": mt5_count, "exchange_links": exchange_count})
     except Exception as exc:
-        return Check(name="broker_sandbox_execution", ok=False, status="FAIL", detail="broker DB link check failed: " + str(exc)[:300], data=data)
+        return Check(name="broker_sandbox_execution", ok=False, status="FAIL", detail="broker DB link check failed: " + _safe_error(exc), data=data)
 
     if not allow_order:
         return Check(

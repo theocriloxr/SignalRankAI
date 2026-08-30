@@ -1,6 +1,6 @@
 # Engineering Governance Index
 
-Last updated: 2026-06-29
+Last updated: 2026-07-26
 Owner: Engineering
 
 SignalRankAI1 is managed as a continuously evolving software product. These
@@ -28,6 +28,14 @@ the codebase is audited, implemented, refactored, optimized, or release-hardened
 | Shadow Governance | `docs/SHADOW_INTELLIGENCE_GOVERNANCE.md` | Rules for shadow evaluation and safe promotion. |
 | Launch Runbook | `docs/PRODUCTION_LAUNCH_RUNBOOK.md` | Public production launch sequence, rollback, and evidence checklist. |
 | Five-Year Roadmap | `docs/FIVE_YEAR_TRADING_SYSTEM_ROADMAP.md` | Research-backed durable architecture and feature roadmap for broker, risk, ML, data, portfolio, and audit upgrades. |
+| Universal Requirements | `docs/UNIVERSAL_REQUIREMENT_REGISTER.md` | Canonical requirement, implementation, status, and remaining evidence mapping. |
+| Cross-Chat Decisions | `docs/CROSS_CHAT_DECISION_LEDGER.md` | Self-contained historical decisions for agents without prior chat access. |
+| Permission/Blockers | `docs/PERMISSION_AND_EXTERNAL_BLOCKER_REGISTER.md` | External access, credential, approval, and business-decision blockers. |
+| Completion Evidence | `docs/COMPLETION_EVIDENCE_STATUS.md` | Honest separation of local, staging, live, paid, and execution evidence. |
+| Repository Proof | `docs/REPOSITORY_PROOF_MANIFEST.md` | File inventory, hashes, public symbols, env reads, and lexical test mapping. |
+| Provider Environment Contract | `docs/PROVIDER_ENVIRONMENT_CONTRACT.md` | Optional provider credentials and production classification rules. |
+| Work Checkpoint | `docs/WORK_COMPLETION_CHECKPOINT.md` | Resumable current-state and next-command record. |
+| Final Local Release Report | `docs/FINAL_LOCAL_COMPLETION_REPORT_2026-07-26.md` | Exact locally verified changes, tests, limits, artefacts, deployment sequence, and live blockers. |
 
 ## Definition Of Done For Future Sessions
 

@@ -1,0 +1,47 @@
+{
+  "package": "SignalRankAI v1.5.1 Deployment Completion Patch",
+  "base_release": "1.5.1",
+  "purpose": "Repair and automate the staging deployment failure caused by PostgreSQL remaining at Alembic 0034 while v1.5.1 requires 0038.",
+  "alembic_head": "0038_account_security_product",
+  "file_count": 2344,
+  "total_uncompressed_bytes": 27241781,
+  "validation": {
+    "targeted_tests_passed": 110,
+    "targeted_tests_failed": 0,
+    "compileall": "PASS",
+    "bash_syntax": "PASS",
+    "governance_documents_checked": 24,
+    "secret_scan_findings": 0,
+    "alembic_head_count": 1
+  },
+  "key_commands": {
+    "powershell": ".\\scripts\\railway_finish_staging.ps1 -AcknowledgeStagingMigration",
+    "staging_migration": "python scripts/staging_migrate_and_bootstrap.py --discover --top 100",
+    "schema_gate": "python scripts/assert_database_schema.py"
+  },
+  "changed_files": [
+    "BLOCKED_EXTERNAL_REQUIREMENTS_V151.md",
+    "README.md",
+    "requirements/legacy_disposition.json",
+    "scripts/controlled_migrate.py",
+    "scripts/staging_predeploy_v151.sh",
+    "start.sh"
+  ],
+  "added_files": [
+    "DEPLOYMENT_PATCH_FILE_CHANGES.json",
+    "DEPLOYMENT_REMEDIATION_REPORT_V151.md",
+    "artifacts/v151-deployment-patch/pytest.log",
+    "artifacts/v151-deployment-patch/validation.json",
+    "docs/STAGING_TERMINAL_COMPLETION.md",
+    "scripts/assert_database_schema.py",
+    "scripts/database_identity.py",
+    "scripts/railway_finish_staging.ps1",
+    "scripts/staging_migrate_and_bootstrap.py",
+    "tests/test_deployment_schema_completion_v151.py"
+  ],
+  "external_execution_required": [
+    "Authenticated Railway CLI session",
+    "Real staging PostgreSQL service",
+    "Runtime signal/payment/email/soak evidence"
+  ]
+}

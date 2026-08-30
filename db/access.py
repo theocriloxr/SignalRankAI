@@ -1,10 +1,12 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Subscription, User
 from db.session import get_session, is_db_configured
@@ -15,9 +17,49 @@ def owner_id() -> int:
     return int(getattr(config, "OWNER_TELEGRAM_ID", 0) or 0)
 
 
+def owner_ids() -> set[int]:
+    try:
+        from config import OWNER_IDS
+        return {int(value) for value in (OWNER_IDS or set()) if int(value) > 0}
+    except Exception:
+        oid = owner_id()
+        return {oid} if oid > 0 else set()
+
+
 def is_owner(telegram_user_id: int) -> bool:
-    oid = owner_id()
-    return bool(oid) and telegram_user_id == oid
+    return int(telegram_user_id) in owner_ids()
+
+
+async def resolve_product_tier(session: AsyncSession, user: User) -> str:
+    """Resolve delivery entitlements from the persisted account and upgrades.
+
+    Operator allowlists control privileged commands; they do not silently
+    upgrade a recipient's product plan. Persisted owner/admin markings win,
+    followed by an active paid subscription, then free.
+    """
+    if bool(getattr(user, "is_blocked", False)) or bool(getattr(user, "is_suspended", False)):
+        return "none"
+
+    stored = str(getattr(user, "tier", "free") or "free").strip().lower()
+    if stored in {"owner", "admin"}:
+        return stored
+
+    result = await session.execute(
+        select(Subscription)
+        .where(
+            Subscription.user_id == int(user.id),
+            Subscription.status == "active",
+            (Subscription.expires_at.is_(None)) | (Subscription.expires_at > now_utc_naive()),
+        )
+        .order_by(desc(Subscription.expires_at))
+        .limit(1)
+    )
+    subscription = result.scalars().first()
+    if subscription is not None:
+        upgraded = str(getattr(subscription, "tier", "free") or "free").strip().lower()
+        if upgraded in {"premium", "vip"}:
+            return upgraded
+    return "free"
 
 
 async def _try_sync_owner_tier(telegram_user_id: int) -> None:
@@ -39,25 +81,26 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
     Falls back to OWNER or FREE when Postgres is not configured.
     """
 
-    if is_owner(telegram_user_id):
-        # Ensure DB reflects owner tier when possible.
-        await _try_sync_owner_tier(telegram_user_id)
-        return "owner"
 
     if not is_db_configured():
-        return "free"
+        return "owner" if is_owner(telegram_user_id) else "free"
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     async with get_session() as session:
         res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
         user = res_user.scalar_one_or_none()
         if user is None:
-            return "free"
+            return "owner" if is_owner(telegram_user_id) else "free"
 
-        # If user tier was manually elevated (admin/owner), respect it.
+        if bool(getattr(user, "is_blocked", False)) or bool(getattr(user, "is_suspended", False)):
+            return "none"
+        if is_owner(telegram_user_id):
+            return "owner"
+
+        # Owner is derived only from the live owner list; admin remains stored.
         try:
             t = str(getattr(user, "tier", "") or "").strip().lower()
-            if t in {"admin", "owner"}:
+            if t == "admin":
                 return t
         except Exception:
             pass

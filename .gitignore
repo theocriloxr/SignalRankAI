@@ -1,58 +1,40 @@
+# Python environments and bytecode
 .venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Test, coverage and static-analysis outputs
 .pytest_cache/
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+artifacts/
 
-# Local env/secrets
+# Local environment files and secrets
 .env
 .env.*
 !.env.example
+!.env.providers.example
 
-# Local DB / artifacts
+# Local databases and SQLite runtime files
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+.freebuff/
 
-# Logs
+# Runtime diagnostics and logs
+.diagnostics/
 *.log
 
-# OS
+# Operating system and editor files
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Local env/secrets
-.env
-.env.*
-!.env.example
-
-# Local DB / artifacts
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
+.audit-venv/

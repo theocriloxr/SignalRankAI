@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 import os
 import logging
 from datetime import datetime, timedelta, timezone
@@ -114,7 +115,7 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
         from db.models import Signal, AdminEvent
         from sqlalchemy import select
         from datetime import datetime, timedelta
-        cutoff = datetime.utcnow() - timedelta(hours=4)
+        cutoff = now_utc_naive() - timedelta(hours=4)
         async with get_session() as session:
             rows = await session.execute(
                 select(Signal)
@@ -331,7 +332,7 @@ async def selfcheck_command(update, context) -> None:
                 redis_status = "⚠️ REDIS_URL not set"
     
             window_days = 30
-            now = datetime.utcnow()
+            now = now_utc_naive()
             window_start = now - timedelta(days=window_days)
     
             async with get_session() as session:

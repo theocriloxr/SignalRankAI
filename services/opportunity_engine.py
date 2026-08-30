@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any, Iterable
 
 from services.user_intelligence import UserTradingPreferences, risk_profile_settings, signal_matches_preferences
@@ -40,9 +41,15 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
     pref_ok, pref_reason = signal_matches_preferences(sig, prefs)
     risk_settings = risk_profile_settings(prefs.risk_profile)
     technical = _component(sig, "score", "score_calibrated", "score_final", default=60.0)
-    ai_conf = _component(sig, "gemini_review_score", "ai_review_score", default=_component(sig, "ml_probability", default=60.0))
-    if ai_conf <= 10:
-        ai_conf *= 10.0
+    # Prefer calibrated probabilities. Raw model output remains a ranking hint,
+    # not a public probability or a substitute for calibration.
+    calibrated = sig.get("ml_probability_calibrated")
+    if calibrated is not None:
+        ai_conf = _component(sig, "ml_probability_calibrated", default=50.0)
+    else:
+        ai_conf = _component(sig, "gemini_review_score", "ai_review_score", default=50.0)
+        raw_model = _component(sig, "ml_probability_raw", "ml_probability", default=50.0)
+        ai_conf = (ai_conf * 0.7) + (min(raw_model, 70.0) * 0.3)
     historical = _component(sig, "historical_win_rate", "segment_win_rate", "live_win_rate", default=55.0)
     market = _component(sig, "asset_health_score", "scan_priority", default=60.0)
     rr = _f(sig.get("rr_ratio") or sig.get("rr_estimate") or 0.0)
@@ -69,7 +76,8 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
         + time_to_target * 0.12
         + mtf * 0.08
     )
-    score -= float(risk_settings.get("min_score_boost", 0.0)) * 0.15
+    base_required = float(os.getenv("PERSONALIZED_BASE_MIN_SCORE", "75") or 75.0)
+    required_technical = max(0.0, min(100.0, base_required + float(risk_settings.get("min_score_boost", 0.0))))
     if not pref_ok:
         return OpportunityScore(
             asset=str(sig.get("asset") or sig.get("symbol") or ""),
@@ -78,6 +86,16 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
             components={k: round(v, 1) for k, v in components.items()},
             eligible=False,
             rejection_reason=pref_reason,
+        )
+    if technical < required_technical:
+        reason = f"risk_profile_score_below_{required_technical:.1f}"
+        return OpportunityScore(
+            asset=str(sig.get("asset") or sig.get("symbol") or ""),
+            score=round(max(0.0, score - 15.0), 1),
+            rank_reason=f"Risk profile requires technical score {required_technical:.1f}",
+            components={k: round(v, 1) for k, v in components.items()},
+            eligible=False,
+            rejection_reason=reason,
         )
     best_component = max(components.items(), key=lambda item: item[1])
     return OpportunityScore(
@@ -101,5 +119,5 @@ def rank_opportunities(signals: Iterable[dict[str, Any]], prefs: UserTradingPref
             enriched["opportunity_rejection_reason"] = score.rejection_reason
         ranked.append((score, enriched))
     ranked.sort(key=lambda item: (item[0].eligible, item[0].score), reverse=True)
-    out = [item[1] for item in ranked]
+    out = [item[1] for item in ranked if item[0].eligible]
     return out[:limit] if limit else out

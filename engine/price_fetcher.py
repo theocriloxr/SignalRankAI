@@ -377,6 +377,20 @@ async def get_live_price(
         
         # Get providers for asset class
         if asset_class == "crypto":
+            # The canonical router prioritizes Coinbase and OKX, which are
+            # reachable from Railway. Keep the legacy Binance/Bybit chain below
+            # only as a compatibility fallback.
+            try:
+                from data.get_live_price import get_live_price as get_canonical_live_price
+
+                canonical_timeout = max(1.0, min(float(timeout_seconds), 6.0))
+                price = await get_canonical_live_price(asset, timeout=canonical_timeout)
+                if price:
+                    logger.info(f"[price] {asset} = {price} (canonical crypto router)")
+                    return float(price)
+            except Exception as canonical_error:
+                logger.debug(f"[price] canonical router failed for {asset}: {canonical_error}")
+
             # Try Binance first (primary)
             price = await asyncio.wait_for(
                 _fetch_price_binance(asset),
@@ -465,11 +479,14 @@ async def get_live_price_batch(
     tasks = [fetch_one(a) for a in assets]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    return {
-        asset: price 
-        for asset, price in results 
-        if not isinstance(price, Exception)
-    }
+    output: Dict[str, Optional[float]] = {}
+    for item in results:
+        if isinstance(item, Exception):
+            logger.debug("[price_batch] item failed: %s", item)
+            continue
+        asset, price = item
+        output[str(asset)] = price
+    return output
 
 
 # =============================================================================

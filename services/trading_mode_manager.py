@@ -203,51 +203,43 @@ class TradingModeManager:
         user_id: int,
         execution_mode: str = EXEC_MODE_MANUAL,
     ) -> Dict[str, Any]:
-        """Execute on live MT5 account."""
+        """Execute on the user's selected live broker."""
         try:
-            from services.mt5_signal_router import route_signal_to_mt5
-            from services.subscription_manager import SubscriptionManager
-            
-            # Check if user has active subscription
-            sub_status = await SubscriptionManager.get_status(user_id)
-            tier = str(sub_status.get("tier", "free") or "free").strip().lower()
-            
-            # Only premium+ users can use live trading
-            if tier not in ("premium", "vip", "owner", "admin"):
+            from services.broker_signal_router import route_signal_to_broker
+            from core.tier_policy import evaluate_feature_access
+            from signalrank_telegram.access import resolve_user_tier
+
+            # Execution eligibility comes from the canonical tier policy. It
+            # does not replace consent, risk, quote, or kill-switch checks in
+            # the router's ExecutionGate.
+            tier = str(resolve_user_tier(user_id) or "free").strip().lower()
+            access = evaluate_feature_access(tier, "execution_preflight")
+            if not access.allowed:
                 return {
                     "success": False,
                     "destination": "mt5",
-                    "error": "Live trading requires premium subscription",
+                    "error": "Broker execution requires an eligible tier",
                 }
             
-            # Get user's MT5 account
             from db.user_preferences import get_user_preferences
-            
             prefs = await get_user_preferences(user_id)
-            account_id = prefs.default_mt5_account_id
-            if not account_id:
-                try:
-                    from services.mt5_client import get_user_mt5_account_id
-                    account_id = await get_user_mt5_account_id(int(user_id))
-                except Exception:
-                    account_id = None
-            if not account_id:
+
+            if execution_mode not in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE}:
                 return {
                     "success": False,
-                    "destination": "mt5",
-                    "error": (
-                        "No executable MT5 account is ready. If /mt5_status shows saved "
-                        "credentials, MetaApi still needs to provision the execution bridge."
-                    ),
+                    "destination": str(getattr(prefs, "execution_provider", "auto") or "auto"),
+                    "error": "Explicit AUTO or COPY execution mode is required",
                 }
-            
-            # Execute via MT5 router
-            router_mode = "auto" if execution_mode in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE} else "manual"
-            routed = await route_signal_to_mt5(signal, user_id, router_mode)
+
+            # Preserve COPY mode so its separate global feature flag and
+            # per-user consent mode are evaluated by ExecutionGate.
+            router_mode = execution_mode
+            routed = await route_signal_to_broker(signal, user_id, router_mode)
             if hasattr(routed, "__dict__"):
+                provider = str(getattr(prefs, "execution_provider", "auto") or "auto")
                 return {
                     "success": bool(getattr(routed, "success", False)),
-                    "destination": "mt5",
+                    "destination": provider,
                     "message": getattr(routed, "message", ""),
                     "order_id": getattr(routed, "order_id", None),
                     "error": getattr(routed, "error", None),
@@ -258,7 +250,7 @@ class TradingModeManager:
             logger.error(f"[TradingModeManager] Live execution error: {e}")
             return {
                 "success": False,
-                "destination": "mt5",
+                "destination": "broker",
                 "error": str(e),
             }
     
@@ -287,12 +279,26 @@ class TradingModeManager:
                 "error": f"Invalid mode: {new_mode}",
             }
         
-        # Check if switching to live - verify MT5 account
+        # Check if switching to live - verify the selected provider rather
+        # than requiring MT5 for users who deliberately linked Bybit.
         if new_mode in [TRADING_MODE_LIVE, TRADING_MODE_BOTH]:
-            if not mt5_account_id:
-                # Try to get default
-                from db.user_preferences import get_user_preferences
-                prefs = await get_user_preferences(user_id)
+            from db.user_preferences import get_user_preferences
+            prefs = await get_user_preferences(user_id)
+            provider = str(getattr(prefs, "execution_provider", "auto") or "auto").strip().lower()
+            bybit_ready = False
+            if provider in {"auto", "bybit"}:
+                try:
+                    from db.models import RuntimeState
+                    from db.session import get_session
+                    async with get_session(label="trading_mode.bybit_ready", timeout_seconds=5.0) as session:
+                        row = await session.get(RuntimeState, f"broker_exchange:{int(user_id)}:bybit")
+                    value = dict(getattr(row, "value", {}) or {}) if row is not None else {}
+                    bybit_ready = bool(value.get("api_key_enc") and value.get("api_secret_enc"))
+                except Exception:
+                    bybit_ready = False
+
+            if provider != "bybit" and not mt5_account_id:
+                # Try to get default MT5 account.
                 mt5_account_id = prefs.default_mt5_account_id
                 if not mt5_account_id:
                     try:
@@ -301,10 +307,19 @@ class TradingModeManager:
                     except Exception:
                         mt5_account_id = None
             
-            if not mt5_account_id:
+            provider_ready = bybit_ready if provider == "bybit" else bool(mt5_account_id or (provider == "auto" and bybit_ready))
+            if not provider_ready:
                 return {
                     "success": False,
-                    "error": "No MT5 account linked. Use /mt5_link first.",
+                    "error": (
+                        "No executable Bybit account is ready. Link a trade-only, IP-bound Bybit key first."
+                        if provider == "bybit"
+                        else (
+                            "No executable MT5 account is ready. Link and verify an MT5 account first."
+                            if provider == "mt5"
+                            else "No executable broker account is ready. Link MT5 or a trade-only Bybit account first."
+                        )
+                    ),
                 }
         
         # Update mode

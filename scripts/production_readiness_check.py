@@ -29,6 +29,30 @@ REQUIRED_FILES = (
     "web/app.py",
     "signalrank_telegram/bot.py",
     "signalrank_telegram/commands.py",
+    "scripts/architecture_smoke.py",
+    "scripts/schema_audit.py",
+    "scripts/release_guard.py",
+    "scripts/production_health.py",
+    "core/resource_governor.py",
+    "core/automaton.py",
+    "ml/evidence.py",
+    "payments/receipt_service.py",
+    "payments/payout_service.py",
+    "services/bybit_client.py",
+    "services/bybit_signal_router.py",
+    "services/broker_signal_router.py",
+    "core/financial_activation.py",
+    "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example",
+    "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example",
+    "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
+    "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
+    "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
+    "scripts/controlled_migrate.py",
+    "scripts/generate_certification_bundle.py",
+    "configs/env/railway-hobby-full-advisory.env.example",
+    "configs/env/railway-hobby-owner-beta.env.example",
+    "configs/env/railway-hobby-paper-demo.env.example",
+    "configs/env/railway-hobby-real-execution-gated.env.example",
 )
 
 REQUIRED_ENV_TEMPLATE_KEYS = (
@@ -37,10 +61,62 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
     "OWNER_IDS",
     "PAYSTACK_SECRET_KEY",
     "GEMINI_API_KEY",
+    "PUBLIC_TESTING_MODE",
+    "AUTOMATON_STARTING_BALANCE_USD",
+    "FINAL_SEND_LIVE_PRICE_CHECK_ENABLED",
+    "STATE_REDIS_URL",
+    "DELIVERY_REDIS_URL",
+    "RESOURCE_GUARD_ENABLED",
+    "LIVE_FINANCIAL_FEATURES_ENABLED",
+    "REAL_EXECUTION_ENABLED",
+    "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED",
+    "MT5_ALLOW_LIVE_ACCOUNTS",
+    "BYBIT_EXECUTION_ENABLED",
+    "REAL_PAYOUTS_ENABLED",
+    "PAYOUT_MANUAL_APPROVAL_REQUIRED",
+    "APP_MEMORY_SOFT_RATIO",
+    "APP_MEMORY_HARD_RATIO",
 )
 
+PROFILE_REQUIRED_ENV_KEYS = {
+    "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example": (
+        "SIGNALRANK_ENV_PROFILE=staging-certification",
+        "PAYMENTS_PUBLIC_TEST_MODE=1",
+        "BYBIT_TESTNET=1",
+        "MT5_ALLOW_LIVE_ACCOUNTS=0",
+        "REAL_PAYOUTS_ENABLED=0",
+        "EXPECTED_RELEASE_COMMIT=",
+    ),
+    "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example": (
+        "SIGNALRANK_ENV_PROFILE=production-advisory",
+        "PRODUCTION_DB_BACKUP_VERIFIED=",
+        "EXPECTED_RELEASE_COMMIT=",
+        "REAL_EXECUTION_ENABLED=0",
+        "AUTO_EXECUTION_ENABLED=0",
+        "GLOBAL_EXECUTION_KILL_SWITCH=1",
+    ),
+    "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example": (
+        "SIGNALRANK_ENV_PROFILE=production-live-owner-canary",
+        "PRODUCTION_EXECUTION_ACK=I_APPROVE_OWNER_ONLY_LIVE_EXECUTION",
+        "LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS=",
+        "LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS=",
+        "LIVE_EXECUTION_ALLOWED_SYMBOLS=",
+        "DEMO_CERTIFICATION_REPORT_ID=",
+        "LIVE_MAX_DAILY_LOSS=",
+        "LIVE_MAX_TOTAL_EXPOSURE=",
+        "LIVE_ACTIVATION_EXPIRES_AT=",
+    ),
+}
+
 REQUIRED_WEB_MARKERS = (
-    '@app.get("/health"',
+    "/health",
+    "/healthz",
+    "/metrics/prometheus",
+)
+
+REQUIRED_RAILWAY_DIRECT_MARKERS = (
     '@app.get("/healthz"',
     '@app.get("/metrics/prometheus"',
 )
@@ -96,13 +172,42 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
         + _read(root, "scripts/generate_railway_prefill_sheet.py")
         + "\n"
         + _read(root, "config.py")
+        + "\n"
+        + _read(root, "configs/env/railway-hobby-full-advisory.env.example")
+        + "\n"
+        + _read(root, "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example")
+        + "\n"
+        + _read(root, "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example")
     )
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
     add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")
+    for profile_path, markers in PROFILE_REQUIRED_ENV_KEYS.items():
+        profile_text = _read(root, profile_path)
+        missing_profile = [marker for marker in markers if marker not in profile_text]
+        add(
+            f"profile_contract:{profile_path}",
+            not missing_profile,
+            "missing=" + ",".join(missing_profile) if missing_profile else "profile-specific gates documented",
+        )
 
-    web_text = _read(root, "web/app.py")
+    # The Railway monolith owns the externally probed health endpoints while
+    # ``web/app.py`` retains the standalone web-service routes. Check both and
+    # match route paths rather than one exact decorator spelling.
+    railway_text = _read(root, "railway_main.py")
+    web_text = _read(root, "web/app.py") + "\n" + railway_text
     missing_web = [marker for marker in REQUIRED_WEB_MARKERS if marker not in web_text]
     add("web_health_routes", not missing_web, "missing=" + ",".join(missing_web) if missing_web else "health and metrics routes present")
+
+    missing_direct = [
+        marker for marker in REQUIRED_RAILWAY_DIRECT_MARKERS if marker not in railway_text
+    ]
+    add(
+        "railway_direct_observability_routes",
+        not missing_direct,
+        "missing=" + ",".join(missing_direct)
+        if missing_direct
+        else "Railway owns direct healthz and Prometheus routes",
+    )
 
     telemetry_text = _read(root, "core/telemetry.py")
     missing_telemetry = [marker for marker in REQUIRED_TELEMETRY_MARKERS if marker not in telemetry_text]

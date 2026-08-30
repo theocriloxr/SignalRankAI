@@ -1,11 +1,12 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Outcome, Signal, SignalDelivery, User
@@ -63,7 +64,7 @@ class AssetPositionState:
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow()
+    return now_utc_naive()
 
 
 def _env_float(name: str, default: float) -> float:
@@ -112,7 +113,7 @@ async def get_user_asset_position_state(
     if user is None or not symbol:
         return AssetPositionState(0, int(telegram_user_id), symbol, "NONE", reason="no_user_or_asset")
 
-    cooldown_h = max(0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 12.0)))
+    cooldown_h = max(0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 4.0)))
     unresolved_h = max(
         cooldown_h,
         float(unresolved_block_hours if unresolved_block_hours is not None else _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0)),
@@ -127,6 +128,7 @@ async def get_user_asset_position_state(
                 Signal.direction,
                 Signal.timeframe,
                 SignalDelivery.sent_ok,
+                SignalDelivery.delivery_state,
                 Outcome.status,
                 Outcome.canonical_outcome,
             )
@@ -140,7 +142,9 @@ async def get_user_asset_position_state(
                 SignalDelivery.signal_id != str(exclude_signal_id or "__none__"),
                 or_(
                     SignalDelivery.sent_ok.is_(True),
-                    and_(SignalDelivery.sent_ok.is_(False), SignalDelivery.last_error.is_(None)),
+                    func.lower(SignalDelivery.delivery_state).in_(
+                        ("reserved", "sending", "sent", "delivered", "confirmed", "updated")
+                    ),
                 ),
             )
             .order_by(SignalDelivery.delivered_at.desc())
@@ -150,9 +154,10 @@ async def get_user_asset_position_state(
     if row is None:
         return AssetPositionState(int(user.id), int(telegram_user_id), symbol, "NONE", reason="no_recent_position")
 
-    signal_id, delivered_at, direction, timeframe, sent_ok, status, canonical = row
+    signal_id, delivered_at, direction, timeframe, sent_ok, delivery_state, status, canonical = row
     outcome_status = _normalize_status(canonical or status)
-    state = "CANDIDATE" if sent_ok is False else _state_from_status(outcome_status)
+    delivery_state_norm = _normalize_status(delivery_state)
+    state = "CANDIDATE" if not bool(sent_ok) and delivery_state_norm in {"reserved", "sending"} else _state_from_status(outcome_status)
     age_hours = None
     if delivered_at is not None:
         try:
@@ -163,7 +168,7 @@ async def get_user_asset_position_state(
     locked = state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
     if state == "CANDIDATE":
         locked = True
-        reason = "candidate_delivery_reserved"
+        reason = "delivery_reservation_active"
     elif state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
         locked = True
         reason = "terminal_but_cooldown_active"

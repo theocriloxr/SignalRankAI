@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict as DictType, List, Optional
 
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.production_integrity import probability_for_public_display
+from core.geometry_calculation import calculate_trade_geometry
 from engine.signal_metrics import (
     resolve_confidence_ratio,
     resolve_confluence_percent,
@@ -238,16 +240,36 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
-def _compute_rr(entry: Any, stop_loss: Any, take_profit: Any) -> Optional[float]:
-    entry_f = _safe_float(entry)
-    stop_f = _safe_float(stop_loss)
-    tp_f = _safe_float(take_profit)
-    if entry_f is None or stop_f is None or tp_f is None:
+def _compute_rr(entry: Any, stop_loss: Any, take_profit: Any, direction: Any = "long") -> Optional[float]:
+    """R:R through the canonical post-geometry calculation (single source of truth)."""
+    result = calculate_trade_geometry(entry, stop_loss, [take_profit], direction)
+    if not result.ok or result.rr_tp1 is None:
         return None
-    risk = abs(entry_f - stop_f)
-    if risk <= 0:
+    try:
+        return float(result.rr_tp1)
+    except Exception:
         return None
-    return abs(tp_f - entry_f) / risk
+
+
+def _strip_embedded_rr(text: str) -> str:
+    """Remove bare R:R expressions so only canonical TP-identified values remain."""
+    import re
+
+    cleaned = re.sub(r"\bR\s*:\s*R\s*[:=]?\s*[\d.]+\b", "", str(text or ""))
+    return cleaned.strip(" ;,•|")
+
+
+def _why_with_canonical_rr(why: str, rr_tp1: Optional[float], rr_tp_last: Optional[float], tp_count: int) -> str:
+    """Append canonical, target-identified R:R to a Why explanation.
+
+    Never a bare generic 'R:R=3.74' — the value is always tied to its target.
+    """
+    text = _strip_embedded_rr(why)
+    if rr_tp1 is None or rr_tp_last is None or int(tp_count or 0) < 2:
+        return text
+    return (
+        f"{text} • TP1 R:R 1:{float(rr_tp1):.2f} • TP{min(3, int(tp_count))} R:R 1:{float(rr_tp_last):.2f}"
+    )
 
 
 def _expected_move_pct(entry: Any, target: Any, direction: str) -> Optional[float]:
@@ -354,7 +376,7 @@ def _freshness_text(signal: DictType[str, Any]) -> str:
 
 def _score_blurb(signal: DictType[str, Any]) -> str:
     score = resolve_score_percent(signal) or 0.0
-    ml_prob = resolve_ml_probability(signal)
+    probability = probability_for_public_display(signal)
     confluence = resolve_confluence_percent(signal)
     parts: List[str] = []
     strong_threshold = max(
@@ -368,8 +390,8 @@ def _score_blurb(signal: DictType[str, Any]) -> str:
         parts.append("strong setup")
     else:
         parts.append("qualified setup")
-    if ml_prob is not None:
-        parts.append(f"ML {ml_prob * 100.0:.0f}%")
+    if probability.probability is not None:
+        parts.append(f"calibrated {probability.probability * 100.0:.0f}%")
     if confluence is not None:
         parts.append(f"confluence {int(confluence)}")
     return " • ".join(parts)
@@ -418,20 +440,43 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
 
 
 def _execution_mode(signal: DictType[str, Any]) -> str:
-    mode = str(signal.get("execution_mode") or signal.get("trade_execution_mode") or "manual").strip().lower()
+    """Return recipient-specific execution state; intent alone never proves management."""
+    mode = str(
+        signal.get("delivery_execution_mode")
+        or signal.get("execution_mode")
+        or signal.get("trade_execution_mode")
+        or "manual"
+    ).strip().lower()
+    state = str(signal.get("execution_state") or "").strip().lower()
+    evidence = signal.get("execution_evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    reference = str(
+        evidence.get("reference")
+        or signal.get("broker_order_id")
+        or signal.get("paper_position_id")
+        or ""
+    ).strip()
+    destination = str(evidence.get("destination") or "").strip().lower()
+    if reference and state in {"confirmed", "open", "partially_filled", "filled"}:
+        return "paper_managed" if destination == "paper" else "broker_managed"
     if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"}:
-        return "auto"
-    if str(os.getenv("AUTO_TRADE_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}:
-        return "auto"
+        return "auto_pending"
     return "manual"
 
 
 def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
-    if _execution_mode(signal) == "auto":
+    mode = _execution_mode(signal)
+    if mode in {"broker_managed", "paper_managed"}:
         return [
             "(Bot will auto-close 50% &amp; move SL to BE)",
             "(Bot will auto-close 25%)",
             "(Moonbag running risk-free)",
+        ]
+    if mode == "auto_pending":
+        return [
+            "(Auto-close starts only after a separate execution receipt confirms one open position)",
+            "(No automated close is active until that receipt arrives)",
+            "(Manual management applies if execution is not confirmed)",
         ]
     return [
         "(Suggested close 50% &amp; move SL to BE)",
@@ -439,6 +484,16 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
         "(Optional runner; manual execution)",
     ]
 
+
+def _execution_status_line(signal: DictType[str, Any]) -> str:
+    mode = _execution_mode(signal)
+    if mode == "broker_managed":
+        return "Execution: Broker position confirmed — automated management is active for that order"
+    if mode == "paper_managed":
+        return "Execution: Paper position confirmed — automated virtual management is active"
+    if mode == "auto_pending":
+        return "Execution: Automatic entry requested — not active until a separate execution receipt"
+    return "Execution: Manual — confirm trade and size yourself"
 
 def _best_rr(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_levels: List[float]) -> Optional[float]:
     """Prefer actual target-derived R/R over profile minimum placeholders."""
@@ -541,14 +596,18 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Conviction Score: {score_val:.1f}%",
+        f"🤖 Signal Quality Score: {score_val:.1f}/100",
         f"⚠️ Volatility: {volatility}",
     ]
 
-    # Optional: ML probability
-    ml_prob = resolve_ml_probability(signal)
-    if ml_prob is not None:
-        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    # Public probability language is allowed only for a persisted calibration curve.
+    probability = probability_for_public_display(signal)
+    if probability.probability is not None:
+        lines.append(f"🧠 {probability.label}: {probability.probability * 100.0:.1f}%")
+    else:
+        raw_model_score = resolve_ml_probability(signal)
+        if raw_model_score is not None:
+            lines.append(f"🧠 Model Score (uncalibrated): {raw_model_score * 100.0:.1f}/100")
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
@@ -569,13 +628,16 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     elif len(tp_levels) == 1:
         lines.append(f"✅ TP: {_h(_fmt_price_clean(tp_levels[0], asset))}")
 
-    # R/R ratio — actual target-derived RR, not merely profile minimum
-    rr = _best_rr(signal, entry, sl, tp_levels)
-    if rr is not None:
-        lines.append(f"⚖️ Risk/Reward: 1:{float(rr):.1f}")
-        profile_min_rr = _safe_float(signal.get("profile_min_rr") or signal.get("min_rr"))
-        if profile_min_rr and abs(float(profile_min_rr) - float(rr)) > 0.05:
-            lines.append(f"📏 Profile minimum: 1:{float(profile_min_rr):.2f}")
+    # R/R ratio — canonical TP-identified values from the rendered ladder,
+    # never a bare generic ratio.
+    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
+        lines.append(
+            f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
+        )
+    elif rr_tp1 is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{float(rr_tp1):.1f}")
 
     if expected_profit is not None:
         lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
@@ -591,8 +653,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🌍 Regime: {_h(str(regime))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
-    if _execution_mode(signal) == "manual":
-        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
+    lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:
@@ -613,8 +674,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
 
     lines += [
         "",
-        "<i>⚠️ Note: This trade will run naked. Upgrade to VIP to unlock "
-        "Auto-Breakeven, Partial Profit Taking, and Smart Risk Sizing! /upgrade</i>",
+        "<i>VIP adds the TP3 management ladder and execution preflight. "
+        "Every tier still requires the same freshness, risk, consent, and kill-switch checks. "
+        "No outcome is guaranteed. /upgrade</i>",
     ]
 
     return "\n".join(lines)
@@ -676,8 +738,12 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     generated_time = _signal_generated_time(signal)
     delivered_time = _signal_delivery_time(signal)
 
-    # R/R — use actual target-derived RR, not merely profile minimum
+    # R/R — use actual target-derived RR, not merely profile minimum.
+    # Compute from the exact TP ladder rendered in this message so the display
+    # is always internally consistent (canonical post-geometry calculation).
     rr = _best_rr(signal, entry, sl, tp_levels)
+    rr_tp1 = _compute_rr(entry, sl, tp_levels[0] if tp_levels else None, signal.get("direction", "long"))
+    rr_tp_last = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
 
     lines = [
         "🚨 <b>VIP SIGNAL DETECTED</b> 🚨",
@@ -693,7 +759,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Conviction Score: {score_val:.1f}%",
+        f"🤖 Signal Quality Score: {score_val:.1f}/100",
     ]
 
     # Order Block — VIP exclusive
@@ -706,7 +772,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             or signal.get("setup_rationale")
         )
         if tl:
-            lines.append(f"🧱 Setup: {_h(str(tl)[:100])}")
+            # Never leak a bare generic R:R into the Setup line either.
+            lines.append(f"🧱 Setup: {_h(_strip_embedded_rr(str(tl)[:100]))}")
 
     # Volatility with regime context
     regime = signal.get("regime") or signal.get("market_regime", "")
@@ -715,10 +782,14 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         vol_line += f" — {_h(str(regime))}"
     lines.append(vol_line)
 
-    # ML probability
-    ml_prob = resolve_ml_probability(signal)
-    if ml_prob is not None:
-        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    # Public probability language is allowed only for a persisted calibration curve.
+    probability = probability_for_public_display(signal)
+    if probability.probability is not None:
+        lines.append(f"🧠 {probability.label}: {probability.probability * 100.0:.1f}%")
+    else:
+        raw_model_score = resolve_ml_probability(signal)
+        if raw_model_score is not None:
+            lines.append(f"🧠 Model Score (uncalibrated): {raw_model_score * 100.0:.1f}/100")
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
@@ -759,7 +830,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             f"{strategy} supports this {direction_text} setup on {timeframe_text}; "
             f"risk and confluence checks passed for the {regime_text} regime."
         )
-    lines.append(f"Why: {_h(str(why)[:180])}")
+    lines.append(f"Why: {_h(_why_with_canonical_rr(str(why)[:180], rr_tp1, rr_tp_last, len(tp_levels)))}")
 
     lines += [
         "",
@@ -781,7 +852,13 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
                 line += f" {note}"
             lines.append(line)
 
-    if rr:
+    if rr_tp1 is not None and rr_tp_last is not None and len(tp_levels) > 1:
+        lines.append(
+            f"⚖️ R/R: TP1 1:{float(rr_tp1):.1f} • TP{min(3, len(tp_levels))} 1:{float(rr_tp_last):.1f}"
+        )
+    elif rr_tp1 is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{float(rr_tp1):.1f}")
+    elif rr:
         try:
             rr_val = float(rr)
             if rr_val > 0:
@@ -815,8 +892,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
-    if _execution_mode(signal) == "manual":
-        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
+    lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:

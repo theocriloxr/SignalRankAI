@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from datetime import datetime
@@ -40,7 +41,7 @@ def _is_stock(symbol: str) -> bool:
 
 
 def _utc_hour_now() -> int:
-    return int(datetime.utcnow().hour)
+    return int(now_utc_naive().hour)
 
 
 def _is_london_ny_overlap() -> bool:

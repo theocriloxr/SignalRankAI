@@ -64,7 +64,7 @@ class TestAsyncFetcher(unittest.TestCase):
             return await fn()
 
         async def run_test():
-            with patch(
+            with patch.dict(os.environ, {"OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME": "3"}), patch(
                 "data.connector_registry.get_async_providers_for_asset",
                 return_value=[
                     ("binance_connector", binance_403),
@@ -158,7 +158,7 @@ class TestAsyncFetcher(unittest.TestCase):
         async def run_test():
             from engine.core import _fetch_market_data_for_assets
 
-            async def fake_fetch(asset, tfs):
+            async def fake_fetch(asset, tfs, **kwargs):
                 if asset == "BTCUSDT":
                     return {}
                 return {"1h": {"candles": make_dummy_candles(30), "indicators": {"ok": True}}}

@@ -33,10 +33,14 @@ def test_provider_outage_alerts_are_staged_and_emit_recovery(monkeypatch):
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES", "10,30,60")
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES", "60")
+    monkeypatch.setenv("PROVIDER_RECOVERY_REQUIRED_SUCCESSES", "1")
+    monkeypatch.setenv("PROVIDER_RECOVERY_STABLE_SECONDS", "0")
     fetcher._PROVIDER_OUTAGE_ALERTED.clear()
     fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
     fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
     fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+    fetcher._PROVIDER_RECOVERY_SUCCESS_STREAK.clear()
+    fetcher._PROVIDER_RECOVERY_FIRST_SUCCESS.clear()
 
     assert fetcher.should_alert_provider_outage("polygon_connector", 10.0) is True
     assert fetcher.provider_outage_alert_label("polygon_connector", 10.0) == "initial"
@@ -51,6 +55,28 @@ def test_provider_outage_alerts_are_staged_and_emit_recovery(monkeypatch):
 
     assert alerts and alerts[0]["provider"] == "polygon_connector"
     assert fetcher.consume_provider_recovery_alerts() == []
+
+
+def test_provider_recovery_hysteresis_requires_configured_success_streak(monkeypatch):
+    import data.fetcher as fetcher
+
+    monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
+    monkeypatch.setenv("PROVIDER_RECOVERY_REQUIRED_SUCCESSES", "3")
+    monkeypatch.setenv("PROVIDER_RECOVERY_STABLE_SECONDS", "0")
+    fetcher._PROVIDER_OUTAGE_ALERTED.clear()
+    fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
+    fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
+    fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+    fetcher._PROVIDER_RECOVERY_SUCCESS_STREAK.clear()
+    fetcher._PROVIDER_RECOVERY_FIRST_SUCCESS.clear()
+
+    assert fetcher.should_alert_provider_outage("polygon_connector", 10.0) is True
+    fetcher.mark_provider_result("polygon_connector", True)
+    fetcher.mark_provider_result("polygon_connector", True)
+    assert fetcher.consume_provider_recovery_alerts() == []
+    fetcher.mark_provider_result("polygon_connector", True)
+    alerts = fetcher.consume_provider_recovery_alerts()
+    assert alerts and alerts[0]["success_streak"] == 3
 
 
 def test_quality_rejection_reasons_map_to_admin_pulse_buckets():
@@ -301,7 +327,7 @@ async def test_admin_pulse_uses_latest_cycle_when_db_window_is_empty(monkeypatch
 
     assert stats["scanned"] == 20
     assert stats["delivered"] == 0
-    assert stats["rejected_by"] == {"other": 20}
+    assert stats["rejected_by"] == {"data_unavailable": 20}
     assert stats["unaccounted"] == 0
     assert stats["sources"]["cycle_attempted"] == 20
     assert stats["latest_cycle"]["cycle"] == 482
@@ -319,9 +345,10 @@ def test_market_data_batch_is_timeout_isolated_per_asset():
     core_source = Path("engine/core.py").read_text(encoding="utf-8")
 
     assert "asyncio.wait_for(" in core_source
-    assert "fetch_market_data_cached(asset, tfs)" in core_source
+    assert "fetch_market_data_cached(asset, timeframes, diagnostic_scope=diagnostic_scope)" in core_source
+    assert "children_cancelled=true" in core_source
     assert "return_exceptions=True" in core_source
-    assert "status=timeout" in core_source
+    assert "[ohlc_asset_timeout]" in core_source
 
 
 def test_indicator_schema_aliases_support_strategy_keys():

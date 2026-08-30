@@ -77,18 +77,40 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     event = str(body.get("event") or "")
     data  = body.get("data") or {}
 
-    logger.info("[paystack_webhook] Received event: %s", event)
+    # Persist the signed payload before acknowledging it.  A process crash
+    # after this point is recovered by the worker-owned inbox loop.
+    from payments.paystack_events import ingest_paystack_event, process_stored_paystack_event
 
-    # ── Dispatch event processing in background ───────────────────────────────
-    # Return 200 immediately — Paystack retries if we don't respond quickly
-    background_tasks.add_task(_process_event, event, data)
+    try:
+        inbox = await ingest_paystack_event(body, raw_body, route="/webhook/paystack")
+    except Exception as exc:
+        logger.error("[paystack_webhook] durable inbox unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Webhook persistence unavailable")
 
-    return {"status": "ok"}
+    if not inbox.get("terminal"):
+        background_tasks.add_task(process_stored_paystack_event, str(inbox["event_id"]))
+
+    return {
+        "status": "ok",
+        "idempotent": bool(inbox.get("idempotent")),
+        "event_id": inbox.get("event_id"),
+        "processing_status": inbox.get("status"),
+    }
 
 
 async def _process_event(event: str, data: dict) -> None:
     """Process a Paystack webhook event."""
     try:
+        import os
+
+        if str(os.getenv("PAYMENTS_ENABLED") or "").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            logger.info("[paystack_webhook] payment mutation disabled by configuration")
+            return
         from payments.paystack import (
             process_subscription_create,
             process_charge_success,
@@ -117,6 +139,12 @@ async def _process_event(event: str, data: dict) -> None:
         elif event == "subscription.not_renew":
             # Subscription scheduled to not renew — warn user
             await _handle_subscription_not_renew(data)
+
+        elif event in {"transfer.success", "transfer.failed", "transfer.reversed"}:
+            from payments.payout_service import apply_transfer_event
+            applied = await apply_transfer_event(event, data)
+            if not applied:
+                logger.warning("[paystack_webhook] transfer event did not match a payout request")
 
         elif event == "customeridentification.success":
             logger.debug("[paystack_webhook] Customer identified: %s", data.get("customer_id"))

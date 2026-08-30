@@ -20,7 +20,7 @@ def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
     text = f"{reason or ''} {decision or ''}".lower()
     if any(token in text for token in ("ml", "gemini", "ai", "model", "probability")):
         return "ml"
-    if any(token in text for token in ("squeeze",)):
+    if "squeeze" in text:
         return "squeeze"
     if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
         return "microstructure"
@@ -32,8 +32,28 @@ def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
         return "risk"
     if any(token in text for token in ("duplicate", "cooldown", "open_limit")):
         return "dedupe"
-    return "other"
+    if any(token in text for token in ("candle", "market_data", "stale", "provider", "quote")):
+        return "data_unavailable"
+    if any(token in text for token in ("strategy", "consensus", "no_signal", "generation")):
+        return "generation_empty"
+    if any(token in text for token in ("validation", "invalid", "geometry")):
+        return "validation"
+    if any(token in text for token in ("exception", "error", "failed", "store")):
+        return "processing_error"
+    if str(reason or "").strip():
+        return "policy_other"
+    return "unclassified_reason"
 
+
+def _decision_bucket(decision: str | None) -> str:
+    value = str(decision or "").strip().lower()
+    if value in {"issued", "accepted", "approved", "sent", "delivered", "selected", "eligible"}:
+        return "accepted"
+    if value in {"failed", "error", "exception"}:
+        return "processing_error"
+    if value in {"rejected", "skipped", "delayed", "suppressed"}:
+        return "rejection"
+    return f"decision_{value}" if value else "decision_unclassified"
 
 def _profile_from_timeframe(timeframe: str | None) -> str:
     tf = str(timeframe or "").strip().lower()
@@ -85,38 +105,167 @@ def _cycle_rejection_buckets(cycle: dict[str, Any]) -> dict[str, int]:
             return 0
 
     buckets = {
-        "regime": 0,
-        "squeeze": 0,
         "microstructure": _i("advanced_filter_failed") + _i("skipped_confluence_block"),
         "score": _i("score_rejected"),
-        "ml": 0,
         "risk": _i("risk_failed") + _i("skipped_portfolio_exposure"),
         "dedupe": (
-            _i("skipped_open_limit_asset")
-            + _i("skipped_open_limit_class")
-            + _i("skipped_cycle_cooldown")
-            + _i("skipped_cycle_asset_cooldown")
-            + _i("skipped_db_cooldown")
-            + _i("skipped_db_asset_cooldown")
+            _i("skipped_open_limit_asset") + _i("skipped_open_limit_class")
+            + _i("skipped_cycle_cooldown") + _i("skipped_cycle_asset_cooldown")
+            + _i("skipped_db_cooldown") + _i("skipped_db_asset_cooldown")
             + _i("skipped_duplicate_trade")
         ),
-        "other": (
-            _i("no_candles")
-            + _i("stale_data")
-            + _i("no_strategy_signals")
-            + _i("validation_failed")
-            + _i("quality_rejected")
-            + _i("invalid_tp")
-            + _i("no_consensus")
-            + _i("strategy_exception")
-            + _i("consensus_exception")
-            + _i("scoring_exception")
-            + _i("store_failed")
+        "data_unavailable": _i("no_candles") + _i("stale_data"),
+        "generation_empty": _i("no_strategy_signals") + _i("no_consensus"),
+        "validation": _i("validation_failed") + _i("invalid_tp"),
+        "processing_error": (
+            _i("strategy_exception") + _i("consensus_exception")
+            + _i("scoring_exception") + _i("store_failed")
         ),
+        "policy_other": _i("quality_rejected"),
     }
-    return {k: v for k, v in buckets.items() if v > 0}
+    return {name: value for name, value in buckets.items() if value > 0}
 
 
+
+def _reconcile_window(
+    *,
+    scanned: int,
+    delivered: int,
+    classifications: dict[str, int],
+    source: str,
+) -> dict[str, Any]:
+    """Return a self-accounting counter window without hiding a remainder."""
+    scanned = max(0, int(scanned or 0))
+    delivered = max(0, int(delivered or 0))
+    clean = {
+        str(name): max(0, int(value or 0))
+        for name, value in (classifications or {}).items()
+        if int(value or 0) > 0
+    }
+    classified = sum(clean.values())
+    if classified < scanned:
+        clean["classification_gap"] = scanned - classified
+        classified = scanned
+    return {
+        "scanned": scanned,
+        "delivered": delivered,
+        "classifications": clean,
+        "accounted": classified,
+        "classification_gap": int(clean.get("classification_gap") or 0),
+        "classification_overflow": max(0, classified - scanned),
+        "source": source,
+    }
+
+
+def _deployment_window(lifetime: dict[str, Any]) -> dict[str, Any]:
+    """Subtract a deployment-scoped Redis baseline from lifetime counters."""
+    deployment_id = str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local").strip()
+    key = f"pulse:deployment_baseline:{deployment_id}"
+    numeric = {
+        "scanned": int(lifetime.get("scanned") or 0),
+        "delivered": int(lifetime.get("delivered") or 0),
+        **{
+            f"classification:{name}": int(value or 0)
+            for name, value in (lifetime.get("classifications") or {}).items()
+        },
+    }
+    baseline = dict(numeric)
+    try:
+        from core.redis_state import state
+
+        raw = state.get_sync(key)
+        if raw:
+            baseline = json.loads(str(raw))
+        else:
+            client = state._get_redis_sync()
+            encoded = json.dumps(numeric, sort_keys=True)
+            if client is not None:
+                client.set(key, encoded, nx=True)
+                raw = client.get(key)
+                baseline = json.loads(str(raw)) if raw else dict(numeric)
+            else:
+                state.set_sync(key, encoded)
+    except Exception:
+        baseline = dict(numeric)
+    classifications = {
+        name.split(":", 1)[1]: max(0, value - int(baseline.get(name) or 0))
+        for name, value in numeric.items()
+        if name.startswith("classification:")
+    }
+    return _reconcile_window(
+        scanned=max(0, numeric["scanned"] - int(baseline.get("scanned") or 0)),
+        delivered=max(0, numeric["delivered"] - int(baseline.get("delivered") or 0)),
+        classifications=classifications,
+        source=f"lifetime_minus_deployment_baseline:{deployment_id}",
+    )
+
+
+def _record_engine_pulse_health(
+    *,
+    status: str,
+    stats: dict[str, Any] | None = None,
+    error: str | None = None,
+    recipients: int = 0,
+) -> None:
+    payload = {
+        "status": str(status or "unknown"),
+        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+        "interval_seconds": max(60, int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600)),
+        "recipients": int(recipients or 0),
+        "error": str(error or "") or None,
+    }
+    if isinstance(stats, dict):
+        payload.update({
+            "scanned": int(stats.get("scanned") or 0),
+            "delivered": int(stats.get("delivered") or 0),
+            "accounted": int(stats.get("accounted") or 0),
+            "unaccounted": int(stats.get("unaccounted") or 0),
+            "db_signals": int((stats.get("sources") or {}).get("db_signals") or 0),
+            "db_deliveries": int((stats.get("sources") or {}).get("db_deliveries") or 0),
+            "generated_at": stats.get("generated_at"),
+        })
+        payload["counter_invariant_ok"] = int(payload["unaccounted"]) == 0
+    try:
+        from core.redis_state import state
+        state.set_sync("engine:pulse:health", json.dumps(payload, sort_keys=True))
+    except Exception:
+        logger.debug("[admin_pulse] unable to persist pulse health", exc_info=True)
+
+
+def _engine_pulse_health() -> dict[str, Any]:
+    try:
+        from core.redis_state import state
+        raw = state.get_sync("engine:pulse:health")
+        payload = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
+        heartbeat = datetime.fromisoformat(str(payload.get("heartbeat_at") or "").replace("Z", "+00:00"))
+        age_seconds = max(0.0, (datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc)).total_seconds())
+        interval = max(60, int(payload.get("interval_seconds") or 3600))
+        payload["heartbeat_age_seconds"] = age_seconds
+        payload["proven"] = (
+            str(payload.get("status") or "") == "healthy"
+            and bool(payload.get("counter_invariant_ok"))
+            and age_seconds <= max(900, interval * 2)
+        )
+        return payload
+    except Exception:
+        return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
+
+
+def _shadow_tracker_health() -> dict[str, Any]:
+    try:
+        from core.redis_state import state
+
+        raw = state.get_sync("shadow:tracker:health")
+        payload = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
+        heartbeat = datetime.fromisoformat(str(payload.get("heartbeat_at") or "").replace("Z", "+00:00"))
+        age_seconds = max(0.0, (datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc)).total_seconds())
+        interval = max(15, int(payload.get("interval_seconds") or 60))
+        status = str(payload.get("status") or "unknown")
+        payload["heartbeat_age_seconds"] = age_seconds
+        payload["proven"] = status in {"starting", "idle", "healthy"} and age_seconds <= max(180, interval * 3)
+        return payload
+    except Exception:
+        return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
     
@@ -142,7 +291,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "microstructure": global_stats.get("vetoed_microstructure", 0),
             "score": global_stats.get("vetoed_score", 0),
             "ml": global_stats.get("vetoed_ml", 0),
-            "other": global_stats.get("vetoed_other", 0),
+            "unclassified_legacy": global_stats.get("vetoed_other", 0),
         }
         use_global_stats = True
         logger.info("[admin_pulse] Using GlobalStats for real-time metrics")
@@ -200,7 +349,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                             "SELECT reason, decision, COUNT(*) FROM decision_log "
                             "WHERE created_at >= :since "
                             "AND decision IN ('rejected','skipped','delayed','suppressed') "
-                            "GROUP BY reason, decision ORDER BY COUNT(*) DESC LIMIT 20"
+                            "GROUP BY reason, decision ORDER BY COUNT(*) DESC"
                         ),
                         params,
                     )
@@ -216,6 +365,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     db_scanned = 0
                     db_rejected_by = {}
 
+                # Compatibility SQL contract: FROM signal_deliveries WHERE delivered_at >= :since AND sent_ok IS TRUE
                 # SignalDelivery uses delivered_at in the ORM; some old tables
                 # may have created_at, so try delivered_at first then fallback.
             try:
@@ -223,8 +373,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     await session.execute(
                         text(
                             "SELECT COUNT(*) FROM signal_deliveries "
-                            "WHERE sent_ok IS TRUE AND telegram_message_id IS NOT NULL "
-                            "AND COALESCE(delivery_confirmed_at, delivered_at_utc, delivered_at, last_attempt_at) >= :since"
+                            "WHERE delivered_at >= :since AND sent_ok IS TRUE "
+                            "AND telegram_message_id IS NOT NULL "
+                            "AND COALESCE(delivery_confirmed_at, delivered_at, last_attempt_at) >= :since"
                         ),
                         params,
                     )
@@ -330,9 +481,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                             "SELECT COUNT(*), "
                             "SUM(CASE WHEN outcome_tracked_at IS NULL THEN 1 ELSE 0 END), "
                             "SUM(CASE WHEN outcome_tracked_at IS NOT NULL THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'false_negative' THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'correct_block' THEN 1 ELSE 0 END), "
-                            "SUM(CASE WHEN actual_outcome = 'partial_win' THEN 1 ELSE 0 END) "
+                            "SUM(CASE WHEN actual_outcome LIKE 'tp%' THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome IN ('sl','stop','stopped') THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome IN ('tp1','tp2','partial_win') THEN 1 ELSE 0 END) "
                             "FROM ml_rejected_signals WHERE created_at >= :since"
                         ),
                         params,
@@ -478,6 +629,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "correct_block": correct_block,
             "partial_win": partial_win,
             "shadow_winner_rate_pct": shadow_winner_rate,
+            "tracker": _shadow_tracker_health(),
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -487,19 +639,23 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         logger.debug("[admin_pulse] no telegram token configured")
+        _record_engine_pulse_health(status="degraded", error="telegram_token_missing")
         return False
     try:
         from config import OWNER_IDS, ADMIN_IDS
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
         if not recipients:
             logger.debug("[admin_pulse] no recipients configured")
+            _record_engine_pulse_health(status="degraded", error="admin_recipients_missing")
             return False
 
         stats = await compute_engine_health(window_hours=window_hours)
         txt = (
             f"Engine Pulse ({window_hours}h)\n\n"
-            f"Total Scanned: {stats.get('scanned', 0)}\n"
-            f"Delivered: {stats.get('delivered', 0)}\n"
+            f"Scope: global | Window: trailing {window_hours}h\n\n"
+            f"Decision rows evaluated: {stats.get('scanned', 0)}\n"
+            f"Signals generated: {(stats.get('sources') or {}).get('db_signals', 0)}\n"
+            f"Confirmed recipient deliveries: {stats.get('delivered', 0)}\n"
             f"Accounted: {stats.get('accounted', 0)}\n"
             f"Unaccounted: {stats.get('unaccounted', 0)}\n"
             "Rejected breakdown:\n"
@@ -577,18 +733,30 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
 
         import requests
 
+        sent = 0
         for rid in recipients:
             try:
-                requests.post(
+                response = requests.post(
                     f"https://api.telegram.org/bot{token}/sendMessage",
                     json={"chat_id": int(rid), "text": txt},
                     timeout=6,
                 )
+                if bool(getattr(response, "ok", False)):
+                    sent += 1
             except Exception:
                 continue
-        return True
+        invariant_ok = int(stats.get("unaccounted") or 0) == 0
+        status = "healthy" if invariant_ok and sent == len(recipients) else "degraded"
+        error = None if status == "healthy" else (
+            "counter_invariant_failed" if not invariant_ok else f"telegram_sent_{sent}_of_{len(recipients)}"
+        )
+        _record_engine_pulse_health(
+            status=status, stats=stats, error=error, recipients=sent
+        )
+        return status == "healthy"
     except Exception as exc:
         logger.error("[admin_pulse] send error: %s", exc)
+        _record_engine_pulse_health(status="error", error=f"{type(exc).__name__}:{exc}")
         return False
 
 
@@ -686,6 +854,37 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         return False
 
 
+async def _claim_pulse_slot(interval_seconds: int) -> bool:
+    """Allow only one replica to emit an hourly pulse for the current interval."""
+    if str(os.getenv("ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED", "1") or "1").strip().lower() not in {"1", "true", "yes", "on"}:
+        return True
+
+    ttl = max(60, int(os.getenv("ENGINE_PULSE_LOCK_TTL_SECONDS", str(max(60, interval_seconds - 30))) or max(60, interval_seconds - 30)))
+    key = str(os.getenv("ENGINE_PULSE_LOCK_KEY", "signalrank:admin_pulse:hourly") or "signalrank:admin_pulse:hourly")
+
+    require_lock = (
+        str(os.getenv("APP_ENV", "") or "").strip().lower() == "production"
+        or str(os.getenv("ENGINE_PULSE_REQUIRE_DISTRIBUTED_LOCK", "0") or "0").lower()
+        in {"1", "true", "yes", "on"}
+    )
+    def _claim() -> bool:
+        try:
+            from core.redis_state import state
+            client = state._get_redis_sync()
+            if client is None:
+                logger.warning("[engine_pulse_leadership] acquired=false reason=lock_unavailable required=%s", require_lock)
+                return not require_lock
+            token = f"{os.getpid()}:{datetime.now(timezone.utc).isoformat()}"
+            acquired = bool(client.set(key, token, nx=True, ex=ttl))
+            logger.info("[engine_pulse_leadership] acquired=%s key=%s ttl=%s", acquired, key, ttl)
+            return acquired
+        except Exception as exc:
+            logger.warning("[engine_pulse_leadership] acquired=false reason=lock_error required=%s error=%s", require_lock, type(exc).__name__)
+            return not require_lock
+
+    return await asyncio.to_thread(_claim)
+
+
 async def start_pulse_loop(interval_seconds: int = None) -> None:
     interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
     initial_delay = int(os.getenv("ENGINE_PULSE_INITIAL_DELAY_SECONDS", "300") or 300)
@@ -693,7 +892,10 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
         await asyncio.sleep(min(initial_delay, max(60, int(interval))))
     while True:
         try:
-            await send_admin_pulse_via_telegram(window_hours=1)
+            if await _claim_pulse_slot(interval):
+                await send_admin_pulse_via_telegram(window_hours=1)
+            else:
+                logger.info("[admin_pulse] duplicate replica pulse skipped")
         except Exception:
             logger.exception("[admin_pulse] loop send failed")
         # Weekly filter-efficacy report: run once per configured weekday/hour

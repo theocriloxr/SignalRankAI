@@ -32,3 +32,27 @@ def test_prometheus_endpoint_exposes_text_metrics():
     assert response.status_code == 200
     assert "text/plain" in response.headers.get("content-type", "")
     assert "signalrank_service_up" in response.text
+
+
+def test_shutdown_tracer_is_idempotent(monkeypatch):
+    import core.telemetry as telemetry
+
+    class Provider:
+        def __init__(self):
+            self.calls = 0
+
+        def shutdown(self):
+            self.calls += 1
+
+    provider = Provider()
+    monkeypatch.setattr(telemetry, "_TRACER", object())
+    monkeypatch.setattr(telemetry, "_TRACER_PROVIDER", provider)
+    monkeypatch.setattr(telemetry, "_TRACER_INITIALIZED", True)
+
+    telemetry.shutdown_tracer()
+    telemetry.shutdown_tracer()
+
+    assert provider.calls == 1
+    assert telemetry._TRACER is None
+    assert telemetry._TRACER_PROVIDER is None
+    assert telemetry._TRACER_INITIALIZED is True

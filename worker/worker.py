@@ -17,6 +17,7 @@ import os
 from config import config
 import signal
 import threading
+import time
 from typing import Optional
 
 from core.redis_state import state
@@ -60,6 +61,13 @@ def _is_railway_runtime() -> bool:
     )
     return any(bool((os.getenv(name) or "").strip()) for name in markers)
 
+
+def _analytics_work_allowed_in_worker() -> bool:
+    """Prevent accidental analytics ownership in the monolith/worker role."""
+    run_mode = str(os.getenv("RUN_MODE") or "all").strip().lower()
+    if run_mode == "analytics":
+        return True
+    return _env_bool_any(("ALLOW_ANALYTICS_IN_WORKER", "ALLOW_ML_TRAIN_IN_MONOLITH"), False)
 
 
 
@@ -145,6 +153,25 @@ class Worker:
                 logger.error("[worker] failed to start task %s: %s", name, exc, exc_info=True)
 
         _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
+        if _env_bool("ECOSYSTEM_BOOTSTRAP_ON_START", True):
+            _register_task(
+                "ecosystem_bootstrap",
+                lambda: self._ecosystem_bootstrap_once(),
+                restart_on_failure=False,
+            )
+        if _env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+            _register_task(
+                "instrument_discovery",
+                lambda: self._instrument_discovery_loop(),
+                restart_on_failure=True,
+            )
+        if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
+            _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
+        if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
+            _register_task("webhook_delivery", lambda: self._webhook_delivery_loop(), restart_on_failure=True)
+
+        if _env_bool("EMAIL_DELIVERY_ENABLED", True):
+            _register_task("email_delivery", lambda: self._email_delivery_loop(), restart_on_failure=True)
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
@@ -158,8 +185,26 @@ class Worker:
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
+
+        # Canonical delivery-to-outcome projection reconciliation belongs to
+        # the background worker, not the Telegram front door. This guarantees
+        # proof-backed deliveries receive a durable pending/terminal outcome
+        # row without adding database sweeps to interactive webhook latency.
+        if _env_bool("OUTCOME_RECONCILIATION_ENABLED", True):
+            _register_task(
+                "outcome_reconciliation",
+                lambda: self._outcome_reconciliation_loop(),
+                restart_on_failure=True,
+            )
+            logger.info("[worker] OutcomeReconciliation started")
         # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), True)
+        # Shadow outcome tracking is an operational reliability loop, not an
+        # analytics/training workload. Its explicit flag must therefore have
+        # the same meaning in monolith and decomposed worker deployments.
+        _enable_shadow = _env_bool_any(
+            ("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"),
+            True,
+        )
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
@@ -192,22 +237,118 @@ class Worker:
             try:
                 from data.ws_ingest import run_ws_ingestor
                 _register_task("ws_ingestor", lambda: run_ws_ingestor(self._stop), restart_on_failure=True)
+                logger.info(
+                    "[worker] WebSocket ingestor enabled master=%s crypto=%s",
+                    getattr(config, "WS_INGEST_ENABLED", False),
+                    config.CRYPTO_WS_ENABLED,
+                )
             except Exception:
                 logger.exception("[worker] Failed to start WS ingestor")
+        else:
+            logger.info(
+                "[worker] WebSocket ingestor disabled master=%s crypto=%s; REST remains authoritative",
+                getattr(config, "WS_INGEST_ENABLED", False),
+                config.CRYPTO_WS_ENABLED,
+            )
 
-        # ML daily retrain loop (optional)
-        if config.ML_TRAIN_ENABLED:
+        # Adaptive strategy learning is analytics-only and produces SHADOW candidates.
+        if (
+            _analytics_work_allowed_in_worker()
+            and _env_bool("ADAPTIVE_LEARNING_WORKER_ENABLED", True)
+        ):
+            try:
+                _register_task("adaptive_learning", lambda: self._adaptive_learning_loop(), restart_on_failure=True)
+                logger.info("[worker] AdaptiveStrategyLearning started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start adaptive learning loop: %s", e)
+
+        if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
+            try:
+                from engine.adaptive.candle_store import candle_capture_loop
+                _register_task("adaptive_candle_capture", lambda: candle_capture_loop(self._stop), restart_on_failure=True)
+                logger.info("[worker] AdaptiveCandleCapture started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start adaptive candle capture: %s", e)
+
+        if _env_bool("BYBIT_EXECUTION_ENABLED", False) and _env_bool("BYBIT_RECONCILIATION_ENABLED", False):
+            try:
+                from services.bybit_reconciler import bybit_reconciliation_loop
+                _register_task(
+                    "bybit_reconciliation",
+                    lambda: bybit_reconciliation_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] BybitExecutionReconciliation started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start Bybit reconciliation: %s", e)
+
+        if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
+            try:
+                from payments.paystack_events import (
+                    paystack_recovery_configuration,
+                    paystack_webhook_recovery_loop,
+                )
+                recovery_ready, recovery_reason = paystack_recovery_configuration()
+                if recovery_ready:
+                    _register_task(
+                        "paystack_webhook_recovery",
+                        lambda: paystack_webhook_recovery_loop(self._stop),
+                        restart_on_failure=True,
+                    )
+                    logger.info("[worker] PaystackWebhookRecovery started")
+                else:
+                    logger.warning(
+                        "[worker] PaystackWebhookRecovery disabled reason=%s",
+                        recovery_reason,
+                    )
+            except Exception as e:
+                logger.warning("[worker] Failed to start Paystack webhook recovery: %s", e)
+
+        # Per-user paper trading consumes Telegram-confirmed deliveries only.
+        # It never routes to a broker and remains isolated from real execution state.
+        if _env_bool("PAPER_TRADING_ENABLED", True):
+            try:
+                from core.paper_trading_service import paper_trading_service
+                _register_task(
+                    "paper_trading",
+                    lambda: paper_trading_service.loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] PaperTradingWorker started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start paper trading worker: %s", e)
+
+        # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
+        if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
-        # Data drift monitor loop (enabled by default).
-        if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+        # Data drift monitor belongs to the analytics role and is opt-in here.
+        if (
+            _analytics_work_allowed_in_worker()
+            and str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        ):
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start drift monitor loop: %s", e)
+        if (
+            _analytics_work_allowed_in_worker()
+            and _env_bool("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True)
+        ):
+            try:
+                from services.continuous_improvement.scheduler import continuous_improvement_loop
+
+                _register_task(
+                    "continuous_improvement_review",
+                    lambda: continuous_improvement_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] ContinuousImprovementReview started in analytics ownership lane")
+            except Exception as e:
+                logger.warning("[worker] Failed to start continuous-improvement review loop: %s", e)
         import time
         last_heartbeat = time.time()
         try:
@@ -225,9 +366,22 @@ class Worker:
                     if restart and not self._stop.is_set():
                         try:
                             exc: BaseException | None = None
-                            if not task.cancelled():
+                            task_cancelled = task.cancelled()
+                            if not task_cancelled:
                                 with contextlib.suppress(Exception):
                                     exc = task.exception()
+
+                            # Normal completion without exception: task finished cleanly.
+                            # Do NOT restart tasks that completed without errors.
+                            # Only restart tasks that crashed with an exception.
+                            if exc is None and not task_cancelled:
+                                logger.info(
+                                    "[worker] task %s completed normally; no restart scheduled",
+                                    name,
+                                )
+                                spec["restart"] = False
+                                continue
+
                             if not bool(spec.get("restart_pending", False)):
                                 restart_count = int(spec.get("restart_count", 0) or 0) + 1
                                 spec["restart_count"] = restart_count
@@ -238,7 +392,7 @@ class Worker:
                                 spec["next_restart_at"] = now_mono + delay_s
                                 spec["restart_pending"] = True
                                 logger.warning(
-                                    "[worker] task %s ended; restart scheduled in %.1fs (attempt=%s db_error=%s)",
+                                    "[worker] task %s ended with error; restart scheduled in %.1fs (attempt=%s db_error=%s)",
                                     name,
                                     delay_s,
                                     restart_count,
@@ -278,19 +432,263 @@ class Worker:
                     await task
                 logger.info("[worker] task stopped: %s", name)
 
+    async def _ecosystem_bootstrap_once(self) -> None:
+        """Seed catalogue/model/strategy metadata after migrations are current."""
+        if not is_db_configured():
+            logger.info("[ecosystem_bootstrap] skipped database_not_configured")
+            return
+        from db.ecosystem_bootstrap import seed_all
+        async with get_session(
+            priority="background",
+            label="worker.ecosystem_bootstrap",
+            timeout_seconds=15.0,
+            drop_if_busy=False,
+        ) as session:
+            result = await seed_all(session)
+            await session.commit()
+        logger.info("[ecosystem_bootstrap] completed result=%s", result)
+
+    async def _instrument_discovery_loop(self) -> None:
+        """Persist public provider listings without holding DB sessions over I/O."""
+        interval = max(300.0, _env_float("DYNAMIC_UNIVERSE_REFRESH_SECONDS", 900.0, minimum=300.0))
+        top = max(10, int(os.getenv("INSTRUMENT_DISCOVERY_TOP", "150") or 150))
+        while not self._stop.is_set():
+            provider_rows: dict[str, list[dict]] = {}
+            provider_results: dict[str, dict] = {}
+            try:
+                from data.connectors.coingecko_adapter import discover_instruments as coingecko_discover
+                from data.connectors.defillama_adapter import discover_instruments as defillama_discover
+                from data.instrument_discovery import DynamicInstrumentRegistry
+                from db.ecosystem_bootstrap import persist_instrument_registry, record_discovery_run
+
+                providers = {
+                    "coingecko": coingecko_discover,
+                    "defillama": defillama_discover,
+                }
+                registry = DynamicInstrumentRegistry()
+                for provider, discover in providers.items():
+                    try:
+                        rows = await asyncio.wait_for(
+                            asyncio.to_thread(discover, top=top),
+                            timeout=max(5.0, _env_float("INSTRUMENT_DISCOVERY_PROVIDER_TIMEOUT_SECONDS", 20.0, minimum=5.0)),
+                        )
+                        payload = list(rows or [])
+                        provider_rows[provider] = payload
+                        provider_results[provider] = registry.ingest(provider, payload).to_dict()
+                    except Exception as exc:
+                        provider_results[provider] = {
+                            "provider": provider,
+                            "state": "failed",
+                            "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                        }
+                if is_db_configured():
+                    async with get_session(
+                        priority="background",
+                        label="worker.instrument_discovery.persist",
+                        timeout_seconds=15.0,
+                        drop_if_busy=False,
+                    ) as session:
+                        persisted = await persist_instrument_registry(session, registry, provider_rows=provider_rows)
+                        for provider, result in provider_results.items():
+                            await record_discovery_run(session, provider, result)
+                        await session.commit()
+                    logger.info(
+                        "[instrument_discovery] providers=%s persisted=%s",
+                        provider_results,
+                        persisted,
+                    )
+            except Exception as exc:
+                logger.warning("[instrument_discovery] cycle failed err=%s", exc, exc_info=True)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _webhook_delivery_loop(self) -> None:
+        from services.platform.webhooks import deliver_webhook_batch
+
+        interval = max(2.0, _env_float("WEBHOOK_DELIVERY_INTERVAL_SECONDS", 5.0, minimum=1.0))
+        while not self._stop.is_set():
+            try:
+                result = await deliver_webhook_batch()
+                if int(result.get("claimed") or 0):
+                    logger.info("[webhook_delivery] %s", result)
+            except Exception as exc:
+                logger.warning("[webhook_delivery] cycle failed: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _email_delivery_loop(self) -> None:
+        from services.platform.email_delivery import deliver_email_outbox_batch
+
+        interval = max(5.0, _env_float("EMAIL_DELIVERY_INTERVAL_SECONDS", 15.0, minimum=2.0))
+        while not self._stop.is_set():
+            try:
+                result = await deliver_email_outbox_batch()
+                if int(result.get("claimed") or 0):
+                    logger.info("[email_delivery] %s", result)
+            except Exception as exc:
+                logger.warning("[email_delivery] cycle failed: %s", type(exc).__name__)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
     async def _expiry_loop(self) -> None:
         # Runs periodically; safe no-op when DATABASE_URL not configured.
         while not self._stop.is_set():
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
-                        async with get_session(noncritical=True) as session:
-                            _ = await expire_subscriptions(session)
-                            await session.commit()
+                        from db.priority import DBPriority
+                        from db.session import NoncriticalWriteDropped
+                        try:
+                            async with get_session(priority=DBPriority.BACKGROUND, label="subscription_expiry") as session:
+                                _ = await expire_subscriptions(session)
+                                await session.commit()
+                        except NoncriticalWriteDropped:
+                            logger.info("[db_background_deferred] task=subscription_expiry reason=foreground_reserved retry_in_s=3600")
                     await run_with_db_retry(_do_expire)
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")
             await asyncio.sleep(3600)
+
+    async def _decision_log_retry_loop(self) -> None:
+        """Flush annotations deferred while the foreground DB lane was reserved."""
+        interval = max(5.0, _env_float("DECISION_LOG_RETRY_INTERVAL_SECONDS", 30.0, minimum=5.0))
+        batch_size = max(1, int(os.getenv("DECISION_LOG_RETRY_BATCH_SIZE", "100") or 100))
+        while not self._stop.is_set():
+            try:
+                from db.repository import flush_decision_log_retry_queue
+                flushed = await flush_decision_log_retry_queue(batch_size)
+                if flushed:
+                    logger.info("[worker] decision log retry flushed=%s", flushed)
+            except Exception as exc:
+                logger.debug("[worker] decision log retry deferred: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _outcome_reconciliation_loop(self) -> None:
+        """Continuously close proof-delivery gaps under one cluster lease."""
+        interval = max(
+            60.0,
+            _env_float("OUTCOME_RECONCILIATION_INTERVAL_SECONDS", 300.0, minimum=60.0),
+        )
+        initial_delay = _env_float(
+            "OUTCOME_RECONCILIATION_STARTUP_DELAY_SECONDS",
+            30.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+        while not self._stop.is_set():
+            try:
+                from core.job_leases import acquire_scheduler_job_lease
+                from services.outcome_reconciliation import (
+                    ensure_outcome_projections,
+                    repair_outcome_notification_outbox,
+                )
+                from services.performance_ledger import (
+                    reconcile_all_performance_ledgers,
+                    repair_partial_exit_outcomes,
+                    persist_performance_reconciliation_result,
+                )
+
+                with acquire_scheduler_job_lease(
+                    "outcome_reconciliation",
+                    lease_seconds=max(120, int(interval)),
+                ) as lease:
+                    if not lease.acquired:
+                        logger.info(
+                            "[outcome_reconciliation] skipped owner_elsewhere backend=%s scope=%s",
+                            lease.backend,
+                            lease.scope,
+                        )
+                    elif is_db_configured():
+                        async def _run() -> None:
+                            from db.priority import DBPriority
+
+                            async with get_session(
+                                priority=DBPriority.BACKGROUND,
+                                label="outcome_reconciliation",
+                            ) as session:
+                                result = await ensure_outcome_projections(
+                                    session,
+                                    queue_notifications=False,
+                                )
+                                outbox_repair = await repair_outcome_notification_outbox(session)
+                                repaired_partial_exits = await repair_partial_exit_outcomes(session)
+                                performance_result = await reconcile_all_performance_ledgers(session)
+                                # Commit successful outcome repairs and per-user savepoints before
+                                # surfacing a batch certification failure. This prevents a poison
+                                # performance user from rolling back already verified repairs.
+                                await session.commit()
+                                await persist_performance_reconciliation_result(
+                                    performance_result, persist_cursor=True
+                                )
+                                logger.info(
+                                    "[outcome_reconciliation] completed outcome=%s outbox=%s partial_exit_repairs=%s performance=%s",
+                                    result.as_dict(),
+                                    outbox_repair.as_dict(),
+                                    repaired_partial_exits,
+                                    performance_result.as_dict(),
+                                )
+                                if performance_result.certification_failed:
+                                    raise RuntimeError(
+                                        "performance ledger certification failed: all examined users failed; "
+                                        f"reconciliation_id={performance_result.reconciliation_id} "
+                                        f"reasons={performance_result.failed_users_by_reason}"
+                                    )
+
+                        await run_with_db_retry(_run)
+            except Exception as exc:
+                logger.warning(
+                    "[outcome_reconciliation] iteration failed: %s",
+                    exc,
+                    exc_info=True,
+                )
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _adaptive_learning_loop(self) -> None:
+        """Publish approved profiles and build bounded SHADOW challengers."""
+        from engine.adaptive.learning import AdaptiveLearningWorker
+
+        worker = AdaptiveLearningWorker()
+        interval = max(3600, int(os.getenv("ADAPTIVE_LEARNING_INTERVAL_SECONDS", "21600") or 21600))
+        initial_delay = _env_float(
+            "ADAPTIVE_LEARNING_STARTUP_DELAY_SECONDS",
+            300.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            logger.info("[worker] adaptive learning delayed %.1fs to avoid startup DB pressure", initial_delay)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+        while not self._stop.is_set():
+            try:
+                result = await worker.run_once()
+                logger.info("[adaptive_learning] completed result=%s", result)
+            except Exception as exc:
+                logger.warning("[adaptive_learning] iteration failed: %s", exc, exc_info=True)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""
@@ -478,6 +876,23 @@ class Worker:
 
             drifting = list(result.get("drifting_features") or [])
             top = ", ".join(drifting[:8]) if drifting else "unknown"
+            from core.health_notifications import claim_health_notification
+
+            claimed, claim_key = await asyncio.to_thread(
+                claim_health_notification,
+                "ml_drift_detected",
+                {
+                    "features": sorted(str(name) for name in drifting),
+                    "psi_scores": result.get("psi_scores") or {},
+                },
+                ttl_seconds=max(
+                    300,
+                    int(os.getenv("ML_DRIFT_NOTIFICATION_DEDUPE_SECONDS", "21600") or 21600),
+                ),
+            )
+            if not claimed:
+                logger.info("[drift_notification] duplicate suppressed key=%s", claim_key)
+                return
             text = (
                 "⚠️ ML Data Drift Detected\n"
                 f"Features drifting: {top}\n"

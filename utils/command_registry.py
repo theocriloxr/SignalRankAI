@@ -41,8 +41,10 @@ TIER_RANKS = {
     "free": 0,
     "premium": 1,
     "vip": 2,
-    "owner": 3,
-    "admin": 4,
+    "professional": 3,
+    "institutional": 4,
+    "admin": 5,
+    "owner": 6,
 }
 
 # Tier display names
@@ -50,8 +52,10 @@ TIER_NAMES = {
     "free": "Free",
     "premium": "Premium",
     "vip": "VIP",
-    "owner": "Owner",
+    "professional": "Professional",
+    "institutional": "Institutional",
     "admin": "Admin",
+    "owner": "Owner",
 }
 
 

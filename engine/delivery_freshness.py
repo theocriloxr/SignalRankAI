@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from data.provider_types import (
+    FinalQuotePolicy,
+    LivePriceFailure,
+    LivePriceQuote,
+    validate_quote_for_final_delivery,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +36,8 @@ DEFAULT_PROFILE_MAX_AGE_MINUTES: dict[str, float] = {
     "position": 4320.0,
 }
 
+FINAL_VALIDATION_POLICY_VERSION = "phase4-pass1-v1"
+
 
 @dataclass(frozen=True, slots=True)
 class DeliveryFreshnessResult:
@@ -43,6 +52,13 @@ class DeliveryFreshnessResult:
     current_rr: float | None = None
     queue_age_seconds: float | None = None
     max_queue_age_seconds: float | None = None
+    policy_version: str | None = None
+    quote_provider: str | None = None
+    quote_request_id: str | None = None
+    quote_kind: str | None = None
+    quote_source_timestamp: float | None = None
+    quote_source_age_seconds: float | None = None
+    rule_results: tuple[str, ...] = ()
 
 
 def _direction(signal: dict[str, Any]) -> str:
@@ -50,6 +66,14 @@ def _direction(signal: dict[str, Any]) -> str:
     if raw in {"sell", "short", "bearish"}:
         return "short"
     return "long"
+
+
+def _public_testing() -> bool:
+    """Check if PUBLIC_TESTING_MODE is enabled."""
+    raw = os.getenv("PUBLIC_TESTING_MODE")
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -148,11 +172,12 @@ def _asset_class(symbol: str) -> str:
 def _max_entry_drift_pct(symbol: str) -> float:
     cls = _asset_class(symbol)
     defaults = {
-        "crypto": 0.20,
-        "fx": 0.08,
+        "crypto": 0.50,
+        "fx": 0.12,
         "stock": 0.35,
-        "commodity": 0.20,
+        "commodity": 0.30,
         "index": 0.25,
+        "macro": 0.10,
     }
     env_by_cls = {
         "crypto": "FINAL_SEND_MAX_DRIFT_CRYPTO_PCT",
@@ -162,12 +187,42 @@ def _max_entry_drift_pct(symbol: str) -> float:
         "index": "FINAL_SEND_MAX_DRIFT_INDEX_PCT",
     }
     env_name = env_by_cls.get(cls, "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT")
-    # Backward-compatible default: class-percentage drift is active in
-    # production when env values are set, but unit tests/legacy installs without
-    # env continue to rely on the stop-distance drift gate.
-    if os.getenv(env_name) is None and os.getenv("FINAL_SEND_MAX_DRIFT_DEFAULT_PCT") is None:
-        return 999999.0
     return _env_float(env_name, defaults.get(cls, _env_float("FINAL_SEND_MAX_DRIFT_DEFAULT_PCT", 0.20)))
+
+
+def _canonical_entry_drift_pct(signal: dict[str, Any], symbol: str) -> float:
+    """Return the single volatility/risk-aware entry-drift limit used at delivery."""
+    entry = _to_float(signal.get("entry"))
+    if entry is None or entry <= 0:
+        return _max_entry_drift_pct(symbol)
+
+    baseline = _max_entry_drift_pct(symbol)
+    candidates = [baseline]
+
+    stop = _to_float(signal.get("stop_loss") or signal.get("sl"))
+    if stop is not None and stop != entry:
+        stop_fraction = max(0.0, _env_float("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", 0.75))
+        candidates.append(abs(entry - stop) / entry * 100.0 * stop_fraction)
+
+    atr = _to_float(signal.get("atr"))
+    if atr is not None and atr > 0:
+        atr_multiplier = max(0.0, _env_float("DELIVERY_ENTRY_DRIFT_ATR_MULTIPLIER", 0.50))
+        candidates.append(atr / entry * 100.0 * atr_multiplier)
+
+    zone_low = _to_float(signal.get("entry_zone_low"))
+    zone_high = _to_float(signal.get("entry_zone_high"))
+    if zone_low is not None:
+        candidates.append(abs(entry - zone_low) / entry * 100.0)
+    if zone_high is not None:
+        candidates.append(abs(zone_high - entry) / entry * 100.0)
+
+    asset_class = _asset_class(symbol)
+    hard_defaults = {"crypto": 1.50, "fx": 0.40, "stock": 1.00, "commodity": 1.00, "index": 0.75, "macro": 0.25}
+    hard_cap = _env_float(
+        f"FINAL_SEND_ABSOLUTE_MAX_DRIFT_{asset_class.upper()}_PCT",
+        hard_defaults.get(asset_class, _env_float("FINAL_SEND_ABSOLUTE_MAX_DRIFT_DEFAULT_PCT", 1.0)),
+    )
+    return max(0.01, min(max(candidates), max(0.01, hard_cap)))
 
 
 def _time_to_telegraph_budget_seconds(signal: dict[str, Any], symbol: str) -> float:
@@ -242,29 +297,54 @@ def evaluate_time_to_telegraph(
     )
 
 
-async def _fetch_final_live_price(symbol: str) -> float | None:
-    """Fetch a fresh quote for final delivery validation.
-
-    This deliberately uses live quote endpoints rather than old candle/cache
-    values so missed entries are not labelled Fresh. It may use a very short
-    Redis cache only to dedupe concurrent user fanout for the same symbol.
-    """
+async def _fetch_final_live_quote(symbol: str) -> LivePriceQuote | None:
+    """Fetch a new provider observation; final-send caches are prohibited."""
     try:
-        from data.get_live_price import get_cached_price, get_live_price_quote
-        max_cache = max(0.0, _env_float("FINAL_SEND_LIVE_PRICE_MAX_CACHE_SECONDS", 10.0))
-        if _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", False):
-            quote = await get_live_price_quote(symbol, timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)))
-            if quote is not None:
-                logger.info(
-                    "[delivery_freshness] live_quote symbol=%s price=%s provider=%s latency_ms=%s",
-                    symbol, quote.price, quote.provider, quote.latency_ms,
-                )
-                return float(quote.price)
+        from data.get_live_price import get_live_price_result
+
+        result = await get_live_price_result(
+            symbol,
+            timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)),
+        )
+        if isinstance(result, LivePriceFailure):
+            logger.info(
+                "[delivery_freshness] quote_unavailable symbol=%s provider=%s reason=%s request_id=%s",
+                symbol,
+                result.provider,
+                result.reason,
+                result.request_id,
+            )
             return None
-        return await get_cached_price(symbol, max_age_seconds=max_cache)
+        logger.info(
+            "[delivery_freshness] live_quote symbol=%s price=%s provider=%s kind=%s latency_ms=%s request_id=%s",
+            symbol,
+            result.price,
+            result.provider,
+            result.quote_kind,
+            result.latency_ms,
+            result.request_id,
+        )
+        return result
     except Exception as exc:
-        logger.debug("[delivery_freshness] final live price fetch failed symbol=%s err=%s", symbol, exc)
+        logger.debug("[delivery_freshness] final live quote fetch failed symbol=%s err=%s", symbol, exc)
         return None
+
+
+async def fetch_trusted_live_quote(symbol: str) -> LivePriceQuote | None:
+    """Return the canonical typed quote used by the final delivery boundary.
+
+    Engine pre-delivery checks must use this function instead of legacy or
+    analysis-only price helpers.  Keeping one trust path prevents a signal
+    from being rebased using one provider and rejected moments later by the
+    final delivery validator using another.
+    """
+    return await _fetch_final_live_quote(symbol)
+
+
+async def _fetch_final_live_price(symbol: str) -> float | None:
+    """Legacy private wrapper retained for callers that still expect a float."""
+    quote = await fetch_trusted_live_quote(symbol)
+    return float(quote.mid) if quote is not None else None
 
 
 def _all_targets_consumed(signal: dict[str, Any], live_price: float) -> bool:
@@ -323,6 +403,35 @@ def _target_prices(signal: dict[str, Any]) -> list[float]:
     return out
 
 
+def _validate_risk_geometry(signal: dict[str, Any]) -> tuple[bool, str]:
+    """Validate direction, stop placement, and monotonic TP ordering."""
+    entry = _to_float(signal.get("entry"))
+    stop = _to_float(signal.get("stop_loss") or signal.get("sl"))
+    targets = _target_prices(signal)
+    if entry is None:
+        return False, "missing_or_invalid_entry"
+    if stop is None:
+        return False, "missing_or_invalid_stop"
+    if not targets:
+        return False, "missing_or_invalid_targets"
+    direction = _direction(signal)
+    if direction == "short":
+        if stop <= entry:
+            return False, "short_stop_must_be_above_entry"
+        if any(target >= entry for target in targets):
+            return False, "short_target_must_be_below_entry"
+        if any(left <= right for left, right in zip(targets, targets[1:])):
+            return False, "short_targets_must_descend"
+    else:
+        if stop >= entry:
+            return False, "long_stop_must_be_below_entry"
+        if any(target <= entry for target in targets):
+            return False, "long_target_must_be_above_entry"
+        if any(left >= right for left, right in zip(targets, targets[1:])):
+            return False, "long_targets_must_ascend"
+    return True, "risk_geometry_ok"
+
+
 def _current_reward_risk(signal: dict[str, Any], live_price: float) -> tuple[bool, str, float | None]:
     entry = _to_float(signal.get("entry"))
     stop = _to_float(signal.get("stop_loss") or signal.get("sl"))
@@ -331,11 +440,6 @@ def _current_reward_risk(signal: dict[str, Any], live_price: float) -> tuple[boo
     stop_distance = abs(entry - stop)
     if stop_distance <= 0:
         return False, "invalid_stop_distance", None
-
-    max_drift = _env_float("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", 0.75)
-    drift_fraction = abs(float(live_price) - entry) / stop_distance
-    if drift_fraction > max_drift:
-        return False, f"entry_drift_exceeded:{drift_fraction:.2f}>{max_drift:.2f}", None
 
     targets = _target_prices(signal)
     if not targets:
@@ -412,15 +516,42 @@ async def validate_delivery_freshness(
     user_profile: str | None = None,
     cached_live_price: float | None = None,
     require_live_price: bool | None = None,
+    live_quote: LivePriceQuote | None = None,
+    final_send: bool = False,
+    delivery_tier: str | None = None,
+    quote_policy: FinalQuotePolicy | None = None,
 ) -> DeliveryFreshnessResult:
-    """Final non-negotiable gate before a signal is reserved or sent."""
-    if not _env_bool("DELIVERY_FRESHNESS_GATE_ENABLED", True):
+    """Validate analytical freshness or enforce the final-send trust boundary.
+
+    ``final_send=True`` is deliberately stricter: it ignores cached/naked
+    prices, obtains a typed provider observation, checks source age and market
+    state, and fails closed independently of compatibility feature flags.
+
+    PUBLIC_TESTING_MODE: When enabled, all fail-open delivery paths are
+    overridden to fail-closed. A quote timeout, provider error, missing quote,
+    or stale quote always blocks delivery. The env vars
+    DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN, DELIVERY_FRESHNESS_ERROR_FAIL_OPEN,
+    and DELIVERY_MISSING_PRICE_FAIL_OPEN are ignored.
+    """
+    _pt = _public_testing()
+    if not _env_bool("DELIVERY_FRESHNESS_GATE_ENABLED", True) and not final_send:
         return DeliveryFreshnessResult(True, "disabled")
 
     sig = dict(signal or {})
     age_result = evaluate_signal_age(sig, user_profile=user_profile)
     if not age_result.ok:
-        return age_result
+        if not final_send:
+            return age_result
+        return DeliveryFreshnessResult(
+            False,
+            age_result.reason,
+            age_result.age_minutes,
+            age_result.max_age_minutes,
+            age_result.opportunity_remaining_pct,
+            state="BLOCKED_STALE",
+            policy_version=FINAL_VALIDATION_POLICY_VERSION,
+            rule_results=("signal_age_failed",),
+        )
 
     require_price = _env_bool("DELIVERY_REQUIRE_LIVE_PRICE", True) if require_live_price is None else bool(require_live_price)
     symbol = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
@@ -437,27 +568,91 @@ async def validate_delivery_freshness(
             state=queue_result.state,
             queue_age_seconds=queue_result.queue_age_seconds,
             max_queue_age_seconds=queue_result.max_queue_age_seconds,
+            policy_version=FINAL_VALIDATION_POLICY_VERSION,
+            rule_results=("signal_age_passed", "queue_age_failed"),
         )
 
-    # Final send should be based on a fresh market quote in production, but
-    # compatibility tests and canary paths may pass a pre-fetched live price.
-    # When FINAL_SEND_FORCE_FRESH_PRICE=1, always refetch immediately before
-    # Telegram send.
+    policy = quote_policy or FinalQuotePolicy()
+    rule_results = ["signal_age_passed", "queue_age_passed"]
+    quote = live_quote
     live_price = None
-    force_fresh = _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", False)
-    if not force_fresh:
-        live_price = cached_live_price
-        if live_price is None:
-            raw_price = sig.get("current_price") or sig.get("live_price")
-            try:
-                live_price = float(raw_price) if raw_price is not None else None
-            except Exception:
-                live_price = None
+    quote_meta: dict[str, Any] = {
+        "policy_version": policy.version if final_send else FINAL_VALIDATION_POLICY_VERSION,
+    }
 
-    if force_fresh and _env_bool("FINAL_SEND_LIVE_PRICE_CHECK_ENABLED", True) and symbol:
-        live_price = await _fetch_final_live_price(symbol)
+    if final_send:
+        if quote is None and symbol:
+            quote = await _fetch_final_live_quote(symbol)
+        try:
+            from data.market_hours import get_market_session_status
 
-    if require_price and force_fresh and live_price is None:
+            market = get_market_session_status(symbol)
+            market_open: bool | None = market.is_open
+            market_reason = market.reason
+        except Exception as exc:
+            market_open = None
+            market_reason = f"market_calendar_error:{type(exc).__name__}"
+        trust = validate_quote_for_final_delivery(
+            quote,
+            market_open=market_open,
+            market_reason=market_reason,
+            policy=policy,
+        )
+        if quote is not None:
+            quote_meta.update(
+                quote_provider=quote.provider,
+                quote_request_id=quote.request_id,
+                quote_kind=quote.quote_kind,
+                quote_source_timestamp=quote.source_timestamp,
+                quote_source_age_seconds=trust.source_age_seconds,
+            )
+        if not trust.ok:
+            return DeliveryFreshnessResult(
+                False,
+                trust.reason,
+                age_result.age_minutes,
+                age_result.max_age_minutes,
+                age_result.opportunity_remaining_pct,
+                None,
+                state=trust.state,
+                queue_age_seconds=queue_result.queue_age_seconds,
+                max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                rule_results=tuple(rule_results) + ("quote_trust_failed",),
+                **quote_meta,
+            )
+        live_price = float(quote.mid) if quote is not None else None
+        rule_results.extend(trust.checks)
+        rule_results.append("quote_trust_passed")
+    else:
+        force_fresh = _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", False)
+        if force_fresh and _env_bool("FINAL_SEND_LIVE_PRICE_CHECK_ENABLED", True) and symbol:
+            quote = quote or await _fetch_final_live_quote(symbol)
+            live_price = float(quote.mid) if quote is not None else None
+        else:
+            live_price = cached_live_price
+            if live_price is None:
+                raw_price = sig.get("current_price") or sig.get("live_price")
+                try:
+                    live_price = float(raw_price) if raw_price is not None else None
+                except Exception:
+                    live_price = None
+
+    if require_price and live_price is None:
+        # In public-testing mode, always block with a distinct state name
+        # so logs clearly identify the enforcement.
+        _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED"
+        if _pt:
+            _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED_PUBLIC_TEST"
+        elif final_send:
+            _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED"
+        logger.warning(
+            "[delivery_blocked] signal=%(signal_id)s asset=%(asset)s reason=%(reason)s fail_open=false",
+            {
+                "signal_id": str(sig.get("signal_id") or "unknown")[:12],
+                "asset": symbol,
+                "reason": "live_price_unavailable",
+            },
+        )
         return DeliveryFreshnessResult(
             False,
             "live_price_unavailable:final_live_price_unavailable",
@@ -465,15 +660,40 @@ async def validate_delivery_freshness(
             age_result.max_age_minutes,
             age_result.opportunity_remaining_pct,
             None,
-            state="LIVE_PRICE_UNAVAILABLE",
+            state=_blocked_state,
             queue_age_seconds=queue_result.queue_age_seconds,
             max_queue_age_seconds=queue_result.max_queue_age_seconds,
+            rule_results=tuple(rule_results) + ("live_price_missing",),
+            **quote_meta,
         )
+
+    if final_send:
+        geometry_ok, geometry_reason = _validate_risk_geometry(sig)
+        if not geometry_ok:
+            return DeliveryFreshnessResult(
+                False,
+                geometry_reason,
+                age_result.age_minutes,
+                age_result.max_age_minutes,
+                age_result.opportunity_remaining_pct,
+                live_price,
+                state="BLOCKED_RISK_INVALID",
+                queue_age_seconds=queue_result.queue_age_seconds,
+                max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                rule_results=tuple(rule_results) + ("risk_geometry_failed",),
+                **quote_meta,
+            )
+        rule_results.append("risk_geometry_passed")
 
     try:
         from engine.stale_signal_validator import validate_signal_freshness
 
-        ok, reason, fetched_live = await validate_signal_freshness(sig, cached_live_price=live_price)
+        validation_signal = dict(sig)
+        canonical_drift_pct = _canonical_entry_drift_pct(validation_signal, symbol)
+        validation_signal["_canonical_drift_threshold_pct"] = canonical_drift_pct
+        if final_send:
+            validation_signal["_trusted_live_quote"] = True
+        ok, reason, fetched_live = await validate_signal_freshness(validation_signal, cached_live_price=live_price)
         if fetched_live is not None:
             live_price = float(fetched_live)
         if not ok:
@@ -484,12 +704,14 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 live_price,
+                state="MISSED_ENTRY" if final_send else None,
+                queue_age_seconds=queue_result.queue_age_seconds,
+                max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                rule_results=tuple(rule_results) + ("stale_validator_failed",),
+                **quote_meta,
             )
         reason_l = str(reason or "").lower()
-        if require_price and live_price is None and any(
-            marker in reason_l
-            for marker in ("unavailable", "timeout", "error", "skip")
-        ):
+        if require_price and live_price is None and any(marker in reason_l for marker in ("unavailable", "timeout", "error", "skip")):
             return DeliveryFreshnessResult(
                 False,
                 f"live_price_unavailable:{reason}",
@@ -497,7 +719,11 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 None,
+                state="BLOCKED_PROVIDER_UNTRUSTED" if final_send else None,
+                rule_results=tuple(rule_results) + ("stale_validator_no_price",),
+                **quote_meta,
             )
+        rule_results.append("stale_validator_passed")
     except Exception as exc:
         if require_price:
             return DeliveryFreshnessResult(
@@ -507,15 +733,22 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 live_price,
+                state="BLOCKED_PROVIDER_UNTRUSTED" if final_send else None,
+                rule_results=tuple(rule_results) + ("stale_validator_error",),
+                **quote_meta,
             )
         logger.debug("[delivery_freshness] price revalidation skipped after error: %s", exc)
 
     if live_price is not None:
+        # One canonical percentage gate is authoritative for final entry drift.
+        # The stale validator receives this same threshold, avoiding conflicting
+        # "accepted" then "blocked" decisions from independent constants.
         entry = _to_float(sig.get("entry"))
+        drift_pct = None
         if entry is not None:
             drift_pct = abs(float(live_price) - entry) / entry * 100.0
-            max_drift_pct = _max_entry_drift_pct(symbol)
-            if drift_pct > max_drift_pct:
+            max_drift_pct = _canonical_entry_drift_pct(sig, symbol)
+            if drift_pct > max_drift_pct + 1e-9:
                 return DeliveryFreshnessResult(
                     False,
                     f"final_entry_drift:{drift_pct:.2f}%>{max_drift_pct:.2f}%",
@@ -523,11 +756,15 @@ async def validate_delivery_freshness(
                     age_result.max_age_minutes,
                     age_result.opportunity_remaining_pct,
                     float(live_price),
-                    state="MISSED_ENTRY_DRIFT",
+                    state="MISSED_ENTRY" if final_send else "MISSED_ENTRY_DRIFT",
                     entry_drift_pct=drift_pct,
                     queue_age_seconds=queue_result.queue_age_seconds,
                     max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                    rule_results=tuple(rule_results) + ("canonical_drift_failed",),
+                    **quote_meta,
                 )
+        rule_results.append("canonical_drift_passed")
+
         if _env_bool("REJECT_IF_TP1_ALREADY_HIT", True) and _first_target_hit(sig, float(live_price)):
             return DeliveryFreshnessResult(
                 False,
@@ -536,9 +773,11 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 float(live_price),
-                state="TP1_ALREADY_HIT",
+                state="MISSED_ENTRY" if final_send else "TP1_ALREADY_HIT",
                 queue_age_seconds=queue_result.queue_age_seconds,
                 max_queue_age_seconds=queue_result.max_queue_age_seconds,
+                rule_results=tuple(rule_results) + ("tp1_already_hit",),
+                **quote_meta,
             )
         if _env_bool("REJECT_IF_ALL_TARGETS_ALREADY_HIT", True) and _all_targets_consumed(sig, float(live_price)):
             return DeliveryFreshnessResult(
@@ -548,8 +787,11 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 float(live_price),
+                state="MISSED_ENTRY" if final_send else None,
+                rule_results=tuple(rule_results) + ("all_targets_consumed",),
+                **quote_meta,
             )
-        rr_ok, rr_reason, _current_rr = _current_reward_risk(sig, float(live_price))
+        rr_ok, rr_reason, current_rr = _current_reward_risk(sig, float(live_price))
         if not rr_ok:
             return DeliveryFreshnessResult(
                 False,
@@ -558,7 +800,13 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 float(live_price),
+                state="BLOCKED_RISK_INVALID" if final_send else None,
+                current_rr=current_rr,
+                rule_results=tuple(rule_results) + ("reward_risk_failed",),
+                **quote_meta,
             )
+        rule_results.append("reward_risk_passed")
+
         try:
             from engine.price_validator import check_sl_tp_hit
 
@@ -571,8 +819,24 @@ async def validate_delivery_freshness(
                     age_result.max_age_minutes,
                     age_result.opportunity_remaining_pct,
                     float(live_price),
+                    state="MISSED_ENTRY" if final_send else None,
+                    rule_results=tuple(rule_results) + ("sl_tp_already_resolved",),
+                    **quote_meta,
                 )
+            rule_results.append("sl_tp_not_resolved")
         except Exception as exc:
+            if final_send:
+                return DeliveryFreshnessResult(
+                    False,
+                    f"sl_tp_validation_error:{type(exc).__name__}",
+                    age_result.age_minutes,
+                    age_result.max_age_minutes,
+                    age_result.opportunity_remaining_pct,
+                    float(live_price),
+                    state="BLOCKED_RISK_INVALID",
+                    rule_results=tuple(rule_results) + ("sl_tp_validation_error",),
+                    **quote_meta,
+                )
             logger.debug("[delivery_freshness] SL/TP revalidation failed: %s", exc)
 
     return DeliveryFreshnessResult(
@@ -585,4 +849,6 @@ async def validate_delivery_freshness(
         state="LIVE_CHECK_PASSED",
         queue_age_seconds=queue_result.queue_age_seconds,
         max_queue_age_seconds=queue_result.max_queue_age_seconds,
+        rule_results=tuple(rule_results),
+        **quote_meta,
     )

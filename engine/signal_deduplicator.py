@@ -3,9 +3,13 @@ Signal deduplication, caching, and ML rejection tracking.
 """
 import hashlib
 import logging
+import asyncio
 import os
 import json
 import math
+import threading
+import time
+from collections import deque
 from typing import Optional, Dict, Set, Iterable, Any, cast
 from datetime import datetime, timedelta
 
@@ -15,6 +19,37 @@ from sqlalchemy import select, text
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
+
+# Rejection telemetry is high-volume and must never contend one transaction per
+# rejected strategy candidate. A bounded process-local spool batches writes into
+# a single background transaction and retries after admission backpressure.
+_REJECTION_SPOOL: deque[dict[str, Any]] = deque()
+_REJECTION_SPOOL_LOCK = threading.Lock()
+_REJECTION_LAST_FLUSH_MONO = time.monotonic()
+_REJECTION_LAST_DEFER_LOG_MONO = 0.0
+_REJECTION_FLUSH_TASK: asyncio.Task[None] | None = None
+_REJECTION_FLUSH_TASK_LOCK = threading.Lock()
+
+def _json_safe(value: Any) -> Any:
+    """Recursively convert telemetry values into JSON-compatible structures."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (list, tuple, set, deque)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    try:
+        isoformat = getattr(value, "isoformat", None)
+        if callable(isoformat):
+            return isoformat()
+    except Exception:
+        pass
+    return str(value)
+
 
 _DEFAULT_DEDUP_WINDOW_SECONDS = 4 * 60 * 60
 
@@ -71,8 +106,10 @@ def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
     try:
         from core.redis_state import state
 
-        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
-        return bool(state.get_sync(key))
+        from services.asset_repeat_policy import canonical_delivery_cooldown_key, legacy_delivery_cooldown_keys
+
+        keys = (canonical_delivery_cooldown_key(user_id, asset), *legacy_delivery_cooldown_keys(user_id, asset, direction))
+        return any(bool(state.get_sync(key)) for key in keys)
     except Exception:
         return False
 
@@ -82,15 +119,13 @@ def set_user_asset_cooldown(user_id: int, asset: str, direction: str, tier: str)
     try:
         from core.redis_state import state
 
-        tier_l = str(tier or "free").lower()
-        if tier_l in {"vip", "owner", "admin"}:
-            hours = int(os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4)
-        elif tier_l == "premium":
-            hours = int(os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8)
-        else:
-            hours = int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12)
-        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
-        state.set_sync(key, "1", ex=hours * 3600)
+        from services.asset_repeat_policy import canonical_delivery_cooldown_key, get_asset_repeat_lock_hours
+
+        hours = get_asset_repeat_lock_hours(tier)
+        if hours <= 0:
+            return
+        key = canonical_delivery_cooldown_key(user_id, asset)
+        state.set_sync(key, "1", ex=max(1, int(hours * 3600)))
     except Exception as exc:
         logger.debug("[dedup] set_user_asset_cooldown failed: %s", exc)
 
@@ -514,66 +549,191 @@ class MLRejectionTracker:
         except Exception:
             return 0.0
 
-    async def persist_rejection(
-            self,
-            asset: str,
-            timeframe: str,
-            direction: str,
-            entry_price: float,
-            stop_loss: float,
-            take_profit_levels: Any,
-            ml_probability: Optional[float],
-            rejection_reason: str,
-            features: Dict[str, Any],
-            rejection_type: Optional[str] = None,
-            signal_id: Optional[str] = None,
-        ) -> None:
-            """Store rejection for future outcome tracking."""
-            if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
-                "1", "true", "yes", "on",
-            }:
-                return
-            session = None
-            try:
-                tp_value = self._parse_tp_value(take_profit_levels)
-                if tp_value <= 0:
-                    tp_value = entry_price * 1.05 if entry_price else 0.0
-                safe_ml_prob = float(ml_probability or 0.0)
-                features = dict(features or {})
-                if rejection_type:
-                    features.setdefault("rejection_type", rejection_type)
-                if signal_id:
-                    features.setdefault("signal_id", signal_id)
-                async with get_session(noncritical=True) as session:
-                    rejection = MLRejectedSignal(
-                        signal_id=signal_id,
-                        asset=str(asset or "").upper(),
-                        timeframe=str(timeframe or "").lower(),
-                        direction=str(direction or "").lower(),
-                        entry=float(entry_price or 0.0),
-                        stop_loss=float(stop_loss or 0.0),
-                        take_profit=str(tp_value),
-                        ml_probability=safe_ml_prob,
-                        rejection_reason=str(rejection_reason or "rejected")[:128],
-                        features=features,
-                        actual_outcome=None,
-                        outcome_tracked_at=None,
-                        created_at=now_utc_naive(),
-                    )
+    @staticmethod
+    def _rejection_spool_settings() -> tuple[int, int, float]:
+        try:
+            max_items = max(100, int(os.getenv("REJECTION_SPOOL_MAX_ITEMS", "5000") or 5000))
+        except Exception:
+            max_items = 5000
+        try:
+            batch_size = max(1, int(os.getenv("REJECTION_DB_BATCH_SIZE", "50") or 50))
+        except Exception:
+            batch_size = 50
+        try:
+            flush_seconds = max(0.1, float(os.getenv("REJECTION_DB_FLUSH_SECONDS", "2") or 2))
+        except Exception:
+            flush_seconds = 2.0
+        return max_items, batch_size, flush_seconds
 
-                    session.add(rejection)
-                    await session.commit()  # CRITICAL: Must commit to save to DB (not just flush)
-                    logger.info("Rejection stored: %s %s %s signal_id=%s", asset, timeframe, direction, signal_id)
-            except Exception as e:
-                if type(e).__name__ == "NoncriticalWriteDropped":
-                    logger.warning("Rejection log dropped because DB gate is busy")
-                else:
-                    logger.error("Failed to persist rejection: %s", e)
-                if session:
-                    try:
-                        await session.rollback()
-                    except Exception:
-                        pass
+    @staticmethod
+    def _enqueue_rejection_payload(payload: dict[str, Any]) -> None:
+        max_items, _, _ = MLRejectionTracker._rejection_spool_settings()
+        with _REJECTION_SPOOL_LOCK:
+            while len(_REJECTION_SPOOL) >= max_items:
+                _REJECTION_SPOOL.popleft()
+            _REJECTION_SPOOL.append(payload)
+
+    @staticmethod
+    def pending_rejection_count() -> int:
+        with _REJECTION_SPOOL_LOCK:
+            return len(_REJECTION_SPOOL)
+
+    async def _delayed_rejection_flush(self, delay_seconds: float) -> None:
+        """Flush sparse telemetry after a short delay and retry brief backpressure."""
+        try:
+            await asyncio.sleep(max(0.0, float(delay_seconds)))
+            for attempt in range(3):
+                if self.pending_rejection_count() <= 0:
+                    return
+                await self.flush_pending_rejections(force=True)
+                if self.pending_rejection_count() <= 0:
+                    return
+                await asyncio.sleep(min(30.0, max(0.5, float(delay_seconds)) * (2 ** attempt)))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("Rejection delayed flush ended: %s", exc)
+
+    def _schedule_rejection_flush(self, delay_seconds: float) -> None:
+        """Schedule one delayed flush per process event loop."""
+        global _REJECTION_FLUSH_TASK
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        with _REJECTION_FLUSH_TASK_LOCK:
+            current = _REJECTION_FLUSH_TASK
+            if current is not None and not current.done():
+                return
+            task = loop.create_task(self._delayed_rejection_flush(delay_seconds))
+            _REJECTION_FLUSH_TASK = task
+
+        def _clear(done: asyncio.Task[None]) -> None:
+            global _REJECTION_FLUSH_TASK
+            with _REJECTION_FLUSH_TASK_LOCK:
+                if _REJECTION_FLUSH_TASK is done:
+                    _REJECTION_FLUSH_TASK = None
+
+        task.add_done_callback(_clear)
+
+    async def flush_pending_rejections(self, *, force: bool = False) -> int:
+        """Persist a bounded batch of spooled rejection telemetry.
+
+        Returns the number committed. Deferred work is restored to the front of
+        the spool so a temporary foreground DB burst no longer loses evidence.
+        """
+        global _REJECTION_LAST_FLUSH_MONO, _REJECTION_LAST_DEFER_LOG_MONO
+
+        _, batch_size, flush_seconds = self._rejection_spool_settings()
+        now_mono = time.monotonic()
+        with _REJECTION_SPOOL_LOCK:
+            pending = len(_REJECTION_SPOOL)
+            due = force or pending >= batch_size or (
+                pending > 0 and now_mono - _REJECTION_LAST_FLUSH_MONO >= flush_seconds
+            )
+            if not due:
+                return 0
+            batch = [_REJECTION_SPOOL.popleft() for _ in range(min(batch_size, pending))]
+            _REJECTION_LAST_FLUSH_MONO = now_mono
+
+        if not batch:
+            return 0
+
+        try:
+            from db.priority import DBPriority
+            from db.session import DatabaseWorkDeferred
+
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="rejection_batch_write",
+                timeout_seconds=float(os.getenv("REJECTION_DB_TIMEOUT_SECONDS", "0.5") or 0.5),
+            ) as session:
+                session.add_all([MLRejectedSignal(**payload) for payload in batch])
+                await session.commit()
+            logger.info("Rejection batch stored: count=%s pending=%s", len(batch), self.pending_rejection_count())
+            return len(batch)
+        except Exception as exc:
+            # Restore in original order. Bounded overflow discards the oldest
+            # telemetry only after the configured safety cap is reached.
+            max_items, _, _ = self._rejection_spool_settings()
+            with _REJECTION_SPOOL_LOCK:
+                for payload in reversed(batch):
+                    _REJECTION_SPOOL.appendleft(payload)
+                while len(_REJECTION_SPOOL) > max_items:
+                    _REJECTION_SPOOL.pop()
+            is_deferred = False
+            try:
+                is_deferred = isinstance(exc, DatabaseWorkDeferred)
+            except Exception:
+                is_deferred = type(exc).__name__ in {
+                    "DatabaseWorkDeferred",
+                    "NoncriticalWriteDropped",
+                    "AnalyticsWorkDeferred",
+                }
+            if is_deferred:
+                # Rate-limit this expected backpressure message.
+                if now_mono - _REJECTION_LAST_DEFER_LOG_MONO >= 30.0:
+                    _REJECTION_LAST_DEFER_LOG_MONO = now_mono
+                    logger.info(
+                        "Rejection batch deferred by DB admission controller: pending=%s",
+                        self.pending_rejection_count(),
+                    )
+            else:
+                logger.error("Failed to persist rejection batch: %s", exc)
+            return 0
+
+    async def persist_rejection(
+        self,
+        asset: str,
+        timeframe: str,
+        direction: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit_levels: Any,
+        ml_probability: Optional[float],
+        rejection_reason: str,
+        features: Dict[str, Any],
+        rejection_type: Optional[str] = None,
+        signal_id: Optional[str] = None,
+    ) -> None:
+        """Queue rejection evidence and opportunistically flush it in batches."""
+        if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+            "1", "true", "yes", "on",
+        }:
+            return
+
+        tp_value = self._parse_tp_value(take_profit_levels)
+        if tp_value <= 0:
+            tp_value = entry_price * 1.05 if entry_price else 0.0
+        safe_ml_prob = float(ml_probability or 0.0)
+        safe_features = _json_safe(dict(features or {}))
+        if rejection_type:
+            safe_features.setdefault("rejection_type", rejection_type)
+        if signal_id:
+            safe_features.setdefault("signal_id", signal_id)
+
+        self._enqueue_rejection_payload(
+            {
+                "signal_id": signal_id,
+                "asset": str(asset or "").upper(),
+                "timeframe": str(timeframe or "").lower(),
+                "direction": str(direction or "").lower(),
+                "entry": float(entry_price or 0.0),
+                "stop_loss": float(stop_loss or 0.0),
+                "take_profit": str(tp_value),
+                "ml_probability": safe_ml_prob,
+                "rejection_reason": str(rejection_reason or "rejected")[:128],
+                "features": safe_features,
+                "actual_outcome": None,
+                "outcome_tracked_at": None,
+                "created_at": now_utc_naive(),
+            }
+        )
+        _, batch_size, flush_seconds = self._rejection_spool_settings()
+        if self.pending_rejection_count() >= batch_size:
+            await self.flush_pending_rejections(force=True)
+        else:
+            self._schedule_rejection_flush(flush_seconds)
 
     async def _load_runtime_int(self, key: str, default: int = 0) -> int:
         try:
@@ -927,7 +1087,9 @@ class MLRejectionTracker:
 
                 cfg = await refresh_thresholds(force=True)
                 if cfg is not None:
-                    _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
+                    _force_env_override = str(
+                        os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or ""
+                    ).strip().lower() in {"1", "true", "yes", "on", "y"}
                     os.environ["ML_PROB_THRESHOLD"] = str(float(getattr(cfg, "ml_prob_threshold", 0.55) or 0.55))
                     if not _force_env_override:
                         os.environ["PREMIUM_SCORE_THRESHOLD"] = str(
@@ -1028,6 +1190,7 @@ class MLRejectionTracker:
     async def track_rejection_outcomes(self) -> int:
         """Track all non-issued outcomes across configured windows and trigger adaptive learning."""
         try:
+            await self.flush_pending_rejections(force=True)
             backfilled = await self._ingest_non_ml_rejections_from_decision_log()
             async with get_session() as session:
                 # Get rejections still awaiting full window labels
@@ -1101,3 +1264,14 @@ class MLRejectionTracker:
         except Exception as e:
             logger.error(f"Failed to track rejection outcomes: {e}")
             return 0
+
+
+_ml_rejection_tracker: MLRejectionTracker | None = None
+
+
+def get_ml_rejection_tracker() -> MLRejectionTracker:
+    """Return the module-level ML rejection tracker singleton."""
+    global _ml_rejection_tracker
+    if _ml_rejection_tracker is None:
+        _ml_rejection_tracker = MLRejectionTracker()
+    return _ml_rejection_tracker

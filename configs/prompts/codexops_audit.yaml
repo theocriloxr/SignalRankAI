@@ -1,0 +1,3 @@
+version: codexops-audit-v1
+purpose: produce read-only code and release findings
+write_access: false

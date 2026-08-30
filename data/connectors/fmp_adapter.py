@@ -30,99 +30,57 @@ async def _async_get_candles(
     limit: int = 200,
     timeout: float = 10.0,
 ) -> List[Dict[str, Any]]:
-    """
-    Fetch candles from FMP API.
-    
-    Args:
-        symbol: Trading symbol (e.g., "AAPL", "EURUSD")
-        timeframe: Timeframe (1h, 4h, 1d) 
-        limit: Number of candles to fetch
-        timeout: Request timeout
-        
-    Returns:
-        List of candle dicts with keys: timestamp, open, high, low, close, volume
-    """
+    """Fetch normalized candles from FMP's current stable chart endpoints."""
     api_key = (os.getenv("FMP_API_KEY") or "").strip()
-    if not api_key:
-        logger.debug("fmp_adapter: FMP_API_KEY not set")
+    if not api_key or httpx is None:
         return []
-
-    # Clean symbol
-    symbol = (symbol or "").upper().strip()
-    symbol_clean = symbol.replace("/", "").replace("-", "").replace("_", "")
-    
-    request_timeout = min(10.0, max(2.0, float(timeout)))
-    
-    # Map timeframe to FMP format
-    tf_map = {
-        "1m": "1min",
-        "5m": "5min",
-        "15m": "15min", 
-        "1h": "1hour",
-        "4h": "4hour",
-        "1d": "1day"  # FMP uses 1day for daily
-    }
-    fmp_tf = tf_map.get((timeframe or "").strip().lower(), "1hour")
-    
+    symbol_clean = (symbol or "").upper().strip().replace("/", "").replace("-", "").replace("_", "")
+    tf = (timeframe or "1h").strip().lower()
+    interval_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1hour", "4h": "4hour"}
+    if tf in {"1d", "d", "day", "daily"}:
+        url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+    else:
+        interval = interval_map.get(tf)
+        if not interval:
+            return []
+        url = f"https://financialmodelingprep.com/stable/historical-chart/{interval}"
+    params = {"symbol": symbol_clean, "apikey": api_key}
+    client = httpx_client.get_client("fmp")
+    request_timeout = min(12.0, max(2.0, float(timeout)))
     try:
-        # FMP historical candles endpoint
-        url = (
-            f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol_clean}?"
-            f"from=2020-01-01&"
-            f"to=2030-01-01&"
-            f"timeseries={fmp_tf}&"
-            f"apikey={api_key}"
-        )
-        
-        client = httpx_client.get_client("fmp")
-        
-        if client is not None:
-            resp = await client.get(url, timeout=request_timeout)
+        if client is None:
+            async with httpx.AsyncClient(timeout=request_timeout) as fallback:
+                response = await fallback.get(url, params=params)
         else:
-            async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
-                resp = await client_fallback.get(url)
-        
-        if resp.status_code != 200:
-            logger.debug(f"fmp_adapter HTTP {resp.status_code}: {getattr(resp, 'text', '')[:200]}")
+            response = await client.get(url, params=params, timeout=request_timeout)
+        if response.status_code != 200:
+            logger.debug("fmp_adapter HTTP %s: %s", response.status_code, getattr(response, "text", "")[:200])
             return []
-        
-        data = resp.json()
-        
-        # FMP returns: {"symbol": "AAPL", "historical": [...]}
-        if not data or not isinstance(data, dict):
+        payload = response.json()
+        if isinstance(payload, dict):
+            rows = payload.get("historical") or payload.get("data") or []
+        else:
+            rows = payload or []
+        if not isinstance(rows, list):
             return []
-        
-        # Check for API error messages
-        if "Error" in str(data):
-            logger.debug(f"fmp_adapter API error: {data}")
-            return []
-        
-        historical = data.get("historical")
-        if not historical or not isinstance(historical, list):
-            return []
-        
         out: List[Dict[str, Any]] = []
-        
-        for row in historical[:limit]:
+        for row in rows[: max(1, int(limit or 200))]:
+            if not isinstance(row, dict):
+                continue
             try:
-                # FMP historical format
                 out.append({
-                    "timestamp": row.get("date"),
+                    "timestamp": row.get("date") or row.get("datetime") or row.get("timestamp"),
                     "open": float(row.get("open", 0)),
                     "high": float(row.get("high", 0)),
                     "low": float(row.get("low", 0)),
                     "close": float(row.get("close", 0)),
-                    "volume": float(row.get("volume", 0)),
+                    "volume": float(row.get("volume", 0) or 0),
                 })
-            except (ValueError, TypeError) as e:
-                logger.debug(f"fmp_adapter parse error: {e}")
+            except (TypeError, ValueError):
                 continue
-        
-        # FMP returns reverse chronological, so reverse to get oldest first
-        return out[::-1]
-        
-    except Exception as e:
-        logger.debug(f"fmp_adapter exception: {e}")
+        return list(reversed(out))
+    except Exception as exc:
+        logger.debug("fmp_adapter exception: %s", exc)
         return []
 
 
@@ -149,15 +107,15 @@ async def _async_get_quote(
     request_timeout = min(5.0, max(1.0, float(timeout)))
     
     try:
-        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={api_key}"
+        url = "https://financialmodelingprep.com/stable/quote"
         
         client = httpx_client.get_client("fmp")
         
         if client is not None:
-            resp = await client.get(url, timeout=request_timeout)
+            resp = await client.get(url, params={"symbol": symbol, "apikey": api_key}, timeout=request_timeout)
         else:
             async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
-                resp = await client_fallback.get(url)
+                resp = await client_fallback.get(url, params={"symbol": symbol, "apikey": api_key})
         
         if resp.status_code != 200:
             return {}

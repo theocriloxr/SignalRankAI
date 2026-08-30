@@ -1,0 +1,19 @@
+﻿{
+    "status":  "PASS",
+    "environment":  "staging",
+    "database_service":  "Postgres-R8Lr",
+    "database_fingerprint":  "abe93c3fb838c1ae8ca49ed3",
+    "alembic_head":  "0038_account_security_product",
+    "certification_exit_code":  0,
+    "certification_status":  "PENDING_RUNTIME_EVIDENCE",
+    "structural_proof_status":  "PASS",
+    "structural_proof":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\20260823-171231\\staging_structural_proof.json",
+    "services":  [
+                     "SignalRankAI",
+                     "striking-optimism",
+                     "bountiful-miracle"
+                 ],
+    "evidence_directory":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\20260823-171231",
+    "generated_at":  "2026-08-23T17:18:11.6450593+01:00",
+    "note":  "Infrastructure/schema/bootstrap/source-patch deployment completed and structurally proven. Fresh-signal, confirmed-delivery, paper-position, payment/email and soak evidence remain runtime observations."
+}

@@ -106,7 +106,7 @@ async def _load_events_from_db() -> list[dict]:
         from db.session import get_session, run_with_db_retry
 
         async def _fetch() -> list[dict]:
-            async with get_session() as session:
+            async with get_session(priority="background", label="economic_calendar_cache_read") as session:
                 events = await get_economic_events(session, hours_ahead=168)
                 out = []
                 for event in events:
@@ -173,8 +173,19 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
             })
         logger.info(f"[economic_calendar] Finnhub returned {len(events)} high-impact events")
         return events
+    except httpx.HTTPStatusError as exc:
+        # httpx exception text includes the full request URL. Finnhub places
+        # its API token in the query string, so log only non-secret evidence.
+        logger.warning(
+            "[economic_calendar] Finnhub fetch failed status=%s",
+            getattr(exc.response, "status_code", "unknown"),
+        )
+        return []
     except Exception as exc:
-        logger.warning(f"[economic_calendar] Finnhub fetch failed: {exc}")
+        logger.warning(
+            "[economic_calendar] Finnhub fetch failed error_type=%s",
+            type(exc).__name__,
+        )
         return []
 
 

@@ -45,15 +45,21 @@ async def _async_get_candles(
         logger.debug("kucoin_adapter: httpx not available")
         return []
 
-    # 1. Translate Binance format (BTC/USDT) to KuCoin format (BTC-USDT)
-    symbol = (symbol or "").upper().strip()
-    # Remove common separators
-    symbol = symbol.replace("/", "-").replace("_", "").replace("-", "")
-    
-    # Handle USDT suffix - KuCoin uses USDT for crypto
-    if symbol.endswith("USDT") or symbol.endswith("USD"):
-        # Keep as-is for KuCoin
-        pass
+    # 1. Translate canonical formats (BTCUSDT, BTC/USDT, BTC-USDT)
+    # to KuCoin's required BASE-QUOTE form.
+    raw_symbol = (symbol or "").upper().strip().replace("_", "-").replace("/", "-")
+    if "-" in raw_symbol:
+        parts = [part for part in raw_symbol.split("-") if part]
+        symbol = "-".join(parts[:2]) if len(parts) >= 2 else raw_symbol
+    else:
+        symbol = raw_symbol
+        for quote in ("USDT", "USDC", "USD", "BTC", "ETH", "EUR", "GBP"):
+            if symbol.endswith(quote) and len(symbol) > len(quote):
+                symbol = f"{symbol[:-len(quote)]}-{quote}"
+                break
+    if "-" not in symbol:
+        logger.debug("kucoin_adapter unsupported symbol mapping: %s", raw_symbol)
+        return []
     
     # 2. Map timeframe strings (KuCoin uses '1hour' instead of '1h')
     tf_map = {

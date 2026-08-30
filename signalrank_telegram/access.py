@@ -41,6 +41,18 @@ def resolve_user_tier(user_id):
     except (ValueError, TypeError):
         return "FREE"
     
+    # Privileged configuration never bypasses a blocked account. The async DB
+    # resolver applies that ordering and avoids persisting owner overrides.
+    configured_role = "OWNER" if user_id_int in OWNER_IDS else ("ADMIN" if user_id_int in ADMIN_IDS else "")
+    if configured_role and _resolve_user_tier_pg is not None:
+        try:
+            db_tier = str(run_sync(_resolve_user_tier_pg(user_id_int)) or "FREE").upper()
+            resolved = "NONE" if db_tier == "NONE" else configured_role
+            state.cache_set_sync(_tier_cache_key(user_id_int), resolved, ex=_tier_cache_ttl_seconds())
+            return resolved
+        except Exception:
+            pass
+    
     # PRIORITY 1: Check OWNER_IDS (environment variable - highest priority)
     # This ensures owner is never marked as FREE from database
     if user_id_int in OWNER_IDS:
@@ -61,7 +73,9 @@ def resolve_user_tier(user_id):
     # Cache fast-path
     try:
         cached = str(state.cache_get_sync(_tier_cache_key(user_id_int)) or "").strip().upper()
-        if cached in {"FREE", "PREMIUM", "VIP", "ADMIN", "OWNER"}:
+        valid = cached in {"NONE", "FREE", "PREMIUM", "VIP", "ADMIN", "OWNER"}
+        stale_owner_override = cached == "OWNER" and user_id_int not in OWNER_IDS
+        if valid and not stale_owner_override:
             return cached
     except Exception:
         pass

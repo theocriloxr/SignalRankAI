@@ -29,6 +29,24 @@ def normalize_indicator_schema(indicators: MutableMapping[str, Any] | None) -> M
                 indicators[canonical] = indicators.get(alias)
                 break
 
+    bollinger_payload = indicators.get("bollinger")
+    if isinstance(bollinger_payload, dict):
+        upper = next((bollinger_payload.get(key) for key in ("upper", "upper_band", "bb_upper", "high") if bollinger_payload.get(key) not in (None, "")), None)
+        lower = next((bollinger_payload.get(key) for key in ("lower", "lower_band", "bb_lower", "low") if bollinger_payload.get(key) not in (None, "")), None)
+        middle = next((bollinger_payload.get(key) for key in ("middle", "mid", "basis", "sma") if bollinger_payload.get(key) not in (None, "")), None)
+        width = next((bollinger_payload.get(key) for key in ("width", "bandwidth", "bb_width") if bollinger_payload.get(key) not in (None, "")), None)
+        if width in (None, "") and upper not in (None, "") and lower not in (None, ""):
+            try:
+                upper_f = float(upper)
+                lower_f = float(lower)
+                denominator = abs(float(middle)) if middle not in (None, "") and float(middle) != 0 else abs((upper_f + lower_f) / 2.0)
+                width = abs(upper_f - lower_f) / denominator if denominator else abs(upper_f - lower_f)
+                bollinger_payload["width"] = width
+            except Exception:
+                width = None
+        if indicators.get("bollinger_width") in (None, "") and width not in (None, ""):
+            indicators["bollinger_width"] = width
+
     macd_payload = indicators.get("macd")
     if isinstance(macd_payload, dict):
         if indicators.get("macd_line") in (None, "") and macd_payload.get("macd") not in (None, ""):

@@ -17,7 +17,7 @@ class ATRBreakoutStrategy(BaseStrategy):
         if width in (None, ""):
             missing.append("bollinger.width")
         if not candles or missing:
-            logger.warning(
+            logger.debug(
                 "%s missing indicators: %s available=%s",
                 self.name,
                 missing,

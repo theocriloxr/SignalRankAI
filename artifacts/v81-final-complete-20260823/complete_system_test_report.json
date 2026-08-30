@@ -1,0 +1,682 @@
+{
+  "evidence_scope": "HERMETIC_LOCAL_ONLY",
+  "full_suite_requested": true,
+  "generated_at": "2026-08-23T16:44:34.426829+00:00",
+  "live_provider_calls_requested": false,
+  "not_proven_by_this_command": [
+    "Railway deployment",
+    "Telegram network delivery",
+    "PostgreSQL/PgBouncer live connection",
+    "two live Redis services",
+    "Paystack test transaction",
+    "TradingView external alert",
+    "MetaApi demo order",
+    "24-72 hour soak"
+  ],
+  "ok": true,
+  "profile": "configs/env/railway-hobby-owner-beta.env.example",
+  "pytest_results": {
+    "errors": 0,
+    "failed": 0,
+    "passed": 1384,
+    "skipped": 0,
+    "unparsed_batches": 0
+  },
+  "steps": [
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "-m",
+        "compileall",
+        "-q",
+        "."
+      ],
+      "duration_seconds": 21.999,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\compileall.log",
+      "name": "compileall",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/validate_env_contract.py",
+        ".env.example",
+        "RAILWAY_ENV_UPDATED.env.example",
+        "configs\\env\\hermetic-test.env.example",
+        "configs\\env\\production.env.example",
+        "configs\\env\\railway-hobby-full-advisory.env.example",
+        "configs\\env\\railway-hobby-owner-beta.env.example",
+        "configs\\env\\railway-hobby-paper-demo.env.example",
+        "configs\\env\\railway-hobby-real-execution-gated.env.example",
+        "configs\\env\\railway-staging.env.example",
+        "deploy\\railway_roles\\analytics.env",
+        "deploy\\railway_roles\\delivery.env",
+        "deploy\\railway_roles\\engine.env",
+        "deploy\\railway_roles\\gateway.env",
+        "deploy\\railway_roles\\monolith_safe.env",
+        "deploy\\railway_roles\\outcome.env",
+        "deploy\\railway_roles\\worker.env"
+      ],
+      "duration_seconds": 0.217,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\env_contracts.log",
+      "name": "env_contracts",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/schema_audit.py"
+      ],
+      "duration_seconds": 6.64,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\schema_audit.log",
+      "name": "schema_audit",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/architecture_smoke.py"
+      ],
+      "duration_seconds": 0.515,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\architecture_smoke.log",
+      "name": "architecture_smoke",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/audit_db_session_calls.py"
+      ],
+      "duration_seconds": 4.03,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\db_session_audit.log",
+      "name": "db_session_audit",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/validate_governance_docs.py"
+      ],
+      "duration_seconds": 0.217,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\governance_validation.log",
+      "name": "governance_validation",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/secret_scan.py"
+      ],
+      "duration_seconds": 33.059,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\secret_scan.log",
+      "name": "secret_scan",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/production_readiness_check.py"
+      ],
+      "duration_seconds": 0.216,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\production_readiness.log",
+      "name": "production_readiness",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/runtime_config_snapshot.py",
+        "--profile",
+        "configs/env/railway-hobby-owner-beta.env.example",
+        "--output",
+        "artifacts\\v81-final-complete-20260823\\runtime_config_snapshot.json"
+      ],
+      "duration_seconds": 0.316,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\runtime_config.log",
+      "name": "runtime_config",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/simulate_railway.py",
+        "--port",
+        "8877"
+      ],
+      "duration_seconds": 5.533,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\railway_simulation.log",
+      "name": "railway_simulation",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/load_test_delivery_planner.py",
+        "--users",
+        "100000",
+        "--shards",
+        "32",
+        "--batch-size",
+        "100",
+        "--max-seconds",
+        "10"
+      ],
+      "duration_seconds": 1.522,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\fanout_load.log",
+      "name": "fanout_load",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/certify_providers.py",
+        "--output-dir",
+        "artifacts\\v81-final-complete-20260823\\provider-certification"
+      ],
+      "duration_seconds": 4.333,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\provider_certification.log",
+      "name": "provider_certification",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_access.py",
+        "tests\\test_access_tier_cache.py",
+        "tests\\test_adaptive_candle_store.py",
+        "tests\\test_adaptive_dataset_and_wfo.py",
+        "tests\\test_adaptive_runtime_integration.py",
+        "tests\\test_adaptive_strategy_intelligence.py",
+        "tests\\test_admin_pulse_delivery_count.py",
+        "tests\\test_alembic_migration_url_contract.py",
+        "tests\\test_asset_repeat_policy.py",
+        "tests\\test_backtest_wfo.py",
+        "tests\\test_broker_execution_p0.py"
+      ],
+      "duration_seconds": 11.758,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_01.log",
+      "name": "full_pytest_batch_01",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_broker_permission_validation.py",
+        "tests\\test_bypass_rotation.py",
+        "tests\\test_callback_feature_completion.py",
+        "tests\\test_callback_handler.py",
+        "tests\\test_canonical_broker_entrypoints.py",
+        "tests\\test_codex_governance_and_asset_locks.py",
+        "tests\\test_command_contracts.py",
+        "tests\\test_command_tier_contract.py",
+        "tests\\test_complete_system_orchestrator_contract.py",
+        "tests\\test_connectors.py",
+        "tests\\test_connectors_providers.py"
+      ],
+      "duration_seconds": 42.929,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_02.log",
+      "name": "full_pytest_batch_02",
+      "ok": true
+    },
+    {
+      "attempts": 2,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_container_startup_cmd.py",
+        "tests\\test_continuous_improvement_v8.py",
+        "tests\\test_db_session_labels.py",
+        "tests\\test_decision_intelligence.py",
+        "tests\\test_delivery_fanout_planner.py",
+        "tests\\test_delivery_freshness.py",
+        "tests\\test_delivery_limit_guard.py",
+        "tests\\test_delivery_outcome_news_hardening.py",
+        "tests\\test_deploy_log_regressions.py",
+        "tests\\test_deployment_diagnostics_entrypoint.py",
+        "tests\\test_deployment_schema_completion_v151.py"
+      ],
+      "duration_seconds": 314.482,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_03.log",
+      "name": "full_pytest_batch_03",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_diagnostics_source_scope.py",
+        "tests\\test_dispatch_update_smoke.py",
+        "tests\\test_drift_adjustment.py",
+        "tests\\test_dynamic_sizing_fail_closed.py",
+        "tests\\test_ecosystem_bootstrap_asyncpg_types.py",
+        "tests\\test_engine_critical_fallbacks_fail_closed.py",
+        "tests\\test_engine_final_safety_gates.py",
+        "tests\\test_engine_loop.py",
+        "tests\\test_engine_reconciliation.py",
+        "tests\\test_enterprise_features.py",
+        "tests\\test_env_examples_no_duplicates.py"
+      ],
+      "duration_seconds": 70.089,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_04.log",
+      "name": "full_pytest_batch_04",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_execution_safety.py",
+        "tests\\test_expectancy_gate.py",
+        "tests\\test_extended_provider_adapters.py",
+        "tests\\test_fetcher.py",
+        "tests\\test_fetcher_async.py",
+        "tests\\test_fibonacci_helpers.py",
+        "tests\\test_formatter_delivery_pressure.py",
+        "tests\\test_free_provider_microstructure.py",
+        "tests\\test_governance_docs.py",
+        "tests\\test_governance_runtime_exclusions.py",
+        "tests\\test_help_menu_cache.py"
+      ],
+      "duration_seconds": 13.968,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_05.log",
+      "name": "full_pytest_batch_05",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_imp_strategy.py",
+        "tests\\test_indices_asset_support.py",
+        "tests\\test_live_production_evidence.py",
+        "tests\\test_macro_flow.py",
+        "tests\\test_market_data_routing.py",
+        "tests\\test_market_monitor_regressions.py",
+        "tests\\test_market_state.py",
+        "tests\\test_migration_0015_clean_schema.py",
+        "tests\\test_migration_0031_sql_bind_safety.py",
+        "tests\\test_migration_database_url_normalization.py",
+        "tests\\test_migration_revision_ids.py"
+      ],
+      "duration_seconds": 8.755,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_06.log",
+      "name": "full_pytest_batch_06",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_ml_learning_runtime_v135.py",
+        "tests\\test_ml_registry.py",
+        "tests\\test_ml_schema_evolution.py",
+        "tests\\test_monolith_hardening_defaults.py",
+        "tests\\test_mt5_link_state_contract.py",
+        "tests\\test_mt5_signal_router_queue.py",
+        "tests\\test_native_mt5_bridge_hardening.py",
+        "tests\\test_news_intelligence.py",
+        "tests\\test_news_x_sentiment.py",
+        "tests\\test_onchain_providers.py",
+        "tests\\test_orderbook_fills.py"
+      ],
+      "duration_seconds": 7.547,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_07.log",
+      "name": "full_pytest_batch_07",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_orderbook_loader.py",
+        "tests\\test_outcome_delivery_contract.py",
+        "tests\\test_outcome_integration_multi_tp.py",
+        "tests\\test_outcome_provenance_hardening.py",
+        "tests\\test_owner_diagnostic_commands.py",
+        "tests\\test_owner_operational_commands_surface.py",
+        "tests\\test_paper_ledger_exits.py",
+        "tests\\test_payment_receipt_migration_idempotency.py",
+        "tests\\test_payments.py",
+        "tests\\test_paystack_recovery_configuration.py",
+        "tests\\test_paystack_webhook.py"
+      ],
+      "duration_seconds": 10.759,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_08.log",
+      "name": "full_pytest_batch_08",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_phase12_performance_paper_reliability.py",
+        "tests\\test_phase4_pass1_live_validation.py",
+        "tests\\test_phase4_pass1_quote_contract.py",
+        "tests\\test_phase4_pass2_db_priority_and_command_speed.py",
+        "tests\\test_phase4_pass3_delivery_reliability.py",
+        "tests\\test_phase4_pass4_outcome_tracker_redesign.py",
+        "tests\\test_phase4_pass5_tier_policy_and_upgrade_ux.py",
+        "tests\\test_phase4_pass6_security_api_payments.py",
+        "tests\\test_phase4_pass7_runtime_roles.py",
+        "tests\\test_pipeline.py",
+        "tests\\test_post_deploy_signal_hardening.py"
+      ],
+      "duration_seconds": 19.493,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_09.log",
+      "name": "full_pytest_batch_09",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_post_deploy_smoke_contract.py",
+        "tests\\test_price_validator.py",
+        "tests\\test_product_tier_resolution.py",
+        "tests\\test_production_endgame_20260725.py",
+        "tests\\test_production_operations_package.py",
+        "tests\\test_production_quality_guard.py",
+        "tests\\test_production_readiness_check.py",
+        "tests\\test_provider_and_asset_registry_hardening.py",
+        "tests\\test_provider_catalog_and_certification.py",
+        "tests\\test_provider_certification_entrypoint.py",
+        "tests\\test_provider_registry_fail_closed.py"
+      ],
+      "duration_seconds": 13.67,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_10.log",
+      "name": "full_pytest_batch_10",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_providers_proxy.py",
+        "tests\\test_proxy_manager.py",
+        "tests\\test_railway_activation_contract.py",
+        "tests\\test_railway_lifecycle.py",
+        "tests\\test_railway_monolith_contract.py",
+        "tests\\test_railway_no_redis.py",
+        "tests\\test_railway_redis_queue.py",
+        "tests\\test_railway_runtime_incident_fixes.py",
+        "tests\\test_railway_simulation_contract.py",
+        "tests\\test_railway_staging_activation_hotfix_20260727.py",
+        "tests\\test_ranking_weights.py"
+      ],
+      "duration_seconds": 9.853,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_11.log",
+      "name": "full_pytest_batch_11",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_realtime_outcome_delivery_tier_gates.py",
+        "tests\\test_realtime_outcome_tp_tiers.py",
+        "tests\\test_realtime_outcome_tracker_user_perf_ids.py",
+        "tests\\test_redis_webhook_queue.py",
+        "tests\\test_referral_reliability_v133.py",
+        "tests\\test_repository_proof_manifest_contract.py",
+        "tests\\test_resource_governor.py",
+        "tests\\test_risk_dynamic.py",
+        "tests\\test_runtime_config_snapshot.py",
+        "tests\\test_runtime_hardening_contract.py",
+        "tests\\test_runtime_hotfix_20260725.py"
+      ],
+      "duration_seconds": 6.642,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_12.log",
+      "name": "full_pytest_batch_12",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_runtime_log_regressions.py",
+        "tests\\test_runtime_p0_cache_worker_scheduler.py",
+        "tests\\test_runtime_startup_contention_followup.py",
+        "tests\\test_scheduler_registration_contract.py",
+        "tests\\test_score_calibration.py",
+        "tests\\test_secret_scan_documents.py",
+        "tests\\test_signal_charts.py",
+        "tests\\test_signal_dedup_rules.py",
+        "tests\\test_signal_deduplicator.py",
+        "tests\\test_signal_delivery_ack.py",
+        "tests\\test_signal_explainability.py"
+      ],
+      "duration_seconds": 11.054,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_13.log",
+      "name": "full_pytest_batch_13",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_signal_fingerprint.py",
+        "tests\\test_signal_lock_contract.py",
+        "tests\\test_signal_monitoring_reliability.py",
+        "tests\\test_signal_visibility_and_proof_quality.py",
+        "tests\\test_single_service_defaults.py",
+        "tests\\test_smart_dca_hardening.py",
+        "tests\\test_staged_release_contracts.py",
+        "tests\\test_staging_log_regressions_20260801.py",
+        "tests\\test_stale_learning_multiservice.py",
+        "tests\\test_storage_priority_hardening.py",
+        "tests\\test_strategies.py"
+      ],
+      "duration_seconds": 86.558,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_14.log",
+      "name": "full_pytest_batch_14",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_strategy_runner.py",
+        "tests\\test_strategy_runner_async.py",
+        "tests\\test_telegram_webhook_registration_contract.py",
+        "tests\\test_telemetry.py",
+        "tests\\test_tick_liquidity.py",
+        "tests\\test_tiered_execution_canonical_routing.py",
+        "tests\\test_time_stop_outcome_persistence.py",
+        "tests\\test_timeutils.py",
+        "tests\\test_timezone_and_performance_v2.py",
+        "tests\\test_trade_manager_breakeven_persistence.py",
+        "tests\\test_trade_tracker.py"
+      ],
+      "duration_seconds": 12.364,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_15.log",
+      "name": "full_pytest_batch_15",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_trader_profiles_and_platform_reliability.py",
+        "tests\\test_trading_ecosystem_intelligence.py",
+        "tests\\test_unified_canonical_billing_v151.py",
+        "tests\\test_unified_platform_artifacts.py",
+        "tests\\test_unified_platform_completion_v150.py",
+        "tests\\test_unified_platform_identity.py",
+        "tests\\test_unified_platform_webhooks.py",
+        "tests\\test_v104_runtime_schema_hotfix.py",
+        "tests\\test_v105_railway_readiness_hotfix.py",
+        "tests\\test_v106_delivery_db_hotfix.py",
+        "tests\\test_v107_startup_db_deadlock_hotfix.py"
+      ],
+      "duration_seconds": 31.059,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_16.log",
+      "name": "full_pytest_batch_16",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_v108_operational_gaps.py",
+        "tests\\test_v111_adaptive_operational_hotfix.py",
+        "tests\\test_v120_launch_hardening.py",
+        "tests\\test_v121_runtime_import_paper_hotfix.py",
+        "tests\\test_v122_full_system_staging.py",
+        "tests\\test_v123_log_driven_hotfix.py",
+        "tests\\test_v124_runtime_log_fixes.py",
+        "tests\\test_v125_live_paystack_delivery_hotfix.py",
+        "tests\\test_v126_callback_outcome_recovery.py",
+        "tests\\test_v127_outcome_price_production.py"
+      ],
+      "duration_seconds": 5.641,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_17.log",
+      "name": "full_pytest_batch_17",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_v128_outcome_perf_readiness_hotfix.py",
+        "tests\\test_v129_lifecycle_profile_observability_hotfix.py",
+        "tests\\test_v130_production_cutover_outcome_recovery.py",
+        "tests\\test_v131_live_financial_activation.py",
+        "tests\\test_v131_notification_delivery_integrity.py",
+        "tests\\test_v131_payout_api.py",
+        "tests\\test_v132_auto_delivery_callbacks_monitor.py",
+        "tests\\test_v1364_runtime_stability_hotfix.py",
+        "tests\\test_v1365_production_integrity.py",
+        "tests\\test_v1365_production_integrity_profile_routing.py"
+      ],
+      "duration_seconds": 10.856,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_18.log",
+      "name": "full_pytest_batch_18",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_v1366_runtime_certification_hotfix.py",
+        "tests\\test_v1367_integrity_accounting_hotfix.py",
+        "tests\\test_v1368_performance_scale_hotfix.py",
+        "tests\\test_v1369_outcome_delivery_recovery.py",
+        "tests\\test_v136_railway_performance_decomposition.py",
+        "tests\\test_v20_event_platform.py",
+        "tests\\test_v20_financial_ledger.py",
+        "tests\\test_v20_provider_layer.py",
+        "tests\\test_v20_risk_authority.py",
+        "tests\\test_v20_slo_registry.py"
+      ],
+      "duration_seconds": 7.444,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_19.log",
+      "name": "full_pytest_batch_19",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\.venv\\Scripts\\python.exe",
+        "scripts/pytest_hard_exit.py",
+        "-q",
+        "tests\\test_v21_multi_asset_expansion.py",
+        "tests\\test_v22_provider_expansion.py",
+        "tests\\test_v7_governance_contract.py",
+        "tests\\test_v81_connected_staging_contract.py",
+        "tests\\test_volume_delta.py",
+        "tests\\test_web_api_tokens.py",
+        "tests\\test_web_app_regression_guard.py",
+        "tests\\test_webhook_lifecycle_receipts.py",
+        "tests\\test_wfo_train.py",
+        "tests\\test_yfinance_integration.py"
+      ],
+      "duration_seconds": 32.045,
+      "exit_code": 0,
+      "log_path": "artifacts\\v81-final-complete-20260823\\full_pytest_batch_20.log",
+      "name": "full_pytest_batch_20",
+      "ok": true
+    }
+  ]
+}

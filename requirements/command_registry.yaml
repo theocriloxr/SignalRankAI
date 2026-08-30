@@ -1,0 +1,2877 @@
+{
+  "commands": [
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.about",
+      "canonical_name": "about",
+      "fallback_handlers": [],
+      "handler": "about_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6197"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.account",
+      "canonical_name": "account",
+      "fallback_handlers": [],
+      "handler": "account_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6298"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_pause",
+      "canonical_name": "adaptive_pause",
+      "fallback_handlers": [],
+      "handler": "adaptive_pause_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6354"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_promote",
+      "canonical_name": "adaptive_promote",
+      "fallback_handlers": [],
+      "handler": "adaptive_promote_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6356"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_resume",
+      "canonical_name": "adaptive_resume",
+      "fallback_handlers": [],
+      "handler": "adaptive_resume_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6355"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_rollback",
+      "canonical_name": "adaptive_rollback",
+      "fallback_handlers": [],
+      "handler": "adaptive_rollback_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6358"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_status",
+      "canonical_name": "adaptive_status",
+      "fallback_handlers": [],
+      "handler": "adaptive_status_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6353"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.adaptive_suspend",
+      "canonical_name": "adaptive_suspend",
+      "fallback_handlers": [],
+      "handler": "adaptive_suspend_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6357"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin_feedback",
+        "admin_payment_lookup",
+        "admin_receipt_lookup",
+        "admin_signal_lookup",
+        "admin_subscription_fix",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin",
+      "canonical_name": "admin",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6477"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.admin_broadcast",
+      "canonical_name": "admin_broadcast",
+      "fallback_handlers": [],
+      "handler": "admin_broadcast_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6479"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.admin_dashboard",
+      "canonical_name": "admin_dashboard",
+      "fallback_handlers": [],
+      "handler": "admin_dashboard",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6478"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_payment_lookup",
+        "admin_receipt_lookup",
+        "admin_signal_lookup",
+        "admin_subscription_fix",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin_feedback",
+      "canonical_name": "admin_feedback",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6338"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_feedback",
+        "admin_receipt_lookup",
+        "admin_signal_lookup",
+        "admin_subscription_fix",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin_payment_lookup",
+      "canonical_name": "admin_payment_lookup",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6237"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_feedback",
+        "admin_payment_lookup",
+        "admin_signal_lookup",
+        "admin_subscription_fix",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin_receipt_lookup",
+      "canonical_name": "admin_receipt_lookup",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6238"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_feedback",
+        "admin_payment_lookup",
+        "admin_receipt_lookup",
+        "admin_subscription_fix",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin_signal_lookup",
+      "canonical_name": "admin_signal_lookup",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6337"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_feedback",
+        "admin_payment_lookup",
+        "admin_receipt_lookup",
+        "admin_signal_lookup",
+        "admin_user"
+      ],
+      "audit_event": "telegram.command.admin_subscription_fix",
+      "canonical_name": "admin_subscription_fix",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6336"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.admin_top_assets",
+      "canonical_name": "admin_top_assets",
+      "fallback_handlers": [],
+      "handler": "admin_top_assets_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6332"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "strategy_leaderboard"
+      ],
+      "audit_event": "telegram.command.admin_top_strategies",
+      "canonical_name": "admin_top_strategies",
+      "fallback_handlers": [],
+      "handler": "admin_top_strategies_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6333"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin",
+        "admin_feedback",
+        "admin_payment_lookup",
+        "admin_receipt_lookup",
+        "admin_signal_lookup",
+        "admin_subscription_fix"
+      ],
+      "audit_event": "telegram.command.admin_user",
+      "canonical_name": "admin_user",
+      "fallback_handlers": [],
+      "handler": "admin_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6335"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.admin_user_engagement",
+      "canonical_name": "admin_user_engagement",
+      "fallback_handlers": [],
+      "handler": "admin_user_engagement_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6334"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.alerts",
+      "canonical_name": "alerts",
+      "fallback_handlers": [],
+      "handler": "alerts_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6266"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.all_asset_test_status",
+      "canonical_name": "all_asset_test_status",
+      "fallback_handlers": [],
+      "handler": "all_asset_test_status_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6295"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.analyze",
+      "canonical_name": "analyze",
+      "fallback_handlers": [],
+      "handler": "analyze_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6302"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.apikey",
+      "canonical_name": "apikey",
+      "fallback_handlers": [],
+      "handler": "apikey_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6324"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "open_app"
+      ],
+      "audit_event": "telegram.command.app",
+      "canonical_name": "app",
+      "fallback_handlers": [],
+      "handler": "app_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6318"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.asset_capability",
+      "canonical_name": "asset_capability",
+      "fallback_handlers": [],
+      "handler": "asset_capability_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6293"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.asset_class_test",
+      "canonical_name": "asset_class_test",
+      "fallback_handlers": [],
+      "handler": "asset_class_test_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6294"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.assets",
+      "canonical_name": "assets",
+      "fallback_handlers": [],
+      "handler": "assets_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6339"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.automaton_pause",
+      "canonical_name": "automaton_pause",
+      "fallback_handlers": [],
+      "handler": "automaton_pause_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6223"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.automaton_report",
+      "canonical_name": "automaton_report",
+      "fallback_handlers": [],
+      "handler": "automaton_report_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6204"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.automaton_reset_paper",
+      "canonical_name": "automaton_reset_paper",
+      "fallback_handlers": [],
+      "handler": "automaton_reset_paper_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6225"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.automaton_resume",
+      "canonical_name": "automaton_resume",
+      "fallback_handlers": [],
+      "handler": "automaton_resume_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6224"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.automaton_status",
+      "canonical_name": "automaton_status",
+      "fallback_handlers": [],
+      "handler": "automaton_status_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6203"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.blast_terms",
+      "canonical_name": "blast_terms",
+      "fallback_handlers": [],
+      "handler": "blast_terms_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6481"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.broadcast",
+      "canonical_name": "broadcast",
+      "fallback_handlers": [],
+      "handler": "broadcast_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6377"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.cancel",
+      "canonical_name": "cancel",
+      "fallback_handlers": [],
+      "handler": "cancel_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6418"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.codex_audit",
+      "canonical_name": "codex_audit",
+      "fallback_handlers": [],
+      "handler": "codex_audit_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6244"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_fix_plan",
+      "canonical_name": "codex_fix_plan",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6246"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_generate_issue",
+      "canonical_name": "codex_generate_issue",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6252"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_log_review",
+      "canonical_name": "codex_log_review",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6245"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_pr_summary",
+      "canonical_name": "codex_pr_summary",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6251"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_release_check",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_refactor_plan",
+      "canonical_name": "codex_refactor_plan",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6250"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_security_scan",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_release_check",
+      "canonical_name": "codex_release_check",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6248"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_test_plan"
+      ],
+      "audit_event": "telegram.command.codex_security_scan",
+      "canonical_name": "codex_security_scan",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6247"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "codex_fix_plan",
+        "codex_generate_issue",
+        "codex_log_review",
+        "codex_pr_summary",
+        "codex_refactor_plan",
+        "codex_release_check",
+        "codex_security_scan"
+      ],
+      "audit_event": "telegram.command.codex_test_plan",
+      "canonical_name": "codex_test_plan",
+      "fallback_handlers": [],
+      "handler": "codexops_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6249"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "mt5",
+        "mt5_link",
+        "mt5link"
+      ],
+      "audit_event": "telegram.command.connect_broker",
+      "canonical_name": "connect_broker",
+      "fallback_handlers": [],
+      "handler": "mt5_link_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6405"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.contact_admin",
+      "canonical_name": "contact_admin",
+      "fallback_handlers": [],
+      "handler": "contact_admin_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6221"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.correct_signal",
+      "canonical_name": "correct_signal",
+      "fallback_handlers": [],
+      "handler": "correct_signal",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6374"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dashboard",
+      "canonical_name": "dashboard",
+      "fallback_handlers": [],
+      "handler": "dashboard_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6299"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.db_health",
+      "canonical_name": "db_health",
+      "fallback_handlers": [],
+      "handler": "db_health_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6285"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dead_letter_replay",
+      "canonical_name": "dead_letter_replay",
+      "fallback_handlers": [],
+      "handler": "dead_letter_replay_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6388"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dead_letter_status",
+      "canonical_name": "dead_letter_status",
+      "fallback_handlers": [],
+      "handler": "dead_letter_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6387"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dedup_audit",
+      "canonical_name": "dedup_audit",
+      "fallback_handlers": [],
+      "handler": "dedup_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6382"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.delivery_debug",
+      "canonical_name": "delivery_debug",
+      "fallback_handlers": [],
+      "handler": "delivery_debug_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6286"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.delivery_eligibility",
+      "canonical_name": "delivery_eligibility",
+      "fallback_handlers": [],
+      "handler": "delivery_eligibility_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6291"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "force_signal"
+      ],
+      "audit_event": "telegram.command.dev_force_signal",
+      "canonical_name": "dev_force_signal",
+      "fallback_handlers": [],
+      "handler": "dev_force_signal",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6369"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dev_invalidate",
+      "canonical_name": "dev_invalidate",
+      "fallback_handlers": [],
+      "handler": "dev_invalidate",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6371"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dev_pause",
+      "canonical_name": "dev_pause",
+      "fallback_handlers": [],
+      "handler": "dev_pause",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6367"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.dev_resume",
+      "canonical_name": "dev_resume",
+      "fallback_handlers": [],
+      "handler": "dev_resume",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6368"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.devices",
+      "canonical_name": "devices",
+      "fallback_handlers": [],
+      "handler": "devices_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6322"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.disclaimer",
+      "canonical_name": "disclaimer",
+      "fallback_handlers": [],
+      "handler": "disclaimer_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6199"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.drawdown",
+      "canonical_name": "drawdown",
+      "fallback_handlers": [],
+      "handler": "drawdown_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6413"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.early",
+      "canonical_name": "early",
+      "fallback_handlers": [],
+      "handler": "early_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6276"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.elite",
+      "canonical_name": "elite",
+      "fallback_handlers": [],
+      "handler": "elite_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6275"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.engine_debug",
+      "canonical_name": "engine_debug",
+      "fallback_handlers": [],
+      "handler": "engine_debug_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6289"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.execution",
+      "canonical_name": "execution",
+      "fallback_handlers": [],
+      "handler": "execution_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6414"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.faq",
+      "canonical_name": "faq",
+      "fallback_handlers": [],
+      "handler": "faq_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6198"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.feedback",
+      "canonical_name": "feedback",
+      "fallback_handlers": [],
+      "handler": "feedback_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6301"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.filter",
+      "canonical_name": "filter",
+      "fallback_handlers": [
+        "_filter_unavailable"
+      ],
+      "handler": "filter_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6304",
+        "signalrank_telegram/bot.py:6316"
+      ],
+      "status": "IMPLEMENTED_WITH_FAIL_CLOSED_FALLBACK",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.force_market_scan",
+      "canonical_name": "force_market_scan",
+      "fallback_handlers": [],
+      "handler": "force_market_scan_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6480"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "dev_force_signal"
+      ],
+      "audit_event": "telegram.command.force_signal",
+      "canonical_name": "force_signal",
+      "fallback_handlers": [],
+      "handler": "dev_force_signal",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6370"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.format_debug",
+      "canonical_name": "format_debug",
+      "fallback_handlers": [],
+      "handler": "format_debug_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6288"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.gemini",
+      "canonical_name": "gemini",
+      "fallback_handlers": [],
+      "handler": "gemini_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6239"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.gemini_analyze",
+      "canonical_name": "gemini_analyze",
+      "fallback_handlers": [],
+      "handler": "gemini_analyze_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6241"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.gemini_audit",
+      "canonical_name": "gemini_audit",
+      "fallback_handlers": [],
+      "handler": "gemini_audit_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6242"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.gemini_predict",
+      "canonical_name": "gemini_predict",
+      "fallback_handlers": [],
+      "handler": "gemini_predict_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6243"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.gemini_review",
+      "canonical_name": "gemini_review",
+      "fallback_handlers": [],
+      "handler": "gemini_review_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6240"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.help",
+      "canonical_name": "help",
+      "fallback_handlers": [],
+      "handler": "help_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6196"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.history",
+      "canonical_name": "history",
+      "fallback_handlers": [],
+      "handler": "history_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6263"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.invite",
+      "canonical_name": "invite",
+      "fallback_handlers": [],
+      "handler": "invite_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6259"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.kill_switch",
+      "canonical_name": "kill_switch",
+      "fallback_handlers": [],
+      "handler": "kill_switch_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6393"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.language",
+      "canonical_name": "language",
+      "fallback_handlers": [],
+      "handler": "language_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6325"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.leaderboard",
+      "canonical_name": "leaderboard",
+      "fallback_handlers": [],
+      "handler": "leaderboard_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6422"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ledger_audit",
+      "canonical_name": "ledger_audit",
+      "fallback_handlers": [],
+      "handler": "ledger_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6389"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.link",
+      "canonical_name": "link",
+      "fallback_handlers": [],
+      "handler": "link_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6321"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.liveprice",
+      "canonical_name": "liveprice",
+      "fallback_handlers": [],
+      "handler": "liveprice_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6270"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.login_code",
+      "canonical_name": "login_code",
+      "fallback_handlers": [],
+      "handler": "login_code_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6320"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.market",
+      "canonical_name": "market",
+      "fallback_handlers": [],
+      "handler": "market_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6272"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.mission",
+      "canonical_name": "mission",
+      "fallback_handlers": [],
+      "handler": "mission_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6231"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.mode",
+      "canonical_name": "mode",
+      "fallback_handlers": [],
+      "handler": "mode_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6267"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "connect_broker",
+        "mt5_link",
+        "mt5link"
+      ],
+      "audit_event": "telegram.command.mt5",
+      "canonical_name": "mt5",
+      "fallback_handlers": [],
+      "handler": "mt5_link_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6408"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "connect_broker",
+        "mt5",
+        "mt5link"
+      ],
+      "audit_event": "telegram.command.mt5_link",
+      "canonical_name": "mt5_link",
+      "fallback_handlers": [],
+      "handler": "mt5_link_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6404"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.mt5_status",
+      "canonical_name": "mt5_status",
+      "fallback_handlers": [],
+      "handler": "mt5_status_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6409"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "connect_broker",
+        "mt5",
+        "mt5_link"
+      ],
+      "audit_event": "telegram.command.mt5link",
+      "canonical_name": "mt5link",
+      "fallback_handlers": [],
+      "handler": "mt5_link_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6407"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.myid",
+      "canonical_name": "myid",
+      "fallback_handlers": [],
+      "handler": "myid_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6297"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.mystats",
+      "canonical_name": "mystats",
+      "fallback_handlers": [],
+      "handler": "mystats_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6416"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.notification_audit",
+      "canonical_name": "notification_audit",
+      "fallback_handlers": [],
+      "handler": "notification_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6383"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.notify",
+      "canonical_name": "notify",
+      "fallback_handlers": [],
+      "handler": "notify_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6300"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ohlc_health",
+      "canonical_name": "ohlc_health",
+      "fallback_handlers": [],
+      "handler": "ohlc_health_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6292"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "app"
+      ],
+      "audit_event": "telegram.command.open_app",
+      "canonical_name": "open_app",
+      "fallback_handlers": [],
+      "handler": "app_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6319"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ops_health",
+      "canonical_name": "ops_health",
+      "fallback_handlers": [],
+      "handler": "ops_health_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6283"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.outcome",
+      "canonical_name": "outcome",
+      "fallback_handlers": [],
+      "handler": "outcome_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6258"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.outcome_audit",
+      "canonical_name": "outcome_audit",
+      "fallback_handlers": [],
+      "handler": "outcome_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6381"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.outcome_rebuild",
+      "canonical_name": "outcome_rebuild",
+      "fallback_handlers": [],
+      "handler": "outcome_rebuild_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6380"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.owner_revenue",
+      "canonical_name": "owner_revenue",
+      "fallback_handlers": [],
+      "handler": "owner_revenue",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6373"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.owner_test_delivery",
+      "canonical_name": "owner_test_delivery",
+      "fallback_handlers": [],
+      "handler": "owner_test_delivery_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6296"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.owner_users",
+      "canonical_name": "owner_users",
+      "fallback_handlers": [],
+      "handler": "owner_users",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6372"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_activity",
+      "canonical_name": "paper_activity",
+      "fallback_handlers": [],
+      "handler": "paper_activity_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6213"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_audit",
+      "canonical_name": "paper_audit",
+      "fallback_handlers": [],
+      "handler": "paper_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6384"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_balance",
+      "canonical_name": "paper_balance",
+      "fallback_handlers": [],
+      "handler": "paper_balance_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6205"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_close_all",
+      "canonical_name": "paper_close_all",
+      "fallback_handlers": [],
+      "handler": "paper_close_all_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6209"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_history",
+      "canonical_name": "paper_history",
+      "fallback_handlers": [],
+      "handler": "paper_history_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6208"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_performance",
+      "canonical_name": "paper_performance",
+      "fallback_handlers": [],
+      "handler": "paper_performance_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6207"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_positions",
+      "canonical_name": "paper_positions",
+      "fallback_handlers": [],
+      "handler": "paper_positions_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6206"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_reset",
+      "canonical_name": "paper_reset",
+      "fallback_handlers": [],
+      "handler": "paper_reset_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6210"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_retry",
+      "canonical_name": "paper_retry",
+      "fallback_handlers": [],
+      "handler": "paper_retry_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6215"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_settings",
+      "canonical_name": "paper_settings",
+      "fallback_handlers": [],
+      "handler": "paper_settings_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6211"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_skips",
+      "canonical_name": "paper_skips",
+      "fallback_handlers": [],
+      "handler": "paper_skips_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6214"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.paper_status",
+      "canonical_name": "paper_status",
+      "fallback_handlers": [],
+      "handler": "paper_status_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6212"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.payment_help",
+      "canonical_name": "payment_help",
+      "fallback_handlers": [],
+      "handler": "payment_help_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6219"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.payment_reconcile",
+      "canonical_name": "payment_reconcile",
+      "fallback_handlers": [],
+      "handler": "payment_reconcile_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6390"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "winrate"
+      ],
+      "audit_event": "telegram.command.performance",
+      "canonical_name": "performance",
+      "fallback_handlers": [],
+      "handler": "performance_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6228"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.performance_audit",
+      "canonical_name": "performance_audit",
+      "fallback_handlers": [],
+      "handler": "performance_audit_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6379"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.performance_rebuild",
+      "canonical_name": "performance_rebuild",
+      "fallback_handlers": [],
+      "handler": "performance_rebuild_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6378"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "shadow_report"
+      ],
+      "audit_event": "telegram.command.performance_truth",
+      "canonical_name": "performance_truth",
+      "fallback_handlers": [],
+      "handler": "performance_truth_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6226"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "refunds"
+      ],
+      "audit_event": "telegram.command.policy",
+      "canonical_name": "policy",
+      "fallback_handlers": [],
+      "handler": "policy_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6279"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.portfolio",
+      "canonical_name": "portfolio",
+      "fallback_handlers": [],
+      "handler": "portfolio_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6271"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.pricing",
+      "canonical_name": "pricing",
+      "fallback_handlers": [],
+      "handler": "pricing_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6253"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.profile",
+      "canonical_name": "profile",
+      "fallback_handlers": [],
+      "handler": "profile_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6229"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.profile_debug",
+      "canonical_name": "profile_debug",
+      "fallback_handlers": [],
+      "handler": "profile_debug_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6230"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.proof",
+      "canonical_name": "proof",
+      "fallback_handlers": [],
+      "handler": "proof_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6256"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.provider_health",
+      "canonical_name": "provider_health",
+      "fallback_handlers": [],
+      "handler": "provider_health_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6227"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.provider_status",
+      "canonical_name": "provider_status",
+      "fallback_handlers": [],
+      "handler": "provider_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6375"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.public_test_status",
+      "canonical_name": "public_test_status",
+      "fallback_handlers": [],
+      "handler": "public_test_status_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6201"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.qa_report",
+      "canonical_name": "qa_report",
+      "fallback_handlers": [],
+      "handler": "qa_report_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6376"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "signal_quality"
+      ],
+      "audit_event": "telegram.command.quality",
+      "canonical_name": "quality",
+      "fallback_handlers": [],
+      "handler": "quality_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6232"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.queue_replay",
+      "canonical_name": "queue_replay",
+      "fallback_handlers": [],
+      "handler": "queue_replay_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6386"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.queue_status",
+      "canonical_name": "queue_status",
+      "fallback_handlers": [],
+      "handler": "queue_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6385"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.recap",
+      "canonical_name": "recap",
+      "fallback_handlers": [],
+      "handler": "recap_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6281"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.receipt",
+      "canonical_name": "receipt",
+      "fallback_handlers": [],
+      "handler": "receipt_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6216"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.receipts",
+      "canonical_name": "receipts",
+      "fallback_handlers": [],
+      "handler": "receipts_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6217"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.referral",
+      "canonical_name": "referral",
+      "fallback_handlers": [],
+      "handler": "referral_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6417"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.referral_leaderboard",
+      "canonical_name": "referral_leaderboard",
+      "fallback_handlers": [],
+      "handler": "referral_leaderboard_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6330"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.referral_rewards",
+      "canonical_name": "referral_rewards",
+      "fallback_handlers": [],
+      "handler": "referral_rewards_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6331"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.refund_request",
+      "canonical_name": "refund_request",
+      "fallback_handlers": [],
+      "handler": "refund_request_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6220"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "policy"
+      ],
+      "audit_event": "telegram.command.refunds",
+      "canonical_name": "refunds",
+      "fallback_handlers": [],
+      "handler": "policy_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6280"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.release_guard",
+      "canonical_name": "release_guard",
+      "fallback_handlers": [],
+      "handler": "release_guard_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6202"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.release_status",
+      "canonical_name": "release_status",
+      "fallback_handlers": [],
+      "handler": "release_status_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6392"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.report",
+      "canonical_name": "report",
+      "fallback_handlers": [],
+      "handler": "report_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6277"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.report_issue",
+      "canonical_name": "report_issue",
+      "fallback_handlers": [],
+      "handler": "report_issue_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6218"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.reports",
+      "canonical_name": "reports",
+      "fallback_handlers": [],
+      "handler": "reports_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6329"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.risk",
+      "canonical_name": "risk",
+      "fallback_handlers": [],
+      "handler": "risk_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6265"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.security",
+      "canonical_name": "security",
+      "fallback_handlers": [],
+      "handler": "security_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6323"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.selfcheck",
+      "canonical_name": "selfcheck",
+      "fallback_handlers": [],
+      "handler": "selfcheck_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6282"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.setlot",
+      "canonical_name": "setlot",
+      "fallback_handlers": [],
+      "handler": "setlot_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6410"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.setrisk",
+      "canonical_name": "setrisk",
+      "fallback_handlers": [],
+      "handler": "setrisk_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6411"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.settings",
+      "canonical_name": "settings",
+      "fallback_handlers": [],
+      "handler": "settings_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6328"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.setwebhook",
+      "canonical_name": "setwebhook",
+      "fallback_handlers": [],
+      "handler": "setwebhook_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6412"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "performance_truth"
+      ],
+      "audit_event": "telegram.command.shadow_report",
+      "canonical_name": "shadow_report",
+      "fallback_handlers": [],
+      "handler": "performance_truth_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6235"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.signal",
+      "canonical_name": "signal",
+      "fallback_handlers": [],
+      "handler": "signal_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6257"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.signal_debug",
+      "canonical_name": "signal_debug",
+      "fallback_handlers": [],
+      "handler": "signal_debug_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6287"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "quality"
+      ],
+      "audit_event": "telegram.command.signal_quality",
+      "canonical_name": "signal_quality",
+      "fallback_handlers": [],
+      "handler": "quality_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6233"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.signals",
+      "canonical_name": "signals",
+      "fallback_handlers": [],
+      "handler": "signals_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6255"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.simulate",
+      "canonical_name": "simulate",
+      "fallback_handlers": [],
+      "handler": "simulate_command",
+      "minimum_tier": "VIP",
+      "registration": "runtime_static",
+      "role_scope": "VIP",
+      "sources": [
+        "signalrank_telegram/bot.py:6264"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.start",
+      "canonical_name": "start",
+      "fallback_handlers": [],
+      "handler": "start_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6194"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.stats",
+      "canonical_name": "stats",
+      "fallback_handlers": [],
+      "handler": "stats_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6262"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.status",
+      "canonical_name": "status",
+      "fallback_handlers": [],
+      "handler": "status_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6195"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "admin_top_strategies"
+      ],
+      "audit_event": "telegram.command.strategy_leaderboard",
+      "canonical_name": "strategy_leaderboard",
+      "fallback_handlers": [],
+      "handler": "admin_top_strategies_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6236"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.support",
+      "canonical_name": "support",
+      "fallback_handlers": [],
+      "handler": "support_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6200"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.system",
+      "canonical_name": "system",
+      "fallback_handlers": [],
+      "handler": "system_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6284"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.system_health",
+      "canonical_name": "system_health",
+      "fallback_handlers": [],
+      "handler": "system_health_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6391"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.tester_feedback",
+      "canonical_name": "tester_feedback",
+      "fallback_handlers": [],
+      "handler": "tester_feedback_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6222"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.tiers",
+      "canonical_name": "tiers",
+      "fallback_handlers": [],
+      "handler": "tiers_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6415"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.timezone",
+      "canonical_name": "timezone",
+      "fallback_handlers": [],
+      "handler": "timezone_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6326"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.travelmode",
+      "canonical_name": "travelmode",
+      "fallback_handlers": [],
+      "handler": "travelmode_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6327"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.unlock",
+      "canonical_name": "unlock",
+      "fallback_handlers": [],
+      "handler": "unlock",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6366"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.upgrade",
+      "canonical_name": "upgrade",
+      "fallback_handlers": [],
+      "handler": "upgrade_command",
+      "minimum_tier": "FREE",
+      "registration": "runtime_static",
+      "role_scope": "FREE",
+      "sources": [
+        "signalrank_telegram/bot.py:6254"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.version",
+      "canonical_name": "version",
+      "fallback_handlers": [],
+      "handler": "version_command",
+      "minimum_tier": "OWNER",
+      "registration": "runtime_static",
+      "role_scope": "OWNER",
+      "sources": [
+        "signalrank_telegram/bot.py:6395"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.why_no_signal",
+      "canonical_name": "why_no_signal",
+      "fallback_handlers": [],
+      "handler": "why_no_signal_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py:6290"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [
+        "performance"
+      ],
+      "audit_event": "telegram.command.winrate",
+      "canonical_name": "winrate",
+      "fallback_handlers": [],
+      "handler": "performance_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py:6234"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    }
+  ],
+  "count": 180,
+  "duplicates": [],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "command_registry",
+  "registration_count": 181,
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source": "signalrank_telegram/bot.py",
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

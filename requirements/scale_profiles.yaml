@@ -1,0 +1,47 @@
+schema_version: 1
+profiles:
+  internal:
+    registered_users: 50
+    concurrent_users: 20
+    alerts_per_day: 1000
+    connected_accounts: 5
+    required_soak_hours: 4
+  closed_beta:
+    registered_users: 500
+    concurrent_users: 150
+    alerts_per_day: 25000
+    connected_accounts: 100
+    required_soak_hours: 24
+  public_beta:
+    registered_users: 5000
+    concurrent_users: 1500
+    alerts_per_day: 250000
+    connected_accounts: 1000
+    required_soak_hours: 48
+  commercial:
+    registered_users: 50000
+    concurrent_users: 15000
+    alerts_per_day: 10000000
+    connected_accounts: 10000
+    required_soak_hours: 72
+  large_scale:
+    registered_users: 100000
+    concurrent_users: 20000
+    alerts_per_day: 20000000
+    connected_accounts: 50000
+    required_soak_hours: 168
+    event_stream_partitions: 32
+    minimum_worker_replicas:
+      fanout: 8
+      notification: 16
+      outcome: 8
+      projection: 8
+    slos:
+      webhook_ack_p95_ms: 500
+      webhook_ack_p99_ms: 1000
+      signal_persistence_p99_ms: 2000
+      qualified_signal_delivery_p95_ms: 5000
+      notification_queue_age_p99_seconds: 60
+      projection_coverage_min: 0.999
+      duplicate_user_visible_deliveries: 0
+      duplicate_live_orders: 0

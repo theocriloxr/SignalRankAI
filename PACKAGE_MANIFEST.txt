@@ -1,0 +1,8 @@
+SignalRankAI v1.0.7 Startup DB Deadlock Hotfix
+
+- Disables active-signal keyboard refresh by default.
+- Runs optional keyboard refresh as a delayed, snapshot-based background job.
+- Never holds a DB session during Telegram API calls.
+- Reports worker-only realtime outcome ownership accurately.
+- Treats expected outcome DB deferral as backpressure, not an exception.
+- Includes governance and environment proof inputs in the Railway image.

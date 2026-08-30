@@ -13,6 +13,7 @@ Usage:
     # Generate invoice for payment
     invoice = await generate_invoice(user_id, amount, plan)
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import uuid
@@ -34,14 +35,12 @@ class InvoiceStatus(Enum):
 # Plan pricing (in Naira)
 PLAN_PRICING = {
     "premium": {
-        "monthly": 5000,
-        "quarterly": 13500,
-        "yearly": 48000,
+        "monthly": 24000,
+        "quarterly": 56000,
+        "yearly": 192000,
     },
     "vip": {
-        "monthly": 10000,
-        "quarterly": 27000,
-        "yearly": 90000,
+        "monthly": 40000,
     },
 }
 
@@ -86,7 +85,7 @@ class InvoiceService:
             if not user:
                 return {"error": "User not found"}
             
-            now = datetime.utcnow()
+            now = now_utc_naive()
             due_date = now + timedelta(days=7)
             
             invoice = {
@@ -161,7 +160,7 @@ class InvoiceService:
                 return False
             
             invoice["status"] = InvoiceStatus.PAID.value
-            invoice["paid_at"] = datetime.utcnow().isoformat()
+            invoice["paid_at"] = now_utc_naive().isoformat()
             invoice["paystack_reference"] = paystack_reference
             
             await self._save_invoice(invoice)
@@ -181,7 +180,7 @@ class InvoiceService:
                 return False
             
             invoice["status"] = InvoiceStatus.CANCELLED.value
-            invoice["cancelled_at"] = datetime.utcnow().isoformat()
+            invoice["cancelled_at"] = now_utc_naive().isoformat()
             
             await self._save_invoice(invoice)
             
@@ -238,7 +237,7 @@ class InvoiceService:
         """
         items_text = ""
         for item in invoice.get("items", []):
-            items_text += f"  {item['description']}\n    ${item['total']:,.2f}\n"
+            items_text += f"  {item['description']}\n    {invoice.get('currency', 'NGN')} {item['total']:,.2f}\n"
         
         receipt = f"""
 ╔════════════════════════════════════════╗
@@ -264,19 +263,37 @@ class InvoiceService:
         self,
         invoice: Dict[str, Any]
     ) -> bool:
-        """
-        Send receipt via email (placeholder).
-        
-        In production, this would integrate with email service.
-        """
-        # Generate receipt text
+        """Queue a durable transactional receipt email."""
+        recipient = str(invoice.get("user_email") or "").strip().lower()
+        invoice_id = str(invoice.get("invoice_id") or "").strip()
+        if not recipient or "@" not in recipient or not invoice_id:
+            return False
         receipt = await self.generate_receipt(invoice)
-        
-        # Log for now (would send email in production)
-        logger.info(f"[InvoiceService] Would send receipt for {invoice.get('invoice_id')}")
-        logger.debug(f"[InvoiceService] Receipt:\n{receipt}")
-        
-        return True
+        try:
+            from db.session import get_session
+            from services.platform.email_delivery import queue_account_email
+            async with get_session(label="invoice.receipt_email", timeout_seconds=10.0) as session:
+                await queue_account_email(
+                    session,
+                    recipient=recipient,
+                    template="payment_receipt",
+                    user_id=int(invoice.get("user_id")) if invoice.get("user_id") is not None else None,
+                    idempotency_key=f"invoice_receipt:{invoice_id}",
+                    context={
+                        "receipt_number": invoice_id,
+                        "plan": invoice.get("plan"),
+                        "amount": invoice.get("total"),
+                        "currency": invoice.get("currency", "NGN"),
+                        "payment_reference": invoice.get("paystack_reference"),
+                        "message": receipt,
+                    },
+                )
+                await session.commit()
+            logger.info("[InvoiceService] Queued receipt invoice=%s recipient=%s", invoice_id, recipient)
+            return True
+        except Exception as exc:
+            logger.warning("[InvoiceService] Receipt queue failed invoice=%s error=%s", invoice_id, type(exc).__name__)
+            return False
     
     async def _get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user details."""
@@ -295,7 +312,7 @@ class InvoiceService:
                     return {
                         "id": user.id,
                         "telegram_user_id": user.telegram_user_id,
-                        "email": user.username,
+                        "email": user.primary_email or user.username,
                         "tier": user.tier,
                     }
                 return None
@@ -310,12 +327,15 @@ class InvoiceService:
             from db.session import get_session
             from db.models import RuntimeState
             
-            async with get_session() as session:
-                state = RuntimeState(
-                    key=f"invoice:{invoice.get('invoice_id')}",
-                    value=invoice,
-                )
-                session.add(state)
+            async with get_session(label="invoice.save", timeout_seconds=10.0) as session:
+                key = f"invoice:{invoice.get('invoice_id')}"
+                state = await session.get(RuntimeState, key)
+                if state is None:
+                    state = RuntimeState(key=key, value=invoice)
+                    session.add(state)
+                else:
+                    state.value = invoice
+                    state.updated_at = now_utc_naive()
                 await session.commit()
                 return True
                 

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1722" />
+  <meta name="description" content="SignalRankAI unified trading intelligence dashboard" />
+  <link rel="manifest" href="/app/manifest.webmanifest" />
+  <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/app-assets/styles.css" />
+  <title>SignalRankAI</title>
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <header class="topbar">
+    <a class="brand" href="/app" aria-label="SignalRankAI home">
+      <span class="brand-mark">SR</span>
+      <span><strong>SignalRank</strong><small>Trading Intelligence</small></span>
+    </a>
+    <nav id="sessionNav" hidden>
+      <button data-view="overview">Overview</button>
+      <button data-view="signals">Signals</button>
+      <button data-view="evidence">Evidence</button>
+      <button data-view="markets">Markets</button>
+      <button data-view="paper">Paper</button>
+      <button data-view="portfolio">Portfolio</button>
+      <button data-view="performance">Performance</button>
+      <button data-view="journal">Journal</button>
+      <button data-view="support">Support</button>
+      <button data-view="account">Account</button>
+      <button id="logoutButton" class="ghost">Log out</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="authShell" class="auth-shell">
+      <div class="hero-card">
+        <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
+        <h1>Your SignalRankAI data follows you.</h1>
+        <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and future execution connections.</p>
+        <ul class="feature-list">
+          <li>Verified signal history and outcomes</li>
+          <li>Paper portfolio and risk dashboard</li>
+          <li>Provider-discovered market search</li>
+          <li>Cross-channel preferences and security</li>
+        </ul>
+      </div>
+
+      <div class="auth-card">
+        <div class="tabs" role="tablist">
+          <button id="loginTab" class="active" role="tab">Log in</button>
+          <button id="registerTab" role="tab">Create account</button>
+          <button id="activateTab" role="tab">Activate from Telegram</button>
+        </div>
+
+        <form id="loginForm" class="stack">
+          <h2>Welcome back</h2>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit" class="primary">Log in securely</button>
+        </form>
+
+        <form id="registerForm" class="stack" hidden>
+          <h2>Create your SignalRank account</h2>
+          <label>Display name<input name="display_name" autocomplete="name" maxlength="160" /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <small>Use at least 10 characters and three character types.</small>
+          <button type="submit" class="primary">Create account</button>
+        </form>
+
+        <form id="activateForm" class="stack" hidden>
+          <h2>Bring your Telegram account into the app</h2>
+          <p>In the SignalRankAI bot, send <code>/app</code> or <code>/login_code</code>. Enter the one-time code or open the secure link.</p>
+          <label>One-time token or code<input id="activationCredential" name="token_or_code" autocomplete="one-time-code" required /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <button type="submit" class="primary">Activate app access</button>
+        </form>
+
+        <div class="auth-links"><button id="magicLinkButton" class="link-button" type="button">Email me a sign-in link</button><button id="forgotPasswordButton" class="link-button" type="button">Reset password</button></div>
+        <form id="mfaForm" class="stack" hidden><h2>Two-factor authentication</h2><p>Enter your authenticator code or a recovery code.</p><input type="hidden" name="token" /><label>Security code<input name="code" autocomplete="one-time-code" required /></label><button class="primary">Complete sign in</button></form>
+        <form id="passwordResetForm" class="stack" hidden><h2>Choose a new password</h2><input type="hidden" name="token" /><label>New password<input name="new_password" type="password" minlength="10" autocomplete="new-password" required /></label><button class="primary">Reset password</button></form>
+      </div>
+    </section>
+
+    <section id="appShell" hidden>
+      <div class="dashboard-header">
+        <div>
+          <p class="eyebrow">SIGNALRANKAI COMMAND CENTRE</p>
+          <h1 id="welcomeTitle">Dashboard</h1>
+          <p id="accountSubtitle"></p>
+        </div>
+        <span id="tierBadge" class="tier-badge">FREE</span>
+      </div>
+
+      <section id="overviewView" class="view">
+        <div class="regime-strip" aria-label="Market operating state">
+          <div><small>Operating mode</small><strong>PAPER</strong></div>
+          <div><small>Decision standard</small><strong>EVIDENCE FIRST</strong></div>
+          <div><small>Confirmation</small><strong>COMPLETED CANDLES</strong></div>
+          <div><small>Execution</small><strong class="cyan">DISABLED</strong></div>
+        </div>
+        <div id="summaryCards" class="card-grid"></div>
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><h2>Latest signals</h2><button data-view="signals" class="link-button">View all</button></div>
+            <div id="latestSignals" class="data-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><h2>Paper positions</h2><button data-view="paper" class="link-button">Open paper desk</button></div>
+            <div id="overviewPositions" class="data-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="signalsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
+        <div class="filters"><input id="signalAssetFilter" placeholder="Filter by asset" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
+        <div id="signalsTable" class="table-wrap"></div>
+      </section>
+
+      <section id="evidenceView" class="view" hidden>
+        <div class="evidence-heading">
+          <div><p class="eyebrow">CANDLE EVIDENCE · NOT PROOF</p><h2>Market evidence workspace</h2></div>
+          <div class="integrity-stamp"><span>NO FUTURE DATA USED</span><small id="evidenceFreshness">Awaiting signal data</small></div>
+        </div>
+        <div class="evidence-workspace">
+          <article class="evidence-canvas" aria-label="Candlestick anatomy demonstration">
+            <div class="canvas-toolbar"><span id="evidenceAsset">LATEST SIGNAL</span><span id="evidenceTimeframe">—</span><span class="paper-chip">PAPER MODE</span></div>
+            <div class="candle-stage">
+              <div class="price-grid" aria-hidden="true"></div>
+              <div class="level-zone"><span>KEY LEVEL CONTEXT</span></div>
+              <div class="candle-diagram" aria-label="Selected candle with body and wicks">
+                <span class="wick upper"></span><span class="candle-body"></span><span class="wick lower"></span>
+                <span class="callout upper-label">UPPER WICK · REJECTION</span>
+                <span class="callout close-label">CLOSE · CONTROL AT FINISH</span>
+                <span class="callout lower-label">LOWER WICK · REJECTION</span>
+              </div>
+              <div class="next-candle"><span>?</span><small>NEXT CANDLE<br>PENDING</small></div>
+            </div>
+            <div class="volume-track"><span>RELATIVE VOLUME</span><i style="--volume:72%"></i><strong>CONTEXT REQUIRED</strong></div>
+            <p class="canvas-note">A wick records rejection, not a guaranteed reversal. Location, close quality, participation and completed follow-through determine its weight.</p>
+          </article>
+          <aside class="evidence-spine">
+            <div class="spine-step observed"><b>01</b><div><small>REJECTION</small><strong>Observed</strong><p>Measure wick against the full range.</p></div></div>
+            <div class="spine-step observed"><b>02</b><div><small>CLOSE</small><strong>Observed</strong><p>Locate the close within the range.</p></div></div>
+            <div class="spine-step observed"><b>03</b><div><small>LEVEL</small><strong>Contextual</strong><p>Compare with past-only support or resistance.</p></div></div>
+            <div class="spine-step observed"><b>04</b><div><small>VOLUME</small><strong>Contextual</strong><p>Compare with the prior-period median.</p></div></div>
+            <div class="spine-step pending"><b>05</b><div><small>CONFIRMATION</small><strong>Pending</strong><p>Wait for the next candle to close.</p></div></div>
+          </aside>
+          <aside class="evidence-verdict">
+            <p class="eyebrow">CURRENT VERDICT</p><h3>AWAITING CONFIRMATION</h3>
+            <dl><div><dt>Evidence state</dt><dd>Observed</dd></div><div><dt>Prediction claim</dt><dd>None</dd></div><div><dt>Live execution</dt><dd>Disabled</dd></div></dl>
+            <div class="risk-rule"><strong>Invalidation first</strong><p>Every thesis must state the completed-candle condition that makes it wrong.</p></div>
+          </aside>
+        </div>
+        <article class="evidence-ledger">
+          <div class="panel-heading"><div><p class="eyebrow">CHRONOLOGICAL AUDIT TRAIL</p><h2>Evidence ledger</h2></div></div>
+          <div id="evidenceLedger" class="ledger-grid">
+            <div class="ledger-row"><b>01</b><strong>Rejection</strong><p>Wick geometry is measured as evidence, never a reversal guarantee.</p><span class="cyan">OBSERVED</span></div>
+            <div class="ledger-row"><b>02</b><strong>Close location</strong><p>The close shows who controlled the end of the completed period.</p><span class="cyan">OBSERVED</span></div>
+            <div class="ledger-row"><b>03</b><strong>Key-level context</strong><p>Support and resistance use only candles known at assessment time.</p><span class="cyan">CONTEXT</span></div>
+            <div class="ledger-row"><b>04</b><strong>Relative volume</strong><p>Participation is compared with a prior-period median.</p><span class="cyan">CONTEXT</span></div>
+            <div class="ledger-row"><b>05</b><strong>Next candle</strong><p>No conclusion is recorded until the following candle is final.</p><span class="pending-text">PENDING</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section id="marketsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">DYNAMIC PROVIDER REGISTRY</p><h2>Market explorer</h2></div></div>
+        <div class="filters"><input id="marketSearch" placeholder="Search BTC, gold, EURUSD, AAPL…" /><select id="assetClassFilter"><option value="">All classes</option><option value="crypto_spot">Crypto</option><option value="forex">Forex</option><option value="equity">Stocks</option><option value="commodity_spot">Commodities</option><option value="index">Indices</option></select><button id="searchMarkets" class="primary">Search</button></div>
+        <div id="marketResults" class="market-grid"></div>
+      </section>
+
+      <section id="paperView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">SIMULATED CAPITAL</p><h2>Paper trading</h2></div></div>
+        <div id="paperAccount" class="card-grid"></div>
+        <div id="paperPositions" class="table-wrap"></div>
+      </section>
+
+      <section id="portfolioView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">UNIFIED EXPOSURE</p><h2>Portfolio</h2></div></div>
+        <div id="portfolioSummary" class="card-grid"></div><div id="portfolioExposures" class="table-wrap"></div>
+      </section>
+
+      <section id="performanceView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">PROOF-BACKED HISTORY</p><h2>Performance</h2></div></div>
+        <div id="performanceSummary" class="card-grid"></div><p class="muted">Historical outcomes are not guarantees of future performance.</p><div id="performanceBreakdown" class="table-wrap"></div>
+      </section>
+
+      <section id="journalView" class="view" hidden>
+        <div class="split-grid">
+          <article class="panel"><h2>Trading journal</h2><form id="journalForm" class="stack-form"><label>Title<input name="title" maxlength="180" /></label><label>Notes<textarea name="notes" rows="7" maxlength="20000" required></textarea></label><label>Emotion<input name="emotion" maxlength="64" /></label><label>Mistake category<input name="mistake_category" maxlength="96" /></label><label>Plan adherence %<input name="plan_adherence" type="number" min="0" max="100" /></label><label>Result (R)<input name="result_r" type="number" step="0.01" /></label><label>Tags<input name="tags" placeholder="discipline, breakout, london" /></label><button class="primary" type="submit">Save journal entry</button></form></article>
+          <article class="panel"><h2>Recent entries</h2><div id="journalEntries" class="data-list"></div></article>
+        </div>
+      </section>
+
+      <section id="supportView" class="view" hidden>
+        <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
+      </section>
+
+      <section id="accountView" class="view" hidden>
+        <div class="two-column">
+          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
+        </div>
+        <article class="panel"><h2>Notification preferences</h2><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><button class="primary" type="submit">Save preferences</button></form></article>
+        <article class="panel"><h2>Plans and billing</h2><p>Prices are resolved securely by the server. Professional and Institutional plans use contact sales.</p><div id="billingProducts" class="card-grid"></div><h3>Billing history</h3><div id="billingHistory" class="data-list"></div></article>
+        <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
+      </section>
+    </section>
+  </main>
+
+  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
+  <script src="/app-assets/app.js" defer></script>
+</body>
+</html>

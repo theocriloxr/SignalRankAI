@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 from datetime import datetime
 from typing import Iterable, Optional
@@ -25,7 +26,7 @@ async def upsert_market_tick(
         symbol=sym,
         price=float(price),
         event_time_ms=int(event_time_ms) if event_time_ms is not None else None,
-        updated_at=datetime.utcnow(),
+        updated_at=now_utc_naive(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[MarketTick.symbol],
@@ -68,7 +69,7 @@ async def upsert_market_candle(
         close=float(close),
         volume=float(volume or 0.0),
         is_final=bool(is_final),
-        updated_at=datetime.utcnow(),
+        updated_at=now_utc_naive(),
     )
     stmt = stmt.on_conflict_do_update(
         constraint="uq_market_candles_symbol_tf_open",

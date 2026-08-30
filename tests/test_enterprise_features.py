@@ -225,13 +225,13 @@ class TestLotSizeVIP:
         lot = calculate_lot_size_vip(user, 10_000_000.0, 1.1, 1.099, "EURUSD")
         assert lot <= MAX_LOT_VIP
 
-    def test_zero_balance_returns_default(self):
-        """Zero balance should not crash â€” return DEFAULT_FIXED_LOT."""
-        from engine.tiered_executor import calculate_lot_size_vip, DEFAULT_FIXED_LOT
+    def test_zero_balance_fails_closed(self):
+        """Missing broker balance must block sizing rather than use a fallback lot."""
+        from engine.tiered_executor import calculate_lot_size_vip
 
         user = self._make_user(1.0)
         lot = calculate_lot_size_vip(user, 0.0, 1.1, 1.09, "EURUSD")
-        assert lot == pytest.approx(DEFAULT_FIXED_LOT)
+        assert lot == 0.0
 
 
 # ===========================================================================
@@ -953,7 +953,7 @@ class TestPlanCodeInjection:
 
         async def _run():
             with patch("httpx.AsyncClient") as mock_client_cls, \
-                 patch.dict(os.environ, {"PAYSTACK_PREMIUM_PLAN_CODE": "PLN_abc", "PAYSTACK_SECRET_KEY": "sk_test"}):
+                 patch.dict(os.environ, {"PAYSTACK_PREMIUM_PLAN_CODE": "PLN_abc", "PAYSTACK_SECRET_KEY": "sk_test_fixture"}):
 
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = self._paystack_init_payload()
@@ -989,7 +989,7 @@ class TestPlanCodeInjection:
         async def _run():
             env = {k: v for k, v in os.environ.items()
                    if not k.startswith("PAYSTACK_PREMIUM_PLAN_CODE")}
-            env["PAYSTACK_SECRET_KEY"] = "sk_test"
+            env["PAYSTACK_SECRET_KEY"] = "sk_test_fixture"
             env.pop("PAYSTACK_PREMIUM_PLAN_CODE", None)
 
             with patch("httpx.AsyncClient") as mock_client_cls, \

@@ -11,7 +11,7 @@ import threading
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 try:
     import redis
@@ -42,8 +42,11 @@ def _webhook_queue_key() -> str:
 
 
 def _redis_max_connections() -> int:
-    # Always use high production value
-    return 200
+    try:
+        configured = int(os.getenv("REDIS_MAX_CONNECTIONS", "24") or 24)
+    except (TypeError, ValueError):
+        configured = 24
+    return max(2, min(64, configured))
 
 
 def _mask_redis_url(url: str | None) -> str:
@@ -62,11 +65,10 @@ def _mask_redis_url(url: str | None) -> str:
 
 
 def _resolve_redis_url_with_source() -> tuple[Optional[str], str]:
-    # State/delivery traffic can be moved to a second Redis so webhook intake
-    # is not competing with delivery locks, delivered-signal sets, and fanout
-    # coordination. Leave REDIS_URL for the webhook queue; set DELIVERY_REDIS_URL
-    # or STATE_REDIS_URL when adding a second Redis database.
-    for name in ("DELIVERY_REDIS_URL", "STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
+    # This client owns state/cache/market coordination only. Delivery and
+    # webhook-critical streams use ``core.redis_streams`` and the dedicated
+    # DELIVERY_REDIS_URL, so delivery pressure cannot starve state reads.
+    for name in ("STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
         val = (os.getenv(name) or "").strip()
         if val:
             return val, name
@@ -624,6 +626,59 @@ class RedisState:
             pass
         return int(total)
 
+    def add_extra_signals_once_sync(
+        self,
+        telegram_user_id: int,
+        count: int,
+        payment_reference: str,
+        ttl_seconds: int = 86400,
+    ) -> int | None:
+        """Atomically apply one paid extra-signal credit in Redis.
+
+        Production payment processing requires Redis for this operation. The
+        payment reference is a durable idempotency key, so a webhook retry or
+        crash between provider acknowledgement and DB bookkeeping cannot
+        double-credit the user.
+        """
+        uid = int(telegram_user_id)
+        amount = max(0, int(count))
+        reference = str(payment_reference or "").strip()
+        if amount <= 0 or not reference:
+            return None
+        r = self._get_redis_sync()
+        if r is None:
+            return None
+        extra_key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
+        marker_key = f"signalrankai:payment_credit:{hashlib.sha256(reference.encode()).hexdigest()}"
+        ttl_seconds = max(60, int(ttl_seconds))
+        script = """
+        if redis.call('EXISTS', KEYS[2]) == 1 then
+          local current = redis.call('GET', KEYS[1])
+          if not current then return 0 end
+          local ok, data = pcall(cjson.decode, current)
+          if not ok then return 0 end
+          return tonumber(data['total'] or 0)
+        end
+        local total = 0
+        local used = 0
+        local current = redis.call('GET', KEYS[1])
+        if current then
+          local ok, data = pcall(cjson.decode, current)
+          if ok then
+            total = tonumber(data['total'] or 0)
+            used = tonumber(data['used'] or 0)
+          end
+        end
+        total = total + tonumber(ARGV[1])
+        redis.call('SET', KEYS[1], cjson.encode({total=total, used=used}), 'EX', tonumber(ARGV[2]))
+        redis.call('SET', KEYS[2], '1', 'EX', tonumber(ARGV[2]))
+        return total
+        """
+        try:
+            return int(r.eval(script, 2, extra_key, marker_key, amount, ttl_seconds))
+        except Exception:
+            return None
+
     def get_extra_signals_left_sync(self, telegram_user_id: int) -> int:
         uid = int(telegram_user_id)
         key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
@@ -797,6 +852,53 @@ class RedisState:
     def cache_set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         ttl = ex if ex is not None else int(os.getenv("CACHE_DEFAULT_TTL_SECONDS", "120") or 120)
         self.set_sync(f"cache:{str(key)}", str(value), ex=max(1, int(ttl)))
+
+    def cache_delete_if_value_sync(self, key: str, expected_value: str) -> bool:
+        """Delete a cache key only when it still contains our lock token.
+
+        The compare-and-delete operation prevents an expired delivery fanout from
+        deleting a newer worker's replacement lock. Redis uses a tiny Lua script
+        for atomicity; Postgres/memory fallbacks are best-effort but still token
+        checked.
+        """
+        full_key = f"cache:{str(key)}"
+        expected = str(expected_value)
+        r = self._get_redis_sync()
+        if r is not None:
+            try:
+                deleted = r.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                    "return redis.call('del', KEYS[1]) else return 0 end",
+                    1,
+                    full_key,
+                    expected,
+                )
+                self._cache.pop(full_key, None)
+                return bool(int(deleted or 0))
+            except Exception:
+                return False
+
+        if self._pg_available():
+            try:
+                row = self._pg_exec_one(
+                    "DELETE FROM runtime_state WHERE key=%s "
+                    "AND COALESCE(value->>'value', value#>>'{}')=%s RETURNING key",
+                    (full_key, expected),
+                )
+                self._cache.pop(full_key, None)
+                return bool(row)
+            except Exception:
+                return False
+
+        current = self._memory.get(full_key)
+        if current is None:
+            current = self._memory.get(key)
+        if str(current) != expected:
+            return False
+        self._memory.pop(full_key, None)
+        self._memory.pop(key, None)
+        self._cache.pop(full_key, None)
+        return True
 
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         """Set a value in the state store (Postgres or memory) with optional expiration."""
@@ -1106,6 +1208,9 @@ class RedisState:
 
     async def cache_set(self, key: str, value: str, ex: Optional[int] = None) -> None:
         await asyncio.to_thread(self.cache_set_sync, key, value, ex)
+
+    async def cache_delete_if_value(self, key: str, expected_value: str) -> bool:
+        return await asyncio.to_thread(self.cache_delete_if_value_sync, key, expected_value)
 
     async def enqueue_webhook_update(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
         return await asyncio.to_thread(self.enqueue_webhook_update_sync, payload, max_depth)

@@ -1,13 +1,15 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 import json
 import hmac
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from collections import deque
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +17,11 @@ from sqlalchemy.exc import IntegrityError
 from db.models import Subscription, User, Signal, Outcome, DecisionLog, ProcessedWebhookEvent, ApiToken
 from db.session import get_session
 
+if TYPE_CHECKING:
+    from db.models import EconomicEvent
+
 ACTIVE_PARTIAL_OUTCOME_STATUSES = ("tp1", "tp2")
+_DECISION_LOG_RETRY_QUEUE: deque[dict[str, Any]] = deque(maxlen=5000)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -29,7 +35,7 @@ async def count_active_subscriptions(
     session: AsyncSession,
 ) -> int:
     """Count ALL active subscriptions across all tiers."""
-    now = datetime.utcnow()
+    now = now_utc_naive()
     q = (
         select(func.count(Subscription.id))
         .where(
@@ -48,7 +54,7 @@ async def get_active_subscription(
     tier: str,
 ) -> Optional[Subscription]:
     tier_norm = normalize_tier(tier)
-    now = datetime.utcnow()
+    now = now_utc_naive()
     res = await session.execute(
         select(Subscription)
         .join(User, User.id == Subscription.user_id)
@@ -68,7 +74,7 @@ async def count_active_vip_users(
     session: AsyncSession,
     exclude_telegram_user_ids: set[int] | None = None,
 ) -> int:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     q = (
         select(func.count(func.distinct(Subscription.user_id)))
         .select_from(Subscription)
@@ -89,8 +95,15 @@ async def count_active_vip_users(
 
 
 def normalize_tier(tier: str) -> str:
+    """Normalize customer subscription tiers without confusing them with roles."""
     t = (tier or "").strip().lower()
-    if t in {"vip", "owner", "admin"}:
+    if t in {"owner", "admin", "elite"}:
+        return "vip"
+    if t in {"institutional", "enterprise"}:
+        return "institutional"
+    if t in {"professional", "professional_monthly"}:
+        return "professional"
+    if t == "vip":
         return "vip"
     if t in {"premium", "pro"}:
         return "premium"
@@ -137,13 +150,17 @@ async def get_or_create_user(
 
 async def activate_subscription(
     session: AsyncSession,
-    telegram_user_id: int,
+    telegram_user_id: int | None,
     tier: str,
     duration_days: int,
     paystack_reference: Optional[str],
     meta: Dict[str, Any],
+    *,
+    user_id: int | None = None,
 ) -> Subscription:
-    # Idempotency: if reference already exists, return existing subscription.
+    # Legacy subscription-reference idempotency remains for older rows. New
+    # webhook idempotency is enforced by payment_events, which permits each
+    # renewal to keep its own provider reference without mutating this row.
     if paystack_reference:
         res = await session.execute(
             select(Subscription).where(Subscription.paystack_reference == paystack_reference)
@@ -152,21 +169,58 @@ async def activate_subscription(
         if existing is not None:
             return existing
 
-    user = await get_or_create_user(session, telegram_user_id)
+    user: User | None = None
+    if user_id is not None:
+        user = (await session.execute(select(User).where(User.id == int(user_id)))).scalar_one_or_none()
+        if user is None:
+            raise ValueError("canonical_user_not_found")
+        if telegram_user_id is not None and user.telegram_user_id not in {None, int(telegram_user_id)}:
+            raise ValueError("canonical_and_telegram_identity_mismatch")
+    elif telegram_user_id is not None:
+        user = await get_or_create_user(session, int(telegram_user_id))
+    else:
+        raise ValueError("subscription_user_identity_required")
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tier_norm = normalize_tier(tier)
     add_days = max(int(duration_days), 1)
 
-    # Renewal behavior: if user already has an active subscription for the same tier, extend it.
-    existing = await get_active_subscription(session, telegram_user_id=telegram_user_id, tier=tier_norm)
-    if existing is not None and existing.expires_at is not None:
-        existing.expires_at = existing.expires_at + timedelta(days=add_days)
-        existing.meta = {**(existing.meta or {}), **(meta or {})}
-        if paystack_reference and not existing.paystack_reference:
-            existing.paystack_reference = paystack_reference
+    tier_order = {"free": 0, "premium": 1, "vip": 2, "professional": 3, "institutional": 4}
+    active_rows = list((await session.execute(
+        select(Subscription)
+        .where(
+            Subscription.user_id == user.id,
+            Subscription.status == "active",
+            Subscription.expires_at.is_not(None),
+            Subscription.expires_at > now,
+        )
+        .order_by(Subscription.expires_at.desc())
+        .with_for_update()
+    )).scalars().all())
+    highest = max(active_rows, key=lambda row: tier_order.get(normalize_tier(row.tier), 0), default=None)
+    purchased_rank = tier_order.get(tier_norm, 0)
+    highest_rank = tier_order.get(normalize_tier(highest.tier), 0) if highest is not None else -1
+
+    if highest is not None and highest_rank >= purchased_rank:
+        # Same-tier renewal extends normally. A lower-tier purchase can never
+        # downgrade an active higher entitlement; it extends that entitlement.
+        base = max(highest.expires_at or now, now)
+        highest.expires_at = base + timedelta(days=add_days)
+        highest.meta = {
+            **(highest.meta or {}),
+            **(meta or {}),
+            "last_purchase_tier": tier_norm,
+            "lower_tier_purchase_preserved_higher_access": highest_rank > purchased_rank,
+        }
+        user.tier = normalize_tier(highest.tier)
+        user.premium_until = highest.expires_at
         await session.flush()
-        return existing
+        return highest
+
+    if highest is not None and purchased_rank > highest_rank:
+        for row in active_rows:
+            row.status = "superseded"
+            row.meta = {**(row.meta or {}), "superseded_by_tier": tier_norm, "superseded_at": now.isoformat()}
 
     expires_at = now + timedelta(days=add_days)
 
@@ -180,13 +234,15 @@ async def activate_subscription(
         meta=meta or {},
     )
     session.add(sub)
+    user.tier = tier_norm
+    user.premium_until = expires_at
     await session.flush()
     return sub
 
 
 async def expire_subscriptions(session: AsyncSession) -> int:
     """Mark active subscriptions as expired if past expiry."""
-    now = datetime.utcnow()
+    now = now_utc_naive()
     stmt = (
         update(Subscription)
         .where(
@@ -222,7 +278,7 @@ async def persist_decision_log(
     }:
         return 0
     try:
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="db_repository") as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,
@@ -244,9 +300,38 @@ async def persist_decision_log(
     except Exception as e:
         import logging
         if type(e).__name__ == "NoncriticalWriteDropped":
-            logging.getLogger(__name__).warning("Decision log dropped because DB gate is busy")
+            _DECISION_LOG_RETRY_QUEUE.append({
+                "signal_id": signal_id,
+                "asset": asset,
+                "timeframe": timeframe,
+                "decision": decision,
+                "reason": reason,
+                "meta": dict(meta or {}),
+            })
+            logging.getLogger(__name__).info(
+                "Decision log queued because DB gate is busy pending=%s",
+                len(_DECISION_LOG_RETRY_QUEUE),
+            )
         else:
             logging.exception(f"Failed to persist decision log: {e}")
+        return 0
+
+
+async def flush_decision_log_retry_queue(limit: int = 100) -> int:
+    """Best-effort bounded flush for decision annotations deferred by DB admission."""
+    if not _DECISION_LOG_RETRY_QUEUE:
+        return 0
+    batch: list[dict[str, Any]] = []
+    for _ in range(min(max(1, int(limit)), len(_DECISION_LOG_RETRY_QUEUE))):
+        batch.append(_DECISION_LOG_RETRY_QUEUE.popleft())
+    try:
+        async with get_session(priority="background", label="decision_log_retry", timeout_seconds=2.0) as session:
+            session.add_all([DecisionLog(**item) for item in batch])
+            await session.commit()
+        return len(batch)
+    except Exception:
+        for item in reversed(batch):
+            _DECISION_LOG_RETRY_QUEUE.appendleft(item)
         return 0
 
 
@@ -256,7 +341,72 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
         async with get_session() as session:
             asset = str(signal_data.get("asset") or "").strip().upper()
             timeframe = str(signal_data.get("timeframe") or "").strip().lower()
-            direction = str(signal_data.get("direction") or "").strip().lower()
+            from core.production_integrity import (
+                canonical_direction,
+                semantic_entries_equivalent,
+                signal_thesis_fingerprint,
+                signal_thesis_scope,
+            )
+            direction = canonical_direction(signal_data.get("direction"))
+            thesis_fingerprint = signal_thesis_fingerprint(signal_data)
+            # Serialize duplicate-thesis admission across engine replicas. This
+            # closes the race where two workers both observe no recent signal and
+            # persist near-identical BTC/SOL ideas seconds apart.
+            try:
+                if str(session.get_bind().dialect.name or "").lower() == "postgresql":
+                    semantic_scope = f"signal-thesis:{signal_thesis_scope(signal_data)}"
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
+                        {"fingerprint": thesis_fingerprint},
+                    )
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                        {"scope": semantic_scope},
+                    )
+            except Exception as lock_error:
+                from core.env import runtime_environment_name
+                if runtime_environment_name("development") == "production":
+                    raise RuntimeError("signal_thesis_lock_unavailable") from lock_error
+                # Non-production SQLite/test environments still receive the
+                # deterministic recent-thesis query below.
+            thesis_cutoff = now_utc_naive() - timedelta(
+                hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4))
+            )
+            recent_thesis = (await session.execute(
+                select(Signal.signal_id).where(
+                    Signal.thesis_fingerprint == thesis_fingerprint,
+                    Signal.created_at >= thesis_cutoff,
+                    Signal.archived.is_(False),
+                    Signal.expired.is_(False),
+                ).limit(1)
+            )).scalar_one_or_none()
+            if recent_thesis is not None:
+                return None
+            try:
+                semantic_tolerance = max(0.0001, min(0.05, float(
+                    os.getenv("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", "0.003") or 0.003
+                )))
+            except Exception:
+                semantic_tolerance = 0.003
+            strategy_name = str(signal_data.get("strategy_name") or signal_data.get("strategy") or "unknown").lower().strip()
+            semantic_candidates = (await session.execute(
+                select(Signal).where(
+                    Signal.asset == asset,
+                    Signal.direction == direction,
+                    func.lower(Signal.strategy_name) == strategy_name,
+                    Signal.created_at >= thesis_cutoff,
+                    Signal.archived.is_(False),
+                    Signal.expired.is_(False),
+                ).order_by(Signal.created_at.desc())
+            )).scalars().all()
+            entry_value = float(signal_data.get("entry") or 0)
+            for candidate in semantic_candidates:
+                if semantic_entries_equivalent(
+                    getattr(candidate, "entry", None),
+                    entry_value,
+                    tolerance=semantic_tolerance,
+                ):
+                    return None
             opposite = "short" if direction == "long" else ("long" if direction == "short" else "")
             if asset and timeframe and opposite:
                 conflict_q = (
@@ -277,6 +427,8 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             # Convert take_profit list to JSON string
             tp_json = json.dumps(signal_data.get('take_profit', []))
             
+            calibrated_probability = signal_data.get("ml_probability_calibrated")
+            calibration_version = signal_data.get("ml_calibration_version")
             signal = Signal(
                 asset=asset or signal_data.get('asset'),
                 timeframe=timeframe or signal_data.get('timeframe'),
@@ -289,13 +441,49 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 strategy_name=signal_data.get('strategy_name', 'unknown'),
                 strategy_group=signal_data.get('strategy_group', 'mixed'),
                 strength=signal_data.get('confidence', 0.7),
-                ml_probability=signal_data.get('ml_probability'),
-                fingerprint=f"{signal_data.get('asset')}_{signal_data.get('timeframe')}_{signal_data.get('direction')}_{int(signal_data.get('entry') or 0)}",
-                created_at=datetime.utcnow(),
+                ml_probability=calibrated_probability if calibrated_probability is not None else signal_data.get('ml_probability'),
+                ml_probability_raw=signal_data.get('ml_probability_raw') or signal_data.get('ml_probability'),
+                ml_probability_calibrated=calibrated_probability,
+                ml_calibration_version=calibration_version,
+                ml_calibration_validated=bool(signal_data.get('ml_calibration_validated', False)),
+                ml_calibration_validation_rows=(
+                    int(signal_data.get('ml_calibration_validation_rows'))
+                    if signal_data.get('ml_calibration_validation_rows') is not None
+                    else None
+                ),
+                ml_calibration_brier=(
+                    float(signal_data.get('ml_calibration_brier'))
+                    if signal_data.get('ml_calibration_brier') is not None
+                    else None
+                ),
+                ml_calibration_ece=(
+                    float(signal_data.get('ml_calibration_ece'))
+                    if signal_data.get('ml_calibration_ece') is not None
+                    else None
+                ),
+                fingerprint=thesis_fingerprint,
+                thesis_fingerprint=thesis_fingerprint,
+                asset_discovery_provider=(str(signal_data.get("asset_discovery_provider") or "").strip()[:128] or None),
+                quality_gate_version=str(signal_data.get('quality_gate_version') or 'production-integrity-v1'),
+                quality_gate_passed=bool(signal_data.get('quality_gate_passed', False)),
+                created_at=now_utc_naive(),
             )
             
             session.add(signal)
             await session.flush()
+
+            # Persist structured adaptive evidence and canonical sequence references
+            # in the same short transaction. Unknown/legacy signals remain unaffected.
+            if signal_data.get("adaptive_evidence") or signal_data.get("adaptive_sequence_refs"):
+                try:
+                    from engine.adaptive.repository import persist_signal_adaptive_evidence
+                    await persist_signal_adaptive_evidence(session, signal, signal_data)
+                except Exception as adaptive_error:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "[adaptive] evidence persistence skipped signal=%s error=%s",
+                        getattr(signal, "signal_id", None), adaptive_error,
+                    )
             
             # FIX: Explicit commit for NullPool compatibility
             await session.commit()
@@ -309,7 +497,9 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
 
 def hash_api_token(raw_token: str) -> str:
     token = str(raw_token or "").strip()
-    pepper = str(os.getenv("API_TOKEN_PEPPER") or "signalrankai-api-token-pepper")
+    from core.security import api_token_pepper
+
+    pepper = api_token_pepper()
     dk = hashlib.pbkdf2_hmac(
         "sha256",
         token.encode("utf-8"),
@@ -353,7 +543,7 @@ async def get_api_token_owner(
     *,
     required_scope: str = "signals:read",
 ) -> Optional[int]:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tok_hash = hash_api_token(raw_token)
     row = await session.execute(
         select(ApiToken, User.telegram_user_id)
@@ -383,7 +573,7 @@ async def revoke_api_token(
     session: AsyncSession,
     raw_token: str,
 ) -> int:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tok_hash = hash_api_token(raw_token)
     stmt = (
         update(ApiToken)
@@ -399,7 +589,7 @@ async def get_latest_active_api_token_meta(
     session: AsyncSession,
     telegram_user_id: int,
 ) -> Optional[dict]:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     row = await session.execute(
         select(ApiToken.token_prefix, ApiToken.expires_at)
         .join(User, User.id == ApiToken.user_id)
@@ -456,6 +646,9 @@ async def mark_webhook_event_processed(
         event_type=str(event_type or "unknown"),
         reference=(str(reference).strip() or None) if reference is not None else None,
         payload_hash=str(payload_hash),
+        status="pending",
+        attempt_count=0,
+        updated_at=now_utc_naive(),
         meta=meta or {},
     )
     session.add(row)
@@ -467,11 +660,67 @@ async def mark_webhook_event_processed(
         return False
 
 
+async def get_webhook_event(session: AsyncSession, event_id: str) -> ProcessedWebhookEvent | None:
+    return (
+        await session.execute(
+            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == str(event_id))
+        )
+    ).scalar_one_or_none()
+
+
+async def update_webhook_event_status(
+    session: AsyncSession,
+    *,
+    event_id: str,
+    status: str,
+    error: str | None = None,
+    increment_attempt: bool = False,
+) -> ProcessedWebhookEvent | None:
+    row = (
+        await session.execute(
+            select(ProcessedWebhookEvent)
+            .where(ProcessedWebhookEvent.event_id == str(event_id))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    row.status = str(status or "failed")[:16]
+    if increment_attempt:
+        row.attempt_count = int(row.attempt_count or 0) + 1
+    row.last_error = str(error)[:512] if error else None
+    row.updated_at = now_utc_naive()
+    if row.status in {"succeeded", "ignored"}:
+        row.processed_at = now_utc_naive()
+    await session.flush()
+    return row
+
+
+async def list_recoverable_webhook_events(
+    session: AsyncSession,
+    *,
+    provider: str = "paystack",
+    max_attempts: int = 10,
+    limit: int = 50,
+) -> list[ProcessedWebhookEvent]:
+    rows = await session.execute(
+        select(ProcessedWebhookEvent)
+        .where(
+            ProcessedWebhookEvent.provider == str(provider),
+            ProcessedWebhookEvent.status.in_(("pending", "failed", "processing")),
+            ProcessedWebhookEvent.attempt_count < max(1, int(max_attempts)),
+        )
+        .order_by(ProcessedWebhookEvent.updated_at.asc(), ProcessedWebhookEvent.id.asc())
+        .limit(max(1, min(int(limit), 200)))
+    )
+    return list(rows.scalars().all())
+
+
 async def get_economic_events(session, hours_ahead: int = 168) -> List["EconomicEvent"]:
     """Get upcoming medium/high-impact economic events from DB."""
     from db.models import EconomicEvent
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     window_end = now + timedelta(hours=max(0, int(hours_ahead or 0)))
     try:
         result = await session.execute(

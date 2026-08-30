@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     JSON,
     UniqueConstraint,
+    event,
 )
 # Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
 try:
@@ -41,7 +42,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    telegram_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
     username: Mapped[Optional[str]] = mapped_column(String(64))
     tier: Mapped[str] = mapped_column(String(16), index=True, default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
@@ -57,6 +58,8 @@ class User(Base):
     referral_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     premium_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
     accepted_terms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     execution_mode: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)
     auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
@@ -71,6 +74,24 @@ class User(Base):
     locale: Mapped[Optional[str]] = mapped_column(String(16))
     time_format: Mapped[str] = mapped_column(String(8), default="12h", nullable=False)
     dca_profile: Mapped[Optional[str]] = mapped_column(String(32))
+    # Unified platform identity fields (migration 0036). Existing users.id stays
+    # canonical so Telegram, web and mobile retain the same trading history.
+    public_user_id: Mapped[Optional[str]] = mapped_column(String(36), unique=True, index=True)
+    primary_email: Mapped[Optional[str]] = mapped_column(String(320), index=True)
+    primary_phone: Mapped[Optional[str]] = mapped_column(String(32))
+    display_name: Mapped[Optional[str]] = mapped_column(String(160))
+    country: Mapped[Optional[str]] = mapped_column(String(2))
+    preferred_currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    account_status: Mapped[str] = mapped_column(String(24), default="active", nullable=False, index=True)
+    onboarding_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    risk_profile: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    privacy_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    terms_version: Mapped[Optional[str]] = mapped_column(String(32))
+    terms_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class Subscription(Base):
@@ -96,6 +117,7 @@ class Signal(Base):
     __tablename__ = "signals"
 
     signal_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    display_id: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
     asset: Mapped[str] = mapped_column(String(32), index=True)
     timeframe: Mapped[str] = mapped_column(String(8), index=True)
     direction: Mapped[str] = mapped_column(String(16))
@@ -111,7 +133,18 @@ class Signal(Base):
     strength: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    thesis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    asset_discovery_provider: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     ml_probability: Mapped[Optional[float]] = mapped_column(Float)
+    ml_probability_raw: Mapped[Optional[float]] = mapped_column(Float)
+    ml_probability_calibrated: Mapped[Optional[float]] = mapped_column(Float)
+    ml_calibration_version: Mapped[Optional[str]] = mapped_column(String(64))
+    ml_calibration_validated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ml_calibration_validation_rows: Mapped[Optional[int]] = mapped_column(Integer)
+    ml_calibration_brier: Mapped[Optional[float]] = mapped_column(Float)
+    ml_calibration_ece: Mapped[Optional[float]] = mapped_column(Float)
+    quality_gate_version: Mapped[Optional[str]] = mapped_column(String(64))
+    quality_gate_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     trade_profile: Mapped[Optional[str]] = mapped_column(String(16), index=True)
     asset_class: Mapped[Optional[str]] = mapped_column(String(16), index=True)
     target_model: Mapped[Optional[str]] = mapped_column(String(32))
@@ -127,6 +160,26 @@ class Signal(Base):
     performance_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
+@event.listens_for(Signal, "before_insert")
+def _assign_signal_identity(_mapper, _connection, target: Signal) -> None:
+    """Generate the UUID and immutable public reference together exactly once."""
+    from core.signal_identity import make_display_signal_id
+
+    if not getattr(target, "signal_id", None):
+        target.signal_id = str(uuid4())
+    if not getattr(target, "display_id", None):
+        target.display_id = make_display_signal_id(target.signal_id)
+
+
+
+
+@event.listens_for(Signal.display_id, "set", retval=True, active_history=True)
+def _keep_signal_display_id_immutable(_target, value, oldvalue, _initiator):
+    from sqlalchemy.orm.attributes import NO_VALUE
+
+    if oldvalue not in (None, NO_VALUE) and str(oldvalue) and str(value) != str(oldvalue):
+        raise ValueError("signal display_id is immutable")
+    return value
 
 
 logger.info("✅ Signal model defined successfully")
@@ -134,6 +187,7 @@ logger.info("✅ Signal model defined successfully")
 
 class Outcome(Base):
     __tablename__ = "outcomes"
+    __table_args__ = (UniqueConstraint("signal_id", name="uq_outcomes_signal_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
@@ -148,6 +202,14 @@ class Outcome(Base):
     canonical_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     vip_fill_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     sentiment_outcome: Mapped[Optional[str]] = mapped_column(String(16))
+    terminal_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    provenance: Mapped[str] = mapped_column(String(32), default="canonical_live", nullable=False)
+    calculation_policy_version: Mapped[str] = mapped_column(String(64), default="legacy", nullable=False)
+    performance_inclusion_status: Mapped[str] = mapped_column(String(24), default="eligible", nullable=False)
+    performance_exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
+    corrected_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    corrected_by: Mapped[Optional[str]] = mapped_column(String(128))
+    correction_reason: Mapped[Optional[str]] = mapped_column(Text)
 
     signal: Mapped[Signal] = relationship(back_populates="outcomes")
 
@@ -219,6 +281,8 @@ class ReferralReward(Base):
     referred_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     reward_type: Mapped[str] = mapped_column(String(64), index=True)
     reward_value: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -346,7 +410,53 @@ class SignalLifecycle(Base):
     tp2_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     tp3_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reversed_after_tp1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    highest_tp_hit: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    terminal_event_type: Mapped[Optional[str]] = mapped_column(String(32))
+    terminal_event_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    terminal_price: Mapped[Optional[float]] = mapped_column(Float)
+    terminal_evidence: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserSignalMonitoring(Base):
+    """Per-recipient monitoring preference; never mutates global signal truth."""
+
+    __tablename__ = "user_signal_monitoring"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_user_signal_monitoring_user_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="auto_continue", index=True, nullable=False)
+    highest_notified_tp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    stopped_at_stage: Mapped[Optional[int]] = mapped_column(Integer)
+    realized_r: Mapped[Optional[float]] = mapped_column(Float)
+    realized_outcome: Mapped[Optional[str]] = mapped_column(String(24))
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    continued_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    access_revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class UserSignalMonitoringAction(Base):
+    """Idempotency ledger for Continue/Stop callback updates."""
+
+    __tablename__ = "user_signal_monitoring_actions"
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_user_signal_monitoring_action_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    monitoring_id: Mapped[int] = mapped_column(ForeignKey("user_signal_monitoring.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    stage: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class SignalTrackingEvent(Base):
@@ -386,9 +496,12 @@ class SignalEventNotification(Base):
     sent_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     delivery_state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     sent_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     error: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class EconomicEvent(Base):
@@ -423,6 +536,80 @@ class MT5Execution(Base):
     realized_pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     executed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class BrokerExecution(Base):
+    """Provider-neutral, idempotent execution ledger."""
+
+    __tablename__ = "broker_executions"
+    __table_args__ = (
+        UniqueConstraint("provider", "idempotency_key", name="uq_broker_execution_provider_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    provider: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    account_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_order_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    provider_client_order_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="reserved", index=True, nullable=False)
+    error_code: Mapped[Optional[str]] = mapped_column(String(128))
+    realized_pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    tier_at_execution: Mapped[str] = mapped_column(String(16), default="vip", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PayoutAccountRecord(Base):
+    __tablename__ = "payout_accounts"
+    __table_args__ = (UniqueConstraint("user_id", "currency", name="uq_payout_account_user_currency"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN", nullable=False)
+    bank_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    account_number_encrypted: Mapped[str] = mapped_column(String(512), nullable=False)
+    account_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    account_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    recipient_code_encrypted: Mapped[Optional[str]] = mapped_column(String(512))
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PayoutRequestRecord(Base):
+    __tablename__ = "payout_requests"
+    __table_args__ = (UniqueConstraint("reference", name="uq_payout_request_reference"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    payout_account_id: Mapped[int] = mapped_column(ForeignKey("payout_accounts.id"), nullable=False)
+    amount_kobo: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="requested", index=True, nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(String(256))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    approved_by_telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    provider_transfer_code: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    failure_code: Mapped[Optional[str]] = mapped_column(String(128))
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -485,7 +672,12 @@ class ProcessedWebhookEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64))
     reference: Mapped[Optional[str]] = mapped_column(String(128))
     payload_hash: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(String(512))
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -502,6 +694,29 @@ class PaymentEvent(Base):
     currency: Mapped[Optional[str]] = mapped_column(String(8))
     paystack_reference: Mapped[str] = mapped_column(String(128), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PaymentReceipt(Base):
+    """Confirmed-payment receipt; one successful receipt per provider reference."""
+
+    __tablename__ = "payment_receipts"
+    __table_args__ = (UniqueConstraint("provider", "payment_reference", name="uq_payment_receipt_provider_reference"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_number: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="paystack")
+    payment_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    plan: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN")
+    status: Mapped[str] = mapped_column(String(16), default="paid")
+    payment_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    subscription_start: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    text_body: Mapped[str] = mapped_column(Text, default="")
+    html_body: Mapped[Optional[str]] = mapped_column(Text)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -522,6 +737,175 @@ class RuntimeState(Base):
     value: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PaperAccount(Base):
+    __tablename__ = "paper_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    starting_balance: Mapped[float] = mapped_column(Float, default=10000.0, nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Float, default=10000.0, nullable=False)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    auto_trade_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    risk_pct: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    max_open_positions: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    min_signal_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    spread_bps: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    slippage_bps: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    fee_bps: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
+    target_mode: Mapped[str] = mapped_column(String(8), default="TP1", nullable=False)
+    allowed_directions: Mapped[str] = mapped_column(String(16), default="both", nullable=False)
+    allowed_asset_classes: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PaperPosition(Base):
+    __tablename__ = "paper_positions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_paper_position_user_signal"),
+    )
+
+    position_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[Optional[int]] = mapped_column(ForeignKey("signal_deliveries.id"), index=True)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    timeframe: Mapped[Optional[str]] = mapped_column(String(8), index=True)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True, nullable=False)
+    signal_entry: Mapped[float] = mapped_column(Float, nullable=False)
+    fill_entry: Mapped[float] = mapped_column(Float, nullable=False)
+    current_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profits: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    target_price: Mapped[Optional[float]] = mapped_column(Float)
+    quantity: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    notional: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    reserved_cash: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    entry_fee: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    exit_fee: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    r_multiple: Mapped[Optional[float]] = mapped_column(Float)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(32), default="delivered_signal", nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PaperLedgerEntry(Base):
+    __tablename__ = "paper_ledger_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    position_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    entry_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    balance_after: Mapped[float] = mapped_column(Float, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+
+
+class PaperTradeAttempt(Base):
+    """Audited paper-candidate decisions; positions contain only real trades."""
+
+    __tablename__ = "paper_trade_attempts"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_paper_trade_attempt_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid4()), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), index=True, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    market_price: Mapped[Optional[float]] = mapped_column(Float)
+    available_cash: Mapped[Optional[float]] = mapped_column(Float)
+    risk_amount: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_quantity: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_notional: Mapped[Optional[float]] = mapped_column(Float)
+    calculated_fee: Mapped[Optional[float]] = mapped_column(Float)
+    required_cash: Mapped[Optional[float]] = mapped_column(Float)
+    sizing_policy_version: Mapped[str] = mapped_column(String(64), default="paper-fee-reserve-v2", nullable=False)
+    first_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    retry_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PerformanceLedgerEntry(Base):
+    """One canonical proof-backed performance row per user and signal."""
+
+    __tablename__ = "performance_ledger_entries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", "domain", "environment", name="uq_performance_ledger_scope"),
+    )
+
+    ledger_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("signal_deliveries.id"), index=True, nullable=False)
+    domain: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    delivery_confirmed_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    thesis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    primary_bucket: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    entry_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    highest_tp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    global_outcome: Mapped[Optional[str]] = mapped_column(String(32))
+    user_monitoring_outcome: Mapped[Optional[str]] = mapped_column(String(32))
+    final_realized_r: Mapped[Optional[float]] = mapped_column(Float)
+    outcome_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    outcome_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    calculation_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    signal_plan_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    included: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    corrected_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    corrected_by: Mapped[Optional[str]] = mapped_column(String(128))
+    correction_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class PerformanceCorrectionAudit(Base):
+    __tablename__ = "performance_correction_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("performance_ledger_entries.ledger_id"), index=True, nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    before_values: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    after_values: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class MarketTick(Base):
@@ -607,6 +991,22 @@ class MLShadowPrediction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class MLModelArtifact(Base):
+    __tablename__ = "ml_model_artifacts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    model_name: Mapped[str] = mapped_column(String(64), default="primary", index=True, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_schema_version: Mapped[str] = mapped_column(String(64), default="1", nullable=False)
+    artifact_hash_sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    source_counts: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    trained_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class MLRejectedSignal(Base):
     __tablename__ = "ml_rejected_signals"
 
@@ -647,9 +1047,151 @@ class MLPastTrainingData(Base):
     outcome_r_multiple: Mapped[Optional[float]] = mapped_column(Float)
     outcome_percent: Mapped[Optional[float]] = mapped_column(Float)
     outcome_meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    provenance_domain: Mapped[str] = mapped_column(String(32), default="legacy_unverified", index=True, nullable=False)
+    delivery_proof_backed: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    persistence_status: Mapped[str] = mapped_column(String(24), default="persisted", nullable=False)
+    exclusion_reason: Mapped[Optional[str]] = mapped_column(String(128))
     signal_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     outcome_closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     archived_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveStrategySpec(Base):
+    __tablename__ = "adaptive_strategy_specs"
+    __table_args__ = (UniqueConstraint("strategy_id", "version", name="uq_adaptive_strategy_spec"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_version: Mapped[Optional[str]] = mapped_column(String(64))
+    family: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    creation_source: Mapped[str] = mapped_column(String(32), default="deterministic")
+    state: Mapped[str] = mapped_column(String(32), index=True, default="DRAFT")
+    spec: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    dataset_version: Mapped[Optional[str]] = mapped_column(String(128))
+    feature_version: Mapped[Optional[str]] = mapped_column(String(128))
+    approved_by: Mapped[Optional[int]] = mapped_column(BigInteger)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    suspension_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveAssetProfile(Base):
+    __tablename__ = "adaptive_asset_profiles"
+    __table_args__ = (UniqueConstraint("asset", "version", name="uq_adaptive_asset_profile_version"),)
+
+    profile_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    asset_class: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), index=True, default="DRAFT")
+    source_scope: Mapped[str] = mapped_column(String(32), default="asset")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    preferred_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    penalised_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    disabled_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    preferred_timeframes: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    preferred_sessions: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    avoided_sessions: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    regime_weights: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    family_weights: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    minimum_confidence: Mapped[float] = mapped_column(Float, default=0.70)
+    minimum_reward_risk: Mapped[float] = mapped_column(Float, default=1.5)
+    maximum_score_multiplier: Mapped[float] = mapped_column(Float, default=1.15)
+    minimum_score_multiplier: Mapped[float] = mapped_column(Float, default=0.85)
+    data_sufficiency_score: Mapped[float] = mapped_column(Float, default=0.0)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+    parent_profile_id: Mapped[Optional[str]] = mapped_column(String(128))
+    rollback_profile_id: Mapped[Optional[str]] = mapped_column(String(128))
+    metadata_json: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveSignalEvidence(Base):
+    __tablename__ = "adaptive_signal_evidence"
+    __table_args__ = (UniqueConstraint("signal_id", "duplicate_fingerprint", name="uq_adaptive_signal_evidence"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    strategy_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    strategy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    family: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    setup_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_score: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence_quality: Mapped[str] = mapped_column(String(24), default="genuine")
+    profile_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    profile_version: Mapped[Optional[int]] = mapped_column(Integer)
+    regime: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    data_quality: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    conflicts: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    duplicate_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveSignalSequence(Base):
+    __tablename__ = "adaptive_signal_sequences"
+    __table_args__ = (UniqueConstraint("signal_id", "timeframe", "evidence_stage", "sequence_hash", name="uq_adaptive_signal_sequence"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    sequence_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    candle_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger)
+    end_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger)
+    provider: Mapped[Optional[str]] = mapped_column(String(64))
+    evidence_stage: Mapped[str] = mapped_column(String(24), default="pre_signal")
+    summary: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveDatasetVersion(Base):
+    __tablename__ = "adaptive_dataset_versions"
+
+    dataset_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    first_decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    evidence_categories: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    assets: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    sequence_coverage: Mapped[float] = mapped_column(Float, default=0.0)
+    manifest: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveFeatureVersion(Base):
+    __tablename__ = "adaptive_feature_versions"
+
+    feature_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    component_versions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    feature_schema: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveWalkForwardRun(Base):
+    __tablename__ = "adaptive_walk_forward_runs"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    profile_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    dataset_version: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    feature_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    config: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    folds: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    error: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class Trade(Base):
@@ -693,6 +1235,7 @@ class OutcomeNotification(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     tier_at_send: Mapped[str] = mapped_column(String(16), default="free")
     outcome_status: Mapped[str] = mapped_column(String(16), index=True)
+    stage_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
     delivery_state: Mapped[str] = mapped_column(String(16), default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

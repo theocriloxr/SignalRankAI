@@ -1,0 +1,9 @@
+﻿{
+    "status":  "PASS",
+    "environment":  "staging",
+    "window_hours":  24,
+    "require_payment":  false,
+    "require_email":  false,
+    "evidence_directory":  "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI1\\deployment_evidence\\runtime-20260824-083139",
+    "generated_at":  "2026-08-24T08:32:56.5092140+01:00"
+}

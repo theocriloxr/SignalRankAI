@@ -1,0 +1,118 @@
+{
+  "gates": [
+    {
+      "acceptance": [
+        "clean dependency install",
+        "all local batches pass",
+        "no unknown P0/P1 requirement",
+        "security scans meet threshold"
+      ],
+      "gate": "A",
+      "name": "code_integrity",
+      "status": "PARTIAL_PASS_LOCAL",
+      "strongest_allowed_verdict": "local_repository_hardened"
+    },
+    {
+      "acceptance": [
+        "one Alembic head",
+        "clean and legacy PostgreSQL migrations",
+        "PgBouncer contract",
+        "separate Redis services",
+        "unique task ownership"
+      ],
+      "gate": "B",
+      "name": "database_infrastructure",
+      "status": "PARTIAL_PASS_LOCAL",
+      "strongest_allowed_verdict": "local_repository_hardened"
+    },
+    {
+      "acceptance": [
+        "webhook acceptance",
+        "registry equals runtime",
+        "safe command probes",
+        "all visible callbacks",
+        "no cross-user access"
+      ],
+      "gate": "C",
+      "name": "telegram_recovery",
+      "status": "PARTIAL_PASS_LOCAL",
+      "strongest_allowed_verdict": "local_repository_hardened"
+    },
+    {
+      "acceptance": [
+        "crypto REST provider certified",
+        "exact signal delivery/lifecycle/outcome proof",
+        "four-hour repeat lock",
+        "WebSockets off"
+      ],
+      "gate": "D",
+      "name": "owner_crypto_advisory",
+      "status": "BLOCKED_EXTERNAL",
+      "strongest_allowed_verdict": "not_activated"
+    },
+    {
+      "acceptance": [
+        "24–72 hour stability",
+        "restart and Redis recovery",
+        "stable queues and resources"
+      ],
+      "gate": "E",
+      "name": "owner_soak",
+      "status": "BLOCKED_EXTERNAL",
+      "strongest_allowed_verdict": "not_activated"
+    },
+    {
+      "acceptance": [
+        "one asset class at a time",
+        "provider/calendar/instrument/strategy/lifecycle certification"
+      ],
+      "gate": "F",
+      "name": "asset_expansion",
+      "status": "BLOCKED_EXTERNAL",
+      "strongest_allowed_verdict": "not_activated"
+    },
+    {
+      "acceptance": [
+        "internal tester matrix",
+        "support runbook",
+        "owner business approval"
+      ],
+      "gate": "G",
+      "name": "limited_users_subscriptions",
+      "status": "BLOCKED_EXTERNAL",
+      "strongest_allowed_verdict": "not_activated"
+    },
+    {
+      "acceptance": [
+        "Paystack test E2E",
+        "replay/wrong amount/refund/reconciliation/receipt",
+        "legal/pricing approval"
+      ],
+      "gate": "H",
+      "name": "payments",
+      "status": "DISABLED_BY_POLICY",
+      "strongest_allowed_verdict": "not_activated"
+    },
+    {
+      "acceptance": [
+        "paper",
+        "MetaApi demo",
+        "controlled demo users",
+        "separate real pilot approval"
+      ],
+      "gate": "I",
+      "name": "execution",
+      "status": "DISABLED_BY_POLICY",
+      "strongest_allowed_verdict": "not_activated"
+    }
+  ],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "release_gates",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

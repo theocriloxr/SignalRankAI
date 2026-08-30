@@ -1,12 +1,11 @@
 from pathlib import Path
 
 
-def test_updated_signal_jump_button_uses_url_not_callback():
+def test_updated_signal_jump_button_uses_durable_open_signal_callback():
     source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
-    snippet = source.split('InlineKeyboardButton(\n                        "Go to signal"', 1)[1].split(")]]", 1)[0]
-
-    assert "url=_build_signal_message_link" in snippet
-    assert "callback_data" not in snippet
+    assert '"Open updated signal"' in source
+    assert 'callback_data=_signal_callback_data("open_signal_", signal_id)' in source
+    assert '"Go to signal"' not in source
 
 
 def test_tp_notification_formatter_has_asset_and_ref_fallbacks():
@@ -72,6 +71,7 @@ def test_quality_gate_blocks_low_gemini_score_when_present():
             "rr_ratio": 2.5,
             "entry": 1.1,
             "stop_loss": 1.095,
+            "take_profit": [1.1125, 1.1175, 1.1225],
             "gemini_review_score": 6.5,
             "adx": 30,
             "mtf_4h_trend": 1,
@@ -145,9 +145,11 @@ def test_engine_default_timeframes_cover_1m_to_24h():
 
 def test_mt5_trade_callback_attempts_reprovision_before_failing():
     bot_source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    router_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_signal_router.py").read_text(encoding="utf-8")
     client_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_client.py").read_text(encoding="utf-8")
 
-    assert "ensure_user_mt5_account_id" in bot_source
+    assert 'execution_mode="manual_confirmed"' in bot_source
+    assert "ensure_user_mt5_account_id" in router_source
     assert "async def ensure_user_mt5_account_id" in client_source
     assert "decrypt_secret" in client_source
     assert "link_mt5_account(" in client_source

@@ -1,0 +1,36 @@
+{
+  "alembic_head": "0038_account_security_product",
+  "complete_system_certification_passed": true,
+  "external_completion_required": [
+    "Railway staging and production deployment",
+    "real provider credentials, plans, and redistribution rights",
+    "real Telegram, SMTP, OAuth, Paystack, and push credentials",
+    "signed mobile builds and app-store publication",
+    "fresh staging signal, delivery, paper-position, and soak evidence",
+    "legal and regulatory approval",
+    "statistically validated trading performance"
+  ],
+  "local_repository_certification_passed": true,
+  "primary_reports": [
+    "FINAL_COMPLETION_REPORT_V1.5.1.md",
+    "BLOCKED_EXTERNAL_REQUIREMENTS_V151.md",
+    "docs/MASTER_PROMPT_IMPLEMENTATION_MATRIX.md",
+    "docs/DEPLOYMENT_V151.md",
+    "docs/CANONICAL_BILLING_V151.md",
+    "docs/NEW_ENV_VARIABLES_V151.md",
+    "artifacts/v151_local_certification.json",
+    "artifacts/v151-local-complete/complete_system_test_report.json"
+  ],
+  "provider_evidence_scope": "HERMETIC_LOCAL_ONLY",
+  "pytest_results": {
+    "errors": 0,
+    "failed": 0,
+    "passed": 1344,
+    "skipped": 1,
+    "unparsed_batches": 0
+  },
+  "real_execution_default": "disabled",
+  "real_payouts_default": "disabled",
+  "release": "1.5.1",
+  "release_fingerprint": "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
+}

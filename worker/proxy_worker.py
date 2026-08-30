@@ -21,7 +21,7 @@ from utils.async_runner import run_sync
 logger = logging.getLogger(__name__)
 
 _BINANCE_PING_URL = "https://api.binance.com/api/v3/ping"
-_DEFAULT_PROVIDER_URL = "https://example.com/proxies"
+_DEFAULT_PROVIDER_URL = ""
 _VALIDATION_TIMEOUT_S = 2.0
 
 
@@ -32,6 +32,27 @@ def _provider_url() -> str:
         or _DEFAULT_PROVIDER_URL
     )
 
+
+
+
+def _truthy(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def proxy_validation_enabled() -> bool:
+    """Return whether proxy discovery/validation is safely configured."""
+    if not _truthy("PROXY_VALIDATION_ENABLED", False):
+        return False
+    url = _provider_url()
+    if not url:
+        return False
+    lowered = url.lower()
+    if "example.com" in lowered or lowered.startswith("changeme"):
+        return False
+    return True
 
 def _extract_proxy_candidates(payload: Any) -> list[str]:
     urls: list[str] = []
@@ -54,7 +75,10 @@ def _extract_proxy_candidates(payload: Any) -> list[str]:
 
 async def fetch_proxy_candidates() -> list[str]:
     url = _provider_url()
-    if not url:
+    if not proxy_validation_enabled():
+        logger.debug(
+            "[proxy_worker] disabled or provider URL missing/placeholder; no network request performed"
+        )
         return []
     try:
         async with httpx.AsyncClient(timeout=_VALIDATION_TIMEOUT_S) as client:
@@ -167,7 +191,10 @@ async def run_proxy_validation_cycle() -> dict[str, int]:
 
 
 def proxy_validation_job() -> None:
+    if not proxy_validation_enabled():
+        logger.info("[proxy_worker] validation job disabled; set PROXY_VALIDATION_ENABLED=1 and a real PROXY_API_PROVIDER_URL")
+        return
     try:
         run_sync(run_proxy_validation_cycle(), timeout=None)
     except Exception as exc:
-        logger.warning("[proxy_worker] proxy_validation_cycle_failed err=%s", exc)
+        logger.warning("[proxy_worker] proxy_validation_cycle_failed err=%s", exc, exc_info=True)

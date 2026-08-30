@@ -3,7 +3,7 @@
 Runs FastAPI + APScheduler + python-telegram-bot polling in a single asyncio event loop using FastAPI lifespan.
 
 Start with:
-  uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8000}
+  uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1
 
 This keeps existing main.py intact.
 """
@@ -28,23 +28,65 @@ except Exception:
     pass
 
 import os
+
+
+from runtime_safety import apply_runtime_safety_environment
+
+# Compatibility inventory retained for v1.2.1 source-level deployment checks.
+_RUNTIME_SAFETY_RELEVANT_FLAGS = (
+    "REAL_EXECUTION_ENABLED",
+    "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED",
+    "REAL_PAYOUTS_ENABLED",
+    "PAYMENTS_PUBLIC_ENABLED",
+    "FREE_SIGNAL_DISTRIBUTION_ENABLED",
+    "FREE_RANDOM_DISTRIBUTION_ENABLED",
+)
+
+
+def _enforce_nonproduction_safety_environment():
+    """Backward-compatible wrapper around the v1.2.3 runtime policy."""
+    return apply_runtime_safety_environment()
+
+
+_RUNTIME_SAFETY = _enforce_nonproduction_safety_environment()
+_NONPRODUCTION_SAFETY_OVERRIDES = _RUNTIME_SAFETY.forced_off
+
+
 import asyncio
+import hmac
+import json
+import re
+import sys
 import logging
 import threading
 from collections import deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 import time
 from typing import Iterable
 
 from fastapi import FastAPI, Request, Response, HTTPException, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from core.telegram_webhook_config import telegram_webhook_registration_kwargs
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from prometheus_client import Counter, Gauge, Histogram
 
 from core.redis_state import state
+from core.redis_streams import (
+    StreamMessage,
+    stream_consumer_name,
+    telegram_update_stream,
+)
 
 
 logger = logging.getLogger(__name__)
+_PROCESS_STARTED_MONO = time.monotonic()
+_LAST_READINESS_FAILURE_SIGNATURE = ""
+_LAST_READINESS_FAILURE_LOG_MONO = 0.0
 
 
 def _resolve_redis_url() -> str:
@@ -65,7 +107,50 @@ except Exception:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 
 
-logger.info("[startup] Redis URL detected; webhook redis queue will be used (production mode)")
+_startup_redis_url = _resolve_redis_url()
+if _startup_redis_url:
+    logger.info("[startup] Redis URL detected; durable webhook queue is available")
+else:
+    logger.warning("[startup] Redis URL not configured; webhook dispatcher will use the bounded in-process queue")
+
+logger.info(
+    "[startup_safety] requested=%s acknowledgement_valid=%s full_system_test_enabled=%s environment=%s",
+    int(str(os.getenv("FULL_SYSTEM_STAGING_TEST_MODE") or "").strip().lower() in {"1", "true", "yes", "on", "enabled"}),
+    int(bool(_RUNTIME_SAFETY.acknowledgement_valid)),
+    int(bool(_RUNTIME_SAFETY.full_system_test_enabled)),
+    _RUNTIME_SAFETY.environment,
+)
+
+if _RUNTIME_SAFETY.full_system_test_enabled:
+    logger.warning(
+        "[startup_safety] FULL SYSTEM STAGING TEST MODE active environment=%s "
+        "forced_on=%s sandbox_boundaries=%s audience=%s",
+        _RUNTIME_SAFETY.environment,
+        ",".join(_RUNTIME_SAFETY.forced_on) or "already_enabled",
+        ",".join(_RUNTIME_SAFETY.hard_boundaries) or "already_enforced",
+        _RUNTIME_SAFETY.audience_allowlist or "EMPTY",
+    )
+elif _NONPRODUCTION_SAFETY_OVERRIDES:
+    logger.warning(
+        "[startup_safety] non-production environment forced live-risk flags off: %s",
+        ",".join(_NONPRODUCTION_SAFETY_OVERRIDES),
+    )
+elif str(os.getenv("FULL_SYSTEM_STAGING_TEST_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}:
+    if not _RUNTIME_SAFETY.acknowledgement_valid:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE requested but acknowledgement is invalid; "
+            "live-risk flags remain fail-closed"
+        )
+    elif _RUNTIME_SAFETY.environment in {"production", "prod"}:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE is not permitted in production; "
+            "live-risk flags remain fail-closed"
+        )
+    else:
+        logger.error(
+            "[startup_safety] FULL_SYSTEM_STAGING_TEST_MODE could not be activated; "
+            "live-risk flags remain fail-closed"
+        )
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
@@ -84,6 +169,17 @@ _use_redis_webhook_queue: bool = False
 _last_redis_backend_log_at: float = 0.0
 _db_ready_cache: bool | None = None
 _db_ready_lock = threading.Lock()
+_webhook_stream = telegram_update_stream()
+
+
+def _append_pending_webhook_update(payload: dict) -> bool:
+    """Append without allowing ``deque(maxlen=...)`` to evict valid work."""
+    max_items = int(_pending_webhook_updates.maxlen or 0)
+    if max_items and len(_pending_webhook_updates) >= max_items:
+        webhook_queue_full_total.inc()
+        return False
+    _pending_webhook_updates.append(payload)
+    return True
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -149,9 +245,21 @@ def _extract_chat_id(payload: dict | None) -> int:
 
 
 
-# Always use Redis for webhook queue in production
 def _redis_queue_requested() -> bool:
-    return True
+    """Use Redis only when configured and not explicitly disabled.
+
+    Earlier builds returned ``True`` unconditionally, causing no-Redis/local
+    deployments to claim a durable backend and repeatedly attempt unavailable
+    Redis operations.
+    """
+    configured = bool(
+        str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+        or _resolve_redis_url()
+    )
+    requested = str(os.getenv("WEBHOOK_REDIS_QUEUE_ENABLED", "1")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    return bool(configured and requested)
 
 
 def _log_task_failure(task: asyncio.Task, task_name: str) -> None:
@@ -228,22 +336,23 @@ async def _safe_get_webhook_info() -> dict | None:
 
 
 def _app_has_registered_handlers(app_obj: object) -> bool:
-    """Best-effort readiness check for PTB Application handler registration."""
+    """Return True only when the complete Telegram handler contract is present."""
     if app_obj is None:
         return False
     try:
         handlers_map = getattr(app_obj, "handlers", None)
         if not isinstance(handlers_map, dict):
             return False
+        total_handlers = 0
         for _group, handler_list in handlers_map.items():
             try:
-                if handler_list and len(handler_list) > 0:
-                    return True
+                total_handlers += len(handler_list or [])
             except Exception:
                 continue
+        minimum = max(1, int(os.getenv("BOT_WEBHOOK_READY_MIN_HANDLERS", "60") or 60))
+        return total_handlers >= minimum
     except Exception:
         return False
-    return False
 
 
 async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
@@ -268,10 +377,12 @@ async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
 
 
 def _get_webhook_url() -> str:
-    """Derive the public HTTPS URL for the Telegram webhook.
+    """Derive the public HTTPS URL for the current deployment.
 
-    Uses RAILWAY_PUBLIC_DOMAIN (set automatically by Railway) or the
-    explicit WEBHOOK_DOMAIN / WEBHOOK_URL env var as a fallback.
+    Railway's generated domain is authoritative inside Railway. Explicit
+    overrides are fallbacks for non-Railway hosting and local tunnels. This
+    ordering prevents a staging service copied from production from registering
+    or probing the production domain through a stale APP_BASE_URL.
     """
     domain = (
         os.getenv("RAILWAY_PUBLIC_DOMAIN")
@@ -282,9 +393,47 @@ def _get_webhook_url() -> str:
     ).strip()
     if not domain:
         return ""
-    if not domain.startswith("https://"):
+    if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"
     return domain.rstrip("/")
+
+
+def _production_webhook_contract_errors() -> list[str]:
+    """Return production blockers that make webhook acceptance unsafe.
+
+    A Railway deployment that cannot durably accept Telegram updates must not
+    overwrite the bot's webhook while Railway is still routing the public domain
+    to an older deployment. Doing so causes pending updates to hit the old image
+    and appear as repeated 404 responses.
+    """
+    # Durable webhook dependencies are required on every Railway environment,
+    # including staging. This is intentionally broader than the production-only
+    # public cutover gate used by /readyz.
+    if not (_is_running_on_railway() or _production_readiness_required()):
+        return []
+
+    errors: list[str] = []
+    database_url = str(os.getenv("DATABASE_URL") or "").strip()
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+
+    if not database_url:
+        errors.append("DATABASE_URL")
+    if not state_url:
+        errors.append("STATE_REDIS_URL|REDIS_URL")
+    if not delivery_url:
+        errors.append("DELIVERY_REDIS_URL")
+    if state_url and delivery_url and state_url == delivery_url:
+        errors.append("DISTINCT_REDIS_SERVICES")
+    if not secret:
+        errors.append("TELEGRAM_WEBHOOK_SECRET")
+    return errors
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -292,6 +441,26 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _railway_process_ownership():
+    """Resolve the only valid compositions for ``railway_main:app``.
+
+    The HTTP application may run as the compatibility monolith or as the fast
+    decomposed front door. Dedicated engine/worker roles must use ``main.py``
+    and are rejected here so a bad Railway start command cannot silently
+    recreate the monolith.
+    """
+    from runtime.roles import RunMode, process_ownership
+
+    requested = os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all"
+    ownership = process_ownership(requested)
+    if ownership.mode not in {RunMode.FRONTDOOR, RunMode.ALL_DEV}:
+        raise RuntimeError(
+            f"railway_main:app cannot own RUN_MODE={ownership.mode.value}; "
+            "use start.sh/main.py for dedicated roles"
+        )
+    return ownership
 
 
 def _is_running_on_railway() -> bool:
@@ -324,6 +493,28 @@ def _is_db_ready() -> bool:
             _db_ready_cache = False
             logger.warning("[db] readiness check failed: %s", exc)
     return _db_ready_cache
+
+
+def _validate_production_runtime_contract() -> None:
+    """Fail fast when a production Railway service carries test-only controls."""
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    public_testing = str(os.getenv("PUBLIC_TESTING_MODE") or "0").strip().lower() in {
+        "1", "true", "yes", "on", "y"
+    }
+    allow_override = str(
+        os.getenv("ALLOW_PUBLIC_TESTING_IN_PRODUCTION") or "0"
+    ).strip().lower() in {"1", "true", "yes", "on", "y"}
+    if environment in {"production", "prod"} and public_testing and not allow_override:
+        raise RuntimeError(
+            "PUBLIC_TESTING_MODE=1 is forbidden in production; set it to 0 or explicitly "
+            "set ALLOW_PUBLIC_TESTING_IN_PRODUCTION=1 for an isolated non-customer test"
+        )
 
 
 def _log_railway_env_readiness() -> None:
@@ -366,7 +557,7 @@ def _log_railway_env_readiness() -> None:
         logger.warning("[railway] missing env vars: %s", ", ".join(missing))
 
 
-async def _run_startup_ops() -> None:
+async def _run_startup_ops(run_mode: str = "all") -> None:
     """Run DB migrations/startup ops first.
 
     Uses existing db.auto_ops.run_startup_ops which handles:
@@ -379,20 +570,36 @@ async def _run_startup_ops() -> None:
 
     logger.info("[startup] DB startup ops begin")
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: run_startup_ops("all"))
+    await loop.run_in_executor(None, lambda: run_startup_ops("web" if run_mode == "frontdoor" else run_mode))
     logger.info("[startup] DB startup ops end")
+
+
+def _ml_archive_backfill_enabled() -> bool:
+    """Run ML archive maintenance only on the analytics role or by explicit opt-in."""
+    explicit = os.getenv("ML_ARCHIVE_BACKFILL_ENABLED")
+    if explicit is not None:
+        return _env_bool("ML_ARCHIVE_BACKFILL_ENABLED", False)
+    run_mode = (os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all").strip().lower()
+    return run_mode in {"analytics", "ml", "learning"}
 
 
 async def _archive_ml_history_job() -> None:
     """Backfill ml_past_training_data from finalized outcomes (idempotent)."""
+    if not _ml_archive_backfill_enabled():
+        return
     try:
         from ml.schema_version import MODEL_FORMAT_VERSION, get_current_schema_version
-        from db.session import get_session, is_db_configured
+        from db.priority import DBPriority
+        from db.session import DatabaseWorkDeferred, get_session, is_db_configured
         from sqlalchemy import text
         if not is_db_configured():
             return
 
-        async with get_session() as session:
+        async with get_session(
+            priority=DBPriority.ANALYTICS,
+            label="ml_archive_backfill",
+            timeout_seconds=float(os.getenv("ML_ARCHIVE_DB_TIMEOUT_SECONDS", "0") or 0),
+        ) as session:
             # Ensure table exists even if migration order had race conditions.
             await session.execute(text(
                 """
@@ -477,6 +684,8 @@ async def _archive_ml_history_job() -> None:
                 inserted = 0
             if inserted > 0:
                 logger.info("[ml_archive] backfilled rows=%d", inserted)
+    except DatabaseWorkDeferred:
+        logger.debug("[ml_archive] deferred while foreground database work is active")
     except Exception as exc:
         logger.warning(f"[ml_archive] backfill failed: {exc}")
 
@@ -496,49 +705,64 @@ def _build_scheduler() -> AsyncIOScheduler:
     duplicate execution.  This scheduler only registers jobs that are
     unique to the web layer (VIP waitlist TTL management).
     """
-    from web.app import (
-        _check_waitlist_capacity_job,
-        _monitor_expired_invites_job,
-    )
+    # Import waitlist jobs from their lightweight canonical module.  This
+    # avoids importing the entire web surface merely to register scheduler
+    # callbacks and gives us a full traceback if registration ever regresses.
+    try:
+        from services.waitlist_jobs import (
+            check_waitlist_capacity_job as _check_waitlist_capacity_job,
+            monitor_expired_invites_job as _monitor_expired_invites_job,
+        )
+    except Exception as exc:
+        logger.exception("[sched] waitlist jobs unavailable: %s", exc)
+        _check_waitlist_capacity_job = None
+        _monitor_expired_invites_job = None
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     # VIP waitlist TTL — web layer only, not present in run_bot()
     try:
+        if _check_waitlist_capacity_job is None:
+            raise LookupError("waitlist capacity job unavailable")
         scheduler.add_job(
             _check_waitlist_capacity_job,
-            "interval",
-            hours=1,
+            IntervalTrigger(hours=1, timezone="UTC"),
             id="wl_capacity",
             replace_existing=True,
             max_instances=1,
         )
     except Exception as exc:
-        logger.warning(f"[sched] could not add wl_capacity job: {exc}")
+        logger.warning("[sched] could not add wl_capacity job: %s", exc, exc_info=True)
     try:
+        if _monitor_expired_invites_job is None:
+            raise LookupError("waitlist monitor job unavailable")
         scheduler.add_job(
             _monitor_expired_invites_job,
-            "interval",
-            minutes=15,
+            IntervalTrigger(minutes=15, timezone="UTC"),
             id="wl_monitor",
             replace_existing=True,
             max_instances=1,
         )
     except Exception as exc:
-        logger.warning(f"[sched] could not add wl_monitor job: {exc}")
+        logger.warning("[sched] could not add wl_monitor job: %s", exc, exc_info=True)
 
-    # ML archive backfill (idempotent): keep historical training table populated.
-    try:
-        scheduler.add_job(
-            _archive_ml_history_job,
-            "interval",
-            minutes=10,
-            id="ml_archive_backfill",
-            replace_existing=True,
-            max_instances=1,
-        )
-    except Exception as exc:
-        logger.warning(f"[sched] could not add ml_archive_backfill job: {exc}")
+    # ML history belongs to the analytics role. Keep it off the production monolith.
+    if _ml_archive_backfill_enabled():
+        try:
+            scheduler.add_job(
+                _archive_ml_history_job,
+                IntervalTrigger(
+                    minutes=max(5, int(os.getenv("ML_ARCHIVE_INTERVAL_MINUTES", "10") or 10)),
+                    timezone="UTC",
+                ),
+                id="ml_archive_backfill",
+                replace_existing=True,
+                max_instances=1,
+            )
+        except Exception as exc:
+            logger.warning(f"[sched] could not add ml_archive_backfill job: {exc}")
+    else:
+        logger.info("[sched] ML archive backfill disabled for this service role")
 
     return scheduler
 
@@ -561,6 +785,17 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
 
     if _bot_ready and _bot_application is not None:
         return _bot_application, True
+
+    contract_errors = _production_webhook_contract_errors()
+    if contract_errors:
+        joined = ",".join(contract_errors)
+        print(f"[bot] webhook setup blocked: production contract missing={joined}", flush=True)
+        logger.error(
+            "[bot] webhook setup blocked by production contract missing=%s; "
+            "existing Telegram webhook was not changed",
+            joined,
+        )
+        return None, False
 
     if not _is_db_ready():
         print("[bot] webhook setup skipped: DATABASE_URL missing", flush=True)
@@ -636,7 +871,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             app_obj = getattr(_bot_module, "_webhook_application", None)
             handlers_flag = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
             handlers_detected = _app_has_registered_handlers(app_obj)
-            handlers_ready = handlers_flag or handlers_detected
+            handlers_ready = handlers_flag and handlers_detected
         except Exception:
             app_obj = None
             handlers_flag = False
@@ -665,14 +900,8 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         if setup_error:
             logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
 
-    # Fallback: if an application object exists and handlers are attached,
-    # proceed even if the explicit readiness flag never flipped.
-    if app_obj is not None and not handlers_ready:
-        handlers_ready = _app_has_registered_handlers(app_obj)
-        if handlers_ready:
-            logger.warning(
-                "[bot] readiness flag missing but handlers detected; proceeding with webhook startup"
-            )
+    # Never proceed with a partially initialised PTB application. The explicit
+    # readiness flag is set only after commands and callback routes exist.
 
     if app_obj is None or not handlers_ready:
         print("[bot] webhook setup failed: handlers not ready", flush=True)
@@ -684,6 +913,10 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     # Initialize and start the Application on uvicorn's event loop
     try:
         await app_obj.initialize()
+        post_init = getattr(app_obj, "post_init", None)
+        if callable(post_init):
+            await post_init(app_obj)
+            logger.info("[bot] post_init completed in webhook lifecycle")
         await app_obj.start()
     except Exception as exc:
         print(f"[bot] application initialize/start failed: {exc}", flush=True)
@@ -712,39 +945,83 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     except Exception as exc:
         logger.warning("[webhook] queued replay after startup failed: %s", exc)
 
-    # Register webhook with Telegram
+    # Register webhook with Telegram. Avoid unnecessary setWebhook calls because
+    # Telegram rate-limits repeated registrations during rapid Railway deploys.
     webhook_url = _get_webhook_url()
     if webhook_url:
         webhook_endpoint = f"{webhook_url}/telegram/webhook"
+        webhook_kwargs = telegram_webhook_registration_kwargs()
+        webhook_info = None
         try:
-            await app_obj.bot.delete_webhook(drop_pending_updates=True)
-            await app_obj.bot.set_webhook(webhook_endpoint)
-            print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
-            logger.info("[bot] webhook registered: %s", webhook_endpoint)
-            try:
-                wh = await app_obj.bot.get_webhook_info()
-                logger.info(
-                    "[webhook] startup status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
-                    bool(getattr(wh, "url", "")),
-                    int(getattr(wh, "pending_update_count", 0) or 0),
-                    getattr(wh, "last_error_date", None),
-                    getattr(wh, "last_error_message", None),
-                )
-                print(
-                    "[webhook] startup status: "
-                    f"url_set={bool(getattr(wh, 'url', ''))} "
-                    f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
-                    f"last_error_date={getattr(wh, 'last_error_date', None)} "
-                    f"last_error_message={getattr(wh, 'last_error_message', None)}",
-                    flush=True,
-                )
-            except Exception as _wh_exc:
-                logger.warning("[webhook] get_webhook_info failed after set_webhook: %s", _wh_exc)
+            webhook_info = await app_obj.bot.get_webhook_info()
         except Exception as exc:
-            print(f"[bot] set_webhook failed: {exc}", flush=True)
-            logger.warning(
-                f"[bot] set_webhook failed: {exc} — bot initialized but Telegram may not route updates here"
+            logger.debug("[webhook] pre-registration status unavailable: %s", exc)
+
+        force_registration = _env_bool("TELEGRAM_FORCE_WEBHOOK_REREGISTER", False)
+        already_registered = bool(
+            webhook_info is not None
+            and str(getattr(webhook_info, "url", "") or "").rstrip("/")
+            == webhook_endpoint.rstrip("/")
+        )
+
+        if already_registered and not force_registration:
+            logger.info("[bot] webhook already registered: %s", webhook_endpoint)
+            print(f"[bot] webhook already registered: {webhook_endpoint}", flush=True)
+        else:
+            set_ok = False
+            max_attempts = max(1, min(3, int(os.getenv("TELEGRAM_WEBHOOK_SET_MAX_ATTEMPTS", "2") or 2)))
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    await app_obj.bot.set_webhook(webhook_endpoint, **webhook_kwargs)
+                    set_ok = True
+                    print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
+                    logger.info("[bot] webhook registered: %s attempt=%s", webhook_endpoint, attempt)
+                    break
+                except Exception as exc:
+                    retry_after = getattr(exc, "retry_after", None)
+                    if retry_after is None:
+                        match = re.search(r"Retry in (\d+)", str(exc), flags=re.IGNORECASE)
+                        retry_after = int(match.group(1)) if match else None
+                    if retry_after is not None and attempt < max_attempts:
+                        sleep_seconds = max(1.0, min(15.0, float(retry_after) + 0.25))
+                        logger.warning(
+                            "[bot] set_webhook rate-limited attempt=%s/%s retry_in=%.2fs",
+                            attempt,
+                            max_attempts,
+                            sleep_seconds,
+                        )
+                        await asyncio.sleep(sleep_seconds)
+                        continue
+                    print(f"[bot] set_webhook failed: {exc}", flush=True)
+                    logger.warning(
+                        "[bot] set_webhook failed attempt=%s/%s err=%s — preserving existing webhook",
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    break
+            if not set_ok and webhook_info is not None and already_registered:
+                logger.info("[bot] existing webhook remains active after registration failure")
+
+        try:
+            wh = await app_obj.bot.get_webhook_info()
+            logger.info(
+                "[webhook] startup status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
+                bool(getattr(wh, "url", "")),
+                int(getattr(wh, "pending_update_count", 0) or 0),
+                getattr(wh, "last_error_date", None),
+                getattr(wh, "last_error_message", None),
             )
+            print(
+                "[webhook] startup status: "
+                f"url_set={bool(getattr(wh, 'url', ''))} "
+                f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
+                f"last_error_date={getattr(wh, 'last_error_date', None)} "
+                f"last_error_message={getattr(wh, 'last_error_message', None)}",
+                flush=True,
+            )
+        except Exception as _wh_exc:
+            logger.warning("[webhook] get_webhook_info failed after registration: %s", _wh_exc)
     else:
         print("[bot] webhook NOT registered: RAILWAY_PUBLIC_DOMAIN/WEBHOOK_URL missing", flush=True)
         logger.warning(
@@ -790,6 +1067,17 @@ async def _stop_telegram_bot(application: object) -> None:
             await application.stop()
     except Exception:
         pass
+    try:
+        post_stop = getattr(application, "post_stop", None)
+        if callable(post_stop):
+            await post_stop(application)
+    except Exception as exc:
+        logger.debug("[bot] post_stop callback failed: %s", exc)
+    try:
+        if hasattr(application, "shutdown"):
+            await application.shutdown()
+    except Exception as exc:
+        logger.debug("[bot] application shutdown failed: %s", exc)
 
 
 async def _notify_admin_bot_ready() -> None:
@@ -800,6 +1088,51 @@ async def _notify_admin_bot_ready() -> None:
 
         if not OWNER_IDS:
             return
+
+        # Railway rolling deploys can briefly run the retiring and replacement
+        # containers together. Claim a shared short-lived notification key so
+        # owners receive one ready message instead of one from each container.
+        try:
+            ttl_seconds = max(30, int(os.getenv("BOT_READY_NOTIFICATION_DEDUPE_SECONDS", "180") or 180))
+        except (TypeError, ValueError):
+            ttl_seconds = 180
+        environment = str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME")
+            or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV")
+            or "unknown"
+        ).strip().lower()
+        deployment_id = str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "unknown").strip()
+        dedupe_key = f"startup:bot_ready:{environment}"
+
+        async def _claim_ready_notification() -> bool:
+            try:
+                from core.redis_state import state
+
+                def _claim() -> bool:
+                    redis_client = state._get_redis_sync()  # shared state Redis; atomic SET NX
+                    if redis_client is not None:
+                        return bool(redis_client.set(
+                            dedupe_key,
+                            deployment_id,
+                            ex=ttl_seconds,
+                            nx=True,
+                        ))
+                    # Best-effort fallback for local development without Redis.
+                    if state.get_sync(dedupe_key):
+                        return False
+                    state.set_sync(dedupe_key, deployment_id, ex=ttl_seconds)
+                    return True
+
+                return bool(await asyncio.to_thread(_claim))
+            except Exception as exc:
+                logger.warning("[bot_ready_notification] dedupe unavailable error=%s", type(exc).__name__)
+                return True
+
+        if not await _claim_ready_notification():
+            logger.info("[bot_ready_notification] duplicate suppressed key=%s ttl=%ss", dedupe_key, ttl_seconds)
+            return
+
         msg = "✅ SignalRankAI bot is alive, webhook-ready, and core functions are running."
         for owner_id in OWNER_IDS:
             try:
@@ -849,6 +1182,88 @@ def _start_engine_loop_in_background() -> asyncio.Task:
     return task
 
 
+async def _run_deployment_diagnostics_once() -> None:
+    """Run the read-only deployment audit after the HTTP service is ready.
+
+    Full pytest/provider certification is opt-in because it can consume the
+    entire Railway Hobby allocation. The generated report is secret-safe and
+    can be fetched through the protected diagnostics endpoint.
+    """
+    if not _env_bool(
+        "DEPLOYMENT_DIAGNOSTICS_ENABLED",
+        _is_running_on_railway(),
+    ):
+        logger.info("[deployment_diagnostics] disabled")
+        return
+    delay = max(1.0, float(os.getenv("DEPLOYMENT_DIAGNOSTICS_START_DELAY_SECONDS", "25") or 25))
+    await asyncio.sleep(delay)
+    report_path = str(
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_REPORT_PATH")
+        or "/tmp/signalrank_deployment_diagnostics.json"
+    )
+    command = [
+        sys.executable,
+        "scripts/deployment_diagnostics.py",
+        "--phase",
+        "runtime",
+        "--output",
+        report_path,
+        "--continue-on-failure",
+    ]
+    # Always probe the current Railway deployment first. A duplicated staging
+    # environment may still contain production APP_BASE_URL/WEBHOOK_DOMAIN values.
+    base_url = str(
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_BASE_URL")
+        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("WEBHOOK_DOMAIN")
+        or os.getenv("WEBHOOK_URL")
+        or os.getenv("APP_BASE_URL")
+        or ""
+    ).strip()
+    # A rolling public domain may still target the previous image. Runtime
+    # diagnostics must validate the container that launched the audit.
+    if _is_running_on_railway() and not str(os.getenv("DEPLOYMENT_DIAGNOSTICS_BASE_URL") or "").strip():
+        port = str(os.getenv("PORT") or "8080").strip()
+        base_url = f"http://127.0.0.1:{port}"
+    if base_url:
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
+        command.extend(["--base-url", base_url])
+    if _env_bool("DEPLOYMENT_DIAGNOSTICS_LIVE_PROVIDERS", False):
+        command.append("--live-providers")
+    if _env_bool("DEPLOYMENT_EXTENDED_SCANS_ENABLED", False):
+        command.append("--extended-scans")
+    if _env_bool("DEPLOYMENT_FULL_TESTS_ENABLED", False):
+        command.append("--run-full-suite")
+
+    logger.info("[deployment_diagnostics] starting command=%s", command)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(Path(__file__).resolve().parent),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        timeout = max(60.0, float(os.getenv("DEPLOYMENT_DIAGNOSTICS_TIMEOUT_SECONDS", "1800") or 1800))
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        text = (stdout or b"").decode("utf-8", errors="replace")
+        for line in text.splitlines()[-200:]:
+            logger.info("[deployment_diagnostics_output] %s", line)
+        logger.info(
+            "[deployment_diagnostics] completed exit_code=%s report=%s",
+            process.returncode,
+            report_path,
+        )
+    except asyncio.TimeoutError:
+        logger.error("[deployment_diagnostics] timed out")
+        try:
+            process.kill()
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.exception("[deployment_diagnostics] failed: %s", exc)
+
+
 def _start_worker_loop_in_background() -> asyncio.Task:
     """Start the worker.main loop in a thread executor."""
     from worker.worker import main as worker_main
@@ -879,7 +1294,44 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
+    ownership = _railway_process_ownership()
+    _validate_production_runtime_contract()
     _log_railway_env_readiness()
+    try:
+        from core.version import get_version_banner
+        from core.startup_diagnostics import render_startup_diagnostics
+
+        logger.info("[%s]", get_version_banner())
+        for line in render_startup_diagnostics().splitlines():
+            logger.info(line)
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never block startup
+        logger.debug("[startup_diagnostics] unavailable: %s", exc)
+    logger.info(
+        "[runtime_ownership] mode=%s decomposed=%s http=%s telegram=%s scheduler=%s engine=%s worker=%s startup_ops=%s",
+        ownership.mode.value,
+        str(ownership.decomposed).lower(),
+        str(ownership.http).lower(),
+        str(ownership.telegram).lower(),
+        str(ownership.scheduler).lower(),
+        str(ownership.engine).lower(),
+        str(ownership.worker).lower(),
+        str(ownership.startup_ops).lower(),
+    )
+    try:
+        from db.session import get_session_api_contract
+
+        contract = get_session_api_contract()
+        logger.info(
+            "[db_session_api] signature_version=%s supports_priority=%s supports_label=%s "
+            "supports_timeout=%s legacy_adapter=%s",
+            contract["signature_version"],
+            str(contract["supports_priority"]).lower(),
+            str(contract["supports_label"]).lower(),
+            str(contract["supports_timeout"]).lower(),
+            str(contract["legacy_adapter"]).lower(),
+        )
+    except Exception as exc:
+        logger.error("[db_session_api] self-check failed: %s", exc)
     _db_ready = _is_db_ready()
 
     if not _db_ready:
@@ -899,15 +1351,16 @@ async def lifespan(_: FastAPI):
     # and only wait for bounded time when explicitly configured.
     startup_ops_task: asyncio.Task | None = None
     startup_maintenance_tasks: list[asyncio.Task] = []
+    startup_work_enabled = bool(ownership.startup_ops) and _env_bool("STARTUP_OPS_ENABLED", True)
 
     # On Railway, default to non-blocking startup so healthchecks can connect
     # immediately; operators can opt in to waiting by setting STARTUP_OPS_TIMEOUT_SECONDS.
     _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
     startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", _default_ops_timeout) or 0)
 
-    if _db_ready:
+    if _db_ready and startup_work_enabled:
         try:
-            startup_ops_task = asyncio.create_task(_run_startup_ops())
+            startup_ops_task = asyncio.create_task(_run_startup_ops(ownership.mode.value))
             startup_ops_task.add_done_callback(lambda t: _log_task_failure(t, "startup-ops"))
             startup_maintenance_tasks.append(startup_ops_task)
             if startup_ops_timeout_s > 0:
@@ -924,8 +1377,10 @@ async def lifespan(_: FastAPI):
                 "[startup] DB startup ops failed: %s; continuing anyway — web endpoints will serve degraded responses",
                 exc,
             )
-    else:
+    elif not _db_ready:
         logger.warning("[startup] DB startup ops skipped: DATABASE_URL not configured")
+    else:
+        logger.info("[startup] DB startup ops skipped by role/config mode=%s", ownership.mode.value)
 
     async def _run_post_startup_maintenance() -> None:
         """Run maintenance in strict order once startup ops are done.
@@ -963,12 +1418,15 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             logger.warning(f"[startup] fresh reset step failed: {exc}")
 
-        # Always run archive pass afterwards to keep ml_past_training_data filled.
-        try:
-            await _archive_ml_history_job()
-            logger.info("[startup] post-maintenance: ml archive backfill step complete")
-        except Exception as exc:
-            logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+        # ML archive maintenance is isolated to the analytics role.
+        if _ml_archive_backfill_enabled():
+            try:
+                await _archive_ml_history_job()
+                logger.info("[startup] post-maintenance: ml archive backfill step complete")
+            except Exception as exc:
+                logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+        else:
+            logger.info("[startup] post-maintenance: ml archive backfill disabled")
 
         logger.info("[startup] post-maintenance end")
 
@@ -977,7 +1435,7 @@ async def lifespan(_: FastAPI):
     maintenance_timeout_s = int(
         os.getenv("STARTUP_MAINTENANCE_TIMEOUT_SECONDS", _default_maintenance_timeout) or 0
     )
-    if _db_ready:
+    if _db_ready and startup_work_enabled:
         try:
             maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
             maintenance_task.add_done_callback(lambda t: _log_task_failure(t, "startup-maintenance"))
@@ -993,26 +1451,55 @@ async def lifespan(_: FastAPI):
             )
         except Exception as exc:
             logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
-    else:
+    elif not _db_ready:
         logger.warning("[startup] post-startup maintenance skipped: DATABASE_URL not configured")
+    else:
+        logger.info("[startup] post-startup maintenance skipped by role/config mode=%s", ownership.mode.value)
 
 
     _running_on_railway = _is_running_on_railway()
+    # Production and certification workers must never race repository migrations.
+    # Pre-deploy is responsible for upgrading the schema; runtime only proves it.
+    profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
+    strict_worker_admission = _production_readiness_required() or profile in {
+        "staging-certification",
+        "production-advisory",
+        "production-live-owner-canary",
+    }
+    worker_admitted = True
+    worker_admission: dict[str, object] = {"ok": True, "detail": "not_required"}
+    if strict_worker_admission and (ownership.engine or ownership.worker):
+        from core.version import runtime_commit_matches_expected
+
+        database_admission = await _database_readiness_check()
+        commit_ok, commit_detail = runtime_commit_matches_expected()
+        worker_admitted = bool(database_admission.get("ok")) and commit_ok
+        worker_admission = {
+            "ok": worker_admitted,
+            "database": database_admission,
+            "release_commit": {"ok": commit_ok, "detail": commit_detail},
+        }
+        logger.info("[worker_admission] %s", json.dumps(worker_admission, sort_keys=True, default=str))
+        if not worker_admitted:
+            logger.critical(
+                "[worker_admission] engine and worker loops blocked by schema or release identity"
+            )
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     # Default ON in monolith so web+bot+engine+worker run in one service.
     # Can still be disabled explicitly with RUN_ENGINE_LOOP=0.
     engine_task = None
-    _run_engine = str(
-        os.getenv("RUN_ENGINE_LOOP", "1")
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    _run_engine = bool(ownership.engine)
     if not _run_engine:
         logger.info(
-            "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
+            "[startup] Engine loop skipped by ownership mode=%s%s",
+            ownership.mode.value,
+            " [decomposed front door]" if ownership.decomposed else "",
         )
     elif not _db_ready:
         logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
+    elif not worker_admitted:
+        logger.critical("[startup] Engine loop blocked by database worker admission")
     else:
         try:
             engine_task = _start_engine_loop_in_background()
@@ -1034,16 +1521,17 @@ async def lifespan(_: FastAPI):
     # Default ON in monolith so web+bot+engine+worker run in one service.
     # Can still be disabled explicitly with RUN_WORKER_LOOP=0.
     worker_task = None
-    _run_worker = str(
-        os.getenv("RUN_WORKER_LOOP", "1")
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    _run_worker = bool(ownership.worker)
     if not _run_worker:
         logger.info(
-            "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
+            "[startup] Worker loop skipped by ownership mode=%s%s",
+            ownership.mode.value,
+            " [decomposed front door]" if ownership.decomposed else "",
         )
     elif not _db_ready:
         logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
+    elif not worker_admitted:
+        logger.critical("[startup] Worker loop blocked by database worker admission")
     else:
         try:
             worker_task = _start_worker_loop_in_background()
@@ -1197,7 +1685,8 @@ async def lifespan(_: FastAPI):
                         _base = _get_webhook_url()
                         if _base:
                             _endpoint = f"{_base}/telegram/webhook"
-                            await _bot_application.bot.set_webhook(_endpoint)
+                            _kwargs = telegram_webhook_registration_kwargs()
+                            await _bot_application.bot.set_webhook(_endpoint, **_kwargs)
                             logger.warning("[webhook] periodic self-heal: webhook was unset, re-registered=%s", _endpoint)
                             print(f"[webhook] periodic self-heal: re-registered={_endpoint}", flush=True)
                     except Exception as _heal_exc:
@@ -1218,9 +1707,14 @@ async def lifespan(_: FastAPI):
                         logger.warning("[webhook] Redis queue disabled by config; using in-process queue")
                     continue
 
-                redis_ok = bool(await state.has_redis())
+                if _webhook_stream.configured:
+                    redis_ok = bool(await _webhook_stream.ping())
+                else:
+                    # Compatibility path for local/test deployments that have
+                    # not yet provisioned the dedicated delivery Redis.
+                    redis_ok = bool(await state.has_redis())
                 if redis_ok and (not _use_redis_webhook_queue):
-                    _use_redis_webhook_queue = True
+                    _use_redis_webhook_queue = _redis_queue_requested()
                     logger.info("[webhook] Redis became available; switched queue_backend=redis")
                 elif (not redis_ok) and _use_redis_webhook_queue:
                     _use_redis_webhook_queue = False
@@ -1235,10 +1729,12 @@ async def lifespan(_: FastAPI):
 
     async def _webhook_worker(worker_id: int) -> None:
         """Background worker: process Telegram updates from queue."""
+        stream_consumer = stream_consumer_name(f"telegram-{worker_id}")
         while True:
             payload = None
             payload_source = "redis" if _use_redis_webhook_queue else "in_process"
             consumed_in_process = False
+            stream_message: StreamMessage | None = None
 
             # Important: even in Redis mode, consume local fallback items first.
             # This prevents ingress/worker disconnect when Redis enqueue times out.
@@ -1251,8 +1747,19 @@ async def lifespan(_: FastAPI):
                     payload = None
 
             if payload is None and _use_redis_webhook_queue:
-                payload = await state.dequeue_webhook_update(timeout_seconds=1)
-                payload_source = "redis"
+                if _webhook_stream.configured:
+                    stream_messages = await _webhook_stream.read(
+                        consumer=stream_consumer,
+                        count=1,
+                        block_ms=1_000,
+                    )
+                    if stream_messages:
+                        stream_message = stream_messages[0]
+                        payload = stream_message.payload
+                    payload_source = "redis_stream"
+                else:
+                    payload = await state.dequeue_webhook_update(timeout_seconds=1)
+                    payload_source = "redis_legacy"
                 if not payload:
                     continue
 
@@ -1274,7 +1781,15 @@ async def lifespan(_: FastAPI):
                     payload_source,
                 )
                 if (not _bot_ready) or (_bot_application is None):
-                    _pending_webhook_updates.append(payload)
+                    if stream_message is not None:
+                        # Leave the entry pending; another consumer can claim it
+                        # after the lease once the bot application is ready.
+                        await asyncio.sleep(0.1)
+                    elif not _append_pending_webhook_update(payload):
+                        logger.error(
+                            "[webhook] pending queue full while bot unavailable update_id=%s",
+                            payload_update_id,
+                        )
                     continue
                 from telegram import Update
                 update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
@@ -1302,9 +1817,36 @@ async def lifespan(_: FastAPI):
                     except asyncio.TimeoutError:
                         process_task.cancel()
                         logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
+                        raise
                 _record_dispatch_latency(str(payload_update_id), started_at)
+                if stream_message is not None:
+                    acknowledged = await _webhook_stream.ack(stream_message.message_id)
+                    if not acknowledged:
+                        # The Telegram update has already been processed. XACK=0
+                        # commonly means another consumer/recovery pass already
+                        # acknowledged the same stream id. Retrying the business
+                        # action would duplicate commands, referrals, or sends.
+                        logger.warning(
+                            "[webhook] stream ack returned zero after successful processing; "
+                            "treating as idempotent id=%s update_id=%s",
+                            stream_message.message_id,
+                            payload_update_id,
+                        )
                 logger.info("[webhook] worker=%s finished update_id=%s", worker_id, payload_update_id)
             except Exception as exc:
+                if stream_message is not None:
+                    try:
+                        attempts = await _webhook_stream.fail(stream_message, exc)
+                        logger.warning(
+                            "[webhook] stream processing failed id=%s attempts=%s",
+                            stream_message.message_id,
+                            attempts,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[webhook] failed to persist stream retry state id=%s",
+                            stream_message.message_id,
+                        )
                 logger.error(
                     "[webhook] worker=%s failed processing update: %s",
                     worker_id,
@@ -1324,18 +1866,20 @@ async def lifespan(_: FastAPI):
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-webhook-health"))
     _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-redis-backend"))
+    _monitor_tasks.append(asyncio.create_task(_run_deployment_diagnostics_once()))
+    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "deployment-diagnostics"))
 
-    # Bounded queue + worker pool for high concurrent webhook traffic (production values)
+    # Bounded queue + worker pool sized for a single Railway Hobby process.
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
-    _default_queue_size = "5000"
-    _default_worker_count = "64"
-    _use_redis_webhook_queue = True
+    _default_queue_size = "1000"
+    _default_worker_count = "4"
+    _use_redis_webhook_queue = _redis_queue_requested()
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
-    _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
+    _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, min(10_000, _queue_size)))
     _webhook_dispatch_workers = [
         asyncio.create_task(_webhook_worker(i + 1))
-        for i in range(max(4, _worker_count))
+        for i in range(max(1, min(16, _worker_count)))
     ]
     for idx, _wt in enumerate(_webhook_dispatch_workers, start=1):
         _wt.add_done_callback(lambda t, _idx=idx: _log_task_failure(t, f"webhook-worker-{_idx}"))
@@ -1464,14 +2008,24 @@ async def lifespan(_: FastAPI):
     # Emit a single consolidated log line showing which subsystems are active so
     # operators can immediately verify the single-service deployment is healthy.
     _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
-    _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    _engine_outcome_requested = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    # The monolith has one authoritative realtime outcome owner: the worker loop.
+    # ENGINE_OUTCOME_TRACKER_ENABLED is retained only as a compatibility input and
+    # does not start a second tracker.
+    _engine_outcome_state = "DISABLED(worker_owned)"
+    if _engine_outcome_requested:
+        logger.warning(
+            "[startup] ENGINE_OUTCOME_TRACKER_ENABLED requested but ignored; "
+            "worker loop is the sole realtime outcome owner"
+        )
     _bot_state = "DISABLED" if not _db_ready else ("ENABLED" if bot_started else "INITIALIZING")
     _subsystem_summary = (
         "[startup] subsystem summary | "
+        f"mode={ownership.mode.value} | "
         f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
         f"outcome_worker={'ENABLED' if worker_task else 'DISABLED'} | "
         f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
-        f"engine_outcome_tracker={'ENABLED' if _engine_outcome_enabled else 'DISABLED'} | "
+        f"engine_outcome_tracker={_engine_outcome_state} | "
         f"scheduler={'ENABLED' if scheduler else 'DISABLED'} | "
         f"bot={_bot_state}"
     )
@@ -1571,6 +2125,17 @@ async def lifespan(_: FastAPI):
                     _task.cancel()
                 except Exception:
                     pass
+        try:
+            await _webhook_stream.close()
+        except Exception as exc:
+            logger.debug("[shutdown] webhook stream close failed: %s", exc)
+        try:
+            from core.telemetry import shutdown_tracer
+
+            shutdown_tracer()
+            logger.info("[telemetry] tracer shutdown")
+        except Exception as exc:
+            logger.debug("[shutdown] telemetry shutdown failed: %s", exc)
 
 
 import logging
@@ -1581,45 +2146,835 @@ from web.app import app as _web_app
 app = FastAPI(lifespan=lifespan)
 
 
+@app.get("/diagnostics/deployment")
+async def _deployment_diagnostics_endpoint(
+    x_diagnostics_key: str | None = Header(default=None, alias="X-Diagnostics-Key"),
+) -> JSONResponse:
+    """Return the latest secret-safe deployment audit when explicitly enabled."""
+    if not _env_bool("DEPLOYMENT_DIAGNOSTICS_ENDPOINT_ENABLED", False):
+        return JSONResponse(status_code=404, content={"ok": False, "error": "not_enabled"})
+    expected = str(os.getenv("DEPLOYMENT_DIAGNOSTICS_KEY") or "").strip()
+    if _production_readiness_required() and not expected:
+        return JSONResponse(status_code=503, content={"ok": False, "error": "diagnostics_key_not_configured"})
+    supplied = str(x_diagnostics_key or "").strip()
+    if expected and not hmac.compare_digest(supplied, expected):
+        return JSONResponse(status_code=401, content={"ok": False, "error": "invalid_diagnostics_key"})
+    report_path = Path(
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_REPORT_PATH")
+        or "/tmp/signalrank_deployment_diagnostics.json"
+    )
+    if not report_path.exists():
+        return JSONResponse(
+            status_code=202,
+            content={"ok": False, "status": "pending", "report_path": str(report_path)},
+        )
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.exception("[deployment_diagnostics] report read failed: %s", exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": "report_unreadable"})
+    return JSONResponse(status_code=200, content={"ok": True, "report": payload})
+
+
 # ─────────────────────────────────────────────────────────────────────────────────────
 # Railway healthcheck - add directly to main app for reliability
 # This ensures /healthz responds even if the mount fails or during edge cases
 # ─────────────────────────────────────────────────────────────────────────────────────
 
 class _HealthResponse(BaseModel):
-    status: str = "healthy"
+    status: str = "ok"
     uptime: float
     signals_active: int = 0
     cache_hit_rate: float = 0.0
+    resource_state: str = "OPTIMAL"
+
+
+@app.get("/metrics/prometheus", include_in_schema=False)
+async def _metrics_prometheus_endpoint() -> Response:
+    """Expose Prometheus metrics directly on the Railway monolith.
+
+    The compatibility web app is mounted later, but this direct route keeps the
+    scrape/readiness contract available even if that mount changes or fails.
+    """
+    from core.telemetry import prometheus_content_type, prometheus_metrics_text
+
+    return Response(
+        content=prometheus_metrics_text(),
+        media_type=prometheus_content_type(),
+    )
 
 
 @app.get("/health", response_model=_HealthResponse)
 @app.get("/healthz", response_model=_HealthResponse)
+@app.get("/livez", response_model=_HealthResponse)
 async def _healthz_endpoint():
-    """Railway healthcheck - fast liveness probe.
-    
-    Returns 200 quickly even if DB is unavailable (status=degraded).
-    Mounted web app also serves this, but having it here ensures reliability.
+    """Cheap process liveness check.
+
+    This endpoint deliberately performs no network or database I/O. Dependency
+    admission belongs to ``/readyz`` so provider or database jitter cannot
+    trigger a Railway restart loop.
     """
-    import time
-    uptime = time.time() - float(os.getenv("START_TS", "0"))
-    # Try to get cache stats, gracefully handle unavailability
-    cache_hit_rate = 0.0
+    resource_state = "OPTIMAL"
     try:
-        from core.redis_cache import cache_stats
-        cache = await cache_stats()
-        cache_hit_rate = float(cache.get("hit_rate", 0))
+        from core.resource_governor import get_resource_governor
+
+        resource_state = str(get_resource_governor().snapshot().state.value)
     except Exception:
         pass
     return _HealthResponse(
-        status="healthy",
-        uptime=uptime,
+        status="ok",
+        uptime=max(0.0, time.monotonic() - _PROCESS_STARTED_MONO),
         signals_active=0,
-        cache_hit_rate=cache_hit_rate,
+        cache_hit_rate=0.0,
+        resource_state=resource_state,
     )
 
 
-@app.post("/telegram/webhook")
+def _database_readiness_timeout_seconds() -> float:
+    """Return the bounded timeout for the Railway database readiness probe.
+
+    Railway starts health checks while migrations, startup maintenance and the
+    Telegram application may still be warming the same small database pool.
+    The previous 1.5 second budget was shorter than normal cold-start catalogue
+    latency and produced false 503s even while ordinary database work succeeded.
+    """
+    raw = str(os.getenv("DB_READINESS_TIMEOUT_SECONDS") or "8").strip()
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 8.0
+    return max(2.0, min(30.0, value))
+
+
+async def _database_readiness_check() -> dict[str, object]:
+    """Verify connectivity and the complete runtime schema in one round trip."""
+    timeout_s = _database_readiness_timeout_seconds()
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import text
+
+        from db.priority import DBPriority
+        from db.session import get_session, is_db_configured
+
+        if not is_db_configured():
+            return {"ok": False, "detail": "not_configured"}
+
+        alembic_cfg = Config(str(Path(__file__).with_name("alembic.ini")))
+        expected_heads = tuple(ScriptDirectory.from_config(alembic_cfg).get_heads())
+        if len(expected_heads) != 1:
+            return {"ok": False, "detail": "repository_migration_heads_invalid"}
+
+        # Readiness is traffic-admission control, so it uses the reserved
+        # critical lane rather than competing as an ordinary interactive query.
+        # A single catalogue query proves connectivity, migration head, required
+        # columns and the active-thesis guard without four separate round trips.
+        async with get_session(
+            priority=DBPriority.CRITICAL,
+            label="readiness",
+            timeout_seconds=timeout_s,
+        ) as session:
+            result = await asyncio.wait_for(
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            COALESCE(
+                                (SELECT version_num FROM alembic_version LIMIT 1),
+                                ''
+                            ) AS deployed_revision,
+                            EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'decision_log'
+                                  AND column_name = 'created_at'
+                            ) AS decision_log_created_at,
+                            EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signals'
+                                  AND column_name = 'mfe_pct'
+                            ) AS signals_mfe_pct,
+                            EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signals'
+                                  AND column_name = 'mae_pct'
+                            ) AS signals_mae_pct,
+                            EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signals'
+                                  AND column_name = 'performance_version'
+                            ) AS signals_performance_version,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'instruments'
+                            ) AS instruments_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'subscription_entitlements'
+                            ) AS subscription_entitlements_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'auth_identities'
+                            ) AS auth_identities_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'journal_entries'
+                            ) AS journal_entries_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'api_keys'
+                            ) AS api_keys_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'webhook_deliveries'
+                            ) AS webhook_deliveries_table,
+                            EXISTS (
+                                SELECT 1
+                                FROM pg_index AS i
+                                JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                                JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                                JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                                WHERE ns.nspname = current_schema()
+                                  AND tbl.relname = 'signals'
+                                  AND idx.relname = 'ix_signals_active_thesis'
+                                  AND i.indisunique IS TRUE
+                                  AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%status%'
+                                  AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%active%'
+                            ) AS active_guard_present,
+                            (
+                                SELECT COUNT(*)
+                                FROM (
+                                    SELECT signal_id
+                                    FROM outcomes
+                                    GROUP BY signal_id
+                                    HAVING COUNT(*) > 1
+                                ) AS duplicate_outcomes
+                            ) AS outcome_duplicate_groups,
+                            EXISTS (
+                                SELECT 1
+                                FROM pg_index AS i
+                                JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                                JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                                JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                                WHERE ns.nspname = current_schema()
+                                  AND tbl.relname = 'outcomes'
+                                  AND idx.relname = 'uq_outcomes_signal_id'
+                                  AND i.indisunique IS TRUE
+                            ) AS outcome_guard_present
+                        """
+                    )
+                ),
+                timeout=timeout_s,
+            )
+            row = result.mappings().one()
+            await session.rollback()
+
+        deployed = str(row.get("deployed_revision") or "")
+        if deployed != expected_heads[0]:
+            return {
+                "ok": False,
+                "detail": "migration_not_at_head",
+                "deployed_revision": deployed or None,
+                "expected_revision": expected_heads[0],
+            }
+
+        column_flags = {
+            "decision_log.created_at": bool(row.get("decision_log_created_at")),
+            "signals.mfe_pct": bool(row.get("signals_mfe_pct")),
+            "signals.mae_pct": bool(row.get("signals_mae_pct")),
+            "signals.performance_version": bool(row.get("signals_performance_version")),
+        }
+        missing_columns = sorted(name for name, present in column_flags.items() if not present)
+        if missing_columns:
+            return {
+                "ok": False,
+                "detail": "critical_schema_columns_missing",
+                "missing": missing_columns,
+                "revision": deployed,
+            }
+
+        table_flags = {
+            "instruments": bool(row.get("instruments_table")),
+            "subscription_entitlements": bool(row.get("subscription_entitlements_table")),
+            "auth_identities": bool(row.get("auth_identities_table")),
+            "journal_entries": bool(row.get("journal_entries_table")),
+            "api_keys": bool(row.get("api_keys_table")),
+            "webhook_deliveries": bool(row.get("webhook_deliveries_table")),
+        }
+        missing_tables = sorted(name for name, present in table_flags.items() if not present)
+        if missing_tables:
+            return {
+                "ok": False,
+                "detail": "required_ecosystem_tables_missing",
+                "missing": missing_tables,
+                "revision": deployed,
+            }
+
+        if not bool(row.get("active_guard_present")):
+            return {
+                "ok": False,
+                "detail": "active_signal_guard_missing",
+                "index": "ix_signals_active_thesis",
+                "revision": deployed,
+            }
+
+        outcome_duplicate_groups = int(row.get("outcome_duplicate_groups") or 0)
+        if outcome_duplicate_groups:
+            return {
+                "ok": False,
+                "detail": "duplicate_outcome_projections",
+                "duplicate_groups": outcome_duplicate_groups,
+                "revision": deployed,
+            }
+        if not bool(row.get("outcome_guard_present")):
+            return {
+                "ok": False,
+                "detail": "outcome_projection_guard_missing",
+                "index": "uq_outcomes_signal_id",
+                "revision": deployed,
+            }
+
+        return {
+            "ok": True,
+            "detail": "reachable",
+            "revision": deployed,
+            "expected_revision": expected_heads[0],
+            "critical_schema": column_flags,
+            "required_ecosystem_tables": table_flags,
+            "active_signal_guard": True,
+            "outcome_projection_guard": True,
+            "outcome_duplicate_groups": 0,
+            "probe_timeout_seconds": timeout_s,
+        }
+    except TimeoutError:
+        logger.warning(
+            "[readyz] database readiness probe timed out after %.2fs",
+            timeout_s,
+        )
+        return {"ok": False, "detail": "timeout", "timeout_seconds": timeout_s}
+    except Exception as exc:
+        return {"ok": False, "detail": type(exc).__name__}
+
+
+async def _redis_url_readiness_check(url: str, *, label: str) -> dict[str, object]:
+    if not str(url or "").strip():
+        return {"ok": False, "detail": "not_configured", "role": label}
+    client = None
+    try:
+        from redis.asyncio import Redis
+
+        client = Redis.from_url(
+            str(url).strip(),
+            decode_responses=True,
+            socket_connect_timeout=0.75,
+            socket_timeout=0.75,
+            max_connections=max(
+                1,
+                min(64, int(os.getenv("REDIS_MAX_CONNECTIONS", "24") or 24)),
+            ),
+        )
+        pong = await asyncio.wait_for(client.ping(), timeout=1.0)
+        return {"ok": bool(pong), "detail": "reachable" if pong else "ping_failed", "role": label}
+    except asyncio.TimeoutError:
+        return {"ok": False, "detail": "timeout", "role": label}
+    except Exception as exc:
+        return {"ok": False, "detail": type(exc).__name__, "role": label}
+    finally:
+        if client is not None:
+            try:
+                close = getattr(client, "aclose", None) or getattr(client, "close", None)
+                if close is not None:
+                    result = close()
+                    if asyncio.iscoroutine(result):
+                        await result
+            except Exception:
+                logger.debug("[readyz] redis client close failed", exc_info=True)
+
+
+def _is_unconfigured_runtime_value(value: object) -> bool:
+    """Return True for empty/example values that must never pass production readiness."""
+    raw = str(value or "").strip().strip('"').strip("'")
+    if not raw:
+        return True
+    lowered = raw.lower()
+    if raw.startswith("<") and raw.endswith(">"):
+        return True
+    return lowered in {
+        "changeme",
+        "change-me",
+        "replace-me",
+        "placeholder",
+        "todo",
+        "none",
+        "null",
+    }
+
+
+def _production_cutover_check() -> dict[str, object]:
+    """Reject accidental staging, placeholder, or restricted production deployments."""
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    violations: list[str] = []
+    if environment not in {"production", "prod"}:
+        violations.append("environment_not_production")
+    if _env_bool("PUBLIC_TESTING_MODE", False):
+        violations.append("public_testing_enabled")
+    if _env_bool("FULL_SYSTEM_STAGING_TEST_MODE", False) or _env_bool(
+        "FULL_SYSTEM_STAGING_TEST_ACTIVE", False
+    ):
+        violations.append("staging_test_mode_enabled")
+    if str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip():
+        violations.append("delivery_allowlist_not_empty")
+    if _env_bool("RESEND_AUDIENCE_ALLOWLIST_ONLY", False):
+        violations.append("resend_allowlist_only")
+    forced_financial = str(os.getenv("FINANCIAL_ACTIVATION_FORCED_OFF") or "").strip()
+    if forced_financial:
+        violations.append(f"financial_activation_forced_off:{forced_financial}")
+    if not _env_bool("FREE_SIGNAL_DISTRIBUTION_ENABLED", True):
+        violations.append("free_distribution_disabled")
+    try:
+        ownership = _railway_process_ownership()
+    except Exception as exc:
+        ownership = None
+        violations.append(f"runtime_ownership_invalid:{type(exc).__name__}")
+    if ownership is not None:
+        if ownership.mode.value == "frontdoor":
+            if not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False):
+                violations.append("frontdoor_without_decomposed_topology")
+            if _env_bool("RUN_ENGINE_LOOP", False):
+                violations.append("frontdoor_engine_loop_requested")
+            if _env_bool("RUN_WORKER_LOOP", False):
+                violations.append("frontdoor_worker_loop_requested")
+        else:
+            if not ownership.engine:
+                violations.append("engine_loop_disabled")
+            if not ownership.worker:
+                violations.append("worker_loop_disabled")
+    if not _env_bool("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
+        violations.append("lifecycle_notifications_disabled")
+    if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
+        violations.append("outcome_notifications_disabled")
+    if _env_bool("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", False):
+        violations.append("duplicate_tp_sl_notification_dispatchers_enabled")
+    if _env_bool("DELIVERY_SIGNAL_UPDATE_ENABLED", False):
+        violations.append("signal_delivery_edit_mode_enabled")
+    try:
+        if int(os.getenv("TELEGRAM_SEND_MAX_ATTEMPTS", "3") or 3) < 2:
+            violations.append("telegram_send_retries_too_low")
+    except Exception:
+        violations.append("telegram_send_retries_invalid")
+    try:
+        if int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "60") or 60) > 300:
+            violations.append("unsent_signal_recovery_interval_too_high")
+    except Exception:
+        violations.append("unsent_signal_recovery_interval_invalid")
+    try:
+        if int(os.getenv("OUTCOME_NOTIFICATION_INTERVAL_SECONDS", "90") or 90) > 300:
+            violations.append("outcome_notification_interval_too_high")
+    except Exception:
+        violations.append("outcome_notification_interval_invalid")
+    try:
+        if int(os.getenv("MONITOR_REFRESH_INTERVAL_SECONDS", "120") or 120) > 300:
+            violations.append("monitor_refresh_interval_too_high")
+    except Exception:
+        violations.append("monitor_refresh_interval_invalid")
+    if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", False):
+        violations.append("resend_recovery_can_be_suppressed_by_fanout")
+    if _env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False):
+        violations.append("uncertified_rich_signal_delivery_enabled")
+
+    required_values = {
+        "DATABASE_URL": os.getenv("DATABASE_URL"),
+        "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN"),
+        "TELEGRAM_WEBHOOK_SECRET": os.getenv("TELEGRAM_WEBHOOK_SECRET"),
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+        "ENCRYPTION_KEY": os.getenv("ENCRYPTION_KEY"),
+        "STATE_REDIS_URL": os.getenv("STATE_REDIS_URL") or os.getenv("REDIS_URL"),
+        "DELIVERY_REDIS_URL": os.getenv("DELIVERY_REDIS_URL"),
+    }
+    for name, value in required_values.items():
+        if _is_unconfigured_runtime_value(value):
+            violations.append(f"missing_or_placeholder:{name}")
+
+    owner_value = (
+        os.getenv("OWNER_IDS")
+        or os.getenv("OWNER_TELEGRAM_IDS")
+        or os.getenv("OWNER_TELEGRAM_ID")
+        or os.getenv("TELEGRAM_OWNER_ID")
+    )
+    if _is_unconfigured_runtime_value(owner_value):
+        violations.append("missing_or_placeholder:OWNER_TELEGRAM_ID")
+
+    state_url = str(required_values["STATE_REDIS_URL"] or "").strip()
+    delivery_url = str(required_values["DELIVERY_REDIS_URL"] or "").strip()
+    if state_url and delivery_url and state_url == delivery_url:
+        violations.append("state_and_delivery_redis_not_distinct")
+
+    if _env_bool("DEMO_EXECUTION_ENABLED", False) and _is_unconfigured_runtime_value(
+        os.getenv("META_API_TOKEN")
+    ):
+        violations.append("missing_or_placeholder:META_API_TOKEN")
+
+    if _env_bool("PAYMENTS_ENABLED", False) or _env_bool("PAYMENTS_PUBLIC_ENABLED", False):
+        paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
+        paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
+        if _is_unconfigured_runtime_value(paystack_secret) or not paystack_secret.startswith("sk_live_"):
+            violations.append("paystack_live_secret_invalid")
+        if _is_unconfigured_runtime_value(paystack_public) or not paystack_public.startswith("pk_live_"):
+            violations.append("paystack_live_public_invalid")
+
+    try:
+        from core.financial_activation import evaluate_financial_activation
+        financial = evaluate_financial_activation()
+        if not financial.ok:
+            violations.extend(
+                f"financial:{check.name}" for check in financial.checks
+                if check.blocking and not check.ok
+            )
+    except Exception as exc:
+        violations.append(f"financial_activation_check:{type(exc).__name__}")
+
+    return {
+        "ok": not violations,
+        "detail": "public_production" if not violations else ",".join(violations),
+        "environment": environment or "unknown",
+        "audience": "global" if not str(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST") or "").strip() else "restricted",
+    }
+
+
+def _runtime_environment_name() -> str:
+    return str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+
+
+def _production_readiness_required() -> bool:
+    """Return whether production-only cutover policy must gate traffic.
+
+    Railway also hosts staging and preview environments. Platform presence by
+    itself must not turn a dependency healthcheck into a production-launch
+    certification check.
+    """
+    return _runtime_environment_name() in {"production", "prod"}
+
+
+def _readiness_cutover_check(*, production: bool) -> dict[str, object]:
+    cutover = _production_cutover_check()
+    if production:
+        return {**cutover, "required": True}
+    return {
+        **cutover,
+        "ok": True,
+        "required": False,
+        "detail": "not_required_for_nonproduction",
+        "production_detail": cutover.get("detail"),
+    }
+
+
+async def _provider_coverage_readiness_check(*, production: bool) -> dict[str, object]:
+    """Validate configured live-quote coverage for enabled asset classes.
+
+    Staging exposes partial coverage without failing traffic admission. Production
+    fails closed when FX or commodities rely only on the public Yahoo fallback.
+    """
+    raw_classes = str(
+        os.getenv("ENABLED_ASSET_CLASSES")
+        or os.getenv("ASSET_CLASSES")
+        or "crypto,fx,stock,index,commodity"
+    )
+    enabled = {
+        part.strip().lower()
+        for part in raw_classes.replace(";", ",").split(",")
+        if part.strip()
+    }
+    aliases = {"forex": "fx", "stocks": "stock", "indices": "index", "commodities": "commodity"}
+    enabled = {aliases.get(item, item) for item in enabled}
+    probes = {
+        "crypto": "BTCUSDT",
+        "fx": "EURUSD",
+        "commodity": "XAGUSD",
+        "stock": "AAPL",
+        "index": "US500",
+    }
+    coverage: dict[str, object] = {}
+    missing: list[str] = []
+    try:
+        from data.get_live_price import _get_providers_for_asset
+
+        for asset_class, symbol in probes.items():
+            if asset_class not in enabled:
+                coverage[asset_class] = {"required": False, "providers": []}
+                continue
+            providers = list(_get_providers_for_asset(symbol))
+            if "metaapi" in providers and not any(
+                str(os.getenv(name) or "").strip()
+                for name in ("META_API_MARKET_DATA_ACCOUNT_ID", "META_API_ACCOUNT_ID", "METAAPI_ACCOUNT_ID")
+            ):
+                # Readiness must stay fast and deterministic. Runtime delivery may
+                # resolve an owner's stored account, but production admission
+                # requires an explicit dedicated market-data account ID.
+                providers = [provider for provider in providers if provider != "metaapi"]
+            configured_trusted = [provider for provider in providers if provider != "yahoo"]
+            complete = bool(providers)
+            if asset_class in {"fx", "commodity"}:
+                complete = bool(configured_trusted)
+            coverage[asset_class] = {
+                "required": True,
+                "providers": providers,
+                "configured_trusted": configured_trusted,
+                "complete": complete,
+            }
+            if not complete:
+                missing.append(asset_class)
+    except Exception as exc:
+        return {
+            "ok": not production,
+            "required": production,
+            "detail": f"coverage_check_failed:{type(exc).__name__}",
+            "coverage": coverage,
+        }
+    discovery: dict[str, object] = {}
+    discovery_complete = False
+    try:
+        from data.pair_discovery import get_asset_discovery_snapshot
+
+        discovery = dict(get_asset_discovery_snapshot(force_refresh=False) or {})
+        max_age = max(60, int(os.getenv("ASSET_DISCOVERY_MAX_SNAPSHOT_AGE_SECONDS", "7200") or 7200))
+        age = float(discovery.get("last_refresh_age_seconds") or 10**12)
+        providers = dict(discovery.get("providers") or {})
+        discovery_complete = bool(
+            int(discovery.get("total") or 0) > 0
+            and bool(providers.get("provider_backed"))
+            and int(discovery.get("untrusted_total") or 0) == 0
+            and age <= max_age
+        )
+        discovery["maximum_age_seconds"] = max_age
+        discovery["complete"] = discovery_complete
+    except Exception as exc:
+        discovery = {"complete": False, "error": type(exc).__name__}
+
+    complete = not missing and discovery_complete
+    detail_parts: list[str] = []
+    if missing:
+        detail_parts.append("missing_provider_classes:" + ",".join(sorted(missing)))
+    if not discovery_complete:
+        detail_parts.append("asset_discovery_unverified")
+    return {
+        "ok": complete if production else True,
+        "required": production,
+        "complete": complete,
+        "detail": "complete" if complete else ";".join(detail_parts),
+        "coverage": coverage,
+        "asset_discovery": discovery,
+    }
+
+
+@app.get("/ready")
+@app.get("/readyz")
+async def _readyz_endpoint(response: Response) -> dict[str, object]:
+    """Dependency admission check for Railway traffic routing."""
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    production = _production_readiness_required()
+
+    database, state_redis, delivery_redis = await asyncio.gather(
+        _database_readiness_check(),
+        _redis_url_readiness_check(state_url, label="state"),
+        _redis_url_readiness_check(delivery_url, label="delivery"),
+    )
+    try:
+        from core.financial_activation import evaluate_financial_activation
+        financial_activation = evaluate_financial_activation().as_dict()
+    except Exception as exc:
+        financial_activation = {"ok": False, "detail": type(exc).__name__}
+    provider_coverage = await _provider_coverage_readiness_check(production=production)
+    try:
+        from db.session import get_session
+        from services.outcome_reconciliation import outcome_projection_health
+        async with get_session(priority="interactive", label="readiness.outcome_projection") as _session:
+            outcome_projection = await outcome_projection_health(_session, days=30)
+            await _session.commit()
+    except Exception as exc:
+        outcome_projection = {
+            "ok": not production,
+            "detail": f"outcome_projection_check_failed:{type(exc).__name__}",
+        }
+    try:
+        from services.performance_ledger import performance_ledger_health
+        async with get_session(priority="interactive", label="readiness.performance_ledger") as _session:
+            performance_ledger = await performance_ledger_health(_session, days=30)
+            await _session.commit()
+        if not production:
+            performance_ledger = {**performance_ledger, "ok": True, "required": False}
+        else:
+            performance_ledger["required"] = True
+    except Exception as exc:
+        performance_ledger = {
+            "ok": not production,
+            "required": production,
+            "detail": f"performance_ledger_check_failed:{type(exc).__name__}",
+        }
+    try:
+        from engine.ml import get_model_integrity_status
+        ml_calibration = get_model_integrity_status(ensure_loaded=True)
+        if not production:
+            ml_calibration = {**ml_calibration, "ok": True, "required": False}
+        else:
+            ml_calibration["required"] = True
+    except Exception as exc:
+        ml_calibration = {
+            "ok": not production,
+            "required": production,
+            "detail": f"ml_calibration_check_failed:{type(exc).__name__}",
+        }
+    try:
+        from core.version import (
+            EXPECTED_RELEASE_COMMIT,
+            GIT_COMMIT_SHA,
+            runtime_commit_matches_expected,
+        )
+
+        commit_ok, commit_detail = runtime_commit_matches_expected()
+    except Exception as exc:
+        GIT_COMMIT_SHA = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown")
+        EXPECTED_RELEASE_COMMIT = str(os.getenv("EXPECTED_RELEASE_COMMIT") or "")
+        commit_ok, commit_detail = False, type(exc).__name__
+    checks: dict[str, object] = {
+        "database": database,
+        "state_redis": state_redis,
+        "delivery_redis": delivery_redis,
+        "production_cutover": _readiness_cutover_check(production=production),
+        "release_commit": {
+            "ok": commit_ok if production else True,
+            "required": production,
+            "detail": commit_detail if production else "not_required_for_nonproduction",
+        },
+        "financial_activation": financial_activation,
+        "provider_coverage": provider_coverage,
+        "outcome_projection": outcome_projection,
+        "performance_ledger": performance_ledger,
+        "ml_calibration": ml_calibration,
+    }
+
+    distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
+    allow_shared_dev = (
+        not production
+        and _env_bool("ALLOW_SHARED_REDIS_FOR_DEV", False)
+    )
+    checks["redis_separation"] = {
+        "ok": distinct_redis or allow_shared_dev,
+        "detail": "distinct" if distinct_redis else ("shared_dev_override" if allow_shared_dev else "must_be_distinct"),
+    }
+
+    shadow_required = _env_bool("SHADOW_OUTCOME_TRACKER_ENABLED", True) or _env_bool(
+        "WORKER_SHADOW_TRACKER_ENABLED", True
+    )
+    if shadow_required:
+        try:
+            from engine.admin_pulse import _shadow_tracker_health
+
+            shadow_health = _shadow_tracker_health()
+            checks["shadow_tracker"] = {
+                "ok": bool(shadow_health.get("proven")),
+                "detail": str(shadow_health.get("status") or "missing"),
+                **shadow_health,
+            }
+        except Exception as exc:
+            checks["shadow_tracker"] = {
+                "ok": False,
+                "detail": f"health_probe_failed:{type(exc).__name__}",
+            }
+    pulse_required = production or _env_bool("WORKER_ENGINE_PULSE_ENABLED", True)
+    if pulse_required:
+        try:
+            from engine.admin_pulse import _engine_pulse_health
+            pulse_health = _engine_pulse_health()
+            checks["engine_pulse"] = {
+                "ok": bool(pulse_health.get("proven")),
+                "detail": str(pulse_health.get("status") or "missing"),
+                **pulse_health,
+            }
+        except Exception as exc:
+            checks["engine_pulse"] = {
+                "ok": False,
+                "detail": f"health_probe_failed:{type(exc).__name__}",
+            }
+    if str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
+        checks["telegram"] = {
+            "ok": bool(_bot_ready and _bot_application is not None),
+            "detail": "ready" if _bot_ready else "initializing",
+        }
+        webhook_secret_configured = bool(str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip())
+        checks["telegram_webhook_secret"] = {
+            "ok": webhook_secret_configured or not production,
+            "detail": "configured" if webhook_secret_configured else "missing",
+        }
+
+    try:
+        from core.resource_governor import ResourceState, get_resource_governor
+
+        snapshot = get_resource_governor().snapshot()
+        checks["resource_guard"] = {
+            "ok": snapshot.state is not ResourceState.CRITICAL,
+            "detail": snapshot.state.value,
+        }
+    except Exception:
+        checks["resource_guard"] = {"ok": True, "detail": "not_loaded"}
+
+    ready = all(
+        bool(value.get("ok"))
+        for value in checks.values()
+        if isinstance(value, dict)
+    )
+    if not ready:
+        response.status_code = 503
+        global _LAST_READINESS_FAILURE_SIGNATURE, _LAST_READINESS_FAILURE_LOG_MONO
+        signature = json.dumps(checks, sort_keys=True, default=str)
+        now = time.monotonic()
+        if (
+            signature != _LAST_READINESS_FAILURE_SIGNATURE
+            or now - _LAST_READINESS_FAILURE_LOG_MONO >= 30.0
+        ):
+            logger.warning("[readyz] degraded checks=%s", signature)
+            _LAST_READINESS_FAILURE_SIGNATURE = signature
+            _LAST_READINESS_FAILURE_LOG_MONO = now
+    deployed_revision = database.get("revision") or database.get("deployed_revision")
+    expected_revision = database.get("expected_revision")
+    return {
+        "status": "ready" if ready else "degraded",
+        "ready": ready,
+        "release_identity": {
+            "confirmed": bool(commit_ok and database.get("ok") and deployed_revision == expected_revision),
+            "deployed_git_sha": str(GIT_COMMIT_SHA),
+            "expected_git_sha": str(EXPECTED_RELEASE_COMMIT),
+            "deployed_alembic_revision": deployed_revision,
+            "expected_alembic_revision": expected_revision,
+        },
+        "checks": checks,
+    }
+
+
 async def _telegram_webhook_route(req: Request) -> dict:
     """Receive Telegram updates and dispatch them to the bot application.
 
@@ -1639,7 +2994,15 @@ async def _telegram_webhook_route(req: Request) -> dict:
                 "[webhook] ingress queued while bot_not_ready update_id=%s",
                 (payload or {}).get("update_id", "?"),
             )
-            _pending_webhook_updates.append(payload)
+            if not _append_pending_webhook_update(payload):
+                logger.warning("[webhook] bot_not_ready pending queue is full")
+                return {
+                    "ok": False,
+                    "error": "queue_full",
+                    "bot_ready": False,
+                    "status": "queue_full",
+                    "queue_backend": "pending",
+                }
             logger.warning(
                 "[webhook] bot_not_ready — update queued size=%d",
                 len(_pending_webhook_updates),
@@ -1665,7 +3028,14 @@ async def _telegram_webhook_route(req: Request) -> dict:
         logger.info("[webhook] ingress received update_id=%s type=%s", update_id, update_type)
         logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
         if _webhook_dispatch_queue is None:
-            _pending_webhook_updates.append(data)
+            if not _append_pending_webhook_update(data):
+                return {
+                    "ok": False,
+                    "error": "queue_full",
+                    "bot_ready": True,
+                    "status": "queue_full",
+                    "queue_backend": "pending",
+                }
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
             return {
                 "ok": True,
@@ -1677,36 +3047,63 @@ async def _telegram_webhook_route(req: Request) -> dict:
             }
 
         redis_fallback = False
+        redis_enqueue_indeterminate = False
         if _use_redis_webhook_queue:
             enqueued = False
+            duplicate = False
+            redis_backend = "redis_legacy"
             try:
-                enqueued = await asyncio.wait_for(
-                    state.enqueue_webhook_update(
-                        data,
-                        max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
-                    ),
-                    timeout=2.5,
-                )
+                if _webhook_stream.configured:
+                    enqueue_result = await asyncio.wait_for(
+                        _webhook_stream.enqueue(
+                            data,
+                            idempotency_key=f"telegram-update:{update_id}",
+                        ),
+                        timeout=0.35,
+                    )
+                    enqueued = bool(enqueue_result.accepted)
+                    duplicate = bool(enqueue_result.duplicate)
+                    redis_backend = "redis_stream"
+                else:
+                    enqueued = await asyncio.wait_for(
+                        state.enqueue_webhook_update(
+                            data,
+                            max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
+                        ),
+                        timeout=0.35,
+                    )
+                    redis_backend = "redis"
             except asyncio.TimeoutError:
-                logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+                # A Redis timeout is indeterminate: the XADD may have committed
+                # after our local wait expired. Falling back immediately to the
+                # in-process queue can therefore process the same Telegram
+                # update twice. Return a retryable 503 instead; Telegram retries
+                # and the stream idempotency key collapses any late success.
+                redis_enqueue_indeterminate = True
+                logger.warning(
+                    "[webhook] redis enqueue timeout update_id=%s action=retry_no_local_fallback",
+                    update_id,
+                )
             except Exception as exc:
                 logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
             if enqueued:
                 _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
-                queue_size = 0
-                try:
-                    queue_size = int(
-                        await asyncio.wait_for(state.webhook_queue_depth(), timeout=2.0)
-                    )
-                except Exception:
-                    queue_size = 0
                 return {
                     "ok": True,
                     "queued": True,
                     "bot_ready": True,
                     "status": "queued",
-                    "queue_backend": "redis",
-                    "queue_size": queue_size,
+                    "queue_backend": redis_backend,
+                    "duplicate": duplicate,
+                }
+            if redis_enqueue_indeterminate:
+                return {
+                    "ok": False,
+                    "error": "redis_enqueue_indeterminate",
+                    "bot_ready": True,
+                    "status": "retry",
+                    "queue_backend": redis_backend,
+                    "update_id": update_id,
                 }
             logger.warning("[webhook] redis enqueue failed — falling back to in-process queue")
             redis_fallback = True
@@ -1734,11 +3131,133 @@ async def _telegram_webhook_route(req: Request) -> dict:
         return {"ok": False, "error": "invalid_payload", "status": "invalid_payload"}
 
 
+def _webhook_queue_diagnostics() -> dict[str, object]:
+    in_process_size = None
+    in_process_capacity = None
+    try:
+        if _webhook_dispatch_queue is not None:
+            in_process_size = int(_webhook_dispatch_queue.qsize())
+            in_process_capacity = int(_webhook_dispatch_queue.maxsize)
+    except Exception:
+        pass
+    return {
+        "bot_ready": bool(_bot_ready and _bot_application is not None),
+        "dispatcher_ready": _webhook_dispatch_queue is not None,
+        "redis_queue_enabled": bool(_use_redis_webhook_queue),
+        "redis_stream_configured": bool(getattr(_webhook_stream, "configured", False)),
+        "in_process_size": in_process_size,
+        "in_process_capacity": in_process_capacity,
+        "pending_buffer_size": len(_pending_webhook_updates),
+        "inflight_updates": len(_inflight_update_tasks),
+    }
+
+
+def _webhook_rejection(
+    req: Request,
+    *,
+    status_code: int,
+    reason: str,
+    extra: dict[str, object] | None = None,
+) -> JSONResponse:
+    diagnostics = _webhook_queue_diagnostics()
+    if extra:
+        diagnostics.update(extra)
+    client_host = getattr(getattr(req, "client", None), "host", None)
+    logger.warning(
+        "[webhook_rejected] reason=%s status=%s client=%s diagnostics=%s",
+        reason,
+        status_code,
+        client_host,
+        diagnostics,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content={"ok": False, "error": reason, "diagnostics": diagnostics},
+    )
+
+
+@app.post("/telegram/webhook")
+async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
+    """Authenticated, bounded Telegram ingress with retryable overload errors."""
+    expected_secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    supplied_secret = str(
+        req.headers.get("x-telegram-bot-api-secret-token") or ""
+    ).strip()
+    if _production_readiness_required() and not expected_secret:
+        return _webhook_rejection(
+            req,
+            status_code=503,
+            reason="webhook_secret_not_configured",
+        )
+    if expected_secret and not hmac.compare_digest(supplied_secret, expected_secret):
+        return _webhook_rejection(
+            req,
+            status_code=401,
+            reason="invalid_webhook_secret",
+            extra={"secret_header_present": bool(supplied_secret)},
+        )
+
+    max_body_bytes = max(
+        1024,
+        min(
+            2 * 1024 * 1024,
+            int(os.getenv("WEBHOOK_MAX_BODY_BYTES", str(1024 * 1024)) or 1024 * 1024),
+        ),
+    )
+    content_length = req.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_body_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"ok": False, "error": "payload_too_large"},
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "invalid_content_length"},
+            )
+    body = await req.body()
+    if not body:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "empty_payload"},
+        )
+    if len(body) > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"ok": False, "error": "payload_too_large"},
+        )
+
+    result = await _telegram_webhook_route(req)
+    error = str(result.get("error") or "")
+    status_code = 200
+    if error in {"queue_full", "redis_enqueue_indeterminate"}:
+        status_code = 503
+    elif error:
+        status_code = 400
+    if status_code != 200:
+        return _webhook_rejection(
+            req,
+            status_code=status_code,
+            reason=error or "webhook_ingress_failed",
+            extra={
+                "queue_backend": str(result.get("queue_backend") or "unknown"),
+                "route_result": {
+                    key: value for key, value in result.items()
+                    if key not in {"diagnostics"}
+                },
+            },
+        )
+    return JSONResponse(status_code=200, content=result)
+
+
 async def _enqueue_webhook_update_async(data: dict) -> None:
     update_id = (data or {}).get("update_id", "?")
     queue_ref = _webhook_dispatch_queue
     if queue_ref is None:
-        _pending_webhook_updates.append(data)
+        if not _append_pending_webhook_update(data):
+            logger.error("[webhook] dispatcher_not_ready and pending queue full")
         logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
         return
 
@@ -1748,11 +3267,14 @@ async def _enqueue_webhook_update_async(data: dict) -> None:
                 data,
                 max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
             ),
-            timeout=2.5,
+            timeout=0.35,
         )
     except asyncio.TimeoutError:
-        enqueued = False
-        logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+        logger.warning(
+            "[webhook] redis enqueue timeout update_id=%s action=retry_no_local_fallback",
+            update_id,
+        )
+        return
     except Exception as exc:
         enqueued = False
         logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
@@ -1763,7 +3285,11 @@ async def _enqueue_webhook_update_async(data: dict) -> None:
     try:
         queue_ref = _webhook_dispatch_queue
         if queue_ref is None:
-            _pending_webhook_updates.append(data)
+            if not _append_pending_webhook_update(data):
+                logger.error(
+                    "[webhook] dispatcher_not_ready during fallback and pending queue full update_id=%s",
+                    update_id,
+                )
             logger.warning("[webhook] dispatcher_not_ready during fallback enqueue update_id=%s", update_id)
             return
         queue_ref.put_nowait(data)
@@ -1807,9 +3333,6 @@ async def _telegram_webhook_status() -> dict:
 
 # Mount the existing web app AFTER the webhook route — FastAPI checks routes
 # in registration order, so /telegram/webhook is matched before the catch-all.
-app.mount("/", _web_app)
-
-
 # ============================================================================
 # TradingView Webhook Endpoint
 # ============================================================================
@@ -1937,3 +3460,9 @@ async def tradingview_webhook_status():
         "ok": True,
         "webhook_configured": secret_set,
     }
+
+
+# Compatibility web/API surface. This catch-all mount must remain the final
+# route so it cannot intercept Telegram, TradingView, Paystack, health, or
+# readiness endpoints owned by the canonical Railway application.
+app.mount("/", _web_app)

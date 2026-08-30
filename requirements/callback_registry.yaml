@@ -1,0 +1,290 @@
+{
+  "callbacks": [
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_admin",
+      "name": "admin",
+      "pattern": "^admin_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_agree_terms",
+      "name": "agree_terms",
+      "pattern": "^agree_terms$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_ask_gemini",
+      "name": "ask_gemini",
+      "pattern": "^ask_gemini_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_cancel_confirm",
+      "name": "cancel_confirm",
+      "pattern": "^cancel_confirm$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_cancel_nevermind",
+      "name": "cancel_nevermind",
+      "pattern": "^cancel_nevermind$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_check_outcome_callback",
+      "name": "check_outcome_callback",
+      "pattern": "^check_outcome_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:7195",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_check_outcome",
+      "name": "check_outcome",
+      "pattern": "^check_outcome_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_decline_terms",
+      "name": "decline_terms",
+      "pattern": "^decline_terms$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_help_page",
+      "name": "help_page",
+      "pattern": "^help_page_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_locked",
+      "name": "locked",
+      "pattern": "^locked_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_signal_monitor_callback",
+      "name": "signal_monitor_callback",
+      "pattern": "^monitor_signal_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:6838",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_monitor_signal",
+      "name": "monitor_signal",
+      "pattern": "^monitor_signal_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_mt5_link_guide",
+      "name": "mt5_link_guide",
+      "pattern": "^mt5_link_guide$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_mt5_settings",
+      "name": "mt5_settings",
+      "pattern": "^mt5_settings$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_mt5_status",
+      "name": "mt5_status",
+      "pattern": "^mt5_status$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_mt5_trade_callback",
+      "name": "mt5_trade_callback",
+      "pattern": "^mt5_trade_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:6972",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_mt5_trade",
+      "name": "mt5_trade",
+      "pattern": "^mt5_trade_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_nav",
+      "name": "nav",
+      "pattern": "^nav_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_open_signal_callback",
+      "name": "open_signal_callback",
+      "pattern": "^open_signal_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:7026",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_open_signal",
+      "name": "open_signal",
+      "pattern": "^open_signal_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_signal_monitoring_action_callback",
+      "name": "signal_monitoring_action_callback",
+      "pattern": "^sigmon_(?:continue|stop)_[12]_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:6837",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_signal_chart",
+      "name": "signal_chart",
+      "pattern": "^signal_chart_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "handler_or_fast_ack_guard",
+      "handler": "_signal_reaction_callback",
+      "name": "signal_reaction_callback",
+      "pattern": "^signal_reaction_",
+      "payload_trust": "untrusted",
+      "route_class": "specific_before_catchall",
+      "source": "signalrank_telegram/bot.py:6576",
+      "status": "IMPLEMENTED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_signal_reaction",
+      "name": "signal_reaction",
+      "pattern": "^signal_reaction_(.+)\\|(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_trade_now",
+      "name": "trade_now",
+      "pattern": "^trade_now_(.+)$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_vip_sold_out",
+      "name": "vip_sold_out",
+      "pattern": "^vip_sold_out$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    },
+    {
+      "ack_policy": "immediate",
+      "handler": "_handle_vip_waitlist",
+      "name": "vip_waitlist",
+      "pattern": "^vip_waitlist_join$",
+      "payload_trust": "untrusted",
+      "route_class": "global_fallback",
+      "source": "signalrank_telegram/callback_handlers.py",
+      "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
+    }
+  ],
+  "count": 27,
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "invariants": [
+    "specific routes register before the catch-all route",
+    "callback data is untrusted and must be ownership/entitlement checked",
+    "callbacks acknowledge before database or network work",
+    "forged or expired callbacks fail closed with a user-visible response"
+  ],
+  "kind": "callback_registry",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

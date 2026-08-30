@@ -1,74 +1,125 @@
 #!/bin/bash
-# Deployment script for SignalRankAI
+# Canonical SignalRankAI deployment entrypoint.
+set -euo pipefail
 
-# Activate virtual environment (if any)
-# source venv/bin/activate
-
-# Emit version/build metadata at boot.
+# Emit version/build metadata at boot without exposing secrets.
 python -c "from core.version import get_version_banner; print('[boot] ' + get_version_banner())" || true
 
-# Install dependencies at boot only when explicitly requested.
-# (Image build already installs requirements in Dockerfile.)
+# Install dependencies at boot only when explicitly requested. Production image
+# builds should install requirements before runtime.
 if [ "${INSTALL_AT_BOOT:-false}" = "true" ] && [ -f requirements.txt ]; then
-	pip install -r requirements.txt
+    python -m pip install --no-cache-dir -r requirements.txt
 fi
 
-# Export environment variables from .env only when explicitly enabled.
-# Railway/production should use injected environment variables.
+# Load a local dotenv file only when explicitly enabled. Railway and production
+# must use injected/sealed variables instead.
 if [ "${ALLOW_DOTENV:-false}" = "true" ] && [ -f .env ]; then
-	export $(grep -v '^#' .env | xargs)
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
 fi
 
-# Optional pre-boot migration step.
-# Default is OFF to keep Railway healthcheck startup fast.
-# The app also runs startup DB ops internally.
-if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL}" ]; then
-	echo "[boot] Running database migrations..."
-	python -m alembic upgrade head || echo "[WARN] Migration failed, continuing anyway..."
+# Protected Railway profiles migrate only through scripts/controlled_migrate.py,
+# which verifies source identity, production backup evidence and the advisory lock.
+case "${SIGNALRANK_ENV_PROFILE:-}" in
+    staging-certification|production-advisory|production-live-owner-canary)
+        if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ]; then
+            echo "[FATAL] Boot-time migrations are forbidden for protected profiles." >&2
+            exit 1
+        fi
+        ;;
+esac
+# Run migrations only during a controlled deployment. A failed migration is a
+# hard startup failure; the service must never run against an unknown schema.
+if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}" ]; then
+    echo "[boot] Running database migrations..."
+    if ! python -m alembic upgrade head; then
+        echo "[FATAL] Migration failed; refusing to start with an unknown schema state." >&2
+        exit 1
+    fi
 fi
 
-# Railway-safe default:
-# - On Railway, default to the monolith web entrypoint (railway_main) even when
-#   RUN_MODE is set, unless explicitly overridden.
-# - This prevents accidental RUN_MODE=engine/worker/bot deployments from failing
-#   platform HTTP healthchecks.
-# - Outside Railway, RUN_MODE is still honored via main.py.
+# Print repository and deployed migration identity on every database-backed boot.
+python -m alembic heads 2>&1 | sed 's/^/[boot] alembic_expected_head=/' || true
+if [ -n "${DATABASE_URL:-}" ]; then
+    python -m alembic current 2>&1 | sed 's/^/[boot] alembic_current=/' || true
+fi
+
+# Every database-backed role must prove schema compatibility before it starts.
+# Readiness protects HTTP routing, but dedicated engine/worker roles have no
+# HTTP health endpoint; without this gate they can loop forever against stale
+# tables and columns. The gate is read-only and never runs migrations.
+if { [ -n "${DATABASE_URL:-}" ] || [ -n "${DATABASE_PRIVATE_URL:-}" ] || [ -n "${DATABASE_PUBLIC_URL:-}" ] || [ -n "${POSTGRES_URL:-}" ]; } && [ "${DATABASE_SCHEMA_GATE_ENABLED:-true}" != "false" ] && [ "${DATABASE_SCHEMA_GATE_ENABLED:-1}" != "0" ]; then
+    if ! python scripts/assert_database_schema.py; then
+        echo "[FATAL] Database schema admission failed; run the one-owner staging/production migration before starting services." >&2
+        exit 78
+    fi
+fi
+
+_start_frontdoor() {
+    export RUN_MODE="frontdoor"
+    export DECOMPOSED_TOPOLOGY_ENABLED="1"
+    export RUN_ENGINE_LOOP="0"
+    export RUN_WORKER_LOOP="0"
+    exec uvicorn railway_main:app \
+        --host 0.0.0.0 \
+        --port "${PORT:-8000}" \
+        --workers 1
+}
+
+_start_monolith() {
+    export RUN_MODE="all"
+    # SignalRankAI's Railway Hobby profile is a coordinated single-process
+    # async monolith. Keep one Uvicorn worker so schedulers, queues, engines and
+    # lifecycle workers cannot be duplicated by process-local ownership.
+    exec uvicorn railway_main:app \
+        --host 0.0.0.0 \
+        --port "${PORT:-8000}" \
+        --workers 1
+}
 
 _on_railway="false"
 if [ -n "${RAILWAY_SERVICE_NAME:-}" ] || [ -n "${RAILWAY_ENVIRONMENT:-}" ]; then
-	_on_railway="true"
+    _on_railway="true"
 fi
 
 _honor_run_mode_on_railway="false"
 if [ "${HONOR_RUN_MODE_ON_RAILWAY:-false}" = "true" ]; then
-	_honor_run_mode_on_railway="true"
+    _honor_run_mode_on_railway="true"
 fi
 
+# Optional decomposed roles remain available for future multi-service scaling.
+# On Railway the safe default is always the HTTP monolith unless explicitly
+# overridden, because the platform healthcheck and Telegram webhook require it.
 if [ -n "${RUN_MODE:-}" ] && { [ "${_on_railway}" != "true" ] || [ "${_honor_run_mode_on_railway}" = "true" ]; }; then
-	case "${RUN_MODE}" in
-		web|worker|engine|bot)
-			python main.py
-			exit $?
-			;;
-		all)
-			# Legacy env often left behind on Railway. For this service we want
-			# railway_main webhook stack (with /telegram/webhook route).
-			exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
-			;;
-		*)
-			# Unknown RUN_MODE => safe default to web monolith
-			exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
-			;;
-	esac
+    case "${RUN_MODE}" in
+        frontdoor|front-door|webhook)
+            _start_frontdoor
+            ;;
+        web|worker|engine|bot|delivery|outcome|analytics|scheduler)
+            exec python main.py
+            ;;
+        all|all/dev)
+            if [ "${DECOMPOSED_TOPOLOGY_ENABLED:-false}" = "true" ] || [ "${DECOMPOSED_TOPOLOGY_ENABLED:-0}" = "1" ]; then
+                echo "[FATAL] Decomposed topology forbids RUN_MODE=${RUN_MODE}; refusing hidden monolith fallback." >&2
+                exit 64
+            fi
+            _start_monolith
+            ;;
+        *)
+            if [ "${DECOMPOSED_TOPOLOGY_ENABLED:-false}" = "true" ] || [ "${DECOMPOSED_TOPOLOGY_ENABLED:-0}" = "1" ]; then
+                echo "[FATAL] Unknown RUN_MODE=${RUN_MODE} in decomposed topology; refusing monolith fallback." >&2
+                exit 64
+            fi
+            echo "[boot] Unknown RUN_MODE=${RUN_MODE}; starting compatibility monolith" >&2
+            _start_monolith
+            ;;
+    esac
 fi
 
-# Optional legacy mode: consolidate all subsystems under railway_main, which
-# owns the /telegram/webhook FastAPI route. Running separate per-mode
-# python main.py processes caused the bot process to register a Telegram
-# webhook URL that the web process (web.app:app, no /telegram/webhook route)
-# couldn't serve — producing 404s for every inbound Telegram update.
 if [ "${RUN_ALL:-false}" = "true" ]; then
-	exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
+    _start_monolith
 fi
 
-exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
+_start_monolith

@@ -35,6 +35,56 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _first_target(value):
+    if isinstance(value, dict):
+        for key in ("tp1", "target", "price", "value"):
+            if value.get(key) is not None:
+                return _safe_float(value.get(key))
+        for item in value.values():
+            parsed = _safe_float(item)
+            if parsed > 0:
+                return parsed
+        return 0.0
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            parsed = _first_target(item)
+            if parsed > 0:
+                return parsed
+        return 0.0
+    return _safe_float(value)
+
+
+
+def _normalise_direction(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"buy", "long", "bull", "bullish", "1"}:
+        return "long"
+    if text in {"sell", "short", "bear", "bearish", "-1"}:
+        return "short"
+    return text or "long"
+
+
+def _normalise_session(value: object) -> str:
+    text = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "NEW_YORK": "NY",
+        "NEWYORK": "NY",
+        "LONDON_NEW_YORK_OVERLAP": "NY",
+        "LONDON_NY_OVERLAP": "NY",
+        "OVERLAP": "NY",
+        "ASIAN": "ASIA",
+        "ASIA_OPENING": "ASIA",
+    }
+    return aliases.get(text, text)
+
+
 class UltraQualityFilter:
     """Filters signals to only highest quality setups."""
     
@@ -64,27 +114,27 @@ class UltraQualityFilter:
         
         Returns: (should_trade, rejection_reason, final_score)
         """
-        score = signal.get("score", 0)
+        score = _safe_float(signal.get("score"), 0.0)
 
         # Hard gate: never pass signals below the minimum score threshold.
         if score < self.min_score:
             return False, f"Score {score:.1f} < {self.min_score}", score
 
-        entry = signal.get("entry")
-        stop = signal.get("stop")
-        target = signal.get("targets", entry)
-        rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
+        entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+        stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+        target = _first_target(signal.get("take_profit") or signal.get("targets"))
+        rr = abs(target - entry) / abs(entry - stop) if entry > 0 and stop > 0 and target > 0 and abs(entry - stop) > 0 else 0.0
         if rr < self.min_rr_ratio:
             return False, f"R:R {rr:.2f} < {self.min_rr_ratio}", score
 
-        regime = signal.get("regime", "unknown")
-        adx = signal.get("adx_trend", 0)
-        if not (regime == "trending" and adx >= self.min_adx):
-            return False, f"Regime not trending (ADX {float(adx):.1f} < {self.min_adx})", score
+        regime = str(signal.get("regime") or "unknown").strip().upper()
+        adx = _safe_float(signal.get("adx_trend") or signal.get("adx"), 0.0)
+        if not (regime == "TRENDING" and adx >= self.min_adx):
+            return False, f"Regime not trending (regime={regime}, ADX {adx:.1f} < {self.min_adx})", score
 
-        session = signal.get("session", "unknown")
+        session = _normalise_session(signal.get("session") or signal.get("market_session"))
         if session not in self.high_conviction_sessions:
-            return False, f"Session {session} not in high-conviction list", score
+            return False, f"Session {session or 'UNKNOWN'} not in high-conviction list", score
 
         passed_checks = 0
         failed_checks = []
@@ -103,7 +153,9 @@ class UltraQualityFilter:
             failed_checks.append(f"Confluence {confluence:.0f}% < {self.min_confluence}%")
         
         # 3. Confidence check
-        confidence = signal.get("confidence", 0)
+        confidence = _safe_float(signal.get("confidence"), 0.0)
+        if confidence > 1.0:
+            confidence /= 100.0
         if confidence >= self.min_confidence:
             passed_checks += 1
         else:
@@ -116,20 +168,20 @@ class UltraQualityFilter:
             failed_checks.append(f"R:R {rr:.2f} < {self.min_rr_ratio}")
         
         # 5. Regime check (must be trending)
-        if regime == "trending" and adx >= self.min_adx:
+        if regime == "TRENDING" and adx >= self.min_adx:
             passed_checks += 1
         else:
             failed_checks.append(f"Regime not trending (ADX {adx:.1f} < {self.min_adx})")
         
         # 6. Volume check
-        volume_ratio = signal.get("volume_ratio", 0)
+        volume_ratio = _safe_float(signal.get("volume_ratio"), 0.0)
         if volume_ratio >= self.min_volume_ratio:
             passed_checks += 1
         else:
             failed_checks.append(f"Volume {volume_ratio:.1f}x < {self.min_volume_ratio}x avg")
         
         # 7. Volatility check
-        volatility = signal.get("volatility", 0)
+        volatility = _safe_float(signal.get("volatility"), 0.0)
         if volatility <= self.max_volatility:
             passed_checks += 1
         else:
@@ -187,7 +239,7 @@ class UltraQualityFilter:
         # 1. Trend alignment
         trend_ema = float(signal.get("trend_ema", 0) or 0)
         trend_sma = float(signal.get("trend_sma", 0) or 0)
-        direction = signal.get("direction", "long")
+        direction = _normalise_direction(signal.get("direction", "long"))
         
         if direction == "long":
             if trend_ema > 0 and trend_sma > 0:
@@ -215,7 +267,7 @@ class UltraQualityFilter:
         # 4. Support/Resistance respect
         nearest_support = float(signal.get("nearest_support", 0) or 0)
         nearest_resistance = float(signal.get("nearest_resistance", 0) or 0)
-        current_price = float(signal.get("close_price", 0) or 0)
+        current_price = _safe_float(signal.get("close_price") or signal.get("entry"), 0.0)
         
         if direction == "long" and current_price > nearest_support:
             confirmations += 1
@@ -223,10 +275,10 @@ class UltraQualityFilter:
             confirmations += 1
         
         # 5. Market regime alignment
-        regime = signal.get("regime", "unknown")
-        adx_trend = float(signal.get("adx_trend", 0) or 0)
+        regime = str(signal.get("regime") or "unknown").strip().upper()
+        adx_trend = _safe_float(signal.get("adx_trend") or signal.get("adx"), 0.0)
         
-        if regime == "trending" and adx_trend >= self.min_adx:
+        if regime == "TRENDING" and adx_trend >= self.min_adx:
             confirmations += 1
         
         # 6. HTF bias alignment

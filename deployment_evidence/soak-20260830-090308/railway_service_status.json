@@ -1,0 +1,272 @@
+﻿[
+  {
+    "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+    "name": "bountiful-miracle",
+    "isLinked": false,
+    "source": {
+      "repo": "theocriloxr/SignalRankAI",
+      "image": null
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "dcc04e7c-5a3a-4137-b020-1cd2a1327e78",
+    "latestDeployment": {
+      "id": "dcc04e7c-5a3a-4137-b020-1cd2a1327e78",
+      "status": "SUCCESS",
+      "createdAt": "2026-08-27T06:28:39.789Z",
+      "deploymentStopped": false
+    },
+    "url": "https://bountiful-miracle-staging.up.railway.app",
+    "volumes": [],
+    "regions": [
+      {
+        "name": "europe-west4-drams3a",
+        "location": "EU West",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+    "name": "PgBouncer",
+    "isLinked": false,
+    "source": {
+      "repo": null,
+      "image": "ghcr.io/railwayapp-templates/pgbouncer:1"
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "169526d6-5023-4ba5-af0f-83cb6e057407",
+    "latestDeployment": {
+      "id": "169526d6-5023-4ba5-af0f-83cb6e057407",
+      "status": "SUCCESS",
+      "createdAt": "2026-08-29T00:01:10.684Z",
+      "deploymentStopped": false
+    },
+    "url": null,
+    "volumes": [],
+    "regions": [
+      {
+        "name": "europe-west4-drams3a",
+        "location": "EU West",
+        "configured": 3
+      }
+    ],
+    "replicas": {
+      "configured": 3,
+      "running": 3,
+      "crashed": 0,
+      "exited": 0,
+      "total": 3
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "1488765d-749c-4415-8ac3-52d346591879",
+    "name": "Postgres-R8Lr",
+    "isLinked": false,
+    "source": {
+      "repo": null,
+      "image": "ghcr.io/railwayapp-templates/postgres-ssl:18"
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "d0b5e3ae-4637-4d2e-ac0b-170501ccd5f1",
+    "latestDeployment": {
+      "id": "d0b5e3ae-4637-4d2e-ac0b-170501ccd5f1",
+      "status": "SUCCESS",
+      "createdAt": "2026-08-23T14:25:09.654Z",
+      "deploymentStopped": false
+    },
+    "url": null,
+    "volumes": [
+      {
+        "name": "postgres-volume-pf45",
+        "mountPath": "/var/lib/postgresql/data",
+        "currentSizeMb": 3278.7496960000003,
+        "sizeMb": 5000,
+        "state": "READY"
+      }
+    ],
+    "regions": [
+      {
+        "name": "us-west2",
+        "location": "US West",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+    "name": "Redis",
+    "isLinked": false,
+    "source": {
+      "repo": null,
+      "image": "redis:8.2.1"
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "468af77d-6e57-49dd-8378-0824bd8075d2",
+    "latestDeployment": {
+      "id": "468af77d-6e57-49dd-8378-0824bd8075d2",
+      "status": "SUCCESS",
+      "createdAt": "2026-07-27T10:24:52.807Z",
+      "deploymentStopped": false
+    },
+    "url": null,
+    "volumes": [
+      {
+        "name": "redis-volume",
+        "mountPath": "/data",
+        "currentSizeMb": 642.00704,
+        "sizeMb": 5000,
+        "state": "READY"
+      }
+    ],
+    "regions": [
+      {
+        "name": "us-west2",
+        "location": "US West",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+    "name": "Redis-_-ro",
+    "isLinked": false,
+    "source": {
+      "repo": null,
+      "image": "redis:8.2.1"
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "8f6dd52a-6dcb-4829-9019-6ee2a3b47487",
+    "latestDeployment": {
+      "id": "8f6dd52a-6dcb-4829-9019-6ee2a3b47487",
+      "status": "SUCCESS",
+      "createdAt": "2026-07-27T10:24:52.809Z",
+      "deploymentStopped": false
+    },
+    "url": null,
+    "volumes": [
+      {
+        "name": "redis-volume-zzhR",
+        "mountPath": "/data",
+        "currentSizeMb": 150.224896,
+        "sizeMb": 5000,
+        "state": "READY"
+      }
+    ],
+    "regions": [
+      {
+        "name": "europe-west4-drams3a",
+        "location": "EU West",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+    "name": "SignalRankAI",
+    "isLinked": false,
+    "source": {
+      "repo": "theocriloxr/SignalRankAI",
+      "image": null
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "4f8f187f-0294-4ee7-91d1-8bfa23258324",
+    "latestDeployment": {
+      "id": "4f8f187f-0294-4ee7-91d1-8bfa23258324",
+      "status": "SUCCESS",
+      "createdAt": "2026-08-27T06:28:26.522Z",
+      "deploymentStopped": false
+    },
+    "url": "https://signalrankai-staging.up.railway.app",
+    "volumes": [],
+    "regions": [
+      {
+        "name": "us-east4-eqdc4a",
+        "location": "US East",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  },
+  {
+    "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+    "name": "striking-optimism",
+    "isLinked": false,
+    "source": {
+      "repo": "theocriloxr/SignalRankAI",
+      "image": null
+    },
+    "status": "SUCCESS",
+    "deploymentStopped": false,
+    "deploymentId": "63840c29-58ba-41a8-9899-4f36f1993635",
+    "latestDeployment": {
+      "id": "63840c29-58ba-41a8-9899-4f36f1993635",
+      "status": "SUCCESS",
+      "createdAt": "2026-08-27T06:28:34.410Z",
+      "deploymentStopped": false
+    },
+    "url": null,
+    "volumes": [],
+    "regions": [
+      {
+        "name": "europe-west4-drams3a",
+        "location": "EU West",
+        "configured": 1
+      }
+    ],
+    "replicas": {
+      "configured": 1,
+      "running": 1,
+      "crashed": 0,
+      "exited": 0,
+      "total": 1
+    },
+    "volumeMigrating": false
+  }
+]
+

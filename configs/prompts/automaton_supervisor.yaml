@@ -1,0 +1,3 @@
+version: automaton-supervisor-v1
+purpose: recommend virtual treasury conservation or optimization actions
+real_money_actions: false

@@ -1,0 +1,17 @@
+{
+  "schema_version": "signalrankai.production_promotion.v1",
+  "generated_at": "2026-08-23T16:25:00Z",
+  "status": "NOT_READY",
+  "verdict": "DO_NOT_PROMOTE",
+  "staging_commit": "c27f155735b7aac25ebe61ff242fda69e66b06ce",
+  "schema_head": "0038_account_security_product",
+  "structural_staging_gate": "PASS",
+  "runtime_staging_gate": "BLOCKED",
+  "soak_gate": "BLOCKED",
+  "payment_test_gate": "BLOCKED",
+  "backup_restore_gate": "BLOCKED",
+  "owner_acceptance_gate": "BLOCKED",
+  "production_write_authorized": false,
+  "required_literal_instruction": "PROMOTE_TO_PRODUCTION",
+  "dangerous_features_remain_disabled": true
+}

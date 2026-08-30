@@ -33,16 +33,16 @@ def test_signal_store_timeout_env_is_used(monkeypatch):
     from pathlib import Path
 
     monkeypatch.setenv("SIGNAL_STORE_TIMEOUT_SECONDS", "45")
-    text = Path("db/pg_compat.py").read_text()
+    text = Path("db/pg_compat.py").read_text(encoding="utf-8")
     assert "SIGNAL_STORE_TIMEOUT_SECONDS" in text
-    assert "get_session(critical=True)" in text
+    assert 'get_session(priority="critical"' in text
     assert float(os.getenv("SIGNAL_STORE_TIMEOUT_SECONDS")) == 45.0
 
 
 def test_bot_background_flags_present():
     from pathlib import Path
 
-    text = Path("signalrank_telegram/bot.py").read_text()
+    text = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
     assert "SEND_OUTCOME_NOTIFICATIONS_ENABLED" in text
     assert "FREE_RANDOM_DISTRIBUTION_ENABLED" in text
     assert "RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE" in text

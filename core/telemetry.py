@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import threading
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -27,6 +28,11 @@ except Exception:  # pragma: no cover - OTel optional
     BatchSpanProcessor = None  # type: ignore[assignment]
     ConsoleSpanExporter = None  # type: ignore[assignment]
     OTLPSpanExporter = None  # type: ignore[assignment]
+
+_TRACER_LOCK = threading.Lock()
+_TRACER: Any = None
+_TRACER_PROVIDER: Any = None
+_TRACER_INITIALIZED = False
 
 SERVICE_UP = Gauge("signalrank_service_up", "Service readiness indicator")
 ENGINE_CYCLE_SECONDS = Histogram("signalrank_engine_cycle_seconds", "Engine loop cycle duration in seconds", buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60))
@@ -157,30 +163,55 @@ def set_exchange_rate_limit(provider: str, remaining: float | None = None, limit
 
 
 def init_tracer(service_name: str = "signalrankai"):
-    """Initialize OpenTelemetry tracing if the optional packages are installed.
-
-    The function is intentionally fail-open: if OTel is unavailable, it returns
-    `None` and the rest of the service keeps running.
-    """
+    """Initialize one process-wide tracer without spawning duplicate exporters."""
+    global _TRACER, _TRACER_PROVIDER, _TRACER_INITIALIZED
+    if _TRACER_INITIALIZED:
+        return _TRACER
     if trace is None or TracerProvider is None:
+        _TRACER_INITIALIZED = True
         return None
     if str(os.getenv("OTEL_SDK_DISABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+        _TRACER_INITIALIZED = True
         return None
 
-    try:
-        resource = Resource.create({"service.name": service_name}) if Resource is not None else None
-        provider = TracerProvider(resource=resource) if resource is not None else TracerProvider()
-        endpoint = (os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or "").strip()
-        if endpoint and OTLPSpanExporter is not None:
-            exporter = OTLPSpanExporter(endpoint=endpoint)
-            provider.add_span_processor(BatchSpanProcessor(exporter))
-        elif ConsoleSpanExporter is not None:
-            provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-        trace.set_tracer_provider(provider)
-        return trace.get_tracer(service_name)
-    except Exception:
-        logger.debug("[telemetry] otel init failed", exc_info=True)
-        return None
+    with _TRACER_LOCK:
+        if _TRACER_INITIALIZED:
+            return _TRACER
+        try:
+            resource = Resource.create({"service.name": service_name}) if Resource is not None else None
+            provider = TracerProvider(resource=resource) if resource is not None else TracerProvider()
+            endpoint = (os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or "").strip()
+            console_enabled = str(os.getenv("OTEL_CONSOLE_EXPORTER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+            if endpoint and OTLPSpanExporter is not None:
+                provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+            elif console_enabled and ConsoleSpanExporter is not None:
+                provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+            trace.set_tracer_provider(provider)
+            _TRACER_PROVIDER = provider
+            _TRACER = trace.get_tracer(service_name)
+        except Exception:
+            logger.debug("[telemetry] otel init failed", exc_info=True)
+            _TRACER = None
+        _TRACER_INITIALIZED = True
+        return _TRACER
+
+
+def shutdown_tracer() -> None:
+    """Flush and stop telemetry workers during service/test teardown."""
+    global _TRACER, _TRACER_PROVIDER, _TRACER_INITIALIZED
+    with _TRACER_LOCK:
+        provider = _TRACER_PROVIDER
+        _TRACER = None
+        _TRACER_PROVIDER = None
+        # OpenTelemetry's global provider cannot safely be replaced in the same
+        # interpreter. Keep initialization closed after shutdown so repeated
+        # FastAPI test lifespans cannot spawn a second exporter worker.
+        _TRACER_INITIALIZED = True
+    if provider is not None:
+        try:
+            provider.shutdown()
+        except Exception:
+            logger.debug("[telemetry] tracer shutdown failed", exc_info=True)
 
 
 @contextmanager

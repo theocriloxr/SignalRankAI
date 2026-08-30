@@ -15,7 +15,7 @@ class EMATrendStrategy(BaseStrategy):
             return None
         missing = missing_indicators(ind, ("ema_fast", "ema_slow", "ema_trend"))
         if missing:
-            logger.warning("EMA Trend missing indicators: %s available=%s", missing, list(ind.keys())[:12])
+            logger.debug("EMA Trend skipped; indicators unavailable: %s available=%s", missing, list(ind.keys())[:12])
             return None
         # LONG: EMA bullish stack
         ema_fast = float(ind.get('ema_fast') or 0)

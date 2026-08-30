@@ -13,7 +13,8 @@ def _candles(start: float, step: float, n: int = 80):
     ]
 
 
-def test_asset_registry_classifies_indices_and_builds_provider_routes():
+def test_asset_registry_classifies_indices_and_builds_provider_routes(monkeypatch):
+    monkeypatch.setenv("ALLOW_STATIC_ASSET_FALLBACK", "1")
     from services.asset_registry import build_asset_profile, classify_asset, discover_asset_universe
 
     assert classify_asset("NAS100") == "index"

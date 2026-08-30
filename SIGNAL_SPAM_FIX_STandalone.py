@@ -6,6 +6,7 @@ regenerated for the same (asset, timeframe, direction) within a cooldown window.
 
 Add this to engine/core.py or create a new middleware that wraps signal generation.
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import time
@@ -63,7 +64,7 @@ class GenerationCooldown:
                 return True  # Never generated before
             
             cooldown_seconds = get_generation_cooldown(timeframe)
-            elapsed = (datetime.utcnow() - last_gen).total_seconds()
+            elapsed = (now_utc_naive() - last_gen).total_seconds()
             
             if elapsed < cooldown_seconds:
                 logger.info(
@@ -78,7 +79,7 @@ class GenerationCooldown:
         """Record that a signal was generated."""
         with self._lock:
             key = self._make_key(asset, timeframe, direction)
-            self._last_generated[key] = datetime.utcnow()
+            self._last_generated[key] = now_utc_naive()
             logger.debug(f"[GenCooldown] Recorded generation for {key}")
     
     def get_cooldown_remaining(self, asset: str, timeframe: str, direction: str = "long") -> int:
@@ -91,7 +92,7 @@ class GenerationCooldown:
                 return 0
             
             cooldown_seconds = get_generation_cooldown(timeframe)
-            elapsed = (datetime.utcnow() - last_gen).total_seconds()
+            elapsed = (now_utc_naive() - last_gen).total_seconds()
             remaining = int(cooldown_seconds - elapsed)
             return max(0, remaining)
 

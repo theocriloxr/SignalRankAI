@@ -148,19 +148,32 @@ async def _handle_mt5_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         user_id = query.from_user.id
         tier = resolve_user_tier(user_id)
         
-        # Check tier for premium
-        from signalrank_telegram.commands import tier_rank
-        if tier_rank(tier) < tier_rank("PREMIUM"):
+        from core.tier_policy import evaluate_button_access
+        decision = evaluate_button_access("mt5_trade", tier)
+        if not decision.allowed:
+            try:
+                from services.upgrade_intents import schedule_upgrade_intent
+                schedule_upgrade_intent(
+                    int(user_id), decision, action="mt5_trade", source="telegram_button"
+                )
+            except Exception:
+                pass
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="🔒 Premium feature. Use /upgrade to unlock.",
+                text=decision.reason,
             )
             return
         
-        # Direct to MT5 execution flow
+        # The canonical MT5 callback is registered before this global catch-all.
+        # Reaching this fallback means the execution preflight route was not
+        # available, so fail closed instead of implying an order flow started.
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text="⚡ Opening MT5 trade execution...",
+            text=(
+                "⚠️ MT5 execution preflight is unavailable in this route. "
+                "No order was submitted. Use /mt5_status and retry from the "
+                "latest signal message."
+            ),
         )
         
     except Exception as e:
@@ -246,41 +259,38 @@ async def _handle_signal_reaction(
 
 
 async def _handle_monitor_signal(
-    update: Update, 
-    context: ContextTypes.DEFAULT_TYPE, 
-    signal_id: str
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    signal_id: str,
 ) -> None:
-    """Handle monitor signal button."""
+    """Fallback monitor route that never overwrites the original signal card."""
     query = update.callback_query
-    
+    await _safe_answer(query, "Refreshing…", show_alert=False)
+    user_id = _callback_user_id(update)
+    chat_id = int(getattr(getattr(query, "message", None), "chat_id", user_id) or user_id)
     try:
-        # Immediately answer
-        await query.answer("Refreshing...")
-        
-        # Build monitor snapshot
-        from signalrank_telegram.bot import _build_monitor_snapshot
-        
-        text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
-        
-        # Send new message or edit existing
-        try:
-            await context.bot.edit_message_text(
-                chat_id=query.message.chat_id,
-                message_id=query.message.message_id,
-                text=text,
-                parse_mode="HTML",
-            )
-        except Exception:
-            # Send new if edit fails
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=text,
-                parse_mode="HTML",
-            )
-        
-    except Exception as e:
-        logger.warning(f"[callback] monitor error: {e}")
-        await query.answer("⚠️ Could not load monitor.", show_alert=True)
+        from signalrank_telegram.bot import _build_monitor_keyboard, _build_monitor_snapshot
+
+        text, _is_active, _expires_at = await _build_monitor_snapshot(
+            signal_id,
+            telegram_user_id=user_id,
+        )
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=_build_monitor_keyboard(signal_id),
+            reply_to_message_id=int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None,
+            allow_sending_without_reply=True,
+            disable_notification=False,
+        )
+    except Exception as exc:
+        logger.warning("[callback] monitor error user=%s ref=%s err=%s", user_id, str(signal_id)[:16], exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Could not refresh the monitor right now. The signal remains tracked; retry shortly.",
+            disable_notification=False,
+        )
 
 
 async def _handle_check_outcome(
@@ -293,6 +303,23 @@ async def _handle_check_outcome(
     
     try:
         await query.answer("Checking outcome...")
+
+        from engine.outcome_snapshots import (
+            format_outcome_snapshot,
+            read_cached_outcome_snapshot,
+        )
+
+        try:
+            snapshot = await read_cached_outcome_snapshot(signal_id)
+        except Exception:
+            snapshot = None
+        if snapshot is not None:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=format_outcome_snapshot(snapshot),
+                parse_mode="HTML",
+            )
+            return
         
         # Load outcome from DB
         from db.session import get_session
@@ -423,19 +450,171 @@ async def _safe_answer(query, text: str = "", show_alert: bool = False) -> None:
         pass
 
 
+async def _load_authorized_signal_payload(
+    signal_id: str,
+    telegram_user_id: int,
+) -> dict[str, Any] | None:
+    """Return a signal only when this Telegram user has delivery proof for it.
+
+    Callback data is untrusted and may be forged or forwarded.  The ownership
+    check is completed in a short database transaction; chart rendering,
+    market-data access and Gemini calls happen only after the session closes.
+    """
+    try:
+        from sqlalchemy import select
+
+        from db.models import SignalDelivery, User
+        from db.session import get_session
+
+        async with get_session(priority="interactive", label="callback.signal_authorization") as session:
+            delivery_id = (
+                await session.execute(
+                    select(SignalDelivery.id)
+                    .join(User, User.id == SignalDelivery.user_id)
+                    .where(
+                        User.telegram_user_id == int(telegram_user_id),
+                        SignalDelivery.signal_id == str(signal_id),
+                        SignalDelivery.sent_ok.is_(True),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            await session.commit()
+        if delivery_id is None:
+            return None
+
+        from signalrank_telegram.bot import _load_signal_payload
+
+        return await _load_signal_payload(str(signal_id))
+    except Exception as exc:
+        logger.warning("[callback] signal ownership lookup failed: %s", exc)
+        return None
+
+
+def _callback_user_id(update: Update) -> int:
+    user = getattr(update, "effective_user", None)
+    if user is None:
+        query = getattr(update, "callback_query", None)
+        user = getattr(query, "from_user", None)
+    try:
+        return int(getattr(user, "id", 0) or 0)
+    except Exception:
+        return 0
+
+
 async def _handle_signal_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
     query = update.callback_query
-    await _safe_answer(query, "Chart view is not available yet.", show_alert=False)
+    await _safe_answer(query, "Building chart…", show_alert=False)
+
+    user_id = _callback_user_id(update)
+    signal = await _load_authorized_signal_payload(signal_id, user_id)
+    if signal is None:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🔒 This signal is unavailable or was not delivered to your account.",
+        )
+        return
+
+    try:
+        from signalrank_telegram.signal_charts import build_signal_chart
+
+        chart = await build_signal_chart(signal)
+        if chart is None:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⚠️ Chart data is temporarily unavailable for this signal.",
+            )
+            return
+        caption = (
+            f"📊 {str(signal.get('asset') or 'Signal')} "
+            f"{str(signal.get('timeframe') or '').upper()} · "
+            f"{str(signal.get('direction') or '').upper()}"
+        ).strip()
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=chart,
+            caption=caption[:1024],
+        )
+    except Exception as exc:
+        logger.warning("[callback] signal chart failed: %s", exc)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="⚠️ The chart could not be generated right now. Please retry later.",
+        )
 
 
 async def _handle_ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
     query = update.callback_query
-    await _safe_answer(query, "Gemini analysis is being prepared.", show_alert=False)
+    await _safe_answer(query, "Reviewing signal…", show_alert=False)
+
+    user_id = _callback_user_id(update)
+    signal = await _load_authorized_signal_payload(signal_id, user_id)
+    if signal is None:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🔒 This signal is unavailable or was not delivered to your account.",
+        )
+        return
+
+    try:
+        from services.gemini_ml import ask_gemini_signal_explanation
+
+        explanation = await ask_gemini_signal_explanation(dict(signal))
+        if not explanation:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=(
+                    "ℹ️ Gemini review is currently unavailable. The deterministic "
+                    "signal and its risk controls remain unchanged."
+                ),
+            )
+            return
+        text = "🤖 Gemini advisory review\n\n" + str(explanation).strip()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=text[:4000],
+        )
+    except Exception as exc:
+        logger.warning("[callback] Gemini explanation failed: %s", exc)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=(
+                "ℹ️ Gemini review could not be completed. The deterministic "
+                "signal remains available and no execution decision was made."
+            ),
+        )
 
 
 async def _handle_open_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    """Fallback open-signal route; always renders a fresh authorized card."""
     query = update.callback_query
-    await _safe_answer(query, show_alert=False)
+    await _safe_answer(query, "Opening signal…", show_alert=False)
+    user_id = _callback_user_id(update)
+    chat_id = int(getattr(getattr(query, "message", None), "chat_id", user_id) or user_id)
+    try:
+        from signalrank_telegram.bot import _send_signal_card_for_user
+
+        reply_to = int(getattr(getattr(query, "message", None), "message_id", 0) or 0) or None
+        message = await _send_signal_card_for_user(
+            context.bot,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            signal_ref=str(signal_id),
+            reply_to_message_id=reply_to,
+        )
+        if message is None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Signal not found in your confirmed deliveries. Use /signals for the latest list.",
+                disable_notification=False,
+            )
+    except Exception as exc:
+        logger.warning("[callback] open signal failed user=%s ref=%s err=%s", user_id, str(signal_id)[:16], exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Could not open that signal right now. Retry the button or use /signal <reference>.",
+            disable_notification=False,
+        )
 
 
 async def _handle_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, feature: str) -> None:

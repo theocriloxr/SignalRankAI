@@ -1,18 +1,19 @@
-"""
-engine/shadow_outcome_worker.py
+"""Track shadow outcomes for rejected and stale signals without blocking delivery.
 
-Background worker to track outcomes for `ml_rejected_signals` (shadow tracking).
-Optimized for batch commits and fixed logic for outcome classification.
+Rows are loaded in a short background-priority transaction, prices are fetched
+after the transaction is closed, and updates are committed in a second short
+transaction.  This prevents provider network latency from occupying scarce DB
+connections.
 """
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import asyncio
 import contextlib
 import logging
 import os
-import traceback
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,152 +24,277 @@ class ShadowOutcomeWorker:
         self._stop = asyncio.Event()
         self._interval = max(15, int(os.getenv("SHADOW_TRACKER_INTERVAL_SECONDS", "60") or 60))
         self._min_age_minutes = max(1, int(os.getenv("REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES", "5") or 5))
+        self._batch_size = max(1, min(250, int(os.getenv("SHADOW_TRACKER_BATCH_SIZE", "50") or 50)))
+        self._price_concurrency = max(1, min(8, int(os.getenv("SHADOW_PRICE_CONCURRENCY", "3") or 3)))
 
+    def _publish_health(
+        self,
+        status: str,
+        *,
+        scanned: int = 0,
+        evaluated: int = 0,
+        tracked: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Publish durable proof that the configured tracker is actually running."""
+        try:
+            import json
+            from core.redis_state import state
+
+            payload = {
+                "status": str(status),
+                "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+                "interval_seconds": self._interval,
+                "deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"),
+                "git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+                "scanned": max(0, int(scanned or 0)),
+                "evaluated": max(0, int(evaluated or 0)),
+                "tracked": max(0, int(tracked or 0)),
+                "error": str(error)[:240] if error else None,
+            }
+            state.set_sync(
+                "shadow:tracker:health",
+                json.dumps(payload, sort_keys=True),
+                ex=max(300, self._interval * 5),
+            )
+        except Exception:
+            logger.debug("[shadow_tracker] health publication failed", exc_info=True)
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
         self._stop.clear()
-        self._task = asyncio.create_task(self._run_loop())
-        logger.info("[shadow_tracker] started (interval=%ss)", self._interval)
+        self._publish_health("starting")
+        self._task = asyncio.create_task(self._run_loop(), name="shadow-outcome-tracker")
+        logger.info("[shadow_tracker] started interval=%ss batch=%s", self._interval, self._batch_size)
 
     async def stop(self) -> None:
+        self._stop.set()
+        if self._task:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+        self._publish_health("stopped")
+
+    async def _load_rows(self) -> list[dict[str, Any]]:
+        from db.models import MLRejectedSignal
+        from db.priority import DBPriority
+        from db.session import NoncriticalWriteDropped, get_session
+        from sqlalchemy import select
+
+        cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
         try:
-            self._stop.set()
-            if self._task:
-                self._task.cancel()
-                with contextlib.suppress(Exception):
-                    await self._task
-        except Exception:
-            pass
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="shadow_outcome_scan",
+                timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
+                drop_if_busy=False,
+            ) as session:
+                rows = list((await session.execute(
+                    select(MLRejectedSignal)
+                    .where(MLRejectedSignal.outcome_tracked_at.is_(None))
+                    .where(MLRejectedSignal.created_at <= cutoff)
+                    .order_by(MLRejectedSignal.created_at.asc())
+                    .limit(self._batch_size)
+                )).scalars().all())
+                # Copy only primitive values before closing the session.
+                return [{
+                    "id": int(r.id), "signal_id": r.signal_id, "asset": r.asset,
+                    "timeframe": r.timeframe, "direction": r.direction,
+                    "entry": float(r.entry or 0.0), "stop_loss": float(r.stop_loss or 0.0),
+                    "take_profit": r.take_profit, "ml_probability": float(r.ml_probability or 0.0),
+                    "rejection_reason": r.rejection_reason, "features": dict(r.features or {}),
+                    "created_at": r.created_at,
+                } for r in rows]
+        except NoncriticalWriteDropped:
+            logger.info("[shadow_tracker] deferred reason=db_background_capacity")
+            return []
+
+    async def _evaluate_rows(self, rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]:
+        from data.fetcher import async_get_candles
+        from engine.realtime_outcome_tracker import _check_hit, _get_live_price, _parse_tp_levels
+        semaphore = asyncio.Semaphore(self._price_concurrency)
+
+        def candle_value(candle: Any, *names: str) -> float | None:
+            if isinstance(candle, dict):
+                for name in names:
+                    try:
+                        value = float(candle.get(name))
+                        if value > 0:
+                            return value
+                    except Exception:
+                        pass
+            return None
+
+        def _candle_time(candle: Any) -> datetime | None:
+            if not isinstance(candle, dict):
+                return None
+            raw = None
+            for key in ("timestamp", "time", "datetime", "open_time", "openTime", "date"):
+                if candle.get(key) not in (None, ""):
+                    raw = candle.get(key)
+                    break
+            if raw is None:
+                return None
+            try:
+                if isinstance(raw, (int, float)):
+                    value = float(raw)
+                    if value > 10_000_000_000:
+                        value /= 1000.0
+                    return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+            except Exception:
+                return None
+
+        def historical_terminal(row: dict[str, Any], candles: Any) -> str | None:
+            if not isinstance(candles, list):
+                return None
+            created_at = row.get("created_at")
+            if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+                created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+            direction = str(row.get("direction") or "long").lower()
+            stop = float(row.get("stop_loss") or 0.0)
+            targets = _parse_tp_levels(row.get("take_profit"))
+            final_target = float(targets[-1]) if targets else 0.0
+            if stop <= 0 or final_target <= 0:
+                return None
+            for candle in candles:
+                candle_time = _candle_time(candle)
+                # A rejected signal can only be judged on market data observed
+                # after the rejection. Using older candles creates false wins
+                # and false losses that the engine could never have traded.
+                if isinstance(created_at, datetime):
+                    if candle_time is None or candle_time < created_at:
+                        continue
+                high = candle_value(candle, "high", "h")
+                low = candle_value(candle, "low", "l")
+                if high is None or low is None:
+                    continue
+                sl_hit = low <= stop if direction == "long" else high >= stop
+                tp_hit = high >= final_target if direction == "long" else low <= final_target
+                if sl_hit and tp_hit:
+                    # Candle resolution cannot prove which barrier occurred first.
+                    return "ambiguous"
+                if sl_hit:
+                    return "sl"
+                if tp_hit:
+                    return "tp3"
+            return None
+
+        async def one(row: dict[str, Any]):
+            async with semaphore:
+                try:
+                    candles = await async_get_candles(str(row["asset"]), str(row.get("timeframe") or "1h"))
+                except Exception:
+                    candles = []
+                historical = historical_terminal(row, candles)
+                if historical == "ambiguous":
+                    # Persist ambiguous candle ordering as an explicit excluded
+                    # research result. Retrying forever would leave shadow
+                    # pending counts at zero/unknown and could later convert an
+                    # unknowable sequence into a false win or false loss.
+                    return row, "ambiguous"
+                if historical:
+                    return row, historical
+                price = await _get_live_price(str(row["asset"]))
+            if price is None:
+                return None
+            hit = _check_hit(
+                str(row["direction"]), float(row["entry"]), float(row["stop_loss"]),
+                _parse_tp_levels(row["take_profit"]), float(price),
+            )
+            return (row, str(hit).lower()) if hit else None
+
+        results = await asyncio.gather(*(one(row) for row in rows), return_exceptions=True)
+        return [item for item in results if isinstance(item, tuple)]
+
+    async def _persist(self, evaluated: list[tuple[dict[str, Any], str]]) -> int:
+        if not evaluated:
+            return 0
+        from core.redis_state import state
+        from db.models import MLRejectedSignal, MLShadowPrediction
+        from db.priority import DBPriority
+        from db.session import NoncriticalWriteDropped, get_session
+        from sqlalchemy import select
+
+        ids = [row["id"] for row, _ in evaluated]
+        by_id = {row["id"]: (row, outcome) for row, outcome in evaluated}
+        now = now_utc_naive()
+        try:
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="shadow_outcome_write",
+                timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
+                drop_if_busy=False,
+            ) as session:
+                db_rows = list((await session.execute(
+                    select(MLRejectedSignal).where(MLRejectedSignal.id.in_(ids)).with_for_update(skip_locked=True)
+                )).scalars().all())
+                tracked = 0
+                for record in db_rows:
+                    source, outcome = by_id.get(int(record.id), ({}, ""))
+                    if not outcome or record.outcome_tracked_at is not None:
+                        continue
+                    session.add(MLShadowPrediction(
+                        signal_id=source.get("signal_id"),
+                        model_name="rejection_outcome_tracker",
+                        model_version=os.getenv("ML_MODEL_VERSION", "v1"),
+                        probability=float(source.get("ml_probability") or 0.0),
+                        is_shadow=True, feature_schema_ok=True,
+                        meta={
+                            "asset": source.get("asset"), "direction": source.get("direction"),
+                            "entry": source.get("entry"), "stop_loss": source.get("stop_loss"),
+                            "take_profit": str(source.get("take_profit")), "actual_outcome": outcome,
+                            "rejection_reason": source.get("rejection_reason"),
+                            "learning_category": (source.get("features") or {}).get("learning_category", "SHADOW_REJECTED"),
+                            "rejection_id": int(record.id),
+                        }, created_at=now,
+                    ))
+                    record.actual_outcome = outcome[:32]
+                    record.outcome_tracked_at = now
+                    tracked += 1
+                    try:
+                        bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
+                        state.incr_sync(f"shadow:counts:{bucket}", 1)
+                        state.incr_sync("shadow:counts:total_tracked", 1)
+                    except Exception:
+                        logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
+                await session.commit()
+                return tracked
+        except NoncriticalWriteDropped:
+            logger.info("[shadow_tracker] write deferred reason=db_background_capacity")
+            return 0
+
+    async def run_once(self) -> int:
+        rows = await self._load_rows()
+        if not rows:
+            self._publish_health("idle")
+            return 0
+        evaluated = await self._evaluate_rows(rows)
+        tracked = await self._persist(evaluated)
+        self._publish_health(
+            "healthy",
+            scanned=len(rows),
+            evaluated=len(evaluated),
+            tracked=tracked,
+        )
+        if tracked:
+            logger.info("[shadow_tracker] processed=%s scanned=%s", tracked, len(rows))
+        return tracked
 
     async def _run_loop(self) -> None:
-        try:
-            # Local imports to prevent circular dependency issues in some engine architectures
-            from db.session import get_session
-            from db.models import MLRejectedSignal, MLShadowPrediction
-            from sqlalchemy import select
-            from engine.realtime_outcome_tracker import _get_live_price, _parse_tp_levels, _check_hit
-            from core.redis_state import state
-
-            while not self._stop.is_set():
-                try:
-                    cutoff = datetime.utcnow() - timedelta(minutes=self._min_age_minutes)
-                    
-                    async with get_session(noncritical=True) as session:
-                        # 1. Fetch a batch of untracked signals
-                        stmt = (
-                            select(MLRejectedSignal)
-                            .where(MLRejectedSignal.outcome_tracked_at.is_(None))
-                            .where(MLRejectedSignal.created_at <= cutoff)
-                            .order_by(MLRejectedSignal.created_at.asc())
-                            .with_for_update(skip_locked=True)
-                            .limit(100) # Slightly smaller batch for better transaction stability
-                        )
-                        res = await session.execute(stmt)
-                        rows = res.scalars().all()
-
-                        if not rows:
-                            # No work to do, release session and wait
-                            await session.commit()
-                        else:
-                            for r in rows:
-                                try:
-                                    asset = str(getattr(r, "asset", "") or "")
-                                    entry = float(getattr(r, "entry", 0.0) or 0.0)
-                                    sl = float(getattr(r, "stop_loss", 0.0) or 0.0)
-                                    tp_raw = getattr(r, "take_profit", "")
-                                    tp_levels = _parse_tp_levels(tp_raw)
-                                    direction = str(getattr(r, "direction", "") or "long")
-
-                                    # Fetch live price
-                                    price = await _get_live_price(asset)
-                                    if price is None:
-                                        continue
-                                    
-                                    # Check if TP or SL has been hit
-                                    hit = _check_hit(direction, entry, sl, tp_levels, price)
-                                    if not hit:
-                                        continue
-
-                                    now = datetime.utcnow()
-                                    actual_outcome = str(hit).lower()
-                                    
-                                    # Resolve Signal ID
-                                    signal_id = getattr(r, "signal_id", None)
-                                    if signal_id is None:
-                                        features = getattr(r, "features", {}) or {}
-                                        signal_id = features.get("signal_id")
-
-                                    # 2. Prepare the MLShadowPrediction record
-                                    shadow_pred = MLShadowPrediction(
-                                        signal_id=signal_id,
-                                        model_name="xgboost_rejection_validator",
-                                        model_version=os.getenv("ML_MODEL_VERSION", "v1"),
-                                        probability=float(getattr(r, "ml_probability", 0.0) or 0.0),
-                                        is_shadow=True,
-                                        feature_schema_ok=True,
-                                        meta={
-                                            "asset": asset,
-                                            "direction": direction,
-                                            "entry": entry,
-                                            "stop_loss": sl,
-                                            "take_profit": str(tp_raw),
-                                            "actual_outcome": actual_outcome,
-                                            "rejection_reason": str(getattr(r, "rejection_reason", "") or ""),
-                                            "rejection_id": int(getattr(r, "id", 0) or 0),
-                                        },
-                                        created_at=now,
-                                    )
-                                    session.add(shadow_pred)
-
-                                    # 3. Update the existing RejectedSignal record
-                                    r.actual_outcome = actual_outcome[:32]
-                                    r.outcome_tracked_at = now
-
-                                    # 4. Update Redis Metrics
-                                    try:
-                                        if actual_outcome.startswith("tp"):
-                                            # Classification logic: TP3+ is a False Negative (we should have taken it)
-                                            is_high_tp = actual_outcome in {"tp3", "tp"}
-                                            if not is_high_tp and len(actual_outcome) > 2:
-                                                suffix = actual_outcome[2:]
-                                                if suffix.isdigit() and int(suffix) >= 3:
-                                                    is_high_tp = True
-
-                                            if is_high_tp:
-                                                state.incr_sync("shadow:counts:false_negative", 1)
-                                            else:
-                                                state.incr_sync("shadow:counts:partial_win", 1)
-                                        
-                                        elif actual_outcome == "sl":
-                                            # Correct block: Rejection saved us from a loss
-                                            state.incr_sync("shadow:counts:correct_block", 1)
-                                        else:
-                                            state.incr_sync("shadow:counts:other_outcome", 1)
-                                        
-                                        state.incr_sync("shadow:counts:total_tracked", 1)
-                                    except Exception:
-                                        logger.debug("[shadow_tracker] redis increment failed", exc_info=True)
-
-                                except Exception as row_err:
-                                    logger.error(f"[shadow_tracker] failed processing row {getattr(r, 'id', '?')}: {row_err}")
-
-                            # Commit all changes for this batch at once
-                            await session.commit()
-                            logger.info(f"[shadow_tracker] Processed batch of {len(rows)} signals")
-
-                except Exception as iter_err:
-                    logger.error(f"[shadow_tracker] iteration failed: {iter_err}")
-                    logger.error(traceback.format_exc())
-
-                # Sleep until next interval
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
-                except asyncio.TimeoutError:
-                    continue
-
-        except Exception as exc:
-            logger.error("[shadow_tracker] critical failure: %s", exc, exc_info=True)
+        while not self._stop.is_set():
+            try:
+                await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
+                self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
+            except asyncio.TimeoutError:
+                pass
 
 
 shadow_outcome_worker = ShadowOutcomeWorker()

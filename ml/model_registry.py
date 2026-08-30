@@ -106,6 +106,18 @@ def extract_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
         "trained_at": str(payload.get("trained_at") or ""),
         "xgboost_version": str(payload.get("xgboost_version") or ""),
         "artifact_hash_sha256": str(payload.get("artifact_hash_sha256") or ""),
+        "calibration_kind": str(payload.get("calibration_kind") or "none"),
+        "calibration_x": list(payload.get("calibration_x") or []),
+        "calibration_y": list(payload.get("calibration_y") or []),
+        "metrics": dict(payload.get("metrics") or (payload.get("training_meta") or {}).get("metrics") or {}),
+        "calibration_metrics": dict(
+            payload.get("calibration_metrics")
+            or (payload.get("metrics") or {}).get("calibration")
+            or (payload.get("training_meta") or {}).get("calibration_metrics")
+            or ((payload.get("training_meta") or {}).get("metrics") or {}).get("calibration")
+            or {}
+        ),
+        "training_meta": dict(payload.get("training_meta") or {}),
     }
 
 
@@ -163,6 +175,12 @@ def save_model_payload(path: Path, booster: Any, feature_cols: List[str], metada
             'trained_at': str(metadata.get('trained_at') or ''),
             'xgboost_version': str(metadata.get('xgboost_version') or ''),
             'artifact_hash_sha256': str(metadata.get('artifact_hash_sha256') or ''),
+            'calibration_kind': str(metadata.get('calibration_kind') or 'none'),
+            'calibration_x': list(metadata.get('calibration_x') or []),
+            'calibration_y': list(metadata.get('calibration_y') or []),
+            'metrics': dict(metadata.get('metrics') or {}),
+            'calibration_metrics': dict(metadata.get('calibration_metrics') or {}),
+            'training_meta': dict(metadata.get('training_meta') or {}),
         }
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump(payload, fh, ensure_ascii=False)

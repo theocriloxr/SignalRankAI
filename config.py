@@ -51,7 +51,12 @@ class Config:
 			self.ADMIN_IDS.add(_single_admin)
 
 		# Payments and API keys
-		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
+		self.PAYMENTS_ENABLED = self._env_bool("PAYMENTS_ENABLED", False)
+		self.AUTO_TRADE_ENABLED = self._env_bool("AUTO_TRADE_ENABLED", False)
+		self.COPY_TRADE_ENABLED = self._env_bool("COPY_TRADE_ENABLED", False)
+		self.TELEGRAM_RICH_MESSAGES_ENABLED = self._env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False)
+		self.VIP_WEBHOOK_DISPATCH_ENABLED = self._env_bool("VIP_WEBHOOK_DISPATCH_ENABLED", False)
+		self.CHAT_MT5_CREDENTIALS_ENABLED = self._env_bool("CHAT_MT5_CREDENTIALS_ENABLED", False)
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 		self.PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "")
 		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
@@ -84,9 +89,15 @@ class Config:
 		self.RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID", "")
 		self.GIT_COMMIT_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
 
-		# Feature toggles (add more as needed)
-		self.MARKET_MONITOR_ENABLED = True
-		self.CRYPTO_WS_ENABLED = True
+		# Feature toggles. WebSocket ingestion is an optimisation, not a
+		# correctness dependency. Keep it fail-safe/off unless the master flag and
+		# crypto-specific flag are both explicitly enabled.
+		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
+		self.WS_INGEST_ENABLED = self._env_bool("WS_INGEST_ENABLED", False)
+		self.CRYPTO_WS_ENABLED = (
+			self.WS_INGEST_ENABLED
+			and self._env_bool("CRYPTO_WS_ENABLED", self.WS_INGEST_ENABLED)
+		)
 # Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
 		is_railway = any(
 			bool((os.getenv(name) or "").strip())
@@ -224,6 +235,10 @@ def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
 		return ""
 	if raw.startswith("postgresql+asyncpg://"):
 		return raw if async_driver else raw.replace("postgresql+asyncpg://", "postgresql://", 1)
+	if raw.startswith("postgresql+psycopg2://"):
+		return raw.replace("postgresql+psycopg2://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
+	if raw.startswith("postgresql+psycopg://"):
+		return raw.replace("postgresql+psycopg://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
 	if raw.startswith("postgres://"):
 		return raw.replace("postgres://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
 	if raw.startswith("postgresql://"):

@@ -17,12 +17,16 @@ Features:
 import os
 import logging
 import time
+import copy
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 _RATE_LIMIT = "__TV_RATE_LIMIT__"
 _LAST_REQUEST_TS: float = 0.0
+_RESULT_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_CIRCUIT_OPEN_UNTIL: float = 0.0
+_LAST_CIRCUIT_LOG_TS: float = 0.0
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -60,6 +64,36 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _cache_get(key: tuple[str, str]) -> list[dict] | None:
+    item = _RESULT_CACHE.get(key)
+    if not item:
+        return None
+    expires_at, value = item
+    if time.monotonic() >= expires_at:
+        _RESULT_CACHE.pop(key, None)
+        return None
+    return copy.deepcopy(value)
+
+
+def _cache_set(key: tuple[str, str], value: list[dict], ttl: float | None = None) -> None:
+    cache_ttl = max(1.0, float(ttl or _env_float("TRADINGVIEW_CACHE_TTL_SECONDS", 300.0)))
+    _RESULT_CACHE[key] = (time.monotonic() + cache_ttl, copy.deepcopy(value))
+    max_entries = max(16, _env_int("TRADINGVIEW_CACHE_MAX_ENTRIES", 512))
+    if len(_RESULT_CACHE) > max_entries:
+        oldest_key = min(_RESULT_CACHE, key=lambda item_key: _RESULT_CACHE[item_key][0])
+        _RESULT_CACHE.pop(oldest_key, None)
+
+
+def _open_circuit(reason: str) -> None:
+    global _CIRCUIT_OPEN_UNTIL, _LAST_CIRCUIT_LOG_TS
+    cooldown = max(30.0, _env_float("TRADINGVIEW_RATE_LIMIT_COOLDOWN_SECONDS", 300.0))
+    _CIRCUIT_OPEN_UNTIL = max(_CIRCUIT_OPEN_UNTIL, time.monotonic() + cooldown)
+    now = time.monotonic()
+    if now - _LAST_CIRCUIT_LOG_TS >= 30.0:
+        logger.warning("[tradingview] circuit opened cooldown=%.0fs reason=%s", cooldown, reason)
+        _LAST_CIRCUIT_LOG_TS = now
+
+
 def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
     """
     Fetch technical signals from TradingView for an asset and timeframe.
@@ -72,11 +106,17 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
         List of signal dicts with direction, confidence, entry, stop, targets
     """
     signals = []
-    
+    cache_key = (str(asset or "").upper().strip(), str(timeframe or "").lower().strip())
+
     # Check if TradingView integration is enabled
     if not _env_bool("TRADINGVIEW_ENABLED", False):
         return signals
-    
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    if time.monotonic() < _CIRCUIT_OPEN_UNTIL:
+        return signals
+
     try:
         from tradingview_ta import TA_Handler, Interval
         
@@ -102,6 +142,9 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
         if asset_upper.endswith(('USDT', 'BUSD', 'USDC', 'BTC', 'ETH')):
             exchange = 'BINANCE'
             symbol = asset_upper  # TradingView expects full pair, e.g., BTCUSDT
+        elif asset_upper in {"XAUUSD", "XAGUSD"}:
+            exchange = 'OANDA'
+            symbol = asset_upper
         elif len(asset_upper) == 6 and asset_upper.isalpha():
             # Forex pair (e.g., EURUSD, GBPUSD)
             exchange = 'FX_IDC'
@@ -141,10 +184,11 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
                         time.sleep(rl_delay)
                         continue
                     else:
-                        logger.error(f"[tradingview] rate_limit_exhausted symbol={symbol} retries={max_rl_retries}")
+                        logger.warning(f"[tradingview] rate_limit_exhausted symbol={symbol} retries={max_rl_retries}")
+                        _open_circuit("rate_limit_exhausted")
                         return signals
                 else:
-                    logger.error(f"[tradingview] error fetching analysis for {symbol}: {e}", exc_info=True)
+                    logger.warning(f"[tradingview] unavailable symbol={symbol} exchange={exchange}: {e}")
                     analysis = None
                     break
         # Fallback: some TradingView listings require base-only symbol (rare). Try that once.
@@ -163,10 +207,12 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
                 analysis = None
 
         if analysis == _RATE_LIMIT:
+            _open_circuit("rate_limit")
             return signals
 
         if analysis is None:
             logger.warning(f"[tradingview] skip symbol_not_found asset={asset_upper} exchange={exchange} tf={timeframe}")
+            _cache_set(cache_key, signals, ttl=_env_float("TRADINGVIEW_NEGATIVE_CACHE_TTL_SECONDS", 90.0))
             return signals
         
         # Extract recommendation
@@ -271,6 +317,7 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
     except Exception as e:
         logger.error(f"[tradingview] Error analyzing {asset} {timeframe}: {e}", exc_info=True)
     
+    _cache_set(cache_key, signals)
     return signals
 
 

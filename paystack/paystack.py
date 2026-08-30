@@ -16,20 +16,21 @@ PAYSTACK_INIT_URL = 'https://api.paystack.co/transaction/initialize'
 _audit_logger: logging.Logger = logging.getLogger("audit")
 
 AMOUNTS = {
-    # Recommended pricing (Nigeria-optimized)
-    'PREMIUM_WEEKLY': 8000,
-    'PREMIUM_MONTHLY': 24000,
-    'PREMIUM_QUARTERLY': 56000,
-    'VIP_MONTHLY': 40000,
-
-    # Legacy/optional weekly pricing (kept for backward compatibility)
-    'VIP_WEEKLY': 16000,
-    'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn']
+    # Environment-backed production catalog.
+    'PREMIUM_WEEKLY': int(os.getenv('PREMIUM_WEEKLY_PRICE_NGN', '8000') or 8000),
+    'PREMIUM_MONTHLY': int(os.getenv('PREMIUM_MONTHLY_PRICE_NGN', '24000') or 24000),
+    'PREMIUM_QUARTERLY': int(os.getenv('PREMIUM_QUARTERLY_PRICE_NGN', '56000') or 56000),
+    'PREMIUM_YEARLY': int(os.getenv('PREMIUM_YEARLY_PRICE_NGN', '192000') or 192000),
+    'VIP_MONTHLY': int(os.getenv('VIP_MONTHLY_PRICE_NGN', os.getenv('VIP_PRICE_NGN', '40000')) or 40000),
+    'VIP_WEEKLY': int(os.getenv('VIP_WEEKLY_PRICE_NGN', '16000') or 16000),
+    'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn'],
 }
+
 DURATIONS = {
     'PREMIUM_WEEKLY': 7,
     'PREMIUM_MONTHLY': 30,
     'PREMIUM_QUARTERLY': 90,
+    'PREMIUM_YEARLY': 365,
     'VIP_MONTHLY': 30,
     'VIP_WEEKLY': 7,
     'WEEKLY_PLAN': WEEKLY_PLAN['duration_days']
@@ -88,9 +89,9 @@ def verify_payment(reference, user_id):
                 if tnorm == "VIP":
                     pass
                 # Amount check for recommended plans
-                if tnorm == "PREMIUM" and amount not in {8000, 24000, 56000}:
+                if tnorm == "PREMIUM" and amount not in {AMOUNTS["PREMIUM_WEEKLY"], AMOUNTS["PREMIUM_MONTHLY"], AMOUNTS["PREMIUM_QUARTERLY"], AMOUNTS["PREMIUM_YEARLY"]}:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
-                if tnorm == "VIP" and amount != 40000:
+                if tnorm == "VIP" and amount != AMOUNTS["VIP_MONTHLY"]:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
                 return False, "❌ Manual verification is no longer supported. Please wait for webhook confirmation.", None
             # Block repeat first-time VIP trial
@@ -117,12 +118,9 @@ def match_amount_to_tier(amount) -> str | None:
     return None
 
 # --- Webhook signature verification ---
-def verify_webhook_signature(request_body, signature) -> bool:
-    secret: str | None = PAYSTACK_WEBHOOK_SECRET or PAYSTACK_SECRET_KEY
-    if not secret:
-        return False
-    computed: str = hmac.new(secret.encode(), request_body, hashlib.sha512).hexdigest()
-    return hmac.compare_digest(computed, signature)
+def verify_webhook_signature(request_body: bytes | str, signature: str | None) -> bool:
+    from payments.paystack_policy import verify_paystack_event_signature
+    return verify_paystack_event_signature(request_body, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
 def generate_paystack_link(
@@ -147,10 +145,24 @@ def generate_paystack_link(
         return "PAYSTACK_SECRET_KEY is not configured."
 
     amount_ngn = int(price)
+    from payments.paystack_policy import evaluate_paystack_operation
+    policy = evaluate_paystack_operation(
+        telegram_user_id=int(user_id),
+        amount_ngn=amount_ngn,
+    )
+    if not policy.allowed:
+        logging.warning(
+            "Paystack checkout blocked user=%s amount_ngn=%s mode=%s reason=%s",
+            user_id, amount_ngn, policy.mode, policy.reason,
+        )
+        return f"Paystack checkout blocked: {policy.reason}."
     amount_kobo: int = max(100, amount_ngn) * 100
 
     metadata: dict[str, int] = {
         "telegram_user_id": int(user_id),
+        "amount_ngn": int(amount_ngn),
+        "paystack_mode": policy.mode,
+        "guarded_staging_live": policy.reason == "guarded_live_staging",
     }
     if plan_code:
         metadata["plan_code"] = str(plan_code)

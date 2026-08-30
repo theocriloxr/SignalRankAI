@@ -14,6 +14,7 @@ Historical Similarity Check
        ↓
 User Delivery
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import logging
@@ -164,7 +165,7 @@ async def check_historical_similarity(
     if not asset:
         return True, 0.0, 0, "no_asset"
     
-    cutoff_date = datetime.utcnow() - timedelta(days=max_age_days)
+    cutoff_date = now_utc_naive() - timedelta(days=max_age_days)
     
     try:
         from db.session import get_session
@@ -262,7 +263,7 @@ async def get_historical_winrate(
     Returns:
         Tuple of (win_rate, total_signals, wins)
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=max_age_days)
+    cutoff_date = now_utc_naive() - timedelta(days=max_age_days)
     
     try:
         from db.session import get_session
@@ -353,7 +354,7 @@ async def get_similar_signals(
     if not asset:
         return []
     
-    cutoff_date = datetime.utcnow() - timedelta(days=180)
+    cutoff_date = now_utc_naive() - timedelta(days=180)
     
     try:
         from db.session import get_session

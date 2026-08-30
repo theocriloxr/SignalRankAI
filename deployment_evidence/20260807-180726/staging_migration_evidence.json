@@ -1,0 +1,7 @@
+{
+  "environment": "staging",
+  "error": "ProgrammingError: invalid dsn: missing \"=\" after \"postgresql+psycopg2://postgres:hAmJIdIhPsyvsGcFmgoNypZnQTDGOuro@postgres-r8lr.railway.internal:5432/railway\" in connection info string\n",
+  "evidence_type": "staging_integration",
+  "finished_at": "2026-08-07T17:07:31.619604+00:00",
+  "status": "BLOCKED"
+}

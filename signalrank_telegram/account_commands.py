@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -182,7 +183,7 @@ async def apikey_command(update, context) -> None:
         from db.session import get_session
         from db.repository import create_api_token
         token = generate_api_key()
-        expires = datetime.utcnow() + timedelta(days=max(1, min(int(ttl_days), 365)))
+        expires = now_utc_naive() + timedelta(days=max(1, min(int(ttl_days), 365)))
         async with get_session() as session:
             await create_api_token(
                 session,

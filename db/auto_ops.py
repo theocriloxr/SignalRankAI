@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 
 import os
@@ -122,7 +123,7 @@ def run_startup_ops(run_mode: str) -> None:
 
         # 1b) Failsafe bootstrap for fresh DBs when migrations are skipped or
         # migration graph differs across branches. create_all is idempotent.
-        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", True):
+        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", False):
             try:
                 from sqlalchemy import create_engine
                 from db.models import Base
@@ -191,6 +192,9 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
+                    "ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS reference VARCHAR(128)",
+                    "ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_rewards_reference ON referral_rewards(reference) WHERE reference IS NOT NULL",
                     # outcomes (0023 migration belt-and-suspenders)
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
@@ -349,16 +353,27 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_timeframe ON decision_log(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_decision ON decision_log(decision)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_created_at ON decision_log(created_at)")
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signal_deliveries_live_proof "
+                    "ON signal_deliveries(signal_id, sent_ok, delivery_state) WHERE sent_ok IS TRUE"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signals_open_expiry "
+                    "ON signals(expired, archived, expires_at, asset, direction)"
+                )
 
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS ml_rejected_signals (
                         id SERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36),
                         asset VARCHAR(32) NOT NULL,
                         timeframe VARCHAR(8) NOT NULL,
                         direction VARCHAR(8) NOT NULL,
@@ -374,6 +389,8 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE ml_rejected_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_signal_id ON ml_rejected_signals(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)")
@@ -411,9 +428,94 @@ def run_startup_ops(run_mode: str) -> None:
                     ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP
                     """
                 )
+
+                # Durable promoted ML artifact — failsafe for migration 0033.
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ml_model_artifacts (
+                        id BIGSERIAL PRIMARY KEY,
+                        model_name VARCHAR(64) NOT NULL DEFAULT 'primary',
+                        model_version VARCHAR(64) NOT NULL,
+                        feature_schema_version VARCHAR(64) NOT NULL DEFAULT '1',
+                        artifact_hash_sha256 VARCHAR(64) NOT NULL,
+                        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        source_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        is_active BOOLEAN NOT NULL DEFAULT FALSE,
+                        trained_at TIMESTAMP NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_ml_model_artifacts_active_name
+                    ON ml_model_artifacts (model_name)
+                    WHERE is_active = TRUE
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS ix_ml_model_artifacts_name_created
+                    ON ml_model_artifacts (model_name, created_at DESC)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS ix_ml_model_artifacts_hash
+                    ON ml_model_artifacts (artifact_hash_sha256)
+                    """
+                )
                 conn.commit()
         except Exception:
             pass
+
+        # 5) Restore the latest promoted model after an ephemeral Railway restart.
+        #    This runs after schema repair and before the live engine begins inference.
+        if _env_bool("ML_RESTORE_ACTIVE_ARTIFACT_ON_STARTUP", True):
+            try:
+                from pathlib import Path
+                from ml.artifact_store import restore_active_model_artifact_sync
+
+                raw_model_path = str(os.getenv("ML_MODEL_PATH") or "").strip()
+                model_path = (
+                    Path(raw_model_path)
+                    if raw_model_path
+                    else Path(__file__).resolve().parents[1] / "ml" / "model.json"
+                )
+                restored = restore_active_model_artifact_sync(
+                    conn, model_path, model_name="primary"
+                )
+                candidate_restored = False
+                candidate_path = Path(
+                    str(
+                        os.getenv("ML_CANDIDATE_MODEL_PATH")
+                        or (Path(__file__).resolve().parents[1] / "ml" / "model_candidate.json")
+                    )
+                )
+                if _env_bool("ML_RESTORE_CANDIDATE_ARTIFACT_ON_STARTUP", True):
+                    candidate_restored = restore_active_model_artifact_sync(
+                        conn, candidate_path, model_name="candidate"
+                    )
+                if restored or candidate_restored:
+                    try:
+                        from engine import ml as engine_ml
+                        reload_status = engine_ml.reload_model() if restored else None
+                        shadow_status = (
+                            engine_ml.reload_shadow_model() if candidate_restored else None
+                        )
+                        print(
+                            "[auto_ops] restored ML artifacts "
+                            f"primary={reload_status} candidate={shadow_status}",
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        print(
+                            f"[auto_ops] restored ML artifact but live reload failed: {exc}",
+                            flush=True,
+                        )
+            except Exception as exc:
+                print(f"[auto_ops] ML artifact restore skipped: {exc}", flush=True)
 
     finally:
         if conn is not None:
@@ -467,7 +569,7 @@ def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
         cur.execute("TRUNCATE " + ",".join(tables) + " RESTART IDENTITY CASCADE")
 
         # Re-create the fresh-start flag in runtime_state
-        now = datetime.utcnow().isoformat() + "Z"
+        now = now_utc_naive().isoformat() + "Z"
         cur.execute(
             "INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (%s, %s::jsonb, NULL, NOW())",
             ("signalrankai:fresh_start_done", '{"done": true, "at": "%s"}' % now),

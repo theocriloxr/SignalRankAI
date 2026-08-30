@@ -16,9 +16,36 @@ _bg_lock = threading.Lock()
 
 
 def _background_workers_disabled() -> bool:
+    """Return whether the shared async bridge is disabled for hermetic tests.
+
+    A stale Railway variable previously forced every scheduler callback through
+    ``asyncio.run()``, creating a new event loop and SQLAlchemy engine on each
+    invocation. Railway always uses the long-lived bridge; only pytest or an
+    explicit non-Railway test process may disable it.
+    """
     if "pytest" in sys.modules:
         return True
-    return str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() in {"1", "true", "yes", "y", "on"}
+    requested = str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() in {"1", "true", "yes", "y", "on"}
+    railway = any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "RAILWAY_SERVICE_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_DEPLOYMENT_ID",
+            "RAILWAY_REPLICA_ID",
+        )
+    )
+    if requested and railway:
+        try:
+            import logging
+            logging.getLogger(__name__).warning(
+                "[async_runner] SIGNALRANK_DISABLE_BACKGROUND_THREADS ignored on Railway; using shared loop"
+            )
+        except Exception:
+            pass
+        return False
+    return requested
 
 def _ensure_background_loop() -> asyncio.AbstractEventLoop:
     """Create (once) and return a dedicated background event loop.

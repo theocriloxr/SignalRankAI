@@ -3,6 +3,8 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from utils.timeutils import now_utc_naive, to_naive_utc
+
 import numpy as np
 import pandas as pd
 
@@ -753,7 +755,12 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
             return False
     
     # Freshness check (integrate tier_constants)
-    created_age = (datetime.utcnow() - signal.get("created_at", datetime.utcnow())).total_seconds()
+    now = now_utc_naive()
+    created_at = signal.get("created_at")
+    if not isinstance(created_at, datetime):
+        created_at = now
+    created_at = to_naive_utc(created_at) or now
+    created_age = (now - created_at).total_seconds()
     tf_mult = float(signal.get("timeframe_mult", CANDLE_STALENESS_MULTIPLIER))
     if created_age > (int(signal.get("timeframe_minutes", 60)) * tf_mult):
         return False

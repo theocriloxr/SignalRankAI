@@ -10,31 +10,9 @@ except Exception:
 
 
 def _infer_run_mode() -> str:
-    """Derive a sensible default RUN_MODE from Railway service naming.
-
-    If RUN_MODE is explicitly set, it wins. Otherwise we look at
-    RAILWAY_SERVICE_NAME/RAILWAY_SERVICE and pick a mode so you can deploy
-    four Railway services without manual env tweaks.
-    """
-
-    explicit = os.getenv("RUN_MODE")
-    if explicit:
-        return explicit.strip().lower()
-
-    service = (os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("RAILWAY_SERVICE") or "").lower()
-    for needle, mode in (
-        ("all", "all"),
-        ("web", "web"),
-        ("bot", "bot"),
-        ("telegram", "bot"),
-        ("worker", "worker"),
-        ("engine", "engine"),
-        ("core", "engine"),
-    ):
-        if needle in service:
-            return mode
-
-    return "engine"
+    """Resolve the canonical role from RUN_MODE or Railway service naming."""
+    from runtime.roles import infer_run_mode
+    return infer_run_mode().value
 
 
 def _check_database_configured() -> bool:
@@ -53,6 +31,27 @@ def _check_database_configured() -> bool:
     except Exception as e:
         print(f"[startup] DB config check failed: {e}", flush=True)
         return False
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _startup_ops_enabled(mode: str) -> bool:
+    explicit = os.getenv("STARTUP_OPS_ENABLED")
+    if explicit is not None:
+        return _env_bool("STARTUP_OPS_ENABLED", False)
+    return mode in {"web", "all", "all/dev"}
+
+
+def _startup_data_selfcheck_enabled(mode: str) -> bool:
+    explicit = os.getenv("STARTUP_DATA_SELFCHECK_ENABLED")
+    if explicit is not None:
+        return _env_bool("STARTUP_DATA_SELFCHECK_ENABLED", False)
+    return mode in {"engine", "all", "all/dev"}
 
 
 def main() -> None:
@@ -93,47 +92,61 @@ def main() -> None:
         f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')} ",
         flush=True,
     )
-    # Run DB migrations and startup ops once per process
-    try:
-        from db.auto_ops import run_startup_ops
-        run_startup_ops("web" if mode == "all" else mode)
-    except Exception:
-        raise
-    try:
-        from data.startup_selfcheck import run_startup_data_selfcheck
-        run_startup_data_selfcheck()
-    except Exception:
-        pass
-    if mode == "all":
+    # Startup maintenance belongs to the front door/pre-deploy path. Dedicated
+    # engine/worker services skip the large idempotent schema patch sweep unless
+    # explicitly opted in, which removes avoidable launch and DB contention.
+    if _startup_ops_enabled(mode):
+        try:
+            from db.auto_ops import run_startup_ops
+            run_startup_ops("web" if mode in {"all", "all/dev", "frontdoor"} else mode)
+        except Exception:
+            raise
+    else:
+        print(f"[startup] startup ops skipped for dedicated role={mode}", flush=True)
+
+    if _startup_data_selfcheck_enabled(mode):
+        try:
+            from data.startup_selfcheck import run_startup_data_selfcheck
+            run_startup_data_selfcheck()
+        except Exception:
+            pass
+    else:
+        print(f"[startup] data self-check skipped for role={mode}", flush=True)
+    if mode in {"all", "all/dev"}:
         # Delegate to railway_main which owns the /telegram/webhook FastAPI route.
         # Running separate per-mode processes (old approach) caused the bot process
         # to register a Telegram webhook URL that the web process (web.app:app,
         # which has no /telegram/webhook route) couldn't serve, producing 404s for
         # every inbound Telegram update.  railway_main bundles web + engine + worker
         # + bot in a single asyncio event loop with correct route registration.
-        import uvicorn
-        port = int(os.getenv("PORT", "8000"))
+        from runtime.all_dev import run as run_all_dev
+        run_all_dev()
+        return
+        # Legacy monolith launch code below is retained for source-level
+        # rollback reference but is unreachable after the adapter return.
         print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
-        uvicorn.run("railway_main:app", host="0.0.0.0", port=port, log_level="info")
+        
+    elif mode == "frontdoor":
+        from runtime.frontdoor import run as run_frontdoor
+        run_frontdoor()
         return
     elif mode == "web":
-        import uvicorn
-        port = int(os.getenv("PORT", "8000"))
-        uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
+        from runtime.web import run as run_web
+        run_web()
         return
     elif mode == "worker":
         from worker.worker import main as worker_main
         worker_main()
         return
     elif mode == "bot":
-        from signalrank_telegram.bot import run_bot as bot_main
-        bot_main()
+        from runtime.bot import run as run_bot
+        run_bot()
         return
-    # engine (default)
-    from engine.core import main_loop
-    from config import config
-    dry_run = config.DRY_RUN
-    main_loop(dry_run)
+    # Kept below for compatibility with the historical branch layout. The
+    # canonical dispatcher is used for every role in the new entrypoint.
+    from runtime.dispatcher import dispatch
+    requested_mode = str(os.getenv("RUN_MODE") or mode).strip().lower()
+    dispatch(requested_mode, legacy_worker=(requested_mode == "worker"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,64 @@
+{
+  "release": "1.5.1",
+  "patch_level": "deployment-final-r4",
+  "alembic_head": "0038_account_security_product",
+  "live_staging_schema_evidence": {
+    "observed": true,
+    "date": "2026-08-07",
+    "head": "0038_account_security_product",
+    "required_schema_gate": "PASS",
+    "credentials_stored": false
+  },
+  "local_certification": {
+    "scope": "HERMETIC_LOCAL_ONLY",
+    "complete_system_ok": true,
+    "pytest_passed": 1365,
+    "pytest_skipped": 1,
+    "pytest_failed": 0,
+    "pytest_errors": 0,
+    "unparsed_batches": 0,
+    "secret_scan_findings": 0,
+    "governance_documents_checked": 24
+  },
+  "safety": {
+    "real_execution_default_disabled": true,
+    "copy_trade_default_disabled": true,
+    "real_payouts_default_disabled": true,
+    "public_payments_staging_disabled": true,
+    "fixed_win_rate_claimed": false
+  },
+  "changed_or_added_files": [
+    "db/ecosystem_bootstrap.py",
+    "tools/bootstrap_ecosystem.py",
+    "data/instrument_discovery.py",
+    "data/database_universe.py",
+    "core/version.py",
+    "scripts/staging_migrate_and_bootstrap.py",
+    "scripts/staging_runtime_proof.py",
+    "scripts/railway_finish_staging.ps1",
+    "scripts/railway_certify_staging_runtime.ps1",
+    "scripts/railway_certify_staging_soak.ps1",
+    "tests/test_ecosystem_bootstrap_asyncpg_types.py",
+    "tests/test_deployment_schema_completion_v151.py",
+    "tests/test_v22_provider_expansion.py",
+    "tests/test_unified_platform_artifacts.py",
+    "STAGING_COMPLETION_R4.md",
+    "DEPLOYMENT_REMEDIATION_REPORT_V151.md",
+    "DEPLOYMENT_FINAL_R4_VALIDATION.md",
+    "CURRENT_RELEASE.md",
+    "BLOCKED_EXTERNAL_REQUIREMENTS_V151.md"
+  ],
+  "external_runtime_evidence_required": true,
+  "external_boundary": [
+    "upload/run R4 in authenticated Railway staging",
+    "fresh qualifying signal and confirmed Telegram delivery",
+    "fresh paper position derived from confirmed delivery",
+    "Paystack staging transaction/receipt when payment certification is requested",
+    "SMTP sent-email proof when email certification is requested",
+    "24-hour elapsed staging soak",
+    "provider credentials/rights for asset classes requiring them",
+    "backup/restore, failover and penetration-test evidence",
+    "legal/compliance approval",
+    "statistically defensible trading-performance evidence"
+  ]
+}

@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from datetime import datetime, timedelta
 from typing import Iterable, Dict, Any
 import pandas as pd
@@ -402,7 +403,7 @@ class WalkForwardOptimizer:
                 artifact_hash = compute_model_hash_from_b64(model_b64)
                 meta = {
                     'version': os.getenv('ML_MODEL_VERSION', 'wfo-trained'),
-                    'trained_at': datetime.utcnow().isoformat(),
+                    'trained_at': now_utc_naive().isoformat(),
                     'xgboost_version': getattr(xgb, '__version__', '') if xgb is not None else '',
                     'artifact_hash_sha256': artifact_hash,
                 }

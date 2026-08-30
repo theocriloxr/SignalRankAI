@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Script to fix extra whitespace lines in class definition"""
+from utils.timeutils import now_utc_naive
 
 with open('engine/core.py', 'r', encoding='utf-8') as f:
     content = f.read()
@@ -19,7 +20,7 @@ old_block = '''    class _FallbackThresholdOptimizer:
                 'ml_prob_threshold': self.get_threshold(),
                 'min_score_threshold': 70.0,
                 'confluence_min': 0.0,
-                'last_updated': datetime.utcnow(),
+                'last_updated': now_utc_naive(),
                 'source': 'env',
             })()
     '''
@@ -37,7 +38,7 @@ new_block = '''    class _FallbackThresholdOptimizer:
                 'ml_prob_threshold': self.get_threshold(),
                 'min_score_threshold': 70.0,
                 'confluence_min': 0.0,
-                'last_updated': datetime.utcnow(),
+                'last_updated': now_utc_naive(),
                 'source': 'env',
             })()
     '''

@@ -1,0 +1,25 @@
+{
+  "release": "1.5.1",
+  "patch_level": "deployment-final-r4",
+  "files": [
+    "db/ecosystem_bootstrap.py",
+    "tools/bootstrap_ecosystem.py",
+    "data/instrument_discovery.py",
+    "data/database_universe.py",
+    "core/version.py",
+    "scripts/staging_migrate_and_bootstrap.py",
+    "scripts/staging_runtime_proof.py",
+    "scripts/railway_finish_staging.ps1",
+    "scripts/railway_certify_staging_runtime.ps1",
+    "scripts/railway_certify_staging_soak.ps1",
+    "tests/test_ecosystem_bootstrap_asyncpg_types.py",
+    "tests/test_deployment_schema_completion_v151.py",
+    "tests/test_v22_provider_expansion.py",
+    "tests/test_unified_platform_artifacts.py",
+    "STAGING_COMPLETION_R4.md",
+    "DEPLOYMENT_REMEDIATION_REPORT_V151.md",
+    "DEPLOYMENT_FINAL_R4_VALIDATION.md",
+    "CURRENT_RELEASE.md",
+    "BLOCKED_EXTERNAL_REQUIREMENTS_V151.md"
+  ]
+}
