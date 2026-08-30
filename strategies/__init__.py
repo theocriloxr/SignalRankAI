@@ -42,6 +42,10 @@ except ImportError:
 
 def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime_strategies=None):
     signals = []
+    from services.asset_registry import classify_asset
+    from .capabilities import supported_groups
+
+    asset_class = classify_asset(asset)
 
     # Multi-timeframe bias: get higher timeframe (HTF) bias for each asset
     def get_htf_bias(market_data):
@@ -96,6 +100,34 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         if 'indicators' not in data or 'candles' not in data:
             continue
 
+        # Fail closed before any strategy sees bad or ambiguous market data.
+        # Expected exchange/session closures are class-aware; genuine gaps,
+        # duplicates, impossible OHLC, staleness and timezone faults quarantine
+        # this instrument/timeframe for the cycle.
+        try:
+            from market.data_quality_certification import certify_market_candles
+
+            quality = certify_market_candles(
+                data.get('candles') or [],
+                asset_class=asset_class,
+                timeframe=timeframe,
+                provider=str(data.get('source') or data.get('provider') or 'unknown'),
+                data_age_seconds=data.get('data_age_seconds'),
+                metadata=data.get('metadata') or {},
+            )
+            data['data_quality_certification'] = quality.as_dict()
+            if not quality.usable:
+                logger.warning(
+                    "[market_data_quarantine] asset=%s class=%s timeframe=%s provider=%s reasons=%s",
+                    asset, quality.asset_class, timeframe,
+                    data.get('source') or data.get('provider') or 'unknown',
+                    list(quality.reasons),
+                )
+                continue
+        except (TypeError, ValueError) as exc:
+            logger.warning("[market_data_quarantine] asset=%s timeframe=%s certification_error=%s", asset, timeframe, exc)
+            continue
+
         # Only allow lower timeframe trades in direction of HTF bias
         # TEMPORARILY relaxed - was causing signals to be filtered when HTF bias doesn't match
         # if timeframe in ["5m", "15m", "1h"] and htf_bias:
@@ -143,6 +175,11 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     exc,
                     exc_info=True,
                 )
+
+        # Enforce the explicit strategy × class × timeframe × regime matrix.
+        # Unsupported groups are never invoked and therefore cannot leak
+        # stock assumptions into crypto (or any other class).
+        groups = supported_groups(groups, asset_class, timeframe, regime)
 
         # Run main strategy groups
         if "trend" in groups:

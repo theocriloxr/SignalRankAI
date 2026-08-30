@@ -53,6 +53,14 @@ def test_symbol_exposure_limit() -> None:
     assert decision.reason == "symbol_exposure_limit"
 
 
+def test_conservative_risk_per_trade_limit() -> None:
+    authority = _authority()
+    candidate = TradeCandidate(symbol="BTCUSDT", direction="long", notional="50", entry="100", stop="80")
+    decision = authority.evaluate(candidate)
+    assert not decision.approved
+    assert decision.reason == "risk_per_trade_limit"
+
+
 def test_account_exposure_limit() -> None:
     # Symbol cap raised to 10% so a single symbol can carry enough notional to
     # trip the 20% account-exposure cap.
