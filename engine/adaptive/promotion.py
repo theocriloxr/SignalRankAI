@@ -11,9 +11,12 @@ class PromotionGateResult:
 
 
 _ALLOWED_TRANSITIONS = {
-    "SHADOW": {"FORWARD_TEST"},
-    "FORWARD_TEST": {"CANARY"},
+    "RESEARCH": {"SHADOW"},
+    "SHADOW": {"FORWARD_TEST", "PAPER"},
+    "FORWARD_TEST": {"PAPER", "CANARY"},
+    "PAPER": {"CANARY", "LIMITED_LIVE"},
     "CANARY": {"LIMITED_LIVE"},
+    "LIMITED_LIVE": {"NORMAL_PRODUCTION"},
 }
 
 
@@ -51,7 +54,7 @@ def evaluate_profile_promotion(
         reasons.append("walk_forward_leakage_check_failed")
     if not human_approved:
         reasons.append("human_approval_required")
-    if target not in {"FORWARD_TEST", "CANARY", "LIMITED_LIVE"}:
+    if target not in {"SHADOW", "FORWARD_TEST", "PAPER", "CANARY", "LIMITED_LIVE", "NORMAL_PRODUCTION"}:
         reasons.append("unsafe_target_state")
     if current is not None and target not in _ALLOWED_TRANSITIONS.get(current, set()):
         reasons.append(f"invalid_transition:{current}->{target}")

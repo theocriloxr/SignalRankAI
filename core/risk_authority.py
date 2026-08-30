@@ -52,6 +52,7 @@ class RiskLimits:
     max_spread_bps: Decimal = Decimal("50")
     max_slippage_bps: Decimal = Decimal("25")
     max_volatility_pct: Decimal = Decimal("0.30")
+    max_risk_per_trade_pct: Decimal = Decimal("0.005")
 
     def __post_init__(self) -> None:
         for attr in (
@@ -62,6 +63,7 @@ class RiskLimits:
             "max_spread_bps",
             "max_slippage_bps",
             "max_volatility_pct",
+            "max_risk_per_trade_pct",
         ):
             value = getattr(self, attr)
             parsed = _decimal(value, attr)
@@ -82,6 +84,7 @@ class RiskLimits:
             max_spread_bps=Decimal(str(_env_float("RISK_MAX_SPREAD_BPS", 50))),
             max_slippage_bps=Decimal(str(_env_float("RISK_MAX_SLIPPAGE_BPS", 25))),
             max_volatility_pct=Decimal(str(_env_float("RISK_MAX_VOLATILITY_PCT", 0.30))),
+            max_risk_per_trade_pct=Decimal(str(_env_float("RISK_MAX_PER_TRADE_PCT", 0.005))),
         )
 
 
@@ -221,6 +224,14 @@ class PortfolioRiskAuthority:
             return RiskDecision(
                 False, "symbol_exposure_limit", tuple(checks), account_exposure
             )
+        entry = _decimal(candidate.entry, "entry")
+        stop = _decimal(candidate.stop, "stop")
+        if entry <= 0 or stop <= 0 or entry == stop:
+            return RiskDecision(False, "invalid_stop_geometry", tuple(checks), account_exposure)
+        stop_risk = notional * abs(entry - stop) / entry
+        risk_fraction = stop_risk / self.equity if self.equity > 0 else Decimal("0")
+        if risk_fraction > self.limits.max_risk_per_trade_pct:
+            return RiskDecision(False, "risk_per_trade_limit", tuple(checks), account_exposure)
         checks.append("exposure")
 
         spread = _bps(candidate.spread_bps)

@@ -2240,19 +2240,20 @@ def main_loop(DRY_RUN: bool = False):
                     from db.session import get_session as _get_universe_session
                     from utils.async_runner import run_sync as _run_universe_sync
 
+                    _requested_universe_classes = (
+                        list(getattr(_profile_demand_snapshot, "asset_classes", ()) or ())
+                        if _profile_demand_snapshot is not None else []
+                    )
+
                     async def _fetch_database_universe():
                         async with _get_universe_session(
                             priority="background",
                             label="engine.database_universe",
                             timeout_seconds=4.0,
                         ) as _universe_session:
-                            requested_classes = (
-                                list(getattr(_profile_demand_snapshot, "asset_classes", ()) or ())
-                                if _profile_demand_snapshot is not None else []
-                            )
                             return await load_database_universe(
                                 _universe_session,
-                                asset_classes=requested_classes,
+                                asset_classes=_requested_universe_classes,
                                 limit=max(20, _env_int("ENGINE_DATABASE_UNIVERSE_LIMIT", 250)),
                             )
 
@@ -2263,6 +2264,25 @@ def main_loop(DRY_RUN: bool = False):
                             timeout=float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "7") or 7),
                         ) or [])
                     ]
+                    from data.class_universe import build_class_complete_universe, default_discoverers
+
+                    _discovered_assets, _class_universe_health = build_class_complete_universe(
+                        _discovered_assets,
+                        enabled_classes=_requested_universe_classes or sorted(_enabled_asset_classes()),
+                        discoverers=default_discoverers(),
+                    )
+                    for _class_name, _class_health in _class_universe_health.items():
+                        logger.info(
+                            "[engine_universe_class] class=%s configured=%s discovered=%s candle_capable=%s usable=%s source=%s degraded=%s failure=%s",
+                            _class_name,
+                            _class_health.configured_count,
+                            _class_health.discovered_count,
+                            _class_health.candle_capable_count,
+                            _class_health.usable_count,
+                            _class_health.source,
+                            _class_health.degraded,
+                            _class_health.failure_reason,
+                        )
                     _universe_source = "database_registry"
                 except Exception as _database_universe_error:
                     logger.warning(

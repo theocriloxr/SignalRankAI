@@ -108,6 +108,16 @@ class PerformanceMetrics:
     confidence_high: float = 0.0
 
 
+def _wilson_interval(successes: int, total: int, *, z: float = 1.96) -> tuple[float, float]:
+    if total <= 0:
+        return 0.0, 0.0
+    rate = max(0, min(total, successes)) / total
+    denominator = 1 + z * z / total
+    centre = (rate + z * z / (2 * total)) / denominator
+    spread = z * ((rate * (1 - rate) / total + z * z / (4 * total * total)) ** 0.5) / denominator
+    return max(0.0, centre - spread), min(1.0, centre + spread)
+
+
 def compute_metrics(outcomes: Sequence[Mapping[str, Any] | float]) -> PerformanceMetrics:
     values: list[float] = []
     tp_counts = {"tp1": 0, "tp2": 0, "tp3": 0}
@@ -148,14 +158,7 @@ def compute_metrics(outcomes: Sequence[Mapping[str, Any] | float]) -> Performanc
         drawdown = max(drawdown, peak - equity)
     # Wilson interval is deliberately conservative for sparse samples and is
     # suitable for public reports without claiming a point estimate is truth.
-    if n:
-        z = 1.96
-        denominator = 1 + z * z / n
-        centre = (wins / n + z * z / (2 * n)) / denominator
-        spread = z * ((wins / n * (1 - wins / n) / n + z * z / (4 * n * n)) ** 0.5) / denominator
-        confidence_low, confidence_high = max(0.0, centre - spread), min(1.0, centre + spread)
-    else:
-        confidence_low = confidence_high = 0.0
+    confidence_low, confidence_high = _wilson_interval(wins, n)
     return PerformanceMetrics(
         sample_size=n,
         wins=wins,
@@ -184,6 +187,75 @@ class PromotionDecision:
     reasons: tuple[str, ...]
     metrics: PerformanceMetrics
     manifest_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublicClaimDecision:
+    certified: bool
+    reasons: tuple[str, ...]
+    metrics: PerformanceMetrics
+    unique_theses: int
+    delivered_signals: int
+    terminal_signals: int
+    outcome_coverage: float
+    strict_tp3_win_rate: float
+    strict_confidence_low: float
+
+
+def evaluate_public_win_rate_claim(
+    outcomes: Sequence[Mapping[str, Any]],
+    *,
+    approved_drawdown_limit_r: float,
+    minimum_win_rate_lower_bound: float = 0.70,
+) -> PublicClaimDecision:
+    """Certify a public win-rate claim from unique, delivered OOS theses only."""
+    delivered = [row for row in outcomes if bool(row.get("delivered")) and bool(row.get("out_of_sample"))]
+    thesis_ids = {str(row.get("thesis_fingerprint") or "") for row in delivered if row.get("thesis_fingerprint")}
+    terminal_states = {"tp3", "stop_loss", "sl", "partial_profit", "breakeven", "expired", "cancelled", "data_unavailable"}
+    seen: set[str] = set()
+    terminal: list[Mapping[str, Any]] = []
+    for row in delivered:
+        thesis = str(row.get("thesis_fingerprint") or "")
+        state = str(row.get("state") or row.get("outcome") or "").lower()
+        if not thesis or thesis in seen or state not in terminal_states:
+            continue
+        seen.add(thesis)
+        terminal.append(row)
+    metrics = compute_metrics(terminal)
+    strict_wins = sum(
+        1
+        for row in terminal
+        if str(row.get("state") or row.get("outcome") or "").lower() == "tp3"
+    )
+    strict_rate = strict_wins / len(terminal) if terminal else 0.0
+    strict_confidence_low = _wilson_interval(strict_wins, len(terminal))[0]
+    coverage = len(terminal) / len(delivered) if delivered else 0.0
+    reasons: list[str] = []
+    if len(terminal) < 200:
+        reasons.append("minimum_200_terminal_delivered_oos_signals")
+    if len(thesis_ids) < 100:
+        reasons.append("minimum_100_unique_theses")
+    if coverage < 0.95:
+        reasons.append("outcome_coverage_below_95_percent")
+    if strict_confidence_low < minimum_win_rate_lower_bound:
+        reasons.append("wilson_lower_bound_below_70_percent")
+    if metrics.expectancy_r <= 0:
+        reasons.append("non_positive_after_cost_expectancy")
+    if metrics.profit_factor <= 1.0:
+        reasons.append("profit_factor_not_positive")
+    if metrics.max_drawdown_r > float(approved_drawdown_limit_r):
+        reasons.append("approved_drawdown_limit_exceeded")
+    return PublicClaimDecision(
+        certified=not reasons,
+        reasons=tuple(reasons),
+        metrics=metrics,
+        unique_theses=len(thesis_ids),
+        delivered_signals=len(delivered),
+        terminal_signals=len(terminal),
+        outcome_coverage=coverage,
+        strict_tp3_win_rate=strict_rate,
+        strict_confidence_low=strict_confidence_low,
+    )
 
 
 def evaluate_promotion(
@@ -259,10 +331,12 @@ __all__ = [
     "EvidenceManifest",
     "PerformanceMetrics",
     "PromotionDecision",
+    "PublicClaimDecision",
     "SCHEMA_VERSION",
     "build_manifest",
     "compute_metrics",
     "evaluate_promotion",
+    "evaluate_public_win_rate_claim",
     "register_candidate",
     "purged_walk_forward_splits",
 ]
