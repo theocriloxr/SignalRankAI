@@ -8,6 +8,7 @@ from db.models import User, SignalDelivery, Outcome, MT5Execution
 from engine.tiered_executor import PREMIUM_DAILY_LIMIT, reset_daily_counter_if_needed
 from engine.risk_analytics import sharpe_ratio, sortino_ratio
 from signalrank_telegram.utils import tier_rank, _effective_tier, _build_dynamic_menu
+from signalrank_telegram.command_resilience import safe_command_error
 
 async def performance_command(update, context):
     """30-day performance summary."""
@@ -165,7 +166,7 @@ async def history_command(update, context):
         return
     except Exception as exc:
         if update.message is not None:
-            await update.message.reply_text(f"❌ Could not load history: {exc}")
+            await update.message.reply_text(safe_command_error("Could not load signal history.", exc))
 
 async def apikey_command(update, context) -> None:
     """Generate or rotate API key for /signals web endpoint."""

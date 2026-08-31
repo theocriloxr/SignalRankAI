@@ -179,6 +179,19 @@ def score_signal(signal):
         confluence_score = calculate_confluence(signal)
     if confluence_score is not None and confluence_score < confluence_min:
         return 0.0
+
+    candle_evidence = signal.get("candle_evidence") if isinstance(signal.get("candle_evidence"), dict) else {}
+    candle_score = signal.get("candle_evidence_score", candle_evidence.get("evidence_score_pct"))
+    try:
+        candle_component = min(max(float(candle_score) / 100.0, 0.0), 1.0) if candle_score is not None else None
+    except (TypeError, ValueError):
+        candle_component = None
+    if candle_component is not None and _env_bool("CANDLE_EVIDENCE_HARD_GATE_ENABLED", False):
+        candle_min = _env_float("CANDLE_EVIDENCE_GATE_MIN", 55.0) / 100.0
+        alignment = str(signal.get("candle_evidence_alignment") or candle_evidence.get("alignment") or "")
+        confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "")
+        if alignment == "conflicting" or confirmation == "invalidated" or candle_component < candle_min:
+            return 0.0
     
     # Target: 0..100 score
     confidence = resolve_confidence_ratio(signal)
@@ -213,6 +226,7 @@ def score_signal(signal):
     weight_rr = _env_float("SCORE_WEIGHT_RR", 0.3)
     weight_vol = _env_float("SCORE_WEIGHT_VOL", 0.2)
     weight_confli = _env_float("SCORE_WEIGHT_CONFLUENCE", 0.2)
+    weight_candle = max(0.0, _env_float("SCORE_WEIGHT_CANDLE_EVIDENCE", 0.10))
 
     components: dict[str, tuple[float, float]] = {
         "rr": (rr_component, weight_rr),
@@ -222,6 +236,8 @@ def score_signal(signal):
         components["confidence"] = (confidence, weight_conf)
     if confluence_score is not None:
         components["confluence"] = (min(max(confluence_score / 100.0, 0.0), 1.0), weight_confli)
+    if candle_component is not None and weight_candle > 0:
+        components["candle_evidence"] = (candle_component, weight_candle)
 
     total_weight = sum(weight for _, weight in components.values()) if components else 0.0
     if total_weight <= 0:

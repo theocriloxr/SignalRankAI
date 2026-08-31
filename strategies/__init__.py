@@ -40,12 +40,66 @@ except ImportError:
     tradingview_strategies = None
 
 
+def _certified_strategy_market_data(asset, asset_class, market_data):
+    """Return only candle timeframes that passed the shared quality contract."""
+    from market.data_quality_certification import certify_market_candles
+
+    certified = {
+        key: value
+        for key, value in (market_data or {}).items()
+        if str(key).startswith("_")
+    }
+    for timeframe, data in (market_data or {}).items():
+        if str(timeframe).startswith("_") or not isinstance(data, dict):
+            continue
+        if "indicators" not in data or "candles" not in data:
+            continue
+        try:
+            quality = certify_market_candles(
+                data.get("candles") or [],
+                asset_class=asset_class,
+                timeframe=timeframe,
+                provider=str(data.get("source") or data.get("provider") or "unknown"),
+                data_age_seconds=data.get("data_age_seconds"),
+                metadata=data.get("metadata") or {},
+            )
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "[market_data_quarantine] asset=%s timeframe=%s certification_error=%s",
+                asset,
+                timeframe,
+                exc,
+            )
+            continue
+        data["data_quality_certification"] = quality.as_dict()
+        if not quality.usable:
+            logger.warning(
+                "[market_data_quarantine] asset=%s class=%s timeframe=%s provider=%s reasons=%s",
+                asset,
+                quality.asset_class,
+                timeframe,
+                data.get("source") or data.get("provider") or "unknown",
+                list(quality.reasons),
+            )
+            continue
+        certified[timeframe] = data
+    return certified
+
+
 def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime_strategies=None):
     signals = []
     from services.asset_registry import classify_asset
     from .capabilities import supported_groups
 
     asset_class = classify_asset(asset)
+    market_data = _certified_strategy_market_data(asset, asset_class, market_data)
+    if not any(
+        isinstance(value, dict) and value.get("candles")
+        for key, value in market_data.items()
+        if not str(key).startswith("_")
+    ):
+        logger.warning("[strategies] asset=%s skipped=no_certified_market_data", asset)
+        return []
 
     # Multi-timeframe bias: get higher timeframe (HTF) bias for each asset
     def get_htf_bias(market_data):
@@ -98,34 +152,6 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         if not isinstance(data, dict):
             continue
         if 'indicators' not in data or 'candles' not in data:
-            continue
-
-        # Fail closed before any strategy sees bad or ambiguous market data.
-        # Expected exchange/session closures are class-aware; genuine gaps,
-        # duplicates, impossible OHLC, staleness and timezone faults quarantine
-        # this instrument/timeframe for the cycle.
-        try:
-            from market.data_quality_certification import certify_market_candles
-
-            quality = certify_market_candles(
-                data.get('candles') or [],
-                asset_class=asset_class,
-                timeframe=timeframe,
-                provider=str(data.get('source') or data.get('provider') or 'unknown'),
-                data_age_seconds=data.get('data_age_seconds'),
-                metadata=data.get('metadata') or {},
-            )
-            data['data_quality_certification'] = quality.as_dict()
-            if not quality.usable:
-                logger.warning(
-                    "[market_data_quarantine] asset=%s class=%s timeframe=%s provider=%s reasons=%s",
-                    asset, quality.asset_class, timeframe,
-                    data.get('source') or data.get('provider') or 'unknown',
-                    list(quality.reasons),
-                )
-                continue
-        except (TypeError, ValueError) as exc:
-            logger.warning("[market_data_quarantine] asset=%s timeframe=%s certification_error=%s", asset, timeframe, exc)
             continue
 
         # Only allow lower timeframe trades in direction of HTF bias
@@ -247,17 +273,24 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         try:
             # Get a single timeframe data for fallback (use first available)
             tf_data = None
+            fallback_timeframe = None
             for tf in ["1h", "4h", "1d"]:
                 if tf in market_data:
                     tf_data = market_data[tf]
+                    fallback_timeframe = tf
                     break
             
             if tf_data is None:
                 # Use first available timeframe
-                tf_data = list(market_data.values())[0] if market_data else {}
+                for tf, candidate_data in market_data.items():
+                    if str(tf).startswith("_") or not isinstance(candidate_data, dict):
+                        continue
+                    tf_data = candidate_data
+                    fallback_timeframe = tf
+                    break
             
             if tf_data and isinstance(tf_data, dict):
-                fallback_sigs = fallback_strategies(asset, timeframe, tf_data)
+                fallback_sigs = fallback_strategies(asset, fallback_timeframe or "1h", tf_data)
                 for sig in fallback_sigs:
                     sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
                     sig['is_fallback'] = True  # Mark as fallback
@@ -268,5 +301,35 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         except Exception as e:
             logger.debug(f"[strategies] Fallback strategies error: {e}")
             pass
+
+    # Attach one consistent, auditable candlestick interpretation to every
+    # strategy family. This is evidence enrichment; optional score/gate policy
+    # is centralized in engine.scoring so individual strategies cannot quietly
+    # redefine what a wick, close or confirmation means.
+    if _env_bool("CANDLE_EVIDENCE_ENABLED", True):
+        try:
+            from core.candle_evidence import attach_candle_evidence
+
+            evidence_counts = {"supportive": 0, "mixed": 0, "conflicting": 0}
+            for sig in signals:
+                signal_tf = str(sig.get("timeframe") or "")
+                tf_data = market_data.get(signal_tf, {}) if signal_tf else {}
+                candles = tf_data.get("candles", []) if isinstance(tf_data, dict) else []
+                if not candles:
+                    continue
+                attach_candle_evidence(sig, candles)
+                alignment = str(sig.get("candle_evidence_alignment") or "mixed")
+                evidence_counts[alignment] = evidence_counts.get(alignment, 0) + 1
+            if signals:
+                logger.debug(
+                    "[candle_evidence] asset=%s signals=%s supportive=%s mixed=%s conflicting=%s",
+                    asset,
+                    len(signals),
+                    evidence_counts.get("supportive", 0),
+                    evidence_counts.get("mixed", 0),
+                    evidence_counts.get("conflicting", 0),
+                )
+        except Exception as exc:
+            logger.warning("[candle_evidence] enrichment failed asset=%s error=%s", asset, exc, exc_info=True)
     
     return signals

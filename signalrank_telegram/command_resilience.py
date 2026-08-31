@@ -5,6 +5,8 @@ import logging
 import os
 import threading
 import time
+import traceback
+import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -139,3 +141,31 @@ def schedule_background_task(awaitable: Awaitable[Any], *, name: str) -> asyncio
 
     task.add_done_callback(_completed)
     return task
+
+
+def safe_command_error(action: str, exc: BaseException) -> str:
+    """Log full command failure details and return a safe, actionable reply.
+
+    Raw provider, database, and credential-bearing exception messages must not
+    be copied into Telegram. The short reference lets operators correlate the
+    user report with the full server-side traceback.
+    """
+    reference = f"CMD-{uuid.uuid4().hex[:8].upper()}"
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        guidance = "The request timed out. Please retry in a moment."
+    elif isinstance(exc, PermissionError):
+        guidance = "The operation was denied. Check your account access or contact support."
+    elif isinstance(exc, (ConnectionError, OSError)):
+        guidance = "A required service is temporarily unavailable. Please retry shortly."
+    elif isinstance(exc, ValueError):
+        guidance = "The supplied value could not be processed. Check the command format and retry."
+    else:
+        guidance = "The request could not be completed. Please retry or send this reference to /support."
+    logger.error(
+        "command failure reference=%s action=%s error_type=%s traceback=%s",
+        reference,
+        str(action),
+        type(exc).__name__,
+        " | ".join(line.strip() for line in traceback.format_tb(exc.__traceback__))[:2000] or "unavailable",
+    )
+    return f"❌ {str(action).strip()}\n{guidance}\nReference: {reference}"

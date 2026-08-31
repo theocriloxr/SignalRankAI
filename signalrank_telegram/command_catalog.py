@@ -58,6 +58,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("disclaimer", "Read the financial-risk disclaimer", "FREE", "Support"),
     CommandSpec("myid", "Show your Telegram ID and tier", "FREE", "Support"),
     CommandSpec("language", "Change notification language", "FREE", "Preferences"),
+    CommandSpec("timezone", "Set the timezone used for signal times", "FREE", "Preferences"),
+    CommandSpec("settings", "Review account and timezone preferences", "FREE", "Preferences"),
     # Premium
     CommandSpec("performance", "Delivered-signal performance with provenance", "PREMIUM", "Analytics"),
     CommandSpec("stats", "Win rate, R multiples, and sample size", "PREMIUM", "Analytics"),
@@ -130,12 +132,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("release_status", "Show release fingerprint and runtime version", "OWNER", "Owner"),
     CommandSpec("kill_switch", "Inspect or toggle the global kill switch", "OWNER", "Owner"),
     CommandSpec("system_health", "Summarize DB/Redis/runtime safety health", "ADMIN", "Admin"),
-    CommandSpec("why_no_signal", "Explain the most recent signal rejections", "OWNER", "Owner diagnostics"),
-    CommandSpec("delivery_eligibility", "Inspect a user's delivery eligibility", "OWNER", "Owner diagnostics"),
-    CommandSpec("ohlc_health", "Inspect OHLC provider coverage", "OWNER", "Owner diagnostics"),
-    CommandSpec("asset_capability", "Inspect one asset's runtime capability", "OWNER", "Owner diagnostics"),
-    CommandSpec("asset_class_test", "Run asset-class routing checks", "OWNER", "Owner diagnostics"),
-    CommandSpec("all_asset_test_status", "View the all-asset certification status", "OWNER", "Owner diagnostics"),
+    CommandSpec("why_no_signal", "Explain the most recent signal rejections", "ADMIN", "Admin diagnostics"),
+    CommandSpec("delivery_eligibility", "Inspect a user's delivery eligibility", "ADMIN", "Admin diagnostics"),
+    CommandSpec("ohlc_health", "Inspect OHLC provider coverage", "ADMIN", "Admin diagnostics"),
+    CommandSpec("asset_capability", "Inspect one asset's runtime capability", "ADMIN", "Admin diagnostics"),
+    CommandSpec("asset_class_test", "Run asset-class routing checks", "ADMIN", "Admin diagnostics"),
+    CommandSpec("all_asset_test_status", "View the all-asset certification status", "ADMIN", "Admin diagnostics"),
     CommandSpec("owner_test_delivery", "Send one audited owner test delivery", "OWNER", "Owner diagnostics"),
 )
 

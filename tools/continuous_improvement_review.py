@@ -12,12 +12,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate a recommendation-only SignalRankAI research review")
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--external-openai", action="store_true", help="Opt in to aggregate-only OpenAI review")
+    parser.add_argument("--external-gemini", action="store_true", help="Opt in to aggregate-only Gemini review")
     parser.add_argument("--output-dir", default="artifacts/continuous-improvement")
     args = parser.parse_args()
     report, paths = asyncio.run(
         run_weekly_review(
             days=max(1, args.days),
             request_external=bool(args.external_openai),
+            request_gemini=bool(args.external_gemini),
             output_dir=Path(args.output_dir),
         )
     )

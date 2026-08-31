@@ -17,9 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def _session():
-    from db.session import session_scope
+    """Return the synchronous session required by these synchronous helpers."""
+    from db.session import get_sync_session
 
-    return session_scope()
+    return get_sync_session()
 
 
 def _now_sql() -> str:
@@ -39,10 +40,8 @@ def mark_telegram_unreachable(
     happens only via a fresh inbound update or an owner command.
     """
     try:
-        from db.session import get_session
-
         if session is None:
-            with get_session() as sess:
+            with _session() as sess:
                 return _apply(sess, telegram_user_id, reason)
         return _apply(session, telegram_user_id, reason)
     except Exception as exc:  # noqa: BLE001
@@ -74,9 +73,7 @@ def is_telegram_reachable(telegram_user_id: int, *, session: Any = None) -> bool
         from sqlalchemy import text
 
         if session is None:
-            from db.session import get_session
-
-            with get_session() as sess:
+            with _session() as sess:
                 return _query_reachable(sess, telegram_user_id)
         return _query_reachable(session, telegram_user_id)
     except Exception as exc:  # noqa: BLE001
@@ -115,9 +112,7 @@ def record_outcome_correction(
         from sqlalchemy import text
 
         if session is None:
-            from db.session import get_session
-
-            with get_session() as sess:
+            with _session() as sess:
                 return _insert_correction(sess, signal_id, original_outcome, corrected_outcome, reason, evidence, source)
         return _insert_correction(session, signal_id, original_outcome, corrected_outcome, reason, evidence, source)
     except Exception as exc:  # noqa: BLE001 - unique-violation conflicts are expected
@@ -165,9 +160,7 @@ def upsert_terminal_suppression(
         from sqlalchemy import text
 
         if session is None:
-            from db.session import get_session
-
-            with get_session() as sess:
+            with _session() as sess:
                 return _insert_suppression(sess, notification_key, canonical_notification_id, reason)
         return _insert_suppression(session, notification_key, canonical_notification_id, reason)
     except Exception as exc:  # noqa: BLE001
@@ -205,9 +198,7 @@ def suppression_keys(
         from sqlalchemy import text
 
         if session is None:
-            from db.session import get_session
-
-            with get_session() as sess:
+            with _session() as sess:
                 return _query_suppressions(sess, terminal_only)
         return _query_suppressions(session, terminal_only)
     except Exception as exc:  # noqa: BLE001

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,8 @@ from .audit_store import write_review_artifacts
 from .collector import collect_weekly_snapshot
 from .recommendation_schema import ReviewReport
 from .reviewer import review_snapshot
+
+logger = logging.getLogger(__name__)
 
 
 def _git_sha() -> str:
@@ -31,15 +34,45 @@ def detect_incidents(snapshot: dict[str, Any]) -> tuple[dict[str, Any], ...]:
     return tuple(incidents)
 
 
+async def _persist_latest_review(report: ReviewReport) -> None:
+    """Persist the anonymized review so container replacement does not erase learning lineage."""
+    try:
+        from sqlalchemy import text
+
+        from db.session import get_session, is_db_configured
+
+        if not is_db_configured():
+            return
+        async with get_session() as session:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                    VALUES ('continuous_improvement_last_review', CAST(:value AS JSONB), NULL, NOW())
+                    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
+                    """
+                ),
+                {"value": json.dumps(report.as_dict(), default=str)},
+            )
+            await session.commit()
+    except Exception:
+        logger.warning("[continuous_improvement] latest review persistence failed", exc_info=True)
+
+
 async def run_weekly_review(
     *,
     days: int = 7,
     request_external: bool = False,
+    request_gemini: bool = False,
     output_dir: Path | None = None,
 ) -> tuple[ReviewReport, tuple[Path, Path] | None]:
     collected = await collect_weekly_snapshot(days)
     snapshot = dict(collected["snapshot"])
-    reviewed = await review_snapshot(snapshot, request_external=request_external)
+    reviewed = await review_snapshot(
+        snapshot,
+        request_external=request_external,
+        request_gemini=request_gemini,
+    )
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=max(1, int(days)))
     identity = json.dumps([start.date().isoformat(), end.date().isoformat(), collected["dataset_hash"], _git_sha()])
@@ -53,6 +86,12 @@ async def run_weekly_review(
         recommendations=tuple(reviewed["recommendations"]),
         incidents=detect_incidents(snapshot),
         external_review_status=str(reviewed["external_status"]),
+        provider_reviews={
+            "status": dict(reviewed.get("provider_status") or {}),
+            "openai": reviewed.get("external_review"),
+            "gemini": reviewed.get("gemini_review"),
+        },
     )
+    await _persist_latest_review(report)
     paths = write_review_artifacts(report, output_dir) if output_dir else None
     return report, paths

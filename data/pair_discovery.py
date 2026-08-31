@@ -35,6 +35,9 @@ _ASSET_UNIVERSE_THREAD: threading.Thread | None = None
 _ASSET_UNIVERSE_THREAD_LOCK = threading.Lock()
 _ASSET_DISCOVERY_PROVENANCE: dict[str, set[str]] = {}
 _ASSET_DISCOVERY_PROVENANCE_LOCK = threading.Lock()
+_METAAPI_SYMBOL_CACHE: list[str] = []
+_METAAPI_SYMBOL_CACHE_AT = 0.0
+_METAAPI_SYMBOL_CACHE_LOCK = threading.Lock()
 
 
 def _record_provider_symbols(symbols: list[str], provider: str) -> list[str]:
@@ -462,25 +465,35 @@ def _coinbase_top_crypto_pairs(top_n: int) -> list[str]:
 
 def _metaapi_symbols() -> list[str]:
     """Discover the exact instrument universe available on the configured MT account."""
+    global _METAAPI_SYMBOL_CACHE, _METAAPI_SYMBOL_CACHE_AT
     token = str(os.getenv("META_API_TOKEN") or "").strip()
     account_id = str(os.getenv("META_API_ACCOUNT_ID") or "").strip()
     if not token or not account_id:
         return []
     region = str(os.getenv("META_API_REGION") or "new-york").strip().lower()
     host = f"https://mt-client-api-v1.{region}.agiliumtrade.ai"
-    try:
-        response = requests.get(
-            f"{host}/users/current/accounts/{account_id}/symbols",
-            headers={"auth-token": token, "Accept": "application/json"},
-            timeout=12,
-        )
-        payload = response.json() if response.ok else []
-        if not isinstance(payload, list):
+    ttl = max(30.0, float(os.getenv("METAAPI_SYMBOL_CACHE_SECONDS", "300") or 300))
+    with _METAAPI_SYMBOL_CACHE_LOCK:
+        if _METAAPI_SYMBOL_CACHE and time.time() - _METAAPI_SYMBOL_CACHE_AT < ttl:
+            return _record_provider_symbols(list(_METAAPI_SYMBOL_CACHE), "metaapi")
+        try:
+            response = requests.get(
+                f"{host}/users/current/accounts/{account_id}/symbols",
+                headers={"auth-token": token, "Accept": "application/json"},
+                timeout=12,
+            )
+            payload = response.json() if response.ok else []
+            if not isinstance(payload, list):
+                return []
+            _METAAPI_SYMBOL_CACHE = _dedupe_limit(
+                [str(item or "").upper().strip() for item in payload],
+                5000,
+            )
+            _METAAPI_SYMBOL_CACHE_AT = time.time()
+            return _record_provider_symbols(list(_METAAPI_SYMBOL_CACHE), "metaapi")
+        except Exception as exc:
+            logger.debug("[pair_discovery] MetaApi symbol discovery failed: %s", exc)
             return []
-        return _record_provider_symbols(_dedupe_limit([str(item or "").upper().strip() for item in payload], 5000), "metaapi")
-    except Exception as exc:
-        logger.debug("[pair_discovery] MetaApi symbol discovery failed: %s", exc)
-        return []
 
 
 # Discover trending crypto pairs from Binance
@@ -759,19 +772,29 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     Returns:
         dict with keys: crypto, fx, stocks, indices, commodities
     """
-    crypto = get_trending_crypto_pairs(crypto_limit)
-    fx = get_trending_fx_pairs()
-    stocks = get_trending_stock_tickers(stock_limit)
-    indices = get_trending_index_tickers(max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))
-    commodities = get_trending_commodity_tickers(10)
-    
-    return {
-        "crypto": crypto,
-        "fx": fx,
-        "stocks": stocks,
-        "indices": indices,
-        "commodities": commodities,
+    jobs = {
+        "crypto": partial(get_trending_crypto_pairs, top_n=max(1, int(crypto_limit))),
+        "fx": get_trending_fx_pairs,
+        "stocks": partial(get_trending_stock_tickers, top_n=max(1, int(stock_limit))),
+        "indices": partial(
+            get_trending_index_tickers,
+            top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))),
+        ),
+        "commodities": partial(get_trending_commodity_tickers, 10),
     }
+    universe: dict[str, list[str]] = {name: [] for name in jobs}
+    # Provider discovery is independent by class. Running it concurrently keeps
+    # a slow broker catalogue from serially delaying the engine startup for each
+    # FX/equity/index/commodity query.
+    with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+        future_map = {executor.submit(job): name for name, job in jobs.items()}
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                universe[name] = list(future.result() or [])
+            except Exception as exc:
+                logger.warning("[pair_discovery] %s universe discovery failed: %s", name, exc)
+    return universe
 
 
 def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:

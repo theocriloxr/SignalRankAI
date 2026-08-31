@@ -85,10 +85,22 @@ async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
     if active_client is None:
         return None
     try:
+        config = None
+        try:
+            from google.genai import types as genai_types
+
+            config = genai_types.GenerateContentConfig(max_output_tokens=max(1, int(max_tokens)))
+        except Exception:
+            config = None
+        kwargs = {
+            "model": MODEL_ID,
+            "contents": prompt,
+        }
+        if config is not None:
+            kwargs["config"] = config
         response = await asyncio.to_thread(
             active_client.models.generate_content,
-            model=MODEL_ID,
-            contents=prompt,
+            **kwargs,
         )
         text = str(getattr(response, "text", "") or "").strip()
         return text or None

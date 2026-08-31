@@ -690,7 +690,11 @@ async def _resend_unsent_signals_async():
                             try:
                                 from db.staging_remediation import mark_telegram_unreachable
 
-                                mark_telegram_unreachable(int(user_id), "telegram_permanent_error")
+                                await asyncio.to_thread(
+                                    mark_telegram_unreachable,
+                                    int(user_id),
+                                    "telegram_permanent_error",
+                                )
                             except Exception:
                                 pass
                             try:
@@ -747,68 +751,6 @@ import os
 from config import config, resolve_database_url
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from signalrank_telegram.httpx_config import httpx_client
-
-def _audit_handler(command_name: str, handler):
-    async def _inner(update, context):
-        import uuid as _uuid
-        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
-        err_ref = f"ERR-{now_utc_naive().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
-        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
-        # IMPORTANT: Skip pre-audit for /start.
-        # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
-        # That would make start_command see the user as "not new" and prevent referral attribution.
-        # start_command already handles user creation + start auditing in a single transaction.
-        if str(command_name) == "start":
-            try:
-                return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
-            except Exception as exc:
-                logger.exception("[cmd:%s] handler failed: %s", command_name, exc)
-                try:
-                    if getattr(update, "message", None) is not None:
-                        await update.message.reply_text(
-                            "The command could not complete right now. Please try again in a moment."
-                        )
-                except Exception:
-                    pass
-                return
-
-        try:
-            from db.session import get_session
-            if getattr(update, "effective_user", None) is not None:
-                user_id = int(update.effective_user.id)
-                username = None
-                try:
-                    username = update.effective_user.username
-                except Exception as e:
-                    logger.debug(f"[audit] Failed to get username from update: {e}")
-                    pass
-                # ...existing code for auditing...
-        except Exception as e:
-            logger.debug(f"[audit] Failed to audit command wrapper: {e}")
-            pass
-        try:
-            return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
-        except asyncio.TimeoutError:
-            logger.warning("[cmd:%s] timed out after %ss", command_name, command_timeout_s)
-            try:
-                if getattr(update, "message", None) is not None:
-                    await update.message.reply_text(
-                        "That command is taking too long right now. Please try again shortly."
-                    )
-            except Exception:
-                pass
-            return
-        except Exception as exc:
-            logger.exception("[cmd:%s] handler failed: %s", command_name, exc)
-            try:
-                if getattr(update, "message", None) is not None:
-                    await update.message.reply_text(
-                        "The command could not complete right now. Please try again in a moment."
-                    )
-            except Exception:
-                pass
-            return
-    return _inner
 
 from telegram.ext import Defaults
 import logging
@@ -1399,6 +1341,35 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                     raise TelegramDeliveryAmbiguous(
                         f"Bot API network outcome unknown: {type(exc).__name__}"
                     ) from exc
+                from signalrank_telegram.telegram_errors import permanent_telegram_send_error
+
+                permanent_reason = permanent_telegram_send_error(exc)
+                if permanent_reason:
+                    logger.info(
+                        "[telegram_unreachable] chat=%s reason=%s retry_suppressed=true err_type=%s",
+                        chat_id,
+                        permanent_reason,
+                        type(exc).__name__,
+                    )
+                    try:
+                        from db.staging_remediation import mark_telegram_unreachable
+
+                        await asyncio.wait_for(
+                            asyncio.to_thread(
+                                mark_telegram_unreachable,
+                                int(chat_id),
+                                permanent_reason,
+                            ),
+                            timeout=3.0,
+                        )
+                    except Exception as remediation_exc:
+                        logger.warning(
+                            "[telegram_unreachable_persist_failed] chat=%s reason=%s err_type=%s",
+                            chat_id,
+                            permanent_reason,
+                            type(remediation_exc).__name__,
+                        )
+                    raise
                 logger.warning(
                     "[telegram_send_error] chat=%s attempt=%s/%s err_type=%s err=%s",
                     chat_id, attempt, max_attempts, type(exc).__name__, exc,
@@ -3757,12 +3728,30 @@ def _audit_handler(command_name: str, handler):
                     username = None
 
                 meta = {"command": str(command_name)}
-                # Avoid logging secrets (e.g., /unlock bypass key)
-                if str(command_name) not in {"unlock"}:
+                sensitive_commands = {
+                    "unlock",
+                    "mt5_link",
+                    "mt5link",
+                    "mt5",
+                    "connect_broker",
+                    "setwebhook",
+                    "apikey",
+                    "login_code",
+                    "link",
+                }
+                # Never persist passwords, API credentials, webhook secrets, or
+                # one-time authentication material in command audit metadata.
+                if str(command_name) not in sensitive_commands:
                     try:
                         meta["args"] = list(getattr(context, "args", None) or [])
                     except Exception:
                         meta["args"] = None
+                else:
+                    try:
+                        meta["arg_count"] = len(list(getattr(context, "args", None) or []))
+                    except Exception:
+                        meta["arg_count"] = 0
+                    meta["args_redacted"] = True
 
                 async def _write_command_audit() -> None:
                     try:
@@ -4383,7 +4372,8 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     EXTRA signals: When FREE users buy extra signals, they get the highest scoring
     ongoing signal that hasn't been sent to them yet.
     
-    Outcomes are sent for ALL signals (crypto and FX) regardless of tier.
+    Outcomes are sent for all delivered signals across supported asset classes,
+    regardless of tier.
     """
 
     tier_raw = resolve_user_tier(user_id)
@@ -5773,12 +5763,15 @@ async def profile_debug_command(update, context):
             import html
             try:
                 redis_diag = state.redis_diagnostics_sync()
-            except Exception as redis_err:
-                redis_diag = {"error": str(redis_err)}
+            except Exception:
+                redis_diag = {"status": "unavailable"}
+            from signalrank_telegram.command_resilience import safe_command_error
+
+            safe_error = safe_command_error("DB preference diagnostics are unavailable.", exc)
             fallback_text = (
                 "<b>Profile Debug</b>\n"
                 "\u26A0\uFE0F DB preference lookup is busy, but the bot is responsive.\n"
-                f"Error: <code>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</code>\n\n"
+                f"{html.escape(safe_error)}\n\n"
                 "<b>Redis/state</b>\n"
                 f"<pre>{html.escape(str(redis_diag))}</pre>\n"
                 "This means user commands are alive; DB background pressure still needs reducing if this repeats."
@@ -6465,7 +6458,7 @@ def run_bot() -> None:
     # \u2500\u2500 Help pagination callbacks (/help) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import help_page_callback
     from telegram.ext import CallbackQueryHandler as _CQH_help
-    application.add_handler(_CQH_help(help_page_callback, pattern=r"^help_page_[1-4]$"))
+    application.add_handler(_CQH_help(help_page_callback, pattern=r"^help_page_[1-5]$"))
 
     # \u2500\u2500 Help/Navigation buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import button_click_handler
@@ -6963,10 +6956,10 @@ def run_bot() -> None:
                 )
         except Exception as exc:
             logger.exception("[mt5] manual confirmed execution failed")
+            from signalrank_telegram.command_resilience import safe_command_error
+
             await query.edit_message_text(
-                "❌ <b>MT5 execution error</b>\n\n"
-                f"<code>{type(exc).__name__}</code>",
-                parse_mode="HTML",
+                safe_command_error("MT5 execution failed.", exc),
             )
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
