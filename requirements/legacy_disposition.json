@@ -2515,11 +2515,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 361,
+      "line_count": 369,
       "path": "core/production_integrity.py",
       "reason": "production/build source",
-      "sha256": "a3d0b7ba70cc1ab5ae7a40a0c59585377a2db8abb90083488e67d41ad3fddd40",
-      "size_bytes": 13181
+      "sha256": "c6980a9a44ec8a43c075dda1a376a2a29bb28e8b4b2da19bc164cd7a3b1ba888",
+      "size_bytes": 13592
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3659,11 +3659,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 763,
+      "line_count": 769,
       "path": "db/repository.py",
       "reason": "production/build source",
-      "sha256": "67c0d980d2a161ec1e8e4c6e6b3bd4880a4b84bc2198c587e6c20126bb27bd63",
-      "size_bytes": 28433
+      "sha256": "b33940118c2a57c6c38d75426b4dab1f85b936024e0a40ff006b2789c6ed6e54",
+      "size_bytes": 28700
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7094,7 +7094,7 @@
       "line_count": 14743,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "26cc993e81bd22b349f0b9ed0769dd55e8ce27527cd4b4671ac25fc7ac760c79",
+      "sha256": "c57ffc03acfb9f3b16b12aa41b86d0726f5c312bb9f069f7c559a6c2a54e04b9",
       "size_bytes": 435921
     },
     {
@@ -10963,11 +10963,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 148,
+      "line_count": 173,
       "path": "tests/test_v1365_production_integrity_profile_routing.py",
       "reason": "automated test evidence",
-      "sha256": "ba72ad60dd73e95ef22c69dd636e31e06a3dfb874d466811cc57ea1c1afabee9",
-      "size_bytes": 5587
+      "sha256": "1a3455c28ce5bc457d9e4ed0c9d1bdbbd711b542e1db867e0da65afb0284bad2",
+      "size_bytes": 6291
     },
     {
       "disposition": "TEST_ONLY",

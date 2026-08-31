@@ -318,7 +318,13 @@ async def persist_decision_log(
 
 
 async def persist_decision_logs_batch(rows: list[dict[str, Any]]) -> int:
-    """Persist one bounded market-scan batch in a single background transaction."""
+    """Persist one bounded market-scan batch without losing it under DB backpressure.
+
+    Market observations are first placed in the same process-local bounded retry
+    queue used by individual decision annotations.  Every subsequent scan drains
+    the oldest entries, so a temporary background-write admission failure does
+    not silently erase the very examples used by the full-market learner.
+    """
     if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
         "1", "true", "yes", "on",
     }:
@@ -332,15 +338,9 @@ async def persist_decision_logs_batch(rows: list[dict[str, Any]]) -> int:
         })
     if not clean:
         return 0
-    try:
-        async with get_session(priority="background", label="decision_log_market_batch") as session:
-            session.add_all([DecisionLog(**item) for item in clean])
-            await session.commit()
-        return len(clean)
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Market decision-log batch failed: %s", type(exc).__name__)
-        return 0
+    for item in clean:
+        _DECISION_LOG_RETRY_QUEUE.append(item)
+    return await flush_decision_log_retry_queue(limit=100)
 
 
 async def flush_decision_log_retry_queue(limit: int = 100) -> int:
@@ -355,9 +355,15 @@ async def flush_decision_log_retry_queue(limit: int = 100) -> int:
             session.add_all([DecisionLog(**item) for item in batch])
             await session.commit()
         return len(batch)
-    except Exception:
+    except Exception as exc:
         for item in reversed(batch):
             _DECISION_LOG_RETRY_QUEUE.appendleft(item)
+        import logging
+        logging.getLogger(__name__).warning(
+            "Decision-log retry batch deferred: %s pending=%s",
+            type(exc).__name__,
+            len(_DECISION_LOG_RETRY_QUEUE),
+        )
         return 0
 
 
