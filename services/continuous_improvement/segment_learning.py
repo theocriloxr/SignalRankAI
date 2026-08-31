@@ -1,4 +1,4 @@
-"""Deterministic per-segment learning proposals from completed outcomes."""
+"""Deterministic segment proposals from issued and counterfactual outcomes."""
 
 from __future__ import annotations
 
@@ -24,9 +24,15 @@ def classify_segment(row: Mapping[str, Any], *, minimum_outcomes: int = 20) -> d
     losses = max(0, int(row.get("losses") or 0))
     total = wins + losses
     average_r = float(row.get("avg_r") or 0.0)
+    source = str(row.get("source") or "canonical_issued")
+    decision = str(row.get("decision") or "issued")
     lower, upper = wilson_interval(wins, total)
     if total < minimum_outcomes:
         state, reason = "observe", "insufficient_terminal_sample"
+    elif source == "shadow_rejected" and lower > 0.45:
+        state, reason = "gate_recall_review_candidate", "rejected_setups_show_supported_false_negative_rate"
+    elif source == "shadow_rejected" and upper < 0.35:
+        state, reason = "gate_precision_supported", "rejection_gate_avoided_losing_setups"
     elif average_r < 0.0 and upper < 0.55:
         state, reason = "shadow_quarantine_candidate", "negative_expectancy_with_weak_win_interval"
     elif average_r > 0.20 and lower > 0.45:
@@ -37,6 +43,9 @@ def classify_segment(row: Mapping[str, Any], *, minimum_outcomes: int = 20) -> d
         "asset_class": str(row.get("asset_class") or "unknown"),
         "timeframe": str(row.get("timeframe") or "unknown"),
         "strategy_name": str(row.get("strategy_name") or "unknown"),
+        "regime": str(row.get("regime") or "unknown"),
+        "source": source,
+        "decision": decision,
         "outcomes": total,
         "wins": wins,
         "losses": losses,
@@ -56,9 +65,15 @@ def build_segment_learning_recommendations(
     recommendations: list[Recommendation] = []
     for raw in segments:
         result = classify_segment(raw, minimum_outcomes=minimum_outcomes)
-        if result["state"] not in {"shadow_quarantine_candidate", "controlled_expansion_candidate"}:
+        if result["state"] not in {
+            "shadow_quarantine_candidate", "controlled_expansion_candidate",
+            "gate_recall_review_candidate", "gate_precision_supported",
+        }:
             continue
-        identity = "/".join((result["asset_class"], result["timeframe"], result["strategy_name"]))
+        identity = "/".join((
+            result["source"], result["decision"], result["asset_class"], result["timeframe"],
+            result["strategy_name"], result["regime"],
+        ))
         action = result["state"]
         recommendation_id = "segment-" + hashlib.sha256(f"{identity}:{action}".encode()).hexdigest()[:16]
         evidence = (
@@ -76,9 +91,12 @@ def build_segment_learning_recommendations(
                 evidence=evidence,
                 proposed_change={
                     "segment": {
+                        "source": result["source"],
+                        "decision": result["decision"],
                         "asset_class": result["asset_class"],
                         "timeframe": result["timeframe"],
                         "strategy_name": result["strategy_name"],
+                        "regime": result["regime"],
                     },
                     "experiment_state": "proposed",
                     "candidate_action": action,

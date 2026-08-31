@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1221,
+  "variable_count": 1235,
   "variables": [
     {
       "declared_defaults": {},
@@ -1178,7 +1178,7 @@
         "core/env.py:57",
         "core/execution_claims.py:22",
         "engine/admin_pulse.py:866",
-        "engine/core.py:4438",
+        "engine/core.py:4422",
         "payments/paystack_policy.py:43",
         "railway_main.py:1102",
         "railway_main.py:2525",
@@ -1336,7 +1336,7 @@
       "name": "ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1609"
+        "engine/core.py:1654"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1365,7 +1365,7 @@
       "name": "ASSET_CLASSES_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1633"
+        "engine/core.py:1678"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1612,7 +1612,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5175",
+        "engine/core.py:5159",
         "services/automated_analyst.py:25"
       ],
       "required_by_code": true,
@@ -2339,7 +2339,7 @@
       "name": "CODEX_OPENAI_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:118",
+        "services/codex_governance.py:119",
         "services/continuous_improvement/refactor_agent.py:181"
       ],
       "required_by_code": true,
@@ -2407,7 +2407,7 @@
       "name": "CONFLUENCE_GATE_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3129",
+        "engine/core.py:3187",
         "engine/threshold_optimizer.py:99"
       ],
       "required_by_code": true,
@@ -2514,7 +2514,7 @@
       "name": "CONTINUOUS_IMPROVEMENT_GEMINI_MAX_TOKENS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:263"
+        "services/codex_governance.py:271"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -2760,7 +2760,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:4691"
+        "engine/core.py:4675"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3682,7 +3682,8 @@
       "name": "DECISION_LOG_WRITE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "db/repository.py:276"
+        "db/repository.py:276",
+        "db/repository.py:322"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3692,7 +3693,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3607"
+        "engine/core.py:3651"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3722,8 +3723,8 @@
       "name": "DEFAULT_RR",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1507",
-        "engine/core.py:3420"
+        "engine/core.py:1552",
+        "engine/core.py:3464"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3749,7 +3750,7 @@
       "production_example_default": "day",
       "read_locations": [
         "data/market_data.py:75",
-        "engine/core.py:1744"
+        "engine/core.py:1789"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3784,7 +3785,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4435",
+        "engine/core.py:4419",
         "payments/paystack_policy.py:66",
         "railway_main.py:2538",
         "railway_main.py:2653",
@@ -4171,7 +4172,7 @@
       "name": "DEMO_ASSETS",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:302"
+        "engine/loop.py:361"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4191,7 +4192,7 @@
       "name": "DEMO_TIMEFRAMES",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:303"
+        "engine/loop.py:362"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4768,7 +4769,7 @@
       "name": "ENGINE_ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1609"
+        "engine/core.py:1654"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4813,7 +4814,7 @@
       "name": "ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2264"
+        "engine/core.py:2309"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4856,7 +4857,7 @@
       "name": "ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2225"
+        "engine/core.py:2270"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4866,7 +4867,7 @@
       "name": "ENGINE_MAX_CONCURRENCY",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:206"
+        "engine/loop.py:265"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4969,7 +4970,7 @@
       "name": "ENGINE_TASK_RETRIES",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:208"
+        "engine/loop.py:267"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4979,7 +4980,7 @@
       "name": "ENGINE_TASK_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:207"
+        "engine/loop.py:266"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5524,6 +5525,18 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "FULL_MARKET_LEARNING_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "services/continuous_improvement/weekly_review.py:72"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": ""
       },
       "name": "FULL_SYSTEM_STAGING_TEST_ACK",
@@ -5539,7 +5552,7 @@
       "read_locations": [
         "core/paper_trading_service.py:84",
         "engine/adaptive/candle_store.py:31",
-        "engine/core.py:957",
+        "engine/core.py:1002",
         "payments/paystack_policy.py:97"
       ],
       "required_by_code": true,
@@ -6384,7 +6397,7 @@
       "name": "MARKET_CIRCUIT_BREAKER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2137"
+        "engine/core.py:2182"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6394,7 +6407,7 @@
       "name": "MARKET_ENRICHMENT_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/market_data.py:1156"
+        "data/market_data.py:1165"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6432,6 +6445,16 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "5"
       },
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
@@ -6449,7 +6472,7 @@
       "name": "MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/market_data.py:1043"
+        "data/market_data.py:1045"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6889,7 +6912,7 @@
       "name": "ML_DRIFT_CONFIDENCE_FLOOR",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:39"
+        "engine/loop.py:71"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6899,7 +6922,7 @@
       "name": "ML_DRIFT_CONFIDENCE_MULTIPLIER",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:38"
+        "engine/loop.py:70"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6967,7 +6990,7 @@
       "name": "ML_HARD_FILTER_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3235"
+        "engine/core.py:3279"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6977,7 +7000,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3597"
+        "engine/core.py:3641"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7051,7 +7074,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3599"
+        "engine/core.py:3643"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7218,7 +7241,7 @@
       "name": "ML_REJECTION_THRESHOLD",
       "production_example_default": null,
       "read_locations": [
-        "engine/loop.py:91"
+        "engine/loop.py:136"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7278,7 +7301,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3598"
+        "engine/core.py:3642"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7288,7 +7311,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3602"
+        "engine/core.py:3646"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7298,7 +7321,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3600"
+        "engine/core.py:3644"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8114,7 +8137,7 @@
       "name": "OPENAI_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:118",
+        "services/codex_governance.py:119",
         "services/continuous_improvement/refactor_agent.py:181"
       ],
       "required_by_code": true,
@@ -8136,7 +8159,7 @@
       "name": "OPENAI_CODEX_REVIEW_MAX_TOKENS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:219"
+        "services/codex_governance.py:227"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -8149,7 +8172,7 @@
       "name": "OPENAI_CODEX_REVIEW_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:185"
+        "services/codex_governance.py:193"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8159,7 +8182,7 @@
       "name": "OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:222"
+        "services/codex_governance.py:230"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8169,7 +8192,7 @@
       "name": "OPENAI_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:185"
+        "services/codex_governance.py:193"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8860,7 +8883,7 @@
       "read_locations": [
         "data/get_live_price.py:113",
         "data/get_live_price.py:647",
-        "engine/core.py:4454",
+        "engine/core.py:4438",
         "payments/paystack_policy.py:67",
         "railway_main.py:2614",
         "railway_main.py:529"
@@ -10070,7 +10093,7 @@
       "name": "PREMIUM_SCORE_THRESHOLD_FORCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/signal_deduplicator.py:1091"
+        "engine/signal_deduplicator.py:1102"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10229,7 +10252,7 @@
       "name": "PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2184"
+        "engine/core.py:2229"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10519,7 +10542,7 @@
       "name": "QUALITY_FX_ALLOWED_TIMEFRAMES",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1116"
+        "engine/core.py:1161"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10547,8 +10570,8 @@
         "core/env.py:56",
         "core/tier_constants.py:148",
         "data/pair_discovery.py:530",
-        "engine/core.py:2001",
-        "engine/core.py:2449",
+        "engine/core.py:2046",
+        "engine/core.py:2494",
         "payments/paystack_policy.py:42",
         "railway_main.py:1101",
         "railway_main.py:2524",
@@ -10658,8 +10681,8 @@
         "core/tier_constants.py:148",
         "data/pair_discovery.py:529",
         "db/session.py:30",
-        "engine/core.py:2001",
-        "engine/core.py:2449",
+        "engine/core.py:2046",
+        "engine/core.py:2494",
         "railway_main.py:1358",
         "railway_main.py:1434",
         "signalrank_telegram/admin_commands.py:237",
@@ -11948,6 +11971,42 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "10"
+      },
+      "name": "SCORE_CALIBRATION_BUCKETS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/codex_governance.py:575"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "40"
+      },
+      "name": "SCORE_CALIBRATION_MIN_HOLDOUT",
+      "production_example_default": null,
+      "read_locations": [
+        "services/codex_governance.py:577"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "200"
+      },
+      "name": "SCORE_CALIBRATION_MIN_OBSERVATIONS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/codex_governance.py:576"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "99.5"
       },
       "name": "SCORE_DISPLAY_MAX",
@@ -11956,6 +12015,26 @@
         "engine/signal_metrics.py:58"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "SCORE_EMPIRICAL_CALIBRATION_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "SCORE_EMPIRICAL_CALIBRATION_SHADOW_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -11996,6 +12075,76 @@
         "engine/signal_metrics.py:78"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.10"
+      },
+      "name": "SCORE_WEIGHT_CANDLE_EVIDENCE",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.20"
+      },
+      "name": "SCORE_WEIGHT_CONFIDENCE",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.15"
+      },
+      "name": "SCORE_WEIGHT_CONFLUENCE",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.20"
+      },
+      "name": "SCORE_WEIGHT_ML",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.05"
+      },
+      "name": "SCORE_WEIGHT_REGIME",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.20"
+      },
+      "name": "SCORE_WEIGHT_RR",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0.10"
+      },
+      "name": "SCORE_WEIGHT_VOL",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -12333,7 +12482,7 @@
       "production_example_default": null,
       "read_locations": [
         "db/pg_features.py:924",
-        "db/repository.py:387"
+        "db/repository.py:413"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13063,8 +13212,8 @@
         "data/fetcher.py:1939",
         "engine/admin_pulse.py:639",
         "engine/admin_pulse.py:769",
-        "engine/core.py:1424",
-        "engine/signal_deduplicator.py:1038",
+        "engine/core.py:1469",
+        "engine/signal_deduplicator.py:1049",
         "railway_main.py:2600",
         "railway_main.py:2923",
         "railway_main.py:530",
@@ -13598,8 +13747,8 @@
       "production_example_default": null,
       "read_locations": [
         "data/startup_selfcheck.py:53",
-        "engine/core.py:1962",
-        "engine/core.py:2204"
+        "engine/core.py:2007",
+        "engine/core.py:2249"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14144,7 +14293,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3434"
+        "engine/core.py:3478"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14154,7 +14303,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3436"
+        "engine/core.py:3480"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14164,7 +14313,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3437"
+        "engine/core.py:3481"
       ],
       "required_by_code": true,
       "sensitive": false

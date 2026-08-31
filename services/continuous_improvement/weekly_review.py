@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,6 +69,16 @@ async def run_weekly_review(
 ) -> tuple[ReviewReport, tuple[Path, Path] | None]:
     collected = await collect_weekly_snapshot(days)
     snapshot = dict(collected["snapshot"])
+    if str(os.getenv("FULL_MARKET_LEARNING_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+        profile = snapshot.get("score_calibration")
+        if isinstance(profile, dict) and profile.get("buckets"):
+            try:
+                from core.redis_state import state
+                from engine.score_calibration import PROFILE_STATE_KEY
+
+                state.set_sync(PROFILE_STATE_KEY, json.dumps(profile, sort_keys=True, default=str))
+            except Exception:
+                logger.warning("[continuous_improvement] shadow score profile persistence failed", exc_info=True)
     reviewed = await review_snapshot(
         snapshot,
         request_external=request_external,

@@ -4,15 +4,24 @@ SignalRankAI's continuous-improvement loop is evidence-driven and recommendation
 
 ## Workflow
 
-1. Aggregate proof-backed signal, delivery, outcome, rejection, provider, and calibration metrics.
-2. Remove user identifiers, contact details, payment data, credentials, and tokens.
-3. Hash the canonical research snapshot for lineage.
-4. Produce a deterministic local review.
-5. Optionally request independent aggregate-only OpenAI Responses API and Gemini reviews when explicitly enabled and configured.
-6. Calculate per-asset-class/timeframe/strategy Wilson intervals and expectancy; weak or strong segments become shadow-only experiment proposals after the minimum sample.
-7. Normalize suggestions into evidence-backed recommendations requiring owner approval.
-8. Move approved experiments sequentially through backtest, walk-forward, shadow, paper, staging, and production-eligibility evidence states.
-9. Hand eligible code recommendations to a dual-provider refactor workflow: OpenAI proposes exact bounded replacements, local guards validate paths and syntax, Gemini independently reviews the exact patch, the full repository certification runs, and only then is a draft PR opened.
+1. Record the complete observable decision surface: every market scan, no-setup observation, issued candidate, rejected/skipped candidate, pending/ambiguous shadow result, regime, score bucket, asset class, timeframe, and strategy.
+2. Aggregate proof-backed signal, delivery, outcome, rejection, provider, and calibration metrics. Issued canonical outcomes have weight `1.0`; counterfactual rejected/skipped shadow outcomes have weight `0.60`. Pending, ambiguous, and no-data rows measure coverage but cannot become training targets.
+3. Remove user identifiers, contact details, payment data, credentials, and tokens.
+4. Fit a Beta-smoothed monotonic score mapping and validate it on the newest chronological 20% holdout. Store the result as a shadow profile with Brier and calibration-error evidence.
+5. Hash the canonical research snapshot for lineage and produce a deterministic local review.
+6. Optionally request independent aggregate-only OpenAI Responses API and Gemini reviews when explicitly enabled and configured.
+7. Calculate source/decision/asset-class/timeframe/strategy/regime Wilson intervals. This detects both weak issued segments and false-negative concentrations among rejected setups.
+8. Normalize suggestions into evidence-backed recommendations requiring owner approval.
+9. Move approved experiments sequentially through backtest, walk-forward, shadow, paper, staging, and production-eligibility evidence states.
+10. Hand eligible code recommendations to a dual-provider refactor workflow: OpenAI proposes exact bounded replacements, local guards validate paths and syntax, Gemini independently reviews the exact patch, the full repository certification runs, and only then is a draft PR opened.
+
+## Scoring and calibration
+
+The heuristic score is an auditable normalized weighted average. Confidence, ML probability, R/R quality, volatility, confluence, regime fit, and candle evidence each appear once; there are no multiplicative ML, regime, or exceptional-R/R boosts. `score_raw`, `score_heuristic`, `score_components`, and `score_calibration_method` preserve lineage.
+
+`SCORE_EMPIRICAL_CALIBRATION_SHADOW_ENABLED=1` records the learned probability as `score_empirical_shadow` without changing delivery thresholds or the live score. `SCORE_EMPIRICAL_CALIBRATION_ENABLED=1` still cannot activate a sparse or failed profile: the profile must meet the configured sample and chronological holdout minimums and avoid worsening Brier score or calibration error. Keep live activation off until staging forward tests also prove expectancy, drawdown, loss-streak, asset coverage, and data-quality gates.
+
+This learns the full *observable* market surface, not an unknowable idealized market. A no-setup scan has no entry/stop/target and therefore contributes coverage/regime evidence, not a fabricated win/loss label. A rejected candidate with a complete trade thesis can be shadow-tracked and becomes a lower-weight counterfactual label after its evaluation window closes.
 
 Run a local review without external API calls:
 

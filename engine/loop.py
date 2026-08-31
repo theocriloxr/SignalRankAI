@@ -24,6 +24,38 @@ dedup = SignalDeduplicator()
 ml_tracker = MLRejectionTracker()
 
 
+def _market_observation_meta(asset_type: str, indicators: dict | None = None, **extra) -> dict:
+    """Bounded, non-candle snapshot used to measure the complete scan surface."""
+    values = dict(indicators or {})
+    keep = (
+        "regime", "session", "rsi", "adx", "atr", "atr_rel", "volatility",
+        "relative_volume", "volume_ratio", "trend", "trend_strength",
+    )
+    payload = {"asset_type": asset_type, "observation_scope": "market_scan"}
+    payload.update({key: values.get(key) for key in keep if values.get(key) is not None})
+    payload.update({key: value for key, value in extra.items() if value is not None})
+    return payload
+
+
+def _candidate_meta(sig, *, asset_type: str, ml_probability=None, ml_threshold=None) -> dict:
+    return {
+        "observation_scope": "trade_candidate",
+        "asset_class": asset_type,
+        "direction": getattr(sig, "direction", None),
+        "entry": getattr(sig, "entry", None),
+        "stop_loss": getattr(sig, "stop_loss", None),
+        "take_profit": getattr(sig, "take_profit", None),
+        "score": getattr(sig, "score", None),
+        "confidence": getattr(sig, "confidence", None),
+        "strategy_name": getattr(sig, "strategy_name", None),
+        "strategy_group": getattr(sig, "strategy_group", None),
+        "regime": getattr(sig, "regime", None),
+        "rr_estimate": getattr(sig, "rr_estimate", None) or getattr(sig, "rr_ratio", None),
+        "ml_probability": ml_probability,
+        "ml_threshold": ml_threshold,
+    }
+
+
 def _apply_drift_confidence_adjustment(confidence: float | None) -> tuple[float | None, dict]:
     """Reduce confidence when live drift penalties are active."""
     try:
@@ -80,20 +112,37 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
         tf_data = market_state.get("timeframes", {}).get(timeframe)
         if not tf_data:
+            await persist_decision_log(
+                None, asset, timeframe, "observed", reason="market_data_unavailable",
+                meta=_market_observation_meta(asset_type, scan_result="no_timeframe_data"),
+            )
             return signals
         candles = tf_data.get("candles", [])
         indicators = tf_data.get("indicators", {})
         ml_prob = tf_data.get("ml_score") or tf_data.get("ml_probability")
         if len(candles) < 50:
+            await persist_decision_log(
+                None, asset, timeframe, "observed", reason="insufficient_candles",
+                meta=_market_observation_meta(asset_type, indicators, scan_result="insufficient_candles", candle_count=len(candles)),
+            )
             return signals
         market_data = {"candles": candles, "indicators": indicators, "ml_probability": ml_prob}
         strategy_signals = signal_gen.generate_signals(asset, timeframe, market_data)
+        if not strategy_signals:
+            await persist_decision_log(
+                None, asset, timeframe, "observed", reason="no_strategy_setup",
+                meta=_market_observation_meta(asset_type, indicators, scan_result="no_setup", ml_probability=ml_prob),
+            )
         threshold_raw = str(os.getenv("ML_REJECTION_THRESHOLD") or "").strip()
         ml_threshold = float(threshold_raw) if threshold_raw else None
         for sig in strategy_signals:
             is_dup = await dedup.is_duplicate(asset, timeframe, sig.direction, sig.entry)
             if is_dup:
                 logger.debug("Duplicate signal skipped: %s %s %s", asset, timeframe, sig.direction)
+                await persist_decision_log(
+                    None, asset, timeframe, "skipped", reason="duplicate_candidate",
+                    meta=_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob),
+                )
                 continue
             ml_prob_value = ml_prob
             if ml_prob_value is None and include_ml:
@@ -130,6 +179,17 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     ml_prob_value = None
             observe_ml_confidence(ml_prob_value)
             if include_ml and ml_threshold is not None and ml_prob_value is not None and ml_prob_value < ml_threshold:
+                decision_meta = _candidate_meta(
+                    sig, asset_type=asset_type, ml_probability=ml_prob_value, ml_threshold=ml_threshold,
+                )
+                decision_id = await persist_decision_log(
+                    None,
+                    asset,
+                    timeframe,
+                    "rejected",
+                    reason=f"ML score {ml_prob_value:.2f} < {ml_threshold:.2f}",
+                    meta=decision_meta,
+                )
                 await ml_tracker.persist_rejection(
                     asset=asset,
                     timeframe=timeframe,
@@ -139,15 +199,14 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     take_profit_levels=sig.take_profit,
                     ml_probability=ml_prob_value,
                     rejection_reason="low_ml_score",
-                    features=sig.ml_features,
-                )
-                await persist_decision_log(
-                    None,
-                    asset,
-                    timeframe,
-                    "rejected",
-                    reason=f"ML score {ml_prob_value:.2f} < {ml_threshold:.2f}",
-                    meta={"ml_probability": ml_prob_value, "ml_threshold": ml_threshold},
+                    features={
+                        **dict(getattr(sig, "ml_features", {}) or {}),
+                        **_candidate_meta(
+                            sig, asset_type=asset_type, ml_probability=ml_prob_value, ml_threshold=ml_threshold,
+                        ),
+                        "decision": "rejected",
+                        "decision_log_id": decision_id or None,
+                    },
                 )
                 continue
             try:
@@ -180,7 +239,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                             timeframe,
                             "issued",
                             reason=f"{sig.strategy_name} ({sig.score:.0f}) drift-adjusted",
-                            meta={"strategy_group": sig.strategy_group, "drift": drift_meta},
+                            meta={**_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob_value), "drift": drift_meta},
                         )
                         continue
                     await persist_decision_log(
@@ -189,7 +248,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                         timeframe,
                         "issued",
                         reason=f"{sig.strategy_name} ({sig.score:.0f})",
-                        meta={"strategy_group": sig.strategy_group},
+                        meta=_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob_value),
                     )
             except Exception as e:
                 logger.error("Failed to persist signal: %s", e)

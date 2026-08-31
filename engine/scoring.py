@@ -195,11 +195,13 @@ def score_signal(signal):
     
     # Target: 0..100 score
     confidence = resolve_confidence_ratio(signal)
-    if confidence is None:
-        confidence = resolve_ml_probability(signal)
+    ml_val = resolve_ml_probability(signal)
+    # A missing strategy confidence may fall back to ML for the hard gate, but
+    # the same probability must never be inserted twice into the weighted score.
+    confidence_for_gate = confidence if confidence is not None else ml_val
     
     confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
-    if confidence is not None and confidence < confidence_min:
+    if confidence_for_gate is not None and confidence_for_gate < confidence_min:
         return 0.0
 
     # Safely convert and normalize entry, stop, and target fields
@@ -222,10 +224,12 @@ def score_signal(signal):
     vol_component = volatility_quality_score(signal)
     
     # Base score: weighted components
-    weight_conf = _env_float("SCORE_WEIGHT_CONFIDENCE", 0.3)
-    weight_rr = _env_float("SCORE_WEIGHT_RR", 0.3)
-    weight_vol = _env_float("SCORE_WEIGHT_VOL", 0.2)
-    weight_confli = _env_float("SCORE_WEIGHT_CONFLUENCE", 0.2)
+    weight_conf = max(0.0, _env_float("SCORE_WEIGHT_CONFIDENCE", 0.20))
+    weight_ml = max(0.0, _env_float("SCORE_WEIGHT_ML", 0.20))
+    weight_rr = max(0.0, _env_float("SCORE_WEIGHT_RR", 0.20))
+    weight_vol = max(0.0, _env_float("SCORE_WEIGHT_VOL", 0.10))
+    weight_confli = max(0.0, _env_float("SCORE_WEIGHT_CONFLUENCE", 0.15))
+    weight_regime = max(0.0, _env_float("SCORE_WEIGHT_REGIME", 0.05))
     weight_candle = max(0.0, _env_float("SCORE_WEIGHT_CANDLE_EVIDENCE", 0.10))
 
     components: dict[str, tuple[float, float]] = {
@@ -234,10 +238,21 @@ def score_signal(signal):
     }
     if confidence is not None:
         components["confidence"] = (confidence, weight_conf)
+    if ml_val is not None:
+        components["ml_probability"] = (min(max(float(ml_val), 0.0), 1.0), weight_ml)
     if confluence_score is not None:
         components["confluence"] = (min(max(confluence_score / 100.0, 0.0), 1.0), weight_confli)
     if candle_component is not None and weight_candle > 0:
         components["candle_evidence"] = (candle_component, weight_candle)
+
+    regime_fit = signal.get("regime_fit")
+    if regime_fit is None:
+        regime_fit = signal.get("htf_alignment")
+    try:
+        if regime_fit is not None and weight_regime > 0:
+            components["regime_fit"] = (min(max(float(regime_fit), 0.0), 1.0), weight_regime)
+    except (TypeError, ValueError):
+        pass
 
     total_weight = sum(weight for _, weight in components.values()) if components else 0.0
     if total_weight <= 0:
@@ -250,43 +265,38 @@ def score_signal(signal):
         print(f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | Reason: Poor R/R ({rr:.2f} < {min_rr:.2f}) | Entry: {entry}, Stop: {stop}, Target: {target}")
         return 0.0
     
-    # REGIME ALIGNMENT BONUS
-    regime_fit = signal.get("regime_fit") or signal.get("htf_alignment")
-    try:
-        if regime_fit is not None:
-            regime_fit = float(regime_fit)
-            regime_fit = min(max(regime_fit, 0.0), 1.0)
-            bonus_base = _env_float("REGIME_SCORE_BONUS_BASE", 1.0)
-            bonus_scale = _env_float("REGIME_SCORE_BONUS_SCALE", 0.2)
-            regime_bonus = bonus_base + (regime_fit * bonus_scale)
-            score = score * regime_bonus
-    except Exception:
-        pass
-    
-    # ML PROBABILITY BOOST
-    ml_val = resolve_ml_probability(signal)
-    if ml_val is not None:
-        try:
-            ml_val = min(max(float(ml_val), 0.0), 1.0)
-            ml_boost_min = _env_float("ML_SCORE_BOOST_MIN", 0.8)
-            ml_boost_range = _env_float("ML_SCORE_BOOST_RANGE", 0.4)
-            ml_boost = ml_boost_min + (ml_val * ml_boost_range)
-            score = score * ml_boost
-        except Exception:
-            pass
-    
-    # EXCEPTIONAL R/R REWARD
-    if rr >= 2.5:
-        score = score * 1.20
-    elif rr >= 2.0:
-        score = score * 1.15
-
     raw_score = float(score)
-    calibrated_score, soft_capped = _apply_score_soft_cap(raw_score)
+    heuristic_score, soft_capped = _apply_score_soft_cap(raw_score)
+    calibrated_score = heuristic_score
+    calibration_method = "heuristic_weighted_v2"
+    empirical_shadow = None
+    empirical_profile = None
+    if _env_bool("SCORE_EMPIRICAL_CALIBRATION_SHADOW_ENABLED", False):
+        try:
+            from engine.score_calibration import calibrate_score, load_shadow_profile, select_calibration_profile
+
+            empirical_profile = load_shadow_profile()
+            empirical_shadow = calibrate_score(heuristic_score, empirical_profile, signal)
+            selected_profile, selected_segment = select_calibration_profile(empirical_profile, signal)
+            if (
+                empirical_shadow is not None
+                and _env_bool("SCORE_EMPIRICAL_CALIBRATION_ENABLED", False)
+                and bool((selected_profile or {}).get("validated"))
+            ):
+                calibrated_score = empirical_shadow
+                calibration_method = f"{selected_profile.get('version') or 'empirical'}:{selected_segment}"
+        except Exception:
+            empirical_shadow = None
     try:
         signal["score_raw"] = round(raw_score, 4)
+        signal["score_heuristic"] = round(heuristic_score, 4)
         signal["score_calibrated"] = round(calibrated_score, 4)
         signal["score_soft_capped"] = bool(soft_capped)
+        signal["score_calibration_method"] = calibration_method
+        signal["score_empirical_shadow"] = round(empirical_shadow, 4) if empirical_shadow is not None else None
+        signal["score_empirical_profile_status"] = (
+            str(empirical_profile.get("status")) if isinstance(empirical_profile, dict) else "unavailable"
+        )
         signal["score_components"] = {
             name: {"value": round(float(value), 4), "weight": round(float(weight), 4)}
             for name, (value, weight) in components.items()

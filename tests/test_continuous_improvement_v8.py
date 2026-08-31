@@ -216,6 +216,21 @@ def test_segment_learning_creates_shadow_only_proposals() -> None:
     assert recommendation.provider == "deterministic_segment_learner"
 
 
+def test_segment_learning_detects_rejected_false_negative_concentration() -> None:
+    result = classify_segment({
+        "source": "shadow_rejected", "decision": "rejected", "wins": 24, "losses": 6,
+        "asset_class": "crypto", "timeframe": "1h", "strategy_name": "breakout", "regime": "trending",
+    })
+
+    assert result["state"] == "gate_recall_review_candidate"
+    recommendation = build_segment_learning_recommendations([{
+        "source": "shadow_rejected", "decision": "rejected", "wins": 24, "losses": 6,
+        "asset_class": "crypto", "timeframe": "1h", "strategy_name": "breakout", "regime": "trending",
+    }])[0]
+    assert recommendation.proposed_change["segment"]["source"] == "shadow_rejected"
+    assert recommendation.proposed_change["activation"] == "shadow_only"
+
+
 def test_structured_refactor_recommendation_keeps_provider_and_tests() -> None:
     items = normalize_recommendations(
         {

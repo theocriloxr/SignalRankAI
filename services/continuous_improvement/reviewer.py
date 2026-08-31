@@ -79,9 +79,9 @@ async def review_snapshot(
     gemini_call = run_external_gemini_aggregate_review(dict(snapshot), requested=True) if request_gemini else _none()
     external, gemini = await asyncio.gather(openai_call, gemini_call)
     recommendations = list(normalize_recommendations(local, provider="local"))
-    recommendations.extend(
-        build_segment_learning_recommendations(list(snapshot.get("segments") or []))
-    )
+    recommendations.extend(build_segment_learning_recommendations(
+        list(snapshot.get("full_market_segments") or snapshot.get("segments") or [])
+    ))
     if external and external.get("ok"):
         recommendations.extend(normalize_recommendations(external.get("review") or {}, provider="openai"))
     if gemini and gemini.get("ok"):

@@ -19,17 +19,19 @@ def _high_raw_score_signal():
     }
 
 
-def test_score_signal_soft_caps_instead_of_flattening_to_100(monkeypatch):
+def test_score_signal_uses_normalized_components_without_multiplier_inflation(monkeypatch):
     monkeypatch.delenv("SCORE_SOFT_CAP_ENABLED", raising=False)
     signal = _high_raw_score_signal()
 
     score = score_signal(signal)
 
-    assert 90.0 < score <= 96.0
-    assert signal["score_raw"] > 100.0
+    assert 90.0 < score < 100.0
+    assert signal["score_raw"] <= 100.0
     assert round(signal["score_calibrated"], 2) == score
-    assert signal["score_soft_capped"] is True
+    assert signal["score_calibration_method"] == "heuristic_weighted_v2"
     assert "rr" in signal["score_components"]
+    assert "ml_probability" in signal["score_components"]
+    assert "regime_fit" in signal["score_components"]
 
 
 def test_candle_evidence_is_an_auditable_score_component(monkeypatch):

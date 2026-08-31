@@ -317,6 +317,32 @@ async def persist_decision_log(
         return 0
 
 
+async def persist_decision_logs_batch(rows: list[dict[str, Any]]) -> int:
+    """Persist one bounded market-scan batch in a single background transaction."""
+    if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return 0
+    clean = []
+    for row in list(rows or [])[:100]:
+        clean.append({
+            "signal_id": row.get("signal_id"), "asset": row.get("asset"),
+            "timeframe": row.get("timeframe"), "decision": str(row.get("decision") or "observed")[:32],
+            "reason": str(row.get("reason") or "")[:1000] or None, "meta": dict(row.get("meta") or {}),
+        })
+    if not clean:
+        return 0
+    try:
+        async with get_session(priority="background", label="decision_log_market_batch") as session:
+            session.add_all([DecisionLog(**item) for item in clean])
+            await session.commit()
+        return len(clean)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Market decision-log batch failed: %s", type(exc).__name__)
+        return 0
+
+
 async def flush_decision_log_retry_queue(limit: int = 100) -> int:
     """Best-effort bounded flush for decision annotations deferred by DB admission."""
     if not _DECISION_LOG_RETRY_QUEUE:

@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy import text
 
 from db.session import get_session, is_db_configured
+from engine.score_calibration import ScoreObservation, build_calibration_profile
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,13 @@ def _aggregate_only_context(context: dict[str, Any]) -> dict[str, Any]:
         "deliveries": context.get("deliveries") or {},
         "score_saturation": context.get("score_saturation") or {},
         "outcome_integrity": context.get("outcome_integrity") or {},
+        "decision_surface": list(context.get("decision_surface") or [])[:40],
+        "shadow_coverage": list(context.get("shadow_coverage") or [])[:30],
+        "full_market_segments": list(context.get("full_market_segments") or [])[:40],
+        "score_calibration": {
+            key: value for key, value in dict(context.get("score_calibration") or {}).items()
+            if key != "segment_profiles"
+        },
     }
 
 
@@ -407,7 +415,167 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                 {"since": since},
             )
         ).mappings().first()
+        decision_surface = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COALESCE(decision, 'unknown') AS decision,
+                           COALESCE(meta->>'asset_class', meta->>'asset_type', 'unknown') AS asset_class,
+                           COALESCE(timeframe, 'unknown') AS timeframe,
+                           COALESCE(meta->>'strategy_name', meta->>'strategy', 'unknown') AS strategy_name,
+                           COALESCE(meta->>'regime', meta->'market_context'->>'regime', 'unknown') AS regime,
+                           CASE
+                             WHEN COALESCE(meta->>'score', '') ~ '^[0-9]+([.][0-9]+)?$'
+                             THEN LEAST(9, FLOOR((meta->>'score')::numeric / 10))::int * 10
+                             ELSE NULL
+                           END AS score_bucket,
+                           COUNT(*) AS observations
+                    FROM decision_log
+                    WHERE created_at >= :since
+                    GROUP BY 1,2,3,4,5,6
+                    ORDER BY observations DESC
+                    LIMIT 100
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().all()
+        shadow_coverage = (
+            await session.execute(
+                text(
+                    """
+                    WITH dedup AS (
+                      SELECT r.*, ROW_NUMBER() OVER (
+                        PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
+                                     COALESCE(rejection_reason, ''), COALESCE(actual_outcome, ''),
+                                     DATE_TRUNC('minute', created_at)
+                        ORDER BY CASE WHEN features->>'decision_log_id' IS NOT NULL THEN 0 ELSE 1 END, id
+                      ) AS duplicate_rank
+                      FROM ml_rejected_signals r WHERE created_at >= :since
+                    )
+                    SELECT COALESCE(actual_outcome, 'pending') AS outcome,
+                           COALESCE(features->>'asset_class', 'unknown') AS asset_class,
+                           COALESCE(timeframe, 'unknown') AS timeframe,
+                           COALESCE(rejection_reason, 'unknown') AS rejection_reason,
+                           COUNT(*) AS observations
+                    FROM dedup
+                    WHERE duplicate_rank = 1
+                    GROUP BY 1,2,3,4
+                    ORDER BY observations DESC
+                    LIMIT 100
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().all()
+        full_market_segments = (
+            await session.execute(
+                text(
+                    f"""
+                    WITH rejected_dedup AS (
+                      SELECT r.*, ROW_NUMBER() OVER (
+                        PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
+                                     COALESCE(rejection_reason, ''), COALESCE(actual_outcome, ''),
+                                     DATE_TRUNC('minute', created_at)
+                        ORDER BY CASE WHEN features->>'decision_log_id' IS NOT NULL THEN 0 ELSE 1 END, id
+                      ) AS duplicate_rank
+                      FROM ml_rejected_signals r WHERE created_at >= :since
+                    ), observations AS (
+                      SELECT 'canonical_issued'::text AS source, 'issued'::text AS decision,
+                             COALESCE(s.asset_class, 'unknown') AS asset_class,
+                             COALESCE(s.timeframe, 'unknown') AS timeframe,
+                             COALESCE(s.strategy_name, 'unknown') AS strategy_name,
+                             COALESCE(s.regime, 'unknown') AS regime,
+                             CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END AS won,
+                             o.r_multiple AS r_multiple
+                      FROM outcomes o JOIN signals s ON s.signal_id=o.signal_id
+                      WHERE COALESCE(o.closed_at, o.opened_at) >= :since
+                        AND {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                      UNION ALL
+                      SELECT 'shadow_rejected', COALESCE(r.features->>'decision', 'rejected'),
+                             COALESCE(r.features->>'asset_class', 'unknown'), COALESCE(r.timeframe, 'unknown'),
+                             COALESCE(r.features->>'strategy_name', r.features->>'strategy', 'unknown'),
+                             COALESCE(r.features->>'regime', 'unknown'),
+                             CASE WHEN lower(r.actual_outcome) IN ('tp','tp1','tp2','tp3','win') THEN 1 ELSE 0 END,
+                             NULL::double precision
+                      FROM rejected_dedup r
+                      WHERE r.duplicate_rank = 1
+                        AND lower(COALESCE(r.actual_outcome, '')) IN ('tp','tp1','tp2','tp3','win','sl','loss','stop_loss')
+                    )
+                    SELECT source, decision, asset_class, timeframe, strategy_name, regime,
+                           COUNT(*) AS outcomes, SUM(won) AS wins, COUNT(*)-SUM(won) AS losses,
+                           AVG(r_multiple) AS avg_r
+                    FROM observations
+                    GROUP BY 1,2,3,4,5,6
+                    ORDER BY outcomes DESC
+                    LIMIT 100
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().all()
+        calibration_rows = (
+            await session.execute(
+                text(
+                    f"""
+                    WITH rejected_dedup AS (
+                      SELECT r.*, ROW_NUMBER() OVER (
+                        PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
+                                     COALESCE(rejection_reason, ''), COALESCE(actual_outcome, ''),
+                                     DATE_TRUNC('minute', created_at)
+                        ORDER BY CASE WHEN features->>'decision_log_id' IS NOT NULL THEN 0 ELSE 1 END, id
+                      ) AS duplicate_rank
+                      FROM ml_rejected_signals r WHERE created_at >= :since
+                    )
+                    SELECT COALESCE(s.score, 0) AS score,
+                           CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN TRUE ELSE FALSE END AS won,
+                           'canonical_issued'::text AS source, 1.0::double precision AS weight,
+                           COALESCE(o.closed_at, o.opened_at, s.created_at)::text AS observed_at,
+                           COALESCE(s.asset_class, 'unknown') AS asset_class,
+                           COALESCE(s.timeframe, 'unknown') AS timeframe,
+                           COALESCE(s.strategy_name, 'unknown') AS strategy,
+                           COALESCE(s.regime, 'unknown') AS regime
+                    FROM outcomes o JOIN signals s ON s.signal_id=o.signal_id
+                    WHERE COALESCE(o.closed_at, o.opened_at) >= :since
+                      AND {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                    UNION ALL
+                    SELECT CASE
+                             WHEN COALESCE(r.features->>'score', '') ~ '^[0-9]+([.][0-9]+)?$' THEN (r.features->>'score')::double precision
+                             ELSE LEAST(100.0, GREATEST(0.0, COALESCE(r.ml_probability, 0.0) * 100.0))
+                           END AS score,
+                           CASE WHEN lower(r.actual_outcome) IN ('tp','tp1','tp2','tp3','win') THEN TRUE ELSE FALSE END,
+                           'shadow_rejected', 0.60::double precision,
+                           COALESCE(r.outcome_tracked_at, r.created_at)::text,
+                           COALESCE(r.features->>'asset_class', 'unknown'), COALESCE(r.timeframe, 'unknown'),
+                           COALESCE(r.features->>'strategy_name', r.features->>'strategy', 'unknown'),
+                           COALESCE(r.features->>'regime', 'unknown')
+                    FROM rejected_dedup r
+                    WHERE r.duplicate_rank = 1
+                      AND lower(COALESCE(r.actual_outcome, '')) IN ('tp','tp1','tp2','tp3','win','sl','loss','stop_loss')
+                    ORDER BY observed_at ASC
+                    LIMIT 20000
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().all()
         await session.commit()
+    observations = [
+        ScoreObservation(
+            score=float(row.get("score") or 0.0), won=bool(row.get("won")),
+            source=str(row.get("source") or "unknown"), observed_at=str(row.get("observed_at") or ""),
+            weight=float(row.get("weight") or 0.0), asset_class=str(row.get("asset_class") or "unknown"),
+            timeframe=str(row.get("timeframe") or "unknown"), strategy=str(row.get("strategy") or "unknown"),
+            regime=str(row.get("regime") or "unknown"),
+        )
+        for row in calibration_rows
+    ]
+    calibration_profile = build_calibration_profile(
+        observations,
+        bins=max(4, int(os.getenv("SCORE_CALIBRATION_BUCKETS", "10") or 10)),
+        minimum_observations=max(20, int(os.getenv("SCORE_CALIBRATION_MIN_OBSERVATIONS", "200") or 200)),
+        minimum_holdout=max(10, int(os.getenv("SCORE_CALIBRATION_MIN_HOLDOUT", "40") or 40)),
+    )
     return {
         "ok": True,
         "days": int(days),
@@ -418,6 +586,10 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         "deliveries": dict(deliveries or {}),
         "score_saturation": dict(score_saturation or {}),
         "outcome_integrity": dict(outcome_integrity or {}),
+        "decision_surface": [dict(row) for row in decision_surface],
+        "shadow_coverage": [dict(row) for row in shadow_coverage],
+        "full_market_segments": [dict(row) for row in full_market_segments],
+        "score_calibration": calibration_profile,
     }
 
 
