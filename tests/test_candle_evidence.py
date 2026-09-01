@@ -63,7 +63,7 @@ def test_same_wick_is_stronger_at_support_than_in_middle_of_range():
         direction="long",
     )
     mid_range = assess_candle_evidence(
-        history + [_candle(106, 108, 103, 107, 150)],
+        history + [_candle(103.5, 104, 102, 103.8, 150)],
         direction="long",
     )
     assert at_support.rejection == "lower_price_rejection"
