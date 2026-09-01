@@ -29,9 +29,9 @@
   "schema_version": 1,
   "source_prompt": {
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
-    "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
-  "variable_count": 1235,
+  "variable_count": 1237,
   "variables": [
     {
       "declared_defaults": {},
@@ -204,7 +204,8 @@
       "name": "ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:202"
+        "engine/adaptive/candle_store.py:302",
+        "engine/adaptive/candle_store.py:45"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -232,7 +233,7 @@
       "name": "ADAPTIVE_CANDLE_CAPTURE_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:201"
+        "engine/adaptive/candle_store.py:301"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -247,7 +248,7 @@
       "name": "ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:49"
+        "engine/adaptive/candle_store.py:146"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -257,7 +258,7 @@
       "name": "ADAPTIVE_CANDLE_DB_PRIORITY",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:33"
+        "engine/adaptive/candle_store.py:35"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -272,7 +273,27 @@
       "name": "ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:152"
+        "engine/adaptive/candle_store.py:252"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/adaptive/candle_store.py:43"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "ADAPTIVE_CANDLE_LOCAL_DRAIN_RETRY_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/adaptive/candle_store.py:64"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -282,7 +303,7 @@
       "name": "ADAPTIVE_CANDLE_OPEN_UPDATE_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:68"
+        "engine/adaptive/candle_store.py:165"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -307,7 +328,7 @@
       "name": "ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/candle_store.py:162"
+        "engine/adaptive/candle_store.py:262"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -928,7 +949,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:62",
-        "data/fetcher.py:2258",
+        "data/fetcher.py:2262",
         "data/providers.py:1002",
         "data/providers.py:902",
         "data/startup_selfcheck.py:122"
@@ -2796,7 +2817,7 @@
         "data/connectors/cryptocompare_adapter.py:103",
         "data/connectors/cryptocompare_adapter.py:31",
         "data/cryptocompare_ws.py:69",
-        "data/fetcher.py:2042",
+        "data/fetcher.py:2046",
         "data/get_live_price.py:253",
         "data/get_live_price.py:588",
         "data/pair_discovery.py:281",
@@ -2830,7 +2851,7 @@
       "name": "CRYPTO_DATA_PROVIDER",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2131",
+        "data/fetcher.py:2135",
         "data/pair_discovery.py:250",
         "data/pair_discovery.py:502",
         "data/pair_discovery.py:842",
@@ -2864,7 +2885,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/connector_registry.py:150",
-        "data/fetcher.py:2610"
+        "data/fetcher.py:2614"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5551,7 +5572,7 @@
       "production_example_default": null,
       "read_locations": [
         "core/paper_trading_service.py:84",
-        "engine/adaptive/candle_store.py:31",
+        "engine/adaptive/candle_store.py:33",
         "engine/core.py:1002",
         "payments/paystack_policy.py:97"
       ],
@@ -5952,7 +5973,7 @@
       "name": "INDEX_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1817"
+        "data/fetcher.py:1821"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5962,7 +5983,7 @@
       "name": "INDEX_DAILY_BREAK_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1837"
+        "data/fetcher.py:1841"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5982,7 +6003,7 @@
       "name": "INDEX_MARKET_MODE",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1807",
+        "data/fetcher.py:1811",
         "data/market_hours.py:252"
       ],
       "required_by_code": true,
@@ -5993,7 +6014,7 @@
       "name": "INDEX_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1816"
+        "data/fetcher.py:1820"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6460,7 +6481,7 @@
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2638"
+        "data/fetcher.py:2642"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13006,8 +13027,8 @@
       "name": "STOCK_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1817",
-        "data/fetcher.py:1893"
+        "data/fetcher.py:1821",
+        "data/fetcher.py:1897"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13027,8 +13048,8 @@
       "name": "STOCK_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1816",
-        "data/fetcher.py:1892"
+        "data/fetcher.py:1820",
+        "data/fetcher.py:1896"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13209,7 +13230,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:37",
-        "data/fetcher.py:1939",
+        "data/fetcher.py:1943",
         "engine/admin_pulse.py:639",
         "engine/admin_pulse.py:769",
         "engine/core.py:1469",
@@ -14158,7 +14179,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/fetcher.py:1070",
-        "data/fetcher.py:2589"
+        "data/fetcher.py:2593"
       ],
       "required_by_code": true,
       "sensitive": false
