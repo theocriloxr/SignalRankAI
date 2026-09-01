@@ -1660,7 +1660,11 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
     
     # Minimum price thresholds by asset type
     MIN_PRICES = {
-        "crypto": 0.0001,      # Crypto can be very small
+        # Token unit prices can legitimately be far below one cent (for
+        # example SHIB, PEPE and BONK). Identity is established by provider
+        # symbol mapping and, when available, last-price/multi-source checks;
+        # a fixed 1e-4 floor silently quarantines valid markets.
+        "crypto": 1e-12,
         "fx": 0.0001,          # Forex pairs in major currencies
         "stock": 0.01,         # Stocks rarely go below penny
         "commodity": 0.01,     # Commodities in dollars
