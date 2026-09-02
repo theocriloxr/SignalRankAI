@@ -157,6 +157,16 @@ STABLECOIN_PAIRS: set[str] = {
 }
 
 
+def _is_non_trading_quote_asset(symbol: str) -> bool:
+    """Reject quote/stablecoin inventory mapped into synthetic USDT pairs."""
+    value = str(symbol or "").upper().strip()
+    base = value[:-4] if value.endswith("USDT") else value
+    return base in {"U", "UB"} or base.startswith("USD") or base in {
+        "USAT", "USBD", "USDCV", "DAI", "BUSD", "FDUSD", "TUSD",
+        "USDE", "USDD", "FRAX", "MIM",
+    }
+
+
 def _load_crypto_blacklist() -> set[str]:
     raw = (os.getenv("CRYPTO_BLACKLIST") or "").strip()
     extra = {x.strip().upper() for x in raw.split(",") if x.strip()}
@@ -184,7 +194,7 @@ def _filter_blacklisted(pairs: list[str]) -> list[str]:
         if sym in _CRYPTO_BLACKLIST or sym in EXCLUDE_ALWAYS:
             continue
         # Bug Fix: Filter stablecoin pairs to prevent "Stablecoin Trap" signals
-        if sym in STABLECOIN_PAIRS:
+        if sym in STABLECOIN_PAIRS or _is_non_trading_quote_asset(sym):
             logger.info(f"[pair_discovery] Filtering stablecoin pair: {sym}")
             continue
         out.append(sym)

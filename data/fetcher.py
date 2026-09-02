@@ -174,6 +174,21 @@ def mark_provider_result(provider_name, ok, latency_ms: int | None = None):
             # Keep only recent failures
             entry["failures"] = [t for t in entry["failures"] if now - t < _PROVIDER_FAIL_WINDOW]
 
+
+def mark_provider_capability_miss(provider_name: str, *, latency_ms: int | None = None) -> None:
+    """Record a symbol/timeframe miss without declaring the provider down."""
+    with _PROVIDER_HEALTH_LOCK:
+        entry = _PROVIDER_HEALTH.setdefault(
+            provider_name,
+            {"failures": [], "last_success": 0, "success_count": 0,
+             "failure_count": 0, "capability_miss_count": 0, "latencies_ms": []},
+        )
+        entry["capability_miss_count"] = int(entry.get("capability_miss_count") or 0) + 1
+        if latency_ms is not None:
+            latencies = entry.setdefault("latencies_ms", [])
+            latencies.append(max(0, int(latency_ms)))
+            entry["latencies_ms"] = latencies[-100:]
+
 def provider_is_healthy(provider_name):
     now = time.time()
     with _PROVIDER_HEALTH_LOCK:
@@ -336,7 +351,7 @@ def _try_provider_chain(
                     latency_ms,
                 )
                 return candles
-            mark_provider_result(provider_name, False, latency_ms=latency_ms)
+            mark_provider_capability_miss(provider_name, latency_ms=latency_ms)
             reason = _provider_failure_reason(
                 provider_name,
                 "insufficient_candles",
@@ -550,6 +565,7 @@ def get_provider_health_snapshot() -> dict[str, dict]:
                 "recent_failures": len(failures),
                 "success_count": int(entry.get("success_count") or 0),
                 "failure_count": int(entry.get("failure_count") or 0),
+                "capability_miss_count": int(entry.get("capability_miss_count") or 0),
                 "error_rate": (
                     float(entry.get("failure_count") or 0)
                     / max(1.0, float((entry.get("success_count") or 0) + (entry.get("failure_count") or 0)))
@@ -2678,7 +2694,7 @@ async def async_get_candles(asset, timeframe):
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                     return candles
                 else:
-                    mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                    mark_provider_capability_miss(provider_name, latency_ms=_latency_ms)
                     reason = _provider_failure_reason(
                         provider_name,
                         "insufficient_candles",
