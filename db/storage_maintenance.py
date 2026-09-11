@@ -42,6 +42,7 @@ def retention_config() -> dict[str, int | bool]:
         "decision_days": _env_int("DECISION_LOG_RETENTION_DAYS", 30, 1, 3650),
         "rejection_tracked_days": _env_int("REJECTION_TRACKED_RETENTION_DAYS", 120, 91, 3650),
         "rejection_untracked_days": _env_int("REJECTION_UNTRACKED_RETENTION_DAYS", 14, 2, 3650),
+        "statement_timeout_ms": _env_int("LEARNING_HISTORY_RETENTION_STATEMENT_TIMEOUT_MS", 8000, 1000, 30000),
     }
 
 
@@ -71,9 +72,9 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             """
             WITH doomed AS (
                 SELECT id FROM decision_log
-                WHERE created_at < NOW() - (:days * INTERVAL '1 day')
+                WHERE created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
-                LIMIT :limit
+                LIMIT CAST(:limit AS INTEGER)
             )
             DELETE FROM decision_log AS target
             USING doomed
@@ -87,9 +88,9 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             WITH doomed AS (
                 SELECT id FROM ml_rejected_signals
                 WHERE outcome_tracked_at IS NOT NULL
-                  AND created_at < NOW() - (:days * INTERVAL '1 day')
+                  AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
-                LIMIT :limit
+                LIMIT CAST(:limit AS INTEGER)
             )
             DELETE FROM ml_rejected_signals AS target
             USING doomed
@@ -103,9 +104,9 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             WITH doomed AS (
                 SELECT id FROM ml_rejected_signals
                 WHERE outcome_tracked_at IS NULL
-                  AND created_at < NOW() - (:days * INTERVAL '1 day')
+                  AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
-                LIMIT :limit
+                LIMIT CAST(:limit AS INTEGER)
             )
             DELETE FROM ml_rejected_signals AS target
             USING doomed
@@ -117,6 +118,10 @@ async def run_learning_history_retention_once() -> dict[str, int]:
 
     try:
         async with get_session(priority="background", label="learning_history_retention", timeout_seconds=10.0) as session:
+            await session.execute(
+                text("SET LOCAL statement_timeout = :timeout"),
+                {"timeout": f"{int(cfg['statement_timeout_ms'])}ms"},
+            )
             for key, sql, days in statements:
                 for _ in range(max_batches):
                     deleted = await _delete_batch(session, sql, {"days": days, "limit": batch_size})
@@ -139,7 +144,7 @@ async def run_learning_history_retention_once() -> dict[str, int]:
 
 
 async def learning_history_maintenance_loop() -> None:
-    """Run bounded retention periodically while the owning service is alive."""
+    """Run bounded retention periodically while the maintenance service is alive."""
     cfg = retention_config()
     if not cfg["enabled"]:
         logger.info("[storage_maintenance] disabled")
