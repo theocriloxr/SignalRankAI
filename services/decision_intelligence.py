@@ -154,7 +154,7 @@ def validate_decision_record(record: Mapping[str, Any]) -> Dict[str, Any]:
         errors.append("asset_missing")
     if not record.get("timeframe"):
         errors.append("timeframe_missing")
-    if record.get("decision") not in {"issued", "rejected", "skipped", "delayed", "suppressed", "error"}:
+    if record.get("decision") not in {"issued", "rejected", "skipped", "observed", "delayed", "suppressed", "error"}:
         errors.append("unknown_decision")
     if missing:
         errors.append("missing_sections")

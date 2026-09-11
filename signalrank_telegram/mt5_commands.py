@@ -1,5 +1,17 @@
+import os
+
 from telegram import Update
 from telegram.ext import ContextTypes
+
+from signalrank_telegram.command_resilience import safe_command_error
+from signalrank_telegram.utils import _effective_tier, tier_rank
+
+
+def _mt5_not_configured_message() -> str:
+    return (
+        "⚠️ MT5 linking is not configured on this deployment.\n"
+        "Signal analysis and paper trading remain available. Please contact /support."
+    )
 
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Link a MetaTrader 5 account for one-click trade execution."""
@@ -23,7 +35,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not (os.getenv("META_API_TOKEN") or "").strip():
         missing_vars.append("META_API_TOKEN")
     if missing_vars:
-        await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
+        await update.message.reply_text(_mt5_not_configured_message())
         return
     
     args = context.args or []
@@ -74,9 +86,9 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
         else:
             err = result.get("error", "Unknown error")
-            reply = f"❌ MT5 Link Failed: {err}"
+            reply = safe_command_error("MT5 account linking failed.", RuntimeError(str(err)))
     except Exception as exc:
-        reply = f"❌ Link Error: {exc}"
+        reply = safe_command_error("MT5 account linking failed.", exc)
     
     await processing_msg.edit_text(reply)
 
@@ -123,6 +135,6 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply += "\n⚡ Ready for signal execution."
         await update.message.reply_text(reply)
     except Exception as exc:
-        await update.message.reply_text(f"Status error: {exc}")
+        await update.message.reply_text(safe_command_error("Could not fetch MT5 status.", exc))
 
 __all__ = ['mt5_link_command', 'mt5_status_command']

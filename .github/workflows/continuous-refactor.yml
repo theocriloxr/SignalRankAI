@@ -1,0 +1,87 @@
+name: Governed Continuous Refactor
+
+on:
+  repository_dispatch:
+    types: [signalrank_refactor]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: signalrank-continuous-refactor
+  cancel-in-progress: false
+
+jobs:
+  draft-refactor:
+    if: vars.CONTINUOUS_REFACTOR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      CONTINUOUS_REFACTOR_SOURCE_SHARING_ENABLED: "1"
+      CONTINUOUS_REFACTOR_WRITE_ENABLED: "1"
+      CONTINUOUS_REFACTOR_ALLOWED_ROOTS: ${{ vars.CONTINUOUS_REFACTOR_ALLOWED_ROOTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - name: Materialize signed research handoff
+        id: handoff
+        shell: bash
+        run: |
+          mkdir -p artifacts/continuous-improvement
+          jq '{recommendations: [.client_payload.recommendation]}' "$GITHUB_EVENT_PATH" > artifacts/continuous-improvement/dispatch-report.json
+          recommendation_id="$(jq -r '.client_payload.recommendation.recommendation_id' "$GITHUB_EVENT_PATH")"
+          echo "recommendation_id=$recommendation_id" >> "$GITHUB_OUTPUT"
+      - name: Create isolated refactor branch
+        shell: bash
+        run: git checkout -b "automation/refactor-${{ steps.handoff.outputs.recommendation_id }}-${GITHUB_RUN_ID}"
+      - name: Generate and apply dual-reviewed patch
+        run: >-
+          python -m tools.continuous_refactor
+          --report artifacts/continuous-improvement/dispatch-report.json
+          --recommendation-id "${{ steps.handoff.outputs.recommendation_id }}"
+          --apply
+          --output artifacts/continuous-improvement/refactor-result.json
+      - run: python -m compileall -q core data db engine market services signalrank_telegram strategies tests tools
+      - run: python scripts/run_complete_system_test.py --full --pytest-batches 20 --output-dir artifacts/refactor-certification
+      - name: Reject empty patches
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No code change produced"
+            exit 1
+          fi
+      - name: Commit and push draft branch
+        shell: bash
+        run: |
+          git config user.name "signalrank-refactor-bot"
+          git config user.email "signalrank-refactor-bot@users.noreply.github.com"
+          while IFS= read -r changed_path; do
+            git add -- "$changed_path"
+          done < <(jq -r '.changed_paths[]' artifacts/continuous-improvement/refactor-result.json)
+          git commit -m "refactor: ${{ steps.handoff.outputs.recommendation_id }}"
+          git push --set-upstream origin HEAD
+      - name: Open draft pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr create --draft --base main \
+            --title "Governed refactor: ${{ steps.handoff.outputs.recommendation_id }}" \
+            --body "Automated draft generated from aggregate evidence. OpenAI proposed the bounded patch, Gemini independently approved it, and repository certification passed. Human review and merge are still required. No production mutation is authorized."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: continuous-refactor-evidence
+          path: |
+            artifacts/continuous-improvement/refactor-result.json
+            artifacts/refactor-certification

@@ -108,6 +108,9 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
     volatility_component = _component_value("vol")
     if volatility_component is not None:
         metric_drivers.append(f"Volatility quality {volatility_component * 100.0:.0f}%")
+    candle_component = _component_value("candle_evidence")
+    if candle_component is not None:
+        metric_drivers.append(f"Candle evidence {candle_component * 100.0:.0f}%")
     if score_components.get("regime_bonus") not in (None, 1, 1.0):
         metric_drivers.append(f"Regime bonus x{float(score_components['regime_bonus']):.2f}")
     if score_components.get("ml_boost") not in (None, 1, 1.0):
@@ -147,6 +150,11 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         bullets.extend(drivers[:3])
     if invalidation_text:
         bullets.append(f"Invalidation: {invalidation_text[:120]}")
+    candle_evidence = signal.get("candle_evidence") if isinstance(signal.get("candle_evidence"), dict) else {}
+    candle_summary = str(signal.get("candle_reasoning") or candle_evidence.get("summary") or "").strip()
+    candle_confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "").strip()
+    if candle_summary:
+        bullets.append(f"Price action: {candle_summary[:180]}")
     
     # Add confidence components from ranking if available
     conf_components = signal.get("confidence_components") or signal.get("score_breakdown") or {}
@@ -173,6 +181,8 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         why_generated.append("Strong confluence detected")
     if ml_probability and ml_probability > 0.7:
         why_generated.append("High ML conviction")
+    if candle_evidence.get("alignment") == "supportive":
+        why_generated.append("Candlestick evidence supports the setup")
     
     # What confirms/invalidates it
     confirms = []
@@ -182,6 +192,8 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         confirms.append("ML validates")
     if regime and regime != "RANGING":
         confirms.append(f"Favorable {regime} regime")
+    if candle_confirmation == "confirmed":
+        confirms.append("Next completed candle followed through")
     
     invalidates = []
     if invalidation_text:
@@ -190,6 +202,8 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         invalidates.append("Sideways market")
     if confluence and confluence < 30:
         invalidates.append("Weak confluence")
+    if candle_confirmation == "invalidated" or candle_evidence.get("alignment") == "conflicting":
+        invalidates.append("Candlestick evidence conflicts or was invalidated")
 
     return {
         "score": float(score or 0.0),
@@ -207,4 +221,5 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         "why_generated": why_generated,
         "confirms": confirms,
         "invalidates": invalidates,
+        "candle_evidence": candle_evidence or None,
     }

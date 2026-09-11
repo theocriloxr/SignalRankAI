@@ -9,6 +9,7 @@ from typing import Any
 
 from core.redis_state import state
 
+from .github_dispatch import dispatch_refactor_workflow
 from .weekly_review import run_weekly_review
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,14 @@ async def run_scheduled_review_once(*, now: float | None = None) -> dict[str, An
         return {"ok": True, "skipped": True, "reason": "not_due"}
     output_dir = Path(os.getenv("CONTINUOUS_IMPROVEMENT_ARTIFACT_DIR", "artifacts/continuous-improvement"))
     external = str(os.getenv("CONTINUOUS_IMPROVEMENT_OPENAI_ENABLED", "0")).lower() in {"1", "true", "yes", "on"}
-    report, paths = await run_weekly_review(days=7, request_external=external, output_dir=output_dir)
+    gemini = str(os.getenv("CONTINUOUS_IMPROVEMENT_GEMINI_ENABLED", "0")).lower() in {"1", "true", "yes", "on"}
+    report, paths = await run_weekly_review(
+        days=7,
+        request_external=external,
+        request_gemini=gemini,
+        output_dir=output_dir,
+    )
+    refactor_dispatch = await dispatch_refactor_workflow(report)
     try:
         state.set_sync(_LAST_RUN_KEY, str(current), ex=max(interval * 3, 2592000))
     except Exception:
@@ -44,6 +52,7 @@ async def run_scheduled_review_once(*, now: float | None = None) -> dict[str, An
         "incidents": len(report.incidents),
         "artifacts": [str(path) for path in paths or ()],
         "production_mutation": False,
+        "refactor_dispatch": refactor_dispatch,
     }
 
 

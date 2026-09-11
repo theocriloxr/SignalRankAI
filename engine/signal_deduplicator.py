@@ -819,9 +819,20 @@ class MLRejectionTracker:
                     if entry <= 0 or stop_loss <= 0:
                         continue
 
+                    decision_log_id = int(getattr(dl, "id", 0) or 0)
+                    already_tracked = (
+                        await session.execute(
+                            select(MLRejectedSignal.id)
+                            .where(MLRejectedSignal.features["decision_log_id"].as_string() == str(decision_log_id))
+                            .limit(1)
+                        )
+                    ).first()
+                    if already_tracked:
+                        continue
+
                     feature_blob = {
                         "source": "decision_log",
-                        "decision_log_id": int(getattr(dl, "id", 0) or 0),
+                        "decision_log_id": decision_log_id,
                         "decision": str(getattr(dl, "decision", "") or ""),
                         "reason": str(getattr(dl, "reason", "") or "")[:256],
                     }

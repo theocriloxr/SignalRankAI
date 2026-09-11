@@ -20,6 +20,11 @@ from services.continuous_improvement.recommendation_schema import (
 )
 from services.continuous_improvement.reviewer import normalize_recommendations
 from services.continuous_improvement.weekly_review import detect_incidents
+from services.continuous_improvement.segment_learning import (
+    build_segment_learning_recommendations,
+    classify_segment,
+    wilson_interval,
+)
 
 
 def _recommendation(kind: RecommendationKind = RecommendationKind.CODE) -> Recommendation:
@@ -183,3 +188,121 @@ def test_worker_registers_review_only_in_analytics_ownership_lane() -> None:
     block = source.split('"continuous_improvement_review"', 1)[0][-500:]
     assert "_analytics_work_allowed_in_worker()" in block
     assert 'CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED' in block
+
+
+def test_segment_learning_waits_for_sample_and_uses_uncertainty() -> None:
+    assert classify_segment({"wins": 9, "losses": 1, "avg_r": 1.0})["state"] == "observe"
+    weak = classify_segment({"wins": 3, "losses": 27, "avg_r": -0.4})
+    assert weak["state"] == "shadow_quarantine_candidate"
+    lower, upper = wilson_interval(3, 30)
+    assert 0.0 <= lower < upper < 0.55
+
+
+def test_segment_learning_creates_shadow_only_proposals() -> None:
+    recommendations = build_segment_learning_recommendations([
+        {
+            "asset_class": "fx",
+            "timeframe": "1h",
+            "strategy_name": "trend",
+            "wins": 3,
+            "losses": 27,
+            "avg_r": -0.4,
+        }
+    ])
+    assert len(recommendations) == 1
+    recommendation = recommendations[0]
+    assert recommendation.proposed_change["activation"] == "shadow_only"
+    assert recommendation.auto_apply is False
+    assert recommendation.provider == "deterministic_segment_learner"
+
+
+def test_segment_learning_detects_rejected_false_negative_concentration() -> None:
+    result = classify_segment({
+        "source": "shadow_rejected", "decision": "rejected", "wins": 24, "losses": 6,
+        "asset_class": "crypto", "timeframe": "1h", "strategy_name": "breakout", "regime": "trending",
+    })
+
+    assert result["state"] == "gate_recall_review_candidate"
+    recommendation = build_segment_learning_recommendations([{
+        "source": "shadow_rejected", "decision": "rejected", "wins": 24, "losses": 6,
+        "asset_class": "crypto", "timeframe": "1h", "strategy_name": "breakout", "regime": "trending",
+    }])[0]
+    assert recommendation.proposed_change["segment"]["source"] == "shadow_rejected"
+    assert recommendation.proposed_change["activation"] == "shadow_only"
+
+
+def test_structured_refactor_recommendation_keeps_provider_and_tests() -> None:
+    items = normalize_recommendations(
+        {
+            "assessment": "Measured duplicate writes",
+            "highest_risk_findings": ["duplicate terminal outcomes"],
+            "recommended_code_changes": [],
+            "recommended_env_tweaks": [],
+            "recommended_refactors": [{
+                "title": "Make outcome write idempotent",
+                "objective": "Prevent duplicate terminal writes",
+                "target_paths": ["services/continuous_improvement/reviewer.py"],
+                "acceptance_tests": ["duplicate write test"],
+                "risk": "medium",
+                "expected_metric": "duplicate outcomes = 0",
+                "rollback": "revert the draft PR",
+            }],
+        },
+        provider="openai",
+    )
+    refactor = next(item for item in items if item.title == "Make outcome write idempotent")
+    assert refactor.provider == "openai"
+    assert refactor.acceptance_tests == ("duplicate write test",)
+    assert refactor.proposed_change["target_paths"]
+
+
+def test_refactor_guard_rejects_paths_and_ambiguous_replacements(tmp_path, monkeypatch) -> None:
+    from services.continuous_improvement.refactor_agent import PatchChange, PatchProposal, validate_patch_proposal
+
+    allowed = tmp_path / "services" / "continuous_improvement"
+    allowed.mkdir(parents=True)
+    target = allowed / "sample.py"
+    target.write_text("value = 1\nvalue = 1\n", encoding="utf-8")
+    monkeypatch.setenv("CONTINUOUS_REFACTOR_ALLOWED_ROOTS", "services/continuous_improvement")
+    ambiguous = PatchProposal(
+        "test",
+        "test",
+        (PatchChange("services/continuous_improvement/sample.py", "value = 1", "value = 2", "test"),),
+        (),
+        (),
+    )
+    assert "old_text_not_unique" in ";".join(validate_patch_proposal(tmp_path, ambiguous))
+    forbidden = PatchProposal(
+        "test",
+        "test",
+        (PatchChange(".github/workflows/ci.yml", "a", "b", "test"),),
+        (),
+        (),
+    )
+    assert "path_not_allowed" in ";".join(validate_patch_proposal(tmp_path, forbidden))
+
+
+def test_only_bounded_external_refactors_are_dispatched() -> None:
+    from services.continuous_improvement.github_dispatch import eligible_refactor_recommendation
+
+    external = Recommendation(
+        recommendation_id="rec-external",
+        kind=RecommendationKind.CODE,
+        title="Bounded refactor",
+        rationale="evidence",
+        evidence=("metric",),
+        proposed_change={"target_paths": ["services/continuous_improvement/reviewer.py"]},
+        risk="low",
+        provider="openai",
+        acceptance_tests=("test",),
+    )
+    report = ReviewReport(
+        review_id="review-dispatch",
+        period_start="2026-08-01T00:00:00+00:00",
+        period_end="2026-08-08T00:00:00+00:00",
+        code_sha="a" * 40,
+        dataset_hash="b" * 64,
+        summary={},
+        recommendations=(_recommendation(), external),
+    )
+    assert eligible_refactor_recommendation(report)["recommendation_id"] == "rec-external"

@@ -1663,7 +1663,8 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         try:
                             from db.staging_remediation import upsert_terminal_suppression
 
-                            upsert_terminal_suppression(
+                            await asyncio.to_thread(
+                                upsert_terminal_suppression,
                                 f"outcome_notification:{getattr(row, 'id', '')}",
                                 canonical_notification_id=int(getattr(row, "id", 0) or 0),
                                 reason="recipient_not_allowed_terminal",

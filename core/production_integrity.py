@@ -151,14 +151,22 @@ def evaluate_signal_freshness(
     timeframe: Any,
     generated_at: datetime | None,
     delivered_at: datetime | None = None,
+    expires_at: datetime | None = None,
     now: datetime | None = None,
     purpose: str = "delivery",
     explicit_age_seconds: float | None = None,
 ) -> FreshnessDecision:
     maximum = max_signal_age_seconds(timeframe, purpose=purpose)
+    current = _as_utc_naive(delivered_at or now) or datetime.now(timezone.utc).replace(tzinfo=None)
+    expiry = _as_utc_naive(expires_at)
+    if expiry is not None and current >= expiry:
+        age = explicit_age_seconds
+        if age is None:
+            age = signal_age_seconds(generated_at, now=current)
+        return FreshnessDecision(False, age, maximum, "signal_expired")
     age = explicit_age_seconds
     if age is None:
-        age = signal_age_seconds(generated_at, now=delivered_at or now)
+        age = signal_age_seconds(generated_at, now=current)
     if age is None:
         if _env_bool(f"{str(purpose).upper()}_REQUIRE_GENERATED_AT", True):
             return FreshnessDecision(False, None, maximum, "generated_at_missing")

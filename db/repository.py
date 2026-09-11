@@ -317,6 +317,32 @@ async def persist_decision_log(
         return 0
 
 
+async def persist_decision_logs_batch(rows: list[dict[str, Any]]) -> int:
+    """Persist one bounded market-scan batch without losing it under DB backpressure.
+
+    Market observations are first placed in the same process-local bounded retry
+    queue used by individual decision annotations.  Every subsequent scan drains
+    the oldest entries, so a temporary background-write admission failure does
+    not silently erase the very examples used by the full-market learner.
+    """
+    if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return 0
+    clean = []
+    for row in list(rows or [])[:100]:
+        clean.append({
+            "signal_id": row.get("signal_id"), "asset": row.get("asset"),
+            "timeframe": row.get("timeframe"), "decision": str(row.get("decision") or "observed")[:32],
+            "reason": str(row.get("reason") or "")[:1000] or None, "meta": dict(row.get("meta") or {}),
+        })
+    if not clean:
+        return 0
+    for item in clean:
+        _DECISION_LOG_RETRY_QUEUE.append(item)
+    return await flush_decision_log_retry_queue(limit=100)
+
+
 async def flush_decision_log_retry_queue(limit: int = 100) -> int:
     """Best-effort bounded flush for decision annotations deferred by DB admission."""
     if not _DECISION_LOG_RETRY_QUEUE:
@@ -329,9 +355,15 @@ async def flush_decision_log_retry_queue(limit: int = 100) -> int:
             session.add_all([DecisionLog(**item) for item in batch])
             await session.commit()
         return len(batch)
-    except Exception:
+    except Exception as exc:
         for item in reversed(batch):
             _DECISION_LOG_RETRY_QUEUE.appendleft(item)
+        import logging
+        logging.getLogger(__name__).warning(
+            "Decision-log retry batch deferred: %s pending=%s",
+            type(exc).__name__,
+            len(_DECISION_LOG_RETRY_QUEUE),
+        )
         return 0
 
 

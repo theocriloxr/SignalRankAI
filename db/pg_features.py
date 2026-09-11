@@ -2573,6 +2573,8 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
             SignalDelivery.sent_ok.is_(True),
             SignalDelivery.telegram_chat_id.is_not(None),
             SignalDelivery.telegram_message_id.is_not(None),
+            User.telegram_reachable.is_(True),
+            User.notification_suppressed.is_(False),
             func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
             or_(UserSignalMonitoring.id.is_(None), UserSignalMonitoring.status.in_(("auto_continue", "continued"))),
         )

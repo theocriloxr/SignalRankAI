@@ -36,9 +36,25 @@ def _is_expected_closure(previous_ms: int, current_ms: int, asset_class: AssetCl
         return False
     previous = datetime.fromtimestamp(previous_ms / 1000, tz=timezone.utc)
     current = datetime.fromtimestamp(current_ms / 1000, tz=timezone.utc)
-    if previous.weekday() >= 4 and current.weekday() <= 1:
-        return True
     if asset_class in {AssetClass.EQUITY, AssetClass.INDEX} and previous.date() != current.date():
+        return True
+    elapsed_hours = (current - previous).total_seconds() / 3600.0
+    # FX and commodity feeds legitimately skip the Friday-close to Sunday-open
+    # interval. Keep this bounded so a week-long outage is never normalized as
+    # a routine closure merely because it crosses a Saturday.
+    if elapsed_hours <= 80.0:
+        cursor = previous.date()
+        while cursor <= current.date():
+            if cursor.weekday() == 5:
+                return True
+            cursor = cursor.fromordinal(cursor.toordinal() + 1)
+    # Many FX and futures feeds omit a short rollover/maintenance window. A
+    # bounded overnight gap is expected; an equivalent intraday hole is not.
+    if (
+        asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}
+        and previous.date() != current.date()
+        and elapsed_hours <= 8.0
+    ):
         return True
     return False
 
@@ -95,6 +111,12 @@ def certify_market_candles(
         if not contract_valid:
             reasons.append("missing_contract_roll_metadata")
     elif canonical is AssetClass.INDEX:
+        if feed_type is None:
+            provider_name = str(provider or "").strip().lower()
+            if any(token in provider_name for token in ("yahoo", "yfinance")):
+                feed_type = "cash_index"
+            elif any(token in provider_name for token in ("metaapi", "oanda", "broker")):
+                feed_type = "cfd"
         if feed_type not in {"cash_index", "cfd", "future", "continuous_future"}:
             reasons.append("ambiguous_index_feed_type")
     elif canonical is AssetClass.CRYPTO and meta.get("exchange_outage"):

@@ -50,6 +50,31 @@ def test_freshness_rejects_old_one_hour_signal(monkeypatch):
     assert decision.reason == "signal_stale"
 
 
+def test_freshness_rejects_explicitly_expired_signal():
+    now = datetime.now(timezone.utc)
+    decision = evaluate_signal_freshness(
+        timeframe="1h",
+        generated_at=now - timedelta(minutes=5),
+        expires_at=now - timedelta(seconds=1),
+        now=now,
+        purpose="delivery",
+    )
+    assert not decision.ok
+    assert decision.reason == "signal_expired"
+
+
+def test_freshness_accepts_unexpired_signal():
+    now = datetime.now(timezone.utc)
+    decision = evaluate_signal_freshness(
+        timeframe="1h",
+        generated_at=now - timedelta(minutes=5),
+        expires_at=now + timedelta(minutes=5),
+        now=now,
+        purpose="delivery",
+    )
+    assert decision.ok
+
+
 def test_thesis_fingerprint_collapses_tiny_repricing_and_timeframe(monkeypatch):
     monkeypatch.delenv("THESIS_FINGERPRINT_INCLUDE_TIMEFRAME", raising=False)
     a = signal_thesis_fingerprint(_signal(entry=63000, timeframe="15m"))
