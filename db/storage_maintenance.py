@@ -119,7 +119,7 @@ async def run_learning_history_retention_once() -> dict[str, int]:
     try:
         async with get_session(priority="background", label="learning_history_retention", timeout_seconds=10.0) as session:
             await session.execute(
-                text("SET LOCAL statement_timeout = :timeout"),
+                text("SELECT set_config('statement_timeout', :timeout, true)"),
                 {"timeout": f"{int(cfg['statement_timeout_ms'])}ms"},
             )
             for key, sql, days in statements:
