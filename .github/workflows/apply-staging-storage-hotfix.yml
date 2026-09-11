@@ -35,18 +35,13 @@ jobs:
           print("strict JSON sanitizer validation passed")
           PY
 
-      - name: Remove one-shot patch machinery
-        run: |
-          rm -f scripts/apply_staging_storage_hotfix.py
-          rm -f .github/workflows/apply-staging-storage-hotfix.yml
-
-      - name: Commit hotfix
+      - name: Commit source hotfix only
         run: |
           git config user.name "signalrank-staging-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
+          git add db/repository.py railway_main.py
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No source changes to commit"
             exit 0
           fi
           git commit -m "fix staging DB JSON safety and retention"
