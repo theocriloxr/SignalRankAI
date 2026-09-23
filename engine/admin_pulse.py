@@ -787,7 +787,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
 
 
 async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool:
-    """Run Gemini weekly filter-efficacy review and post summary to admins.
+    """Run the configured AI weekly filter-efficacy review and post summary to admins.
 
     This delegates to services.gemini_ml.run_gemini_review_pipeline which already
     collects DB aggregates and stores the review in runtime_state.
@@ -803,17 +803,18 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
             logger.debug("[admin_pulse] no recipients configured for weekly report")
             return False
 
-        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-        if not api_key:
-            logger.debug("[admin_pulse] GEMINI_API_KEY not configured; skipping weekly filter efficacy")
+        has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
+        has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+        if not (has_openai or has_gemini):
+            logger.debug("[admin_pulse] no external AI provider configured; skipping weekly filter efficacy")
             return False
 
-        # run the gemini weekly pipeline (it persists results and returns review)
+        # run the provider-routed weekly pipeline (it persists results and returns review)
         try:
             from services import gemini_ml
             review = await gemini_ml.run_gemini_review_pipeline(trigger="weekly_filter_efficacy", scope="weekly")
         except Exception as exc:
-            logger.exception("[admin_pulse] gemini weekly review failed: %s", exc)
+            logger.exception("[admin_pulse] AI weekly review failed: %s", exc)
             return False
 
         # Build message: concise top-level summary + short delivered vs shadow outcome table
