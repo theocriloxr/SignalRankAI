@@ -38,7 +38,9 @@ RUN python -m compileall -q engine db data worker services ml \
       tests/test_phase4_pass2_db_priority_and_command_speed.py::test_dedicated_analytics_role_cannot_be_pinned_to_one_session \
       tests/test_phase4_pass1_quote_contract.py::test_twelvedata_quote_falls_back_to_timestamped_one_minute_bar \
       tests/test_production_endgame_20260725.py::test_current_gemini_review_request_avoids_legacy_sampling_knobs \
-      tests/test_production_endgame_20260725.py::test_metaapi_discovery_uses_canonical_account_aliases
+      tests/test_production_endgame_20260725.py::test_metaapi_discovery_uses_canonical_account_aliases \
+      tests/test_deployment_schema_completion_v151.py::test_production_migration_fast_path_skips_backup_and_lock_at_head \
+      tests/test_deployment_schema_completion_v151.py::test_production_migration_lock_wait_is_bounded_and_nonblocking
 
 # Ensure start script is executable and use it as entrypoint so migrations/run-time
 # setup happens when the container starts (not during image build).
