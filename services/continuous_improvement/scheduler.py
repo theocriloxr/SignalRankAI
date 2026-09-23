@@ -16,6 +16,71 @@ logger = logging.getLogger(__name__)
 _LAST_RUN_KEY = "signalrankai:continuous_improvement:last_weekly_run"
 
 
+def _truthy(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _notify_admins(report) -> dict[str, Any]:
+    """Send one bounded review-only summary through the canonical Telegram helper."""
+    if not _truthy("CONTINUOUS_IMPROVEMENT_ADMIN_NOTIFY_ENABLED", True):
+        return {"enabled": False, "sent": 0, "attempted": 0}
+    try:
+        from config import OWNER_IDS, ADMIN_IDS
+        from services.waitlist_jobs import _send_telegram_dm
+        recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
+    except Exception:
+        recipients = []
+    if not recipients:
+        return {"enabled": True, "sent": 0, "attempted": 0, "reason": "admin_recipients_missing"}
+
+    recommendations = list(getattr(report, "recommendations", ()) or ())
+    incidents = list(getattr(report, "incidents", ()) or ())
+    lines = [
+        "🧠 SignalRank weekly improvement review",
+        "",
+        f"Review: {getattr(report, 'review_id', 'unknown')}",
+        f"Recommendations: {len(recommendations)}",
+        f"Incidents: {len(incidents)}",
+        f"External review: {getattr(report, 'external_review_status', 'not_requested')}",
+        "",
+    ]
+    for idx, recommendation in enumerate(recommendations[:5], start=1):
+        title = str(getattr(recommendation, "title", "Improvement"))[:180]
+        rationale = str(getattr(recommendation, "rationale", ""))[:300]
+        provider = str(getattr(recommendation, "provider", "local"))[:32]
+        risk = str(getattr(recommendation, "risk", "medium"))[:24]
+        tests = list(getattr(recommendation, "acceptance_tests", ()) or ())
+        lines.extend([
+            f"{idx}. {title}",
+            f"Provider: {provider} | Risk: {risk}",
+            f"Why: {rationale}",
+        ])
+        if tests:
+            lines.append(f"Test: {str(tests[0])[:240]}")
+        lines.append("")
+    lines.extend([
+        "No change was auto-applied.",
+        "Use /ai_audit or /codex_audit for detailed evidence before approving an experiment.",
+    ])
+    message = "\n".join(lines)[:3900]
+
+    sent = 0
+    for recipient in recipients:
+        try:
+            await _send_telegram_dm(int(recipient), message)
+            sent += 1
+        except Exception:
+            logger.warning(
+                "[continuous_improvement] admin notification failed chat=%s",
+                recipient,
+                exc_info=True,
+            )
+    return {"enabled": True, "sent": sent, "attempted": len(recipients)}
+
+
 def review_is_due(*, now: float | None = None, interval_seconds: int = 604800) -> bool:
     current = float(time.time() if now is None else now)
     try:
@@ -40,6 +105,7 @@ async def run_scheduled_review_once(*, now: float | None = None) -> dict[str, An
         output_dir=output_dir,
     )
     refactor_dispatch = await dispatch_refactor_workflow(report)
+    admin_notification = await _notify_admins(report)
     try:
         state.set_sync(_LAST_RUN_KEY, str(current), ex=max(interval * 3, 2592000))
     except Exception:
@@ -53,6 +119,7 @@ async def run_scheduled_review_once(*, now: float | None = None) -> dict[str, An
         "artifacts": [str(path) for path in paths or ()],
         "production_mutation": False,
         "refactor_dispatch": refactor_dispatch,
+        "admin_notification": admin_notification,
     }
 
 
