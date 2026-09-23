@@ -40,7 +40,10 @@ class DBAdmissionController:
         self.analytics_enabled = bool(analytics_enabled)
         default_reserve = 1 if self.capacity <= 2 else min(4, max(2, self.capacity // 4))
         requested_reserve = default_reserve if foreground_reserve is None else int(foreground_reserve)
-        self.foreground_reserve = max(1, min(self.capacity, requested_reserve))
+        # Default callers retain a protected foreground lane. Dedicated
+        # non-interactive process roles may explicitly pass zero so their
+        # entire small connection budget is usable by the work they actually own.
+        self.foreground_reserve = max(0, min(self.capacity, requested_reserve))
         borrower_capacity = max(1, self.capacity - self.foreground_reserve)
         default_interactive = 1 if self.capacity <= 2 else max(1, self.foreground_reserve // 2)
         default_critical = 1 if self.capacity <= 2 else max(1, self.foreground_reserve - default_interactive)
