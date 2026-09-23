@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from typing import Any, Dict, List, Tuple
 
 from utils.timeutils import now_utc_naive
@@ -242,6 +243,11 @@ class PortfolioExposureManager:
             # Bind a naïve UTC value so asyncpg never mixes offset-aware and
             # offset-naïve datetimes (which previously blocked every candidate).
             now = now_utc_naive()
+            unresolved_hours = max(
+                1.0,
+                _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0),
+            )
+            unresolved_cutoff = now - timedelta(hours=unresolved_hours)
             active_filters = [
                 Signal.expired.is_(False),
                 Signal.archived.is_(False),
@@ -296,6 +302,11 @@ class PortfolioExposureManager:
                         )),
                         SignalDelivery.telegram_chat_id.is_not(None),
                         SignalDelivery.telegram_message_id.is_not(None),
+                        func.coalesce(
+                            SignalDelivery.delivery_confirmed_at,
+                            SignalDelivery.delivered_at_utc,
+                            SignalDelivery.delivered_at,
+                        ) >= unresolved_cutoff,
                     )
                 )
 
