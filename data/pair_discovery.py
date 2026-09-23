@@ -959,7 +959,11 @@ def get_trending_stock_tickers(top_n=20):
     ) if manual else []
     discovery_mode = str(os.getenv("ASSET_DISCOVERY_MODE") or "auto").strip().lower()
     twelvedata_verified = _twelvedata_verified_configured(manual_symbols, "stocks")
+    yahoo_verified = _yahoo_verified_configured(manual_symbols)
     if manual_symbols and discovery_mode in {"manual", "fixed", "allowlist"}:
+        # Manual/fixed mode controls the admitted symbols, but provider
+        # provenance still comes from live verification. This keeps production
+        # readiness fail-closed when a configured ticker cannot be confirmed.
         return manual_symbols
 
     broker_symbols = _metaapi_symbols()
@@ -1004,6 +1008,7 @@ def get_trending_stock_tickers(top_n=20):
         _polygon_provider(),
         _record_provider_symbols(broker_equities, "metaapi"),
         twelvedata_verified,
+        yahoo_verified,
         manual_symbols,
     ]
     merged = _merge_provider_results(provider_results, limit=max(1, int(top_n)))
