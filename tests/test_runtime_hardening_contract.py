@@ -120,3 +120,12 @@ def test_paystack_recovery_retries_quickly_after_background_contention():
     assert "except NoncriticalWriteDropped:" in loop
     assert "PAYSTACK_WEBHOOK_BUSY_RETRY_SECONDS" in loop
     assert "sleep_for = min(interval, busy_retry)" in loop
+
+
+def test_outcome_tracker_skips_reprocessing_already_recorded_tp():
+    source = text("engine/realtime_outcome_tracker.py")
+    hit = source[source.index("if hit:"):source.index("# Time-stop stale unresolved delivered signals")]
+    assert "if target_tp <= prev_tp:" in hit
+    assert "await publish_snapshot()" in hit
+    assert "return" in hit
+    assert hit.index("if target_tp <= prev_tp:") < hit.index('logger.info(\n                    "[outcome_tracker] Hit detected:')
