@@ -130,3 +130,40 @@ def test_current_twelvedata_canonical_mappings() -> None:
 
     assert map_symbol("JP225", "twelvedata") == "N225"
     assert map_symbol("BRENT", "twelvedata") == "XBR/USD"
+
+def test_yahoo_chart_verifies_configured_indices_not_in_reference_catalogue(monkeypatch) -> None:
+    _reset_discovery_state()
+    monkeypatch.setenv("INDEX_TICKERS", "US500,NAS100,US30,GER40")
+    monkeypatch.setattr(discovery, "_metaapi_symbols", lambda: [])
+    monkeypatch.setattr(discovery, "_twelvedata_verified_configured", lambda symbols, endpoint: [])
+
+    requested = []
+
+    def fake_get(url, **kwargs):
+        requested.append(url)
+        assert "query1.finance.yahoo.com/v8/finance/chart/" in url
+        return SimpleNamespace(
+            ok=True,
+            status_code=200,
+            json=lambda: {
+                "chart": {
+                    "result": [{
+                        "timestamp": [1790112000],
+                        "indicators": {"quote": [{"close": [100.0]}]},
+                    }],
+                    "error": None,
+                }
+            },
+        )
+
+    monkeypatch.setattr(discovery.requests, "get", fake_get)
+
+    indices = discovery.get_trending_index_tickers(top_n=4)
+    assert set(indices) == {"US500", "NAS100", "US30", "GER40"}
+    assert any("%5EGSPC" in url or "^GSPC" in url for url in requested)
+    assert any("%5ENDX" in url or "^NDX" in url for url in requested)
+    assert any("%5EDJI" in url or "^DJI" in url for url in requested)
+    assert any("%5EGDAXI" in url or "^GDAXI" in url for url in requested)
+    for symbol in indices:
+        assert "yahoo" in discovery.asset_discovery_provenance(symbol)
+
