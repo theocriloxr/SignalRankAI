@@ -365,3 +365,19 @@ def test_engine_metadata_reads_wait_boundedly_under_db_contention():
         assert "priority=\"background\"" in window
         assert "drop_if_busy=False" in window
         assert "ENGINE_METADATA_DB_TIMEOUT_SECONDS" in window
+
+
+def test_engine_required_metadata_uses_protected_lane_and_outer_timeout_exceeds_db_wait():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    for label in ("engine.profile_demand", "engine.managed_assets", "engine.database_universe"):
+        idx = source.index(f'label="{label}"')
+        block = source[max(0, idx - 500):idx + 1200]
+        assert 'priority="critical"' in block
+        assert "drop_if_busy=False" in block
+
+    assert 'PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "12"' in source
+    assert 'ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "12"' in source
+    assert 'ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "12"' in source
+    assert '_env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0' in source

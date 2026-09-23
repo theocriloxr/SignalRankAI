@@ -2239,16 +2239,22 @@ class RealtimeOutcomeTracker:
         )
         if hit:
             hit_l = str(hit).lower()
-            logger.info(
-                "[outcome_tracker] Hit detected: %s -> %s @ %.5f (entry=%.5f sl=%.5f)",
-                signal_id[:8], hit_l, price, entry, sl,
-            )
             if hit_l.startswith("tp"):
                 try:
                     target_tp = 3 if hit_l == "tp" else int(hit_l[2:] or 0)
                 except Exception:
                     target_tp = 0
                 target_tp = max(0, min(3, target_tp))
+                if target_tp <= prev_tp:
+                    # Price can remain beyond an already-recorded TP for many
+                    # scans. Do not emit a fresh lifecycle-hit log/event unless
+                    # the monotonic TP state actually advances.
+                    await publish_snapshot()
+                    return
+                logger.info(
+                    "[outcome_tracker] Hit detected: %s -> %s @ %.5f (entry=%.5f sl=%.5f)",
+                    signal_id[:8], hit_l, price, entry, sl,
+                )
                 for tp_index in range(prev_tp + 1, target_tp + 1):
                     event_type = f"tp{tp_index}_hit"
                     event_price = float(tp_levels[tp_index - 1])
