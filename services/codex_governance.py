@@ -169,6 +169,7 @@ def _aggregate_only_context(context: dict[str, Any]) -> dict[str, Any]:
         "decision_surface": list(context.get("decision_surface") or [])[:40],
         "shadow_coverage": list(context.get("shadow_coverage") or [])[:30],
         "full_market_segments": list(context.get("full_market_segments") or [])[:40],
+        "ai_provider_performance": list(context.get("ai_provider_performance") or [])[:20],
         "score_calibration": {
             key: value for key, value in dict(context.get("score_calibration") or {}).items()
             if key != "segment_profiles"
@@ -565,6 +566,57 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                 {"since": since},
             )
         ).mappings().all()
+        ai_provider_performance = (
+            await session.execute(
+                text(
+                    f"""
+                    WITH latest_ai AS (
+                        SELECT DISTINCT ON (signal_id)
+                               signal_id,
+                               COALESCE(NULLIF(meta->>'ai_review_provider', ''), 'unknown') AS provider,
+                               COALESCE(NULLIF(meta->>'ai_review_model', ''), 'unknown') AS model,
+                               CASE
+                                 WHEN COALESCE(meta->>'ai_review_score', '') ~ '^[0-9]+([.][0-9]+)?$'
+                                 THEN (meta->>'ai_review_score')::double precision
+                                 ELSE NULL
+                               END AS ai_score,
+                               CASE
+                                 WHEN COALESCE(meta->>'ai_review_confidence', '') ~ '^[0-9]+([.][0-9]+)?$'
+                                 THEN (meta->>'ai_review_confidence')::double precision
+                                 ELSE NULL
+                               END AS ai_confidence,
+                               CASE
+                                 WHEN COALESCE(meta->>'ai_review_disagreement', '') ~ '^[0-9]+([.][0-9]+)?$'
+                                 THEN (meta->>'ai_review_disagreement')::double precision
+                                 ELSE NULL
+                               END AS ai_disagreement
+                        FROM decision_log
+                        WHERE created_at >= :since
+                          AND decision = 'issued'
+                          AND signal_id IS NOT NULL
+                          AND meta ? 'ai_review_provider'
+                        ORDER BY signal_id, created_at DESC, id DESC
+                    )
+                    SELECT a.provider,
+                           a.model,
+                           COUNT(o.id) AS outcomes,
+                           SUM(CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                           SUM(CASE WHEN {outcome_bucket} IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                           AVG(o.r_multiple) AS avg_r,
+                           AVG(a.ai_score) AS avg_ai_score,
+                           AVG(a.ai_confidence) AS avg_ai_confidence,
+                           AVG(a.ai_disagreement) AS avg_ai_disagreement
+                    FROM latest_ai a
+                    JOIN outcomes o ON o.signal_id = a.signal_id
+                    WHERE {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                    GROUP BY 1,2
+                    ORDER BY outcomes DESC, provider ASC, model ASC
+                    LIMIT 30
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().all()
         await session.commit()
     observations = [
         ScoreObservation(
@@ -595,6 +647,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         "decision_surface": [dict(row) for row in decision_surface],
         "shadow_coverage": [dict(row) for row in shadow_coverage],
         "full_market_segments": [dict(row) for row in full_market_segments],
+        "ai_provider_performance": [dict(row) for row in ai_provider_performance],
         "score_calibration": calibration_profile,
     }
 
