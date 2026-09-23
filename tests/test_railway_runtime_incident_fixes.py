@@ -212,7 +212,9 @@ def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
     source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
     guard = source.index("[dedup] exact active bucket reused")
     insert = source.index("s = Signal(", guard)
-    assert guard < insert
+    bucket_lock = source.index('exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"')
+    assert bucket_lock < guard < insert
+    assert 'pg_advisory_xact_lock(hashtext(:bucket_scope))' in source[bucket_lock:guard]
     for predicate in (
         "Signal.asset == asset",
         "Signal.direction == direction",
@@ -221,6 +223,14 @@ def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
         "Signal.archived.is_(False)",
     ):
         assert predicate in source[guard - 900 : insert]
+
+
+def test_both_signal_persistence_paths_serialize_database_unique_bucket() -> None:
+    primary = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    secondary = (ROOT / "db" / "repository.py").read_text(encoding="utf-8")
+    for source in (primary, secondary):
+        assert 'exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"' in source
+        assert 'pg_advisory_xact_lock(hashtext(:bucket_scope))' in source
 
 
 def test_tradingview_metals_use_oanda_and_optional_failures_are_not_errors() -> None:
