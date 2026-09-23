@@ -523,7 +523,9 @@ def _log_railway_env_readiness() -> None:
     if not running_on_railway:
         return
 
+    has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
     has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+    has_ai_provider = bool(has_openai or has_gemini)
     has_mt5_token = bool((os.getenv("META_API_TOKEN") or "").strip())
     has_encryption = bool((os.getenv("ENCRYPTION_KEY") or "").strip())
     has_owner = bool((os.getenv("OWNER_IDS") or "").strip() or (os.getenv("OWNER_TELEGRAM_ID") or "").strip() or (os.getenv("TELEGRAM_OWNER_ID") or "").strip())
@@ -531,10 +533,12 @@ def _log_railway_env_readiness() -> None:
     has_domain = bool((os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_URL") or "").strip())
 
     logger.info(
-        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s gemini=%s mt5_token=%s encryption=%s",
+        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s ai_provider=%s openai=%s gemini=%s mt5_token=%s encryption=%s",
         has_telegram_token,
         has_domain,
         has_owner,
+        has_ai_provider,
+        has_openai,
         has_gemini,
         has_mt5_token,
         has_encryption,
@@ -547,8 +551,8 @@ def _log_railway_env_readiness() -> None:
         missing.append("RAILWAY_PUBLIC_DOMAIN|WEBHOOK_DOMAIN")
     if not has_owner:
         missing.append("OWNER_IDS|OWNER_TELEGRAM_ID")
-    if not has_gemini:
-        missing.append("GEMINI_API_KEY")
+    if not has_ai_provider:
+        missing.append("OPENAI_API_KEY|GEMINI_API_KEY")
     if not has_mt5_token:
         missing.append("META_API_TOKEN")
     if not has_encryption:
