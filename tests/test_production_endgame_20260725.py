@@ -349,3 +349,19 @@ def test_canonical_migration_head_is_active_guard_reconcile():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     assert script.get_heads() == ["0038_account_security_product"]
+
+
+def test_engine_metadata_reads_wait_boundedly_under_db_contention():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    for label in (
+        "engine.profile_demand",
+        "engine.managed_assets",
+        "engine.database_universe",
+    ):
+        pos = source.index(f'label="{label}"')
+        window = source[max(0, pos - 220): pos + 360]
+        assert "priority=\"background\"" in window
+        assert "drop_if_busy=False" in window
+        assert "ENGINE_METADATA_DB_TIMEOUT_SECONDS" in window
