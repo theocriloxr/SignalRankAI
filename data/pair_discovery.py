@@ -549,7 +549,7 @@ def _twelvedata_reference_rows(endpoint: str) -> list[dict]:
     """Fetch one daily-updated Twelve Data reference catalogue with a bounded cache."""
     api_key = _twelvedata_api_key()
     endpoint_name = str(endpoint or "").strip().strip("/")
-    if not api_key or endpoint_name not in {"forex_pairs", "stocks", "commodities"}:
+    if not api_key or endpoint_name not in {"forex_pairs", "stocks", "commodities", "indices"}:
         return []
     ttl = max(60.0, float(os.getenv("TWELVEDATA_REFERENCE_CACHE_SECONDS", "3600") or 3600))
     now = time.time()
@@ -961,7 +961,7 @@ def get_trending_index_tickers(top_n=20):
         _dedupe_limit(discovered, max(1, int(top_n))),
         "metaapi",
     ) if discovered else []
-    verified_manual = _twelvedata_probe_configured(manual_symbols)
+    verified_manual = _twelvedata_verified_configured(manual_symbols, "indices")
     merged = _merge_provider_results(
         [broker_indices, verified_manual, manual_symbols],
         limit=max(1, int(top_n), len(manual_symbols)),
