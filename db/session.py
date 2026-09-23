@@ -409,13 +409,28 @@ _critical_session_limit = max(
         _pool_int("DB_CRITICAL_MAX_CONCURRENT_SESSIONS", _default_critical_limit, minimum=1),
     ),
 )
+_dedicated_analytics_role = bool(
+    _database_role() == "analytics" or _database_role().startswith("analytics-")
+)
+_default_analytics_limit = 2 if _dedicated_analytics_role else 1
+_analytics_session_limit = max(
+    1,
+    min(
+        max(1, _session_gate_limit - _foreground_reserved_sessions),
+        _pool_int(
+            "DB_ANALYTICS_MAX_CONCURRENT_SESSIONS",
+            _default_analytics_limit,
+            minimum=1,
+        ),
+    ),
+)
 _priority_admission = DBAdmissionController(
     _session_gate_limit,
     foreground_reserve=_foreground_reserved_sessions,
     interactive_limit=_interactive_session_limit,
     critical_limit=_critical_session_limit,
     background_limit=_background_gate_limit,
-    analytics_limit=max(1, min(_session_gate_limit - _foreground_reserved_sessions, 1)),
+    analytics_limit=_analytics_session_limit,
     analytics_enabled=bool(
         _session_gate_limit > 2
         or _database_role() == "analytics"
