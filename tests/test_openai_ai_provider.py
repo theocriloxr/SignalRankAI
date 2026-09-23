@@ -305,3 +305,53 @@ def test_readyz_exposes_secret_safe_optional_openai_status():
     assert 'checks["openai_ai"]' in ready
     assert '"not_configured_optional"' in ready
     assert 'OPENAI_API_KEY' not in ready
+
+
+def test_ai_provider_provenance_is_preserved_and_outcome_attributed():
+    engine = Path("engine/core.py").read_text(encoding="utf-8")
+    governance = Path("services/codex_governance.py").read_text(encoding="utf-8")
+    reviewer = Path("scripts/ai_reviewer.py").read_text(encoding="utf-8")
+
+    scoring = engine[engine.index("gemini_ok, gemini_score, gemini_reason"):engine.index("from core.signal_quality_gate", engine.index("gemini_ok, gemini_score, gemini_reason"))]
+    assert 'sig.get("ai_review_provider")' in scoring
+    assert "provider=consensus" in scoring
+    assert "sig['ai_review_provider'] = ai_provider" in scoring
+
+    logging_block = engine[engine.index("def _log_decision"):engine.index("def _log_market_observations")]
+    for key in (
+        "ai_review_provider",
+        "ai_review_model",
+        "ai_review_score",
+        "ai_review_confidence",
+        "ai_review_disagreement",
+        "ai_review_latency_ms",
+        "ai_review_provider_results",
+    ):
+        assert key in logging_block
+
+    assert "ai_provider_performance = (" in governance
+    assert "COUNT(o.id) AS outcomes" in governance
+    assert "AVG(o.r_multiple) AS avg_r" in governance
+    assert "AVG(a.ai_score) AS avg_ai_score" in governance
+    assert "AVG(a.ai_confidence) AS avg_ai_confidence" in governance
+    assert "AVG(a.ai_disagreement) AS avg_ai_disagreement" in governance
+    assert '"ai_provider_performance": [dict(row) for row in ai_provider_performance]' in governance
+
+    assert "performance_review" in reviewer
+    assert "run_external_gemini_aggregate_review" in reviewer
+    assert "aggregate_only_no_user_or_signal_ids" in reviewer
+    assert '"production_mutation": False' in reviewer
+    assert '"requires_owner_approval": True' in reviewer
+
+
+def test_ai_review_router_supports_failover_and_consensus_modes():
+    router = Path("services/ai_review_router.py").read_text(encoding="utf-8")
+    assert 'AI_SIGNAL_REVIEW_MODE' in router
+    assert 'mode not in {"failover", "consensus"}' in router
+    assert 'AI_CONSENSUS_REQUIRE_TWO_PROVIDERS' in router
+    assert 'AI_DISAGREEMENT_MAX' in router
+    assert 'AI_CONSENSUS_MIN' in router
+    assert 'asyncio.gather(*calls, return_exceptions=True)' in router
+    assert 'provider_disagreement' in router
+    assert 'decision_disagreement' in router
+    assert 'Deterministic risk structure is invalid; AI cannot override it.' in router
