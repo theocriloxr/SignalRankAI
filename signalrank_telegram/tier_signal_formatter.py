@@ -461,8 +461,9 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
     explanation such as "Local AI fallback 8.7/10" instead of
     "ai_review_status=rate_limited_degraded;local_ai:...".
     """
-    score = _safe_float(signal.get("gemini_review_score") or signal.get("ai_review_score"))
-    raw_reason = str(signal.get("gemini_review_reason") or signal.get("ai_review_reason") or "").strip()
+    score = _safe_float(signal.get("ai_review_score") or signal.get("gemini_review_score"))
+    raw_reason = str(signal.get("ai_review_reason") or signal.get("gemini_review_reason") or "").strip()
+    provider = str(signal.get("ai_review_provider") or "").strip().lower()
     if score is None and not raw_reason:
         return None
     if raw_reason in {"gemini_disabled", "gemini_disabled_no_key"}:
@@ -485,7 +486,14 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
     if not reason:
         reason = "quality checks passed"
 
-    label = "Local AI fallback" if local else "Gemini"
+    if local:
+        label = "Local AI fallback"
+    elif provider == "openai" or raw_reason.startswith("openai_"):
+        label = "OpenAI"
+    elif provider == "gemini" or raw_reason.startswith("gemini_"):
+        label = "Gemini"
+    else:
+        label = "AI review"
     parts: List[str] = []
     if score is not None and score > 0:
         parts.append(f"{label} {score:.1f}/10")
