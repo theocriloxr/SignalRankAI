@@ -75,7 +75,12 @@ class AssetLearningWorker:
         from db.priority import DBPriority
         from db.session import NoncriticalWriteDropped, get_session
         try:
-            async with get_session(priority=DBPriority.BACKGROUND,label="asset_learning_candle_write") as session:
+            async with get_session(
+                priority=DBPriority.BACKGROUND,
+                label="asset_learning_candle_write",
+                timeout_seconds=max(10.0, float(os.getenv("ASSET_LEARNING_DB_TIMEOUT_SECONDS", "60") or 60)),
+                drop_if_busy=False,
+            ) as session:
                 for asset,tf,ts,o,h,l,c,v in rows:
                     await upsert_market_candle(session,symbol=asset,timeframe=tf,open_time_ms=ts,open=o,high=h,low=l,close=c,volume=v,is_final=True)
                 await session.commit()
