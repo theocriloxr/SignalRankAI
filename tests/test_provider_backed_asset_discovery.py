@@ -94,6 +94,44 @@ def test_twelvedata_catalogue_verifies_manual_stock_allowlist(monkeypatch) -> No
         assert "twelvedata" in discovery.asset_discovery_provenance(symbol)
 
 
+
+def test_yahoo_chart_verifies_configured_stocks_when_catalogues_are_unavailable(monkeypatch) -> None:
+    _reset_discovery_state()
+    monkeypatch.setenv("STOCK_TICKERS", "MSFT,NVDA,META")
+    monkeypatch.delenv("ASSET_DISCOVERY_MODE", raising=False)
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.setattr(discovery, "_metaapi_symbols", lambda: [])
+    monkeypatch.setattr(discovery, "_twelvedata_verified_configured", lambda symbols, endpoint: [])
+
+    requested = []
+
+    def fake_get(url, **kwargs):
+        requested.append(url)
+        assert "query1.finance.yahoo.com/v8/finance/chart/" in url
+        return SimpleNamespace(
+            ok=True,
+            status_code=200,
+            json=lambda: {
+                "chart": {
+                    "result": [{
+                        "timestamp": [1790112000],
+                        "indicators": {"quote": [{"close": [100.0]}]},
+                    }],
+                    "error": None,
+                }
+            },
+        )
+
+    monkeypatch.setattr(discovery.requests, "get", fake_get)
+
+    stocks = discovery.get_trending_stock_tickers(top_n=3)
+    assert set(stocks) == {"MSFT", "NVDA", "META"}
+    assert len(requested) == 3
+    for symbol in stocks:
+        assert "yahoo" in discovery.asset_discovery_provenance(symbol)
+
+
+
 def test_twelvedata_catalogue_verifies_configured_indices(monkeypatch) -> None:
     _reset_discovery_state()
     monkeypatch.setenv("TWELVEDATA_API_KEY", "test-key")
