@@ -45,6 +45,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
                 except asyncio.TimeoutError:
                     pass
         tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
+    if _enabled("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
+        from services.continuous_improvement.scheduler import continuous_improvement_loop
+        tasks.append(
+            asyncio.create_task(
+                continuous_improvement_loop(stop),
+                name="continuous-improvement-review",
+            )
+        )
     logger.info("[analytics] started shadow=%s tasks=%s",bool(shadow),[task.get_name() for task in tasks])
     try:
         await stop.wait()
