@@ -40,6 +40,8 @@ RUN python -m compileall -q engine db data worker services ml \
       tests/test_production_endgame_20260725.py::test_current_gemini_review_request_avoids_legacy_sampling_knobs \
       tests/test_production_endgame_20260725.py::test_metaapi_discovery_uses_canonical_account_aliases \
       tests/test_production_endgame_20260725.py::test_engine_metadata_reads_wait_boundedly_under_db_contention \
+      tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_accepts_imbalanced_candidate_that_beats_utility_gates \
+      tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_still_rejects_majority_collapse \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_fast_path_skips_backup_and_lock_at_head \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_lock_wait_is_bounded_and_nonblocking
 
