@@ -43,9 +43,12 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_production_endgame_20260725.py::test_engine_metadata_reads_wait_boundedly_under_db_contention \
       tests/test_production_endgame_20260725.py::test_engine_required_metadata_uses_protected_lane_and_outer_timeout_exceeds_db_wait \
       tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_accepts_imbalanced_candidate_that_beats_utility_gates \
+      tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_accepts_strong_pr_auc_lift_on_imbalanced_data \
+      tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_rejects_weak_pr_auc_lift \
       tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_still_rejects_majority_collapse \
       tests/test_v1366_runtime_certification_hotfix.py::test_class_balance_scale_is_bounded_for_minority_positive_class \
       tests/test_v1366_runtime_certification_hotfix.py::test_classification_threshold_is_selected_on_imbalanced_calibration_window \
+      tests/test_v1366_runtime_certification_hotfix.py::test_threshold_selection_prefers_positive_expected_r_over_low_balanced_accuracy_cutoff \
       tests/test_v1366_runtime_certification_hotfix.py::test_training_uses_fit_window_balance_and_calibration_threshold_only \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_fast_path_skips_backup_and_lock_at_head \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_lock_wait_is_bounded_and_nonblocking \
