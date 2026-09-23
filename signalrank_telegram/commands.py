@@ -6138,6 +6138,80 @@ async def quality_command(update, context) -> None:
 		await update.message.reply_text(safe_command_error("Could not build the quality report.", exc))
 
 
+async def ai_status_command(update, context) -> None:
+	"""Owner/admin: show secret-safe AI provider routing and OpenAI circuit state."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from services.openai_ai import provider_status
+		status = provider_status()
+		gemini_configured = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+		circuit = dict(status.get("circuit") or {})
+		budget = dict(status.get("budget") or {})
+		lines = [
+			"🤖 AI Provider Status",
+			"",
+			f"Primary: {status.get('primary_provider', 'openai')}",
+			f"Order: {' → '.join(status.get('provider_order') or [])}",
+			f"OpenAI configured: {'yes' if status.get('configured') else 'no'}",
+			f"OpenAI available: {'yes' if status.get('available') else 'no'}",
+			f"Gemini fallback configured: {'yes' if gemini_configured else 'no'}",
+			f"Signal model: {status.get('signal_model', 'n/a')}",
+			f"Deep model: {status.get('deep_model', 'n/a')}",
+			f"Responses API: {'enabled' if status.get('responses_api') else 'off'}",
+			f"Storage: {'disabled' if status.get('store') is False else 'unknown'}",
+			f"Circuit: {'OPEN' if circuit.get('open') else 'closed'}"
+			+ (f" ({circuit.get('reason')}, {circuit.get('seconds_remaining')}s)" if circuit.get('open') else ""),
+			f"Budget: {budget.get('calls_used', 0)}/{budget.get('max_calls', 0)} per {budget.get('window_seconds', 0)}s",
+		]
+		if not status.get("configured"):
+			lines += [
+				"",
+				"To connect OpenAI, add OPENAI_API_KEY as a Railway secret and redeploy.",
+				"Do not paste the API key into Telegram or chat logs.",
+			]
+		await update.message.reply_text("\n".join(lines))
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("Could not read AI provider status.", exc))
+
+
+async def ai_test_command(update, context) -> None:
+	"""Owner/admin: make one minimal structured OpenAI Responses API probe."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from services.openai_ai import provider_status, test_connection
+		status = provider_status()
+		if not status.get("configured"):
+			await update.message.reply_text(
+				"OpenAI is not connected. Add OPENAI_API_KEY as a Railway secret, redeploy, then run /ai_test again."
+			)
+			return
+		result = await test_connection()
+		if result.get("connected"):
+			await update.message.reply_text(
+				"✅ OpenAI connection verified.\n"
+				f"Model: {result.get('model', status.get('signal_model', 'n/a'))}\n"
+				f"Latency: {result.get('latency_ms', 'n/a')} ms\n"
+				"Provider order remains OpenAI → Gemini → local."
+			)
+			return
+		error = str(result.get("error") or "unknown_error")
+		await update.message.reply_text(
+			"❌ OpenAI connectivity probe failed.\n"
+			f"Reason: {error}\n"
+			"SignalRank will keep using the configured fallback providers; deterministic safety gates are unchanged."
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("OpenAI connectivity test failed.", exc))
+
+
 async def gemini_command(update, context) -> None:
 	"""Admin-only: trigger the configured AI review over all-time aggregates."""
 	if update.effective_user is None or update.message is None:
