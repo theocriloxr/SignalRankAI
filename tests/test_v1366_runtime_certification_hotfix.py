@@ -170,3 +170,36 @@ def test_training_uses_fit_window_balance_and_calibration_threshold_only() -> No
     assert "decision_threshold=classification_threshold" in source
     assert '"classification_threshold": float(classification_threshold)' in source
     assert '"scale_pos_weight": float(class_balance_scale)' in source
+
+
+def test_temporal_split_reserves_production_validation_floor_when_capacity_allows() -> None:
+    from ml.train_model import _temporal_three_way_indices
+
+    train, calibration, validation = _temporal_three_way_indices(
+        290,
+        ordered_indices=list(range(290)),
+        train_ratio=0.70,
+        calibration_ratio=0.15,
+        minimum_train_rows=50,
+        minimum_calibration_rows=30,
+        minimum_validation_rows=100,
+    )
+    assert len(validation) == 100
+    assert len(calibration) >= 30
+    assert len(train) >= 50
+    assert len(train) + len(calibration) + len(validation) == 290
+    assert set(train).isdisjoint(calibration)
+    assert set(train).isdisjoint(validation)
+    assert set(calibration).isdisjoint(validation)
+    assert max(train) < min(calibration) < min(validation)
+
+
+def test_training_passes_calibration_evidence_floors_into_temporal_split() -> None:
+    source = (ROOT / "ml" / "train_model.py").read_text(encoding="utf-8")
+    assert 'ML_MIN_CALIBRATION_VALIDATION_ROWS' in source
+    assert 'ML_MIN_CALIBRATION_FIT_ROWS' in source
+    assert 'ML_MIN_MODEL_FIT_ROWS' in source
+    assert 'minimum_validation_rows=calibration_min_rows' in source
+    assert 'minimum_calibration_rows=minimum_calibration_fit_rows' in source
+    assert 'minimum_train_rows=minimum_model_fit_rows' in source
+    assert '[ml_temporal_split]' in source
