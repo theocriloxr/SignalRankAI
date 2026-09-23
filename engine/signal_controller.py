@@ -202,7 +202,7 @@ class SignalController:
                 self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=%s", asset, tf, reason)
                 return None, reason
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-1.5-flash").strip()
+            model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-3.8-flash").strip()
             prompt = {
                 "asset": asset,
                 "timeframe": tf,
