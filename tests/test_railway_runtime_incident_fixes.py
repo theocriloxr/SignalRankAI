@@ -215,14 +215,16 @@ def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
     bucket_lock = source.index('exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"')
     assert bucket_lock < guard < insert
     assert 'pg_advisory_xact_lock(hashtext(:bucket_scope))' in source[bucket_lock:guard]
+    lookup = source[bucket_lock:insert]
     for predicate in (
         "Signal.asset == asset",
         "Signal.direction == direction",
         "Signal.timeframe == timeframe",
-        "Signal.expired.is_(False)",
-        "Signal.archived.is_(False)",
+        'Signal.status == "active"',
     ):
-        assert predicate in source[guard - 900 : insert]
+        assert predicate in lookup
+    assert 'exact_active.status = "superseded"' in lookup
+    assert "bool(exact_active.expired) or bool(exact_active.archived)" in lookup
 
 
 def test_both_signal_persistence_paths_serialize_database_unique_bucket() -> None:
@@ -231,6 +233,8 @@ def test_both_signal_persistence_paths_serialize_database_unique_bucket() -> Non
     for source in (primary, secondary):
         assert 'exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"' in source
         assert 'pg_advisory_xact_lock(hashtext(:bucket_scope))' in source
+        assert 'Signal.status == "active"' in source
+        assert 'exact_active.status = "superseded"' in source
 
 
 def test_tradingview_metals_use_oanda_and_optional_failures_are_not_errors() -> None:
