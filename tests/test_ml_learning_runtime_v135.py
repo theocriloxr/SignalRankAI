@@ -84,6 +84,18 @@ def test_analytics_owned_workers_share_analytics_priority_lane() -> None:
     assert "priority=_retention_db_priority()" in retention
 
 
+def test_ml_candle_hydration_is_bounded_to_training_window() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
+
+    assert "def _candle_cache_bounds(timeframe: str)" in source
+    assert "MarketCandle.open_time_ms >= floor_ms" in source
+    assert "ML_CANDLE_FEATURE_BUFFER_BARS" in source
+    assert "training_lookback_days * 86400" in source
+    assert "[ml_dataset_stage] stage=live_proof_loaded" in source
+    assert "[ml_candle_cache]" in source
+
+
 def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
