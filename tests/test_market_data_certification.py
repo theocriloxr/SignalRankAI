@@ -37,6 +37,23 @@ def test_fx_friday_to_sunday_open_is_not_a_provider_gap():
     assert result.session_gap_count == 0
 
 
+def test_commodity_daily_maintenance_gap_is_expected():
+    start = int(datetime(2026, 9, 22, 18, tzinfo=timezone.utc).timestamp())
+    rows = _rows(4, seconds=3600, start=start)
+    # Futures-style feed skips the 21:00 maintenance bar: 20:00 -> 22:00.
+    rows += _rows(26, seconds=3600, start=int(datetime(2026, 9, 22, 22, tzinfo=timezone.utc).timestamp()))
+    result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")
+    assert result.session_gap_count == 0
+
+
+def test_commodity_unexplained_intraday_gap_still_quarantines():
+    rows = _rows()
+    rows[20]["timestamp"] += 4 * 3600 * 1000
+    result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")
+    assert result.quarantined
+    assert any(reason.startswith("unexpected_session_gaps") for reason in result.reasons)
+
+
 def test_fx_midweek_gap_is_quarantined():
     rows = _rows()
     rows[20]["timestamp"] += 4 * 3600 * 1000
