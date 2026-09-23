@@ -2276,7 +2276,8 @@ def main_loop(DRY_RUN: bool = False):
                     async with _get_profile_demand_session(
                         priority="background",
                         label="engine.profile_demand",
-                        timeout_seconds=4.0,
+                        timeout_seconds=max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                        drop_if_busy=False,
                     ) as _demand_session:
                         return await _get_profile_demand(
                             _demand_session,
@@ -2317,7 +2318,8 @@ def main_loop(DRY_RUN: bool = False):
                     async with get_session(
                         priority="background",
                         label="engine.managed_assets",
-                        timeout_seconds=3.0,
+                        timeout_seconds=max(3.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                        drop_if_busy=False,
                     ) as _session:
                         return await get_active_managed_assets(_session)
                 _managed_assets = [
@@ -2353,7 +2355,8 @@ def main_loop(DRY_RUN: bool = False):
                         async with _get_universe_session(
                             priority="background",
                             label="engine.database_universe",
-                            timeout_seconds=4.0,
+                            timeout_seconds=max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                            drop_if_busy=False,
                         ) as _universe_session:
                             return await load_database_universe(
                                 _universe_session,
