@@ -94,8 +94,12 @@ def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> No
     assert 'return "analytics"' in trainer
     assert '"drop_if_busy": False' in trainer
     assert "is_analytics and drop_if_busy is not False" in session
-    assert "_default_analytics_limit = 2 if _dedicated_analytics_role else 1" in session
+    assert "def _dedicated_analytics_min_sessions()" in session
+    assert "return max(" in session
+    assert '"DB_ANALYTICS_DEDICATED_MIN_CONCURRENT_SESSIONS"' in session
+    assert "default_limit = 2 if _dedicated_analytics_role else 1" in session
     assert '"DB_ANALYTICS_MAX_CONCURRENT_SESSIONS"' in session
+    assert "requested = max(requested, _dedicated_analytics_min_sessions())" in session
     assert "analytics_limit=_analytics_session_limit" in session
     assert "ASSET_LEARNING_DB_TIMEOUT_SECONDS" in asset_learning
     assert "drop_if_busy=False" in asset_learning
