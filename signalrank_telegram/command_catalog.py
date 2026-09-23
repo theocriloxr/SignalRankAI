@@ -92,7 +92,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("admin_broadcast", "Send an audited platform announcement", "ADMIN", "Admin"),
     CommandSpec("force_market_scan", "Request one controlled market scan", "ADMIN", "Admin"),
     CommandSpec("force_signal", "Generate a controlled diagnostic signal", "ADMIN", "Admin"),
-    CommandSpec("gemini", "Run the Gemini and ML review diagnostics", "ADMIN", "Admin"),
+    CommandSpec("gemini", "Run the configured AI review diagnostics", "ADMIN", "Admin"),
     CommandSpec("gemini_review", "Inspect the current AI review pipeline", "ADMIN", "Admin"),
     CommandSpec("qa_report", "Run the deployment QA report", "ADMIN", "Admin"),
     CommandSpec("selfcheck", "Run internal command and callback checks", "ADMIN", "Admin"),
