@@ -368,6 +368,41 @@ async def load_training_data(lookback_days: int = 90):
                     return 0.0
 
         candle_cache: dict[tuple[str, str], tuple[list[int], list[object]]] = {}
+        training_lookback_days = max(1, int(lookback_days or 90))
+        training_now = now_utc_naive()
+
+        def _timeframe_seconds(raw_timeframe: str) -> int:
+            text = str(raw_timeframe or "").strip().lower()
+            aliases = {"d": "1d", "day": "1d", "daily": "1d", "h": "1h", "hour": "1h"}
+            text = aliases.get(text, text)
+            try:
+                if text.endswith("m"):
+                    return max(60, int(float(text[:-1] or 1) * 60))
+                if text.endswith("h"):
+                    return max(3600, int(float(text[:-1] or 1) * 3600))
+                if text.endswith("d"):
+                    return max(86400, int(float(text[:-1] or 1) * 86400))
+            except (TypeError, ValueError):
+                pass
+            return 3600
+
+        def _candle_cache_bounds(timeframe: str) -> tuple[int, int]:
+            bar_seconds = _timeframe_seconds(timeframe)
+            feature_buffer_bars = max(
+                160,
+                int(os.getenv("ML_CANDLE_FEATURE_BUFFER_BARS", "180") or 180),
+            )
+            span_seconds = training_lookback_days * 86400 + feature_buffer_bars * bar_seconds
+            floor_ms = int((training_now - timedelta(seconds=span_seconds)).timestamp() * 1000)
+            expected_rows = int(span_seconds / max(1, bar_seconds)) + 32
+            hard_cap = max(
+                500,
+                min(
+                    150000,
+                    int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000),
+                ),
+            )
+            return floor_ms, max(500, min(hard_cap, expected_rows))
 
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
@@ -375,13 +410,14 @@ async def load_training_data(lookback_days: int = 90):
             key = (str(symbol).upper(), str(timeframe).lower())
             cached = candle_cache.get(key)
             if cached is None:
-                max_rows = max(500, min(100000, int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000)))
+                floor_ms, max_rows = _candle_cache_bounds(key[1])
                 async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
                     q = (
                         select(MarketCandle)
                         .where(
                             MarketCandle.symbol == key[0],
                             MarketCandle.timeframe == key[1],
+                            MarketCandle.open_time_ms >= floor_ms,
                         )
                         .order_by(desc(MarketCandle.open_time_ms))
                         .limit(max_rows)
@@ -392,6 +428,14 @@ async def load_training_data(lookback_days: int = 90):
                 open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
                 cached = (open_times, all_rows)
                 candle_cache[key] = cached
+                logger.info(
+                    "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
+                    key[0],
+                    key[1],
+                    len(all_rows),
+                    max_rows,
+                    training_lookback_days,
+                )
             open_times, all_rows = cached
             cutoff_ms = int(created_at.timestamp() * 1000)
             stop = bisect_right(open_times, cutoff_ms)
@@ -469,6 +513,11 @@ async def load_training_data(lookback_days: int = 90):
             )
 
         live_proof_rows = len(rows)
+        logger.info(
+            "[ml_dataset_stage] stage=live_proof_loaded rows=%s lookback_days=%s",
+            live_proof_rows,
+            training_lookback_days,
+        )
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
