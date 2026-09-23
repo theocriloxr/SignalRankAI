@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # the engine fast by degrading to local AI review for a cooldown window.
 _GEMINI_REVIEW_LOCK = threading.Lock()
 _GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
+_GEMINI_CIRCUIT_REASON = ""
 _GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
 _GEMINI_REVIEW_WINDOW_CALLS = 0
 
@@ -492,14 +493,15 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
     # budget, skip the external HTTP call and use deterministic local review.
     # This prevents a full engine cycle from taking many minutes while signals
     # become stale.
-    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
+    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
     if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
         now_mono = time.monotonic()
         with _GEMINI_REVIEW_LOCK:
             until = float(_GEMINI_RATE_LIMIT_UNTIL_MONO or 0.0)
             if until and now_mono < until:
                 ok, score, reason = _fallback()
-                return ok, score, f"ai_review_status=rate_limited_circuit_open;{reason}"
+                circuit_reason = _GEMINI_CIRCUIT_REASON or "provider_cooldown"
+                return ok, score, f"ai_review_status={circuit_reason}_circuit_open;{reason}"
 
             window_s = max(10, _env_int("GEMINI_SIGNAL_REVIEW_WINDOW_SECONDS", 60))
             max_calls = max(0, _env_int("GEMINI_SIGNAL_REVIEW_MAX_CALLS_PER_WINDOW", 6))
@@ -545,7 +547,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
     def _do_request() -> tuple[bool, float | None, str]:
-        global _GEMINI_RATE_LIMIT_UNTIL_MONO
+        global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/json")
         try:
@@ -585,6 +587,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
                         cooldown_s = max(30, _env_int("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 900))
                         with _GEMINI_REVIEW_LOCK:
                             _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
+                            _GEMINI_CIRCUIT_REASON = "rate_limited"
                     except Exception:
                         pass
                 _local_ok, local_score, local_reason = _fallback()
@@ -593,7 +596,27 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
                     "[engine] gemini review http_error=429 %s action=fail_open",
                     reason,
                 )
-                return True, local_score, reason
+                return _local_ok, local_score, reason
+            if status_code in {400, 401, 403, 404}:
+                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+                    try:
+                        cooldown_s = max(
+                            60,
+                            _env_int("GEMINI_CONFIG_ERROR_COOLDOWN_SECONDS", 3600),
+                        )
+                        with _GEMINI_REVIEW_LOCK:
+                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
+                            _GEMINI_CIRCUIT_REASON = f"provider_http_{status_code}"
+                    except Exception:
+                        pass
+                local_ok, local_score, local_reason = _fallback()
+                reason = f"ai_review_status=provider_http_{status_code}_degraded;{local_reason}"
+                logger.warning(
+                    "[engine] gemini review http_error=%s %s action=local_fallback",
+                    status_code,
+                    reason,
+                )
+                return local_ok, local_score, reason
             logger.warning("[engine] gemini review http_error=%s", status_code or "?")
             return _fallback()
         except Exception as exc:
