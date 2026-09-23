@@ -387,6 +387,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             try:
                 if str(session.get_bind().dialect.name or "").lower() == "postgresql":
                     semantic_scope = f"signal-thesis:{signal_thesis_scope(signal_data)}"
+                    exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"
                     await session.execute(
                         text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                         {"fingerprint": thesis_fingerprint},
@@ -394,6 +395,10 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     await session.execute(
                         text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
                         {"scope": semantic_scope},
+                    )
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:bucket_scope))"),
+                        {"bucket_scope": exact_bucket_scope},
                     )
             except Exception as lock_error:
                 from core.env import runtime_environment_name
