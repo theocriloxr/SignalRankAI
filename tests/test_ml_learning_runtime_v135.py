@@ -42,6 +42,30 @@ def test_two_slot_pool_keeps_strict_foreground_protection() -> None:
     controller.release(DBPriority.CRITICAL)
 
 
+def test_two_slot_dedicated_role_can_use_zero_foreground_reserve() -> None:
+    from db.priority import DBAdmissionController, DBPriority
+
+    controller = DBAdmissionController(
+        2,
+        foreground_reserve=0,
+        background_limit=2,
+        analytics_limit=1,
+    )
+    assert controller.snapshot()["foreground_reserve"] == 0
+    assert controller.acquire(DBPriority.BACKGROUND, timeout_s=0.01)
+    assert controller.acquire(DBPriority.BACKGROUND, timeout_s=0.01)
+    controller.release(DBPriority.BACKGROUND)
+    controller.release(DBPriority.BACKGROUND)
+
+
+def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "db" / "session.py").read_text(encoding="utf-8")
+    assert '"analytics", "delivery", "outcome", "scheduler", "worker"' in source
+    assert "minimum=0" in source
+    assert '"frontdoor"' not in source[source.index("_dedicated_noninteractive_db_roles"):source.index("_default_foreground_reserve")]
+
+
 def test_ml_training_is_nonblocking_and_multisource() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
