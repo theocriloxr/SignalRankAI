@@ -39,8 +39,15 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _training_db_priority() -> str:
-    value = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background").strip().lower()
-    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+    explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
+    if explicit in {"interactive", "critical", "background", "analytics"}:
+        return explicit
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    # Dedicated analytics workers should not contend in the generic background
+    # lane. They own the analytics lane and may wait boundedly for it.
+    if role == "analytics" or role.startswith("analytics-"):
+        return "analytics"
+    return "background"
 
 
 def _training_db_timeout() -> float:
