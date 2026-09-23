@@ -88,6 +88,22 @@ async def test_session_pressure_admits_interactive_and_critical_while_shedding_a
     assert session._priority_admission.snapshot()["active_total"] == 0
 
 
+def test_dedicated_analytics_role_cannot_be_pinned_to_one_session(monkeypatch) -> None:
+    from db import session
+
+    monkeypatch.setenv("DB_ROLE", "analytics")
+    monkeypatch.setenv("DB_USE_NULLPOOL", "1")
+    monkeypatch.setenv("DB_MAX_CONCURRENT_SESSIONS", "1")
+    monkeypatch.setenv("DB_ANALYTICS_MAX_CONCURRENT_SESSIONS", "1")
+    monkeypatch.delenv("DB_ANALYTICS_DEDICATED_MIN_CONCURRENT_SESSIONS", raising=False)
+
+    gate_limit = session._effective_session_gate_limit()
+    assert gate_limit >= 2
+
+    monkeypatch.setattr(session, "_dedicated_analytics_role", True)
+    assert session._effective_analytics_session_limit(gate_limit, 0) >= 2
+
+
 def test_analytics_runs_only_when_operational_lanes_are_idle() -> None:
     from db.priority import DBAdmissionController, DBPriority
 
