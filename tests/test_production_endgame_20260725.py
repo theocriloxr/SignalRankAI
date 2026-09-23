@@ -227,6 +227,16 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     assert "provider_http_404_circuit_open" in second[2]
 
 
+def test_worker_startup_db_jobs_use_bounded_configurable_waits():
+    from pathlib import Path
+
+    source = Path("worker/worker.py").read_text(encoding="utf-8")
+    assert "WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS" in source
+    assert "INSTRUMENT_DISCOVERY_DB_TIMEOUT_SECONDS" in source
+    assert '_env_float("WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS", 60.0' in source
+    assert '_env_float("INSTRUMENT_DISCOVERY_DB_TIMEOUT_SECONDS", 60.0' in source
+
+
 def test_delivery_worker_does_not_own_learning_retention():
     from pathlib import Path
 
