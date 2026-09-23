@@ -106,6 +106,66 @@ def test_deployed_ml_quality_gate_accepts_imbalanced_candidate_that_beats_utilit
     assert accepted is True
 
 
+def test_deployed_ml_quality_gate_accepts_strong_pr_auc_lift_on_imbalanced_data(monkeypatch) -> None:
+    for name in (
+        "ML_MIN_PROMOTION_AUC",
+        "ML_MIN_PROMOTION_ACCURACY",
+        "ML_MIN_BALANCED_ACCURACY",
+        "ML_MIN_POSITIVE_RECALL",
+        "ML_MIN_PR_AUC",
+        "ML_MIN_PR_AUC_FLOOR",
+        "ML_MIN_PR_AUC_LIFT",
+        "ML_MIN_EXPECTED_R",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.7640,
+            "auc": 0.8323,
+            "majority_baseline_accuracy": 0.8702,
+            "balanced_accuracy": 0.7415,
+            "positive_recall": 0.7111,
+            "positive_rate": 0.1298,
+            "pr_auc": 0.3394,
+            "expected_r": 0.12,
+        },
+        deployed_runtime=True,
+    )
+    assert 0.3394 / 0.1298 > 2.0
+    assert accepted is True
+
+
+def test_deployed_ml_quality_gate_rejects_weak_pr_auc_lift(monkeypatch) -> None:
+    for name in (
+        "ML_MIN_PROMOTION_AUC",
+        "ML_MIN_PROMOTION_ACCURACY",
+        "ML_MIN_BALANCED_ACCURACY",
+        "ML_MIN_POSITIVE_RECALL",
+        "ML_MIN_PR_AUC",
+        "ML_MIN_PR_AUC_FLOOR",
+        "ML_MIN_PR_AUC_LIFT",
+        "ML_MIN_EXPECTED_R",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.70,
+            "auc": 0.72,
+            "majority_baseline_accuracy": 0.80,
+            "balanced_accuracy": 0.62,
+            "positive_recall": 0.40,
+            "positive_rate": 0.20,
+            "pr_auc": 0.26,
+            "expected_r": 0.10,
+        },
+        deployed_runtime=True,
+    )
+    assert 0.26 / 0.20 < 2.0
+    assert accepted is False
+
+
 def test_deployed_ml_quality_gate_still_rejects_majority_collapse(monkeypatch) -> None:
     for name in (
         "ML_MIN_PROMOTION_AUC",
@@ -159,6 +219,32 @@ def test_classification_threshold_is_selected_on_imbalanced_calibration_window(m
     assert 0.15 <= threshold < 0.5
     assert tuned_recall > fixed_recall
     assert tuned_recall == pytest.approx(1.0)
+
+
+def test_threshold_selection_prefers_positive_expected_r_over_low_balanced_accuracy_cutoff(monkeypatch) -> None:
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_TUNING_ENABLED", raising=False)
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_MIN", raising=False)
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_MAX", raising=False)
+    monkeypatch.delenv("ML_THRESHOLD_MIN_POSITIVE_RECALL", raising=False)
+    monkeypatch.delenv("ML_THRESHOLD_MIN_POSITIVE_COVERAGE", raising=False)
+    monkeypatch.delenv("ML_THRESHOLD_MIN_SELECTED_ROWS", raising=False)
+
+    # Low thresholds catch all positives but too many false positives. A higher
+    # calibration-only threshold retains recall and yields positive 2R/-1R utility.
+    y = np.asarray([0] * 80 + [1] * 20, dtype=int)
+    probabilities = np.asarray(
+        [0.05] * 50 + [0.22] * 20 + [0.32] * 10 + [0.42] * 20,
+        dtype=float,
+    )
+    threshold = _select_classification_threshold(y, probabilities)
+    pred = probabilities >= threshold
+    tp = int(((pred == 1) & (y == 1)).sum())
+    fp = int(((pred == 1) & (y == 0)).sum())
+    expected_r = ((2 * tp) - fp) / max(1, tp + fp)
+
+    assert threshold >= 0.32
+    assert tp >= 4
+    assert expected_r > 0.0
 
 
 def test_training_uses_fit_window_balance_and_calibration_threshold_only() -> None:
