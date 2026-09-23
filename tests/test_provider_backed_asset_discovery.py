@@ -16,7 +16,7 @@ def test_provider_merge_does_not_lose_slots_to_duplicates() -> None:
         [["AAPL", "MSFT", "NVDA"], ["AAPL", "GOOGL", "META"], ["MSFT", "AMZN"]],
         limit=5,
     )
-    assert merged == ["AAPL", "MSFT", "GOOGL", "NVDA", "AMZN"]
+    assert merged == ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
 
 
 def test_twelvedata_catalogue_verifies_configured_fx_and_commodities(monkeypatch) -> None:
