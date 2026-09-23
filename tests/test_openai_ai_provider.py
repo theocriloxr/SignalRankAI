@@ -205,3 +205,85 @@ def test_ai_feedback_remains_proposal_only():
     assert '"requires_owner_approval": True' in source
     assert '"auto_apply": False' in source
     assert "requires_forward_test" in source
+
+def test_openai_provider_status_is_secret_safe(monkeypatch):
+    import services.openai_ai as ai
+
+    monkeypatch.setenv("OPENAI_API_KEY", "super-secret-openai-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.6-terra")
+    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-5.6-sol")
+    status = ai.provider_status()
+
+    assert status["configured"] is True
+    assert status["available"] is True
+    assert status["responses_api"] is True
+    assert status["store"] is False
+    assert status["signal_model"] == "gpt-5.6-terra"
+    assert status["deep_model"] == "gpt-5.6-sol"
+    serialized = json.dumps(status)
+    assert "super-secret-openai-key" not in serialized
+    assert "OPENAI_API_KEY" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_openai_connectivity_probe_is_structured_and_non_trading(monkeypatch):
+    import services.openai_ai as ai
+
+    _FakeAsyncClient.payload = {
+        "id": "resp_connectivity",
+        "output": [{
+            "content": [{
+                "type": "output_text",
+                "text": json.dumps({"status": "ok", "message": "connected"}),
+            }]
+        }],
+        "usage": {"input_tokens": 4, "output_tokens": 5},
+    }
+    monkeypatch.setattr(ai.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = await ai.test_connection()
+    assert result["ok"] is True
+    assert result["connected"] is True
+    call = _FakeAsyncClient.captured[-1]
+    assert call["url"] == "https://api.openai.com/v1/responses"
+    assert call["json"]["store"] is False
+    assert call["json"]["text"]["format"]["name"] == "signalrank_provider_connectivity"
+    serialized = json.dumps(call["json"]).lower()
+    assert "buy" not in serialized
+    assert "sell" not in serialized
+    assert "expected profit" not in serialized
+
+
+def test_provider_neutral_telegram_ai_commands_are_registered_and_governed():
+    bot = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+    commands = Path("signalrank_telegram/commands.py").read_text(encoding="utf-8")
+    policy = Path("core/tier_policy.py").read_text(encoding="utf-8")
+    catalogue = Path("signalrank_telegram/command_catalog.py").read_text(encoding="utf-8")
+
+    for command in ("ai", "ai_review", "ai_analyze", "ai_audit", "ai_predict", "ai_status", "ai_test"):
+        assert f'CommandHandler("{command}"' in bot
+    assert "async def ai_status_command" in commands
+    assert "async def ai_test_command" in commands
+    assert '"ai": Tier.ADMIN' in policy
+    assert '"ai_status": Tier.OWNER' in policy
+    assert '"ai_test": Tier.OWNER' in policy
+    assert 'CommandSpec("ai",' in catalogue
+    assert 'CommandSpec("ai_status",' in catalogue
+    assert "OPENAI_API_KEY" in commands
+    assert "Do not paste the API key into Telegram or chat logs." in commands
+
+
+def test_frontdoor_ownership_recovers_only_explicit_frontdoor_hint():
+    source = Path("railway_main.py").read_text(encoding="utf-8")
+    start = source.index("def _railway_process_ownership")
+    end = source.index("def _is_running_on_railway", start)
+    block = source[start:end]
+
+    assert 'os.getenv("DB_ROLE")' in block
+    assert 'requested in {"all", "all/dev"}' in block
+    assert '"frontdoor", "front-door", "webhook"' in block
+    assert 'requested = "frontdoor"' in block
+    assert "railway_main:app cannot own RUN_MODE=" in block
+    assert "engine" not in block.split('role_hint in {', 1)[1].split('}', 1)[0]
+    assert "worker" not in block.split('role_hint in {', 1)[1].split('}', 1)[0]
+
