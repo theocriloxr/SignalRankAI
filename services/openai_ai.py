@@ -469,6 +469,83 @@ async def risk_review(signal: Mapping[str, Any], market_context: Mapping[str, An
     )
 
 
+def provider_status() -> dict[str, Any]:
+    """Return secret-safe OpenAI routing and circuit status for operators."""
+    now = time.monotonic()
+    with _LOCK:
+        window_started = float(_WINDOW_STARTED_MONO or 0.0)
+        window_calls = int(_WINDOW_CALLS or 0)
+        circuit_until = float(_CIRCUIT_UNTIL_MONO or 0.0)
+        circuit_reason = str(_CIRCUIT_REASON or "")
+    window_seconds = _env_int("OPENAI_AI_WINDOW_SECONDS", 60, minimum=10, maximum=3600)
+    max_calls = _env_int("OPENAI_AI_MAX_CALLS_PER_WINDOW", 6, minimum=0, maximum=10000)
+    remaining = max(0.0, circuit_until - now)
+    if window_started and (now - window_started) > window_seconds:
+        window_calls = 0
+    return {
+        "provider": "openai",
+        "key_configured": bool(_api_key()),
+        "available": openai_available(),
+        "enabled": _env_bool("OPENAI_AI_ENABLED", True),
+        "signal_review_enabled": _env_bool("OPENAI_SIGNAL_REVIEW_ENABLED", True),
+        "preferred_provider": preferred_provider(),
+        "provider_order": list(provider_order()),
+        "fast_model": _model(deep=False),
+        "deep_model": _model(deep=True),
+        "fast_reasoning_effort": _reasoning_effort(deep=False),
+        "deep_reasoning_effort": _reasoning_effort(deep=True),
+        "budget": {
+            "window_seconds": int(window_seconds),
+            "max_calls": int(max_calls),
+            "calls_in_window": int(window_calls),
+        },
+        "circuit": {
+            "enabled": _env_bool("OPENAI_AI_CIRCUIT_BREAKER_ENABLED", True),
+            "open": bool(remaining > 0),
+            "reason": circuit_reason if remaining > 0 else "",
+            "remaining_seconds": round(remaining, 1),
+        },
+        "timeouts": {
+            "fast_seconds": _env_float(
+                "OPENAI_SIGNAL_REVIEW_TIMEOUT_SECONDS", 5.0, minimum=1.0, maximum=120.0
+            ),
+            "deep_seconds": _env_float(
+                "OPENAI_DEEP_TIMEOUT_SECONDS", 25.0, minimum=1.0, maximum=120.0
+            ),
+        },
+    }
+
+
+async def connection_test() -> dict[str, Any]:
+    """Run a minimal schema-constrained provider health check with no trading data."""
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "connected": {"type": "boolean"},
+            "message": {"type": "string"},
+        },
+        "required": ["connected", "message"],
+    }
+    result = await _structured_response(
+        task="signalrank_openai_connection_test",
+        system=(
+            "You are completing a connection health check for SignalRankAI. "
+            "Return connected=true and a short message. No trading decision is requested."
+        ),
+        payload={"health_check": True, "contains_trading_data": False},
+        schema=schema,
+        deep=False,
+        max_output_tokens=96,
+    )
+    if result.get("ok"):
+        data = dict(result.get("data") or {})
+        result["connected"] = bool(data.get("connected"))
+    else:
+        result["connected"] = False
+    return result
+
+
 async def custom_question(question: str, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     schema = {
         "type": "object",
@@ -647,4 +724,6 @@ __all__ = [
     "choose_direction",
     "evolution_proposal",
     "threshold_recommendation",
+    "provider_status",
+    "connection_test",
 ]
