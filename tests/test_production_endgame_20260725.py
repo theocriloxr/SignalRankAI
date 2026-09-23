@@ -227,6 +227,21 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     assert "provider_http_404_circuit_open" in second[2]
 
 
+def test_staging_quality_advisory_requires_nonproduction_and_no_live_execution():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    helper = source[source.index("def _staging_quality_advisory_enabled"):source.index("def _append_staging_advisory")]
+    assert 'environment in {"production", "prod"}' in helper
+    assert 'PUBLIC_TESTING_MODE' in helper
+    assert 'STAGING_QUALITY_GATES_ADVISORY' in helper
+    assert 'REAL_EXECUTION_ENABLED' in helper
+    assert 'AUTO_EXECUTION_ENABLED' in helper
+    assert 'COPY_TRADE_ENABLED' in helper
+    assert 'HYPERLIQUID_MAINNET_EXECUTION_ENABLED' in helper
+    assert 'FULL_SYSTEM_STAGING_TEST_ACTIVE' not in helper
+
+
 def test_worker_startup_db_jobs_use_bounded_configurable_waits():
     from pathlib import Path
 
