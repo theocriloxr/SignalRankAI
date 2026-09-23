@@ -197,6 +197,37 @@ class SignalController:
                 return True, "ok"
 
         def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> tuple[str | None, str]:
+            # Backward-compatible inline AI arbitration: OpenAI first, then
+            # Gemini, then the deterministic composite ranker below.
+            try:
+                from services.openai_ai import choose_direction, openai_available, provider_order
+                from utils.async_runner import run_sync
+
+                order = provider_order()
+                if openai_available() and "openai" in order and (
+                    "gemini" not in order or order.index("openai") < order.index("gemini")
+                ):
+                    result = run_sync(
+                        choose_direction(asset, tf, longs, shorts),
+                        timeout=max(2.0, float(os.getenv("AI_INLINE_TIMEOUT_SECONDS", "5") or 5)),
+                    )
+                    if isinstance(result, dict) and result.get("ok"):
+                        data = dict(result.get("data") or {})
+                        winner = str(data.get("winner") or "none").strip().lower()
+                        confidence = float(data.get("confidence") or 0.0)
+                        if winner in {"long", "short"} and confidence >= float(
+                            os.getenv("AI_INLINE_MIN_CONFIDENCE", "0.60") or 0.60
+                        ):
+                            return winner, f"openai_ok:{confidence:.2f}"
+                        return None, f"openai_ambiguous:{confidence:.2f}"
+            except Exception as exc:
+                self.audit_logger.debug(
+                    "openai_inline failed asset=%s tf=%s error=%s",
+                    asset,
+                    tf,
+                    type(exc).__name__,
+                )
+
             can_call, reason = _can_call_gemini()
             if not can_call:
                 self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=%s", asset, tf, reason)
@@ -302,8 +333,18 @@ class SignalController:
                     winning_ml_probs = [s.get("ml_probability") for s in winning if s.get("ml_probability") is not None]
                     if winning_ml_probs:
                         best["winning_avg_ml_prob"] = sum(winning_ml_probs) / len(winning_ml_probs)
+                best["ai_inline_reason"] = str(gemini_reason)
+                best["ai_inline_provider"] = (
+                    "openai" if str(gemini_reason).startswith("openai_")
+                    else "gemini" if str(gemini_reason) == "ok" or str(gemini_reason).startswith("gemini_")
+                    else "local"
+                )
+                best["ai_inline_used"] = bool(
+                    str(gemini_reason) == "ok" or str(gemini_reason).startswith("openai_ok")
+                )
+                # Compatibility aliases.
                 best["gemini_inline_reason"] = str(gemini_reason)
-                best["gemini_inline_used"] = bool(gemini_reason == "ok")
+                best["gemini_inline_used"] = bool(str(gemini_reason) == "ok")
             except Exception:
                 pass
 
