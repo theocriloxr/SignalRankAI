@@ -85,9 +85,11 @@ if [ -n "${RAILWAY_SERVICE_NAME:-}" ] || [ -n "${RAILWAY_ENVIRONMENT:-}" ]; then
 fi
 
 _honor_run_mode_on_railway="false"
-if [ "${HONOR_RUN_MODE_ON_RAILWAY:-false}" = "true" ]; then
-    _honor_run_mode_on_railway="true"
-fi
+case "${HONOR_RUN_MODE_ON_RAILWAY:-false}" in
+    1|true|TRUE|yes|YES|on|ON)
+        _honor_run_mode_on_railway="true"
+        ;;
+esac
 
 # Optional decomposed roles remain available for future multi-service scaling.
 # On Railway the safe default is always the HTTP monolith unless explicitly
