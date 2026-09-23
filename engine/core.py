@@ -540,9 +540,12 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
             )
         },
     }
+    # Current Gemini 3.x models do not need legacy sampling knobs here.
+    # Keep the request minimal so provider-side schema changes do not turn the
+    # optional review layer into persistent HTTP 400 degradation.
     body = json.dumps({
         "contents": [{"parts": [{"text": json.dumps(payload)}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 160},
+        "generationConfig": {"maxOutputTokens": 160},
     }).encode("utf-8")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
@@ -581,6 +584,18 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
             return (score > 8.0), score, "gemini_ok"
         except urllib.error.HTTPError as exc:
             status_code = getattr(exc, "code", None)
+            provider_detail = ""
+            try:
+                provider_detail = exc.read().decode("utf-8", errors="ignore")
+                provider_detail = " ".join(provider_detail.split())[:320]
+            except Exception:
+                provider_detail = ""
+            if provider_detail:
+                logger.warning(
+                    "[engine] gemini review provider_error status=%s detail=%s",
+                    status_code or "?",
+                    provider_detail,
+                )
             if status_code == 429:
                 if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
                     try:
