@@ -76,3 +76,55 @@ def test_outcome_notification_budget_starts_after_database_snapshot() -> None:
     assert deadline_pos > pending_pos
     assert 'OUTCOME_NOTIFICATION_FETCH_MARKET_PRICE_FALLBACK", False' in source
     assert 'OUTCOME_NOTIFICATION_PRICE_TIMEOUT_SECONDS", "3"' in source
+
+
+def test_deployed_ml_quality_gate_accepts_imbalanced_candidate_that_beats_utility_gates(monkeypatch) -> None:
+    for name in (
+        "ML_MIN_PROMOTION_AUC",
+        "ML_MIN_PROMOTION_ACCURACY",
+        "ML_MIN_BALANCED_ACCURACY",
+        "ML_MIN_POSITIVE_RECALL",
+        "ML_MIN_PR_AUC",
+        "ML_MIN_EXPECTED_R",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.7616,
+            "auc": 0.7665,
+            "majority_baseline_accuracy": 0.7634,
+            "balanced_accuracy": 0.5956,
+            "positive_recall": 0.2803,
+            "pr_auc": 0.4465,
+            "expected_r": 0.48,
+        },
+        deployed_runtime=True,
+    )
+    assert accepted is True
+
+
+def test_deployed_ml_quality_gate_still_rejects_majority_collapse(monkeypatch) -> None:
+    for name in (
+        "ML_MIN_PROMOTION_AUC",
+        "ML_MIN_PROMOTION_ACCURACY",
+        "ML_MIN_BALANCED_ACCURACY",
+        "ML_MIN_POSITIVE_RECALL",
+        "ML_MIN_PR_AUC",
+        "ML_MIN_EXPECTED_R",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.82,
+            "auc": 0.55,
+            "majority_baseline_accuracy": 0.82,
+            "balanced_accuracy": 0.50,
+            "positive_recall": 0.0,
+            "pr_auc": 0.18,
+            "expected_r": -0.12,
+        },
+        deployed_runtime=True,
+    )
+    assert accepted is False
