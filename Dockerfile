@@ -42,6 +42,9 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_production_endgame_20260725.py::test_engine_metadata_reads_wait_boundedly_under_db_contention \
       tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_accepts_imbalanced_candidate_that_beats_utility_gates \
       tests/test_v1366_runtime_certification_hotfix.py::test_deployed_ml_quality_gate_still_rejects_majority_collapse \
+      tests/test_v1366_runtime_certification_hotfix.py::test_class_balance_scale_is_bounded_for_minority_positive_class \
+      tests/test_v1366_runtime_certification_hotfix.py::test_classification_threshold_is_selected_on_imbalanced_calibration_window \
+      tests/test_v1366_runtime_certification_hotfix.py::test_training_uses_fit_window_balance_and_calibration_threshold_only \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_fast_path_skips_backup_and_lock_at_head \
       tests/test_deployment_schema_completion_v151.py::test_production_migration_lock_wait_is_bounded_and_nonblocking \
       tests/test_openai_ai_provider.py
