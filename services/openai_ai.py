@@ -342,6 +342,76 @@ def _signal_context(
     }
 
 
+def provider_status() -> dict[str, Any]:
+    """Return secret-safe OpenAI provider configuration and circuit state."""
+    now = time.monotonic()
+    with _LOCK:
+        circuit_remaining = max(0.0, float(_CIRCUIT_UNTIL_MONO or 0.0) - now)
+        window_calls = int(_WINDOW_CALLS)
+        window_started = float(_WINDOW_STARTED_MONO or 0.0)
+        circuit_reason = str(_CIRCUIT_REASON or "")
+    window_seconds = _env_int("OPENAI_AI_WINDOW_SECONDS", 60, minimum=10, maximum=3600)
+    max_calls = _env_int("OPENAI_AI_MAX_CALLS_PER_WINDOW", 6, minimum=0, maximum=10000)
+    return {
+        "provider": "openai",
+        "configured": bool(_api_key()),
+        "enabled": _env_bool("OPENAI_AI_ENABLED", True),
+        "signal_review_enabled": _env_bool("OPENAI_SIGNAL_REVIEW_ENABLED", True),
+        "available": openai_available(),
+        "primary_provider": preferred_provider(),
+        "provider_order": list(provider_order()),
+        "responses_api": True,
+        "store": False,
+        "signal_model": _model(deep=False),
+        "deep_model": _model(deep=True),
+        "signal_reasoning_effort": _reasoning_effort(deep=False),
+        "deep_reasoning_effort": _reasoning_effort(deep=True),
+        "timeout_seconds": _env_float("OPENAI_SIGNAL_REVIEW_TIMEOUT_SECONDS", 5.0, minimum=1.0, maximum=120.0),
+        "deep_timeout_seconds": _env_float("OPENAI_DEEP_TIMEOUT_SECONDS", 25.0, minimum=1.0, maximum=120.0),
+        "budget": {
+            "window_seconds": window_seconds,
+            "max_calls": max_calls,
+            "calls_used": window_calls,
+            "window_age_seconds": max(0.0, now - window_started) if window_started else 0.0,
+        },
+        "circuit": {
+            "open": circuit_remaining > 0,
+            "reason": circuit_reason or None,
+            "seconds_remaining": round(circuit_remaining, 1),
+        },
+    }
+
+
+async def test_connection() -> dict[str, Any]:
+    """Run a minimal schema-constrained OpenAI Responses API connectivity probe."""
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "status": {"type": "string", "enum": ["ok"]},
+            "message": {"type": "string"},
+        },
+        "required": ["status", "message"],
+    }
+    result = await _structured_response(
+        task="signalrank_provider_connectivity",
+        system=(
+            "You are a connectivity probe for SignalRankAI. Return status=ok and a short message. "
+            "Do not provide trading analysis or any other content."
+        ),
+        payload={"probe": "openai_responses_api", "expected": "ok"},
+        schema=schema,
+        deep=False,
+        max_output_tokens=96,
+    )
+    if result.get("ok"):
+        data = dict(result.get("data") or {})
+        result["connected"] = data.get("status") == "ok"
+    else:
+        result["connected"] = False
+    return result
+
+
 async def review_signal(
     signal: Mapping[str, Any],
     candles: Sequence[Mapping[str, Any]] | None = None,
@@ -637,6 +707,8 @@ __all__ = [
     "openai_available",
     "preferred_provider",
     "provider_order",
+    "provider_status",
+    "test_connection",
     "review_signal",
     "explain_signal",
     "news_sentiment",
