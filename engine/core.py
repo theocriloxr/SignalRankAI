@@ -584,6 +584,21 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         _meta.setdefault("ml_probability", sig.get("ml_probability"))
         _meta.setdefault("strategy_name", sig.get("strategy_name"))
         _meta.setdefault("strategy_group", sig.get("strategy_group"))
+        for _ai_key in (
+            "ai_review_provider",
+            "ai_review_model",
+            "ai_review_score",
+            "ai_review_confidence",
+            "ai_review_risk_level",
+            "ai_review_reason",
+            "ai_review_disagreement",
+            "ai_review_decision_disagreement",
+            "ai_review_latency_ms",
+            "ai_review_usage",
+            "ai_review_provider_results",
+        ):
+            if sig.get(_ai_key) is not None:
+                _meta.setdefault(_ai_key, sig.get(_ai_key))
         try:
             from services.decision_intelligence import build_decision_record, validate_decision_record
 
@@ -612,11 +627,18 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 news_assessment["sentiment_score"] = _meta.get("news_sentiment")
             if "news_action" in _meta:
                 news_assessment["signal_action"] = _meta.get("news_action")
-            gemini_summary = {}
-            if "gemini_score" in _meta:
-                gemini_summary["score"] = _meta.get("gemini_score")
-            if "gemini_reason" in _meta:
-                gemini_summary["summary"] = _meta.get("gemini_reason")
+            gemini_summary = {
+                "provider": _meta.get("ai_review_provider"),
+                "model": _meta.get("ai_review_model"),
+                "score": _meta.get("ai_review_score", _meta.get("gemini_score")),
+                "confidence": _meta.get("ai_review_confidence"),
+                "risk_level": _meta.get("ai_review_risk_level"),
+                "summary": _meta.get("ai_review_reason", _meta.get("gemini_reason")),
+                "disagreement": _meta.get("ai_review_disagreement"),
+                "decision_disagreement": _meta.get("ai_review_decision_disagreement"),
+                "latency_ms": _meta.get("ai_review_latency_ms"),
+            }
+            gemini_summary = {key: value for key, value in gemini_summary.items() if value is not None}
 
             decision_record = build_decision_record(
                 decision_signal,
@@ -3806,14 +3828,22 @@ def main_loop(DRY_RUN: bool = False):
                                         ),
                                     ),
                                 )
-                                ai_provider = (
-                                    "openai" if str(gemini_reason).startswith("openai_")
-                                    else "gemini" if str(gemini_reason).startswith("gemini_")
-                                    else "local"
-                                )
+                                ai_provider = str(sig.get("ai_review_provider") or "").strip().lower()
+                                if not ai_provider:
+                                    _reason_text = str(gemini_reason or "")
+                                    if "provider=openai" in _reason_text:
+                                        ai_provider = "openai"
+                                    elif "provider=gemini" in _reason_text:
+                                        ai_provider = "gemini"
+                                    elif "provider=consensus" in _reason_text:
+                                        ai_provider = "consensus"
+                                    else:
+                                        ai_provider = "local"
                                 sig['ai_review_provider'] = ai_provider
-                                sig['ai_review_score'] = gemini_score
-                                sig['ai_review_reason'] = gemini_reason
+                                if sig.get('ai_review_score') is None:
+                                    sig['ai_review_score'] = gemini_score
+                                if not sig.get('ai_review_reason'):
+                                    sig['ai_review_reason'] = gemini_reason
                                 # Compatibility aliases for existing formatters/quality gates.
                                 sig['gemini_review_score'] = gemini_score
                                 sig['gemini_review_reason'] = gemini_reason
