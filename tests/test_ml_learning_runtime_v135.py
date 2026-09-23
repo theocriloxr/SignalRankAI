@@ -70,6 +70,20 @@ def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
     assert '"frontdoor"' not in role_block
 
 
+def test_analytics_owned_workers_share_analytics_priority_lane() -> None:
+    root = Path(__file__).resolve().parents[1]
+    asset = (root / "worker" / "asset_learning_worker.py").read_text(encoding="utf-8")
+    shadow = (root / "engine" / "shadow_outcome_worker.py").read_text(encoding="utf-8")
+    retention = (root / "db" / "storage_maintenance.py").read_text(encoding="utf-8")
+
+    assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in asset
+    assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in shadow
+    assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in retention
+    assert "priority=_learning_db_priority()" in asset
+    assert "priority=_shadow_db_priority()" in shadow
+    assert "priority=_retention_db_priority()" in retention
+
+
 def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
