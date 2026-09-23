@@ -6151,6 +6151,8 @@ async def ai_status_command(update, context) -> None:
 		gemini_configured = bool((os.getenv("GEMINI_API_KEY") or "").strip())
 		circuit = dict(status.get("circuit") or {})
 		budget = dict(status.get("budget") or {})
+		cache = dict(status.get("cache") or {})
+		usage = dict(status.get("usage_totals") or {})
 		lines = [
 			"🤖 AI Provider Status",
 			"",
@@ -6166,6 +6168,8 @@ async def ai_status_command(update, context) -> None:
 			f"Circuit: {'OPEN' if circuit.get('open') else 'closed'}"
 			+ (f" ({circuit.get('reason')}, {circuit.get('seconds_remaining')}s)" if circuit.get('open') else ""),
 			f"Budget: {budget.get('calls_used', 0)}/{budget.get('max_calls', 0)} per {budget.get('window_seconds', 0)}s",
+			f"Cache: {cache.get('hits', 0)} hits / {cache.get('misses', 0)} misses ({cache.get('entries', 0)} entries)",
+			f"OpenAI tokens this process: in {usage.get('input_tokens', 0)} / out {usage.get('output_tokens', 0)}",
 		]
 		if not status.get("configured"):
 			lines += [
