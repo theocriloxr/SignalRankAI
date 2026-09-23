@@ -1022,7 +1022,9 @@ async def get_session(
         is_background
         and (configured_drop_background if drop_if_busy is None else bool(drop_if_busy))
     )
-    nonblocking = bool(is_analytics or drop_background)
+    # Analytics is nonblocking by default, but a durable analytics caller may
+    # explicitly pass drop_if_busy=False to wait within its bounded timeout.
+    nonblocking = bool((is_analytics and drop_if_busy is not False) or drop_background)
 
     acquired = False
     bg_acquired = False
@@ -1114,7 +1116,7 @@ async def get_session(
         # Durable background work (drop_if_busy=False) may wait for the shared
         # session gate after it has been admitted to the non-reserved capacity.
         # Drop-on-busy jobs and analytics remain nonblocking.
-        main_nonblocking = bool(is_analytics or drop_background)
+        main_nonblocking = bool((is_analytics and drop_if_busy is not False) or drop_background)
         if not main_nonblocking:
             with _session_metrics_lock:
                 _session_metrics["waiting"] += 1
