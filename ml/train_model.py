@@ -1155,6 +1155,92 @@ def _temporal_three_way_indices(
     return ordered[:train_end], ordered[train_end:calibration_end], ordered[calibration_end:]
 
 
+def _class_balance_scale(y_values, sample_weights=None) -> float:
+    """Return a bounded positive-class boost for imbalanced model-fit rows.
+
+    The boost is derived only from the model-fit window. Existing per-row
+    provenance/outcome weights remain authoritative; this multiplier prevents a
+    high raw accuracy from being achieved by almost always predicting the
+    dominant negative class.
+    """
+    if not _env_bool("ML_CLASS_BALANCE_ENABLED", True):
+        return 1.0
+    y = np.asarray(y_values, dtype=int)
+    if y.size == 0 or len(np.unique(y)) < 2:
+        return 1.0
+    if sample_weights is None:
+        weights = np.ones(y.shape[0], dtype=float)
+    else:
+        weights = np.asarray(sample_weights, dtype=float)
+        if weights.shape[0] != y.shape[0]:
+            weights = np.ones(y.shape[0], dtype=float)
+        weights = np.where(np.isfinite(weights) & (weights > 0), weights, 1.0)
+    positive_mass = float(weights[y == 1].sum())
+    negative_mass = float(weights[y == 0].sum())
+    if positive_mass <= 0 or negative_mass <= 0:
+        return 1.0
+
+    # Square-root balancing is deliberately gentler than the raw class ratio,
+    # reducing majority collapse without turning rare positives into an
+    # over-weighted objective.
+    raw_scale = math.sqrt(negative_mass / positive_mass)
+    try:
+        minimum = max(1.0, float(os.getenv("ML_CLASS_BALANCE_MIN_SCALE", "1.0") or 1.0))
+    except Exception:
+        minimum = 1.0
+    try:
+        maximum = max(minimum, float(os.getenv("ML_CLASS_BALANCE_MAX_SCALE", "4.0") or 4.0))
+    except Exception:
+        maximum = 4.0
+    return float(max(minimum, min(maximum, raw_scale)))
+
+
+def _select_classification_threshold(y_true, probabilities) -> float:
+    """Choose a diagnostic classification cutoff on calibration-fit rows only.
+
+    The returned threshold is used to evaluate the untouched validation window;
+    it never tunes against validation outcomes and does not change the separate
+    live ML probability gate.
+    """
+    if not _env_bool("ML_CLASSIFICATION_THRESHOLD_TUNING_ENABLED", True):
+        return 0.5
+    y = np.asarray(y_true, dtype=int)
+    proba = np.asarray(probabilities, dtype=float)
+    if y.size < 20 or y.size != proba.size or len(np.unique(y)) < 2:
+        return 0.5
+    proba = np.clip(proba, 0.0, 1.0)
+    try:
+        lower = max(0.05, min(0.45, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MIN", "0.15") or 0.15)))
+    except Exception:
+        lower = 0.15
+    try:
+        upper = min(0.95, max(0.50, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MAX", "0.70") or 0.70)))
+    except Exception:
+        upper = 0.70
+    if upper <= lower:
+        return 0.5
+
+    best_threshold = 0.5
+    best_key = (-1.0, -1.0, -1.0, -1.0)
+    for threshold in np.linspace(lower, upper, 56):
+        pred = (proba >= float(threshold)).astype(int)
+        tp = int(((pred == 1) & (y == 1)).sum())
+        tn = int(((pred == 0) & (y == 0)).sum())
+        fp = int(((pred == 1) & (y == 0)).sum())
+        fn = int(((pred == 0) & (y == 1)).sum())
+        recall = tp / max(1, tp + fn)
+        specificity = tn / max(1, tn + fp)
+        precision = tp / max(1, tp + fp)
+        balanced = 0.5 * (recall + specificity)
+        # Primary objective is balanced accuracy; recall/precision are
+        # deterministic tie-breakers, then prefer the cutoff nearest 0.5.
+        key = (balanced, recall, precision, -abs(float(threshold) - 0.5))
+        if key > best_key:
+            best_key = key
+            best_threshold = float(threshold)
+    return float(best_threshold)
+
+
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
     """Train and calibrate an XGBoost classifier without validation leakage.
 
@@ -1202,7 +1288,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # Train model
+    # Train model with a bounded minority-class correction computed only from
+    # the model-fit window. This complements, rather than replaces, provenance
+    # and outcome sample weights.
+    class_balance_scale = _class_balance_scale(y_tr, w_tr)
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -1210,19 +1299,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
+        scale_pos_weight=class_balance_scale,
         random_state=42,
         verbosity=1,
     )
+    logger.info(
+        "[ml_class_balance] positive_scale=%.4f train_positive=%s train_negative=%s",
+        class_balance_scale,
+        int((np.asarray(y_tr) == 1).sum()),
+        int((np.asarray(y_tr) == 0).sum()),
+    )
     model.fit(X_tr, y_tr, sample_weight=w_tr)
 
-    # Evaluate
-    y_pred = model.predict(X_te)
+    # Choose the classification diagnostic threshold from calibration-fit rows
+    # only, then evaluate that frozen threshold on the untouched validation
+    # window. Probability calibration remains separately measured below.
     y_proba = model.predict_proba(X_te)[:, 1]
+    calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
+    classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)
+    y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)
+    logger.info(
+        "[ml_classification_threshold] selected=%.4f calibration_rows=%s",
+        classification_threshold,
+        len(y_cal),
+    )
+
     calibration_x: list[float] = []
     calibration_y: list[float] = []
     calibrated_proba = np.asarray(y_proba, dtype=float)
     try:
-        calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
         if len(np.unique(calibration_fit_proba)) >= 2 and len(np.unique(y_cal)) >= 2:
             calibrator = IsotonicRegression(out_of_bounds='clip')
             calibrator.fit(calibration_fit_proba, y_cal)
@@ -1321,6 +1426,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     metrics = {
         "accuracy": float(acc),
         "auc": float(auc),
+        "classification_threshold": float(classification_threshold),
+        "scale_pos_weight": float(class_balance_scale),
         "train_rows": int(len(X_tr)),
         "calibration_fit_rows": calibration_fit_rows,
         "validation_rows": validation_rows,
