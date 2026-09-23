@@ -474,12 +474,54 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
 
 
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
+    """Backward-compatible multi-provider AI signal review.
+
+    Provider order defaults to OpenAI -> Gemini -> deterministic local. The
+    historical function name is retained because multiple engine/tests import it.
+    """
     fallback_enabled = _env_bool("AI_REVIEW_FALLBACK_ENABLED", True)
     def _fallback() -> tuple[bool, float | None, str]:
         if not fallback_enabled:
             return True, None, "ai_review_fallback_disabled"
         ok, score, reason = _local_ai_review_signal(signal, candles)
         return ok, score, reason
+
+    # Preferred provider: OpenAI Responses API with strict structured output.
+    # If unavailable/degraded we continue into the existing Gemini path and
+    # finally deterministic local review. AI never overrides deterministic
+    # structure/data/execution gates.
+    try:
+        from services.openai_ai import openai_available, provider_order, review_signal as _openai_review_signal
+
+        order = provider_order()
+        openai_first = "openai" in order and (
+            "gemini" not in order or order.index("openai") < order.index("gemini")
+        )
+        if openai_first and openai_available():
+            openai_result = await _openai_review_signal(signal, candles, news_sentiment)
+            if bool(openai_result.get("ok")):
+                data = dict(openai_result.get("data") or {})
+                try:
+                    score = max(0.0, min(10.0, float(data.get("score"))))
+                except (TypeError, ValueError):
+                    score = None
+                if score is not None:
+                    approved = bool(data.get("approved")) and score > 8.0
+                    summary = " ".join(str(data.get("summary") or "").split())[:260]
+                    risk_level = str(data.get("risk_level") or "unknown").strip().lower()
+                    model = str(openai_result.get("model") or "").strip()
+                    reason = (
+                        f"openai_ok;model={model};risk={risk_level};"
+                        f"confidence={float(data.get('confidence') or 0.0):.2f};summary={summary}"
+                    )
+                    return approved, score, reason
+            else:
+                logger.warning(
+                    "[engine] OpenAI review degraded error=%s action=gemini_fallback",
+                    str(openai_result.get("error") or "unknown")[:120],
+                )
+    except Exception as exc:
+        logger.debug("[engine] OpenAI review path unavailable: %s", type(exc).__name__)
 
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
@@ -3851,12 +3893,27 @@ def main_loop(DRY_RUN: bool = False):
                                         candles if isinstance(candles, list) else [],
                                         float(sig.get('news_sentiment') or 0.0) if sig.get('news_sentiment') is not None else None,
                                     ),
-                                    timeout=max(3.0, _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0)),
+                                    timeout=max(
+                                        3.0,
+                                        _env_float(
+                                            "AI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC",
+                                            _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0),
+                                        ),
+                                    ),
                                 )
+                                ai_provider = (
+                                    "openai" if str(gemini_reason).startswith("openai_")
+                                    else "gemini" if str(gemini_reason).startswith("gemini_")
+                                    else "local"
+                                )
+                                sig['ai_review_provider'] = ai_provider
+                                sig['ai_review_score'] = gemini_score
+                                sig['ai_review_reason'] = gemini_reason
+                                # Compatibility aliases for existing formatters/quality gates.
                                 sig['gemini_review_score'] = gemini_score
                                 sig['gemini_review_reason'] = gemini_reason
                                 if not gemini_ok:
-                                    sig['rejection_reason'] = f"gemini:{gemini_reason}"
+                                    sig['rejection_reason'] = f"ai:{ai_provider}:{gemini_reason}"
                                     _record_gate_failure(asset, "gemini", sig['rejection_reason'])
                                     if _staging_quality_advisory_enabled():
                                         _append_staging_advisory(sig, "gemini", sig['rejection_reason'])
