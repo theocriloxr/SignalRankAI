@@ -227,14 +227,22 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     assert "provider_http_404_circuit_open" in second[2]
 
 
-def test_current_gemini_review_request_avoids_legacy_sampling_knobs():
+def test_engine_uses_provider_neutral_ai_router_instead_of_raw_gemini_http():
     from pathlib import Path
 
-    source = Path("engine/core.py").read_text(encoding="utf-8")
-    review = source[source.index("async def _gemini_review_signal"):source.index("def _log_decision")]
-    assert '"generationConfig": {"maxOutputTokens": 160}' in review
-    assert '"temperature": 0.1' not in review
-    assert "gemini review provider_error status=" in review
+    engine = Path("engine/core.py").read_text(encoding="utf-8")
+    review = engine[engine.index("async def _gemini_review_signal"):engine.index("def _log_decision")]
+    gemini = Path("services/gemini_ml.py").read_text(encoding="utf-8")
+
+    assert "from services.ai_review_router import review_signal as _review_signal" in review
+    assert "await _review_signal(signal, candles, news_sentiment)" in review
+    assert "urllib.request" not in review
+    assert "generativelanguage.googleapis.com" not in review
+    assert "signal[\"ai_review_provider\"]" in review
+    assert "signal[\"ai_review_disagreement\"]" in review
+    assert "async def review_signal_structured(" in gemini
+    assert "_call_gemini(prompt, max_tokens=420)" in gemini
+    assert '"temperature": 0.1' not in gemini[gemini.index("async def review_signal_structured"):gemini.index("async def quantize_news_sentiment")]
 
 
 def test_metaapi_discovery_uses_canonical_account_aliases():
