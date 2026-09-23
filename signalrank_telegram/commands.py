@@ -6139,20 +6139,20 @@ async def quality_command(update, context) -> None:
 
 
 async def gemini_command(update, context) -> None:
-	"""Admin-only: trigger Gemini review over all-time aggregate and retrain ML."""
+	"""Admin-only: trigger the configured AI review over all-time aggregates."""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
 		await update.message.reply_text("Admin only.")
 		return
-	if not (os.getenv("GEMINI_API_KEY") or "").strip():
-		await update.message.reply_text(_railway_env_hint("Gemini", ["GEMINI_API_KEY"]))
+	if not ((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip() or (os.getenv("GEMINI_API_KEY") or "").strip()):
+		await update.message.reply_text(_railway_env_hint("AI provider", ["OPENAI_API_KEY", "GEMINI_API_KEY"]))
 		return
 
 	from services.gemini_ml import run_gemini_review_pipeline
 
 	await update.message.reply_text(
-		"Running Gemini all-time review and ML retrain. This can take up to 2 minutes..."
+		"Running governed AI all-time review. Model retraining remains a separate evidence-gated job..."
 	)
 	try:
 		result = await run_gemini_review_pipeline(
@@ -6161,7 +6161,7 @@ async def gemini_command(update, context) -> None:
 		)
 		err = str(result.get("error") or "").strip()
 		if not bool(result.get("ok", False)):
-			await update.message.reply_text(f"Gemini run failed: {err or 'unknown error'}")
+			await update.message.reply_text(f"AI review failed: {err or 'unknown error'}")
 			return
 
 		received = dict(result.get("received") or {})
@@ -6170,8 +6170,12 @@ async def gemini_command(update, context) -> None:
 		review = str(result.get("review") or "").strip()
 		feature_suggestions = list(result.get("feature_suggestions") or [])
 
+		provider = str(result.get("provider") or "local").strip()
+		model = str(result.get("model") or "n/a").strip()
 		msg = (
-			"Gemini run completed.\n\n"
+			"AI review completed.\n\n"
+			f"Provider: {provider}\n"
+			f"Model: {model}\n"
 			"Received:\n"
 			f"- outcomes: {int(received.get('outcomes_total', 0))}\n"
 			f"- wins/losses: {int(received.get('wins', 0))}/{int(received.get('losses', 0))}\n"
@@ -6193,14 +6197,14 @@ async def gemini_command(update, context) -> None:
 			)
 		if review:
 			await update.message.reply_text(
-				"Gemini review:\n" + review[:3500]
+				"AI review:\n" + review[:3500]
 			)
 	except Exception as exc:
-		await update.message.reply_text(safe_command_error("Gemini analysis failed.", exc))
+		await update.message.reply_text(safe_command_error("AI analysis failed.", exc))
 
 
 async def gemini_review_command(update, context) -> None:
-	"""Admin-only: show latest Gemini review/training rundown."""
+	"""Admin-only: show the latest provider-routed AI review rundown."""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
@@ -6213,7 +6217,7 @@ async def gemini_review_command(update, context) -> None:
 		result = await get_last_gemini_review()
 		if not result:
 			await update.message.reply_text(
-				"No Gemini review found yet. Run /gemini first or wait for the weekly job."
+				"No AI review found yet. Run /gemini first or wait for the scheduled review."
 			)
 			return
 
@@ -6223,8 +6227,12 @@ async def gemini_review_command(update, context) -> None:
 		review = str(result.get("review") or "").strip()
 		feature_suggestions = list(result.get("feature_suggestions") or [])
 
+		provider = str(result.get("provider") or "legacy/local").strip()
+		model = str(result.get("model") or "n/a").strip()
 		msg = (
-			"Latest Gemini review.\n\n"
+			"Latest AI review.\n\n"
+			f"Provider: {provider}\n"
+			f"Model: {model}\n"
 			f"Trigger: {str(result.get('trigger') or 'unknown')}\n"
 			f"Scope: {str(result.get('scope') or 'unknown')}\n"
 			f"Finished: {str(result.get('finished_at') or 'unknown')}\n\n"
@@ -6247,9 +6255,9 @@ async def gemini_review_command(update, context) -> None:
 				"Feature suggestions:\n" + "\n".join(feat_lines)
 			)
 		if review:
-			await update.message.reply_text("Gemini review:\n" + review[:3500])
+			await update.message.reply_text("AI review:\n" + review[:3500])
 	except Exception as exc:
-		await update.message.reply_text(safe_command_error("Could not load the Gemini review.", exc))
+		await update.message.reply_text(safe_command_error("Could not load the AI review.", exc))
 
 
 async def gemini_analyze_command(update, context) -> None:
