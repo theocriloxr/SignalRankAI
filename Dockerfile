@@ -32,6 +32,8 @@ RUN python -m compileall -q engine db data worker services ml \
       tests/test_ml_learning_runtime_v135.py::test_ml_training_is_nonblocking_and_multisource \
       tests/test_railway_runtime_incident_fixes.py::test_signal_insert_reuses_the_exact_active_unique_index_bucket \
       tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
+      tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
+      tests/test_runtime_hardening_contract.py::test_paystack_recovery_retries_quickly_after_background_contention \
       tests/test_phase4_pass1_quote_contract.py::test_twelvedata_quote_falls_back_to_timestamped_one_minute_bar \
       tests/test_production_endgame_20260725.py::test_current_gemini_review_request_avoids_legacy_sampling_knobs \
       tests/test_production_endgame_20260725.py::test_metaapi_discovery_uses_canonical_account_aliases
