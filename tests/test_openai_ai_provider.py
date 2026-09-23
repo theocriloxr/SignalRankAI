@@ -287,3 +287,11 @@ def test_frontdoor_ownership_recovers_only_explicit_frontdoor_hint():
     assert "engine" not in block.split('role_hint in {', 1)[1].split('}', 1)[0]
     assert "worker" not in block.split('role_hint in {', 1)[1].split('}', 1)[0]
 
+def test_start_script_honors_railway_run_mode_truthy_aliases():
+    source = Path("start.sh").read_text(encoding="utf-8")
+    assert 'case "${HONOR_RUN_MODE_ON_RAILWAY:-false}" in' in source
+    assert "1|true|TRUE|yes|YES|on|ON)" in source
+    assert 'case "${RUN_MODE}" in' in source
+    assert "web|worker|engine|bot|delivery|outcome|analytics|scheduler)" in source
+    assert 'exec python main.py' in source
+
