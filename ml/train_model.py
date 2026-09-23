@@ -39,8 +39,15 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _training_db_priority() -> str:
-    value = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background").strip().lower()
-    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+    explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
+    if explicit in {"interactive", "critical", "background", "analytics"}:
+        return explicit
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    # Dedicated analytics workers should not contend in the generic background
+    # lane. They own the analytics lane and may wait boundedly for it.
+    if role == "analytics" or role.startswith("analytics-"):
+        return "analytics"
+    return "background"
 
 
 def _training_db_timeout() -> float:
@@ -113,12 +120,25 @@ def _promotion_quality_gate(
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
     majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
+    positive_precision = float(metrics.get("positive_precision", 0.0) or 0.0)
+    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
+    min_precision = max(
+        float(os.getenv("ML_MIN_POSITIVE_PRECISION", "0.15") or 0.15),
+        positive_rate
+        * float(os.getenv("ML_MIN_POSITIVE_PRECISION_LIFT", "1.05") or 1.05),
+    )
+    # Raw accuracy versus the majority-class baseline is not a valid promotion
+    # requirement for an intentionally imbalanced win/loss target.  A useful
+    # minority-class model can trade a small amount of raw accuracy for much
+    # better win recall.  Keep the absolute accuracy floor, but prove that the
+    # positive class is learned through balanced accuracy, recall, PR-AUC,
+    # precision above prevalence, and expected-R.
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and accuracy > majority_baseline
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
+        and positive_precision >= min_precision
         and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
         and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
     )
@@ -348,6 +368,41 @@ async def load_training_data(lookback_days: int = 90):
                     return 0.0
 
         candle_cache: dict[tuple[str, str], tuple[list[int], list[object]]] = {}
+        training_lookback_days = max(1, int(lookback_days or 90))
+        training_now = now_utc_naive()
+
+        def _timeframe_seconds(raw_timeframe: str) -> int:
+            text = str(raw_timeframe or "").strip().lower()
+            aliases = {"d": "1d", "day": "1d", "daily": "1d", "h": "1h", "hour": "1h"}
+            text = aliases.get(text, text)
+            try:
+                if text.endswith("m"):
+                    return max(60, int(float(text[:-1] or 1) * 60))
+                if text.endswith("h"):
+                    return max(3600, int(float(text[:-1] or 1) * 3600))
+                if text.endswith("d"):
+                    return max(86400, int(float(text[:-1] or 1) * 86400))
+            except (TypeError, ValueError):
+                pass
+            return 3600
+
+        def _candle_cache_bounds(timeframe: str) -> tuple[int, int]:
+            bar_seconds = _timeframe_seconds(timeframe)
+            feature_buffer_bars = max(
+                160,
+                int(os.getenv("ML_CANDLE_FEATURE_BUFFER_BARS", "180") or 180),
+            )
+            span_seconds = training_lookback_days * 86400 + feature_buffer_bars * bar_seconds
+            floor_ms = int((training_now - timedelta(seconds=span_seconds)).timestamp() * 1000)
+            expected_rows = int(span_seconds / max(1, bar_seconds)) + 32
+            hard_cap = max(
+                500,
+                min(
+                    150000,
+                    int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000),
+                ),
+            )
+            return floor_ms, max(500, min(hard_cap, expected_rows))
 
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
@@ -355,13 +410,14 @@ async def load_training_data(lookback_days: int = 90):
             key = (str(symbol).upper(), str(timeframe).lower())
             cached = candle_cache.get(key)
             if cached is None:
-                max_rows = max(500, min(100000, int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000)))
+                floor_ms, max_rows = _candle_cache_bounds(key[1])
                 async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
                     q = (
                         select(MarketCandle)
                         .where(
                             MarketCandle.symbol == key[0],
                             MarketCandle.timeframe == key[1],
+                            MarketCandle.open_time_ms >= floor_ms,
                         )
                         .order_by(desc(MarketCandle.open_time_ms))
                         .limit(max_rows)
@@ -372,6 +428,14 @@ async def load_training_data(lookback_days: int = 90):
                 open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
                 cached = (open_times, all_rows)
                 candle_cache[key] = cached
+                logger.info(
+                    "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
+                    key[0],
+                    key[1],
+                    len(all_rows),
+                    max_rows,
+                    training_lookback_days,
+                )
             open_times, all_rows = cached
             cutoff_ms = int(created_at.timestamp() * 1000)
             stop = bisect_right(open_times, cutoff_ms)
@@ -449,6 +513,11 @@ async def load_training_data(lookback_days: int = 90):
             )
 
         live_proof_rows = len(rows)
+        logger.info(
+            "[ml_dataset_stage] stage=live_proof_loaded rows=%s lookback_days=%s",
+            live_proof_rows,
+            training_lookback_days,
+        )
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
@@ -1140,7 +1209,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # Train model
+    # Train model.  Delivery outcomes are naturally imbalanced; derive a
+    # conservative positive-class weight from the model-fit window only so the
+    # untouched validation window remains genuinely out of sample.  sqrt(ratio)
+    # is intentionally milder than the full neg/pos ratio to avoid overcorrecting
+    # towards false positives.
+    train_positive = int((np.asarray(y_tr) == 1).sum())
+    train_negative = int((np.asarray(y_tr) == 0).sum())
+    empirical_ratio = (
+        float(train_negative) / float(train_positive)
+        if train_positive > 0
+        else 1.0
+    )
+    default_scale_pos_weight = math.sqrt(max(1.0, empirical_ratio))
+    scale_pos_weight = float(
+        os.getenv("ML_SCALE_POS_WEIGHT", str(default_scale_pos_weight))
+        or default_scale_pos_weight
+    )
+    scale_pos_weight = min(
+        float(os.getenv("ML_SCALE_POS_WEIGHT_MAX", "4.0") or 4.0),
+        max(1.0, scale_pos_weight),
+    )
+    logger.info(
+        "[ml_training_balance] train_positive=%s train_negative=%s "
+        "empirical_ratio=%.4f scale_pos_weight=%.4f",
+        train_positive,
+        train_negative,
+        empirical_ratio,
+        scale_pos_weight,
+    )
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -1148,6 +1245,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
+        scale_pos_weight=scale_pos_weight,
         random_state=42,
         verbosity=1,
     )
@@ -1446,8 +1544,21 @@ async def main(lookback_days: int | None = None):
     if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
-            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
-            run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
+            "balanced_accuracy=%.4f positive_recall=%.4f positive_precision=%.4f "
+            "positive_rate=%.4f pr_auc=%.4f expected_r=%.4f "
+            "current_model_preserved=true",
+            run_id,
+            metrics["accuracy"],
+            min_accuracy,
+            metrics["auc"],
+            min_auc,
+            float(metrics.get("balanced_accuracy", 0.0) or 0.0),
+            float(metrics.get("positive_recall", 0.0) or 0.0),
+            float(metrics.get("positive_precision", 0.0) or 0.0),
+            float(metrics.get("positive_rate", 0.0) or 0.0),
+            float(metrics.get("pr_auc", 0.0) or 0.0),
+            float(metrics.get("expected_r", 0.0) or 0.0),
         )
         return False
 

@@ -871,6 +871,7 @@ async def get_or_create_signal_impl(
             # strategy scope. Hidden regime changes or adjacent timeframe scans
             # must not admit two near-identical user-visible trade ideas.
             semantic_scope = f"signal-thesis:{signal_thesis_scope(thesis_payload)}"
+            exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                 {"fingerprint": thesis_fingerprint},
@@ -878,6 +879,15 @@ async def get_or_create_signal_impl(
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
                 {"scope": semantic_scope},
+            )
+            # The database uniqueness guard is broader than a strategy thesis:
+            # only one unresolved asset+direction+timeframe row may exist.
+            # Serialize that exact bucket too, otherwise two different strategy
+            # scopes can race through their separate thesis locks and collide
+            # on ix_signals_active_thesis at flush time.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:bucket_scope))"),
+                {"bucket_scope": exact_bucket_scope},
             )
     except Exception as lock_error:
         from core.env import runtime_environment_name
@@ -1031,22 +1041,36 @@ async def get_or_create_signal_impl(
                 Signal.asset == asset,
                 Signal.direction == direction,
                 Signal.timeframe == timeframe,
-                Signal.expired.is_(False),
-                Signal.archived.is_(False),
+                Signal.status == "active",
             )
             .order_by(Signal.created_at.desc())
             .limit(1)
         )
     ).scalars().first()
     if exact_active is not None:
-        logger.info(
-            "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
-            asset,
-            timeframe,
-            direction,
-            exact_active.signal_id,
-        )
-        return exact_active
+        # The partial unique index is WHERE status='active'. A legacy/inconsistent
+        # row may therefore block INSERT even when expired/archived flags already
+        # say it is inactive. Clear that stale index membership under the same
+        # exact-bucket advisory lock; otherwise reuse the canonical active row.
+        if bool(exact_active.expired) or bool(exact_active.archived):
+            exact_active.status = "superseded"
+            await session.flush()
+            logger.info(
+                "[dedup] reconciled stale active-index row asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+        else:
+            logger.info(
+                "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+            return exact_active
 
     logger.info(
         "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
@@ -2573,6 +2597,8 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
             SignalDelivery.sent_ok.is_(True),
             SignalDelivery.telegram_chat_id.is_not(None),
             SignalDelivery.telegram_message_id.is_not(None),
+            User.telegram_reachable.is_(True),
+            User.notification_suppressed.is_(False),
             func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
             or_(UserSignalMonitoring.id.is_(None), UserSignalMonitoring.status.in_(("auto_continue", "continued"))),
         )

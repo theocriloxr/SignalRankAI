@@ -27,6 +27,7 @@ from .mt5_commands import mt5_link_command, mt5_status_command
 from .utils import tier_rank, _effective_tier, _public_guard
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
+from .command_resilience import safe_command_error
 
 TIER_RANKS: dict[str, int] = {
 	tier: canonical_tier_rank(tier)
@@ -1179,7 +1180,7 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			lines.append(f"Postgres activity error: {pg.get('error')}")
 		await update.message.reply_text("\n".join(lines))
 	except Exception as exc:
-		await update.message.reply_text(f"Database health unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Database health is unavailable.", exc))
 
 
 async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1292,7 +1293,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 			await update.message.reply_text(message[:3900])
 	except Exception as exc:
 		logger.exception("[delivery_debug] failed: %s", exc)
-		await update.message.reply_text(f"Delivery debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Delivery diagnostics failed.", exc))
 
 
 async def _load_signal_debug_payload(ref: str) -> dict | None:
@@ -1337,7 +1338,7 @@ async def signal_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 		await update.message.reply_text("\n".join(lines)[:3900])
 	except Exception as exc:
 		logger.exception("[signal_debug] failed: %s", exc)
-		await update.message.reply_text(f"Signal debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Signal diagnostics failed.", exc))
 
 
 async def format_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1372,7 +1373,7 @@ async def format_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 		await update.message.reply_text(message[:3900])
 	except Exception as exc:
 		logger.exception("[format_debug] failed: %s", exc)
-		await update.message.reply_text(f"Format debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Formatting diagnostics failed.", exc))
 
 
 async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1453,7 +1454,7 @@ async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 			lines.extend(["", f"Class counts: {class_counts}"])
 		await update.message.reply_text("\n".join(lines))
 	except Exception as exc:
-		await update.message.reply_text(f"Engine debug unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Engine diagnostics are unavailable.", exc))
 
 def _load_last_engine_cycle() -> dict:
     """Return the latest engine heartbeat without exposing Redis details."""
@@ -1760,9 +1761,7 @@ async def delivery_eligibility_command(update: Update, context: ContextTypes.DEF
         await update.message.reply_text("\n".join(lines)[:3900])
     except Exception as exc:
         logger.exception("[delivery_eligibility] failed: %s", exc)
-        await update.message.reply_text(
-            f"Delivery eligibility is temporarily unavailable ({type(exc).__name__})."
-        )
+        await update.message.reply_text(safe_command_error("Delivery eligibility is temporarily unavailable.", exc))
 
 
 async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1816,7 +1815,7 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
         logger.info("[test_delivery_completed] user=%s asset=%s", user_id, spec.symbol)
     except Exception as exc:
         logger.exception("[test_delivery_failed] user=%s asset=%s", user_id, spec.symbol)
-        await update.message.reply_text(f"Infrastructure test failed: {type(exc).__name__}")
+        await update.message.reply_text(safe_command_error("Infrastructure test failed.", exc))
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1934,9 +1933,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as exc:
 		logger.exception("[profile] command failed user=%s args=%s", user_id, args)
 		action = "load" if is_read else "update"
-		await update.message.reply_text(
-			f"Could not {action} trading profile: {type(exc).__name__}"
-		)
+		await update.message.reply_text(safe_command_error(f"Could not {action} the trading profile.", exc))
 
 
 async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1999,7 +1996,7 @@ async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		snapshot = build_mission_snapshot(payload, current_price=payload.get("current_price") or payload.get("live_price"))
 		await update.message.reply_text(format_mission(snapshot))
 	except Exception as exc:
-		await update.message.reply_text(f"Mission control unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Mission control is unavailable.", exc))
 
 
 @require_tier("ADMIN")
@@ -2532,7 +2529,7 @@ async def assets_command(update, context) -> None:
 			from data.pair_discovery import get_asset_discovery_snapshot
 			snapshot = get_asset_discovery_snapshot(force_refresh=subcmd in {"discovered", "health"})
 		except Exception as exc:
-			await update.message.reply_text(f"Asset discovery diagnostics unavailable: {type(exc).__name__}")
+			await update.message.reply_text(safe_command_error("Asset-discovery diagnostics are unavailable.", exc))
 			return
 
 		counts = dict(snapshot.get("counts") or {})
@@ -2733,7 +2730,7 @@ async def selfcheck_command(update, context) -> None:
 	# Redis check
 	try:
 		from core.redis_state import state
-		state.get_sync("health_check")
+		await asyncio.wait_for(asyncio.to_thread(state.get_sync, "health_check"), timeout=3.0)
 		checks.append("✅ Redis: connected")
 	except Exception:
 		checks.append("❌ Redis: not connected")
@@ -2743,6 +2740,7 @@ async def selfcheck_command(update, context) -> None:
 		checks.append("✅ Railway: detected")
 		checks.append("✅ GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "❌ GEMINI_API_KEY: missing")
 		checks.append("✅ META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "❌ META_API_TOKEN: missing")
+		checks.append("✅ META_API_ACCOUNT_ID: set" if (os.getenv("META_API_ACCOUNT_ID") or "").strip() else "⚠️ META_API_ACCOUNT_ID: missing (broker discovery disabled)")
 		checks.append("✅ ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "❌ ENCRYPTION_KEY: missing")
 		_owner_ids_raw = (os.getenv("OWNER_IDS") or "").strip()
 		checks.append("✅ OWNER_IDS: set" if _owner_ids_raw else "⚠️ OWNER_IDS: missing (owner-only commands disabled)")
@@ -2750,8 +2748,10 @@ async def selfcheck_command(update, context) -> None:
 	# yfinance check
 	try:
 		import yfinance as yf
-		t = yf.Ticker("AAPL")
-		p = t.fast_info.get('lastPrice')
+		def _yfinance_probe():
+			t = yf.Ticker("AAPL")
+			return t.fast_info.get("lastPrice")
+		p = await asyncio.wait_for(asyncio.to_thread(_yfinance_probe), timeout=6.0)
 		checks.append(f"✅ yfinance: working (AAPL=${p:.2f})" if p else "⚠️ yfinance: no price")
 	except Exception:
 		checks.append("❌ yfinance: not available")
@@ -2940,7 +2940,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ ops health failed: {exc}")
+		await update.message.reply_text(safe_command_error("Operations health check failed.", exc))
 
 from telegram import Update
 from telegram.helpers import escape_markdown
@@ -3012,7 +3012,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		await update.message.reply_text("Notification preferences are temporarily busy. Please retry /notify.")
 	except Exception as exc:
 		logger.exception("[notify] preference update failed user=%s", user_id)
-		await update.message.reply_text(f"Could not update notification preferences: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Could not update notification preferences.", exc))
 # --------- FEEDBACK COMMAND ---------
 from .feedback import feedback_store
 @require_tier("PREMIUM")
@@ -3165,13 +3165,13 @@ def _help_authorized_pages(user_id: int) -> list[int]:
 	pages = [1, 2, 3]
 	try:
 		uid = int(user_id)
-		if uid in ADMIN_IDS:
+		if uid in ADMIN_IDS or uid in OWNER_IDS:
 			pages.append(4)
 		if uid in OWNER_IDS:
-			pages.extend((4, 5))
+			pages.append(5)
 	except Exception:
 		pass
-	return pages
+	return list(dict.fromkeys(pages))
 
 
 def _help_page_is_locked(user_id: int, page: int) -> bool:
@@ -3257,10 +3257,13 @@ async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		page = int(data.rsplit("_", 1)[-1])
 	except Exception:
 		page = 1
-	if page == 4:
+	if page in {4, 5}:
 		try:
 			uid = int(update.effective_user.id)
-			if uid not in ADMIN_IDS and uid not in OWNER_IDS:
+			if page == 5 and uid not in OWNER_IDS:
+				await query.answer("Access denied.", show_alert=True)
+				return
+			if page == 4 and uid not in ADMIN_IDS and uid not in OWNER_IDS:
 				await query.answer("Access denied.", show_alert=True)
 				return
 		except Exception:
@@ -3789,7 +3792,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as exc:
 		_audit_logger.exception("[signals_command] failed user=%s err=%s", user_id, exc)
 		if not await _reply_with_cached_response():
-			await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
+			await message.reply_text(safe_command_error("Could not load signals.", exc))
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4787,7 +4790,7 @@ async def analyze_command(update, context) -> None:
 		await update.message.reply_text("\n".join(msg_lines))
 		return
 	except Exception as e:
-		await update.message.reply_text(f"Analysis failed: {e}")
+		await update.message.reply_text(safe_command_error("Analysis failed.", e))
 
 
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4987,7 +4990,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 	except Exception as e:
 		logger.error(f"[admin] admin_command failed: {e}")
-		await update.message.reply_text(f"Admin query failed: {e}")
+		await update.message.reply_text(safe_command_error("Admin query failed.", e))
 
 
 # ── Admin broadcast ────────────────────────────────────────────────────────
@@ -5054,7 +5057,7 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 
 	except Exception as e:
 		logger.error(f"[admin] admin_broadcast_command failed: {e}")
-		await update.message.reply_text(f"Broadcast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast failed.", e))
 
 
 # ── Terms blast (send disclaimer to all users without accepted_terms) ──────
@@ -5139,7 +5142,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
-		await update.message.reply_text(f"⚠️ Blast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast blast failed.", e))
 
 	try:
 		from db.session import get_engine_for_event_loop, get_session as _gs_bt
@@ -5210,7 +5213,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
-		await update.message.reply_text(f"Blast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast blast failed.", e))
 
 
 # /policy or /refunds command
@@ -6132,7 +6135,7 @@ async def quality_command(update, context) -> None:
 
 		await update.message.reply_text(msg)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not build quality report: {exc}")
+		await update.message.reply_text(safe_command_error("Could not build the quality report.", exc))
 
 
 async def gemini_command(update, context) -> None:
@@ -6193,7 +6196,7 @@ async def gemini_command(update, context) -> None:
 				"Gemini review:\n" + review[:3500]
 			)
 	except Exception as exc:
-		await update.message.reply_text(f"Gemini run exception: {exc}")
+		await update.message.reply_text(safe_command_error("Gemini analysis failed.", exc))
 
 
 async def gemini_review_command(update, context) -> None:
@@ -6246,7 +6249,7 @@ async def gemini_review_command(update, context) -> None:
 		if review:
 			await update.message.reply_text("Gemini review:\n" + review[:3500])
 	except Exception as exc:
-		await update.message.reply_text(f"Could not load Gemini review: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the Gemini review.", exc))
 
 
 async def gemini_analyze_command(update, context) -> None:
@@ -6271,7 +6274,7 @@ async def gemini_analyze_command(update, context) -> None:
 			return
 		await update.message.reply_text(f"Analysis for {asset}: {len(res.get('recent_signals', []))} signals, {len(res.get('recent_rejections', []))} rejections")
 	except Exception as exc:
-		await update.message.reply_text(f"Analyze error: {exc}")
+		await update.message.reply_text(safe_command_error("Analysis failed.", exc))
 
 
 async def gemini_audit_command(update, context) -> None:
@@ -6293,7 +6296,7 @@ async def gemini_audit_command(update, context) -> None:
 			return
 		await update.message.reply_text(f"Recent losses: {len(res.get('recent_losses', []))}, recent rejections: {len(res.get('recent_rejections', []))}")
 	except Exception as exc:
-		await update.message.reply_text(f"Audit error: {exc}")
+		await update.message.reply_text(safe_command_error("Audit failed.", exc))
 
 
 async def codex_audit_command(update, context) -> None:
@@ -6351,7 +6354,7 @@ async def codex_audit_command(update, context) -> None:
 			if ai_findings:
 				await update.message.reply_text("OpenAI aggregate review findings:\n" + "\n".join(f"- {x[:220]}" for x in ai_findings[:6]))
 	except Exception as exc:
-		await update.message.reply_text(f"Codex audit error: {exc}")
+		await update.message.reply_text(safe_command_error("Codex audit failed.", exc))
 
 
 async def gemini_predict_command(update, context) -> None:
@@ -6377,7 +6380,7 @@ async def gemini_predict_command(update, context) -> None:
 		else:
 			candidate = {"asset": args[0], "timeframe": args[1], "direction": args[2], "entry": float(args[3])}
 	except Exception as exc:
-		await update.message.reply_text(f"Candidate parse error: {exc}")
+		await update.message.reply_text(safe_command_error("Candidate parsing failed.", exc))
 		return
 	from services.gemini_ml import predict_candidate
 
@@ -6389,7 +6392,7 @@ async def gemini_predict_command(update, context) -> None:
 		dup = bool(res.get("is_duplicate"))
 		await update.message.reply_text(f"Duplicate: {dup}. Neighbors: {len(res.get('recent_neighbors', []))}")
 	except Exception as exc:
-		await update.message.reply_text(f"Predict error: {exc}")
+		await update.message.reply_text(safe_command_error("Prediction failed.", exc))
 
 
 # -------- Premium commands --------
@@ -6564,7 +6567,7 @@ async def history_command(update, context):
 
 	except Exception as exc:
 		if update.message is not None:
-			await update.message.reply_text(f"❌ Could not load history: {exc}")
+			await update.message.reply_text(safe_command_error("Could not load signal history.", exc))
 
 
 @require_tier("VIP")
@@ -6737,7 +6740,7 @@ async def risk_command(update, context) -> None:
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update risk: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update the risk setting.", exc))
 
 
 @require_tier("PREMIUM")
@@ -6855,7 +6858,7 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 			)
 			await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"Could not update mode: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update execution mode.", exc))
 		return
 
 	await update.message.reply_text(f"Mode updated: {final_mode.upper()}")
@@ -7025,7 +7028,7 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Error fetching price: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch the live price.", exc))
 
 
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7167,7 +7170,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load portfolio: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the portfolio.", exc))
 
 
 async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7224,7 +7227,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not fetch market data: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch market data.", exc))
 
 
 # --------- MT5 LINK COMMAND ---------
@@ -7322,17 +7325,12 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 				)
 		else:
 			err = result.get("error", "Unknown error")
-			reply = (
-				"❌ MT5 Link Failed\n\n"
-				f"Error: {err}\n\n"
-				"Please check your login, password and server name, then try again.\n"
-				"Use /mt5_link <login> <password> <server>"
+			reply = safe_command_error(
+				"MT5 account linking failed.",
+				RuntimeError(str(err)),
 			)
 	except Exception as exc:
-		reply = (
-			f"❌ MT5 Link Error\n\n{type(exc).__name__}: {exc}\n\n"
-			"Please try again or contact support with /support"
-		)
+		reply = safe_command_error("MT5 account linking failed.", exc)
 
 	try:
 		await processing_msg.edit_text(reply)
@@ -7393,7 +7391,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)
 		await update.message.reply_text(reply)
 	except Exception as exc:
-		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch MT5 status.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -7450,7 +7448,7 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				row.fixed_lot_size = lot
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save lot size: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the lot size.", exc))
 		return
 
 	await update.message.reply_text(
@@ -7519,7 +7517,7 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				row.max_risk_percentage = pct
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save risk setting: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the risk setting.", exc))
 		return
 
 	await update.message.reply_text(
@@ -7585,7 +7583,7 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			await session.commit()
 		await update.message.reply_text("✅ VIP execution webhook saved.")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save webhook: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the webhook.", exc))
 
 
 async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7707,7 +7705,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update execution mode: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Could not update execution mode.", exc))
 
 
 async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7785,7 +7783,7 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update drawdown setting: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update the drawdown limit.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -7962,7 +7960,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"⚠️ Could not load stats: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load performance statistics.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -8184,7 +8182,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load leaderboard: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the leaderboard.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

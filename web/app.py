@@ -98,6 +98,10 @@ if os.path.isdir(_PLATFORM_DIR):
     async def platform_service_worker() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "service-worker.js"), media_type="application/javascript", headers={"Service-Worker-Allowed": "/app"})
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def platform_favicon() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "icon.svg"), media_type="image/svg+xml")
+
 # Preserve the dedicated Paystack ingress router as a compatibility alias.
 # The inline routes below remain available for existing clients; this mounts
 # the canonical raw-body/background-task handler at `/webhook/paystack`.

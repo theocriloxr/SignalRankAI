@@ -23,6 +23,13 @@ def _sample_signal() -> dict:
         },
         "regime": "trending",
         "invalidation": "Below 95.00 invalidates the setup",
+        "candle_evidence": {
+            "alignment": "supportive",
+            "confirmation": "confirmed",
+            "summary": "Lower-price rejection at support; evidence, not proof.",
+        },
+        "candle_reasoning": "Lower-price rejection at support; evidence, not proof.",
+        "candle_confirmation": "confirmed",
     }
 
 
@@ -33,6 +40,9 @@ def test_build_signal_explanation_exposes_reasoning():
     assert "Bullish structure break" in explanation["summary"]
     assert any("Confluence" in bullet for bullet in explanation["bullets"])
     assert explanation["invalidation"] == "Below 95.00 invalidates the setup"
+    assert any("Price action:" in bullet for bullet in explanation["bullets"])
+    assert "Next completed candle followed through" in explanation["confirms"]
+    assert explanation["candle_evidence"]["alignment"] == "supportive"
 
 
 def test_vip_formatter_includes_why_block():

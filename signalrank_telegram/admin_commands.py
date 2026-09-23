@@ -1,4 +1,5 @@
 from utils.timeutils import now_utc_naive
+import asyncio
 import os
 import logging
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from engine.signal_analytics import signal_analytics
 from config import OWNER_IDS, ADMIN_IDS
 
 logger = logging.getLogger(__name__)
+from signalrank_telegram.command_resilience import safe_command_error
 
 def _effective_tier(user_id: int) -> str:
     """Get effective tier for a user."""
@@ -245,7 +247,7 @@ async def selfcheck_command(update, context) -> None:
     # Redis check
     try:
         from core.redis_state import state
-        state.get_sync("health_check")
+        await asyncio.wait_for(asyncio.to_thread(state.get_sync, "health_check"), timeout=3.0)
         checks.append("✅ Redis: connected")
     except Exception:
         checks.append("❌ Redis: not connected")
@@ -254,6 +256,7 @@ async def selfcheck_command(update, context) -> None:
         checks.append("✅ Railway: detected")
         checks.append("✅ GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "❌ GEMINI_API_KEY: missing")
         checks.append("✅ META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "❌ META_API_TOKEN: missing")
+        checks.append("✅ META_API_ACCOUNT_ID: set" if (os.getenv("META_API_ACCOUNT_ID") or "").strip() else "⚠️ META_API_ACCOUNT_ID: missing (broker discovery disabled)")
         checks.append("✅ ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "❌ ENCRYPTION_KEY: missing")
         _owner_ids_raw = (os.getenv("OWNER_IDS") or "").strip()
         checks.append("✅ OWNER_IDS: set" if _owner_ids_raw else "⚠️ OWNER_IDS: missing (owner-only commands disabled)")
@@ -261,8 +264,10 @@ async def selfcheck_command(update, context) -> None:
     # yfinance check
     try:
         import yfinance as yf
-        t = yf.Ticker("AAPL")
-        p = t.fast_info.get('lastPrice')
+        def _yfinance_probe():
+            t = yf.Ticker("AAPL")
+            return t.fast_info.get("lastPrice")
+        p = await asyncio.wait_for(asyncio.to_thread(_yfinance_probe), timeout=6.0)
         checks.append(f"✅ yfinance: working (AAPL=${p:.2f})" if p else "⚠️ yfinance: no price")
     except Exception:
         checks.append("❌ yfinance: not available")
@@ -379,7 +384,7 @@ async def selfcheck_command(update, context) -> None:
             )
             await update.message.reply_text(msg, parse_mode="HTML")
         except Exception as exc:
-            await update.message.reply_text(f"❌ ops health failed: {exc}")
+            await update.message.reply_text(safe_command_error("Operations health check failed.", exc))
         
         __all__ = [
             'admin_dashboard',

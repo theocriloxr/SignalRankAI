@@ -11,6 +11,27 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _artifact_db_priority() -> str:
+    explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
+    role = str(
+        os.getenv("DB_ROLE")
+        or os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or ""
+    ).strip().lower()
+    # Model persistence is part of the analytics-owned training transaction.
+    # A dedicated analytics service must not fall back to the generic
+    # background lane, whose foreground reservation can reject this durable
+    # write after a successful fit.
+    if role == "analytics" or role.startswith("analytics-"):
+        if explicit in {"interactive", "critical", "analytics"}:
+            return explicit
+        return "analytics"
+    if explicit in {"interactive", "critical", "background", "analytics"}:
+        return explicit
+    return "background"
+
+
 def _payload_hash(payload: dict[str, Any]) -> str:
     expected = str(payload.get("artifact_hash_sha256") or "").strip().lower()
     if expected:
@@ -50,7 +71,7 @@ async def persist_active_model_artifact(
     normalized_model_name = str(model_name or "primary").strip().lower() or "primary"
     try:
         async with get_session(
-            priority=str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background"),
+            priority=_artifact_db_priority(),
             label="ml_model_artifact_persist",
             timeout_seconds=float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30),
             drop_if_busy=False,

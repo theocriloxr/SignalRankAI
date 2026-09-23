@@ -29,7 +29,7 @@ def write_review_artifacts(report: ReviewReport, output_dir: Path) -> tuple[Path
         "",
     ]
     lines.extend(
-        f"- `{item.recommendation_id}` [{item.kind.value}] {item.title} — owner approval required"
+        f"- `{item.recommendation_id}` [{item.kind.value}/{item.provider}] {item.title} — owner approval required"
         for item in report.recommendations
     )
     if not report.recommendations:

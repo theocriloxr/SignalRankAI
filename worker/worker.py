@@ -441,7 +441,10 @@ class Worker:
         async with get_session(
             priority="background",
             label="worker.ecosystem_bootstrap",
-            timeout_seconds=15.0,
+            timeout_seconds=max(
+                15.0,
+                _env_float("WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS", 60.0, minimum=15.0),
+            ),
             drop_if_busy=False,
         ) as session:
             result = await seed_all(session)
@@ -485,7 +488,10 @@ class Worker:
                     async with get_session(
                         priority="background",
                         label="worker.instrument_discovery.persist",
-                        timeout_seconds=15.0,
+                        timeout_seconds=max(
+                            15.0,
+                            _env_float("INSTRUMENT_DISCOVERY_DB_TIMEOUT_SECONDS", 60.0, minimum=15.0),
+                        ),
                         drop_if_busy=False,
                     ) as session:
                         persisted = await persist_instrument_registry(session, registry, provider_rows=provider_rows)

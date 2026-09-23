@@ -18,6 +18,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _shadow_db_priority() -> str:
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
+
+
 class ShadowOutcomeWorker:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
@@ -84,7 +89,7 @@ class ShadowOutcomeWorker:
         cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
         try:
             async with get_session(
-                priority=DBPriority.BACKGROUND,
+                priority=_shadow_db_priority(),
                 label="shadow_outcome_scan",
                 timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
                 drop_if_busy=False,
@@ -222,7 +227,7 @@ class ShadowOutcomeWorker:
         now = now_utc_naive()
         try:
             async with get_session(
-                priority=DBPriority.BACKGROUND,
+                priority=_shadow_db_priority(),
                 label="shadow_outcome_write",
                 timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
                 drop_if_busy=False,

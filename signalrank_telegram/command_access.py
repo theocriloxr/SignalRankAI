@@ -557,7 +557,7 @@ def get_help_message(tier: str) -> str:
         "",
         "📌 Notes",
         "• Signals are real-time from live market data",
-        "• Supports crypto and FX",
+        "• Supports crypto, FX, stocks, indices, and commodities when each data feed is healthy",
         "• Signal corrections: automatic + manual fixes",
         "• No duplicate signals per user",
         "• Tier features reflect your current subscription",

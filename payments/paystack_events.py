@@ -18,7 +18,7 @@ from db.repository import (
     paystack_event_identity,
     update_webhook_event_status,
 )
-from db.session import get_session, is_db_configured
+from db.session import NoncriticalWriteDropped, get_session, is_db_configured
 from db.priority import DBPriority
 
 logger = logging.getLogger(__name__)
@@ -174,15 +174,26 @@ async def recover_paystack_events_once() -> int:
 
 async def paystack_webhook_recovery_loop(stop_event: asyncio.Event) -> None:
     interval = max(15.0, float(os.getenv("PAYSTACK_WEBHOOK_RECOVERY_INTERVAL_SECONDS", "60") or 60))
+    busy_retry = max(1.0, float(os.getenv("PAYSTACK_WEBHOOK_BUSY_RETRY_SECONDS", "5") or 5))
     while not stop_event.is_set():
+        sleep_for = interval
         try:
             count = await recover_paystack_events_once()
             if count:
                 logger.info("[paystack_inbox] recovered events=%s", count)
+        except NoncriticalWriteDropped:
+            # Background capacity is intentionally reserved behind signal/outcome
+            # work. Retry promptly instead of sleeping a full recovery interval,
+            # otherwise periodic long maintenance jobs can starve the inbox.
+            sleep_for = min(interval, busy_retry)
+            logger.debug(
+                "[paystack_inbox] recovery deferred; retrying in %.1fs",
+                sleep_for,
+            )
         except Exception as exc:
             logger.warning("[paystack_inbox] recovery cycle failed: %s", type(exc).__name__)
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            await asyncio.wait_for(stop_event.wait(), timeout=sleep_for)
         except asyncio.TimeoutError:
             continue
 

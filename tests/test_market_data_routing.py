@@ -125,3 +125,25 @@ async def test_fresh_exchange_data_beats_stale_crypto_cache(monkeypatch):
     result = await market_data.fetch_market_data_cached("BTCUSDT", ["5m", "15m", "1h"])
 
     assert {result[tf]["source"] for tf in ("5m", "15m", "1h")} == {"okx_connector"}
+
+
+@pytest.mark.asyncio
+async def test_stale_successful_provider_payload_is_rejected(monkeypatch):
+    from data import market_data
+
+    monkeypatch.setenv("MARKET_CACHE_ENABLED", "0")
+    monkeypatch.setenv("MARKET_CACHE_WRITE_THROUGH", "0")
+    monkeypatch.setenv("MARKET_ALTERNATIVE_SIGNALS_ENABLED", "0")
+    monkeypatch.setenv("TRADINGVIEW_ENABLED", "0")
+    monkeypatch.setenv("YFINANCE_ENABLED", "0")
+    monkeypatch.setenv("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", "1")
+
+    async def stale_provider(asset, timeframe):
+        return _candles(3600, stale=True)
+
+    monkeypatch.setattr(market_data, "async_get_candles", stale_provider)
+    monkeypatch.setattr(market_data, "_get_last_provider_used", lambda asset, tf: "stale_test_provider")
+
+    result = await market_data.fetch_market_data_cached("XAUUSD", ["1h"])
+
+    assert "1h" not in result

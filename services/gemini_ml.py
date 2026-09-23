@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover - defensive import fallback
 # Setup Client (New SDK: google-genai)
 client = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
 
 # Try to import google.genai (new SDK), fallback gracefully
 try:
@@ -85,10 +85,22 @@ async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
     if active_client is None:
         return None
     try:
+        config = None
+        try:
+            from google.genai import types as genai_types
+
+            config = genai_types.GenerateContentConfig(max_output_tokens=max(1, int(max_tokens)))
+        except Exception:
+            config = None
+        kwargs = {
+            "model": MODEL_ID,
+            "contents": prompt,
+        }
+        if config is not None:
+            kwargs["config"] = config
         response = await asyncio.to_thread(
             active_client.models.generate_content,
-            model=MODEL_ID,
-            contents=prompt,
+            **kwargs,
         )
         text = str(getattr(response, "text", "") or "").strip()
         return text or None

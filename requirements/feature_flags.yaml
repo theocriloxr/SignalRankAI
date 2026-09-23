@@ -1,5 +1,5 @@
 {
-  "count": 137,
+  "count": 146,
   "flags": [
     {
       "dangerous": false,
@@ -219,6 +219,14 @@
     },
     {
       "dangerous": false,
+      "name": "CONTINUOUS_IMPROVEMENT_GEMINI_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "CONTINUOUS_IMPROVEMENT_OPENAI_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -228,6 +236,30 @@
     {
       "dangerous": false,
       "name": "CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CONTINUOUS_REFACTOR_DISPATCH_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CONTINUOUS_REFACTOR_SOURCE_SHARING_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CONTINUOUS_REFACTOR_WRITE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -451,6 +483,14 @@
     },
     {
       "dangerous": false,
+      "name": "FULL_MARKET_LEARNING_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "FX_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -540,6 +580,14 @@
     {
       "dangerous": false,
       "name": "MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -652,6 +700,14 @@
     {
       "dangerous": false,
       "name": "ONCHAIN_ALPHA_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OPENAI_CODEX_REVIEW_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -901,6 +957,22 @@
       "dangerous": false,
       "name": "RUN_WORKER_LOOP",
       "production_example_default": "1",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "SCORE_EMPIRICAL_CALIBRATION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "SCORE_EMPIRICAL_CALIBRATION_SHADOW_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null

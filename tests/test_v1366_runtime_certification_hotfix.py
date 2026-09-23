@@ -51,12 +51,67 @@ def test_deployed_ml_quality_gate_accepts_only_candidate_above_threshold(monkeyp
             "majority_baseline_accuracy": 0.58,
             "balanced_accuracy": 0.63,
             "positive_recall": 0.42,
+            "positive_precision": 0.44,
+            "positive_rate": 0.30,
             "pr_auc": 0.48,
             "expected_r": 0.18,
         },
         deployed_runtime=True,
     )
     assert accepted is True
+
+
+def test_deployed_ml_quality_gate_accepts_imbalanced_useful_model_below_majority_accuracy(monkeypatch) -> None:
+    monkeypatch.delenv("ML_MIN_PROMOTION_AUC", raising=False)
+    monkeypatch.delenv("ML_MIN_PROMOTION_ACCURACY", raising=False)
+    monkeypatch.delenv("ML_MIN_POSITIVE_PRECISION", raising=False)
+    monkeypatch.delenv("ML_MIN_POSITIVE_PRECISION_LIFT", raising=False)
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.71,
+            "auc": 0.76,
+            "majority_baseline_accuracy": 0.76,
+            "balanced_accuracy": 0.61,
+            "positive_recall": 0.36,
+            "positive_precision": 0.34,
+            "positive_rate": 0.24,
+            "pr_auc": 0.46,
+            "expected_r": 0.17,
+        },
+        deployed_runtime=True,
+    )
+    assert accepted is True
+
+
+def test_deployed_ml_quality_gate_still_rejects_majority_only_model(monkeypatch) -> None:
+    monkeypatch.delenv("ML_MIN_PROMOTION_AUC", raising=False)
+    monkeypatch.delenv("ML_MIN_PROMOTION_ACCURACY", raising=False)
+    accepted, _, _ = _promotion_quality_gate(
+        {
+            "accuracy": 0.80,
+            "auc": 0.61,
+            "majority_baseline_accuracy": 0.80,
+            "balanced_accuracy": 0.50,
+            "positive_recall": 0.0,
+            "positive_precision": 0.0,
+            "positive_rate": 0.20,
+            "pr_auc": 0.36,
+            "expected_r": 0.10,
+        },
+        deployed_runtime=True,
+    )
+    assert accepted is False
+
+
+def test_ml_class_balance_weight_is_training_only_and_bounded() -> None:
+    source = (ROOT / "ml" / "train_model.py").read_text(encoding="utf-8")
+    train_block = source[source.index("# Train model"):source.index("# Evaluate")]
+    assert "train_positive" in train_block
+    assert "train_negative" in train_block
+    assert "math.sqrt(max(1.0, empirical_ratio))" in train_block
+    assert '"ML_SCALE_POS_WEIGHT_MAX", "4.0"' in train_block
+    assert "scale_pos_weight=scale_pos_weight" in train_block
+    assert "y_te" not in train_block
 
 
 def test_ml_promotion_requires_calibration_in_deployed_runtime() -> None:
