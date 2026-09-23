@@ -474,214 +474,103 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
 
 
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
-    """Backward-compatible multi-provider AI signal review.
+    """Backward-compatible entry point for provider-neutral AI signal review.
 
-    Provider order defaults to OpenAI -> Gemini -> deterministic local. The
-    historical function name is retained because multiple engine/tests import it.
+    The historical name is retained for compatibility. OpenAI/Gemini routing,
+    failover and optional consensus are owned by services.ai_review_router.
+    Deterministic local review remains the final fallback and no AI path can
+    bypass freshness, risk, exposure or execution controls.
     """
     fallback_enabled = _env_bool("AI_REVIEW_FALLBACK_ENABLED", True)
-    def _fallback() -> tuple[bool, float | None, str]:
+
+    def _fallback(reason_prefix: str = "") -> tuple[bool, float | None, str]:
         if not fallback_enabled:
-            return True, None, "ai_review_fallback_disabled"
+            suffix = f":{reason_prefix}" if reason_prefix else ""
+            return True, None, f"ai_review_fallback_disabled{suffix}"
         ok, score, reason = _local_ai_review_signal(signal, candles)
+        if reason_prefix:
+            return ok, score, f"ai_review_status={reason_prefix};{reason}"
         return ok, score, reason
 
-    # Preferred provider: OpenAI Responses API with strict structured output.
-    # If unavailable/degraded we continue into the existing Gemini path and
-    # finally deterministic local review. AI never overrides deterministic
-    # structure/data/execution gates.
     try:
-        from services.openai_ai import openai_available, provider_order, review_signal as _openai_review_signal
+        from services.ai_review_router import review_signal as _review_signal
 
-        order = provider_order()
-        openai_first = "openai" in order and (
-            "gemini" not in order or order.index("openai") < order.index("gemini")
-        )
-        if openai_first and openai_available():
-            openai_result = await _openai_review_signal(signal, candles, news_sentiment)
-            if bool(openai_result.get("ok")):
-                data = dict(openai_result.get("data") or {})
-                try:
-                    score = max(0.0, min(10.0, float(data.get("score"))))
-                except (TypeError, ValueError):
-                    score = None
-                if score is not None:
-                    approved = bool(data.get("approved")) and score > 8.0
-                    summary = " ".join(str(data.get("summary") or "").split())[:260]
-                    risk_level = str(data.get("risk_level") or "unknown").strip().lower()
-                    model = str(openai_result.get("model") or "").strip()
-                    reason = (
-                        f"openai_ok;model={model};risk={risk_level};"
-                        f"confidence={float(data.get('confidence') or 0.0):.2f};summary={summary}"
-                    )
-                    return approved, score, reason
-            else:
-                logger.warning(
-                    "[engine] OpenAI review degraded error=%s action=gemini_fallback",
-                    str(openai_result.get("error") or "unknown")[:120],
-                )
+        result = await _review_signal(signal, candles, news_sentiment)
     except Exception as exc:
-        logger.debug("[engine] OpenAI review path unavailable: %s", type(exc).__name__)
+        logger.warning("[engine] provider-neutral AI review failed error=%s", type(exc).__name__)
+        return _fallback(f"router_error_{type(exc).__name__}")
 
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        return _fallback()
-    if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
-        return _fallback()
+    if not bool(result.get("ok")):
+        error = str(result.get("error") or "external_review_unavailable")[:120]
+        logger.info("[engine] AI review degraded error=%s action=local_fallback", error)
+        return _fallback(error)
 
-    model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
+    data = dict(result.get("data") or {})
+    try:
+        score = max(0.0, min(10.0, float(data.get("score"))))
+    except (TypeError, ValueError):
+        return _fallback("invalid_ai_score")
+    try:
+        confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
+    except (TypeError, ValueError):
+        confidence = 0.0
 
-    # Fast degradation guard. If Gemini is rate-limited or over per-window
-    # budget, skip the external HTTP call and use deterministic local review.
-    # This prevents a full engine cycle from taking many minutes while signals
-    # become stale.
-    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
-    if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
-        now_mono = time.monotonic()
-        with _GEMINI_REVIEW_LOCK:
-            until = float(_GEMINI_RATE_LIMIT_UNTIL_MONO or 0.0)
-            if until and now_mono < until:
-                ok, score, reason = _fallback()
-                circuit_reason = _GEMINI_CIRCUIT_REASON or "provider_cooldown"
-                return ok, score, f"ai_review_status={circuit_reason}_circuit_open;{reason}"
+    provider = str(result.get("provider") or "unknown").strip().lower()
+    model = str(result.get("model") or "").strip()
+    risk_level = str(data.get("risk_level") or "unknown").strip().lower()
+    summary = " ".join(str(data.get("summary") or "").split())[:260]
+    disagreement = _safe_float(data.get("provider_disagreement"), 0.0)
+    decision_disagreement = bool(data.get("decision_disagreement"))
+    min_score = _env_float("AI_SIGNAL_REVIEW_APPROVAL_SCORE", 8.0)
+    approved = (
+        bool(data.get("approved"))
+        and score >= min_score
+        and not decision_disagreement
+    )
 
-            window_s = max(10, _env_int("GEMINI_SIGNAL_REVIEW_WINDOW_SECONDS", 60))
-            max_calls = max(0, _env_int("GEMINI_SIGNAL_REVIEW_MAX_CALLS_PER_WINDOW", 6))
-            if not _GEMINI_REVIEW_WINDOW_STARTED_MONO or (now_mono - _GEMINI_REVIEW_WINDOW_STARTED_MONO) > window_s:
-                _GEMINI_REVIEW_WINDOW_STARTED_MONO = now_mono
-                _GEMINI_REVIEW_WINDOW_CALLS = 0
-            if max_calls == 0 or _GEMINI_REVIEW_WINDOW_CALLS >= max_calls:
-                ok, score, reason = _fallback()
-                return ok, score, f"ai_review_status=budget_degraded;{reason}"
-            _GEMINI_REVIEW_WINDOW_CALLS += 1
+    # Attach provider-neutral provenance to the signal so downstream decision
+    # logs, formatters and learning jobs can evaluate whether AI added edge.
+    signal["ai_review_provider"] = provider
+    signal["ai_review_model"] = model
+    signal["ai_review_score"] = score
+    signal["ai_review_confidence"] = confidence
+    signal["ai_review_risk_level"] = risk_level
+    signal["ai_review_reason"] = summary
+    signal["ai_review_disagreement"] = disagreement
+    signal["ai_review_decision_disagreement"] = decision_disagreement
+    signal["ai_review_latency_ms"] = _safe_float(result.get("latency_ms"), 0.0)
+    if isinstance(result.get("usage"), dict):
+        signal["ai_review_usage"] = {
+            str(k): v
+            for k, v in dict(result.get("usage") or {}).items()
+            if isinstance(v, (int, float, str, bool)) or v is None
+        }
+    provider_results = result.get("provider_results")
+    if isinstance(provider_results, list):
+        signal["ai_review_provider_results"] = [
+            {
+                "provider": str(row.get("provider") or "")[:32],
+                "model": str(row.get("model") or "")[:96],
+                "approved": bool(row.get("approved")),
+                "score": _safe_float(row.get("score"), 0.0),
+                "confidence": _safe_float(row.get("confidence"), 0.0),
+                "latency_ms": _safe_float(row.get("latency_ms"), 0.0),
+            }
+            for row in provider_results[:3]
+            if isinstance(row, dict)
+        ]
 
-    payload = {
-        "prompt": "Review this trade. Is this a high-probability institutional move or a retail trap? Rate 1-10. Only approve if > 8.",
-        "technical_signal": {
-            "asset": signal.get("asset"),
-            "timeframe": signal.get("timeframe"),
-            "direction": signal.get("direction"),
-            "strategy_name": signal.get("strategy_name"),
-            "strategy_group": signal.get("strategy_group"),
-            "entry": signal.get("entry"),
-            "stop_loss": signal.get("stop_loss"),
-            "take_profit": signal.get("take_profit"),
-            "score": signal.get("score"),
-            "confidence": signal.get("confidence"),
-            "rr_ratio": signal.get("rr_ratio"),
-            "regime": signal.get("regime"),
-            "news_sentiment": news_sentiment,
-        },
-        "recent_ohlcv": candles[-50:],
-        "indicators": {
-            k: signal.get(k)
-            for k in (
-                "rsi", "macd_trend", "macd_hist", "trend_ema", "trend_sma",
-                "adx_trend", "volume_ratio", "atr_rel", "atr_regime", "relative_volume",
-                "mtf_4h_trend", "mtf_1d_trend", "imp_poc", "imp_h4_ema200", "imp_h1_ema50",
-            )
-        },
-    }
-    # Current Gemini 3.x models do not need legacy sampling knobs here.
-    # Keep the request minimal so provider-side schema changes do not turn the
-    # optional review layer into persistent HTTP 400 degradation.
-    body = json.dumps({
-        "contents": [{"parts": [{"text": json.dumps(payload)}]}],
-        "generationConfig": {"maxOutputTokens": 160},
-    }).encode("utf-8")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    # Legacy fields remain populated so old dashboards/formatters do not break.
+    signal["gemini_review_score"] = score
+    signal["gemini_review_reason"] = (
+        f"{provider}:{summary}" if summary else provider
+    )
 
-    def _do_request() -> tuple[bool, float | None, str]:
-        global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON
-        req = urllib.request.Request(url, data=body, method="POST")
-        req.add_header("Content-Type", "application/json")
-        try:
-            timeout_s = max(2, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "4") or 4))
-            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-                raw = resp.read().decode("utf-8", errors="ignore")
-            lower = raw.lower()
-            score: float | None = None
-            for token in ("\"score\":", "score:", "rating:"):
-                if token in lower:
-                    try:
-                        after = lower.split(token, 1)[1]
-                        num = ""
-                        for ch in after:
-                            if ch.isdigit() or ch == ".":
-                                num += ch
-                            elif num:
-                                break
-                        if num:
-                            score = float(num)
-                            break
-                    except Exception:
-                        pass
-            if score is None:
-                for digit in range(10, 0, -1):
-                    if f"{digit}" in lower:
-                        score = float(digit)
-                        break
-            if score is None:
-                return _fallback()
-            return (score > 8.0), score, "gemini_ok"
-        except urllib.error.HTTPError as exc:
-            status_code = getattr(exc, "code", None)
-            provider_detail = ""
-            try:
-                provider_detail = exc.read().decode("utf-8", errors="ignore")
-                provider_detail = " ".join(provider_detail.split())[:320]
-            except Exception:
-                provider_detail = ""
-            if provider_detail:
-                logger.warning(
-                    "[engine] gemini review provider_error status=%s detail=%s",
-                    status_code or "?",
-                    provider_detail,
-                )
-            if status_code == 429:
-                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
-                    try:
-                        cooldown_s = max(30, _env_int("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 900))
-                        with _GEMINI_REVIEW_LOCK:
-                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
-                            _GEMINI_CIRCUIT_REASON = "rate_limited"
-                    except Exception:
-                        pass
-                _local_ok, local_score, local_reason = _fallback()
-                reason = f"ai_review_status=rate_limited_degraded;{local_reason}"
-                logger.warning(
-                    "[engine] gemini review http_error=429 %s action=fail_open",
-                    reason,
-                )
-                return _local_ok, local_score, reason
-            if status_code in {400, 401, 403, 404}:
-                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
-                    try:
-                        cooldown_s = max(
-                            60,
-                            _env_int("GEMINI_CONFIG_ERROR_COOLDOWN_SECONDS", 3600),
-                        )
-                        with _GEMINI_REVIEW_LOCK:
-                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
-                            _GEMINI_CIRCUIT_REASON = f"provider_http_{status_code}"
-                    except Exception:
-                        pass
-                local_ok, local_score, local_reason = _fallback()
-                reason = f"ai_review_status=provider_http_{status_code}_degraded;{local_reason}"
-                logger.warning(
-                    "[engine] gemini review http_error=%s %s action=local_fallback",
-                    status_code,
-                    reason,
-                )
-                return local_ok, local_score, reason
-            logger.warning("[engine] gemini review http_error=%s", status_code or "?")
-            return _fallback()
-        except Exception as exc:
-            logger.debug("[engine] gemini review failed: %s", exc)
-            return _fallback()
-
-    return await asyncio.to_thread(_do_request)
-
+    reason = (
+        f"ai_ok;provider={provider};model={model};risk={risk_level};"
+        f"confidence={confidence:.2f};disagreement={disagreement:.3f};summary={summary}"
+    )
+    return approved, score, reason
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
     try:
