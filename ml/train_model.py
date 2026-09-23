@@ -1350,7 +1350,12 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     try:
         from ml.metrics import evaluate_classification, render_metrics_log
 
-        _full_report = evaluate_classification(y_te, y_pred, y_proba)
+        _full_report = evaluate_classification(
+            y_te,
+            y_pred,
+            y_proba,
+            decision_threshold=classification_threshold,
+        )
         _full_metrics = _full_report.to_dict()
         logger.info("[%s]", render_metrics_log(_full_report))
     except Exception as _metrics_exc:  # noqa: BLE001 - full metrics are additive
