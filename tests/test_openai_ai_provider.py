@@ -98,7 +98,7 @@ async def test_openai_signal_review_uses_responses_structured_output_and_no_stor
 
     assert result["ok"] is True
     assert result["provider"] == "openai"
-    assert result["model"] == "gpt-5.6-terra"
+    assert result["model"] == "gpt-6-luna"
     assert result["data"]["score"] == pytest.approx(8.8)
     call = _FakeAsyncClient.captured[-1]
     body = call["json"]
@@ -210,16 +210,16 @@ def test_openai_provider_status_is_secret_safe(monkeypatch):
     import services.openai_ai as ai
 
     monkeypatch.setenv("OPENAI_API_KEY", "super-secret-openai-key")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.6-terra")
-    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-5.6-sol")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-6-sol")
     status = ai.provider_status()
 
     assert status["configured"] is True
     assert status["available"] is True
     assert status["responses_api"] is True
     assert status["store"] is False
-    assert status["signal_model"] == "gpt-5.6-terra"
-    assert status["deep_model"] == "gpt-5.6-sol"
+    assert status["signal_model"] == "gpt-6-luna"
+    assert status["deep_model"] == "gpt-6-sol"
     serialized = json.dumps(status)
     assert "super-secret-openai-key" not in serialized
     assert "OPENAI_API_KEY" not in serialized
