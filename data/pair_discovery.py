@@ -476,8 +476,17 @@ def _coinbase_top_crypto_pairs(top_n: int) -> list[str]:
 def _metaapi_symbols() -> list[str]:
     """Discover the exact instrument universe available on the configured MT account."""
     global _METAAPI_SYMBOL_CACHE, _METAAPI_SYMBOL_CACHE_AT
-    token = str(os.getenv("META_API_TOKEN") or "").strip()
-    account_id = str(os.getenv("META_API_ACCOUNT_ID") or "").strip()
+    token = str(
+        os.getenv("META_API_TOKEN")
+        or os.getenv("METAAPI_TOKEN")
+        or ""
+    ).strip()
+    account_id = str(
+        os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
+        or os.getenv("META_API_ACCOUNT_ID")
+        or os.getenv("METAAPI_ACCOUNT_ID")
+        or ""
+    ).strip()
     if not token or not account_id:
         return []
     region = str(os.getenv("META_API_REGION") or "new-york").strip().lower()
