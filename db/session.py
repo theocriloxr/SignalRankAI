@@ -354,19 +354,26 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # for a real DB session. This lets heavy features run continuously without
 # starving interactive Telegram commands, signal delivery proof writes, or
 # signal storage. The value is intentionally smaller than the main gate.
+_dedicated_noninteractive_db_roles = {
+    "analytics", "delivery", "outcome", "scheduler", "worker",
+}
 _default_foreground_reserve = (
-    1
-    if _session_gate_limit <= 2
-    else min(4, max(2, _session_gate_limit // 4))
+    0
+    if _database_role() in _dedicated_noninteractive_db_roles
+    else (
+        1
+        if _session_gate_limit <= 2
+        else min(4, max(2, _session_gate_limit // 4))
+    )
 )
 _foreground_reserved_sessions = max(
-    1,
+    0,
     min(
         _session_gate_limit,
         _pool_int(
             "DB_FOREGROUND_RESERVED_SESSIONS",
             _default_foreground_reserve,
-            minimum=1,
+            minimum=0,
         ),
     ),
 )
