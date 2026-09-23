@@ -397,39 +397,88 @@ async def load_training_data(lookback_days: int = 90):
             )
             return floor_ms, max(500, min(hard_cap, expected_rows))
 
+        async def _fetch_candle_series(candle_session, key: tuple[str, str]) -> None:
+            if key in candle_cache:
+                return
+            floor_ms, max_rows = _candle_cache_bounds(key[1])
+            try:
+                q = (
+                    select(MarketCandle)
+                    .where(
+                        MarketCandle.symbol == key[0],
+                        MarketCandle.timeframe == key[1],
+                        MarketCandle.open_time_ms >= floor_ms,
+                    )
+                    .order_by(desc(MarketCandle.open_time_ms))
+                    .limit(max_rows)
+                )
+                res = await candle_session.execute(q)
+                all_rows = list(res.scalars().all())
+            except Exception as exc:
+                # A missing candle series should reduce those derived features
+                # to neutral values, not abort an otherwise proof-backed
+                # training run.
+                logger.warning(
+                    "[ml_candle_cache] load_failed symbol=%s timeframe=%s error=%s",
+                    key[0],
+                    key[1],
+                    type(exc).__name__,
+                )
+                all_rows = []
+            all_rows.reverse()
+            open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
+            candle_cache[key] = (open_times, all_rows)
+            logger.info(
+                "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
+                key[0],
+                key[1],
+                len(all_rows),
+                max_rows,
+                training_lookback_days,
+            )
+
+        async def _preload_candle_cache(series_keys: set[tuple[str, str]]) -> None:
+            pending = sorted(key for key in series_keys if key not in candle_cache)
+            if not pending:
+                return
+            logger.info(
+                "[ml_dataset_stage] stage=candle_preload_start series=%s",
+                len(pending),
+            )
+            # Reuse one bounded analytics session for the whole snapshot. With
+            # NullPool, opening a fresh database connection for every series
+            # made a 200-300 row training set spend minutes in connection
+            # setup. The second analytics slot remains available to shadow
+            # tracking and other learning work.
+            async with get_session(
+                **_training_session_kwargs("ml_training_candle_preload")
+            ) as candle_session:
+                for index, key in enumerate(pending, start=1):
+                    await _fetch_candle_series(candle_session, key)
+                    if index % 10 == 0 or index == len(pending):
+                        logger.info(
+                            "[ml_dataset_stage] stage=candle_preload_progress loaded=%s total=%s",
+                            index,
+                            len(pending),
+                        )
+            logger.info(
+                "[ml_dataset_stage] stage=candle_preload_complete loaded=%s cached=%s",
+                len(pending),
+                len(candle_cache),
+            )
+
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
                 return []
             key = (str(symbol).upper(), str(timeframe).lower())
-            cached = candle_cache.get(key)
-            if cached is None:
-                floor_ms, max_rows = _candle_cache_bounds(key[1])
-                async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
-                    q = (
-                        select(MarketCandle)
-                        .where(
-                            MarketCandle.symbol == key[0],
-                            MarketCandle.timeframe == key[1],
-                            MarketCandle.open_time_ms >= floor_ms,
-                        )
-                        .order_by(desc(MarketCandle.open_time_ms))
-                        .limit(max_rows)
-                    )
-                    res = await candle_session.execute(q)
-                    all_rows = list(res.scalars().all())
-                all_rows.reverse()
-                open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
-                cached = (open_times, all_rows)
-                candle_cache[key] = cached
-                logger.info(
-                    "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
-                    key[0],
-                    key[1],
-                    len(all_rows),
-                    max_rows,
-                    training_lookback_days,
-                )
-            open_times, all_rows = cached
+            if key not in candle_cache:
+                # Archive/secondary rows can introduce a series that was not
+                # part of the live-proof preload. Keep a safe on-demand path.
+                async with get_session(
+                    **_training_session_kwargs("ml_training_candle_read")
+                ) as candle_session:
+                    await _fetch_candle_series(candle_session, key)
+            open_times, all_rows = candle_cache.get(key, ([], []))
             cutoff_ms = int(created_at.timestamp() * 1000)
             stop = bisect_right(open_times, cutoff_ms)
             return all_rows[max(0, stop - max(1, int(limit))):stop]
@@ -511,6 +560,19 @@ async def load_training_data(lookback_days: int = 90):
             live_proof_rows,
             training_lookback_days,
         )
+
+        required_candle_series: set[tuple[str, str]] = set()
+        for _sig, _outcome in rows:
+            _asset = str(getattr(_sig, "asset", "") or "").upper().strip()
+            _timeframe = str(getattr(_sig, "timeframe", "") or "").lower().strip()
+            if not _asset:
+                continue
+            if _timeframe:
+                required_candle_series.add((_asset, _timeframe))
+            required_candle_series.add((_asset, "4h"))
+            required_candle_series.add((_asset, "1d"))
+        await _preload_candle_cache(required_candle_series)
+
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
