@@ -1199,8 +1199,17 @@ def _temporal_three_way_indices(
     ordered_indices=None,
     train_ratio: float = 0.70,
     calibration_ratio: float = 0.15,
+    minimum_train_rows: int = 1,
+    minimum_calibration_rows: int = 1,
+    minimum_validation_rows: int = 1,
 ):
-    """Return non-overlapping model-fit, calibration and validation indices."""
+    """Return non-overlapping chronological fit/calibration/validation indices.
+
+    Ratio behavior remains the default. When a caller supplies evidence floors
+    and the dataset is large enough, rows are reallocated from the oldest
+    model-fit window first so the newest untouched validation window can meet
+    its minimum without leaking future labels into fit/calibration.
+    """
     n = int(row_count)
     if n < 3:
         raise ValueError("At least three rows are required for a three-way split")
@@ -1212,9 +1221,48 @@ def _temporal_three_way_indices(
         raise ValueError("ordered_indices length must match row_count")
     train_ratio = min(0.85, max(0.55, float(train_ratio)))
     calibration_ratio = min(0.30, max(0.05, float(calibration_ratio)))
-    train_end = min(n - 2, max(1, int(n * train_ratio)))
-    calibration_end = min(n - 1, max(train_end + 1, int(n * (train_ratio + calibration_ratio))))
-    return ordered[:train_end], ordered[train_end:calibration_end], ordered[calibration_end:]
+
+    train_count = min(n - 2, max(1, int(n * train_ratio)))
+    calibration_end = min(
+        n - 1,
+        max(train_count + 1, int(n * (train_ratio + calibration_ratio))),
+    )
+    calibration_count = max(1, calibration_end - train_count)
+    validation_count = max(1, n - train_count - calibration_count)
+
+    min_train = max(1, int(minimum_train_rows or 1))
+    min_cal = max(1, int(minimum_calibration_rows or 1))
+    min_val = max(1, int(minimum_validation_rows or 1))
+    if n >= min_train + min_cal + min_val:
+        # First guarantee the untouched validation floor by borrowing only
+        # from windows that still remain above their own evidence floors.
+        needed = max(0, min_val - validation_count)
+        if needed:
+            from_train = min(needed, max(0, train_count - min_train))
+            train_count -= from_train
+            validation_count += from_train
+            needed -= from_train
+        if needed:
+            from_cal = min(needed, max(0, calibration_count - min_cal))
+            calibration_count -= from_cal
+            validation_count += from_cal
+            needed -= from_cal
+
+        # Then guarantee a minimally useful calibration-fit window, borrowing
+        # only from excess model-fit rows.
+        cal_needed = max(0, min_cal - calibration_count)
+        if cal_needed:
+            from_train = min(cal_needed, max(0, train_count - min_train))
+            train_count -= from_train
+            calibration_count += from_train
+
+    train_end = train_count
+    calibration_end = train_count + calibration_count
+    return (
+        ordered[:train_end],
+        ordered[train_end:calibration_end],
+        ordered[calibration_end:],
+    )
 
 
 def _class_balance_scale(y_values, sample_weights=None) -> float:
@@ -1335,11 +1383,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         0.30,
         max(0.05, float(os.getenv("ML_CALIBRATION_FIT_RATIO", "0.15") or 0.15)),
     )
+    calibration_min_rows = max(
+        20,
+        int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100),
+    )
+    minimum_calibration_fit_rows = max(
+        20,
+        int(os.getenv("ML_MIN_CALIBRATION_FIT_ROWS", "30") or 30),
+    )
+    minimum_model_fit_rows = max(
+        50,
+        int(os.getenv("ML_MIN_MODEL_FIT_ROWS", "50") or 50),
+    )
     idx_tr, idx_cal, idx_te = _temporal_three_way_indices(
         n,
         ordered_indices=idx,
         train_ratio=train_ratio,
         calibration_ratio=calibration_ratio,
+        minimum_train_rows=minimum_model_fit_rows,
+        minimum_calibration_rows=minimum_calibration_fit_rows,
+        minimum_validation_rows=calibration_min_rows,
+    )
+    logger.info(
+        "[ml_temporal_split] total=%s train=%s calibration=%s validation=%s "
+        "required_validation=%s",
+        n,
+        len(idx_tr),
+        len(idx_cal),
+        len(idx_te),
+        calibration_min_rows,
     )
 
     X_tr, X_cal, X_te = X_train.iloc[idx_tr], X_train.iloc[idx_cal], X_train.iloc[idx_te]
@@ -1461,7 +1533,6 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
 
     validation_rows = int(len(X_te))
     calibration_fit_rows = int(len(X_cal))
-    calibration_min_rows = max(20, int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100))
     raw_brier = float(np.mean((np.asarray(y_proba, dtype=float) - np.asarray(y_te, dtype=float)) ** 2))
     calibrated_brier = float(np.mean((calibrated_proba - np.asarray(y_te, dtype=float)) ** 2))
     raw_ece = _expected_calibration_error(y_proba, y_te)
