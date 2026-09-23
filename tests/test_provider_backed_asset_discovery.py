@@ -9,6 +9,7 @@ def _reset_discovery_state() -> None:
     discovery._ASSET_DISCOVERY_PROVENANCE.clear()
     discovery._TWELVEDATA_REFERENCE_CACHE.clear()
     discovery._TWELVEDATA_SYMBOL_PROBE_CACHE.clear()
+    discovery._YAHOO_SYMBOL_PROBE_CACHE.clear()
 
 
 def test_provider_merge_does_not_lose_slots_to_duplicates() -> None:
