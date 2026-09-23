@@ -2762,7 +2762,7 @@ def main_loop(DRY_RUN: bool = False):
                 from sqlalchemy import select as _sel_open, func as _func_open
 
                 async def _load_open_signal_counts() -> list[tuple[str, int]]:
-                    from db.models import SignalDelivery as _OpenDelivery
+                    from db.models import Outcome as _OpenOutcome, SignalDelivery as _OpenDelivery
                     from db.priority import DBPriority as _OpenPriority
                     from sqlalchemy import exists as _exists_open, or_ as _or_open
 
@@ -2777,6 +2777,24 @@ def main_loop(DRY_RUN: bool = False):
                         _OpenDelivery.telegram_chat_id.is_not(None),
                         _OpenDelivery.telegram_message_id.is_not(None),
                     )
+                    terminal_outcome_statuses = (
+                        "tp", "tp3", "sl", "partial_win", "partial_win_be",
+                        "time_stop", "missed_entry", "expired", "invalid",
+                        "invalidated", "cancel", "cancelled", "canceled",
+                    )
+                    terminal_outcome_open_count = _exists_open().where(
+                        _OpenOutcome.signal_id == _OpenSig.signal_id,
+                        _or_open(
+                            _OpenOutcome.closed_at.is_not(None),
+                            _func_open.lower(
+                                _func_open.coalesce(
+                                    _OpenOutcome.canonical_outcome,
+                                    _OpenOutcome.status,
+                                    "",
+                                )
+                            ).in_(terminal_outcome_statuses),
+                        ),
+                    )
                     async with _get_s_open(
                         priority=_OpenPriority.CRITICAL,
                         label="engine_open_signal_counts",
@@ -2788,6 +2806,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _OpenSig.archived.is_(False),
                                 _or_open(_OpenSig.expires_at.is_(None), _OpenSig.expires_at >= now_open),
                                 delivered_open,
+                                ~terminal_outcome_open_count,
                             )
                             .group_by(_OpenSig.asset)
                         )).fetchall()
