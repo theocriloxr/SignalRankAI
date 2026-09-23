@@ -2785,7 +2785,7 @@ def main_loop(DRY_RUN: bool = False):
                 from sqlalchemy import select as _sel_open, func as _func_open
 
                 async def _load_open_signal_counts() -> list[tuple[str, int]]:
-                    from db.models import Outcome as _OpenOutcome, SignalDelivery as _OpenDelivery
+                    from db.models import Outcome as _OpenOutcome, SignalDelivery as _OpenDelivery, SignalLifecycle as _OpenLifecycle
                     from db.priority import DBPriority as _OpenPriority
                     from sqlalchemy import exists as _exists_open, or_ as _or_open
 
@@ -2799,6 +2799,19 @@ def main_loop(DRY_RUN: bool = False):
                         )),
                         _OpenDelivery.telegram_chat_id.is_not(None),
                         _OpenDelivery.telegram_message_id.is_not(None),
+                    )
+                    terminal_lifecycle_states = (
+                        "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+                    )
+                    terminal_lifecycle_open_count = _exists_open().where(
+                        _OpenLifecycle.signal_id == _OpenSig.signal_id,
+                        _or_open(
+                            _OpenLifecycle.closed_at.is_not(None),
+                            _OpenLifecycle.terminal_event_type.is_not(None),
+                            _func_open.upper(
+                                _func_open.coalesce(_OpenLifecycle.state, "")
+                            ).in_(terminal_lifecycle_states),
+                        ),
                     )
                     terminal_outcome_statuses = (
                         "tp", "tp3", "sl", "partial_win", "partial_win_be",
@@ -2829,6 +2842,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _OpenSig.archived.is_(False),
                                 _or_open(_OpenSig.expires_at.is_(None), _OpenSig.expires_at >= now_open),
                                 delivered_open,
+                                ~terminal_lifecycle_open_count,
                                 ~terminal_outcome_open_count,
                             )
                             .group_by(_OpenSig.asset)
