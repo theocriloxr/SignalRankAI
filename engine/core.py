@@ -1236,7 +1236,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         max_stop_loss_pct_defaults.get(asset_class, 2.0),
     )
     max_rr = _env_float_for_class("QUALITY_MAX_RR", asset_class, max_rr_defaults.get(asset_class, 4.0))
-    min_gemini_score = _env_float_for_class("QUALITY_MIN_GEMINI_SCORE", asset_class, 8.0)
+    min_ai_score = _env_float_for_class(
+        "QUALITY_MIN_AI_SCORE",
+        asset_class,
+        _env_float_for_class("QUALITY_MIN_GEMINI_SCORE", asset_class, 8.0),
+    )
 
     if score < min_score:
         return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
@@ -1251,8 +1255,8 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
     if confluence_pct is not None and confluence_pct < min_confluence:
         return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
-    if gemini_score > 0 and gemini_score < min_gemini_score:
-        return False, f"quality_gemini {gemini_score:.1f} < {min_gemini_score:.1f} ({asset_class})"
+    if gemini_score > 0 and gemini_score < min_ai_score:
+        return False, f"quality_ai {gemini_score:.1f} < {min_ai_score:.1f} ({asset_class})"
     if adx > 0 and adx < min_adx:
         return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
 
