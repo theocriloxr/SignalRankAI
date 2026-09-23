@@ -487,7 +487,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
     if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
         return _fallback()
 
-    model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
+    model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
 
     # Fast degradation guard. If Gemini is rate-limited or over per-window
     # budget, skip the external HTTP call and use deterministic local review.
