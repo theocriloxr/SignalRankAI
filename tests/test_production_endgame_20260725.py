@@ -227,6 +227,30 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     assert "provider_http_404_circuit_open" in second[2]
 
 
+def test_current_gemini_review_request_avoids_legacy_sampling_knobs():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    review = source[source.index("async def _gemini_review_signal"):source.index("def _log_decision")]
+    assert '"generationConfig": {"maxOutputTokens": 160}' in review
+    assert '"temperature": 0.1' not in review
+    assert "gemini review provider_error status=" in review
+
+
+def test_metaapi_discovery_uses_canonical_account_aliases():
+    from pathlib import Path
+
+    source = Path("data/pair_discovery.py").read_text(encoding="utf-8")
+    start = source.index("def _metaapi_symbols")
+    end = source.index("def get_trending_crypto_pairs", start)
+    block = source[start:end]
+    assert 'os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")' in block
+    assert 'os.getenv("META_API_ACCOUNT_ID")' in block
+    assert 'os.getenv("METAAPI_ACCOUNT_ID")' in block
+    assert 'os.getenv("META_API_TOKEN")' in block
+    assert 'os.getenv("METAAPI_TOKEN")' in block
+
+
 def test_staging_quality_advisory_requires_nonproduction_and_no_live_execution():
     from pathlib import Path
 
