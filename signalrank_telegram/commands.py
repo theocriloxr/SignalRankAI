@@ -6307,6 +6307,87 @@ async def gemini_audit_command(update, context) -> None:
 		await update.message.reply_text(safe_command_error("Audit failed.", exc))
 
 
+async def ai_status_command(update, context) -> None:
+	"""Admin-only: show secret-safe AI provider routing and health state."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from services.openai_ai import provider_status
+		status = provider_status()
+		try:
+			from services.gemini_ml import gemini_available
+			gemini_ready = bool(gemini_available())
+		except Exception:
+			gemini_ready = False
+		budget = dict(status.get("budget") or {})
+		circuit = dict(status.get("circuit") or {})
+		lines = [
+			"AI provider status",
+			f"Primary: {status.get('preferred_provider') or 'openai'}",
+			f"Order: {' -> '.join(status.get('provider_order') or ['local'])}",
+			f"OpenAI key configured: {'yes' if status.get('key_configured') else 'no'}",
+			f"OpenAI available: {'yes' if status.get('available') else 'no'}",
+			f"Gemini available: {'yes' if gemini_ready else 'no'}",
+			f"Fast model: {status.get('fast_model') or 'n/a'} ({status.get('fast_reasoning_effort') or 'n/a'})",
+			f"Deep model: {status.get('deep_model') or 'n/a'} ({status.get('deep_reasoning_effort') or 'n/a'})",
+			(
+				"Budget: "
+				f"{int(budget.get('calls_in_window') or 0)}/"
+				f"{int(budget.get('max_calls') or 0)} calls per "
+				f"{int(budget.get('window_seconds') or 0)}s"
+			),
+			(
+				"Circuit: "
+				+ (
+					f"OPEN ({circuit.get('reason') or 'provider error'}, "
+					f"{float(circuit.get('remaining_seconds') or 0):.0f}s remaining)"
+					if circuit.get("open")
+					else "closed"
+				)
+			),
+			"Secrets are never displayed by this command.",
+		]
+		await update.message.reply_text("\n".join(lines))
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("Could not load AI provider status.", exc))
+
+
+async def ai_test_command(update, context) -> None:
+	"""Admin-only: run a minimal OpenAI Responses API connection test."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from services.openai_ai import connection_test, provider_status
+		status = provider_status()
+		if not bool(status.get("key_configured")):
+			await update.message.reply_text(
+				"OpenAI is not connected. Set OPENAI_API_KEY as a Railway secret, then run /ai_test again."
+			)
+			return
+		result = await connection_test()
+		if not bool(result.get("ok")) or not bool(result.get("connected")):
+			await update.message.reply_text(
+				"OpenAI connection test failed. "
+				f"Error: {str(result.get('error') or 'provider_unavailable')[:120]}. "
+				"Gemini/local fallback remains available according to /ai_status."
+			)
+			return
+		await update.message.reply_text(
+			"OpenAI connection test passed.\n"
+			f"Model: {result.get('model') or status.get('fast_model') or 'n/a'}\n"
+			f"Latency: {float(result.get('latency_ms') or 0):.0f} ms\n"
+			"Structured Responses API: OK"
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("OpenAI connection test failed.", exc))
+
+
 async def codex_audit_command(update, context) -> None:
 	"""Admin-only: local Codex governance review with no external data transfer."""
 	if update.effective_user is None or update.message is None:
