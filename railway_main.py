@@ -450,10 +450,33 @@ def _railway_process_ownership():
     decomposed front door. Dedicated engine/worker roles must use ``main.py``
     and are rejected here so a bad Railway start command cannot silently
     recreate the monolith.
+
+    Railway can preserve a stale RUN_MODE=all snapshot while DB_ROLE/SERVICE_ROLE
+    already identify the dedicated front door. In decomposed topology, recover
+    only that safe front-door case; never reinterpret engine/worker as web.
     """
     from runtime.roles import RunMode, process_ownership
 
-    requested = os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all"
+    requested = str(
+        os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or os.getenv("DB_ROLE")
+        or "all"
+    ).strip().lower()
+    decomposed = str(os.getenv("DECOMPOSED_TOPOLOGY_ENABLED") or "0").strip().lower() in {
+        "1", "true", "yes", "on", "y",
+    }
+    role_hint = str(os.getenv("SERVICE_ROLE") or os.getenv("DB_ROLE") or "").strip().lower()
+    if decomposed and requested in {"all", "all/dev"} and role_hint in {
+        "frontdoor", "front-door", "webhook",
+    }:
+        logger.warning(
+            "[runtime_ownership] correcting stale RUN_MODE=%s from explicit role_hint=%s",
+            requested,
+            role_hint,
+        )
+        requested = "frontdoor"
+
     ownership = process_ownership(requested)
     if ownership.mode not in {RunMode.FRONTDOOR, RunMode.ALL_DEV}:
         raise RuntimeError(
