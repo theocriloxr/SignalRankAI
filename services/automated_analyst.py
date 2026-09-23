@@ -12,15 +12,17 @@ logger = logging.getLogger(__name__)
 
 
 async def run_automated_audit(cycle_no: int, strict_candidates_count: int, final_signals_count: int) -> dict[str, Any]:
-    """Run an automated Gemini audit for this cycle when the engine rejected good candidates.
+    """Run a provider-routed AI audit when the engine rejected good candidates.
 
-    This is a lightweight wrapper that delegates to services.gemini_ml.run_gemini_review_pipeline
+    This delegates to the backward-compatible review pipeline, which routes
+    OpenAI first when configured and Gemini/local as fallbacks.
     which already collects DB aggregates. We keep this async so engine can call via run_sync.
     """
     try:
-        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-        if not api_key:
-            return {"ok": False, "error": "GEMINI_API_KEY not configured"}
+        has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
+        has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+        if not (has_openai or has_gemini):
+            return {"ok": False, "error": "no external AI provider configured"}
 
         enabled = str(os.getenv("AUTO_ANALYST_ENABLED", "1")).strip().lower() in {"1", "true", "yes"}
         if not enabled:
@@ -34,10 +36,10 @@ async def run_automated_audit(cycle_no: int, strict_candidates_count: int, final
         try:
             from services import gemini_ml
             res = await gemini_ml.run_gemini_review_pipeline(trigger=f"automated_cycle_{cycle_no}", scope="weekly")
-            logger.info("[automated_analyst] Gemini audit completed for cycle %s", cycle_no)
+            logger.info("[automated_analyst] AI audit completed for cycle %s", cycle_no)
             return dict(res or {})
         except Exception as exc:
-            logger.exception("[automated_analyst] gemini audit failed: %s", exc)
+            logger.exception("[automated_analyst] AI audit failed: %s", exc)
             return {"ok": False, "error": str(exc)}
     except Exception as exc:
         logger.exception("[automated_analyst] failed: %s", exc)
