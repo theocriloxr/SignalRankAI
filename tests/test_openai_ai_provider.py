@@ -54,6 +54,11 @@ def _reset_openai_state(monkeypatch):
     ai._WINDOW_CALLS = 0
     ai._CIRCUIT_UNTIL_MONO = 0.0
     ai._CIRCUIT_REASON = ""
+    ai._RESPONSE_CACHE.clear()
+    ai._CACHE_HITS = 0
+    ai._CACHE_MISSES = 0
+    ai._USAGE_INPUT_TOKENS = 0
+    ai._USAGE_OUTPUT_TOKENS = 0
     _FakeAsyncClient.captured.clear()
 
 
@@ -98,7 +103,7 @@ async def test_openai_signal_review_uses_responses_structured_output_and_no_stor
 
     assert result["ok"] is True
     assert result["provider"] == "openai"
-    assert result["model"] == "gpt-6-luna"
+    assert result["model"] == "gpt-5.6-luna"
     assert result["data"]["score"] == pytest.approx(8.8)
     call = _FakeAsyncClient.captured[-1]
     body = call["json"]
@@ -107,9 +112,55 @@ async def test_openai_signal_review_uses_responses_structured_output_and_no_stor
     assert body["reasoning"]["effort"] == "low"
     assert body["text"]["format"]["type"] == "json_schema"
     assert body["text"]["format"]["strict"] is True
+    assert body["prompt_cache_key"].startswith("signalrank-signalrank_trade_review-")
     serialized = json.dumps(body)
     assert "secret_should_not_leave" not in serialized
     assert "test-openai-key" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_openai_identical_review_uses_local_ttl_cache_without_second_api_call(monkeypatch):
+    import services.openai_ai as ai
+
+    response_data = {
+        "approved": True,
+        "score": 8.4,
+        "confidence": 0.75,
+        "risk_level": "low",
+        "summary": "Supported.",
+        "veto_reasons": [],
+        "retail_trap_risk": False,
+        "late_entry_risk": False,
+        "macro_conflict": False,
+        "volatility_risk": False,
+        "data_quality_risk": False,
+    }
+    _FakeAsyncClient.payload = {
+        "id": "resp_cached",
+        "output": [{"content": [{"type": "output_text", "text": json.dumps(response_data)}]}],
+        "usage": {"input_tokens": 11, "output_tokens": 13},
+    }
+    monkeypatch.setattr(ai.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setenv("OPENAI_SIGNAL_CACHE_TTL_SECONDS", "180")
+
+    signal = {
+        "asset": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "long",
+        "entry": 100.0,
+        "stop_loss": 98.0,
+        "score": 92.0,
+    }
+    first = await ai.review_signal(signal, [], 0.0)
+    second = await ai.review_signal(signal, [], 0.0)
+
+    assert first["ok"] is True and first["cache_hit"] is False
+    assert second["ok"] is True and second["cache_hit"] is True
+    assert len(_FakeAsyncClient.captured) == 1
+    status = ai.provider_status()
+    assert status["cache"]["hits"] == 1
+    assert status["cache"]["misses"] == 1
+    assert status["usage_totals"] == {"input_tokens": 11, "output_tokens": 13}
 
 
 @pytest.mark.asyncio
@@ -210,16 +261,19 @@ def test_openai_provider_status_is_secret_safe(monkeypatch):
     import services.openai_ai as ai
 
     monkeypatch.setenv("OPENAI_API_KEY", "super-secret-openai-key")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-6-sol")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-5.6-terra")
     status = ai.provider_status()
 
     assert status["configured"] is True
     assert status["available"] is True
     assert status["responses_api"] is True
     assert status["store"] is False
-    assert status["signal_model"] == "gpt-6-luna"
-    assert status["deep_model"] == "gpt-6-sol"
+    assert status["signal_model"] == "gpt-5.6-luna"
+    assert status["deep_model"] == "gpt-5.6-terra"
+    assert status["cache"]["entries"] == 0
+    assert status["cache"]["hits"] == 0
+    assert status["usage_totals"]["input_tokens"] == 0
     serialized = json.dumps(status)
     assert "super-secret-openai-key" not in serialized
     assert "OPENAI_API_KEY" not in serialized
