@@ -291,6 +291,20 @@ def _default_session_gate_limit() -> int:
     return max(1, min(configured_capacity, default_cap))
 
 
+def _dedicated_analytics_min_sessions() -> int:
+    role = _database_role()
+    if role == "analytics" or role.startswith("analytics-"):
+        return max(
+            2,
+            _pool_int(
+                "DB_ANALYTICS_DEDICATED_MIN_CONCURRENT_SESSIONS",
+                2,
+                minimum=1,
+            ),
+        )
+    return 1
+
+
 def _effective_session_gate_limit() -> int:
     requested = max(
         1,
@@ -302,7 +316,18 @@ def _effective_session_gate_limit() -> int:
     )
     pool_size, max_overflow = _effective_pool_settings()
     if pool_size == 0 and max_overflow == 0:
-        return requested
+        # Dedicated analytics uses NullPool by design. A stale generic
+        # DB_MAX_CONCURRENT_SESSIONS=1 must not serialize ML training, shadow
+        # outcome tracking, and learning maintenance into starvation.
+        minimum = _dedicated_analytics_min_sessions()
+        if requested < minimum:
+            logger.warning(
+                "[db_admission_config] raising dedicated analytics session gate "
+                "requested=%s minimum=%s",
+                requested,
+                minimum,
+            )
+        return max(requested, minimum)
     physical_capacity = max(1, int(pool_size) + int(max_overflow))
     effective = min(requested, physical_capacity)
     if effective != requested:
@@ -412,17 +437,32 @@ _critical_session_limit = max(
 _dedicated_analytics_role = bool(
     _database_role() == "analytics" or _database_role().startswith("analytics-")
 )
-_default_analytics_limit = 2 if _dedicated_analytics_role else 1
-_analytics_session_limit = max(
-    1,
-    min(
-        max(1, _session_gate_limit - _foreground_reserved_sessions),
-        _pool_int(
-            "DB_ANALYTICS_MAX_CONCURRENT_SESSIONS",
-            _default_analytics_limit,
-            minimum=1,
+
+
+def _effective_analytics_session_limit(
+    session_gate_limit: int,
+    foreground_reserved_sessions: int,
+) -> int:
+    default_limit = 2 if _dedicated_analytics_role else 1
+    requested = _pool_int(
+        "DB_ANALYTICS_MAX_CONCURRENT_SESSIONS",
+        default_limit,
+        minimum=1,
+    )
+    if _dedicated_analytics_role:
+        requested = max(requested, _dedicated_analytics_min_sessions())
+    return max(
+        1,
+        min(
+            max(1, int(session_gate_limit) - int(foreground_reserved_sessions)),
+            requested,
         ),
-    ),
+    )
+
+
+_analytics_session_limit = _effective_analytics_session_limit(
+    _session_gate_limit,
+    _foreground_reserved_sessions,
 )
 _priority_admission = DBAdmissionController(
     _session_gate_limit,
@@ -437,6 +477,16 @@ _priority_admission = DBAdmissionController(
         or _database_role().startswith("analytics-")
         or _pool_bool("DB_ANALYTICS_ALLOW_SHARED_POOL", False)
     ),
+)
+
+logger.info(
+    "[db_admission_config] role=%s session_limit=%s foreground_reserve=%s "
+    "background_limit=%s analytics_limit=%s",
+    _database_role(),
+    _session_gate_limit,
+    _foreground_reserved_sessions,
+    _background_gate_limit,
+    _analytics_session_limit,
 )
 
 _session_metrics_lock = threading.Lock()
