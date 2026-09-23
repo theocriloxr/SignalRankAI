@@ -353,6 +353,36 @@
     },
     {
       "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ai_status",
+      "canonical_name": "ai_status",
+      "fallback_handlers": [],
+      "handler": "ai_status_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.ai_test",
+      "canonical_name": "ai_test",
+      "fallback_handlers": [],
+      "handler": "ai_test_command",
+      "minimum_tier": "ADMIN",
+      "registration": "runtime_static",
+      "role_scope": "ADMIN",
+      "sources": [
+        "signalrank_telegram/bot.py"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
+      "aliases_for_same_handler": [],
       "audit_event": "telegram.command.alerts",
       "canonical_name": "alerts",
       "fallback_handlers": [],
@@ -2861,12 +2891,12 @@
       "timeout_policy": "bounded_by_audit_handler"
     }
   ],
-  "count": 180,
+  "count": 182,
   "duplicates": [],
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "kind": "command_registry",
-  "registration_count": 181,
+  "registration_count": 306,
   "repository_identity": "resolved_in_release_manifest",
   "schema_version": 1,
   "source": "signalrank_telegram/bot.py",
