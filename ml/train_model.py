@@ -118,19 +118,38 @@ def _promotion_quality_gate(
     balanced_acc = float(metrics.get("balanced_accuracy", accuracy) or 0.0)
     positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
+    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
     majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
+
+    min_pr_auc = float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
+    min_pr_auc_floor = float(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25)
+    min_pr_auc_lift = float(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0)
+    pr_auc_lift = (pr_auc / positive_rate) if positive_rate > 0 else 0.0
+    # PR-AUC is prevalence-sensitive. Keep the existing strong absolute gate,
+    # but also recognize a candidate that clears a conservative absolute floor
+    # while materially outperforming the random/prevalence baseline. This is
+    # stricter than accepting raw accuracy on an imbalanced dataset.
+    pr_auc_ok = bool(
+        pr_auc >= min_pr_auc
+        or (
+            positive_rate > 0
+            and pr_auc >= min_pr_auc_floor
+            and pr_auc_lift >= min_pr_auc_lift
+        )
+    )
+
     # Do not require raw accuracy to beat the majority-class baseline. On an
     # imbalanced outcome set that condition rewards predicting the dominant
     # class and can reject a genuinely useful minority-class model. The
-    # imbalance-aware gates below (balanced accuracy, positive recall, PR-AUC)
-    # plus expected-R are the actual protection against majority collapse.
+    # imbalance-aware gates below plus expected-R are the actual protection
+    # against majority collapse.
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
-        and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
+        and pr_auc_ok
         and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
     )
     return ok, min_accuracy, min_auc
@@ -1196,11 +1215,13 @@ def _class_balance_scale(y_values, sample_weights=None) -> float:
 
 
 def _select_classification_threshold(y_true, probabilities) -> float:
-    """Choose a diagnostic classification cutoff on calibration-fit rows only.
+    """Choose an out-of-sample trading-utility cutoff on calibration rows only.
 
-    The returned threshold is used to evaluate the untouched validation window;
-    it never tunes against validation outcomes and does not change the separate
-    live ML probability gate.
+    The old selector maximized balanced accuracy and could choose a very low
+    threshold with strong recall but negative 2R/-1R expectancy. This selector
+    keeps minimum recall/coverage safeguards, then prefers positive expected-R
+    utility and balanced accuracy. The untouched validation window remains
+    completely unseen until after the threshold is frozen.
     """
     if not _env_bool("ML_CLASSIFICATION_THRESHOLD_TUNING_ENABLED", True):
         return 0.5
@@ -1214,31 +1235,81 @@ def _select_classification_threshold(y_true, probabilities) -> float:
     except Exception:
         lower = 0.15
     try:
-        upper = min(0.95, max(0.50, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MAX", "0.70") or 0.70)))
+        upper = min(0.95, max(0.50, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MAX", "0.85") or 0.85)))
     except Exception:
-        upper = 0.70
+        upper = 0.85
     if upper <= lower:
         return 0.5
 
+    min_recall = max(
+        0.05,
+        min(0.95, float(os.getenv("ML_THRESHOLD_MIN_POSITIVE_RECALL", "0.20") or 0.20)),
+    )
+    min_coverage = max(
+        0.005,
+        min(0.50, float(os.getenv("ML_THRESHOLD_MIN_POSITIVE_COVERAGE", "0.03") or 0.03)),
+    )
+    min_selected = max(
+        5,
+        int(os.getenv("ML_THRESHOLD_MIN_SELECTED_ROWS", "20") or 20),
+    )
+
     best_threshold = 0.5
-    best_key = (-1.0, -1.0, -1.0, -1.0)
-    for threshold in np.linspace(lower, upper, 56):
+    best_key = None
+    fallback_threshold = 0.5
+    fallback_key = (-1.0, -1.0, -1.0, -1.0)
+    total_positives = max(1, int((y == 1).sum()))
+
+    for threshold in np.linspace(lower, upper, 71):
         pred = (proba >= float(threshold)).astype(int)
         tp = int(((pred == 1) & (y == 1)).sum())
         tn = int(((pred == 0) & (y == 0)).sum())
         fp = int(((pred == 1) & (y == 0)).sum())
         fn = int(((pred == 0) & (y == 1)).sum())
+        selected = tp + fp
+        if selected <= 0:
+            continue
+
         recall = tp / max(1, tp + fn)
         specificity = tn / max(1, tn + fp)
-        precision = tp / max(1, tp + fp)
+        precision = tp / max(1, selected)
         balanced = 0.5 * (recall + specificity)
-        # Primary objective is balanced accuracy; recall/precision are
-        # deterministic tie-breakers, then prefer the cutoff nearest 0.5.
-        key = (balanced, recall, precision, -abs(float(threshold) - 0.5))
-        if key > best_key:
+        coverage = selected / max(1, len(y))
+        # Same conservative utility contract used by ml.metrics:
+        # winning selection = +2R, losing selection = -1R.
+        expected_r = ((2.0 * tp) - fp) / max(1, selected)
+        recall_capture = tp / total_positives
+
+        fallback = (balanced, recall, precision, -abs(float(threshold) - 0.5))
+        if fallback > fallback_key:
+            fallback_key = fallback
+            fallback_threshold = float(threshold)
+
+        if (
+            selected < min_selected
+            or coverage < min_coverage
+            or recall < min_recall
+            or recall_capture < min_recall
+            or expected_r <= 0.0
+        ):
+            continue
+
+        # Prefer expectancy first, then broad enough coverage and balanced
+        # discrimination. This avoids a tiny high-precision slice winning merely
+        # because it selected one or two positives.
+        key = (
+            expected_r,
+            min(coverage, 0.50),
+            balanced,
+            recall,
+            precision,
+            -abs(float(threshold) - 0.5),
+        )
+        if best_key is None or key > best_key:
             best_key = key
             best_threshold = float(threshold)
-    return float(best_threshold)
+
+    return float(best_threshold if best_key is not None else fallback_threshold)
 
 
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
@@ -1447,6 +1518,12 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         "negative_precision": _full_metrics.get("negative_precision"),
         "negative_recall": _full_metrics.get("negative_recall"),
         "pr_auc": _full_metrics.get("pr_auc"),
+        "positive_rate": _full_metrics.get("positive_rate"),
+        "pr_auc_lift": (
+            (_full_metrics.get("pr_auc") or 0.0) / max(1e-9, (_full_metrics.get("positive_rate") or 0.0))
+            if (_full_metrics.get("positive_rate") or 0.0) > 0
+            else 0.0
+        ),
         "brier": _full_metrics.get("brier"),
         "ece": _full_metrics.get("ece"),
         "log_loss": _full_metrics.get("log_loss"),
