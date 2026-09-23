@@ -116,6 +116,16 @@ def test_redis_empty_reconciliation_cannot_mass_expire_signals():
     assert "redis active trades empty; expired %s stale DB open signals" not in source
 
 
+def test_engine_pulse_partial_fanout_does_not_fail_engine_health():
+    from pathlib import Path
+
+    source = Path("engine/admin_pulse.py").read_text(encoding="utf-8")
+    assert "notification_reachable = sent > 0" in source
+    assert 'sent == len(recipients)' not in source
+    assert "recipients_attempted=len(recipients)" in source
+    assert "partial Telegram fanout" in source
+
+
 def test_segment_quarantine_uses_delivery_proof():
     from engine import core
 
