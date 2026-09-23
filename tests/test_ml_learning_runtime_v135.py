@@ -94,6 +94,11 @@ def test_ml_candle_hydration_is_bounded_to_training_window() -> None:
     assert "training_lookback_days * 86400" in source
     assert "[ml_dataset_stage] stage=live_proof_loaded" in source
     assert "[ml_candle_cache]" in source
+    assert "async def _preload_candle_cache" in source
+    assert 'ml_training_candle_preload' in source
+    assert "stage=candle_preload_start" in source
+    assert "stage=candle_preload_complete" in source
+    assert "required_candle_series" in source
 
 
 def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> None:
