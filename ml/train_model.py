@@ -120,12 +120,25 @@ def _promotion_quality_gate(
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
     majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
+    positive_precision = float(metrics.get("positive_precision", 0.0) or 0.0)
+    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
+    min_precision = max(
+        float(os.getenv("ML_MIN_POSITIVE_PRECISION", "0.15") or 0.15),
+        positive_rate
+        * float(os.getenv("ML_MIN_POSITIVE_PRECISION_LIFT", "1.05") or 1.05),
+    )
+    # Raw accuracy versus the majority-class baseline is not a valid promotion
+    # requirement for an intentionally imbalanced win/loss target.  A useful
+    # minority-class model can trade a small amount of raw accuracy for much
+    # better win recall.  Keep the absolute accuracy floor, but prove that the
+    # positive class is learned through balanced accuracy, recall, PR-AUC,
+    # precision above prevalence, and expected-R.
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and accuracy > majority_baseline
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
+        and positive_precision >= min_precision
         and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
         and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
     )
@@ -1147,7 +1160,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # Train model
+    # Train model.  Delivery outcomes are naturally imbalanced; derive a
+    # conservative positive-class weight from the model-fit window only so the
+    # untouched validation window remains genuinely out of sample.  sqrt(ratio)
+    # is intentionally milder than the full neg/pos ratio to avoid overcorrecting
+    # towards false positives.
+    train_positive = int((np.asarray(y_tr) == 1).sum())
+    train_negative = int((np.asarray(y_tr) == 0).sum())
+    empirical_ratio = (
+        float(train_negative) / float(train_positive)
+        if train_positive > 0
+        else 1.0
+    )
+    default_scale_pos_weight = math.sqrt(max(1.0, empirical_ratio))
+    scale_pos_weight = float(
+        os.getenv("ML_SCALE_POS_WEIGHT", str(default_scale_pos_weight))
+        or default_scale_pos_weight
+    )
+    scale_pos_weight = min(
+        float(os.getenv("ML_SCALE_POS_WEIGHT_MAX", "4.0") or 4.0),
+        max(1.0, scale_pos_weight),
+    )
+    logger.info(
+        "[ml_training_balance] train_positive=%s train_negative=%s "
+        "empirical_ratio=%.4f scale_pos_weight=%.4f",
+        train_positive,
+        train_negative,
+        empirical_ratio,
+        scale_pos_weight,
+    )
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -1155,6 +1196,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
+        scale_pos_weight=scale_pos_weight,
         random_state=42,
         verbosity=1,
     )
@@ -1453,8 +1495,21 @@ async def main(lookback_days: int | None = None):
     if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
-            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
-            run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
+            "balanced_accuracy=%.4f positive_recall=%.4f positive_precision=%.4f "
+            "positive_rate=%.4f pr_auc=%.4f expected_r=%.4f "
+            "current_model_preserved=true",
+            run_id,
+            metrics["accuracy"],
+            min_accuracy,
+            metrics["auc"],
+            min_auc,
+            float(metrics.get("balanced_accuracy", 0.0) or 0.0),
+            float(metrics.get("positive_recall", 0.0) or 0.0),
+            float(metrics.get("positive_precision", 0.0) or 0.0),
+            float(metrics.get("positive_rate", 0.0) or 0.0),
+            float(metrics.get("pr_auc", 0.0) or 0.0),
+            float(metrics.get("expected_r", 0.0) or 0.0),
         )
         return False
 
