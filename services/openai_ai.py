@@ -89,12 +89,12 @@ def _model(*, deep: bool = False) -> str:
         return str(
             os.getenv("OPENAI_DEEP_MODEL")
             or os.getenv("OPENAI_GOVERNANCE_MODEL")
-            or "gpt-5.6-sol"
+            or "gpt-6-sol"
         ).strip()
     return str(
         os.getenv("OPENAI_SIGNAL_REVIEW_MODEL")
         or os.getenv("OPENAI_MODEL")
-        or "gpt-5.6-terra"
+        or "gpt-6-luna"
     ).strip()
 
 
