@@ -110,6 +110,9 @@ def test_ml_training_is_nonblocking_and_multisource() -> None:
     assert 'drop_if_busy": False' in trainer
     assert 'name="ml-retrain"' in tracker
     assert "self._run_ml_retrain()" in tracker
+    assert "_outcome_tracker_ml_retrain_owned_here()" in tracker
+    assert 'os.getenv("DECOMPOSED_TOPOLOGY_ENABLED", "0")' in tracker
+    assert 'role == "analytics" or role.startswith("analytics-")' in tracker
 
 
 def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
