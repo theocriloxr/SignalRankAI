@@ -83,6 +83,17 @@ def _outcome_db_timeout() -> float:
         return 12.0
 
 
+def _outcome_tracker_ml_retrain_owned_here() -> bool:
+    """Keep retraining on the analytics owner in decomposed deployments."""
+    decomposed = str(os.getenv("DECOMPOSED_TOPOLOGY_ENABLED", "0") or "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if not decomposed:
+        return True
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    return role == "analytics" or role.startswith("analytics-")
+
+
 def _database_tp_progress(lifecycle: Any, outcome: Any) -> int:
     """Derive authoritative target progress from durable lifecycle/outcome data."""
     from core.signal_lifecycle import (
@@ -2016,13 +2027,15 @@ class RealtimeOutcomeTracker:
         min_interval = max(900, retrain_interval)
         retrain_due = (now_ts - float(self._last_retrain_ts or 0.0)) >= float(min_interval)
         retrain_running = bool(self._ml_retrain_task and not self._ml_retrain_task.done())
-        if retrain_due and not retrain_running:
+        if retrain_due and not retrain_running and _outcome_tracker_ml_retrain_owned_here():
             logger.info("[outcome_tracker] Scheduling ML retraining after outcome tracking...")
             self._last_retrain_ts = now_ts
             self._ml_retrain_task = asyncio.create_task(
                 self._run_ml_retrain(),
                 name="ml-retrain",
             )
+        elif retrain_due and not retrain_running:
+            logger.debug("[outcome_tracker] ML retraining owned by dedicated analytics role")
 
         # Update user performance for all affected users
         if update_user_perf:
