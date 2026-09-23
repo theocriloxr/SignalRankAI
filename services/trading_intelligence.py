@@ -25,7 +25,7 @@ def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
         "volume": _f(signal.get("volume_score") or signal.get("relative_volume"), 55.0),
         "regime": _f(signal.get("asset_health_score"), 60.0),
         "historical": _f(signal.get("historical_win_rate") or signal.get("segment_win_rate"), 55.0),
-        "ai": _f(signal.get("gemini_review_score") or signal.get("ml_probability"), 60.0),
+        "ai": _f(signal.get("ai_review_score") or signal.get("gemini_review_score") or signal.get("ml_probability"), 60.0),
     }
 
 
