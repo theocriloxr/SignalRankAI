@@ -190,7 +190,11 @@ async def run_external_codex_aggregate_review(
 
     schema = governance_review_schema()
     body = {
-        "model": (os.getenv("OPENAI_CODEX_REVIEW_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip(),
+        "model": (
+            os.getenv("OPENAI_CODEX_REVIEW_MODEL")
+            or os.getenv("OPENAI_DEEP_MODEL")
+            or "gpt-5.6-sol"
+        ).strip(),
         "input": [
             {
                 "role": "system",
@@ -224,6 +228,8 @@ async def run_external_codex_aggregate_review(
                 "strict": True,
             }
         },
+        "reasoning": {"effort": str(os.getenv("OPENAI_DEEP_REASONING_EFFORT") or "medium").strip().lower()},
+        "store": False,
         "max_output_tokens": int(os.getenv("OPENAI_CODEX_REVIEW_MAX_TOKENS", "1200") or 1200),
     }
     try:
