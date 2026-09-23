@@ -2790,6 +2790,11 @@ def main_loop(DRY_RUN: bool = False):
                     from sqlalchemy import exists as _exists_open, or_ as _or_open
 
                     now_open = now_utc_naive()
+                    open_unresolved_hours = max(
+                        1.0,
+                        _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0),
+                    )
+                    open_proof_cutoff = now_open - _timedelta(hours=open_unresolved_hours)
                     delivered_open = _exists_open().where(
                         _OpenDelivery.signal_id == _OpenSig.signal_id,
                         _OpenDelivery.sent_ok.is_(True),
@@ -2799,6 +2804,11 @@ def main_loop(DRY_RUN: bool = False):
                         )),
                         _OpenDelivery.telegram_chat_id.is_not(None),
                         _OpenDelivery.telegram_message_id.is_not(None),
+                        _func_open.coalesce(
+                            _OpenDelivery.delivery_confirmed_at,
+                            _OpenDelivery.delivered_at_utc,
+                            _OpenDelivery.delivered_at,
+                        ) >= open_proof_cutoff,
                     )
                     terminal_lifecycle_states = (
                         "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
