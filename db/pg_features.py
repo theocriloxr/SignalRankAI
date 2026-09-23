@@ -871,6 +871,7 @@ async def get_or_create_signal_impl(
             # strategy scope. Hidden regime changes or adjacent timeframe scans
             # must not admit two near-identical user-visible trade ideas.
             semantic_scope = f"signal-thesis:{signal_thesis_scope(thesis_payload)}"
+            exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                 {"fingerprint": thesis_fingerprint},
@@ -878,6 +879,15 @@ async def get_or_create_signal_impl(
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
                 {"scope": semantic_scope},
+            )
+            # The database uniqueness guard is broader than a strategy thesis:
+            # only one unresolved asset+direction+timeframe row may exist.
+            # Serialize that exact bucket too, otherwise two different strategy
+            # scopes can race through their separate thesis locks and collide
+            # on ix_signals_active_thesis at flush time.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:bucket_scope))"),
+                {"bucket_scope": exact_bucket_scope},
             )
     except Exception as lock_error:
         from core.env import runtime_environment_name
