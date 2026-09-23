@@ -491,6 +491,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "force_signal": Tier.ADMIN, "gemini": Tier.ADMIN,
         "gemini_review": Tier.ADMIN, "gemini_analyze": Tier.ADMIN,
         "gemini_audit": Tier.ADMIN, "gemini_predict": Tier.ADMIN,
+        "ai_status": Tier.ADMIN, "ai_test": Tier.ADMIN,
         "codex_audit": Tier.ADMIN, "admin_top_assets": Tier.ADMIN,
         "codex_log_review": Tier.ADMIN, "codex_fix_plan": Tier.ADMIN,
         "codex_security_scan": Tier.ADMIN, "codex_release_check": Tier.ADMIN,
