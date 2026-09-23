@@ -20,6 +20,22 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 # Copy application code
 COPY . .
 
+# Release-critical regression gate. GitHub-hosted CI can be unavailable before a
+# runner starts; these deterministic tests therefore also execute in the image
+# build and must pass before Railway can deploy the artifact.
+RUN python -m compileall -q engine db data worker services ml \
+    && python -m pytest -q \
+      tests/test_provider_backed_asset_discovery.py \
+      tests/test_cpu_only_xgboost_dependency.py \
+      tests/test_ml_learning_runtime_v135.py::test_analytics_owned_workers_share_analytics_priority_lane \
+      tests/test_ml_learning_runtime_v135.py::test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait \
+      tests/test_ml_learning_runtime_v135.py::test_ml_training_is_nonblocking_and_multisource \
+      tests/test_railway_runtime_incident_fixes.py::test_signal_insert_reuses_the_exact_active_unique_index_bucket \
+      tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
+      tests/test_phase4_pass1_quote_contract.py::test_twelvedata_quote_falls_back_to_timestamped_one_minute_bar \
+      tests/test_production_endgame_20260725.py::test_current_gemini_review_request_avoids_legacy_sampling_knobs \
+      tests/test_production_endgame_20260725.py::test_metaapi_discovery_uses_canonical_account_aliases
+
 # Ensure start script is executable and use it as entrypoint so migrations/run-time
 # setup happens when the container starts (not during image build).
 RUN chmod +x ./start.sh || true
