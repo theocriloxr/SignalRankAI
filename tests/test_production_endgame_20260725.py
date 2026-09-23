@@ -225,6 +225,9 @@ def test_analytics_role_owns_continuous_improvement_scheduler():
     assert "CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED" in source
     assert "continuous_improvement_loop" in source
     assert "continuous-improvement-review" in source
+    assert "LEARNING_HISTORY_RETENTION_ENABLED" in source
+    assert "learning_history_maintenance_loop" in source
+    assert "learning-history-retention" in source
 
 
 def test_production_runtime_rejects_public_testing_mode():
