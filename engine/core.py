@@ -1020,10 +1020,31 @@ def _signal_adx_value(signal: Dict[str, Any]) -> float:
 
 
 def _staging_quality_advisory_enabled() -> bool:
-    return bool(
-        _env_bool("STAGING_QUALITY_GATES_ADVISORY", False)
-        and str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1"
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    if environment in {"production", "prod"}:
+        return False
+    if not _env_bool("PUBLIC_TESTING_MODE", False):
+        return False
+    if not _env_bool("STAGING_QUALITY_GATES_ADVISORY", False):
+        return False
+    # Advisory quality is strictly a no-live-execution staging experiment.
+    # Paper trading may remain enabled, but every real/copy execution path must
+    # be hard-disabled before a quality veto can become advisory.
+    unsafe_execution_flags = (
+        "REAL_EXECUTION_ENABLED",
+        "AUTO_EXECUTION_ENABLED",
+        "AUTO_TRADE_ENABLED",
+        "COPY_TRADE_ENABLED",
+        "BYBIT_EXECUTION_ENABLED",
+        "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
     )
+    return not any(_env_bool(name, False) for name in unsafe_execution_flags)
 
 
 def _append_staging_advisory(signal: Dict[str, Any], gate: str, reason: Any) -> None:
