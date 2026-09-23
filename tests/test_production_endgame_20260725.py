@@ -82,6 +82,21 @@ def test_portfolio_exposure_query_requires_delivery_proof(monkeypatch):
     assert "telegram_chat_id is not null" in sql
     assert "telegram_message_id is not null" in sql
     assert "expires_at" in sql
+    assert "outcomes" in sql
+    assert "closed_at is not null" in sql
+    assert "tp3" in sql
+    assert "missed_entry" in sql
+    assert "tp1" not in sql
+
+
+def test_engine_open_count_excludes_terminal_outcomes():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    assert "terminal_outcome_open_count" in source
+    assert "_OpenOutcome.closed_at.is_not(None)" in source
+    assert '"tp3"' in source
+    assert '"missed_entry"' in source
 
 
 def test_redis_empty_reconciliation_cannot_mass_expire_signals():
