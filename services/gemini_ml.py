@@ -28,6 +28,7 @@ import asyncio
 
 logger = logging.getLogger("GeminiValidator")
 _LAST_REVIEW_KEY = "gemini_last_review"
+_LAST_AI_REVIEW_KEY = "ai_last_review"
 
 try:
     from services.prompt_registry import render_prompt, prompt_version
@@ -592,7 +593,9 @@ async def get_last_gemini_review() -> Optional[Dict[str, Any]]:
     from db.session import get_session
 
     async with get_session() as session:
-        row = await session.get(RuntimeState, _LAST_REVIEW_KEY)
+        row = await session.get(RuntimeState, _LAST_AI_REVIEW_KEY)
+        if row is None:
+            row = await session.get(RuntimeState, _LAST_REVIEW_KEY)
         return dict(row.value or {}) if row is not None else None
 
 
@@ -603,13 +606,15 @@ async def _persist_gemini_review(result: Dict[str, Any], session=None) -> None:
     from utils.timeutils import now_utc_naive
 
     async def _write(active_session) -> None:
-        row = await active_session.get(RuntimeState, _LAST_REVIEW_KEY)
-        if row is None:
-            row = RuntimeState(key=_LAST_REVIEW_KEY, value=dict(result), updated_at=now_utc_naive())
-            active_session.add(row)
-        else:
-            row.value = dict(result)
-            row.updated_at = now_utc_naive()
+        now = now_utc_naive()
+        for key in (_LAST_AI_REVIEW_KEY, _LAST_REVIEW_KEY):
+            row = await active_session.get(RuntimeState, key)
+            if row is None:
+                row = RuntimeState(key=key, value=dict(result), updated_at=now)
+                active_session.add(row)
+            else:
+                row.value = dict(result)
+                row.updated_at = now
         await active_session.commit()
 
     if session is not None:
