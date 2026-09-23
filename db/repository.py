@@ -444,6 +444,26 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     tolerance=semantic_tolerance,
                 ):
                     return None
+            exact_active = (
+                await session.execute(
+                    select(Signal)
+                    .where(
+                        Signal.asset == asset,
+                        Signal.direction == direction,
+                        Signal.timeframe == timeframe,
+                        Signal.status == "active",
+                    )
+                    .order_by(Signal.created_at.desc())
+                    .limit(1)
+                )
+            ).scalars().first()
+            if exact_active is not None:
+                if bool(exact_active.expired) or bool(exact_active.archived):
+                    exact_active.status = "superseded"
+                    await session.flush()
+                else:
+                    return None
+
             opposite = "short" if direction == "long" else ("long" if direction == "short" else "")
             if asset and timeframe and opposite:
                 conflict_q = (
