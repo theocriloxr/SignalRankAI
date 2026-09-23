@@ -235,7 +235,7 @@ class PortfolioExposureManager:
         """Internal method to check exposure limits."""
         try:
             # Import here to avoid circular imports
-            from db.models import Outcome, Signal, SignalDelivery
+            from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
             from sqlalchemy import select, func, exists, or_
 
             # Signal.expires_at is stored as PostgreSQL TIMESTAMP WITHOUT TIME ZONE.
@@ -250,6 +250,21 @@ class PortfolioExposureManager:
             # Terminal outcome truth must release portfolio capacity even when the
             # legacy Signal.expired/archive projection lags behind. TP1/TP2 remain
             # active; only a genuinely terminal close is excluded.
+            terminal_lifecycle_states = (
+                "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+            )
+            terminal_lifecycle_exists = exists().where(
+                SignalLifecycle.signal_id == Signal.signal_id,
+                or_(
+                    SignalLifecycle.closed_at.is_not(None),
+                    SignalLifecycle.terminal_event_type.is_not(None),
+                    func.upper(func.coalesce(SignalLifecycle.state, "")).in_(
+                        terminal_lifecycle_states
+                    ),
+                ),
+            )
+            active_filters.append(~terminal_lifecycle_exists)
+
             terminal_outcome_statuses = (
                 "tp", "tp3", "sl", "partial_win", "partial_win_be",
                 "time_stop", "missed_entry", "expired", "invalid",
