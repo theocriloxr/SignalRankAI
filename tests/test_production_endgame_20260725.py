@@ -81,6 +81,8 @@ def test_portfolio_exposure_query_requires_delivery_proof(monkeypatch):
     assert "sent_ok is true" in sql
     assert "telegram_chat_id is not null" in sql
     assert "telegram_message_id is not null" in sql
+    assert "delivery_confirmed_at" in sql
+    assert "delivered_at_utc" in sql
     assert "expires_at" in sql
     assert "outcomes" in sql
     assert "signal_lifecycles" in sql
@@ -97,6 +99,8 @@ def test_engine_open_count_excludes_terminal_outcomes():
 
     source = Path("engine/core.py").read_text(encoding="utf-8")
     assert "terminal_outcome_open_count" in source
+    assert "open_proof_cutoff" in source
+    assert "DELIVERY_UNRESOLVED_BLOCK_HOURS" in source
     assert "terminal_lifecycle_open_count" in source
     assert "_OpenLifecycle.terminal_event_type.is_not(None)" in source
     assert "_OpenOutcome.closed_at.is_not(None)" in source
