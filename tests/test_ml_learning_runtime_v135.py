@@ -70,6 +70,20 @@ def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
     assert '"frontdoor"' not in role_block
 
 
+def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> None:
+    root = Path(__file__).resolve().parents[1]
+    trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
+    session = (root / "db" / "session.py").read_text(encoding="utf-8")
+    asset_learning = (root / "worker" / "asset_learning_worker.py").read_text(encoding="utf-8")
+
+    assert 'role == "analytics" or role.startswith("analytics-")' in trainer
+    assert 'return "analytics"' in trainer
+    assert '"drop_if_busy": False' in trainer
+    assert "is_analytics and drop_if_busy is not False" in session
+    assert "ASSET_LEARNING_DB_TIMEOUT_SECONDS" in asset_learning
+    assert "drop_if_busy=False" in asset_learning
+
+
 def test_ml_training_is_nonblocking_and_multisource() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
