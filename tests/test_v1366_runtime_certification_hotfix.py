@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import pytest
 from sqlalchemy.dialects import postgresql
 
-from ml.train_model import _promotion_quality_gate
+from ml.train_model import _class_balance_scale, _promotion_quality_gate, _select_classification_threshold
 from services.outcome_reconciliation import build_outcome_reconciliation_query
 
 
@@ -128,3 +130,42 @@ def test_deployed_ml_quality_gate_still_rejects_majority_collapse(monkeypatch) -
         deployed_runtime=True,
     )
     assert accepted is False
+
+
+def test_class_balance_scale_is_bounded_for_minority_positive_class(monkeypatch) -> None:
+    monkeypatch.delenv("ML_CLASS_BALANCE_ENABLED", raising=False)
+    monkeypatch.delenv("ML_CLASS_BALANCE_MIN_SCALE", raising=False)
+    monkeypatch.delenv("ML_CLASS_BALANCE_MAX_SCALE", raising=False)
+    y = np.asarray([0] * 90 + [1] * 10, dtype=int)
+    scale = _class_balance_scale(y)
+    assert 1.0 < scale <= 4.0
+    assert scale == pytest.approx(3.0)
+
+
+def test_classification_threshold_is_selected_on_imbalanced_calibration_window(monkeypatch) -> None:
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_TUNING_ENABLED", raising=False)
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_MIN", raising=False)
+    monkeypatch.delenv("ML_CLASSIFICATION_THRESHOLD_MAX", raising=False)
+
+    y = np.asarray([0] * 80 + [1] * 20, dtype=int)
+    probabilities = np.asarray([0.05] * 60 + [0.25] * 20 + [0.35] * 20, dtype=float)
+    threshold = _select_classification_threshold(y, probabilities)
+
+    fixed_pred = (probabilities >= 0.5).astype(int)
+    tuned_pred = (probabilities >= threshold).astype(int)
+    fixed_recall = ((fixed_pred == 1) & (y == 1)).sum() / max(1, (y == 1).sum())
+    tuned_recall = ((tuned_pred == 1) & (y == 1)).sum() / max(1, (y == 1).sum())
+
+    assert 0.15 <= threshold < 0.5
+    assert tuned_recall > fixed_recall
+    assert tuned_recall == pytest.approx(1.0)
+
+
+def test_training_uses_fit_window_balance_and_calibration_threshold_only() -> None:
+    source = (ROOT / "ml" / "train_model.py").read_text(encoding="utf-8")
+    assert "class_balance_scale = _class_balance_scale(y_tr, w_tr)" in source
+    assert "scale_pos_weight=class_balance_scale" in source
+    assert "classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)" in source
+    assert "y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)" in source
+    assert '"classification_threshold": float(classification_threshold)' in source
+    assert '"scale_pos_weight": float(class_balance_scale)' in source
