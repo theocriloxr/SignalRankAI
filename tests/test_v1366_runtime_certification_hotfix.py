@@ -167,5 +167,6 @@ def test_training_uses_fit_window_balance_and_calibration_threshold_only() -> No
     assert "scale_pos_weight=class_balance_scale" in source
     assert "classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)" in source
     assert "y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)" in source
+    assert "decision_threshold=classification_threshold" in source
     assert '"classification_threshold": float(classification_threshold)' in source
     assert '"scale_pos_weight": float(class_balance_scale)' in source
