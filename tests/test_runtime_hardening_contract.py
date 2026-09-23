@@ -112,3 +112,11 @@ def test_paystack_recovery_never_occupies_the_critical_db_lane():
     recovery = source[source.index("async def recover_paystack_events_once"):source.index("async def paystack_webhook_recovery_loop")]
     assert "priority=DBPriority.BACKGROUND" in recovery
     assert "timeout_seconds=2.0" in recovery
+
+
+def test_paystack_recovery_retries_quickly_after_background_contention():
+    source = text("payments/paystack_events.py")
+    loop = source[source.index("async def paystack_webhook_recovery_loop"):]
+    assert "except NoncriticalWriteDropped:" in loop
+    assert "PAYSTACK_WEBHOOK_BUSY_RETRY_SECONDS" in loop
+    assert "sleep_for = min(interval, busy_retry)" in loop
