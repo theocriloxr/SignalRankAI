@@ -31,6 +31,11 @@ _WINDOW_STARTED_MONO = 0.0
 _WINDOW_CALLS = 0
 _CIRCUIT_UNTIL_MONO = 0.0
 _CIRCUIT_REASON = ""
+_RESPONSE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CACHE_HITS = 0
+_CACHE_MISSES = 0
+_USAGE_INPUT_TOKENS = 0
+_USAGE_OUTPUT_TOKENS = 0
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -89,12 +94,12 @@ def _model(*, deep: bool = False) -> str:
         return str(
             os.getenv("OPENAI_DEEP_MODEL")
             or os.getenv("OPENAI_GOVERNANCE_MODEL")
-            or "gpt-6-sol"
+            or "gpt-5.6-terra"
         ).strip()
     return str(
         os.getenv("OPENAI_SIGNAL_REVIEW_MODEL")
         or os.getenv("OPENAI_MODEL")
-        or "gpt-6-luna"
+        or "gpt-5.6-luna"
     ).strip()
 
 
@@ -148,6 +153,83 @@ def _fingerprint(value: Any) -> str:
     return hashlib.sha256(_bounded_json(value, max_chars=50000).encode("utf-8")).hexdigest()[:24]
 
 
+def _cache_ttl_seconds(*, deep: bool) -> float:
+    return _env_float(
+        "OPENAI_DEEP_CACHE_TTL_SECONDS" if deep else "OPENAI_SIGNAL_CACHE_TTL_SECONDS",
+        1800.0 if deep else 180.0,
+        minimum=0.0,
+        maximum=86400.0,
+    )
+
+
+def _cache_key(
+    *,
+    task: str,
+    model: str,
+    system: str,
+    payload: Mapping[str, Any],
+    schema: Mapping[str, Any],
+) -> str:
+    material = {
+        "task": task,
+        "model": model,
+        "system_hash": _fingerprint(system),
+        "payload": payload,
+        "schema_hash": _fingerprint(schema),
+    }
+    return hashlib.sha256(
+        _bounded_json(material, max_chars=70000).encode("utf-8")
+    ).hexdigest()
+
+
+def _cache_get(key: str, ttl_seconds: float) -> dict[str, Any] | None:
+    global _CACHE_HITS, _CACHE_MISSES
+    if ttl_seconds <= 0:
+        with _LOCK:
+            _CACHE_MISSES += 1
+        return None
+    now = time.monotonic()
+    with _LOCK:
+        cached = _RESPONSE_CACHE.get(key)
+        if cached is None or now - float(cached[0]) > ttl_seconds:
+            if cached is not None:
+                _RESPONSE_CACHE.pop(key, None)
+            _CACHE_MISSES += 1
+            return None
+        _CACHE_HITS += 1
+        result = dict(cached[1])
+    result["cache_hit"] = True
+    result["latency_ms"] = 0.0
+    return result
+
+
+def _cache_put(key: str, result: Mapping[str, Any]) -> None:
+    max_entries = _env_int("OPENAI_CACHE_MAX_ENTRIES", 512, minimum=16, maximum=10000)
+    with _LOCK:
+        if len(_RESPONSE_CACHE) >= max_entries:
+            oldest = min(_RESPONSE_CACHE.items(), key=lambda item: item[1][0], default=None)
+            if oldest:
+                _RESPONSE_CACHE.pop(oldest[0], None)
+        _RESPONSE_CACHE[key] = (time.monotonic(), dict(result))
+
+
+def _record_usage(usage: Mapping[str, Any] | None) -> None:
+    global _USAGE_INPUT_TOKENS, _USAGE_OUTPUT_TOKENS
+    if not isinstance(usage, Mapping):
+        return
+    try:
+        input_tokens = int(usage.get("input_tokens") or 0)
+    except (TypeError, ValueError):
+        input_tokens = 0
+    try:
+        output_tokens = int(usage.get("output_tokens") or 0)
+    except (TypeError, ValueError):
+        output_tokens = 0
+    with _LOCK:
+        _USAGE_INPUT_TOKENS += max(0, input_tokens)
+        _USAGE_OUTPUT_TOKENS += max(0, output_tokens)
+
+
 def _budget_admit() -> tuple[bool, str]:
     global _WINDOW_STARTED_MONO, _WINDOW_CALLS, _CIRCUIT_UNTIL_MONO, _CIRCUIT_REASON
     if not _env_bool("OPENAI_AI_CIRCUIT_BREAKER_ENABLED", True):
@@ -190,12 +272,23 @@ async def _structured_response(
         return {"ok": False, "provider": "openai", "error": "OPENAI_API_KEY_not_configured"}
     if not _env_bool("OPENAI_AI_ENABLED", True):
         return {"ok": False, "provider": "openai", "error": "openai_disabled"}
+    started = time.perf_counter()
+    model = _model(deep=deep)
+    cache_key = _cache_key(
+        task=task,
+        model=model,
+        system=system,
+        payload=payload,
+        schema=schema,
+    )
+    cached = _cache_get(cache_key, _cache_ttl_seconds(deep=deep))
+    if cached is not None:
+        return cached
+
     admitted, reason = _budget_admit()
     if not admitted:
         return {"ok": False, "provider": "openai", "error": reason, "circuit_open": True}
 
-    started = time.perf_counter()
-    model = _model(deep=deep)
     body: dict[str, Any] = {
         "model": model,
         "input": [
@@ -219,6 +312,12 @@ async def _structured_response(
         },
         "max_output_tokens": max(64, int(max_output_tokens)),
         "store": False,
+        # OpenAI can reuse cached prompt prefixes across similar structured
+        # requests. This stable task/model key reduces repeated input cost while
+        # the full request fingerprint above prevents stale local result reuse.
+        "prompt_cache_key": (
+            f"signalrank-{_safe_name(task)}-{hashlib.sha256((model + system).encode()).hexdigest()[:16]}"
+        )[:64],
     }
     headers = {
         "Authorization": f"Bearer {key}",
@@ -270,7 +369,7 @@ async def _structured_response(
         if not data:
             return {"ok": False, "provider": "openai", "model": model, "error": "invalid_structured_response"}
         usage = raw.get("usage") if isinstance(raw, dict) else None
-        return {
+        result = {
             "ok": True,
             "provider": "openai",
             "model": model,
@@ -280,7 +379,11 @@ async def _structured_response(
             "response_id": str(raw.get("id") or "")[:128] if isinstance(raw, dict) else "",
             "usage": usage if isinstance(usage, dict) else {},
             "input_hash": _fingerprint(payload),
+            "cache_hit": False,
         }
+        _record_usage(usage if isinstance(usage, Mapping) else None)
+        _cache_put(cache_key, result)
+        return result
     except (httpx.TimeoutException, asyncio.TimeoutError):
         return {"ok": False, "provider": "openai", "model": model, "error": "timeout"}
     except Exception as exc:
@@ -350,6 +453,11 @@ def provider_status() -> dict[str, Any]:
         window_calls = int(_WINDOW_CALLS)
         window_started = float(_WINDOW_STARTED_MONO or 0.0)
         circuit_reason = str(_CIRCUIT_REASON or "")
+        cache_hits = int(_CACHE_HITS)
+        cache_misses = int(_CACHE_MISSES)
+        cache_entries = int(len(_RESPONSE_CACHE))
+        usage_input_tokens = int(_USAGE_INPUT_TOKENS)
+        usage_output_tokens = int(_USAGE_OUTPUT_TOKENS)
     window_seconds = _env_int("OPENAI_AI_WINDOW_SECONDS", 60, minimum=10, maximum=3600)
     max_calls = _env_int("OPENAI_AI_MAX_CALLS_PER_WINDOW", 6, minimum=0, maximum=10000)
     return {
@@ -373,6 +481,17 @@ def provider_status() -> dict[str, Any]:
             "max_calls": max_calls,
             "calls_used": window_calls,
             "window_age_seconds": max(0.0, now - window_started) if window_started else 0.0,
+        },
+        "cache": {
+            "entries": cache_entries,
+            "hits": cache_hits,
+            "misses": cache_misses,
+            "signal_ttl_seconds": _cache_ttl_seconds(deep=False),
+            "deep_ttl_seconds": _cache_ttl_seconds(deep=True),
+        },
+        "usage_totals": {
+            "input_tokens": usage_input_tokens,
+            "output_tokens": usage_output_tokens,
         },
         "circuit": {
             "open": circuit_remaining > 0,
