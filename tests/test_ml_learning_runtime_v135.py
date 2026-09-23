@@ -61,9 +61,13 @@ def test_two_slot_dedicated_role_can_use_zero_foreground_reserve() -> None:
 def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "db" / "session.py").read_text(encoding="utf-8")
-    assert '"analytics", "delivery", "outcome", "scheduler", "worker"' in source
+    role_block = source[source.index("_dedicated_noninteractive_db_roles"):source.index("_default_foreground_reserve")]
+    assert '"analytics", "scheduler"' in role_block
     assert "minimum=0" in source
-    assert '"frontdoor"' not in source[source.index("_dedicated_noninteractive_db_roles"):source.index("_default_foreground_reserve")]
+    assert '"worker"' not in role_block
+    assert '"delivery"' not in role_block
+    assert '"outcome"' not in role_block
+    assert '"frontdoor"' not in role_block
 
 
 def test_ml_training_is_nonblocking_and_multisource() -> None:
