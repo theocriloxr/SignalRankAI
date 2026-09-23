@@ -45,6 +45,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
                 except asyncio.TimeoutError:
                     pass
         tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
+    if _enabled("LEARNING_HISTORY_RETENTION_ENABLED", False):
+        from db.storage_maintenance import learning_history_maintenance_loop
+        tasks.append(
+            asyncio.create_task(
+                learning_history_maintenance_loop(),
+                name="learning-history-retention",
+            )
+        )
     if _enabled("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
         from services.continuous_improvement.scheduler import continuous_improvement_loop
         tasks.append(
