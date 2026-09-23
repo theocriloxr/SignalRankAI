@@ -162,6 +162,62 @@ def test_gemini_429_opens_process_circuit(monkeypatch):
     assert "rate_limited_circuit_open" in second[2]
 
 
+def test_gemini_404_opens_provider_config_circuit(monkeypatch):
+    from engine import core
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_ENABLED", "1")
+    monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", "1")
+    monkeypatch.setenv("GEMINI_CONFIG_ERROR_COOLDOWN_SECONDS", "3600")
+    monkeypatch.setenv("QUALITY_MIN_LOCAL_AI_SCORE", "1")
+
+    core._GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
+    core._GEMINI_CIRCUIT_REASON = ""
+    core._GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
+    core._GEMINI_REVIEW_WINDOW_CALLS = 0
+    calls = {"count": 0}
+
+    def _missing_model(*args, **kwargs):
+        calls["count"] += 1
+        raise urllib.error.HTTPError(
+            url="https://example.invalid",
+            code=404,
+            msg="model not found",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(core.urllib.request, "urlopen", _missing_model)
+    signal = {
+        "asset": "BTCUSDT",
+        "timeframe": "5m",
+        "direction": "long",
+        "entry": 100.0,
+        "stop_loss": 99.0,
+        "take_profit": [102.0],
+        "score": 95.0,
+        "rr_ratio": 2.0,
+    }
+    candles = [{"close": 100.0}] * 100
+
+    first = asyncio.run(core._gemini_review_signal(signal, candles, None))
+    second = asyncio.run(core._gemini_review_signal(signal, candles, None))
+
+    assert calls["count"] == 1
+    assert "provider_http_404_degraded" in first[2]
+    assert "provider_http_404_circuit_open" in second[2]
+
+
+def test_analytics_role_owns_continuous_improvement_scheduler():
+    import inspect
+    from runtime import analytics
+
+    source = inspect.getsource(analytics.run_async)
+    assert "CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED" in source
+    assert "continuous_improvement_loop" in source
+    assert "continuous-improvement-review" in source
+
+
 def test_production_runtime_rejects_public_testing_mode():
     import ast
     import os
