@@ -120,10 +120,14 @@ def _promotion_quality_gate(
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
     majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
+    # Do not require raw accuracy to beat the majority-class baseline. On an
+    # imbalanced outcome set that condition rewards predicting the dominant
+    # class and can reject a genuinely useful minority-class model. The
+    # imbalance-aware gates below (balanced accuracy, positive recall, PR-AUC)
+    # plus expected-R are the actual protection against majority collapse.
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and accuracy > majority_baseline
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
         and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
@@ -1504,8 +1508,15 @@ async def main(lookback_days: int | None = None):
     if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
-            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
+            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
+            "majority_baseline=%s balanced_accuracy=%s positive_recall=%s "
+            "pr_auc=%s expected_r=%s current_model_preserved=true",
             run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+            metrics.get("majority_baseline_accuracy"),
+            metrics.get("balanced_accuracy"),
+            metrics.get("positive_recall"),
+            metrics.get("pr_auc"),
+            metrics.get("expected_r"),
         )
         return False
 
