@@ -193,7 +193,7 @@ async def run_external_codex_aggregate_review(
         "model": (
             os.getenv("OPENAI_CODEX_REVIEW_MODEL")
             or os.getenv("OPENAI_DEEP_MODEL")
-            or "gpt-5.6-sol"
+            or "gpt-6-sol"
         ).strip(),
         "input": [
             {
