@@ -97,8 +97,8 @@ required environment variable in this codebase.
 
 ```text
 GEMINI_API_KEY=<required for Gemini analysis>
-GEMINI_MODEL=gemini-2.0-flash
-GEMINI_SIGNAL_REVIEW_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_SIGNAL_REVIEW_MODEL=gemini-3.8-flash
 GEMINI_API_TIMEOUT_SECONDS=8
 GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC=8
 GEMINI_SIGNAL_REVIEW_ENABLED=1
