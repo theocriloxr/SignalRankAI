@@ -87,6 +87,7 @@ def test_analytics_owned_workers_share_analytics_priority_lane() -> None:
 def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
+    artifact_store = (root / "ml" / "artifact_store.py").read_text(encoding="utf-8")
     session = (root / "db" / "session.py").read_text(encoding="utf-8")
     asset_learning = (root / "worker" / "asset_learning_worker.py").read_text(encoding="utf-8")
 
@@ -101,6 +102,9 @@ def test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait() -> No
     assert '"DB_ANALYTICS_MAX_CONCURRENT_SESSIONS"' in session
     assert "requested = max(requested, _dedicated_analytics_min_sessions())" in session
     assert "analytics_limit=_analytics_session_limit" in session
+    assert "def _artifact_db_priority()" in artifact_store
+    assert 'return "analytics"' in artifact_store
+    assert "priority=_artifact_db_priority()" in artifact_store
     assert "ASSET_LEARNING_DB_TIMEOUT_SECONDS" in asset_learning
     assert "drop_if_busy=False" in asset_learning
 
