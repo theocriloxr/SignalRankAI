@@ -2319,10 +2319,11 @@ def main_loop(DRY_RUN: bool = False):
                 from utils.async_runner import run_sync as _run_profile_demand_sync
 
                 async def _load_profile_demand():
+                    _metadata_timeout = max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                     async with _get_profile_demand_session(
-                        priority="background",
+                        priority="critical",
                         label="engine.profile_demand",
-                        timeout_seconds=max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                        timeout_seconds=_metadata_timeout,
                         drop_if_busy=False,
                     ) as _demand_session:
                         return await _get_profile_demand(
@@ -2332,7 +2333,10 @@ def main_loop(DRY_RUN: bool = False):
 
                 _profile_demand_snapshot = _run_profile_demand_sync(
                     _load_profile_demand(),
-                    timeout=max(5.0, float(os.getenv("PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "8") or 8)),
+                    timeout=max(
+                        _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                        float(os.getenv("PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "12") or 12),
+                    ),
                 )
                 logger.info(
                     "[engine_profile_demand] active_profiles=%s asset_classes=%s timeframes=%s preferred_assets=%s source=%s",
@@ -2361,10 +2365,11 @@ def main_loop(DRY_RUN: bool = False):
                 from db.pg_features import get_active_managed_assets
                 from utils.async_runner import run_sync as _run_sync
                 async def _fetch_managed():
+                    _metadata_timeout = max(3.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                     async with get_session(
-                        priority="background",
+                        priority="critical",
                         label="engine.managed_assets",
-                        timeout_seconds=max(3.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                        timeout_seconds=_metadata_timeout,
                         drop_if_busy=False,
                     ) as _session:
                         return await get_active_managed_assets(_session)
@@ -2374,7 +2379,10 @@ def main_loop(DRY_RUN: bool = False):
                         list(
                             _run_sync(
                                 _fetch_managed(),
-                                timeout=float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "5") or 5),
+                                timeout=max(
+                                    _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                                    float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "12") or 12),
+                                ),
                             )
                             or []
                         )
@@ -2398,10 +2406,11 @@ def main_loop(DRY_RUN: bool = False):
                     )
 
                     async def _fetch_database_universe():
+                        _metadata_timeout = max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                         async with _get_universe_session(
-                            priority="background",
+                            priority="critical",
                             label="engine.database_universe",
-                            timeout_seconds=max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0)),
+                            timeout_seconds=_metadata_timeout,
                             drop_if_busy=False,
                         ) as _universe_session:
                             return await load_database_universe(
@@ -2414,7 +2423,10 @@ def main_loop(DRY_RUN: bool = False):
                         _normalize_asset_symbol(s)
                         for s in list(_run_universe_sync(
                             _fetch_database_universe(),
-                            timeout=float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "7") or 7),
+                            timeout=max(
+                                _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                                float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "12") or 12),
+                            ),
                         ) or [])
                     ]
                     from data.class_universe import build_class_complete_universe, default_discoverers
