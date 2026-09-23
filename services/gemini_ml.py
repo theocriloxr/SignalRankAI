@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover - defensive import fallback
 # Setup Client (New SDK: google-genai)
 client = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
 
 # Try to import google.genai (new SDK), fallback gracefully
 try:
