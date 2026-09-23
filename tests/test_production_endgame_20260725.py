@@ -361,8 +361,11 @@ def test_engine_metadata_reads_wait_boundedly_under_db_contention():
         "engine.database_universe",
     ):
         pos = source.index(f'label="{label}"')
-        window = source[max(0, pos - 220): pos + 360]
-        assert "priority=\"background\"" in window
+        window = source[max(0, pos - 520): pos + 900]
+        # These reads determine which assets/timeframes the engine scans, so
+        # they are required engine metadata rather than droppable background
+        # maintenance. They still wait only for a bounded interval.
+        assert 'priority="critical"' in window
         assert "drop_if_busy=False" in window
         assert "ENGINE_METADATA_DB_TIMEOUT_SECONDS" in window
 
