@@ -318,22 +318,6 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start paper trading worker: %s", e)
 
-        # Bounded database retention is an operational reliability loop. It keeps
-        # append-only decision/rejection telemetry from exhausting the Postgres
-        # volume while preserving the configured hot window used by learning.
-        if _env_bool("LEARNING_HISTORY_RETENTION_ENABLED", False):
-            try:
-                from db.storage_maintenance import learning_history_maintenance_loop
-
-                _register_task(
-                    "learning_history_retention",
-                    lambda: learning_history_maintenance_loop(),
-                    restart_on_failure=True,
-                )
-                logger.info("[worker] LearningHistoryRetention started")
-            except Exception as e:
-                logger.warning("[worker] Failed to start learning-history retention loop: %s", e)
-
         # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
         if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:
