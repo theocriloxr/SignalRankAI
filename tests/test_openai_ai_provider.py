@@ -98,7 +98,7 @@ async def test_openai_signal_review_uses_responses_structured_output_and_no_stor
 
     assert result["ok"] is True
     assert result["provider"] == "openai"
-    assert result["model"] == "gpt-5.6-terra"
+    assert result["model"] == "gpt-6-luna"
     assert result["data"]["score"] == pytest.approx(8.8)
     call = _FakeAsyncClient.captured[-1]
     body = call["json"]
@@ -210,16 +210,16 @@ def test_openai_provider_status_is_secret_safe(monkeypatch):
     import services.openai_ai as ai
 
     monkeypatch.setenv("OPENAI_API_KEY", "super-secret-openai-key")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.6-terra")
-    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-5.6-sol")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_DEEP_MODEL", "gpt-6-sol")
     status = ai.provider_status()
 
     assert status["configured"] is True
     assert status["available"] is True
     assert status["responses_api"] is True
     assert status["store"] is False
-    assert status["signal_model"] == "gpt-5.6-terra"
-    assert status["deep_model"] == "gpt-5.6-sol"
+    assert status["signal_model"] == "gpt-6-luna"
+    assert status["deep_model"] == "gpt-6-sol"
     serialized = json.dumps(status)
     assert "super-secret-openai-key" not in serialized
     assert "OPENAI_API_KEY" not in serialized
@@ -295,3 +295,13 @@ def test_start_script_honors_railway_run_mode_truthy_aliases():
     assert "web|worker|engine|bot|delivery|outcome|analytics|scheduler)" in source
     assert 'exec python main.py' in source
 
+
+
+def test_readyz_exposes_secret_safe_optional_openai_status():
+    source = Path("railway_main.py").read_text(encoding="utf-8")
+    ready = source[source.index('async def _readyz_endpoint'):source.index('async def _telegram_webhook_route')]
+    assert 'from services.openai_ai import provider_status as _openai_provider_status' in ready
+    assert 'OPENAI_REQUIRED_FOR_READINESS' in ready
+    assert 'checks["openai_ai"]' in ready
+    assert '"not_configured_optional"' in ready
+    assert 'OPENAI_API_KEY' not in ready

@@ -2904,6 +2904,36 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "ml_calibration": ml_calibration,
     }
 
+    # Secret-safe AI provider observability. OpenAI is optional by default
+    # because Gemini/local fallback keeps trading analysis available when the
+    # owner has not connected an OpenAI key yet. Set
+    # OPENAI_REQUIRED_FOR_READINESS=1 only after the key is provisioned and
+    # /ai_test has verified connectivity.
+    try:
+        from services.openai_ai import provider_status as _openai_provider_status
+
+        _openai_status = dict(_openai_provider_status() or {})
+        _openai_required = _env_bool("OPENAI_REQUIRED_FOR_READINESS", False)
+        checks["openai_ai"] = {
+            **_openai_status,
+            "required": _openai_required,
+            "ok": bool(_openai_status.get("available")) if _openai_required else True,
+            "detail": (
+                "available"
+                if _openai_status.get("available")
+                else ("not_configured_optional" if not _openai_required else "required_but_unavailable")
+            ),
+        }
+    except Exception as exc:
+        _openai_required = _env_bool("OPENAI_REQUIRED_FOR_READINESS", False)
+        checks["openai_ai"] = {
+            "ok": not _openai_required,
+            "required": _openai_required,
+            "configured": False,
+            "available": False,
+            "detail": f"provider_status_failed:{type(exc).__name__}",
+        }
+
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
     allow_shared_dev = (
         not production
