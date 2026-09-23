@@ -217,6 +217,14 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     assert "provider_http_404_circuit_open" in second[2]
 
 
+def test_delivery_worker_does_not_own_learning_retention():
+    from pathlib import Path
+
+    source = Path("worker/worker.py").read_text(encoding="utf-8")
+    assert "LearningHistoryRetention started" not in source
+    assert '"learning_history_retention"' not in source
+
+
 def test_analytics_role_owns_continuous_improvement_scheduler():
     import inspect
     from runtime import analytics
