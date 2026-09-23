@@ -54,6 +54,8 @@ _TWELVEDATA_REFERENCE_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _TWELVEDATA_REFERENCE_CACHE_LOCK = threading.Lock()
 _TWELVEDATA_SYMBOL_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
 _TWELVEDATA_SYMBOL_PROBE_CACHE_LOCK = threading.Lock()
+_YAHOO_SYMBOL_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+_YAHOO_SYMBOL_PROBE_CACHE_LOCK = threading.Lock()
 
 
 def _record_provider_symbols(symbols: list[str], provider: str) -> list[str]:
@@ -673,6 +675,72 @@ def _twelvedata_probe_configured(symbols: list[str]) -> list[str]:
 
 
 
+def _yahoo_verified_configured(symbols: list[str]) -> list[str]:
+    """Verify configured symbols against Yahoo's timestamped chart feed."""
+    if not symbols:
+        return []
+    try:
+        from services.asset_mapper import map_symbol
+    except Exception:
+        return []
+
+    ttl = max(60.0, float(os.getenv("YAHOO_REFERENCE_CACHE_SECONDS", "1800") or 1800))
+    now = time.time()
+
+    def _probe(canonical: str) -> tuple[str, bool]:
+        canonical = str(canonical or "").upper().strip()
+        provider_symbol = str(map_symbol(canonical, "yfinance") or "").strip()
+        if not canonical or not provider_symbol:
+            return canonical, False
+        cache_key = provider_symbol.upper()
+        with _YAHOO_SYMBOL_PROBE_CACHE_LOCK:
+            cached = _YAHOO_SYMBOL_PROBE_CACHE.get(cache_key)
+            if cached and now - float(cached[0]) < ttl:
+                return canonical, bool(cached[1])
+
+        ok = False
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{provider_symbol}",
+                params={"range": "5d", "interval": "1d", "includePrePost": "false"},
+                headers={"User-Agent": "Mozilla/5.0 SignalRankAI/1.0"},
+                timeout=8,
+            )
+            payload = response.json() if response.ok else {}
+            chart = payload.get("chart") if isinstance(payload, dict) else None
+            result = chart.get("result") if isinstance(chart, dict) else None
+            first = result[0] if isinstance(result, list) and result else {}
+            timestamps = first.get("timestamp") if isinstance(first, dict) else None
+            indicators = first.get("indicators") if isinstance(first, dict) else None
+            quotes = indicators.get("quote") if isinstance(indicators, dict) else None
+            quote = quotes[0] if isinstance(quotes, list) and quotes else {}
+            closes = quote.get("close") if isinstance(quote, dict) else None
+            ok = bool(
+                response.ok
+                and isinstance(timestamps, list)
+                and timestamps
+                and isinstance(closes, list)
+                and any(value is not None for value in closes)
+            )
+        except Exception:
+            ok = False
+
+        with _YAHOO_SYMBOL_PROBE_CACHE_LOCK:
+            _YAHOO_SYMBOL_PROBE_CACHE[cache_key] = (now, ok)
+        return canonical, ok
+
+    confirmed: list[str] = []
+    workers = min(4, max(1, len(symbols)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_probe, symbol) for symbol in symbols]
+        for future in as_completed(futures):
+            canonical, ok = future.result()
+            if ok and canonical and canonical not in confirmed:
+                confirmed.append(canonical)
+    return _record_provider_symbols(confirmed, "yahoo")
+
+
+
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
@@ -962,8 +1030,9 @@ def get_trending_index_tickers(top_n=20):
         "metaapi",
     ) if discovered else []
     verified_manual = _twelvedata_verified_configured(manual_symbols, "indices")
+    yahoo_verified = _yahoo_verified_configured(manual_symbols)
     merged = _merge_provider_results(
-        [broker_indices, verified_manual, manual_symbols],
+        [broker_indices, verified_manual, yahoo_verified, manual_symbols],
         limit=max(1, int(top_n), len(manual_symbols)),
     )
     if merged:
