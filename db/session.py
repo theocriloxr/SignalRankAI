@@ -355,7 +355,7 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # starving interactive Telegram commands, signal delivery proof writes, or
 # signal storage. The value is intentionally smaller than the main gate.
 _dedicated_noninteractive_db_roles = {
-    "analytics", "delivery", "outcome", "scheduler", "worker",
+    "analytics", "scheduler",
 }
 _default_foreground_reserve = (
     0
