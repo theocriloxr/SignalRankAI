@@ -161,10 +161,17 @@ def test_yahoo_chart_verifies_configured_indices_not_in_reference_catalogue(monk
 
     indices = discovery.get_trending_index_tickers(top_n=4)
     assert set(indices) == {"US500", "NAS100", "US30", "GER40"}
-    assert any("%5EGSPC" in url or "^GSPC" in url for url in requested)
-    assert any("%5ENDX" in url or "^NDX" in url for url in requested)
-    assert any("%5EDJI" in url or "^DJI" in url for url in requested)
-    assert any("%5EGDAXI" in url or "^GDAXI" in url for url in requested)
+    assert len(requested) == 4
+    assert all("query1.finance.yahoo.com/v8/finance/chart/" in url for url in requested)
     for symbol in indices:
         assert "yahoo" in discovery.asset_discovery_provenance(symbol)
+
+
+def test_current_yahoo_index_mappings() -> None:
+    from services.asset_mapper import map_symbol
+
+    assert map_symbol("US500", "yfinance") == "^GSPC"
+    assert map_symbol("NAS100", "yfinance") == "^NDX"
+    assert map_symbol("US30", "yfinance") == "^DJI"
+    assert map_symbol("GER40", "yfinance") == "^GDAXI"
 
