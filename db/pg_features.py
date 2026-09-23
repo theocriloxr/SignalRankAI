@@ -1041,22 +1041,36 @@ async def get_or_create_signal_impl(
                 Signal.asset == asset,
                 Signal.direction == direction,
                 Signal.timeframe == timeframe,
-                Signal.expired.is_(False),
-                Signal.archived.is_(False),
+                Signal.status == "active",
             )
             .order_by(Signal.created_at.desc())
             .limit(1)
         )
     ).scalars().first()
     if exact_active is not None:
-        logger.info(
-            "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
-            asset,
-            timeframe,
-            direction,
-            exact_active.signal_id,
-        )
-        return exact_active
+        # The partial unique index is WHERE status='active'. A legacy/inconsistent
+        # row may therefore block INSERT even when expired/archived flags already
+        # say it is inactive. Clear that stale index membership under the same
+        # exact-bucket advisory lock; otherwise reuse the canonical active row.
+        if bool(exact_active.expired) or bool(exact_active.archived):
+            exact_active.status = "superseded"
+            await session.flush()
+            logger.info(
+                "[dedup] reconciled stale active-index row asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+        else:
+            logger.info(
+                "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+            return exact_active
 
     logger.info(
         "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
