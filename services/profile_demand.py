@@ -155,8 +155,10 @@ def aggregate_profile_demand(
     for user_id, sources in records.items():
         if active_user_ids is not None and int(user_id) not in active_user_ids:
             continue
+        modern_payload = _payload(sources.get("modern"))
+        modern_payload.update(_payload(sources.get("canonical")))
         merged = merge_preference_payloads(
-            _payload(sources.get("modern")),
+            modern_payload,
             _payload(sources.get("legacy")),
             sources.get("profile"),
         )
@@ -189,13 +191,46 @@ def aggregate_profile_demand(
 
 
 async def load_profile_demand(session) -> ProfileDemandSnapshot:
+    """Load one demand profile per canonical platform user.
+
+    Telegram-era runtime keys are mapped back to users.id. New web/mobile
+    preferences use trading_preferences_user:<users.id>. This prevents channel
+    identities from being counted twice and includes web-first users that have
+    not linked Telegram yet.
+    """
     records: dict[int, dict[str, Any]] = {}
+    active_user_ids: set[int] | None = None
+    telegram_to_user: dict[int, int] = {}
+    try:
+        active_result = await session.execute(
+            text(
+                """
+                SELECT id, telegram_user_id
+                FROM users
+                WHERE COALESCE(is_blocked, FALSE) IS FALSE
+                  AND COALESCE(is_suspended, FALSE) IS FALSE
+                """
+            )
+        )
+        active_rows = active_result.all()
+        active_user_ids = {int(row[0]) for row in active_rows if row[0] is not None}
+        telegram_to_user = {
+            int(row[1]): int(row[0])
+            for row in active_rows
+            if row[0] is not None and row[1] is not None
+        }
+        for active_user_id in active_user_ids:
+            records.setdefault(active_user_id, {})
+    except Exception:
+        active_user_ids = None
+
     result = await session.execute(
         text(
             """
             SELECT key, value
             FROM runtime_state
-            WHERE key LIKE 'trading_preferences:%'
+            WHERE key LIKE 'trading_preferences_user:%'
+               OR key LIKE 'trading_preferences:%'
                OR key LIKE 'user_prefs:%'
                OR key LIKE 'trade_profile:%'
             """
@@ -213,37 +248,29 @@ async def load_profile_demand(session) -> ProfileDemandSnapshot:
             key, value = str(mapping.get("key") or ""), mapping.get("value")
         prefix, _, suffix = key.partition(":")
         try:
-            user_id = int(suffix)
+            raw_id = int(suffix)
         except Exception:
             continue
-        label = {
-            "trading_preferences": "modern",
-            "user_prefs": "legacy",
-            "trade_profile": "profile",
-        }.get(prefix)
+        if prefix == "trading_preferences_user":
+            canonical_id = raw_id
+            label = "canonical"
+        else:
+            canonical_id = telegram_to_user.get(raw_id)
+            if canonical_id is None:
+                # Preserve pre-platform Telegram-only records when the users
+                # lookup is unavailable, but never collide them with known
+                # canonical IDs when the mapping is available.
+                if active_user_ids is not None:
+                    continue
+                canonical_id = raw_id
+            label = {
+                "trading_preferences": "modern",
+                "user_prefs": "legacy",
+                "trade_profile": "profile",
+            }.get(prefix)
         if label:
-            records.setdefault(user_id, {})[label] = value
+            records.setdefault(int(canonical_id), {})[label] = value
 
-    active_user_ids: set[int] | None = None
-    try:
-        active_result = await session.execute(
-            text(
-                """
-                SELECT telegram_user_id
-                FROM users
-                WHERE COALESCE(is_blocked, FALSE) IS FALSE
-                  AND COALESCE(is_suspended, FALSE) IS FALSE
-                """
-            )
-        )
-        active_user_ids = {int(row[0]) for row in active_result.all()}
-        # Active users without an explicit preference record still require the
-        # canonical default profile. Otherwise one highly customized user could
-        # accidentally narrow the shared discovered universe for everybody else.
-        for active_user_id in active_user_ids:
-            records.setdefault(int(active_user_id), {})
-    except Exception:
-        active_user_ids = None
     return aggregate_profile_demand(records, active_user_ids=active_user_ids)
 
 

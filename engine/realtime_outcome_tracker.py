@@ -102,6 +102,10 @@ def _database_tp_progress(lifecycle: Any, outcome: Any) -> int:
     )
 
     progress = highest_tp_for_state(getattr(lifecycle, "state", None))
+    try:
+        progress = max(progress, int(getattr(lifecycle, "highest_tp_hit", 0) or 0))
+    except Exception:
+        pass
     progress = max(
         progress,
         highest_tp_for_state(lifecycle_state_for_outcome(getattr(outcome, "status", None))),
@@ -981,7 +985,13 @@ async def _mark_risk_free_recipient_triggered(
 
 
 async def _get_tp_progress(signal: Dict[str, Any]) -> int:
-    """Return DB-authoritative TP progress; Redis remains projection-only."""
+    """Return monotonic TP progress from durable state plus the Redis projection.
+
+    Database state remains authoritative. Redis is read only as a short-lived
+    monotonic projection so a lifecycle row repaired in one scan cannot be
+    rediscovered as TP1/TP2 on every subsequent scan while DB projections catch
+    up.
+    """
     from core.signal_lifecycle import highest_tp_for_state, lifecycle_state_for_outcome
 
     try:
@@ -995,6 +1005,13 @@ async def _get_tp_progress(signal: Dict[str, Any]) -> int:
         highest_tp_for_state(signal.get("lifecycle_state")),
         highest_tp_for_state(lifecycle_state_for_outcome(signal.get("prev_outcome_status"))),
     )
+    try:
+        from core.redis_state import state
+        cached = await state.cache_get(_tp_progress_cache_key(str(signal.get("signal_id") or "")))
+        if cached is not None:
+            durable = max(durable, int(cached))
+    except Exception:
+        pass
     return max(0, min(3, int(durable)))
 
 
@@ -1974,9 +1991,10 @@ class RealtimeOutcomeTracker:
                     await self._check_signal(sig, observation=quotes.get(asset))
                 except Exception as exc:
                     logger.exception(
-                        "[outcome_tracker] signal_check_failed signal=%s asset=%s error=%s",
+                        "[outcome_tracker] signal_check_failed signal=%s asset=%s error_type=%s error=%r",
                         signal_id,
                         asset,
+                        type(exc).__name__,
                         exc,
                     )
                     return
@@ -2251,10 +2269,7 @@ class RealtimeOutcomeTracker:
                     # the monotonic TP state actually advances.
                     await publish_snapshot()
                     return
-                logger.info(
-                    "[outcome_tracker] Hit detected: %s -> %s @ %.5f (entry=%.5f sl=%.5f)",
-                    signal_id[:8], hit_l, price, entry, sl,
-                )
+                advanced_stages: list[int] = []
                 for tp_index in range(prev_tp + 1, target_tp + 1):
                     event_type = f"tp{tp_index}_hit"
                     event_price = float(tp_levels[tp_index - 1])
@@ -2271,12 +2286,23 @@ class RealtimeOutcomeTracker:
                         },
                     )
                     if not accepted and lifecycle_cas_enabled:
+                        # record_lifecycle_event repairs stale lifecycle rows when
+                        # the event already exists. Cache that durable stage so
+                        # repeated scans do not rediscover/log the same target.
+                        await _set_tp_progress(signal_id, tp_index)
+                        prev_tp = max(prev_tp, tp_index)
                         continue
                     await _persist_outcome(signal_id, f"tp{tp_index}", entry, event_price)
                     await _set_tp_progress(signal_id, tp_index)
                     prev_tp = tp_index
+                    advanced_stages.append(tp_index)
                     lifecycle_state = event_state(event_type)
                     signal["lifecycle_state"] = lifecycle_state
+                if advanced_stages:
+                    logger.info(
+                        "[outcome_tracker] Hit committed: %s -> tp%d @ %.5f (entry=%.5f sl=%.5f)",
+                        signal_id[:8], max(advanced_stages), price, entry, sl,
+                    )
                 await publish_snapshot()
                 return
 

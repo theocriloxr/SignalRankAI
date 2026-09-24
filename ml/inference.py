@@ -200,6 +200,9 @@ class MLFilter:
         self.calibration_x = None
         self.calibration_y = None
         self.calibration_kind = None
+        self.metrics = {}
+        self.classification_threshold = None
+        self.last_raw_probability = None
         try:
             model_data = None
             model_path = _resolve_model_path()
@@ -228,6 +231,12 @@ class MLFilter:
             self.calibration_kind = str(model_data.get("calibration_kind") or "")
             self.calibration_x = model_data.get("calibration_x") or []
             self.calibration_y = model_data.get("calibration_y") or []
+            self.metrics = dict(model_data.get("metrics") or {})
+            try:
+                raw_threshold = self.metrics.get("classification_threshold")
+                self.classification_threshold = float(raw_threshold) if raw_threshold is not None else None
+            except Exception:
+                self.classification_threshold = None
             
             if not model_b64:
                 self.active = False
@@ -270,6 +279,22 @@ class MLFilter:
             pass
         return float(probability)
 
+    def recommended_raw_threshold(self) -> float | None:
+        """Return the model-certified decision threshold in raw-model space."""
+        try:
+            value = float(self.classification_threshold)
+        except Exception:
+            return None
+        if not 0.0 < value < 1.0:
+            return None
+        return value
+
+    @staticmethod
+    def raw_probability_passes(raw_probability: float, threshold: float | None) -> bool:
+        if threshold is None:
+            return True
+        return float(raw_probability) >= float(threshold)
+
     def ml_filter(self, features, threshold: float | None = None):
         """
         Filter signals through ML model.
@@ -304,8 +329,9 @@ class MLFilter:
                 np.array([feature_vector], dtype=np.float32),
                 feature_names=list(self.feature_cols or []),
             )
-            prob = self.model.predict(dmatrix)[0]
-            prob = self._apply_calibration(float(prob))
+            raw_prob = float(self.model.predict(dmatrix)[0])
+            self.last_raw_probability = raw_prob
+            prob = self._apply_calibration(raw_prob)
             if threshold is None:
                 return True, float(prob)
             try:
@@ -314,7 +340,10 @@ class MLFilter:
                 thresh_val = None
             if thresh_val is None:
                 return True, float(prob)
-            approved = prob >= thresh_val
+            # Training selects the classification cutoff in raw model space.
+            # Keep the accept/reject decision in that same space; calibrated
+            # probability remains the confidence exposed downstream.
+            approved = self.raw_probability_passes(raw_prob, thresh_val)
             return approved, float(prob)
         except Exception as exc:
             if _fail_closed_on_unavailable():

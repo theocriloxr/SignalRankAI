@@ -36,6 +36,8 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_retries_quickly_after_background_contention \
       tests/test_runtime_hardening_contract.py::test_outcome_tracker_skips_reprocessing_already_recorded_tp \
+      tests/test_outcome_tracking_monotonic_repair.py \
+      tests/test_market_data_quality_firewall.py \
       tests/test_runtime_hardening_contract.py::test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default \
       tests/test_runtime_hardening_contract.py::test_analytics_owns_dynamic_instrument_catalogue_refresh \
       tests/test_phase4_pass2_db_priority_and_command_speed.py::test_dedicated_analytics_role_cannot_be_pinned_to_one_session \
@@ -58,6 +60,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ai_review_router_consensus.py \
       tests/test_ai_governance_hardening.py \
       tests/test_ml_calibration_audit.py \
+      tests/test_ml_serving_threshold_governance.py \
       tests/test_ml_registry.py \
       tests/test_ml_strict_schema.py \
       tests/test_ml_retrain_governance.py \
@@ -70,6 +73,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ml_artifact_store_timeout.py \
       tests/test_startup_selfcheck_secret_redaction.py \
       tests/test_web_first_signup_contract.py \
+      tests/test_cross_channel_profile_parity.py \
       tests/test_release_source_and_domain_bridge.py \
       tests/test_production_operations_package.py \
     && python scripts/production_readiness_check.py

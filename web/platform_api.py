@@ -24,6 +24,12 @@ from db.session import get_session, is_db_configured
 from services.security import encrypt_secret, is_encryption_available
 from services.platform.webhooks import validate_webhook_destination
 from core.tier_policy import evaluate_feature_access, get_entitlements, policy_snapshot
+from services.user_intelligence import (
+    get_platform_user_trading_preferences,
+    preferences_from_payload,
+    preferences_to_payload,
+    set_platform_user_trading_preferences,
+)
 from services.platform.identity import (
     AuthenticationError,
     IdentityConflict,
@@ -223,6 +229,28 @@ class ProfileUpdateRequest(BaseModel):
     max_risk_percentage: float | None = Field(default=None, ge=0.1, le=10.0)
     max_daily_drawdown_pct: float | None = Field(default=None, ge=0.5, le=50.0)
     marketing_consent: bool | None = None
+
+
+class TradingProfileUpdateRequest(BaseModel):
+    trade_profile: str | None = Field(default=None, max_length=32)
+    risk_profile: str | None = Field(default=None, max_length=32)
+    asset_classes: list[str] | None = Field(default=None, max_length=5)
+    preferred_assets: list[str] | None = Field(default=None, max_length=100)
+    blocked_assets: list[str] | None = Field(default=None, max_length=100)
+    preferred_timeframes: list[str] | None = Field(default=None, max_length=13)
+    preferred_strategies: list[str] | None = Field(default=None, max_length=50)
+    sessions: list[str] | None = Field(default=None, max_length=12)
+    notification_style: str | None = Field(default=None, max_length=32)
+    min_signal_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    max_signals_per_day: int | None = Field(default=None, ge=1, le=500)
+    risk_per_trade_pct: float | None = Field(default=None, ge=0.0, le=10.0)
+    max_daily_trades: int | None = Field(default=None, ge=0, le=500)
+    max_concurrent_positions: int | None = Field(default=None, ge=1, le=100)
+    max_daily_loss_pct: float | None = Field(default=None, ge=0.0, le=50.0)
+    notify_on_entry: bool | None = None
+    notify_on_exit: bool | None = None
+    notify_on_tp: bool | None = None
+    notify_on_sl: bool | None = None
 
 
 class OrganizationInviteRequest(BaseModel):
@@ -751,6 +779,9 @@ async def signal_feed(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
     asset: str | None = Query(default=None, max_length=32),
+    asset_class: str | None = Query(default=None, max_length=32),
+    timeframe: str | None = Query(default=None, max_length=16),
+    strategy: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, max_length=32),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
@@ -759,6 +790,17 @@ async def signal_feed(
     if asset:
         filters.append("s.asset=:asset")
         params["asset"] = asset.upper()
+    if asset_class:
+        class_aliases = {"forex": "fx", "equity": "stock", "equities": "stock", "indices": "index", "commodities": "commodity"}
+        normalized_class = class_aliases.get(asset_class.strip().lower(), asset_class.strip().lower())
+        filters.append("lower(COALESCE(s.asset_class,''))=:asset_class")
+        params["asset_class"] = normalized_class
+    if timeframe:
+        filters.append("lower(COALESCE(s.timeframe,''))=:timeframe")
+        params["timeframe"] = timeframe.strip().lower()
+    if strategy:
+        filters.append("lower(COALESCE(s.strategy_name,'')) LIKE :strategy")
+        params["strategy"] = f"%{strategy.strip().lower()}%"
     if status:
         filters.append("COALESCE(o.status,s.status)=:status")
         params["status"] = status.lower()
@@ -1616,6 +1658,90 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
         updated = await user_snapshot(session, int(user["id"]))
         await session.commit()
     return {"user": updated}
+
+
+@router.get("/trading-profile")
+async def trading_profile(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async with get_session() as session:
+        prefs = await get_platform_user_trading_preferences(session, int(user["id"]))
+        await session.rollback()
+    return {
+        "preferences": preferences_to_payload(prefs),
+        "options": {
+            "trade_profiles": ["all", "scalp", "day", "swing", "position"],
+            "risk_profiles": ["ultra_conservative", "conservative", "balanced", "aggressive"],
+            "asset_classes": ["crypto", "fx", "stock", "index", "commodity"],
+            "timeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"],
+            "sessions": ["auto", "asia", "london", "new_york", "overlap", "weekend"],
+        },
+    }
+
+
+@router.put("/trading-profile")
+async def update_trading_profile(
+    payload: TradingProfileUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    values = payload.model_dump(exclude_unset=True)
+    aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "stocks": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    allowed_classes = {"crypto", "fx", "stock", "index", "commodity"}
+    if "asset_classes" in values and values["asset_classes"] is not None:
+        normalized_classes = []
+        for value in values["asset_classes"]:
+            item = aliases.get(str(value or "").strip().lower(), str(value or "").strip().lower())
+            if item not in allowed_classes:
+                raise HTTPException(status_code=422, detail=f"Unsupported asset class: {value}")
+            if item not in normalized_classes:
+                normalized_classes.append(item)
+        if not normalized_classes:
+            raise HTTPException(status_code=422, detail="Choose at least one asset class")
+        values["asset_classes"] = normalized_classes
+
+    allowed_profiles = {"all", "scalp", "day", "swing", "position"}
+    if values.get("trade_profile") is not None:
+        profile = str(values["trade_profile"]).strip().lower()
+        if profile not in allowed_profiles:
+            raise HTTPException(status_code=422, detail="Unsupported trading profile")
+        values["trade_profile"] = profile
+
+    allowed_risk_profiles = {"ultra_conservative", "conservative", "balanced", "aggressive"}
+    if values.get("risk_profile") is not None:
+        risk_profile = str(values["risk_profile"]).strip().lower().replace("-", "_")
+        if risk_profile not in allowed_risk_profiles:
+            raise HTTPException(status_code=422, detail="Unsupported risk profile")
+        values["risk_profile"] = risk_profile
+
+    allowed_timeframes = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"}
+    if "preferred_timeframes" in values and values["preferred_timeframes"] is not None:
+        normalized_tfs = [str(value or "").strip().lower() for value in values["preferred_timeframes"] if str(value or "").strip()]
+        invalid = sorted(set(normalized_tfs) - allowed_timeframes)
+        if invalid:
+            raise HTTPException(status_code=422, detail=f"Unsupported timeframe(s): {', '.join(invalid)}")
+        values["preferred_timeframes"] = list(dict.fromkeys(normalized_tfs))
+
+    for key in ("preferred_assets", "blocked_assets"):
+        if key in values and values[key] is not None:
+            values[key] = list(dict.fromkeys(str(value or "").strip().upper() for value in values[key] if str(value or "").strip()))
+
+    for key in ("preferred_strategies", "sessions"):
+        if key in values and values[key] is not None:
+            values[key] = list(dict.fromkeys(str(value or "").strip().lower() for value in values[key] if str(value or "").strip()))
+
+    async with get_session() as session:
+        current = await get_platform_user_trading_preferences(session, int(user["id"]))
+        merged = preferences_to_payload(current)
+        merged.update(values)
+        updated = preferences_from_payload(merged)
+        await set_platform_user_trading_preferences(session, int(user["id"]), updated)
+        await session.commit()
+    return {"preferences": preferences_to_payload(updated)}
 
 
 @router.delete("/devices/{session_id}")
