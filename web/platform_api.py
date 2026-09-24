@@ -136,6 +136,33 @@ class CheckoutCreateRequest(BaseModel):
     currency: str = Field(default="NGN", pattern=r"^NGN$")
 
 
+class PaperSettingsUpdateRequest(BaseModel):
+    auto_trade_enabled: bool | None = None
+    risk_pct: float | None = Field(default=None, ge=0.1, le=10.0)
+    max_open_positions: int | None = Field(default=None, ge=1, le=100)
+    min_signal_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    spread_bps: float | None = Field(default=None, ge=0.0, le=500.0)
+    slippage_bps: float | None = Field(default=None, ge=0.0, le=500.0)
+    fee_bps: float | None = Field(default=None, ge=0.0, le=500.0)
+    target_mode: str | None = Field(default=None, pattern=r"^(?i:tp1|tp2|tp3)$")
+    allowed_directions: str | None = Field(default=None, pattern=r"^(both|long|short)$")
+    allowed_asset_classes: list[str] | None = Field(default=None, max_length=5)
+
+
+class PaperResetRequest(BaseModel):
+    starting_balance: float = Field(ge=50.0, le=100_000_000.0)
+    confirm: bool = False
+
+
+class PaperCloseAllRequest(BaseModel):
+    confirm: bool = False
+    allow_last_mark_fallback: bool = False
+
+
+class PaperRetryRequest(BaseModel):
+    signal_reference: str = Field(min_length=4, max_length=64)
+
+
 class WatchlistCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
@@ -1081,6 +1108,156 @@ async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[st
         ).mappings().all()
         await session.rollback()
     return {"account": dict(account or {}), "positions": [dict(row) for row in positions]}
+
+
+def _telegram_identity_or_409(user: dict[str, Any]) -> int:
+    telegram_user_id = user.get("telegram_user_id")
+    if telegram_user_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TELEGRAM_LINK_REQUIRED",
+                "message": "Link Telegram from Account before enabling automatic paper trading. Paper automation only uses delivery-proven signals sent to your account.",
+            },
+        )
+    return int(telegram_user_id)
+
+
+def _paper_snapshot_dict(snapshot: Any) -> dict[str, Any]:
+    if snapshot is None:
+        return {}
+    return {
+        "telegram_user_id": int(snapshot.telegram_user_id),
+        "starting_balance": float(snapshot.starting_balance),
+        "cash_balance": float(snapshot.cash_balance),
+        "equity": float(snapshot.equity),
+        "reserved_cash": float(snapshot.reserved_cash),
+        "unrealized_pnl": float(snapshot.unrealized_pnl),
+        "realized_pnl": float(snapshot.realized_pnl),
+        "open_positions": int(snapshot.open_positions),
+        "closed_positions": int(snapshot.closed_positions),
+        "auto_trade_enabled": bool(snapshot.auto_trade_enabled),
+        "risk_pct": float(snapshot.risk_pct),
+        "max_open_positions": int(snapshot.max_open_positions),
+        "min_signal_score": float(snapshot.min_signal_score),
+        "spread_bps": float(snapshot.spread_bps),
+        "slippage_bps": float(snapshot.slippage_bps),
+        "fee_bps": float(snapshot.fee_bps),
+        "target_mode": str(snapshot.target_mode),
+        "allowed_directions": str(snapshot.allowed_directions),
+        "allowed_asset_classes": list(snapshot.allowed_asset_classes or []),
+    }
+
+
+@router.get("/paper/detail")
+async def paper_detail(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    telegram_user_id = _telegram_identity_or_409(user)
+    from core.paper_trading_service import paper_trading_service
+
+    snapshot = await paper_trading_service.snapshot(telegram_user_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Paper account is unavailable")
+    performance = await paper_trading_service.performance(telegram_user_id) or {}
+    closed = await paper_trading_service.list_positions(telegram_user_id, status="closed", limit=50)
+    skipped = await paper_trading_service.list_positions(telegram_user_id, status="skipped", limit=20)
+    activity = await paper_trading_service.list_attempts(telegram_user_id, limit=30)
+    return {
+        "snapshot": _paper_snapshot_dict(snapshot),
+        "performance": performance,
+        "closed_positions": closed,
+        "skipped_positions": skipped,
+        "activity": activity,
+        "disclaimer": "Paper trading uses virtual funds only. It does not submit live broker orders.",
+    }
+
+
+@router.put("/paper/settings")
+async def paper_settings(
+    payload: PaperSettingsUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    telegram_user_id = _telegram_identity_or_409(user)
+    from core.paper_trading_service import paper_trading_service
+
+    values = payload.model_dump(exclude_unset=True)
+    if "target_mode" in values and values["target_mode"] is not None:
+        values["target_mode"] = str(values["target_mode"]).upper()
+    if "allowed_asset_classes" in values and values["allowed_asset_classes"] is not None:
+        aliases = {
+            "forex": "fx", "equity": "stock", "equities": "stock",
+            "stocks": "stock", "indices": "index", "commodities": "commodity",
+        }
+        allowed = {"crypto", "fx", "stock", "index", "commodity"}
+        normalized = []
+        for raw in values["allowed_asset_classes"]:
+            item = aliases.get(str(raw or "").strip().lower(), str(raw or "").strip().lower())
+            if item not in allowed:
+                raise HTTPException(status_code=422, detail=f"Unsupported asset class: {raw}")
+            if item not in normalized:
+                normalized.append(item)
+        values["allowed_asset_classes"] = normalized
+    try:
+        snapshot = await paper_trading_service.update_settings(telegram_user_id, **values)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Paper account is unavailable")
+    return {"snapshot": _paper_snapshot_dict(snapshot)}
+
+
+@router.post("/paper/close-all")
+async def paper_close_all(
+    payload: PaperCloseAllRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    if not payload.confirm:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    telegram_user_id = _telegram_identity_or_409(user)
+    from core.paper_trading_service import paper_trading_service
+
+    result = await paper_trading_service.close_all_positions(
+        telegram_user_id,
+        allow_last_mark_fallback=bool(payload.allow_last_mark_fallback),
+        reason="WEB_MANUAL_CLOSE_ALL_FORCE" if payload.allow_last_mark_fallback else "WEB_MANUAL_CLOSE_ALL",
+    )
+    snapshot = await paper_trading_service.snapshot(telegram_user_id)
+    return {"result": result, "snapshot": _paper_snapshot_dict(snapshot)}
+
+
+@router.post("/paper/reset")
+async def paper_reset(
+    payload: PaperResetRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    if not payload.confirm:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    telegram_user_id = _telegram_identity_or_409(user)
+    from core.paper_trading_service import paper_trading_service
+
+    try:
+        snapshot = await paper_trading_service.reset_account(telegram_user_id, payload.starting_balance)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Paper account is unavailable")
+    return {"snapshot": _paper_snapshot_dict(snapshot)}
+
+
+@router.post("/paper/retry")
+async def paper_retry(
+    payload: PaperRetryRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    telegram_user_id = _telegram_identity_or_409(user)
+    from core.paper_trading_service import paper_trading_service
+
+    accepted, reason = await paper_trading_service.request_retry(
+        telegram_user_id,
+        payload.signal_reference,
+    )
+    if not accepted:
+        raise HTTPException(status_code=409, detail=reason)
+    return {"accepted": True, "reason": reason}
 
 
 @router.get("/instruments/search")
