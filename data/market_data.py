@@ -762,56 +762,95 @@ def _timeframe_to_seconds(tf: str) -> int:
 
 
 def _validate_ohlcv(candles: list) -> bool:
-    """Validate OHLCV data integrity.
-    
-    Returns True if all candles pass validation, False otherwise.
+    """Fail closed on universally invalid OHLCV before strategy/ML use.
+
+    Provider-specific market behaviour is intentionally not judged here. This
+    gate only rejects impossible/non-finite prices, invalid volumes and broken
+    temporal ordering/duplication. Staleness is checked separately.
     """
     if not candles:
         return True
-    
-    # Allow tiny floating-point tolerance to avoid false negatives from providers.
+
+    import math
+    from datetime import datetime as _dt
+
     eps = 1e-6
+    timestamps: list[float] = []
+
+    def _timestamp_seconds(raw):
+        if raw in (None, ""):
+            return None
+        try:
+            if isinstance(raw, _dt):
+                value = raw.timestamp()
+            elif isinstance(raw, (int, float)):
+                value = float(raw)
+            else:
+                text_value = str(raw).strip().replace("Z", "+00:00")
+                try:
+                    value = float(text_value)
+                except ValueError:
+                    value = _dt.fromisoformat(text_value).timestamp()
+            while value > 10_000_000_000:
+                value /= 1000.0
+            return value if math.isfinite(value) and value > 0 else None
+        except Exception:
+            return None
 
     for i, c in enumerate(candles):
-        try:
-            o = float(c.get("open", 0))
-            h = float(c.get("high", 0))
-            l = float(c.get("low", 0))
-            close = float(c.get("close", 0))
-            
-            # Validate high >= low (fundamental relationship)
-            if h + eps < l:
-                logger.warning(f"OHLCV validation failed at candle {i}: high={h} < low={l}")
-                return False
-            
-            # Validate high >= max(open, close)
-            if h + eps < max(o, close):
-                logger.warning(f"OHLCV validation failed at candle {i}: high={h} < max(open={o}, close={close})")
-                return False
-            
-            # Validate low <= min(open, close)
-            if l - eps > min(o, close):
-                logger.warning(f"OHLCV validation failed at candle {i}: low={l} > min(open={o}, close={close})")
-                return False
-        except (ValueError, TypeError) as e:
-            logger.warning(f"OHLCV validation failed at candle {i}: {e}")
+        if not isinstance(c, dict):
+            logger.warning("OHLCV validation failed at candle %d: row is not a mapping", i)
             return False
-    
-    # Validate candles are sorted by timestamp ascending
-    timestamps = []
-    for c in candles:
-        ts = c.get("timestamp")
-        if ts is not None:
-            # Handle both ms and seconds
-            ts_val = int(ts) if isinstance(ts, (int, float)) else 0
-            if ts_val > 10**12:  # milliseconds
-                ts_val = ts_val // 1000
-            timestamps.append(ts_val)
-    
-    if timestamps and timestamps != sorted(timestamps):
-        logger.warning("OHLCV validation failed: candles not sorted by timestamp ascending")
-        return False
-    
+        try:
+            o = float(c.get("open"))
+            h = float(c.get("high"))
+            l = float(c.get("low"))
+            close = float(c.get("close"))
+        except (ValueError, TypeError):
+            logger.warning("OHLCV validation failed at candle %d: non-numeric price", i)
+            return False
+
+        if not all(math.isfinite(v) and v > 0 for v in (o, h, l, close)):
+            logger.warning("OHLCV validation failed at candle %d: non-positive/non-finite price", i)
+            return False
+        if h + eps < l:
+            logger.warning("OHLCV validation failed at candle %d: high=%s < low=%s", i, h, l)
+            return False
+        if h + eps < max(o, close):
+            logger.warning("OHLCV validation failed at candle %d: high below open/close", i)
+            return False
+        if l - eps > min(o, close):
+            logger.warning("OHLCV validation failed at candle %d: low above open/close", i)
+            return False
+
+        try:
+            volume = float(c.get("volume") or 0.0)
+        except (ValueError, TypeError):
+            logger.warning("OHLCV validation failed at candle %d: invalid volume", i)
+            return False
+        if not math.isfinite(volume) or volume < 0:
+            logger.warning("OHLCV validation failed at candle %d: negative/non-finite volume", i)
+            return False
+
+        raw_ts = c.get("timestamp", c.get("time"))
+        if raw_ts is not None:
+            ts = _timestamp_seconds(raw_ts)
+            if ts is None:
+                logger.warning("OHLCV validation failed at candle %d: invalid timestamp", i)
+                return False
+            timestamps.append(ts)
+
+    if timestamps:
+        if len(timestamps) != len(candles):
+            logger.warning("OHLCV validation failed: partial timestamp coverage")
+            return False
+        if timestamps != sorted(timestamps):
+            logger.warning("OHLCV validation failed: candles not sorted by timestamp ascending")
+            return False
+        if len(timestamps) != len(set(timestamps)):
+            logger.warning("OHLCV validation failed: duplicate candle timestamps")
+            return False
+
     return True
 
 
