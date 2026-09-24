@@ -67,6 +67,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ml_training_dataset_timeout.py \
       tests/test_ml_durable_artifact_sync.py \
       tests/test_ml_shadow_learning_labels.py \
+      tests/test_ml_artifact_store_timeout.py \
       tests/test_startup_selfcheck_secret_redaction.py \
       tests/test_production_operations_package.py \
     && python scripts/production_readiness_check.py
