@@ -853,12 +853,11 @@ class Worker:
                     minimum_features=max(1, int(os.getenv("ML_DRIFT_MIN_EVALUATED_FEATURES", "5") or 5)),
                 )
                 result["source"] = drift_source
-                if "live_predictions" not in locals():
-                    try:
-                        from ml.live_drift import load_live_prediction_samples
-                        live_predictions = load_live_prediction_samples()
-                    except Exception:
-                        live_predictions = []
+                try:
+                    from ml.live_drift import load_live_prediction_samples
+                    live_predictions = load_live_prediction_samples()
+                except Exception:
+                    live_predictions = []
                 prediction_health = detect_prediction_starvation(
                     list(live_predictions or []),
                     minimum_samples=max(
