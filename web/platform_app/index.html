@@ -31,9 +31,10 @@
       <button data-view="signals">Signals</button>
       <button data-view="evidence">Evidence</button>
       <button data-view="markets">Markets</button>
-      <button data-view="paper">Paper</button>
-      <button data-view="portfolio">Portfolio</button>
-      <button data-view="performance">Performance</button>
+      <button data-view="tools">Tools</button>
+      <button data-view="paper" data-feature="paper_trading">Paper</button>
+      <button data-view="portfolio" data-feature="portfolio_analytics">Portfolio</button>
+      <button data-view="performance" data-feature="performance_analytics">Performance</button>
       <button data-view="journal">Journal</button>
       <button data-view="support">Support</button>
       <button data-view="account">Account</button>
@@ -131,6 +132,10 @@
         <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
         <div class="filters signal-filters"><input id="signalAssetFilter" placeholder="Asset e.g. EURUSD" /><select id="signalClassFilter"><option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="stock">Stocks / equities</option><option value="index">Indices</option><option value="commodity">Commodities</option></select><select id="signalTimeframeFilter"><option value="">All timeframes</option><option>1m</option><option>3m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><input id="signalStrategyFilter" placeholder="Strategy" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
         <div id="signalsTable" class="table-wrap"></div>
+        <article id="signalDetailPanel" class="panel signal-detail-panel" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">DELIVERY PROOF & LIFECYCLE</p><h2 id="signalDetailTitle">Signal detail</h2></div><button id="closeSignalDetail" class="ghost" type="button">Close</button></div>
+          <div id="signalDetailBody"></div>
+        </article>
       </section>
 
       <section id="evidenceView" class="view" hidden>
@@ -186,10 +191,75 @@
         <div id="marketResults" class="market-grid"></div>
       </section>
 
+      <section id="toolsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">CROSS-CHANNEL TOOLKIT</p><h2>Market & account tools</h2><p>Use the same account data and market providers as Telegram without leaving the website.</p></div><span class="status-pill">WEB + TELEGRAM</span></div>
+        <div class="tools-grid">
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">LIVE DATA</p><h3>Live quote</h3></div><span class="tool-icon" aria-hidden="true">⌁</span></div>
+            <form id="liveQuoteForm" class="inline-form"><input name="asset" placeholder="EURUSD, BTCUSDT, XAUUSD, AAPL…" maxlength="32" required /><button class="primary">Get quote</button></form>
+            <div id="liveQuoteResult" class="tool-result muted">Provider-attributed price, freshness and health will appear here.</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">WEEKLY PROOF</p><h3>Your recap</h3></div><button id="refreshRecap" class="ghost" type="button">Refresh</button></div>
+            <div id="weeklyRecap" class="tool-result muted">Loading your delivery-proven week…</div>
+          </article>
+          <article class="panel tool-card tool-wide">
+            <div class="tool-heading"><div><p class="eyebrow">PREMIUM ANALYSIS</p><h3>AI-assisted market analysis</h3><p>Deterministic strategy evidence first; OpenAI explains the setup when available. This never bypasses the delivery or risk gates.</p></div><span class="tier-chip">PREMIUM+</span></div>
+            <form id="aiAnalyzeForm" class="analysis-form"><input name="asset" placeholder="Asset e.g. EURUSD" maxlength="32" required /><select name="timeframe"><option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option></select><button class="primary">Analyze market</button></form>
+            <div id="aiAnalysisResult" class="tool-result muted">No analysis requested yet.</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">WATCHLISTS</p><h3>Tracked markets</h3></div></div>
+            <form id="watchlistForm" class="inline-form"><input name="name" placeholder="Watchlist name" maxlength="100" required /><button class="primary">Create</button></form>
+            <div id="watchlistList" class="tool-result muted">Loading watchlists…</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">PREMIUM ALERTS</p><h3>Market alerts</h3></div><span class="tier-chip">PREMIUM+</span></div>
+            <form id="alertForm" class="stack-form">
+              <label>Asset<input name="asset" placeholder="BTCUSDT" maxlength="32" required /></label>
+              <label>Alert<select name="alert_type"><option value="price_above">Price above</option><option value="price_below">Price below</option><option value="signal_generated">New qualified signal</option><option value="entry_triggered">Entry triggered</option><option value="outcome">Outcome update</option><option value="provider_status">Provider status</option></select></label>
+              <label id="alertValueLabel">Threshold<input name="value" type="number" step="any" min="0" /></label>
+              <div class="form-actions"><button class="primary">Create alert</button></div>
+            </form>
+            <div id="alertList" class="tool-result muted">Loading alerts…</div>
+          </article>
+          <article class="panel tool-card tool-wide">
+            <div class="tool-heading"><div><p class="eyebrow">INBOX</p><h3>Notification center</h3></div><button id="refreshNotifications" class="ghost" type="button">Refresh</button></div>
+            <div id="notificationCenter" class="data-list"><p class="muted">Loading notifications…</p></div>
+          </article>
+        </div>
+      </section>
+
       <section id="paperView" class="view" hidden>
-        <div class="panel-heading"><div><p class="eyebrow">SIMULATED CAPITAL</p><h2>Paper trading</h2></div></div>
+        <div class="panel-heading"><div><p class="eyebrow">SIMULATED CAPITAL</p><h2>Paper trading</h2><p>Virtual funds only. Automatic entries use delivery-proven signals tied to your account.</p></div><span class="status-pill">NO LIVE FUNDS</span></div>
         <div id="paperAccount" class="card-grid"></div>
-        <div id="paperPositions" class="table-wrap"></div>
+        <div id="paperLinkNotice" class="panel warning-panel" hidden></div>
+        <div class="split-grid paper-workspace">
+          <article class="panel">
+            <div class="panel-heading"><div><h3>Open positions</h3><p>Fresh marks and current virtual P/L.</p></div><button id="refreshPaper" class="ghost" type="button">Refresh</button></div>
+            <div id="paperPositions" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <h3>Automation settings</h3>
+            <form id="paperSettingsForm" class="stack-form">
+              <label class="switch-row"><span>Automatic paper entries</span><input name="auto_trade_enabled" type="checkbox" /></label>
+              <label>Risk per signal %<input name="risk_pct" type="number" min="0.1" max="10" step="0.1" /></label>
+              <label>Maximum open positions<input name="max_open_positions" type="number" min="1" max="100" /></label>
+              <label>Minimum signal score<input name="min_signal_score" type="number" min="0" max="100" step="0.5" /></label>
+              <label>Exit target<select name="target_mode"><option value="TP1">TP1</option><option value="TP2">TP2</option><option value="TP3">TP3</option></select></label>
+              <label>Directions<select name="allowed_directions"><option value="both">Both</option><option value="long">Long only</option><option value="short">Short only</option></select></label>
+              <fieldset><legend>Markets</legend><div class="choice-grid paper-class-grid"><label><input type="checkbox" name="paper_asset_class" value="crypto" /> Crypto</label><label><input type="checkbox" name="paper_asset_class" value="fx" /> FX</label><label><input type="checkbox" name="paper_asset_class" value="stock" /> Stocks</label><label><input type="checkbox" name="paper_asset_class" value="index" /> Indices</label><label><input type="checkbox" name="paper_asset_class" value="commodity" /> Commodities</label></div><small>Leave every market unchecked to allow all classes.</small></fieldset>
+              <div class="three-column compact-fields"><label>Spread bps<input name="spread_bps" type="number" min="0" max="500" step="0.1" /></label><label>Slippage bps<input name="slippage_bps" type="number" min="0" max="500" step="0.1" /></label><label>Fee bps<input name="fee_bps" type="number" min="0" max="500" step="0.1" /></label></div>
+              <button class="primary" type="submit">Save paper settings</button>
+            </form>
+          </article>
+        </div>
+        <div class="split-grid">
+          <article class="panel"><h3>Paper performance</h3><div id="paperPerformance" class="card-grid compact-card-grid"></div><p class="muted">Paper results remain separate from delivered-signal, shadow, backtest and any future live-execution results.</p></article>
+          <article class="panel"><h3>Account controls</h3><div class="stack-form"><button id="paperCloseAll" class="danger" type="button">Close all virtual positions</button><label>Reset starting balance<input id="paperResetBalance" type="number" min="50" max="100000000" step="50" value="10000" /></label><button id="paperReset" class="danger" type="button">Reset paper account</button></div><p class="muted">Both actions require explicit confirmation. Reset is blocked while virtual positions remain open.</p></article>
+        </div>
+        <article class="panel"><div class="panel-heading"><div><h3>Paper history</h3><p>Closed trades and recent skipped delivery-proven signals.</p></div></div><div id="paperHistory" class="table-wrap"></div></article>
+        <article class="panel"><div class="panel-heading"><div><h3>Paper activity</h3><p>Why delivered signals opened, skipped, deferred, or failed.</p></div></div><div id="paperActivity" class="data-list"></div></article>
       </section>
 
       <section id="portfolioView" class="view" hidden>
@@ -215,7 +285,7 @@
 
       <section id="accountView" class="view" hidden>
         <div class="two-column">
-          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
           <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
         </div>
         <article class="panel trading-profile-panel">
@@ -239,7 +309,7 @@
           </form>
         </article>
         <article class="panel"><h2>Refer and earn</h2><p>Share SignalRankAI from the website or Telegram. Your account keeps one referral code across every channel.</p><div id="referralPanel" class="detail-list"></div></article>
-        <article class="panel"><h2>Notification preferences</h2><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><button class="primary" type="submit">Save preferences</button></form></article>
+        <article class="panel"><h2>Notification preferences</h2><p>These channel and quiet-hour settings follow your account across Telegram, web and mobile.</p><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><label>Quiet from<input type="time" name="quiet_hours_start" /></label><label>Quiet until<input type="time" name="quiet_hours_end" /></label><label>Notification timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><button class="primary" type="submit">Save preferences</button></form></article>
         <article class="panel"><h2>Plans and billing</h2><p>Prices are resolved securely by the server. Professional and Institutional plans use contact sales.</p><div id="billingProducts" class="card-grid"></div><h3>Billing history</h3><div id="billingHistory" class="data-list"></div></article>
         <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
       </section>
