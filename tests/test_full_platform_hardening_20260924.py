@@ -266,6 +266,7 @@ def test_delivery_readiness_probe_is_read_only_and_multi_asset():
     assert 'ASSET_CLASSES = ("crypto", "fx", "commodity", "index", "stock")' in source
     assert "validate_delivery_freshness(" in source
     assert "final_send=True" in source
+    assert "sys.path.insert(0, str(Path(__file__).resolve().parents[1]))" in source
     assert '"read_only": True' in source
     assert "record_signal_delivery" not in source
     assert "mark_signal_delivery" not in source
