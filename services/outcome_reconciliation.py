@@ -435,12 +435,23 @@ async def repair_outcome_notification_outbox(
             failed += 1
             logger.exception(
                 "[outcome_outbox_repair] failed "
-                "outcome_id=%s signal=%s status=%s error=%s",
+                "outcome_id=%s signal=%s status=%s error_type=%s error=%r",
                 outcome_id,
                 outcome_signal_id,
                 outcome_status,
+                type(exc).__name__,
                 exc,
             )
+            # A disconnect/timeout can invalidate the outer transaction even
+            # though the per-outcome savepoint rolled back. Stop the batch and
+            # fully reset the session instead of cascading the same poisoned
+            # transaction through every remaining outcome.
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            queued = 0
+            break
     await session.flush()
     return OutcomeOutboxRepairResult(len(outcomes), queued, failed)
 
