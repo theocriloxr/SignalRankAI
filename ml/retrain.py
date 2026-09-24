@@ -128,7 +128,26 @@ async def collect_training_data() -> list:
 
 
 async def retrain_model() -> bool:
-    """Retrain XGBoost model with latest outcome data."""
+    """Backward-compatible entrypoint for the single governed trainer.
+
+    Historically this module contained an independent AUC-only promotion path.
+    Keep callers stable while delegating all training/promotion decisions to
+    ml.train_model.main(), which owns temporal validation, calibration,
+    live-proof evidence, candidate-only fallback and artifact persistence.
+    """
+    try:
+        from ml.train_model import main as governed_training_main
+
+        logger.info(
+            "[ml_retrain] delegating legacy retrain entrypoint to governed trainer"
+        )
+        return bool(await governed_training_main())
+    except Exception as exc:
+        logger.exception("[ml_retrain] governed trainer failed: %s", exc)
+        return False
+
+    # Legacy implementation retained below as unreachable reference until the
+    # next compatibility cleanup. It must never own promotion decisions.
     try:
         import numpy as np
         import xgboost as xgb
