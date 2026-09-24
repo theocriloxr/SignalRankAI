@@ -1,1 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#64f0b4"/><stop offset="1" stop-color="#50a7ff"/></linearGradient></defs><rect width="512" height="512" rx="120" fill="#080b10"/><path d="M110 336V174c0-35 28-64 64-64h164c35 0 64 29 64 64v164c0 35-29 64-64 64H174c-36 0-64-29-64-64Z" fill="url(#g)"/><path d="M180 307c35-67 67-101 96-101 25 0 43 19 57 57l29-72" fill="none" stroke="#07110e" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><circle cx="180" cy="307" r="16" fill="#07110e"/><circle cx="362" cy="191" r="16" fill="#07110e"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SignalRank</title>
+  <desc id="desc">SignalRank monogram with an upward market signal line</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07131d"/>
+      <stop offset="1" stop-color="#03080d"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="126" y1="382" x2="396" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#21d49b"/>
+      <stop offset=".52" stop-color="#39d9bd"/>
+      <stop offset="1" stop-color="#43bfd5"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="20" y="20" width="472" height="472" rx="124" fill="url(#bg)"/>
+  <rect x="20.75" y="20.75" width="470.5" height="470.5" rx="123.25" fill="none" stroke="#43bfd5" stroke-opacity=".16" stroke-width="1.5"/>
+  <g fill="none" stroke="url(#signal)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M357 132H222c-48 0-78 24-78 62 0 35 25 55 72 59l74 6c53 4 78 24 78 61 0 39-31 65-82 65H145" stroke-width="38"/>
+    <path d="M193 385V286h91c53 0 86 28 86 73 0 33-18 57-49 68l59 55" stroke-width="34"/>
+    <path d="M128 340l55-66 48 31 69-92 50 22 66-98" stroke-width="18" filter="url(#glow)"/>
+    <path d="M388 137h29v29" stroke-width="18"/>
+  </g>
+  <circle cx="128" cy="340" r="10" fill="#21d49b"/>
+  <circle cx="231" cy="305" r="9" fill="#39d9bd"/>
+  <circle cx="350" cy="235" r="9" fill="#43bfd5"/>
+</svg>
