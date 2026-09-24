@@ -2760,6 +2760,9 @@ def main_loop(DRY_RUN: bool = False):
                 "strict_candidates": 0,
                 "risk_passed": 0,
                 "ml_passed": 0,
+                "ml_raw_probability_max": None,
+                "ml_calibrated_probability_max": None,
+                "ml_threshold_raw": None,
                 "final_signals": 0,
                 "stored": 0,
                 "no_candles": 0,
@@ -3336,10 +3339,30 @@ def main_loop(DRY_RUN: bool = False):
                             if ml_filter:
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold(ml_filter)
+                                pipeline_stats["ml_threshold_raw"] = float(threshold)
                                 # Always consult MLFilter when constructed. It owns the
                                 # configured fail-open/fail-closed availability policy,
                                 # including the case where the model is inactive.
                                 approved, prob = ml_filter.ml_filter(features, threshold=threshold)
+                                raw_prob = getattr(ml_filter, "last_raw_probability", None)
+                                if raw_prob is not None:
+                                    try:
+                                        current_raw_max = pipeline_stats.get("ml_raw_probability_max")
+                                        pipeline_stats["ml_raw_probability_max"] = max(
+                                            float(raw_prob),
+                                            float(current_raw_max) if current_raw_max is not None else float(raw_prob),
+                                        )
+                                    except Exception:
+                                        pass
+                                if prob is not None:
+                                    try:
+                                        current_cal_max = pipeline_stats.get("ml_calibrated_probability_max")
+                                        pipeline_stats["ml_calibrated_probability_max"] = max(
+                                            float(prob),
+                                            float(current_cal_max) if current_cal_max is not None else float(prob),
+                                        )
+                                    except Exception:
+                                        pass
                             elif _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
                                 approved, prob = False, None
                         except Exception as _ml_filter_error:
@@ -4471,13 +4494,19 @@ def main_loop(DRY_RUN: bool = False):
                         )
                         logger.info(
                             "[engine] cycle_progress cycle=%s status=in_progress processed=%s/%s "
-                            "market_data_assets=%s strategy_signals=%s max_score_pre_threshold=%s "
+                            "market_data_assets=%s strategy_signals=%s strict_candidates=%s ml_passed=%s "
+                            "ml_raw_max=%s ml_calibrated_max=%s ml_threshold_raw=%s max_score_pre_threshold=%s "
                             "final_signals=%s stored=%s max_score_absent_reason=%s",
                             cycle_no,
                             _asset_index,
                             cycle_assets,
                             usable_market_data_assets,
                             pipeline_stats.get("strategy_signals", 0),
+                            pipeline_stats.get("strict_candidates", 0),
+                            pipeline_stats.get("ml_passed", 0),
+                            pipeline_stats.get("ml_raw_probability_max"),
+                            pipeline_stats.get("ml_calibrated_probability_max"),
+                            pipeline_stats.get("ml_threshold_raw"),
                             _progress_score,
                             pipeline_stats.get("final_signals", 0),
                             pipeline_stats.get("stored", 0),
@@ -4488,6 +4517,11 @@ def main_loop(DRY_RUN: bool = False):
                             "assets_processed": int(_asset_index),
                             "market_data_assets": int(usable_market_data_assets),
                             "strategy_signals": int(pipeline_stats.get("strategy_signals", 0) or 0),
+                            "strict_candidates": int(pipeline_stats.get("strict_candidates", 0) or 0),
+                            "ml_passed": int(pipeline_stats.get("ml_passed", 0) or 0),
+                            "ml_raw_probability_max": pipeline_stats.get("ml_raw_probability_max"),
+                            "ml_calibrated_probability_max": pipeline_stats.get("ml_calibrated_probability_max"),
+                            "ml_threshold_raw": pipeline_stats.get("ml_threshold_raw"),
                             "max_score_pre_threshold": _progress_score,
                             "final_signals": int(pipeline_stats.get("final_signals", 0) or 0),
                             "stored": int(pipeline_stats.get("stored", 0) or 0),
