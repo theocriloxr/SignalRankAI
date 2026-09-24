@@ -48,3 +48,19 @@ def test_ai_status_reports_cache_and_token_usage_without_key_material() -> None:
     assert "provider_status()" in block
     assert "_api_key()" not in block
     assert 'os.getenv("OPENAI_API_KEY")' not in block
+
+
+def test_ai_improve_is_registered_admin_only_review_workflow() -> None:
+    commands = Path("signalrank_telegram/commands.py").read_text(encoding="utf-8")
+    bot = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+    catalog = Path("signalrank_telegram/command_catalog.py").read_text(encoding="utf-8")
+
+    start = commands.index("async def ai_improve_command")
+    end = commands.index("async def ai_test_command", start)
+    block = commands[start:end]
+    assert "_is_admin(update.effective_user.id)" in block
+    assert "evolution_agent.trigger_system_audit(days=7)" in block
+    assert "review only" in block.lower()
+    assert "ai_improve_command," in bot
+    assert 'CommandHandler("ai_improve"' in bot
+    assert 'CommandSpec("ai_improve"' in catalog
