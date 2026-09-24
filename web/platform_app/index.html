@@ -3,8 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1722" />
+  <meta name="theme-color" content="#07131d" />
+  <meta name="color-scheme" content="dark light" />
   <meta name="description" content="SignalRankAI unified trading intelligence dashboard" />
+  <script>
+    (() => {
+      try {
+        const saved = localStorage.getItem('signalrank.theme');
+        if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+      } catch (_) {}
+    })();
+  </script>
   <link rel="manifest" href="/app/manifest.webmanifest" />
   <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/app-assets/styles.css" />
@@ -14,7 +23,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="SignalRankAI home">
-      <span class="brand-mark">SR</span>
+      <span class="brand-logo"><img src="/app-assets/icon.svg" alt="" width="42" height="42" /></span>
       <span><strong>SignalRank</strong><small>Trading Intelligence</small></span>
     </a>
     <nav id="sessionNav" hidden>
@@ -30,6 +39,10 @@
       <button data-view="account">Account</button>
       <button id="logoutButton" class="ghost">Log out</button>
     </nav>
+    <button id="themeToggle" class="theme-toggle ghost" type="button" aria-label="Switch color theme" title="Switch color theme">
+      <span id="themeIcon" aria-hidden="true">◐</span>
+      <span id="themeLabel">Theme</span>
+    </button>
   </header>
 
   <main>
