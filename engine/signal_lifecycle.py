@@ -39,6 +39,32 @@ def _enabled(name: str, default: bool = True) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _lifecycle_lock_timeout_ms() -> int:
+    """Bound row-lock waits so outcome tracking never monopolizes the DB."""
+    try:
+        value = int(float(os.getenv("OUTCOME_LIFECYCLE_LOCK_TIMEOUT_MS", "1500") or 1500))
+    except Exception:
+        value = 1500
+    return max(250, min(10000, value))
+
+
+def _transient_lifecycle_db_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    text_value = f"{type(exc).__name__}: {exc}".lower()
+    return any(
+        token in text_value
+        for token in (
+            "lock timeout",
+            "locknotavailable",
+            "could not obtain lock",
+            "canceling statement due to lock timeout",
+            "deadlock detected",
+            "timed out waiting for critical db admission",
+        )
+    )
+
+
 def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -192,39 +218,60 @@ async def update_lifecycle_observation(
     favorable_r = (favorable_move / risk) if risk > 0 else 0.0
     adverse_r = (adverse_move / risk) if risk > 0 else 0.0
 
-    async with get_session(priority=DBPriority.CRITICAL) as session:
-        row = (await session.execute(
-            select(SignalLifecycle)
-            .where(SignalLifecycle.signal_id == signal_id)
-            .with_for_update()
-        )).scalar_one_or_none()
-        if row is None:
-            row = SignalLifecycle(
-                signal_id=signal_id,
-                state=WATCHING_FOR_ENTRY,
-                generated_at=signal.get("created_at"),
-                watch_started_at=now,
+    try:
+        from sqlalchemy import text as sql_text
+
+        async with get_session(
+            priority=DBPriority.CRITICAL,
+            label="outcome.lifecycle_observation",
+            timeout_seconds=3.0,
+        ) as session:
+            # The tracker runs repeatedly. Waiting tens of seconds on a row lock
+            # is worse than deferring one telemetry sample to the next cycle.
+            await session.execute(
+                sql_text(f"SET LOCAL lock_timeout = '{_lifecycle_lock_timeout_ms()}ms'")
             )
-            session.add(row)
-            session.add(SignalTrackingEvent(
-                signal_id=signal_id,
-                event_type="generated",
-                event_time=signal.get("created_at") or now,
-                price=None,
-                meta={"state": WATCHING_FOR_ENTRY},
-            ))
-        row.state = normalize_lifecycle_state(getattr(row, "state", None))
-        row.last_price = float(price)
-        row.last_checked_at = now
-        row.max_price_seen = max(float(row.max_price_seen or observation_high), observation_high)
-        row.min_price_seen = min(float(row.min_price_seen or observation_low), observation_low)
-        row.mfe_pct = max(float(row.mfe_pct or 0.0), favorable_pct, 0.0)
-        row.mae_pct = min(float(row.mae_pct or 0.0), adverse_pct, 0.0)
-        row.mfe_r = max(float(row.mfe_r or 0.0), favorable_r, 0.0)
-        row.mae_r = min(float(row.mae_r or 0.0), adverse_r, 0.0)
-        row.updated_at = now
-        await session.commit()
-        return normalize_lifecycle_state(row.state)
+            row = (await session.execute(
+                select(SignalLifecycle)
+                .where(SignalLifecycle.signal_id == signal_id)
+                .with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                row = SignalLifecycle(
+                    signal_id=signal_id,
+                    state=WATCHING_FOR_ENTRY,
+                    generated_at=signal.get("created_at"),
+                    watch_started_at=now,
+                )
+                session.add(row)
+                session.add(SignalTrackingEvent(
+                    signal_id=signal_id,
+                    event_type="generated",
+                    event_time=signal.get("created_at") or now,
+                    price=None,
+                    meta={"state": WATCHING_FOR_ENTRY},
+                ))
+            row.state = normalize_lifecycle_state(getattr(row, "state", None))
+            row.last_price = float(price)
+            row.last_checked_at = now
+            row.max_price_seen = max(float(row.max_price_seen or observation_high), observation_high)
+            row.min_price_seen = min(float(row.min_price_seen or observation_low), observation_low)
+            row.mfe_pct = max(float(row.mfe_pct or 0.0), favorable_pct, 0.0)
+            row.mae_pct = min(float(row.mae_pct or 0.0), adverse_pct, 0.0)
+            row.mfe_r = max(float(row.mfe_r or 0.0), favorable_r, 0.0)
+            row.mae_r = min(float(row.mae_r or 0.0), adverse_r, 0.0)
+            row.updated_at = now
+            await session.commit()
+            return normalize_lifecycle_state(row.state)
+    except Exception as exc:
+        if _transient_lifecycle_db_error(exc):
+            logger.info(
+                "[lifecycle_observation_deferred] signal=%s error_type=%s",
+                signal_id[:12],
+                type(exc).__name__,
+            )
+            return normalize_lifecycle_state(signal.get("lifecycle_state"))
+        raise
 
 
 async def record_lifecycle_event(signal: dict, event_type: str, price: float, meta: dict | None = None) -> bool:
