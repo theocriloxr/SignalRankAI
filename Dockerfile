@@ -62,7 +62,8 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ml_strict_schema.py \
       tests/test_ml_retrain_governance.py \
       tests/test_ml_fail_closed_availability.py \
-      tests/test_production_operations_package.py
+      tests/test_production_operations_package.py \
+    && python scripts/production_readiness_check.py
 
 # Ensure start script is executable and use it as entrypoint so migrations/run-time
 # setup happens when the container starts (not during image build).
