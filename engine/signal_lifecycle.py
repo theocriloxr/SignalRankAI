@@ -269,6 +269,53 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
         )).scalar_one_or_none()
         was_new = existing is None
 
+        if existing is not None:
+            # Self-heal legacy/partially committed lifecycle rows. Older
+            # releases could persist the tracking event while leaving the
+            # lifecycle projection behind. Replaying an already-recorded event
+            # must never emit another event/notification, but it should repair
+            # monotonic lifecycle state so the realtime tracker stops
+            # rediscovering the same TP forever.
+            recorded_state = event_state(event_type)
+            tp_stage = {"tp1_hit": 1, "tp2_hit": 2, "tp3_hit": 3}.get(event_type, 0)
+            current_tp = int(getattr(lifecycle, "highest_tp_hit", 0) or 0)
+            if tp_stage > current_tp:
+                lifecycle.highest_tp_hit = tp_stage
+            current_state = normalize_lifecycle_state(getattr(lifecycle, "state", None))
+            current_rank = {
+                WATCHING_FOR_ENTRY: 0,
+                ACTIVE_TRADE: 1,
+                TP1_HIT: 2,
+                TP2_HIT: 3,
+                TP3_HIT: 4,
+                BREAKEVEN_STOP: 5,
+                SL_HIT: 5,
+                MISSED_ENTRY: 5,
+                EXPIRED: 5,
+            }.get(current_state, 0)
+            recorded_rank = {
+                WATCHING_FOR_ENTRY: 0,
+                ACTIVE_TRADE: 1,
+                TP1_HIT: 2,
+                TP2_HIT: 3,
+                TP3_HIT: 4,
+                BREAKEVEN_STOP: 5,
+                SL_HIT: 5,
+                MISSED_ENTRY: 5,
+                EXPIRED: 5,
+            }.get(recorded_state, 0)
+            if recorded_rank > current_rank and current_state not in TERMINAL_STATES:
+                lifecycle.state = recorded_state
+            timestamp_field = {
+                "entry_touched": "entry_touched_at", "tp1_hit": "tp1_hit_at",
+                "tp2_hit": "tp2_hit_at", "tp3_hit": "tp3_hit_at",
+                "sl_hit": "sl_hit_at", "breakeven_stop": "breakeven_at",
+                "missed_entry": "expired_at", "expired": "expired_at",
+            }.get(event_type)
+            if timestamp_field and getattr(lifecycle, timestamp_field, None) is None:
+                setattr(lifecycle, timestamp_field, getattr(existing, "event_time", None) or now)
+            lifecycle.updated_at = now
+
         if existing is None:
             if not event_transition_allowed(lifecycle.state, event_type):
                 logger.info(
