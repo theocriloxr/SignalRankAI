@@ -57,7 +57,7 @@ def test_model_certified_raw_threshold_is_available_for_runtime_governance():
     assert filt.recommended_raw_threshold() == 0.83
 
 
-def test_adaptive_threshold_is_bounded_around_certified_model_threshold(monkeypatch):
+def test_certified_threshold_is_authoritative_by_default(monkeypatch):
     from engine import core
 
     class _Optimizer:
@@ -66,6 +66,21 @@ def test_adaptive_threshold_is_bounded_around_certified_model_threshold(monkeypa
 
     filt = _filter(0.90)
     monkeypatch.setattr(core, "_threshold_optimizer", _Optimizer())
+    monkeypatch.delenv("ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED", raising=False)
+
+    assert abs(core._current_ml_prob_threshold(filt) - 0.83) < 1e-9
+
+
+def test_adaptive_threshold_can_be_explicitly_bounded_around_certified_model(monkeypatch):
+    from engine import core
+
+    class _Optimizer:
+        def get_threshold(self):
+            return 0.99
+
+    filt = _filter(0.90)
+    monkeypatch.setattr(core, "_threshold_optimizer", _Optimizer())
+    monkeypatch.setenv("ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED", "1")
     monkeypatch.setenv("ML_ADAPTIVE_THRESHOLD_MAX_DELTA", "0.08")
 
     assert abs(core._current_ml_prob_threshold(filt) - 0.91) < 1e-9
