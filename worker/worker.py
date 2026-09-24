@@ -819,7 +819,7 @@ class Worker:
 
         while not self._stop.is_set():
             try:
-                from ml.drift_monitor import detect_feature_drift
+                from ml.drift_monitor import detect_feature_drift, detect_prediction_starvation
                 from ml import train_model as ml_train
 
                 baseline_path = os.getenv("ML_BASELINE_FEATURE_STATS_PATH", "ml/baseline_feature_stats.json")
@@ -832,10 +832,15 @@ class Worker:
                         live = json.load(fl) or {}
                     drift_source = "files"
                 else:
-                    from ml.live_drift import load_durable_feature_baseline, load_live_feature_samples
+                    from ml.live_drift import (
+                        load_durable_feature_baseline,
+                        load_live_feature_samples,
+                        load_live_prediction_samples,
+                    )
 
                     baseline = await load_durable_feature_baseline()
                     live = load_live_feature_samples()
+                    live_predictions = load_live_prediction_samples()
                     drift_source = "durable_champion+redis_live"
                     if not baseline or not live:
                         raise FileNotFoundError("durable baseline/live feature sample not available yet")
@@ -848,6 +853,68 @@ class Worker:
                     minimum_features=max(1, int(os.getenv("ML_DRIFT_MIN_EVALUATED_FEATURES", "5") or 5)),
                 )
                 result["source"] = drift_source
+                if "live_predictions" not in locals():
+                    try:
+                        from ml.live_drift import load_live_prediction_samples
+                        live_predictions = load_live_prediction_samples()
+                    except Exception:
+                        live_predictions = []
+                prediction_health = detect_prediction_starvation(
+                    list(live_predictions or []),
+                    minimum_samples=max(
+                        10,
+                        int(os.getenv("ML_STARVATION_MIN_LIVE_SAMPLES", "50") or 50),
+                    ),
+                    minimum_pass_rate=max(
+                        0.0,
+                        min(
+                            1.0,
+                            float(os.getenv("ML_STARVATION_MIN_PASS_RATE", "0.01") or 0.01),
+                        ),
+                    ),
+                )
+                result["prediction_health"] = prediction_health
+                logger.info(
+                    "[ml_drift_check] feature_actionable=%s feature_drift=%s prediction_actionable=%s "
+                    "prediction_starvation=%s samples=%s pass_rate=%s raw_max=%s threshold_min=%s source=%s",
+                    result.get("actionable"),
+                    result.get("drift_detected"),
+                    prediction_health.get("actionable"),
+                    prediction_health.get("starvation_detected"),
+                    prediction_health.get("samples"),
+                    prediction_health.get("pass_rate"),
+                    prediction_health.get("raw_max"),
+                    prediction_health.get("threshold_min"),
+                    drift_source,
+                )
+                if bool(prediction_health.get("starvation_detected")):
+                    try:
+                        ttl = max(1800, interval * 2)
+                        state.set_sync("signalrankai:ml:starvation:mode", "detected", ex=ttl)
+                        state.set_sync(
+                            "signalrankai:ml:starvation:pass_rate",
+                            str(prediction_health.get("pass_rate")),
+                            ex=ttl,
+                        )
+                        state.set_sync(
+                            "signalrankai:ml:starvation:raw_max",
+                            str(prediction_health.get("raw_max")),
+                            ex=ttl,
+                        )
+                        state.set_sync(
+                            "signalrankai:ml:starvation:threshold_min",
+                            str(prediction_health.get("threshold_min")),
+                            ex=ttl,
+                        )
+                        state.set_sync("signalrankai:ml:starvation:detected_at", str(time.time()), ex=ttl)
+                    except Exception:
+                        pass
+                    logger.warning("[ml_prediction_starvation] %s", prediction_health)
+                else:
+                    try:
+                        state.set_sync("signalrankai:ml:starvation:mode", "normal", ex=max(600, interval))
+                    except Exception:
+                        pass
 
                 if bool(result.get("drift_detected")):
                     severity = 0.0
