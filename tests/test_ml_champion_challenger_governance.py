@@ -81,3 +81,20 @@ def test_calibration_regression_keeps_candidate_in_shadow(tmp_path, monkeypatch)
 
     assert ok is False
     assert "calibrated_ece" in evidence["regressions"]
+
+
+def test_durable_champion_metrics_override_stale_local_primary(tmp_path, monkeypatch):
+    monkeypatch.setenv("ML_CHAMPION_COMPARISON_ENABLED", "1")
+    primary = tmp_path / "model.json"
+    _write_champion(primary, _metrics(auc=0.60, pr_auc=0.50, balanced_accuracy=0.55, expected_r=0.10))
+
+    ok, evidence = _champion_comparison_gate(
+        _metrics(auc=0.731, pr_auc=0.675, balanced_accuracy=0.654, expected_r=0.74),
+        primary,
+        deployed_runtime=True,
+        champion_metrics=_metrics(auc=0.75, pr_auc=0.70, balanced_accuracy=0.67, expected_r=0.85),
+    )
+
+    assert ok is False
+    assert evidence["source"] == "durable_registry"
+    assert "auc" in evidence["regressions"]
