@@ -87,6 +87,9 @@ PROFILE_REQUIRED_ENV_KEYS = {
         "BYBIT_TESTNET=1",
         "MT5_ALLOW_LIVE_ACCOUNTS=0",
         "REAL_PAYOUTS_ENABLED=0",
+        "ML_STRICT_SCHEMA=1",
+        "ML_FAIL_CLOSED_ON_UNAVAILABLE=1",
+        "PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING=1",
         "EXPECTED_RELEASE_COMMIT=",
     ),
     "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example": (
@@ -96,6 +99,9 @@ PROFILE_REQUIRED_ENV_KEYS = {
         "REAL_EXECUTION_ENABLED=0",
         "AUTO_EXECUTION_ENABLED=0",
         "GLOBAL_EXECUTION_KILL_SWITCH=1",
+        "ML_STRICT_SCHEMA=1",
+        "ML_FAIL_CLOSED_ON_UNAVAILABLE=1",
+        "PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING=1",
     ),
     "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example": (
         "SIGNALRANK_ENV_PROFILE=production-live-owner-canary",
@@ -107,6 +113,9 @@ PROFILE_REQUIRED_ENV_KEYS = {
         "LIVE_MAX_DAILY_LOSS=",
         "LIVE_MAX_TOTAL_EXPOSURE=",
         "LIVE_ACTIVATION_EXPIRES_AT=",
+        "ML_STRICT_SCHEMA=1",
+        "ML_FAIL_CLOSED_ON_UNAVAILABLE=1",
+        "PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING=1",
     ),
 }
 
