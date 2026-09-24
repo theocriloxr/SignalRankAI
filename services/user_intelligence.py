@@ -367,6 +367,103 @@ async def _upsert_runtime_json(session, key: str, value: Mapping[str, Any]) -> N
     )
 
 
+async def _insert_runtime_json_if_absent(session, key: str, value: Mapping[str, Any]) -> bool:
+    result = await session.execute(
+        text(
+            """
+            INSERT INTO runtime_state(key, value, expires_at, updated_at)
+            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+            ON CONFLICT (key) DO NOTHING
+            RETURNING key
+            """
+        ),
+        {"key": key, "value": json.dumps(dict(value))},
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def backfill_linked_platform_trading_preferences(
+    session,
+    *,
+    limit: int = 500,
+    apply: bool = False,
+) -> dict[str, int]:
+    """Materialize linked Telegram profiles into canonical platform keys safely.
+
+    Existing canonical records are never overwritten. The same merge precedence
+    used by the live Telegram/web readers is applied, so this is an idempotent
+    compatibility backfill rather than a profile reset.
+    """
+    bounded_limit = max(1, min(int(limit), 5000))
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT u.id, u.telegram_user_id
+                FROM users u
+                WHERE u.telegram_user_id IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM runtime_state r
+                      WHERE r.key = 'trading_preferences_user:' || u.id::text
+                  )
+                ORDER BY u.id
+                LIMIT :limit
+                """
+            ),
+            {"limit": bounded_limit},
+        )
+    ).all()
+
+    scanned = len(rows)
+    source_profiles = 0
+    inserted = 0
+    skipped_without_source = 0
+
+    for row in rows:
+        mapping = getattr(row, "_mapping", None)
+        canonical_id = int(mapping["id"] if mapping is not None else row[0])
+        telegram_id = int(mapping["telegram_user_id"] if mapping is not None else row[1])
+        legacy_keys = (
+            f"trading_preferences:{telegram_id}",
+            f"user_prefs:{telegram_id}",
+            f"trade_profile:{telegram_id}",
+        )
+        values = await _runtime_state_values(session, legacy_keys)
+        modern = _mapping(values.get(f"trading_preferences:{telegram_id}"))
+        legacy = _mapping(values.get(f"user_prefs:{telegram_id}"))
+        profile = values.get(f"trade_profile:{telegram_id}")
+        if not modern and not legacy and not _mapping(profile) and not (
+            isinstance(profile, str) and profile.strip()
+        ):
+            skipped_without_source += 1
+            continue
+
+        source_profiles += 1
+        merged = merge_preference_payloads(modern, legacy, profile)
+        payload = preferences_to_payload(preferences_from_payload(merged))
+        if apply and await _insert_runtime_json_if_absent(
+            session,
+            f"trading_preferences_user:{canonical_id}",
+            payload,
+        ):
+            inserted += 1
+
+    if apply and inserted:
+        try:
+            from services.profile_demand import clear_profile_demand_cache
+            clear_profile_demand_cache()
+        except Exception:
+            pass
+
+    return {
+        "scanned": scanned,
+        "source_profiles": source_profiles,
+        "inserted": inserted,
+        "skipped_without_source": skipped_without_source,
+    }
+
+
 async def get_user_trading_preferences(session, telegram_user_id: int) -> UserTradingPreferences:
     """Read preferences for a Telegram identity with canonical-account overlay.
 
