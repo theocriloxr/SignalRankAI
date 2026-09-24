@@ -838,6 +838,51 @@ async def signal_feed(
     return {"signals": [dict(row) for row in rows], "limit": limit, "offset": offset}
 
 
+@router.get("/signals/{signal_id}")
+async def signal_detail(
+    signal_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    ref = str(signal_id or "").strip()
+    if not ref or len(ref) > 64:
+        raise HTTPException(status_code=422, detail="Invalid signal reference")
+    async with get_session(label="platform.signal_detail", timeout_seconds=10.0) as session:
+        row = (await session.execute(text(
+            "SELECT "
+            "s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
+            "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
+            "s.ml_probability,s.ml_probability_calibrated,s.confidence,"
+            "d.delivered_at,d.delivered_at_utc,d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
+            "d.signal_age_at_delivery_seconds,d.telegram_message_id,"
+            "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,o.opened_at AS outcome_opened_at,"
+            "o.closed_at AS outcome_closed_at,o.duration_seconds,o.provenance AS outcome_provenance,"
+            "l.state AS lifecycle_state,l.entry_touched_at,l.tp1_hit_at,l.tp2_hit_at,l.tp3_hit_at,l.sl_hit_at,"
+            "l.breakeven_at,l.expired_at,l.closed_at AS lifecycle_closed_at,l.last_price,l.last_checked_at,"
+            "l.mfe_pct,l.mae_pct,l.mfe_r,l.mae_r,l.highest_tp_hit,l.terminal_event_type,l.terminal_price "
+            "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
+            "LEFT JOIN outcomes o ON o.signal_id=s.signal_id "
+            "LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id "
+            "WHERE d.user_id=:uid AND d.sent_ok=TRUE AND s.signal_id=:sid LIMIT 1"
+        ), {"uid": int(user["id"]), "sid": ref})).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
+        events = (await session.execute(text(
+            "SELECT event_type,event_time,price,r_multiple,meta "
+            "FROM signal_tracking_events WHERE signal_id=:sid ORDER BY event_time,id LIMIT 100"
+        ), {"sid": ref})).mappings().all()
+        await session.rollback()
+    return {
+        "signal": dict(row),
+        "events": [dict(event) for event in events],
+        "proof": {
+            "delivery_proven": bool(row.get("delivery_confirmed_at") or row.get("telegram_message_id")),
+            "delivery_state": row.get("delivery_state"),
+            "delivery_confirmed_at": row.get("delivery_confirmed_at"),
+            "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
+        },
+    }
+
+
 @router.get("/live-price")
 async def live_price(
     asset: str = Query(min_length=2, max_length=32),
