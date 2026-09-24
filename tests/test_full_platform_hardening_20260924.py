@@ -248,3 +248,13 @@ def test_market_data_asset_type_keeps_index_aliases_canonical():
 def test_requirements_install_sqlalchemy_asyncio_extra():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     assert "SQLAlchemy[asyncio]>=2.0,<3" in requirements
+
+
+def test_runtime_audit_classifies_delivery_failures_without_exposing_raw_errors():
+    source = (ROOT / "scripts/runtime_readonly_audit.py").read_text(encoding="utf-8")
+    assert '"delivery_failures_7d": _query(' in source
+    assert "AS error_class" in source
+    assert "missing_chat_id" in source
+    assert "missing_message_id" in source
+    assert "MAX(d.attempt_count) AS max_attempts" in source
+    assert "SELECT d.last_error" not in source
