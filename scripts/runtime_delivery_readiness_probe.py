@@ -10,8 +10,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
+from pathlib import Path
 from collections import Counter, defaultdict
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.pg_features import list_active_signals
 from db.session import get_session
