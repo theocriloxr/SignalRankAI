@@ -1327,6 +1327,28 @@ async def load_training_data_sync(lookback_days: int = 90):
     return await load_training_data(lookback_days)
 
 
+
+def _feature_distribution_baseline(
+    frame: pd.DataFrame,
+    feature_cols: list[str],
+    *,
+    max_points: int = 128,
+) -> dict[str, list[float]]:
+    """Create a deterministic bounded baseline for production PSI monitoring."""
+    points = max(20, min(512, int(max_points or 128)))
+    result: dict[str, list[float]] = {}
+    quantiles = np.linspace(0.0, 1.0, points)
+    for feature in feature_cols:
+        try:
+            values = pd.to_numeric(frame[feature], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+            if len(values) < 20:
+                continue
+            sampled = np.quantile(values.to_numpy(dtype=float), quantiles)
+            result[str(feature)] = [float(value) for value in sampled if np.isfinite(value)]
+        except Exception:
+            continue
+    return result
+
 def _expected_calibration_error(probabilities, labels, bins: int = 10) -> float:
     probs = np.asarray(probabilities, dtype=float)
     truth = np.asarray(labels, dtype=float)
@@ -2110,9 +2132,15 @@ async def main(lookback_days: int | None = None):
                 champion_comparison,
             )
 
+    feature_baseline = _feature_distribution_baseline(
+        X_train,
+        feature_cols,
+        max_points=int(os.getenv("ML_DRIFT_BASELINE_POINTS", "128") or 128),
+    )
     training_meta = {
         "run_id": run_id,
         "offline_bootstrap_used": bool(used_bootstrap),
+        "feature_baseline": feature_baseline,
         "source_rows": int(source_rows),
         "total_rows": int(len(df)),
         "effective_rows": float(effective_rows),
