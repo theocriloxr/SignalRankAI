@@ -70,6 +70,16 @@ def _training_dataset_timeout() -> float:
         return 120.0
 
 
+def _normalize_shadow_outcome(value: object) -> str | None:
+    """Map shadow-tracker barrier vocabulary into the trainer's binary label."""
+    outcome = str(value or "").lower().strip()
+    if outcome in {"win", "tp", "tp1", "tp2", "tp3", "partial_tp"}:
+        return "win"
+    if outcome in {"loss", "sl", "stop", "stop_loss"}:
+        return "loss"
+    return None
+
+
 def _training_session_kwargs(label: str) -> dict:
     return {
         "priority": _training_db_priority(),
@@ -867,11 +877,8 @@ async def load_training_data(lookback_days: int = 90):
                 # ShadowOutcomeWorker persists barrier outcomes (tp1/tp2/tp3/sl)
                 # while older rows may use win/loss. Normalize both vocabularies
                 # so rejected/non-issued decisions actually feed counterfactual learning.
-                if outcome in {"win", "tp", "tp1", "tp2", "tp3", "partial_tp"}:
-                    normalized_outcome = "win"
-                elif outcome in {"loss", "sl", "stop", "stop_loss"}:
-                    normalized_outcome = "loss"
-                else:
+                normalized_outcome = _normalize_shadow_outcome(outcome)
+                if normalized_outcome is None:
                     # ambiguous/time-only outcomes do not prove which decision
                     # policy was correct and must stay out of binary training.
                     continue
