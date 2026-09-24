@@ -1317,6 +1317,8 @@ def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_
         return "dedupe:no_unique_candidates"
     if _i("strict_candidates") == 0:
         return "candidate_gates:no_strict_candidates"
+    if _i("ml_passed") == 0 and _i("strict_candidates") > 0:
+        return "ml_filter:no_ml_passed_candidates"
     if _i("risk_passed") == 0:
         return "risk_or_ml:no_risk_passed_candidates"
     if _i("final_signals") == 0:
@@ -2010,13 +2012,30 @@ def _current_min_score_threshold() -> float:
     return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
 
 
-def _current_ml_prob_threshold() -> float:
+def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
+    """Resolve an adaptive cutoff in the raw-probability space used at training."""
     try:
         if _threshold_optimizer is not None and hasattr(_threshold_optimizer, "get_threshold"):
-            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
+            threshold = float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
+        else:
+            threshold = _env_float("ML_PROB_THRESHOLD", 0.55)
+    except Exception:
+        threshold = _env_float("ML_PROB_THRESHOLD", 0.55)
+
+    try:
+        certified = (
+            ml_filter.recommended_raw_threshold()
+            if ml_filter is not None and hasattr(ml_filter, "recommended_raw_threshold")
+            else None
+        )
+        if certified is not None:
+            max_delta = max(0.0, min(0.25, _env_float("ML_ADAPTIVE_THRESHOLD_MAX_DELTA", 0.08)))
+            floor = max(0.05, float(certified) - max_delta)
+            ceiling = min(0.95, float(certified) + max_delta)
+            threshold = max(floor, min(ceiling, float(threshold)))
     except Exception:
         pass
-    return _env_float("ML_PROB_THRESHOLD", 0.55)
+    return max(0.05, min(0.95, float(threshold)))
 
 
 def load_tradable_assets() -> List[str]:
@@ -2740,6 +2759,7 @@ def main_loop(DRY_RUN: bool = False):
                 "unique": 0,
                 "strict_candidates": 0,
                 "risk_passed": 0,
+                "ml_passed": 0,
                 "final_signals": 0,
                 "stored": 0,
                 "no_candles": 0,
@@ -3315,7 +3335,7 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             if ml_filter:
                                 features = extract_features(sig, market_data)
-                                threshold = _current_ml_prob_threshold()
+                                threshold = _current_ml_prob_threshold(ml_filter)
                                 # Always consult MLFilter when constructed. It owns the
                                 # configured fail-open/fail-closed availability policy,
                                 # including the case where the model is inactive.
@@ -3356,6 +3376,8 @@ def main_loop(DRY_RUN: bool = False):
                             _increment_engine_veto("ml")
                             _log_decision("rejected", sig, reason="ml_filter", meta={
                                 "ml_probability": prob,
+                                "ml_raw_probability": getattr(ml_filter, "last_raw_probability", None),
+                                "ml_threshold_raw": threshold,
                                 "ml_features": features if isinstance(features, dict) else {},
                             })
                             continue
@@ -3374,8 +3396,9 @@ def main_loop(DRY_RUN: bool = False):
                         risk_passed.append(sig)
 
                     pipeline_stats["risk_passed"] += len(risk_passed)
+                    pipeline_stats["ml_passed"] = int(pipeline_stats.get("ml_passed") or 0) + len(risk_passed)
                     if not risk_passed:
-                        _record_gate_failure(asset, "ml_filter", "no_risk_passed_candidates")
+                        _record_gate_failure(asset, "ml_filter", "no_ml_passed_candidates")
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
