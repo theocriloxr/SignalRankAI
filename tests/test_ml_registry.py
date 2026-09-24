@@ -64,6 +64,9 @@ class TestModelRegistry(unittest.TestCase):
             "dataset_version": "dataset-20260924",
             "training_run_id": "run-abc",
             "parent_model_hash_sha256": "1" * 64,
+            "schema_version": 3,
+            "model_format_version": 3,
+            "feature_encoding_version": "stable-sha256-v1",
         }
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "model.json"
@@ -79,6 +82,9 @@ class TestModelRegistry(unittest.TestCase):
         self.assertEqual(payload["dataset_version"], "dataset-20260924")
         self.assertEqual(payload["training_run_id"], "run-abc")
         self.assertEqual(payload["parent_model_hash_sha256"], "1" * 64)
+        self.assertEqual(payload["schema_version"], 3)
+        self.assertEqual(payload["model_format_version"], 3)
+        self.assertEqual(payload["feature_encoding_version"], "stable-sha256-v1")
 
     def test_load_model_with_metadata(self):
         try:
