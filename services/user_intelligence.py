@@ -63,6 +63,9 @@ class UserTradingPreferences:
     trading_mode: str = "paper"
     execution_provider: str = "auto"
     min_signal_score: float = 0.0
+    min_reward_risk: float = 0.0
+    preferred_regimes: tuple[str, ...] = ()
+    reports_optin: bool = False
     max_signals_per_day: int | None = None
     risk_per_trade_pct: float = 1.0
     max_daily_trades: int = 10
@@ -164,6 +167,24 @@ def _tuple_from(value: Any, default: tuple[str, ...] = ()) -> tuple[str, ...]:
     return tuple(out) if out else default
 
 
+def _normalize_asset_classes(value: Any) -> tuple[str, ...]:
+    aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "stocks": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    values = _tuple_from(value, DEFAULT_ASSET_CLASSES if value is None else ())
+    out: list[str] = []
+    for raw in values:
+        item = aliases.get(str(raw or "").strip().lower(), str(raw or "").strip().lower())
+        if item in DEFAULT_ASSET_CLASSES and item not in out:
+            out.append(item)
+    return tuple(out) if out else DEFAULT_ASSET_CLASSES
+
+
 def _normalize_timeframes(value: Any) -> tuple[str, ...]:
     aliases = {
         "60m": "1h",
@@ -247,7 +268,7 @@ def preferences_from_payload(payload: dict[str, Any] | None) -> UserTradingPrefe
     return UserTradingPreferences(
         trade_profile=normalize_trade_profile(data.get("trade_profile") or data.get("profile"), default="all"),
         risk_profile=risk_profile,
-        asset_classes=_tuple_from(asset_classes_raw, DEFAULT_ASSET_CLASSES),
+        asset_classes=_normalize_asset_classes(asset_classes_raw),
         preferred_assets=preferred_assets,
         blocked_assets=blocked_assets,
         preferred_timeframes=_normalize_timeframes(data.get("preferred_timeframes") or data.get("notification_timeframes")),
@@ -258,6 +279,9 @@ def preferences_from_payload(payload: dict[str, Any] | None) -> UserTradingPrefe
         trading_mode=str(data.get("trading_mode") or "paper").strip().lower(),
         execution_provider=str(data.get("execution_provider") or "auto").strip().lower(),
         min_signal_score=max(0.0, min(100.0, _as_float(data.get("min_signal_score"), 0.0))),
+        min_reward_risk=max(0.0, min(20.0, _as_float(data.get("min_reward_risk") or data.get("min_rr"), 0.0))),
+        preferred_regimes=_tuple_from(data.get("preferred_regimes") or data.get("regimes")),
+        reports_optin=_as_bool(data.get("reports_optin"), False),
         max_signals_per_day=max_signals,
         risk_per_trade_pct=max(0.0, risk_pct),
         max_daily_trades=max_daily_trades,
@@ -425,6 +449,9 @@ async def set_user_trading_preferences(
                     "execution_provider": prefs.execution_provider,
                     "risk_per_trade_pct": prefs.risk_per_trade_pct,
                     "min_signal_score": prefs.min_signal_score,
+                    "min_reward_risk": prefs.min_reward_risk,
+                    "preferred_regimes": list(prefs.preferred_regimes),
+                    "reports_optin": prefs.reports_optin,
                     "preferred_asset_class": prefs.asset_classes[0] if len(prefs.asset_classes) == 1 else None,
                     "preferred_timeframes": list(prefs.preferred_timeframes),
                     "preferred_strategies": list(prefs.preferred_strategies),
@@ -500,6 +527,9 @@ async def set_platform_user_trading_preferences(
                         "execution_provider": prefs.execution_provider,
                         "risk_per_trade_pct": prefs.risk_per_trade_pct,
                         "min_signal_score": prefs.min_signal_score,
+                        "min_reward_risk": prefs.min_reward_risk,
+                        "preferred_regimes": list(prefs.preferred_regimes),
+                        "reports_optin": prefs.reports_optin,
                         "preferred_asset_class": prefs.asset_classes[0] if len(prefs.asset_classes) == 1 else None,
                         "preferred_timeframes": list(prefs.preferred_timeframes),
                         "preferred_strategies": list(prefs.preferred_strategies),
@@ -584,6 +614,17 @@ def signal_matches_preferences(
         if not signal_matches_user_profile(signal, prefs.trade_profile):
             return False, f"profile:{prefs.trade_profile}"
 
+    regime = str(signal.get("regime") or signal.get("market_regime") or "").strip().lower()
+    if prefs.preferred_regimes and regime:
+        if not any(value in regime or regime in value for value in prefs.preferred_regimes):
+            return False, f"regime:{regime}"
+
+    rr_present = signal.get("rr_estimate") is not None or signal.get("rr_ratio") is not None
+    if prefs.min_reward_risk > 0 and rr_present:
+        rr_value = _as_float(signal.get("rr_estimate") or signal.get("rr_ratio"), 0.0)
+        if rr_value < prefs.min_reward_risk:
+            return False, f"reward_risk:{prefs.min_reward_risk:.2f}"
+
     score_keys = ("score_calibrated", "score_final", "score")
     score_present = any(signal.get(key) is not None for key in score_keys)
     if score_present:
@@ -639,6 +680,8 @@ def personalize_signal_for_preferences(
     personalized["delivery_preferred_strategies"] = tuple(prefs.preferred_strategies)
     personalized["delivery_sessions"] = tuple(prefs.sessions)
     personalized["delivery_notification_style"] = prefs.notification_style
+    personalized["delivery_min_reward_risk"] = float(prefs.min_reward_risk)
+    personalized["delivery_preferred_regimes"] = tuple(prefs.preferred_regimes)
     personalized["delivery_risk_per_trade_pct"] = float(prefs.risk_per_trade_pct)
     personalized["delivery_max_daily_loss_pct"] = float(prefs.max_daily_loss_pct)
     personalized["delivery_max_concurrent_positions"] = int(prefs.max_concurrent_positions)
@@ -659,6 +702,9 @@ def format_preferences(prefs: UserTradingPreferences) -> str:
             f"Strategies: {', '.join(prefs.preferred_strategies) if prefs.preferred_strategies else 'auto'}",
             f"Sessions: {', '.join(prefs.sessions)}",
             f"Minimum score: {minimum_score_for_preferences(prefs):.1f}",
+            f"Minimum R/R: {prefs.min_reward_risk:.2f}",
+            f"Regimes: {', '.join(prefs.preferred_regimes) if prefs.preferred_regimes else 'auto'}",
+            f"Scheduled reports: {'on' if prefs.reports_optin else 'off'}",
             f"Notifications: {prefs.notification_style}",
             f"Trading mode: {prefs.trading_mode}",
             f"Execution: {prefs.execution_mode} via {prefs.execution_provider}",
