@@ -146,5 +146,6 @@ def test_analytics_owns_dynamic_instrument_catalogue_refresh():
     assert 'name="instrument-catalogue-refresh"' in analytics
     assert 'priority=_db_priority()' in refresh
     assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in refresh
-    assert 'await asyncio.to_thread(discover, top=top)' in refresh
+    assert 'asyncio.to_thread(discover, top=top)' in refresh
+    assert 'await asyncio.wait_for(' in refresh
     assert 'label="analytics.instrument_discovery.persist"' in refresh
