@@ -779,6 +779,9 @@ async def signal_feed(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
     asset: str | None = Query(default=None, max_length=32),
+    asset_class: str | None = Query(default=None, max_length=32),
+    timeframe: str | None = Query(default=None, max_length=16),
+    strategy: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, max_length=32),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
@@ -787,6 +790,17 @@ async def signal_feed(
     if asset:
         filters.append("s.asset=:asset")
         params["asset"] = asset.upper()
+    if asset_class:
+        class_aliases = {"forex": "fx", "equity": "stock", "equities": "stock", "indices": "index", "commodities": "commodity"}
+        normalized_class = class_aliases.get(asset_class.strip().lower(), asset_class.strip().lower())
+        filters.append("lower(COALESCE(s.asset_class,''))=:asset_class")
+        params["asset_class"] = normalized_class
+    if timeframe:
+        filters.append("lower(COALESCE(s.timeframe,''))=:timeframe")
+        params["timeframe"] = timeframe.strip().lower()
+    if strategy:
+        filters.append("lower(COALESCE(s.strategy_name,'')) LIKE :strategy")
+        params["strategy"] = f"%{strategy.strip().lower()}%"
     if status:
         filters.append("COALESCE(o.status,s.status)=:status")
         params["status"] = status.lower()
