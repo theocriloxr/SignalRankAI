@@ -62,6 +62,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ml_calibration_audit.py \
       tests/test_ml_serving_threshold_governance.py \
       tests/test_ml_champion_challenger_governance.py \
+      tests/test_live_drift_monitoring.py \
       tests/test_full_platform_hardening_20260924.py \
       tests/test_ml_registry.py \
       tests/test_ml_strict_schema.py \
