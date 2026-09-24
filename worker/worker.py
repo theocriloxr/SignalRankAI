@@ -159,12 +159,19 @@ class Worker:
                 lambda: self._ecosystem_bootstrap_once(),
                 restart_on_failure=False,
             )
-        if _env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+        # Provider-catalogue persistence is analytics/maintenance work. In a
+        # decomposed deployment it must not occupy the delivery/outcome worker's
+        # tiny DB budget for minutes at a time. Monolith deployments may retain
+        # it, or operators can explicitly opt the worker back in.
+        _discovery_default = not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False)
+        if _env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", _discovery_default):
             _register_task(
                 "instrument_discovery",
                 lambda: self._instrument_discovery_loop(),
                 restart_on_failure=True,
             )
+        else:
+            logger.info("[worker] DynamicInstrumentDiscovery disabled for decomposed worker")
         if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
             _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
         if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
