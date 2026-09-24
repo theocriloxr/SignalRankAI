@@ -214,3 +214,22 @@ def test_weekly_recap_uses_delivery_proof_not_raw_generated_signals():
     assert "delivery_confirmed_at" in block
     assert "resolved_win_rate" in block
     assert "not a forecast" in block
+
+
+def test_market_data_asset_type_keeps_index_aliases_canonical():
+    from data.fetcher import get_asset_type, is_index, is_stock, normalize_index_symbol
+
+    aliases = {
+        "US500": "^GSPC",
+        "SPX500": "^GSPC",
+        "USTEC": "^NDX",
+        "DAX40": "^GDAXI",
+        "FTSE100": "^FTSE",
+        "NIKKEI225": "^N225",
+        "STOXX50": "^STOXX50E",
+    }
+    for symbol, provider_symbol in aliases.items():
+        assert is_index(symbol), symbol
+        assert not is_stock(symbol), symbol
+        assert get_asset_type(symbol) == "index", symbol
+        assert normalize_index_symbol(symbol) == provider_symbol
