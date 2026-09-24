@@ -276,3 +276,20 @@ def test_delivery_readiness_probe_is_read_only_and_multi_asset():
     assert "mark_signal_delivery" not in source
     assert "expire_signal" not in source
     assert "send_message" not in source
+
+
+
+def test_expired_signal_lifecycle_status_is_consistent_and_backfillable():
+    pg_source = (ROOT / "db/pg_features.py").read_text(encoding="utf-8")
+    section = pg_source[
+        pg_source.index("async def expire_signal"):
+        pg_source.index("# ---------------------------------------------------------------------------", pg_source.index("async def expire_signal"))
+    ]
+    assert '.values(expired=True, status="expired")' in section
+
+    script = (ROOT / "scripts/backfill_expired_signal_status.py").read_text(encoding="utf-8")
+    assert '_OPEN_LIKE = ("active", "open", "issued")' in script
+    assert "Signal.expired.is_(True)" in script
+    assert '.values(status="expired")' in script
+    assert 'parser.add_argument("--apply", action="store_true")' in script
+    assert "await session.rollback()" in script
