@@ -12,7 +12,7 @@ import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -321,7 +321,7 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _app_base_url(request: Request) -> str:
+def _app_base_url_from_env() -> str:
     configured = str(
         os.getenv("APP_BASE_URL")
         or os.getenv("STAGING_APP_BASE_URL")
@@ -330,7 +330,11 @@ def _app_base_url(request: Request) -> str:
     ).strip().rstrip("/")
     if configured and not configured.startswith(("http://", "https://")):
         configured = f"https://{configured}"
-    return configured or str(request.base_url).rstrip("/")
+    return configured
+
+
+def _app_base_url(request: Request) -> str:
+    return _app_base_url_from_env() or str(request.base_url).rstrip("/")
 
 
 def _cookie_secure() -> bool:
