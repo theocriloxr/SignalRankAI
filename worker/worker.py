@@ -825,19 +825,29 @@ class Worker:
                 baseline_path = os.getenv("ML_BASELINE_FEATURE_STATS_PATH", "ml/baseline_feature_stats.json")
                 live_path = os.getenv("ML_LIVE_FEATURE_STATS_PATH", "ml/live_feature_stats.json")
 
-                if not (os.path.exists(baseline_path) and os.path.exists(live_path)):
-                    raise FileNotFoundError("baseline/live feature stats files not found")
+                if os.path.exists(baseline_path) and os.path.exists(live_path):
+                    with open(baseline_path, "r", encoding="utf-8") as fb:
+                        baseline = json.load(fb) or {}
+                    with open(live_path, "r", encoding="utf-8") as fl:
+                        live = json.load(fl) or {}
+                    drift_source = "files"
+                else:
+                    from ml.live_drift import load_durable_feature_baseline, load_live_feature_samples
 
-                with open(baseline_path, "r", encoding="utf-8") as fb:
-                    baseline = json.load(fb) or {}
-                with open(live_path, "r", encoding="utf-8") as fl:
-                    live = json.load(fl) or {}
+                    baseline = await load_durable_feature_baseline()
+                    live = load_live_feature_samples()
+                    drift_source = "durable_champion+redis_live"
+                    if not baseline or not live:
+                        raise FileNotFoundError("durable baseline/live feature sample not available yet")
 
                 result = detect_feature_drift(
                     baseline_features=dict(baseline),
                     live_features=dict(live),
                     psi_threshold=psi_threshold,
+                    minimum_samples=max(10, int(os.getenv("ML_DRIFT_MIN_LIVE_SAMPLES", "50") or 50)),
+                    minimum_features=max(1, int(os.getenv("ML_DRIFT_MIN_EVALUATED_FEATURES", "5") or 5)),
                 )
+                result["source"] = drift_source
 
                 if bool(result.get("drift_detected")):
                     severity = 0.0
@@ -851,8 +861,29 @@ class Worker:
                         state.set_sync("signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2))
                     except Exception:
                         pass
+                    try:
+                        prior_consecutive = int(state.get_sync("signalrankai:ml:drift:consecutive") or 0)
+                    except Exception:
+                        prior_consecutive = 0
+                    consecutive = prior_consecutive + 1
+                    try:
+                        state.set_sync(
+                            "signalrankai:ml:drift:consecutive",
+                            str(consecutive),
+                            ex=max(1800, interval * 4),
+                        )
+                    except Exception:
+                        pass
                     await self._notify_admin_drift(result)
-                    if retrain_on_drift and str(state.get_sync("signalrankai:ml:drift:retrain_running") or "").strip() != "1":
+                    required_consecutive = max(
+                        1,
+                        int(os.getenv("ML_DRIFT_REQUIRED_CONSECUTIVE_CHECKS", "2") or 2),
+                    )
+                    if (
+                        retrain_on_drift
+                        and consecutive >= required_consecutive
+                        and str(state.get_sync("signalrankai:ml:drift:retrain_running") or "").strip() != "1"
+                    ):
                         try:
                             state.set_sync("signalrankai:ml:drift:retrain_running", "1", ex=max(1800, interval * 2))
                             asyncio.create_task(self._drift_retrain_once(ml_train, lookback_days=7))
@@ -862,6 +893,7 @@ class Worker:
                     try:
                         state.set_sync("signalrankai:ml:drift:mode", "normal", ex=max(600, interval))
                         state.set_sync("signalrankai:ml:drift:severity", "0", ex=max(600, interval))
+                        state.set_sync("signalrankai:ml:drift:consecutive", "0", ex=max(600, interval))
                     except Exception:
                         pass
             except Exception as exc:
