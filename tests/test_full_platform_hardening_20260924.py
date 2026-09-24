@@ -258,3 +258,16 @@ def test_runtime_audit_classifies_delivery_failures_without_exposing_raw_errors(
     assert "missing_message_id" in source
     assert "MAX(d.attempt_count) AS max_attempts" in source
     assert "SELECT d.last_error" not in source
+
+
+
+def test_delivery_readiness_probe_is_read_only_and_multi_asset():
+    source = (ROOT / "scripts/runtime_delivery_readiness_probe.py").read_text(encoding="utf-8")
+    assert 'ASSET_CLASSES = ("crypto", "fx", "commodity", "index", "stock")' in source
+    assert "validate_delivery_freshness(" in source
+    assert "final_send=True" in source
+    assert '"read_only": True' in source
+    assert "record_signal_delivery" not in source
+    assert "mark_signal_delivery" not in source
+    assert "expire_signal" not in source
+    assert "send_message" not in source
