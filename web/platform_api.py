@@ -70,6 +70,15 @@ class RegisterRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=160)
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
+    referral_code: str | None = Field(default=None, max_length=64)
+    signup_source: str | None = Field(default=None, max_length=32)
+    landing_path: str | None = Field(default=None, max_length=512)
+    http_referrer: str | None = Field(default=None, max_length=1024)
+    utm_source: str | None = Field(default=None, max_length=160)
+    utm_medium: str | None = Field(default=None, max_length=160)
+    utm_campaign: str | None = Field(default=None, max_length=200)
+    utm_content: str | None = Field(default=None, max_length=200)
+    utm_term: str | None = Field(default=None, max_length=200)
 
 
 class LoginRequest(BaseModel):
@@ -314,9 +323,9 @@ def _client_ip(request: Request) -> str | None:
 
 def _app_base_url(request: Request) -> str:
     configured = str(
-        os.getenv("RAILWAY_PUBLIC_DOMAIN")
-        or os.getenv("APP_BASE_URL")
+        os.getenv("APP_BASE_URL")
         or os.getenv("STAGING_APP_BASE_URL")
+        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
         or ""
     ).strip().rstrip("/")
     if configured and not configured.startswith(("http://", "https://")):
@@ -464,6 +473,49 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                 password=payload.password,
                 display_name=payload.display_name,
             )
+            signup_origin = str(request.headers.get("origin") or request.base_url).rstrip("/")[:255]
+            signup_channel = str(payload.signup_source or payload.client_type or "web").strip().lower()[:32] or "web"
+            await session.execute(
+                text(
+                    "INSERT INTO user_acquisition("
+                    "user_id,signup_channel,signup_origin,landing_path,http_referrer,referral_code,"
+                    "utm_source,utm_medium,utm_campaign,utm_content,utm_term,client_type,metadata"
+                    ") VALUES(:uid,:channel,:origin,:path,:referrer,:referral_code,:utm_source,:utm_medium,"
+                    ":utm_campaign,:utm_content,:utm_term,:client_type,CAST(:metadata AS JSONB)) "
+                    "ON CONFLICT(user_id) DO NOTHING"
+                ),
+                {
+                    "uid": int(user_id),
+                    "channel": signup_channel,
+                    "origin": signup_origin,
+                    "path": str(payload.landing_path or "/app")[:512],
+                    "referrer": str(payload.http_referrer or "")[:1024] or None,
+                    "referral_code": str(payload.referral_code or "").strip()[:64] or None,
+                    "utm_source": str(payload.utm_source or "").strip()[:160] or None,
+                    "utm_medium": str(payload.utm_medium or "").strip()[:160] or None,
+                    "utm_campaign": str(payload.utm_campaign or "").strip()[:200] or None,
+                    "utm_content": str(payload.utm_content or "").strip()[:200] or None,
+                    "utm_term": str(payload.utm_term or "").strip()[:200] or None,
+                    "client_type": payload.client_type,
+                    "metadata": json.dumps(
+                        {
+                            "host": str(request.url.hostname or "")[:255],
+                            "web_first": payload.client_type in {"web", "pwa"},
+                        },
+                        separators=(",", ":"),
+                    ),
+                },
+            )
+            if payload.referral_code:
+                from db.pg_features import process_referral_signup_for_user
+                referral_result = await process_referral_signup_for_user(
+                    session,
+                    referred_user_id=int(user_id),
+                    referral_code=payload.referral_code,
+                    signup_channel=signup_channel,
+                )
+                if referral_result.get("status") == "invalid_code":
+                    logger.info("[web_signup] invalid referral code ignored user_id=%s", user_id)
             await request_email_verification(session, user_id=user_id, base_url=_app_base_url(request))
             await session.commit()
     except IdentityConflict as exc:
