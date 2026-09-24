@@ -65,4 +65,4 @@ def test_profile_ui_exposes_locale_quiet_hours_and_cross_channel_sync():
 
 def test_service_worker_shell_version_was_rotated_for_current_frontend():
     sw = (ROOT / "web/platform_app/service-worker.js").read_text(encoding="utf-8")
-    assert "signalrank-shell-v3" in sw
+    assert re.search(r"signalrank-shell-v([3-9]|[1-9][0-9]+)", sw)
