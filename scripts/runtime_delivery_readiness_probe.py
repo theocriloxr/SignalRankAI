@@ -54,7 +54,11 @@ def _asset_class(payload: dict[str, Any]) -> str:
 async def _quote_probe(symbol: str, timeout_seconds: float) -> dict[str, Any]:
     try:
         result = await asyncio.wait_for(
-            get_live_price_result(symbol, timeout=min(8.0, timeout_seconds)),
+            get_live_price_result(
+                symbol,
+                timeout=min(8.0, timeout_seconds),
+                require_delivery_freshness=True,
+            ),
             timeout=timeout_seconds,
         )
         if isinstance(result, LivePriceQuote):
