@@ -189,3 +189,28 @@ def test_worker_reports_prediction_starvation_without_automatically_relaxing_thr
     assert "ML_STARVATION_MIN_LIVE_SAMPLES" in section
     assert "ML_STARVATION_MIN_PASS_RATE" in section
     assert "ML_PROB_THRESHOLD" not in section
+
+
+
+def test_analytics_runtime_owns_drift_monitor_when_enabled():
+    from pathlib import Path
+
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    assert 'if _enabled("ML_DRIFT_MONITOR_ENABLED", False):' in source
+    assert 'name="analytics-ml-drift"' in source
+    assert "detect_feature_drift" in source
+    assert "detect_prediction_starvation" in source
+    assert "load_live_prediction_samples" in source
+    assert "[analytics_ml_drift]" in source
+    assert "[analytics_ml_prediction_starvation]" in source
+
+
+def test_prediction_starvation_never_relaxes_certified_threshold_in_analytics_runtime():
+    from pathlib import Path
+
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    section = source[source.index("async def _ml_drift_loop"):source.index("async def run_async")]
+    assert "ML_STARVATION_RETRAIN_ON_DETECT" in section
+    assert '"0.01"' in section
+    assert "ML_PROB_THRESHOLD" not in section
+    assert "classification_threshold" not in section
