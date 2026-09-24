@@ -317,6 +317,12 @@ class MLFilter:
                 strict=strict_feature_schema_enabled() and int(self.schema_version or 1) >= 3,
                 critical_features=CRITICAL_FEATURES_V3,
             )
+            try:
+                from ml.live_drift import record_live_feature_vector
+                record_live_feature_vector(normalized)
+            except Exception:
+                pass
+
             feature_vector = []
             for col in (self.feature_cols or []):
                 feature_vector.append(float(normalized.get(col, 0.0)))

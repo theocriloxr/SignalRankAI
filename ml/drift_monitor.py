@@ -42,20 +42,42 @@ def detect_feature_drift(
     baseline_features: dict[str, list[float]],
     live_features: dict[str, list[float]],
     psi_threshold: float = 0.25,
+    minimum_samples: int = 50,
+    minimum_features: int = 5,
 ) -> dict[str, Any]:
+    """Compare baseline and live feature distributions with coverage safeguards.
+
+    Empty or tiny live samples are marked insufficient instead of being treated
+    as evidence of no drift. Drift is actionable only after enough independent
+    features have adequate sample support.
+    """
     per_feature: dict[str, float] = {}
     drifting: list[str] = []
+    insufficient: list[str] = []
+    evaluated: list[str] = []
+    required_samples = max(10, int(minimum_samples or 50))
     for feature, expected_vals in (baseline_features or {}).items():
         actual_vals = (live_features or {}).get(feature) or []
         expected = [_safe_float(v) for v in expected_vals]
         actual = [_safe_float(v) for v in actual_vals]
+        if len(expected) < 10 or len(actual) < required_samples:
+            insufficient.append(feature)
+            continue
         score = float(psi(expected, actual, bins=10))
         per_feature[feature] = round(score, 6)
+        evaluated.append(feature)
         if score >= float(psi_threshold):
             drifting.append(feature)
+    enough_features = len(evaluated) >= max(1, int(minimum_features or 5))
     return {
-        "drift_detected": bool(drifting),
+        "drift_detected": bool(enough_features and drifting),
+        "actionable": bool(enough_features),
         "psi_threshold": float(psi_threshold),
-        "drifting_features": drifting,
+        "minimum_samples": required_samples,
+        "minimum_features": max(1, int(minimum_features or 5)),
+        "evaluated_features": evaluated,
+        "insufficient_features": insufficient,
+        "drifting_features": drifting if enough_features else [],
         "psi_scores": per_feature,
     }
+

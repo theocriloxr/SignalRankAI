@@ -16,6 +16,7 @@ import tempfile
 from bisect import bisect_right
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -177,6 +178,154 @@ def _promotion_quality_gate(
         and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
     )
     return ok, min_accuracy, min_auc
+
+
+
+def _champion_comparison_gate(
+    candidate_metrics: dict,
+    primary_path: str | Path,
+    *,
+    deployed_runtime: bool | None = None,
+    champion_metrics: dict[str, Any] | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Require a new candidate to be non-inferior to the active champion.
+
+    Absolute promotion gates answer "is this model usable?". This comparison
+    separately answers "is it safe to replace what is already serving?".
+    Missing champion evidence never blocks a first model, but a material
+    regression in any comparable core metric keeps the new model as challenger.
+    """
+    if deployed_runtime is None:
+        deployed_runtime = _is_production_runtime()
+    if not _env_bool("ML_CHAMPION_COMPARISON_ENABLED", deployed_runtime):
+        return True, {"enabled": False, "reason": "disabled"}
+    source = "durable_registry" if champion_metrics else "local_primary"
+    champion_metrics = dict(champion_metrics or {})
+    if not champion_metrics:
+        path = Path(primary_path)
+        if not path.exists():
+            return True, {"enabled": True, "reason": "no_existing_champion", "source": source}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            champion_metrics = dict(
+                payload.get("metrics")
+                or (payload.get("training_meta") or {}).get("metrics")
+                or {}
+            )
+        except Exception as exc:
+            return False, {
+                "enabled": True,
+                "reason": "champion_metrics_unreadable",
+                "source": source,
+                "error": type(exc).__name__,
+            }
+
+    tolerances = {
+        "auc": float(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01),
+        "pr_auc": float(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02),
+        "balanced_accuracy": float(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02),
+        "expected_r": float(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15),
+    }
+    regressions: dict[str, dict[str, float]] = {}
+    compared: dict[str, dict[str, float]] = {}
+    for key, tolerance in tolerances.items():
+        if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
+            continue
+        try:
+            candidate = float(candidate_metrics[key])
+            champion = float(champion_metrics[key])
+        except (TypeError, ValueError):
+            continue
+        compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
+        if candidate < champion - tolerance:
+            regressions[key] = compared[key]
+
+    candidate_cal = dict(candidate_metrics.get("calibration") or {})
+    champion_cal = dict(champion_metrics.get("calibration") or {})
+    for key, env_name, default in (
+        ("calibrated_ece", "ML_CHAMPION_MAX_ECE_REGRESSION", 0.02),
+        ("calibrated_brier", "ML_CHAMPION_MAX_BRIER_REGRESSION", 0.02),
+    ):
+        if candidate_cal.get(key) is None or champion_cal.get(key) is None:
+            continue
+        try:
+            candidate = float(candidate_cal[key])
+            champion = float(champion_cal[key])
+            tolerance = float(os.getenv(env_name, str(default)) or default)
+        except (TypeError, ValueError):
+            continue
+        compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
+        if candidate > champion + tolerance:
+            regressions[key] = compared[key]
+
+    minimum_comparable = max(1, int(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2))
+    if len(compared) < minimum_comparable:
+        return False, {
+            "enabled": True,
+            "reason": "insufficient_comparable_champion_metrics",
+            "source": source,
+            "compared": compared,
+            "required": minimum_comparable,
+        }
+    return not regressions, {
+        "enabled": True,
+        "reason": "noninferior" if not regressions else "material_regression",
+        "source": source,
+        "compared": compared,
+        "regressions": regressions,
+    }
+
+
+async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Load the serving champion evidence from the durable model registry.
+
+    Analytics containers may start from a repository-bundled model file that is
+    older than the database champion. Promotion comparisons must therefore use
+    the durable active artifact whenever it is available.
+    """
+    try:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(**_training_session_kwargs("ml_champion_compare")) as session:
+            result = await asyncio.wait_for(
+                session.execute(
+                    text(
+                        """
+                        SELECT artifact_hash_sha256, trained_at, metrics, payload
+                        FROM ml_model_artifacts
+                        WHERE model_name='primary' AND is_active IS TRUE
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    )
+                ),
+                timeout=_training_query_timeout(),
+            )
+            row = result.mappings().first()
+            await session.rollback()
+        if not row:
+            return None, {"source": "durable_registry", "reason": "no_active_primary"}
+        payload = dict(row.get("payload") or {})
+        metrics = dict(
+            row.get("metrics")
+            or payload.get("metrics")
+            or (payload.get("training_meta") or {}).get("metrics")
+            or {}
+        )
+        return metrics or None, {
+            "source": "durable_registry",
+            "artifact_hash_sha256": str(row.get("artifact_hash_sha256") or ""),
+            "trained_at": str(row.get("trained_at") or payload.get("trained_at") or ""),
+            "metric_count": len(metrics),
+        }
+    except Exception as exc:
+        logger.warning("[ml_champion_compare] durable lookup unavailable error=%s", type(exc).__name__)
+        return None, {
+            "source": "durable_registry",
+            "reason": "lookup_failed",
+            "error": type(exc).__name__,
+        }
 
 
 def _offline_bootstrap_allowed() -> bool:
@@ -1178,6 +1327,28 @@ async def load_training_data_sync(lookback_days: int = 90):
     return await load_training_data(lookback_days)
 
 
+
+def _feature_distribution_baseline(
+    frame: pd.DataFrame,
+    feature_cols: list[str],
+    *,
+    max_points: int = 128,
+) -> dict[str, list[float]]:
+    """Create a deterministic bounded baseline for production PSI monitoring."""
+    points = max(20, min(512, int(max_points or 128)))
+    result: dict[str, list[float]] = {}
+    quantiles = np.linspace(0.0, 1.0, points)
+    for feature in feature_cols:
+        try:
+            values = pd.to_numeric(frame[feature], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+            if len(values) < 20:
+                continue
+            sampled = np.quantile(values.to_numpy(dtype=float), quantiles)
+            result[str(feature)] = [float(value) for value in sampled if np.isfinite(value)]
+        except Exception:
+            continue
+    return result
+
 def _expected_calibration_error(probabilities, labels, bins: int = 10) -> float:
     probs = np.asarray(probabilities, dtype=float)
     truth = np.asarray(labels, dtype=float)
@@ -1942,9 +2113,34 @@ async def main(lookback_days: int | None = None):
             calibration_metrics.get("maximum_ece"),
         )
 
+    primary_path = _primary_model_path()
+    champion_comparison = {"enabled": False, "reason": "not_evaluated"}
+    if promotion_eligible:
+        durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
+        champion_ok, champion_comparison = _champion_comparison_gate(
+            metrics,
+            primary_path,
+            deployed_runtime=deployed_runtime,
+            champion_metrics=durable_champion_metrics,
+        )
+        champion_comparison["durable_lookup"] = durable_champion_evidence
+        if not champion_ok:
+            promotion_eligible = False
+            logger.warning(
+                "[ml_training_run] id=%s status=candidate_only reason=champion_noninferior_failed comparison=%s primary_model_preserved=true",
+                run_id,
+                champion_comparison,
+            )
+
+    feature_baseline = _feature_distribution_baseline(
+        X_train,
+        feature_cols,
+        max_points=int(os.getenv("ML_DRIFT_BASELINE_POINTS", "128") or 128),
+    )
     training_meta = {
         "run_id": run_id,
         "offline_bootstrap_used": bool(used_bootstrap),
+        "feature_baseline": feature_baseline,
         "source_rows": int(source_rows),
         "total_rows": int(len(df)),
         "effective_rows": float(effective_rows),
@@ -1953,8 +2149,8 @@ async def main(lookback_days: int | None = None):
         "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
         "metrics": metrics,
         "promotion_eligible": bool(promotion_eligible),
+        "champion_comparison": champion_comparison,
     }
-    primary_path = _primary_model_path()
     candidate_path = Path(
         str(
             os.getenv("ML_CANDIDATE_MODEL_PATH")
