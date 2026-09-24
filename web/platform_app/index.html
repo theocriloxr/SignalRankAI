@@ -129,7 +129,7 @@
 
       <section id="signalsView" class="view" hidden>
         <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
-        <div class="filters"><input id="signalAssetFilter" placeholder="Filter by asset" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
+        <div class="filters signal-filters"><input id="signalAssetFilter" placeholder="Asset e.g. EURUSD" /><select id="signalClassFilter"><option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="stock">Stocks / equities</option><option value="index">Indices</option><option value="commodity">Commodities</option></select><select id="signalTimeframeFilter"><option value="">All timeframes</option><option>1m</option><option>3m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><input id="signalStrategyFilter" placeholder="Strategy" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
         <div id="signalsTable" class="table-wrap"></div>
       </section>
 
