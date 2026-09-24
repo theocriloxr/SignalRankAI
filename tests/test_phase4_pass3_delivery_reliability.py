@@ -367,3 +367,51 @@ async def test_accepted_send_survives_db_failure_and_reconciles(monkeypatch):
     assert calls[0]["delivery_state"] == "RECONCILED"
     assert calls[0]["sent_ok"] is True
     assert await store.pending(limit=10) == []
+
+
+
+@pytest.mark.asyncio
+async def test_generic_no_proof_result_cannot_clobber_specific_block_reason():
+    from db.pg_features import mark_signal_delivery_result
+
+    user = SimpleNamespace(id=5, telegram_user_id=42)
+    row = SimpleNamespace(
+        sent_ok=False,
+        delivery_state="BLOCKED",
+        telegram_chat_id=None,
+        telegram_message_id=None,
+        last_error="live_price_unavailable:final_live_price_unavailable",
+        attempt_count=1,
+        telegram_send_started_at=None,
+    )
+
+    class _Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class _Session:
+        def __init__(self):
+            self.results = iter((_Result(user), _Result(row)))
+            self.flushed = False
+
+        async def execute(self, _query):
+            return next(self.results)
+
+        async def flush(self):
+            self.flushed = True
+
+    session = _Session()
+    assert await mark_signal_delivery_result(
+        session,
+        telegram_user_id=42,
+        signal_id="sig-blocked",
+        sent_ok=False,
+        error="delivery_not_confirmed",
+        delivery_state="BLOCKED",
+    ) is True
+    assert row.delivery_state == "BLOCKED"
+    assert row.last_error == "live_price_unavailable:final_live_price_unavailable"
+    assert session.flushed is True
