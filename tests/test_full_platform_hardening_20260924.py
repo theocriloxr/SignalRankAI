@@ -29,7 +29,7 @@ def test_profile_payload_normalizes_all_supported_market_classes():
         }
     )
     assert prefs.trade_profile == "day"
-    assert prefs.asset_classes == ("crypto", "fx", "stocks", "index", "commodities")
+    assert prefs.asset_classes == ("crypto", "fx", "stock", "index", "commodity")
     assert prefs.preferred_timeframes == ("5m", "1h", "4h", "1d")
 
 
