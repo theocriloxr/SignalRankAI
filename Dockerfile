@@ -57,7 +57,8 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_openai_ai_provider.py \
       tests/test_ai_review_router_consensus.py \
       tests/test_ai_governance_hardening.py \
-      tests/test_ml_calibration_audit.py
+      tests/test_ml_calibration_audit.py \
+      tests/test_ml_registry.py
 
 # Ensure start script is executable and use it as entrypoint so migrations/run-time
 # setup happens when the container starts (not during image build).
