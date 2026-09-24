@@ -120,6 +120,7 @@ def _model_path() -> Path:
 
 
 def _load_model() -> None:
+    should_sync_durable = False
     if _MODEL_CACHE["loaded"]:
         if _MODEL_CACHE.get("booster") is not None:
             return
@@ -128,6 +129,7 @@ def _load_model() -> None:
         # cadence instead of caching "no model" forever.
         if not _durable_model_retry_due():
             return
+        should_sync_durable = True
         _MODEL_CACHE.update({
             "loaded": False,
             "feature_cols": [],
@@ -145,7 +147,7 @@ def _load_model() -> None:
     path = _model_path()
     # Dedicated roles do not run db.auto_ops, so synchronize the analytics-owned
     # durable champion before trusting the image-baked local artifact.
-    if _durable_model_retry_due() or not path.exists():
+    if should_sync_durable or (not path.exists() and _durable_model_retry_due()):
         _restore_durable_primary_if_enabled(path)
     if not path.exists():
         _MODEL_CACHE["error"] = f"model_missing:{path}"
