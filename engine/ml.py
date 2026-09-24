@@ -405,15 +405,28 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             preview = ",".join(missing[:8])
             suffix = f" (+{len(missing)-8} more)" if len(missing) > 8 else ""
             logger.warning("[ml] schema mismatch: missing features=%s%s", preview, suffix)
-            # Log more details when features are missing for debugging
             logger.debug("[ml] signal data keys: %s", list(signal.keys()))
             logger.debug("[ml] signal score: %s", signal.get("score"))
             logger.debug("[ml] signal entry: %s", signal.get("entry"))
-            # Use 0.0 for missing features instead of returning None - this ensures ML scoring runs
-            # even with incomplete feature data from 429 errors or missing indicators
-            if str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {"1", "true", "yes", "on"}:
-                logger.debug("[ml] strict schema mode - using default values for missing features")
-        # Always use 0.0 for any missing features instead of failing
+            strict_schema = str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+            if strict_schema:
+                # Fail closed: missing inference features are evidence that the
+                # runtime input contract does not match the trained model.
+                # Substituting zeros here can create confident but meaningless
+                # predictions during provider/data degradation.
+                logger.error(
+                    "[ml] strict schema rejection: missing=%s%s asset=%s",
+                    preview,
+                    suffix,
+                    signal.get("asset"),
+                )
+                return None
+            logger.warning(
+                "[ml] permissive schema fallback: zero-filling %s feature(s)",
+                len(missing),
+            )
         vec = [float(values.get(col, 0.0)) for col in feature_cols]
         return np.asarray([vec], dtype=np.float32)
     except Exception:
