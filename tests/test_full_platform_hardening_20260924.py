@@ -264,8 +264,11 @@ def test_runtime_audit_classifies_delivery_failures_without_exposing_raw_errors(
 def test_delivery_readiness_probe_is_read_only_and_multi_asset():
     source = (ROOT / "scripts/runtime_delivery_readiness_probe.py").read_text(encoding="utf-8")
     assert 'ASSET_CLASSES = ("crypto", "fx", "commodity", "index", "stock")' in source
+    assert "get_live_price_result(" in source
     assert "validate_delivery_freshness(" in source
     assert "final_send=True" in source
+    assert "DELIVERY_READINESS_LOOKBACK_DAYS" in source
+    assert "quote_probe" in source
     assert "sys.path.insert(0, str(Path(__file__).resolve().parents[1]))" in source
     assert '"read_only": True' in source
     assert "record_signal_delivery" not in source
