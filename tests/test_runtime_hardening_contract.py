@@ -128,7 +128,14 @@ def test_outcome_tracker_skips_reprocessing_already_recorded_tp():
     assert "if target_tp <= prev_tp:" in hit
     assert "await publish_snapshot()" in hit
     assert "return" in hit
-    assert hit.index("if target_tp <= prev_tp:") < hit.index('logger.info(\n                    "[outcome_tracker] Hit detected:')
+    assert "advanced_stages" in hit
+    assert "[outcome_tracker] Hit committed:" in hit
+    assert "await _set_tp_progress(signal_id, tp_index)" in hit
+    assert hit.index("if target_tp <= prev_tp:") < hit.index("[outcome_tracker] Hit committed:")
+    progress = source[source.index("def _database_tp_progress"):source.index("@dataclass", source.index("def _database_tp_progress"))]
+    assert 'getattr(lifecycle, "highest_tp_hit", 0)' in progress
+    cache = source[source.index("async def _get_tp_progress"):source.index("async def _set_tp_progress")]
+    assert "state.cache_get" in cache
 
 
 def test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default():
