@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
 # Add parent dir to path
@@ -1196,6 +1197,101 @@ def _expected_calibration_error(probabilities, labels, bins: int = 10) -> float:
     return float(ece)
 
 
+def _platt_features(probabilities):
+    probs = np.clip(np.asarray(probabilities, dtype=float), 1e-6, 1.0 - 1e-6)
+    return np.log(probs / (1.0 - probs)).reshape(-1, 1)
+
+
+def _fit_platt_calibrator(probabilities, labels):
+    model = LogisticRegression(
+        solver="lbfgs",
+        C=1000.0,
+        max_iter=1000,
+        random_state=42,
+    )
+    model.fit(_platt_features(probabilities), np.asarray(labels, dtype=int))
+    return model
+
+
+def _calibrator_score(probabilities, labels) -> tuple[float, float]:
+    probs = np.asarray(probabilities, dtype=float)
+    truth = np.asarray(labels, dtype=float)
+    brier = float(np.mean((probs - truth) ** 2)) if len(probs) else 1.0
+    ece = _expected_calibration_error(probs, truth)
+    return ece, brier
+
+
+def _select_probability_calibrator(calibration_probabilities, calibration_labels):
+    """Select isotonic vs Platt without consulting the final validation window.
+
+    The calibration-fit window is split chronologically into an inner fit and
+    inner selection slice. Candidate calibrators are fitted only on the inner
+    fit rows and ranked on the later selection rows by ECE, then Brier score.
+    The selected method is subsequently refitted on the full calibration-fit
+    window before it is evaluated once on the untouched final validation set.
+    """
+    probs = np.asarray(calibration_probabilities, dtype=float)
+    labels = np.asarray(calibration_labels, dtype=int)
+    n = len(probs)
+    if n < 40 or len(np.unique(labels)) < 2:
+        return "isotonic", {"selection_rows": 0, "selection_ece": None, "selection_brier": None}
+
+    split = max(20, min(n - 20, int(n * 0.70)))
+    fit_probs, select_probs = probs[:split], probs[split:]
+    fit_labels, select_labels = labels[:split], labels[split:]
+    if len(np.unique(fit_labels)) < 2 or len(np.unique(select_labels)) < 2:
+        return "isotonic", {"selection_rows": int(len(select_labels)), "selection_ece": None, "selection_brier": None}
+
+    candidates: dict[str, tuple[float, float]] = {}
+    try:
+        iso = IsotonicRegression(out_of_bounds="clip")
+        iso.fit(fit_probs, fit_labels)
+        candidates["isotonic"] = _calibrator_score(iso.predict(select_probs), select_labels)
+    except Exception as exc:
+        logger.warning("Isotonic calibration selection failed: %s", exc)
+
+    try:
+        platt = _fit_platt_calibrator(fit_probs, fit_labels)
+        platt_pred = platt.predict_proba(_platt_features(select_probs))[:, 1]
+        candidates["platt"] = _calibrator_score(platt_pred, select_labels)
+    except Exception as exc:
+        logger.warning("Platt calibration selection failed: %s", exc)
+
+    if not candidates:
+        return "isotonic", {"selection_rows": int(len(select_labels)), "selection_ece": None, "selection_brier": None}
+
+    kind, (ece, brier) = min(candidates.items(), key=lambda item: (item[1][0], item[1][1], item[0]))
+    logger.info(
+        "[ml_calibration_selector] selected=%s selection_rows=%s ece=%.6f brier=%.6f candidates=%s",
+        kind,
+        len(select_labels),
+        ece,
+        brier,
+        {name: {"ece": vals[0], "brier": vals[1]} for name, vals in candidates.items()},
+    )
+    return kind, {
+        "selection_rows": int(len(select_labels)),
+        "selection_ece": float(ece),
+        "selection_brier": float(brier),
+    }
+
+
+def _fit_selected_calibration_curve(kind: str, probabilities, labels):
+    probs = np.asarray(probabilities, dtype=float)
+    truth = np.asarray(labels, dtype=int)
+    if kind == "platt":
+        calibrator = _fit_platt_calibrator(probs, truth)
+        xs = np.linspace(0.0, 1.0, 257, dtype=float)
+        ys = calibrator.predict_proba(_platt_features(xs))[:, 1]
+        return [float(x) for x in xs], [float(y) for y in ys]
+    calibrator = IsotonicRegression(out_of_bounds="clip")
+    calibrator.fit(probs, truth)
+    return (
+        [float(x) for x in getattr(calibrator, "X_thresholds_", [])],
+        [float(y) for y in getattr(calibrator, "y_thresholds_", [])],
+    )
+
+
 def _temporal_three_way_indices(
     row_count: int,
     *,
@@ -1443,15 +1539,41 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
 
     calibration_x: list[float] = []
     calibration_y: list[float] = []
+    calibration_kind = "none"
+    calibration_selection = {
+        "selection_rows": 0,
+        "selection_ece": None,
+        "selection_brier": None,
+    }
     calibrated_proba = np.asarray(y_proba, dtype=float)
     try:
         if len(np.unique(calibration_fit_proba)) >= 2 and len(np.unique(y_cal)) >= 2:
-            calibrator = IsotonicRegression(out_of_bounds='clip')
-            calibrator.fit(calibration_fit_proba, y_cal)
-            calibration_x = [float(x) for x in getattr(calibrator, 'X_thresholds_', [])]
-            calibration_y = [float(y) for y in getattr(calibrator, 'y_thresholds_', [])]
-            calibrated_proba = np.asarray(calibrator.predict(y_proba), dtype=float)
+            calibration_kind, calibration_selection = _select_probability_calibrator(
+                calibration_fit_proba,
+                y_cal,
+            )
+            calibration_x, calibration_y = _fit_selected_calibration_curve(
+                calibration_kind,
+                calibration_fit_proba,
+                y_cal,
+            )
+            if calibration_x and calibration_y:
+                calibrated_proba = np.asarray(
+                    np.interp(
+                        np.asarray(y_proba, dtype=float),
+                        np.asarray(calibration_x, dtype=float),
+                        np.asarray(calibration_y, dtype=float),
+                        left=float(calibration_y[0]),
+                        right=float(calibration_y[-1]),
+                    ),
+                    dtype=float,
+                )
+            else:
+                calibration_kind = "none"
     except Exception as exc:
+        calibration_kind = "none"
+        calibration_x = []
+        calibration_y = []
         logger.warning("Calibration fitting skipped: %s", exc)
 
     acc = accuracy_score(y_te, y_pred)
@@ -1524,6 +1646,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     max_brier = float(os.getenv("ML_MAX_CALIBRATION_BRIER", "0.25") or 0.25)
     max_ece = float(os.getenv("ML_MAX_CALIBRATION_ECE", "0.10") or 0.10)
     calibration_metrics = {
+        "calibration_kind": calibration_kind,
+        "selection_rows": int(calibration_selection.get("selection_rows") or 0),
+        "selection_ece": calibration_selection.get("selection_ece"),
+        "selection_brier": calibration_selection.get("selection_brier"),
         "validation_rows": validation_rows,
         "calibration_fit_rows": calibration_fit_rows,
         "positive_calibration_rows": int((np.asarray(y_cal) == 1).sum()),
@@ -1624,7 +1750,10 @@ def save_model(
         "training_run_id": str((training_meta or {}).get("run_id") or ""),
         "dataset_version": str((training_meta or {}).get("dataset_version") or ""),
         "parent_model_hash_sha256": str((training_meta or {}).get("parent_model_hash_sha256") or ""),
-        "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
+        "calibration_kind": str(
+            (((training_meta or {}).get("metrics") or {}).get("calibration") or {}).get("calibration_kind")
+            or ("isotonic" if calibration_x and calibration_y else "none")
+        ),
         "calibration_x": calibration_x or [],
         "calibration_y": calibration_y or [],
         "metrics": dict((training_meta or {}).get("metrics") or {}),
