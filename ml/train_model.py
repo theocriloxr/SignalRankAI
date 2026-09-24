@@ -63,6 +63,13 @@ def _training_query_timeout() -> float:
         return 20.0
 
 
+def _training_dataset_timeout() -> float:
+    try:
+        return max(30.0, float(os.getenv("ML_TRAIN_DATASET_TIMEOUT_SECONDS", "120") or 120))
+    except Exception:
+        return 120.0
+
+
 def _training_session_kwargs(label: str) -> dict:
     return {
         "priority": _training_db_priority(),
@@ -1644,7 +1651,33 @@ async def main(lookback_days: int | None = None):
         except Exception:
             lookback_days = 90
 
-    df = await load_training_data(int(lookback_days or 90))
+    logger.info(
+        "[ml_training_run] id=%s stage=dataset_load_start lookback_days=%s db_priority=%s session_timeout=%.1fs query_timeout=%.1fs dataset_timeout=%.1fs",
+        run_id,
+        int(lookback_days or 90),
+        _training_db_priority(),
+        _training_db_timeout(),
+        _training_query_timeout(),
+        _training_dataset_timeout(),
+    )
+    try:
+        df = await asyncio.wait_for(
+            load_training_data(int(lookback_days or 90)),
+            timeout=_training_dataset_timeout(),
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[ml_training_run] id=%s status=deferred reason=dataset_timeout timeout_seconds=%.1f current_model_preserved=true",
+            run_id,
+            _training_dataset_timeout(),
+        )
+        return False
+    logger.info(
+        "[ml_training_run] id=%s stage=dataset_load_complete rows=%s read_status=%s",
+        run_id,
+        0 if df is None else len(df),
+        str((df.attrs.get("read_status") if df is not None else "failed") or "failed"),
+    )
     read_status = str((df.attrs.get("read_status") if df is not None else "failed") or "failed")
     if read_status != "success":
         logger.warning(
