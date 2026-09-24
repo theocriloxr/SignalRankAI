@@ -23,7 +23,7 @@ from sqlalchemy import text
 from db.session import get_session, is_db_configured
 from services.security import encrypt_secret, is_encryption_available
 from services.platform.webhooks import validate_webhook_destination
-from core.tier_policy import evaluate_feature_access, get_entitlements, policy_snapshot
+from core.tier_policy import evaluate_command_access, evaluate_feature_access, get_entitlements, policy_snapshot
 from services.user_intelligence import (
     get_platform_user_trading_preferences,
     preferences_from_payload,
@@ -231,6 +231,11 @@ class ProfileUpdateRequest(BaseModel):
     marketing_consent: bool | None = None
 
 
+class AIAnalyzeRequest(BaseModel):
+    asset: str = Field(min_length=2, max_length=32)
+    timeframe: str = Field(default="1h", pattern=r"^(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|1w)$")
+
+
 class TradingProfileUpdateRequest(BaseModel):
     trade_profile: str | None = Field(default=None, max_length=32)
     risk_profile: str | None = Field(default=None, max_length=32)
@@ -284,6 +289,21 @@ def _assert_feature(user: dict[str, Any], feature: str) -> None:
                 "message": decision.reason,
             },
         )
+
+def _assert_command(user: dict[str, Any], command: str) -> None:
+    decision = evaluate_command_access(command, str(user.get("tier") or "free"))
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": decision.code,
+                "command": command,
+                "required_tier": decision.required_tier.value,
+                "current_tier": decision.current_tier.value,
+                "message": decision.reason,
+            },
+        )
+
 
 
 def _normalized_scopes(values: list[str]) -> list[str]:
@@ -818,8 +838,185 @@ async def signal_feed(
     return {"signals": [dict(row) for row in rows], "limit": limit, "offset": offset}
 
 
+@router.get("/live-price")
+async def live_price(
+    asset: str = Query(min_length=2, max_length=32),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    del user
+    symbol = str(asset or "").upper().strip()
+    try:
+        from data.get_live_price import get_live_price_result
+        from data.provider_types import LivePriceFailure, LivePriceQuote
+
+        result = await get_live_price_result(symbol, timeout=6.0)
+    except Exception as exc:
+        logger.warning("[platform_live_price] asset=%s error=%s", symbol, type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Live quote is temporarily unavailable") from exc
+
+    if isinstance(result, LivePriceFailure):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "LIVE_QUOTE_UNAVAILABLE",
+                "asset": symbol,
+                "provider": result.provider,
+                "reason": result.reason,
+            },
+        )
+    if not isinstance(result, LivePriceQuote):
+        raise HTTPException(status_code=503, detail="Live quote is temporarily unavailable")
+    return {
+        "asset": result.symbol,
+        "asset_class": result.asset_class,
+        "price": result.price,
+        "bid": result.bid,
+        "ask": result.ask,
+        "provider": result.provider,
+        "provider_symbol": result.provider_symbol,
+        "provider_health": result.provider_health,
+        "breaker_state": result.breaker_state,
+        "confidence": result.confidence,
+        "quote_kind": result.quote_kind,
+        "source_timestamp": result.source_timestamp,
+        "received_at": result.received_at,
+        "latency_ms": result.latency_ms,
+        "market_status": result.market_status,
+        "session": result.session,
+        "request_id": result.request_id,
+        "is_stale": result.is_stale,
+        "stale_reason": result.stale_reason,
+    }
+
+
+@router.get("/recap")
+async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    uid = int(user["id"])
+    proof_states = "('sent','delivered','confirmed','reconciled')"
+    async with get_session(label="platform.weekly_recap", timeout_seconds=10.0) as session:
+        total = int((await session.execute(text(
+            "SELECT COUNT(DISTINCT d.signal_id) FROM signal_deliveries d "
+            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
+        ), {"uid": uid})).scalar() or 0)
+        assets = (await session.execute(text(
+            "SELECT s.asset,COUNT(DISTINCT d.signal_id) AS n FROM signal_deliveries d "
+            "JOIN signals s ON s.signal_id=d.signal_id "
+            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
+            "GROUP BY s.asset ORDER BY n DESC,s.asset LIMIT 5"
+        ), {"uid": uid})).mappings().all()
+        strategies = (await session.execute(text(
+            "SELECT COALESCE(s.strategy_name,'Unknown') AS strategy,COUNT(DISTINCT d.signal_id) AS n "
+            "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
+            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
+            "GROUP BY COALESCE(s.strategy_name,'Unknown') ORDER BY n DESC,strategy LIMIT 5"
+        ), {"uid": uid})).mappings().all()
+        outcomes = (await session.execute(text(
+            "SELECT "
+            "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win','partial_win_be','win')) AS wins,"
+            "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('sl','loss','stop_loss')) AS losses,"
+            "COALESCE(AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL),0) AS average_r "
+            "FROM signal_deliveries d LEFT JOIN outcomes o ON o.signal_id=d.signal_id "
+            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
+        ), {"uid": uid})).mappings().first()
+        await session.rollback()
+    summary = dict(outcomes or {})
+    resolved = int(summary.get("wins") or 0) + int(summary.get("losses") or 0)
+    return {
+        "period_days": 7,
+        "total_delivered": total,
+        "top_assets": [dict(row) for row in assets],
+        "top_strategies": [dict(row) for row in strategies],
+        "resolved_wins": int(summary.get("wins") or 0),
+        "resolved_losses": int(summary.get("losses") or 0),
+        "resolved_win_rate": (int(summary.get("wins") or 0) / resolved if resolved else None),
+        "average_r": float(summary.get("average_r") or 0.0),
+        "disclaimer": "Historical, delivery-proven outcomes only; not a forecast of future performance.",
+    }
+
+
+@router.post("/ai/analyze")
+async def ai_analyze(
+    payload: AIAnalyzeRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "analyze")
+    asset = payload.asset.upper().strip()
+    timeframe = payload.timeframe.lower().strip()
+    try:
+        from dataclasses import asdict
+        from engine.market_state import get_market_state_async
+        from engine.strategies.signal_generator import SignalGenerator
+        from services.asset_registry import classify_asset
+        from services.openai_ai import explain_signal, openai_available
+
+        market_state = await get_market_state_async(asset, [timeframe], include_ml=True)
+        tf_data = (market_state.get("timeframes") or {}).get(timeframe) or {}
+        candles = tf_data.get("candles") or []
+        indicators = tf_data.get("indicators") or {}
+        if len(candles) < 50:
+            return {
+                "asset": asset,
+                "asset_class": classify_asset(asset),
+                "timeframe": timeframe,
+                "setup": None,
+                "reason": "insufficient_market_data",
+                "candles": len(candles),
+            }
+
+        candidates = SignalGenerator().generate_signals(
+            asset,
+            timeframe,
+            {
+                "candles": candles,
+                "indicators": indicators,
+                "ml_probability": tf_data.get("ml_score"),
+            },
+        )
+        if not candidates:
+            return {
+                "asset": asset,
+                "asset_class": classify_asset(asset),
+                "timeframe": timeframe,
+                "setup": None,
+                "reason": "no_high_confidence_setup",
+                "candles": len(candles),
+            }
+        best = max(candidates, key=lambda item: float(item.score or 0.0))
+        setup = asdict(best)
+        explanation = None
+        if openai_available():
+            try:
+                explanation = await explain_signal(setup)
+            except Exception as exc:
+                logger.info("[platform_ai_analyze] explanation unavailable type=%s", type(exc).__name__)
+        return {
+            "asset": asset,
+            "asset_class": classify_asset(asset),
+            "timeframe": timeframe,
+            "setup": setup,
+            "openai": explanation,
+            "candles": len(candles),
+            "analysis_only": True,
+            "disclaimer": "Analysis is educational and does not bypass SignalRankAI delivery, risk, freshness, or execution gates.",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[platform_ai_analyze] asset=%s timeframe=%s failed", asset, timeframe)
+        raise HTTPException(status_code=503, detail="Market analysis is temporarily unavailable") from exc
+
+
 @router.get("/paper")
 async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "paper_trading")
     uid = int(user["id"])
     async with get_session() as session:
         account = (
@@ -1791,6 +1988,7 @@ async def remove_watchlist_item(
 
 @router.get("/portfolio")
 async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "portfolio_analytics")
     uid = int(user["id"])
     async with get_session() as session:
         account = (await session.execute(text("SELECT id,cash_balance,realized_pnl,currency FROM paper_accounts WHERE user_id=:uid"), {"uid": uid})).mappings().first()
@@ -1810,6 +2008,7 @@ async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
 
 @router.get("/performance")
 async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "performance_analytics")
     uid = int(user["id"])
     async with get_session() as session:
         summary = (await session.execute(text(
@@ -2068,6 +2267,7 @@ async def add_support_message(
 
 @router.get("/alerts")
 async def list_alerts(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "custom_alerts")
     async with get_session() as session:
         rows = (await session.execute(text(
             "SELECT alert_id,instrument_id,asset,alert_type,condition,channels,active,last_triggered_at,created_at "
@@ -2079,6 +2279,7 @@ async def list_alerts(user: dict[str, Any] = Depends(current_user)) -> dict[str,
 
 @router.post("/alerts", status_code=201)
 async def create_alert(payload: AlertCreateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "custom_alerts")
     channels = sorted({str(channel).lower() for channel in payload.channels if str(channel).lower() in {"telegram", "web", "email", "push", "webhook"}})
     if not channels:
         raise HTTPException(status_code=422, detail="At least one supported channel is required")
@@ -2094,6 +2295,7 @@ async def create_alert(payload: AlertCreateRequest, user: dict[str, Any] = Depen
 
 @router.delete("/alerts/{alert_id}")
 async def delete_alert(alert_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "custom_alerts")
     async with get_session() as session:
         result = await session.execute(text("UPDATE user_alerts SET active=FALSE,updated_at=NOW() WHERE alert_id=:id AND user_id=:uid"), {"id": alert_id, "uid": int(user["id"])})
         await session.commit()
