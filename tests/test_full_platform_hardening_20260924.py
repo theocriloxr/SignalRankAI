@@ -216,6 +216,16 @@ def test_weekly_recap_uses_delivery_proof_not_raw_generated_signals():
     assert "not a forecast" in block
 
 
+def test_runtime_readonly_audit_uses_live_delivery_schema_and_reports_profile_linkage():
+    source = (ROOT / "scripts/runtime_readonly_audit.py").read_text(encoding="utf-8")
+    assert "WHERE d.delivered_at >= NOW()-INTERVAL '7 days'" in source
+    assert "COALESCE(d.delivered_at,d.created_at)" not in source
+    assert '"profile_linkage": _query(' in source
+    assert "linked_telegram_users" in source
+    assert "linked_with_telegram_profile" in source
+    assert "linked_with_canonical_profile" in source
+
+
 def test_market_data_asset_type_keeps_index_aliases_canonical():
     from data.fetcher import get_asset_type, is_index, is_stock, normalize_index_symbol
 
