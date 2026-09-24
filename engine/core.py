@@ -2013,7 +2013,31 @@ def _current_min_score_threshold() -> float:
 
 
 def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
-    """Resolve an adaptive cutoff in the raw-probability space used at training."""
+    """Resolve the runtime cutoff in the raw-probability space used at training.
+
+    A promoted model's classification threshold is selected on a calibration
+    window and validated before promotion. It is therefore authoritative by
+    default. Carrying a threshold adapted for an older model into a new model
+    can silently starve all asset classes. Operators may explicitly opt into a
+    tightly bounded adaptive offset with
+    ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED=1.
+    """
+    certified = None
+    try:
+        certified = (
+            ml_filter.recommended_raw_threshold()
+            if ml_filter is not None and hasattr(ml_filter, "recommended_raw_threshold")
+            else None
+        )
+    except Exception:
+        certified = None
+
+    if certified is not None and not _env_bool(
+        "ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED",
+        False,
+    ):
+        return max(0.05, min(0.95, float(certified)))
+
     try:
         if _threshold_optimizer is not None and hasattr(_threshold_optimizer, "get_threshold"):
             threshold = float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
@@ -2022,21 +2046,15 @@ def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
     except Exception:
         threshold = _env_float("ML_PROB_THRESHOLD", 0.55)
 
-    try:
-        certified = (
-            ml_filter.recommended_raw_threshold()
-            if ml_filter is not None and hasattr(ml_filter, "recommended_raw_threshold")
-            else None
-        )
-        if certified is not None:
+    if certified is not None:
+        try:
             max_delta = max(0.0, min(0.25, _env_float("ML_ADAPTIVE_THRESHOLD_MAX_DELTA", 0.08)))
             floor = max(0.05, float(certified) - max_delta)
             ceiling = min(0.95, float(certified) + max_delta)
             threshold = max(floor, min(ceiling, float(threshold)))
-    except Exception:
-        pass
+        except Exception:
+            threshold = float(certified)
     return max(0.05, min(0.95, float(threshold)))
-
 
 def load_tradable_assets() -> List[str]:
     raw = (os.getenv("TRADABLE_ASSETS") or "").strip()
