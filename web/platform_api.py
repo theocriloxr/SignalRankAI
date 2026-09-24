@@ -247,6 +247,9 @@ class TradingProfileUpdateRequest(BaseModel):
     sessions: list[str] | None = Field(default=None, max_length=12)
     notification_style: str | None = Field(default=None, max_length=32)
     min_signal_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    min_reward_risk: float | None = Field(default=None, ge=0.0, le=20.0)
+    preferred_regimes: list[str] | None = Field(default=None, max_length=20)
+    reports_optin: bool | None = None
     max_signals_per_day: int | None = Field(default=None, ge=1, le=500)
     risk_per_trade_pct: float | None = Field(default=None, ge=0.0, le=10.0)
     max_daily_trades: int | None = Field(default=None, ge=0, le=500)
@@ -1972,7 +1975,7 @@ async def update_trading_profile(
         if key in values and values[key] is not None:
             values[key] = list(dict.fromkeys(str(value or "").strip().upper() for value in values[key] if str(value or "").strip()))
 
-    for key in ("preferred_strategies", "sessions"):
+    for key in ("preferred_strategies", "preferred_regimes", "sessions"):
         if key in values and values[key] is not None:
             values[key] = list(dict.fromkeys(str(value or "").strip().lower() for value in values[key] if str(value or "").strip()))
 
