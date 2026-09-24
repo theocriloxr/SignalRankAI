@@ -75,7 +75,20 @@ if { [ -n "${DATABASE_URL:-}" ] || [ -n "${DATABASE_PRIVATE_URL:-}" ] || [ -n "$
     fi
 fi
 
+_require_web_auth_secret() {
+    _runtime_env="${ENVIRONMENT:-${RAILWAY_ENVIRONMENT_NAME:-${RAILWAY_ENVIRONMENT:-local}}}"
+    _runtime_env="${_runtime_env,,}"
+    if [ "${_runtime_env}" = "production" ] || [ "${_runtime_env}" = "staging" ]; then
+        _auth_secret="${APP_AUTH_SECRET:-}"
+        if [ "${#_auth_secret}" -lt 32 ]; then
+            echo "[FATAL] APP_AUTH_SECRET must be configured with at least 32 random characters before web authentication can start in ${_runtime_env}." >&2
+            exit 80
+        fi
+    fi
+}
+
 _start_frontdoor() {
+    _require_web_auth_secret
     export RUN_MODE="frontdoor"
     export DECOMPOSED_TOPOLOGY_ENABLED="1"
     export RUN_ENGINE_LOOP="0"
@@ -99,6 +112,7 @@ _start_frontdoor() {
 }
 
 _start_monolith() {
+    _require_web_auth_secret
     export RUN_MODE="all"
     # SignalRankAI's Railway Hobby profile is a coordinated single-process
     # async monolith. Keep one Uvicorn worker so schedulers, queues, engines and
