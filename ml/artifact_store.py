@@ -188,3 +188,43 @@ def restore_active_model_artifact_sync(
         # Missing table is expected before migration 0033 or on a fresh local DB.
         logger.warning("[ml_artifact] restore skipped: %s", exc)
         return False
+
+
+def restore_active_model_artifact_from_database_sync(
+    target_path: str | Path,
+    *,
+    model_name: str = "primary",
+    connect_timeout_seconds: int = 5,
+) -> bool:
+    """Restore an active artifact without relying on monolith startup ops.
+
+    Dedicated Railway roles skip db.auto_ops, so serving roles need a small,
+    bounded recovery path of their own to consume analytics-owned promotions.
+    """
+    try:
+        from config import resolve_database_url
+        import psycopg2
+
+        dsn = resolve_database_url(async_driver=False) or ""
+        if not dsn:
+            return False
+        connection = psycopg2.connect(
+            dsn,
+            connect_timeout=max(1, min(10, int(connect_timeout_seconds or 5))),
+        )
+        connection.autocommit = True
+        try:
+            return restore_active_model_artifact_sync(
+                connection,
+                target_path,
+                model_name=model_name,
+            )
+        finally:
+            connection.close()
+    except Exception as exc:
+        logger.warning(
+            "[ml_artifact] direct restore skipped name=%s error=%s",
+            model_name,
+            type(exc).__name__,
+        )
+        return False
