@@ -53,3 +53,20 @@ def test_web_app_exposes_same_profile_and_multi_asset_signal_filters():
     assert "request('/trading-profile',{method:'PUT'" in js
     assert "signalClassFilter" in js
     assert "signalTimeframeFilter" in js
+
+
+
+def test_profile_backfill_is_idempotent_and_never_overwrites_canonical_records():
+    source = Path("services/user_intelligence.py").read_text(encoding="utf-8")
+    script = Path("scripts/backfill_cross_channel_profiles.py").read_text(encoding="utf-8")
+    assert "async def backfill_linked_platform_trading_preferences" in source
+    assert "NOT EXISTS" in source
+    assert "ON CONFLICT (key) DO NOTHING" in source
+    assert "ON CONFLICT (key) DO UPDATE" not in source[
+        source.index("async def _insert_runtime_json_if_absent"):
+        source.index("async def backfill_linked_platform_trading_preferences")
+    ]
+    assert "merge_preference_payloads(modern, legacy, profile)" in source
+    assert 'parser.add_argument("--apply", action="store_true"' in script
+    assert "if apply:" in script
+    assert "await session.rollback()" in script
