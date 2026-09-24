@@ -346,6 +346,37 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
         if cls == "forex" and len(s) == 6:
             return f"{s[:3]}_{s[3:]}"
         return s
+    if p == "fmp":
+        cls = classify_asset(s)
+        if cls == "forex":
+            return s if len(s) == 6 else None
+        if cls == "index":
+            # FMP stable quote accepts common caret-style cash-index symbols.
+            return {
+                "US500": "^GSPC",
+                "NAS100": "^NDX",
+                "US30": "^DJI",
+                "GER40": "^GDAXI",
+                "UK100": "^FTSE",
+                "JP225": "^N225",
+                "FRA40": "^FCHI",
+                "EU50": "^STOXX50E",
+                "AUS200": "^AXJO",
+                "HK50": "^HSI",
+            }.get(s)
+        if cls == "commodity":
+            # Only mappings verified against the provider contract are enabled.
+            return {
+                "GOLD": "GCUSD",
+                "XAUUSD": "GCUSD",
+                "SILVER": "SIUSD",
+                "XAGUSD": "SIUSD",
+                "OIL": "CLUSD",
+                "WTI": "CLUSD",
+            }.get(s)
+        if cls == "stock":
+            return s
+        return None
     return s
 
 
