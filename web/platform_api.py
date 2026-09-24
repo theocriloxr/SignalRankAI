@@ -893,6 +893,57 @@ async def add_watchlist_item(
     return {"added": True}
 
 
+@router.get("/referrals")
+async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Return one canonical referral code plus web and Telegram share links."""
+    from db.pg_features import get_or_create_referral_code_for_user
+
+    async with get_session() as session:
+        code = await get_or_create_referral_code_for_user(
+            session,
+            referrer_user_id=int(user["id"]),
+        )
+        total = int(
+            (
+                await session.execute(
+                    text("SELECT COUNT(*) FROM referrals WHERE referrer_user_id=:uid"),
+                    {"uid": int(user["id"])},
+                )
+            ).scalar()
+            or 0
+        )
+        rewards = int(
+            (
+                await session.execute(
+                    text(
+                        "SELECT COALESCE(SUM(reward_value),0) FROM referral_rewards "
+                        "WHERE referrer_user_id=:uid AND reward_type='premium_days'"
+                    ),
+                    {"uid": int(user["id"])},
+                )
+            ).scalar()
+            or 0
+        )
+        await session.commit()
+
+    base = _app_base_url_from_env()
+    web_url = f"{base}/app?ref={quote(code)}" if base else f"/app?ref={quote(code)}"
+    username = str(os.getenv("BOT_USERNAME") or os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().lstrip("@")
+    telegram_url = f"https://t.me/{username}?start=ref_{quote(code)}" if username else None
+    requirement = max(1, int(os.getenv("REFERRALS_PER_REWARD", "3") or 3))
+    toward_next = int(total % requirement)
+    return {
+        "code": code,
+        "web_url": web_url,
+        "telegram_url": telegram_url,
+        "total_referrals": total,
+        "premium_days_earned": rewards,
+        "toward_next": toward_next,
+        "needed_for_next": requirement if toward_next == 0 else requirement - toward_next,
+        "reward_days": max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7)),
+    }
+
+
 @router.post("/account/telegram-link")
 async def create_telegram_link(
     payload: TelegramLinkCreateRequest,
