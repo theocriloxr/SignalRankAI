@@ -68,5 +68,6 @@ def test_profile_backfill_is_idempotent_and_never_overwrites_canonical_records()
     ]
     assert "merge_preference_payloads(modern, legacy, profile)" in source
     assert 'parser.add_argument("--apply", action="store_true"' in script
+    assert "sys.path.insert(0, str(Path(__file__).resolve().parents[1]))" in script
     assert "if apply:" in script
     assert "await session.rollback()" in script
