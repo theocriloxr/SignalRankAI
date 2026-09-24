@@ -243,7 +243,7 @@ def extract_features(signal, market_data):
             confluence_total = float(len(drivers))
     confluence_norm = (confluence_score / confluence_total) if confluence_total and confluence_total > 0 else 0.0
 
-    return {
+    features = {
         "rsi": float(signal.get("rsi") if signal.get("rsi") is not None else (ind.get("rsi") or 0)),
         "atr": float(signal.get("atr") if signal.get("atr") is not None else (ind.get("atr") or 0)),
         "trend_strength": float(signal.get("trend_strength") if signal.get("trend_strength") is not None else (ind.get("adx") or 0)),
@@ -290,3 +290,7 @@ def extract_features(signal, market_data):
         "spx_trend": float(signal.get("spx_trend") if signal.get("spx_trend") is not None else macro.get("spx_trend") or 0.0),
         "btc_corr": float(signal.get("btc_corr") if signal.get("btc_corr") is not None else macro.get("btc_corr") or 0.0),
     }
+    # Canonical model fields override any legacy aliases above so every inference
+    # path uses the same v3 semantics and categorical encoding as training.
+    features.update(build_model_feature_values(signal, market_data))
+    return features
