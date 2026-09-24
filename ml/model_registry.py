@@ -173,6 +173,23 @@ def verify_feature_schema_integrity(payload: Dict[str, Any]) -> tuple[bool, str 
     return True, None
 
 
+def verify_feature_encoding_contract(payload: Dict[str, Any]) -> tuple[bool, str | None]:
+    """Verify the serving/training categorical encoding contract when required."""
+    import os
+
+    required = str(os.getenv("ML_REQUIRE_FEATURE_ENCODING_CONTRACT") or "0").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if not required:
+        return True, None
+    from ml.features import FEATURE_ENCODING_VERSION
+
+    actual = str(payload.get("feature_encoding_version") or "").strip()
+    if actual != FEATURE_ENCODING_VERSION:
+        return False, "feature_encoding_contract_mismatch"
+    return True, None
+
+
 def load_model_with_metadata(path: Path, xgb_module: Any) -> tuple[Any, List[str], Dict[str, Any], str | None]:
     payload = load_payload(path)
     ok, err = validate_payload(payload)
@@ -186,6 +203,10 @@ def load_model_with_metadata(path: Path, xgb_module: Any) -> tuple[Any, List[str
     schema_ok, schema_err = verify_feature_schema_integrity(payload)
     if not schema_ok:
         return None, [], extract_metadata(payload), schema_err
+
+    encoding_ok, encoding_err = verify_feature_encoding_contract(payload)
+    if not encoding_ok:
+        return None, [], extract_metadata(payload), encoding_err
 
     model_bytes_b64 = str(payload["model_bytes_b64"])
     raw_bytes = base64.b64decode(model_bytes_b64)
