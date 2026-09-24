@@ -31,9 +31,10 @@
       <button data-view="signals">Signals</button>
       <button data-view="evidence">Evidence</button>
       <button data-view="markets">Markets</button>
-      <button data-view="paper">Paper</button>
-      <button data-view="portfolio">Portfolio</button>
-      <button data-view="performance">Performance</button>
+      <button data-view="tools">Tools</button>
+      <button data-view="paper" data-feature="paper_trading">Paper</button>
+      <button data-view="portfolio" data-feature="portfolio_analytics">Portfolio</button>
+      <button data-view="performance" data-feature="performance_analytics">Performance</button>
       <button data-view="journal">Journal</button>
       <button data-view="support">Support</button>
       <button data-view="account">Account</button>
@@ -184,6 +185,45 @@
         <div class="panel-heading"><div><p class="eyebrow">DYNAMIC PROVIDER REGISTRY</p><h2>Market explorer</h2></div></div>
         <div class="filters"><input id="marketSearch" placeholder="Search BTC, gold, EURUSD, AAPL…" /><select id="assetClassFilter"><option value="">All classes</option><option value="crypto_spot">Crypto</option><option value="forex">Forex</option><option value="equity">Stocks</option><option value="commodity_spot">Commodities</option><option value="index">Indices</option></select><button id="searchMarkets" class="primary">Search</button></div>
         <div id="marketResults" class="market-grid"></div>
+      </section>
+
+      <section id="toolsView" class="view" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">CROSS-CHANNEL TOOLKIT</p><h2>Market & account tools</h2><p>Use the same account data and market providers as Telegram without leaving the website.</p></div><span class="status-pill">WEB + TELEGRAM</span></div>
+        <div class="tools-grid">
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">LIVE DATA</p><h3>Live quote</h3></div><span class="tool-icon" aria-hidden="true">⌁</span></div>
+            <form id="liveQuoteForm" class="inline-form"><input name="asset" placeholder="EURUSD, BTCUSDT, XAUUSD, AAPL…" maxlength="32" required /><button class="primary">Get quote</button></form>
+            <div id="liveQuoteResult" class="tool-result muted">Provider-attributed price, freshness and health will appear here.</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">WEEKLY PROOF</p><h3>Your recap</h3></div><button id="refreshRecap" class="ghost" type="button">Refresh</button></div>
+            <div id="weeklyRecap" class="tool-result muted">Loading your delivery-proven week…</div>
+          </article>
+          <article class="panel tool-card tool-wide">
+            <div class="tool-heading"><div><p class="eyebrow">PREMIUM ANALYSIS</p><h3>AI-assisted market analysis</h3><p>Deterministic strategy evidence first; OpenAI explains the setup when available. This never bypasses the delivery or risk gates.</p></div><span class="tier-chip">PREMIUM+</span></div>
+            <form id="aiAnalyzeForm" class="analysis-form"><input name="asset" placeholder="Asset e.g. EURUSD" maxlength="32" required /><select name="timeframe"><option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option></select><button class="primary">Analyze market</button></form>
+            <div id="aiAnalysisResult" class="tool-result muted">No analysis requested yet.</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">WATCHLISTS</p><h3>Tracked markets</h3></div></div>
+            <form id="watchlistForm" class="inline-form"><input name="name" placeholder="Watchlist name" maxlength="100" required /><button class="primary">Create</button></form>
+            <div id="watchlistList" class="tool-result muted">Loading watchlists…</div>
+          </article>
+          <article class="panel tool-card">
+            <div class="tool-heading"><div><p class="eyebrow">PREMIUM ALERTS</p><h3>Market alerts</h3></div><span class="tier-chip">PREMIUM+</span></div>
+            <form id="alertForm" class="stack-form">
+              <label>Asset<input name="asset" placeholder="BTCUSDT" maxlength="32" required /></label>
+              <label>Alert<select name="alert_type"><option value="price_above">Price above</option><option value="price_below">Price below</option><option value="signal_generated">New qualified signal</option><option value="entry_triggered">Entry triggered</option><option value="outcome">Outcome update</option><option value="provider_status">Provider status</option></select></label>
+              <label id="alertValueLabel">Threshold<input name="value" type="number" step="any" min="0" /></label>
+              <div class="form-actions"><button class="primary">Create alert</button></div>
+            </form>
+            <div id="alertList" class="tool-result muted">Loading alerts…</div>
+          </article>
+          <article class="panel tool-card tool-wide">
+            <div class="tool-heading"><div><p class="eyebrow">INBOX</p><h3>Notification center</h3></div><button id="refreshNotifications" class="ghost" type="button">Refresh</button></div>
+            <div id="notificationCenter" class="data-list"><p class="muted">Loading notifications…</p></div>
+          </article>
+        </div>
       </section>
 
       <section id="paperView" class="view" hidden>
