@@ -627,40 +627,82 @@ class Worker:
                             lease.scope,
                         )
                     elif is_db_configured():
-                        async def _run() -> None:
+                        async def _run_phase(label: str, operation, *, budget_seconds: float):
                             from db.priority import DBPriority
 
                             async with get_session(
                                 priority=DBPriority.BACKGROUND,
-                                label="outcome_reconciliation",
+                                label=label,
+                                drop_if_busy=False,
+                                timeout_seconds=min(12.0, max(3.0, budget_seconds)),
                             ) as session:
-                                result = await ensure_outcome_projections(
+                                result = await asyncio.wait_for(
+                                    operation(session),
+                                    timeout=max(3.0, budget_seconds),
+                                )
+                                await session.commit()
+                                return result
+
+                        async def _run() -> None:
+                            phase_budget = max(
+                                8.0,
+                                _env_float(
+                                    "OUTCOME_RECONCILIATION_PHASE_BUDGET_SECONDS",
+                                    30.0,
+                                    minimum=8.0,
+                                ),
+                            )
+                            outbox_limit = max(
+                                1,
+                                min(
+                                    100,
+                                    int(os.getenv("OUTCOME_OUTBOX_REPAIR_BATCH_LIMIT", "25") or 25),
+                                ),
+                            )
+
+                            result = await _run_phase(
+                                "outcome_reconciliation.projections",
+                                lambda session: ensure_outcome_projections(
                                     session,
                                     queue_notifications=False,
+                                ),
+                                budget_seconds=phase_budget,
+                            )
+                            outbox_repair = await _run_phase(
+                                "outcome_reconciliation.outbox",
+                                lambda session: repair_outcome_notification_outbox(
+                                    session,
+                                    limit=outbox_limit,
+                                ),
+                                budget_seconds=phase_budget,
+                            )
+                            repaired_partial_exits = await _run_phase(
+                                "outcome_reconciliation.partial_exits",
+                                repair_partial_exit_outcomes,
+                                budget_seconds=phase_budget,
+                            )
+                            performance_result = await _run_phase(
+                                "outcome_reconciliation.performance",
+                                reconcile_all_performance_ledgers,
+                                budget_seconds=phase_budget,
+                            )
+                            await persist_performance_reconciliation_result(
+                                performance_result,
+                                persist_cursor=True,
+                            )
+                            logger.info(
+                                "[outcome_reconciliation] completed outcome=%s outbox=%s partial_exit_repairs=%s performance=%s",
+                                result.as_dict(),
+                                outbox_repair.as_dict(),
+                                repaired_partial_exits,
+                                performance_result.as_dict(),
+                            )
+                            if performance_result.certification_failed:
+                                raise RuntimeError(
+                                    "performance ledger certification failed: all examined users failed; "
+                                    f"reconciliation_id={performance_result.reconciliation_id} "
+                                    f"reasons={performance_result.failed_users_by_reason}"
                                 )
-                                outbox_repair = await repair_outcome_notification_outbox(session)
-                                repaired_partial_exits = await repair_partial_exit_outcomes(session)
-                                performance_result = await reconcile_all_performance_ledgers(session)
-                                # Commit successful outcome repairs and per-user savepoints before
-                                # surfacing a batch certification failure. This prevents a poison
-                                # performance user from rolling back already verified repairs.
-                                await session.commit()
-                                await persist_performance_reconciliation_result(
-                                    performance_result, persist_cursor=True
-                                )
-                                logger.info(
-                                    "[outcome_reconciliation] completed outcome=%s outbox=%s partial_exit_repairs=%s performance=%s",
-                                    result.as_dict(),
-                                    outbox_repair.as_dict(),
-                                    repaired_partial_exits,
-                                    performance_result.as_dict(),
-                                )
-                                if performance_result.certification_failed:
-                                    raise RuntimeError(
-                                        "performance ledger certification failed: all examined users failed; "
-                                        f"reconciliation_id={performance_result.reconciliation_id} "
-                                        f"reasons={performance_result.failed_users_by_reason}"
-                                    )
 
                         await run_with_db_retry(_run)
             except Exception as exc:
