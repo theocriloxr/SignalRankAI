@@ -280,59 +280,56 @@ def preferences_to_payload(prefs: UserTradingPreferences) -> dict[str, Any]:
     return payload
 
 
-async def get_user_trading_preferences(session, telegram_user_id: int) -> UserTradingPreferences:
-    user_id = int(telegram_user_id)
-    keys = {
-        f"trading_preferences:{user_id}": "modern",
-        f"user_prefs:{user_id}": "legacy",
-        f"trade_profile:{user_id}": "profile",
-    }
-    result = await session.execute(
-        text(
-            """
-            SELECT key, value
-            FROM runtime_state
-            WHERE key = :modern_key OR key = :legacy_key OR key = :profile_key
-            """
-        ),
-        {
-            "modern_key": f"trading_preferences:{user_id}",
-            "legacy_key": f"user_prefs:{user_id}",
-            "profile_key": f"trade_profile:{user_id}",
-        },
-    )
-    values: dict[str, Any] = {}
+async def _canonical_user_id_from_telegram(session, telegram_user_id: int) -> int | None:
     try:
+        value = (
+            await session.execute(
+                text("SELECT id FROM users WHERE telegram_user_id=:telegram_user_id LIMIT 1"),
+                {"telegram_user_id": int(telegram_user_id)},
+            )
+        ).scalar_one_or_none()
+        return int(value) if value is not None else None
+    except Exception:
+        return None
+
+
+async def _telegram_user_id_from_canonical(session, user_id: int) -> int | None:
+    try:
+        value = (
+            await session.execute(
+                text("SELECT telegram_user_id FROM users WHERE id=:user_id LIMIT 1"),
+                {"user_id": int(user_id)},
+            )
+        ).scalar_one_or_none()
+        return int(value) if value is not None else None
+    except Exception:
+        return None
+
+
+async def _runtime_state_values(session, keys: tuple[str, ...]) -> dict[str, Any]:
+    if not keys:
+        return {}
+    params = {f"k{i}": key for i, key in enumerate(keys)}
+    placeholders = ", ".join(f":k{i}" for i in range(len(keys)))
+    try:
+        result = await session.execute(
+            text(f"SELECT key, value FROM runtime_state WHERE key IN ({placeholders})"),
+            params,
+        )
         rows = result.all()
     except Exception:
-        rows = []
+        return {}
+    values: dict[str, Any] = {}
     for row in rows:
         try:
-            key = str(row[0])
-            value = row[1]
+            values[str(row[0])] = row[1]
         except Exception:
             mapping = getattr(row, "_mapping", row)
-            key = str(mapping.get("key"))
-            value = mapping.get("value")
-        label = keys.get(key)
-        if label:
-            values[label] = value
-    merged = merge_preference_payloads(
-        _mapping(values.get("modern")),
-        _mapping(values.get("legacy")),
-        values.get("profile"),
-    )
-    return preferences_from_payload(merged)
+            values[str(mapping.get("key") or "")] = mapping.get("value")
+    return values
 
 
-async def set_user_trading_preferences(
-    session,
-    telegram_user_id: int,
-    prefs: UserTradingPreferences,
-) -> UserTradingPreferences:
-    user_id = int(telegram_user_id)
-    payload_dict = preferences_to_payload(prefs)
-    payload = json.dumps(payload_dict)
+async def _upsert_runtime_json(session, key: str, value: Mapping[str, Any]) -> None:
     await session.execute(
         text(
             """
@@ -342,8 +339,72 @@ async def set_user_trading_preferences(
             SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
             """
         ),
-        {"key": f"trading_preferences:{user_id}", "value": payload},
+        {"key": key, "value": json.dumps(dict(value))},
     )
+
+
+async def get_user_trading_preferences(session, telegram_user_id: int) -> UserTradingPreferences:
+    """Read preferences for a Telegram identity with canonical-account overlay.
+
+    Legacy runtime-state keys remain supported, but a linked web/mobile account's
+    canonical preference record wins so every channel observes the same profile.
+    """
+    telegram_id = int(telegram_user_id)
+    canonical_id = await _canonical_user_id_from_telegram(session, telegram_id)
+    keys = (
+        f"trading_preferences:{telegram_id}",
+        f"user_prefs:{telegram_id}",
+        f"trade_profile:{telegram_id}",
+    )
+    values = await _runtime_state_values(session, keys)
+    merged = merge_preference_payloads(
+        _mapping(values.get(f"trading_preferences:{telegram_id}")),
+        _mapping(values.get(f"user_prefs:{telegram_id}")),
+        values.get(f"trade_profile:{telegram_id}"),
+    )
+    if canonical_id is not None:
+        canonical_values = await _runtime_state_values(
+            session,
+            (f"trading_preferences_user:{canonical_id}",),
+        )
+        merged.update(_mapping(canonical_values.get(f"trading_preferences_user:{canonical_id}")))
+    return preferences_from_payload(merged)
+
+
+async def get_platform_user_trading_preferences(session, user_id: int) -> UserTradingPreferences:
+    """Read the canonical cross-channel preference record for a platform user."""
+    canonical_id = int(user_id)
+    telegram_id = await _telegram_user_id_from_canonical(session, canonical_id)
+    merged: dict[str, Any] = {}
+    if telegram_id is not None:
+        legacy_keys = (
+            f"trading_preferences:{telegram_id}",
+            f"user_prefs:{telegram_id}",
+            f"trade_profile:{telegram_id}",
+        )
+        values = await _runtime_state_values(session, legacy_keys)
+        merged = merge_preference_payloads(
+            _mapping(values.get(f"trading_preferences:{telegram_id}")),
+            _mapping(values.get(f"user_prefs:{telegram_id}")),
+            values.get(f"trade_profile:{telegram_id}"),
+        )
+    canonical_values = await _runtime_state_values(
+        session,
+        (f"trading_preferences_user:{canonical_id}",),
+    )
+    merged.update(_mapping(canonical_values.get(f"trading_preferences_user:{canonical_id}")))
+    return preferences_from_payload(merged)
+
+
+async def set_user_trading_preferences(
+    session,
+    telegram_user_id: int,
+    prefs: UserTradingPreferences,
+) -> UserTradingPreferences:
+    """Persist Telegram preferences and mirror them to the linked canonical user."""
+    telegram_id = int(telegram_user_id)
+    payload_dict = preferences_to_payload(prefs)
+    await _upsert_runtime_json(session, f"trading_preferences:{telegram_id}", payload_dict)
     await session.execute(
         text(
             """
@@ -356,7 +417,7 @@ async def set_user_trading_preferences(
             """
         ),
         {
-            "key": f"user_prefs:{user_id}",
+            "key": f"user_prefs:{telegram_id}",
             "value": json.dumps(
                 {
                     "trading_mode": prefs.trading_mode,
@@ -378,20 +439,86 @@ async def set_user_trading_preferences(
             ),
         },
     )
-    await session.execute(
-        text(
-            """
-            INSERT INTO runtime_state(key, value, expires_at, updated_at)
-            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
-            ON CONFLICT (key) DO UPDATE
-            SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-            """
-        ),
-        {
-            "key": f"trade_profile:{user_id}",
-            "value": json.dumps({"profile": prefs.trade_profile}),
-        },
+    await _upsert_runtime_json(
+        session,
+        f"trade_profile:{telegram_id}",
+        {"profile": prefs.trade_profile},
     )
+    canonical_id = await _canonical_user_id_from_telegram(session, telegram_id)
+    if canonical_id is not None:
+        await _upsert_runtime_json(
+            session,
+            f"trading_preferences_user:{canonical_id}",
+            payload_dict,
+        )
+    try:
+        from services.profile_demand import clear_profile_demand_cache
+        clear_profile_demand_cache()
+    except Exception:
+        pass
+    return prefs
+
+
+async def set_platform_user_trading_preferences(
+    session,
+    user_id: int,
+    prefs: UserTradingPreferences,
+) -> UserTradingPreferences:
+    """Persist web/mobile preferences and mirror to Telegram when linked."""
+    canonical_id = int(user_id)
+    payload_dict = preferences_to_payload(prefs)
+    await _upsert_runtime_json(
+        session,
+        f"trading_preferences_user:{canonical_id}",
+        payload_dict,
+    )
+    telegram_id = await _telegram_user_id_from_canonical(session, canonical_id)
+    if telegram_id is not None:
+        await _upsert_runtime_json(session, f"trading_preferences:{telegram_id}", payload_dict)
+        await _upsert_runtime_json(
+            session,
+            f"trade_profile:{telegram_id}",
+            {"profile": prefs.trade_profile},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+                ON CONFLICT (key) DO UPDATE
+                SET value = COALESCE(runtime_state.value, '{}'::jsonb) || EXCLUDED.value,
+                    expires_at = NULL,
+                    updated_at = NOW()
+                """
+            ),
+            {
+                "key": f"user_prefs:{telegram_id}",
+                "value": json.dumps(
+                    {
+                        "trading_mode": prefs.trading_mode,
+                        "execution_mode": prefs.execution_mode,
+                        "execution_provider": prefs.execution_provider,
+                        "risk_per_trade_pct": prefs.risk_per_trade_pct,
+                        "min_signal_score": prefs.min_signal_score,
+                        "preferred_asset_class": prefs.asset_classes[0] if len(prefs.asset_classes) == 1 else None,
+                        "preferred_timeframes": list(prefs.preferred_timeframes),
+                        "preferred_strategies": list(prefs.preferred_strategies),
+                        "max_daily_trades": prefs.max_daily_trades,
+                        "max_concurrent_positions": prefs.max_concurrent_positions,
+                        "max_daily_loss_pct": prefs.max_daily_loss_pct,
+                        "notify_on_entry": prefs.notify_on_entry,
+                        "notify_on_exit": prefs.notify_on_exit,
+                        "notify_on_tp": prefs.notify_on_tp,
+                        "notify_on_sl": prefs.notify_on_sl,
+                    }
+                ),
+            },
+        )
+    try:
+        from services.profile_demand import clear_profile_demand_cache
+        clear_profile_demand_cache()
+    except Exception:
+        pass
     return prefs
 
 
