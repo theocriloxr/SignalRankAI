@@ -82,7 +82,7 @@ def main() -> int:
                            COUNT(DISTINCT d.signal_id) AS distinct_signals
                     FROM signal_deliveries d
                     JOIN signals s ON s.signal_id=d.signal_id
-                    WHERE COALESCE(d.delivered_at,d.created_at) >= NOW()-INTERVAL '7 days'
+                    WHERE d.delivered_at >= NOW()-INTERVAL '7 days'
                     GROUP BY 1 ORDER BY 1
                     """,
                 ),
@@ -131,6 +131,29 @@ def main() -> int:
                         ) AS telegram_profiles,
                         COUNT(*) FILTER (WHERE key LIKE 'trade_profile:%') AS trade_profiles
                     FROM runtime_state
+                    """,
+                ),
+                "profile_linkage": _query(
+                    cur,
+                    """
+                    SELECT
+                        COUNT(*) AS total_users,
+                        COUNT(*) FILTER (WHERE u.telegram_user_id IS NOT NULL) AS linked_telegram_users,
+                        COUNT(*) FILTER (
+                            WHERE u.telegram_user_id IS NOT NULL
+                              AND EXISTS (
+                                  SELECT 1 FROM runtime_state r
+                                  WHERE r.key = 'trading_preferences:' || u.telegram_user_id::text
+                              )
+                        ) AS linked_with_telegram_profile,
+                        COUNT(*) FILTER (
+                            WHERE u.telegram_user_id IS NOT NULL
+                              AND EXISTS (
+                                  SELECT 1 FROM runtime_state r
+                                  WHERE r.key = 'trading_preferences_user:' || u.id::text
+                              )
+                        ) AS linked_with_canonical_profile
+                    FROM users u
                     """,
                 ),
                 "decision_7d": _query(
