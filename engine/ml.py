@@ -2,6 +2,7 @@ from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
 import gc
+import time
 import os
 import threading
 import logging
@@ -39,6 +40,51 @@ logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
 _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
 _MODEL_RELOAD_LOCK = threading.Lock()
+_DURABLE_MODEL_SYNC_STATE: dict[str, float] = {"last_attempt": 0.0}
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _durable_model_retry_due() -> bool:
+    try:
+        interval = max(
+            15.0,
+            float(os.getenv("ML_DURABLE_ARTIFACT_SYNC_INTERVAL_SECONDS", "60") or 60),
+        )
+    except Exception:
+        interval = 60.0
+    now = time.monotonic()
+    if now - float(_DURABLE_MODEL_SYNC_STATE.get("last_attempt") or 0.0) < interval:
+        return False
+    _DURABLE_MODEL_SYNC_STATE["last_attempt"] = now
+    return True
+
+
+def _restore_durable_primary_if_enabled(path: Path) -> bool:
+    if not _env_bool("ML_DURABLE_ARTIFACT_SYNC_ENABLED", True):
+        return False
+    try:
+        from ml.artifact_store import restore_active_model_artifact_from_database_sync
+
+        restored = restore_active_model_artifact_from_database_sync(
+            path,
+            model_name="primary",
+            connect_timeout_seconds=int(
+                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
+            ),
+        )
+        if restored:
+            logger.info("[ml] durable primary artifact synchronized path=%s", path)
+        return bool(restored)
+    except Exception as exc:
+        logger.warning("[ml] durable artifact synchronization skipped error=%s", type(exc).__name__)
+        return False
+
 
 
 def _asset_class_to_int(asset: str) -> float:
@@ -75,7 +121,20 @@ def _model_path() -> Path:
 
 def _load_model() -> None:
     if _MODEL_CACHE["loaded"]:
-        return
+        if _MODEL_CACHE.get("booster") is not None:
+            return
+        # A dedicated serving role may have started before analytics persisted
+        # a fresh compatible champion. Retry durable recovery at a bounded
+        # cadence instead of caching "no model" forever.
+        if not _durable_model_retry_due():
+            return
+        _MODEL_CACHE.update({
+            "loaded": False,
+            "feature_cols": [],
+            "booster": None,
+            "path": None,
+            "error": None,
+        })
     _MODEL_CACHE.update({"loaded": True, "feature_cols": [], "booster": None, "path": str(_model_path()), "error": None})
 
     if xgb is None:
@@ -84,6 +143,10 @@ def _load_model() -> None:
     assert xgb is not None
 
     path = _model_path()
+    # Dedicated roles do not run db.auto_ops, so synchronize the analytics-owned
+    # durable champion before trusting the image-baked local artifact.
+    if _durable_model_retry_due() or not path.exists():
+        _restore_durable_primary_if_enabled(path)
     if not path.exists():
         _MODEL_CACHE["error"] = f"model_missing:{path}"
         return
