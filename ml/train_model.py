@@ -179,6 +179,90 @@ def _promotion_quality_gate(
     return ok, min_accuracy, min_auc
 
 
+
+def _champion_comparison_gate(
+    candidate_metrics: dict,
+    primary_path: str | Path,
+    *,
+    deployed_runtime: bool | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Require a new candidate to be non-inferior to the active champion.
+
+    Absolute promotion gates answer "is this model usable?". This comparison
+    separately answers "is it safe to replace what is already serving?".
+    Missing champion evidence never blocks a first model, but a material
+    regression in any comparable core metric keeps the new model as challenger.
+    """
+    if deployed_runtime is None:
+        deployed_runtime = _is_production_runtime()
+    if not _env_bool("ML_CHAMPION_COMPARISON_ENABLED", deployed_runtime):
+        return True, {"enabled": False, "reason": "disabled"}
+    path = Path(primary_path)
+    if not path.exists():
+        return True, {"enabled": True, "reason": "no_existing_champion"}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        champion_metrics = dict(
+            payload.get("metrics")
+            or (payload.get("training_meta") or {}).get("metrics")
+            or {}
+        )
+    except Exception as exc:
+        return False, {"enabled": True, "reason": "champion_metrics_unreadable", "error": type(exc).__name__}
+
+    tolerances = {
+        "auc": float(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01),
+        "pr_auc": float(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02),
+        "balanced_accuracy": float(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02),
+        "expected_r": float(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15),
+    }
+    regressions: dict[str, dict[str, float]] = {}
+    compared: dict[str, dict[str, float]] = {}
+    for key, tolerance in tolerances.items():
+        if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
+            continue
+        try:
+            candidate = float(candidate_metrics[key])
+            champion = float(champion_metrics[key])
+        except (TypeError, ValueError):
+            continue
+        compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
+        if candidate < champion - tolerance:
+            regressions[key] = compared[key]
+
+    candidate_cal = dict(candidate_metrics.get("calibration") or {})
+    champion_cal = dict(champion_metrics.get("calibration") or {})
+    for key, env_name, default in (
+        ("calibrated_ece", "ML_CHAMPION_MAX_ECE_REGRESSION", 0.02),
+        ("calibrated_brier", "ML_CHAMPION_MAX_BRIER_REGRESSION", 0.02),
+    ):
+        if candidate_cal.get(key) is None or champion_cal.get(key) is None:
+            continue
+        try:
+            candidate = float(candidate_cal[key])
+            champion = float(champion_cal[key])
+            tolerance = float(os.getenv(env_name, str(default)) or default)
+        except (TypeError, ValueError):
+            continue
+        compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
+        if candidate > champion + tolerance:
+            regressions[key] = compared[key]
+
+    minimum_comparable = max(1, int(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2))
+    if len(compared) < minimum_comparable:
+        return False, {
+            "enabled": True,
+            "reason": "insufficient_comparable_champion_metrics",
+            "compared": compared,
+            "required": minimum_comparable,
+        }
+    return not regressions, {
+        "enabled": True,
+        "reason": "noninferior" if not regressions else "material_regression",
+        "compared": compared,
+        "regressions": regressions,
+    }
+
 def _offline_bootstrap_allowed() -> bool:
     """Synthetic rows are opt-in and can never replace a Railway model."""
     explicit = os.getenv("ML_OFFLINE_BOOTSTRAP_ENABLED")
@@ -1942,6 +2026,22 @@ async def main(lookback_days: int | None = None):
             calibration_metrics.get("maximum_ece"),
         )
 
+    primary_path = _primary_model_path()
+    champion_comparison = {"enabled": False, "reason": "not_evaluated"}
+    if promotion_eligible:
+        champion_ok, champion_comparison = _champion_comparison_gate(
+            metrics,
+            primary_path,
+            deployed_runtime=deployed_runtime,
+        )
+        if not champion_ok:
+            promotion_eligible = False
+            logger.warning(
+                "[ml_training_run] id=%s status=candidate_only reason=champion_noninferior_failed comparison=%s primary_model_preserved=true",
+                run_id,
+                champion_comparison,
+            )
+
     training_meta = {
         "run_id": run_id,
         "offline_bootstrap_used": bool(used_bootstrap),
@@ -1953,8 +2053,8 @@ async def main(lookback_days: int | None = None):
         "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
         "metrics": metrics,
         "promotion_eligible": bool(promotion_eligible),
+        "champion_comparison": champion_comparison,
     }
-    primary_path = _primary_model_path()
     candidate_path = Path(
         str(
             os.getenv("ML_CANDIDATE_MODEL_PATH")
