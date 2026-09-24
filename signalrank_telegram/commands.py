@@ -2296,54 +2296,90 @@ async def handle_timezone_callback(update: Update, context: ContextTypes.DEFAULT
 async def filter_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	args = context.args or []
-	if not args:
-		prefs = user_prefs_store.get_prefs(user_id)
-		filters = prefs.get("filters", {})
-		if not filters:
-			await update.message.reply_text("No custom filters set. Use /filter min_score 60 or /filter rr 2.0 or /filter regime TRENDING.")
-		else:
-			lines: list[str] = ["Your custom filters:"]
-			for k, v in filters.items():
-				lines.append(f"{k}: {v}")
-			await update.message.reply_text("\n".join(lines))
-		return
-	key = args[0].lower()
-	if key not in {"min_score", "rr", "regime"}:
-		await update.message.reply_text("Supported filters: min_score, rr, regime. Example: /filter min_score 60")
-		return
-	value = args[1] if len(args) > 1 else None
-	if not value:
-		await update.message.reply_text("Usage: /filter <min_score|rr|regime> <value>")
-		return
-	filters = user_prefs_store.get_prefs(user_id).get("filters", {})
-	filters[key] = value
-	user_prefs_store.set_prefs(user_id, filters=filters)
-	await update.message.reply_text(f"Filter set: {key} = {value}")
+	user_id = int(update.effective_user.id)
+	args = list(context.args or [])
+	from services.user_intelligence import get_user_trading_preferences, set_user_trading_preferences
+
+	async with get_session(priority="interactive", label="telegram.filter_preferences", timeout_seconds=8.0) as session:
+		prefs = await get_user_trading_preferences(session, user_id)
+		if not args:
+			await session.rollback()
+			regimes = ", ".join(prefs.preferred_regimes) if prefs.preferred_regimes else "any"
+			await update.message.reply_text(
+				"Your delivery filters:\n"
+				f"Minimum score: {prefs.min_signal_score:.1f}\n"
+				f"Minimum R/R: {prefs.min_reward_risk:.2f}\n"
+				f"Regimes: {regimes}\n\n"
+				"Use /filter min_score 75, /filter rr 1.5, or /filter regime trending,range. "
+				"Use /filter regime all to clear the regime filter."
+			)
+			return
+
+		key = str(args[0]).lower().strip()
+		value = args[1] if len(args) > 1 else None
+		if key not in {"min_score", "rr", "regime"} or value is None:
+			await session.rollback()
+			await update.message.reply_text("Usage: /filter <min_score|rr|regime> <value>")
+			return
+		try:
+			if key == "min_score":
+				prefs.min_signal_score = max(0.0, min(100.0, float(value)))
+			elif key == "rr":
+				prefs.min_reward_risk = max(0.0, min(20.0, float(value)))
+			else:
+				raw = ",".join(str(x) for x in args[1:]).strip().lower()
+				prefs.preferred_regimes = () if raw in {"all", "any", "*", "clear", "off"} else tuple(
+					dict.fromkeys(part.strip() for part in raw.split(",") if part.strip())
+				)
+		except (TypeError, ValueError):
+			await session.rollback()
+			await update.message.reply_text("Invalid filter value.")
+			return
+		await set_user_trading_preferences(session, user_id, prefs)
+		await session.commit()
+
+	if key == "min_score":
+		display = f"{prefs.min_signal_score:.1f}"
+	elif key == "rr":
+		display = f"{prefs.min_reward_risk:.2f}"
+	else:
+		display = ", ".join(prefs.preferred_regimes) if prefs.preferred_regimes else "any"
+	await update.message.reply_text(f"Filter saved across Telegram and the SignalRankAI app: {key} = {display}")
+
 
 # --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
 @require_tier("PREMIUM")
 async def reports_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	args = context.args or []
-	if not args:
-		prefs = user_prefs_store.get_prefs(user_id)
-		val = prefs.get("reports_optin", False)
-		msg: str = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
-		await update.message.reply_text(msg)
-		return
-	opt = args[0].lower()
-	if opt in {"on", "yes", "true"}:
-		user_prefs_store.set_prefs(user_id, reports_optin=True)
-		await update.message.reply_text("You will now receive daily/weekly performance summaries.")
-	elif opt in {"off", "no", "false"}:
-		user_prefs_store.set_prefs(user_id, reports_optin=False)
-		await update.message.reply_text("You will no longer receive scheduled reports.")
-	else:
-		await update.message.reply_text("Usage: /reports on|off")
+	user_id = int(update.effective_user.id)
+	args = list(context.args or [])
+	from services.user_intelligence import get_user_trading_preferences, set_user_trading_preferences
+
+	async with get_session(priority="interactive", label="telegram.report_preferences", timeout_seconds=8.0) as session:
+		prefs = await get_user_trading_preferences(session, user_id)
+		if not args:
+			await session.rollback()
+			state_text = "enabled" if prefs.reports_optin else "disabled"
+			await update.message.reply_text(
+				f"Scheduled performance reports are {state_text}.\n"
+				"Use /reports on or /reports off. The same preference is shown on the website."
+			)
+			return
+		opt = str(args[0]).lower().strip()
+		if opt not in {"on", "yes", "true", "off", "no", "false"}:
+			await session.rollback()
+			await update.message.reply_text("Usage: /reports on|off")
+			return
+		prefs.reports_optin = opt in {"on", "yes", "true"}
+		await set_user_trading_preferences(session, user_id, prefs)
+		await session.commit()
+	await update.message.reply_text(
+		"Scheduled performance reports enabled across your account."
+		if prefs.reports_optin
+		else "Scheduled performance reports disabled across your account."
+	)
+
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
 from db.session import get_session
 from db.pg_features import get_or_create_user
