@@ -1,6 +1,7 @@
 """Canonical reconciliation for proof-backed delivery outcome projections."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -333,7 +334,8 @@ async def ensure_outcome_projections(
                     try:
                         from db.staging_remediation import record_outcome_correction
 
-                        record_outcome_correction(
+                        await asyncio.to_thread(
+                            record_outcome_correction,
                             signal_id=signal_id,
                             original_outcome=str(current_status or "unknown"),
                             corrected_outcome=str(canonical or status or "unknown"),

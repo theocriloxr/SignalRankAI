@@ -20,6 +20,8 @@ _MAX_QUEUE = max(100, int(os.getenv("ADAPTIVE_CANDLE_QUEUE_MAX", "2000") or 2000
 _QUEUE: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=_MAX_QUEUE)
 _LAST_SNAPSHOT: dict[tuple[str, str], tuple[int, float]] = {}
 _LOCK = threading.Lock()
+_LOCAL_DRAIN_LOCK = threading.Lock()
+_LOCAL_DRAIN_TASK: asyncio.Task | None = None
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -34,6 +36,96 @@ def _capture_db_priority() -> str:
     return value if value in {"interactive", "critical", "background", "analytics"} else "background"
 
 
+def _local_drain_batch_size() -> int:
+    return max(
+        1,
+        int(
+            os.getenv(
+                "ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE",
+                os.getenv("ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE", "24") or "24",
+            )
+            or 24
+        ),
+    )
+
+
+async def _drain_local_queue() -> None:
+    """Drain the process-local queue in the process that produced it.
+
+    SignalRank runs the scanner/engine and background worker as separate Railway
+    processes. A Python ``queue.Queue`` is not shared between those processes,
+    so relying only on the worker's ``candle_capture_loop`` leaves snapshots
+    produced by the engine stranded until its local queue fills. This short-lived
+    consumer is scheduled on the producer's running event loop and exits once the
+    queue is empty. The worker loop remains useful for monolithic deployments.
+    """
+    retry_delay = max(
+        0.25,
+        float(os.getenv("ADAPTIVE_CANDLE_LOCAL_DRAIN_RETRY_SECONDS", "2") or 2),
+    )
+    while True:
+        if queue_depth() <= 0:
+            return
+        try:
+            result = await persist_queued_snapshots(_local_drain_batch_size())
+            if result["snapshots"]:
+                logger.info(
+                    "[adaptive_candles] local_drain persisted=%s queue_depth=%s",
+                    result,
+                    queue_depth(),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Keep the evidence queued and retry in the same producer process.
+            logger.info(
+                "[adaptive_candles] local_drain deferred error=%s queue_depth=%s",
+                exc,
+                queue_depth(),
+            )
+            await asyncio.sleep(retry_delay)
+        else:
+            # Yield to the engine between DB batches so candle persistence cannot
+            # monopolise the scanner event loop during the initial history backfill.
+            await asyncio.sleep(0)
+
+
+def _local_drain_finished(task: asyncio.Task) -> None:
+    global _LOCAL_DRAIN_TASK
+    try:
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                logger.warning("[adaptive_candles] local drain task crashed: %s", exc)
+    except Exception as exc:
+        logger.debug("[adaptive_candles] local drain completion inspection failed: %s", exc)
+    finally:
+        with _LOCAL_DRAIN_LOCK:
+            if _LOCAL_DRAIN_TASK is task:
+                _LOCAL_DRAIN_TASK = None
+
+
+def ensure_local_drain() -> bool:
+    """Start one producer-local drain task when an asyncio loop is available."""
+    global _LOCAL_DRAIN_TASK
+    if not _env_bool("ADAPTIVE_CANDLE_LOCAL_DRAIN_ENABLED", True):
+        return False
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Synchronous tests/maintenance scripts can still call
+        # ``persist_queued_snapshots`` or run ``candle_capture_loop`` explicitly.
+        return False
+
+    with _LOCAL_DRAIN_LOCK:
+        if _LOCAL_DRAIN_TASK is not None and not _LOCAL_DRAIN_TASK.done():
+            return False
+        task = loop.create_task(_drain_local_queue(), name="adaptive-candle-local-drain")
+        task.add_done_callback(_local_drain_finished)
+        _LOCAL_DRAIN_TASK = task
+        return True
+
+
 def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     """Queue only the changed candle suffix without blocking strategy evaluation.
 
@@ -42,6 +134,11 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     created avoidable write pressure and made a second database look necessary.
     The first observation still backfills the bounded history; later snapshots
     contain only the previous bar (for finalisation) and the new/open bar.
+
+    In decomposed deployments the queue is process-local, so the producer also
+    schedules a local asynchronous drain. This prevents the engine service from
+    depending on a different Railway process to consume Python memory it cannot
+    access.
     """
     if not _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
         return 0
@@ -102,6 +199,9 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
                 pass
             logger.warning("[adaptive_candles] queue full; snapshot dropped asset=%s tf=%s", asset, timeframe)
             break
+
+    if queued:
+        ensure_local_drain()
     return queued
 
 

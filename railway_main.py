@@ -450,10 +450,33 @@ def _railway_process_ownership():
     decomposed front door. Dedicated engine/worker roles must use ``main.py``
     and are rejected here so a bad Railway start command cannot silently
     recreate the monolith.
+
+    Railway can preserve a stale RUN_MODE=all snapshot while DB_ROLE/SERVICE_ROLE
+    already identify the dedicated front door. In decomposed topology, recover
+    only that safe front-door case; never reinterpret engine/worker as web.
     """
     from runtime.roles import RunMode, process_ownership
 
-    requested = os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all"
+    requested = str(
+        os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or os.getenv("DB_ROLE")
+        or "all"
+    ).strip().lower()
+    decomposed = str(os.getenv("DECOMPOSED_TOPOLOGY_ENABLED") or "0").strip().lower() in {
+        "1", "true", "yes", "on", "y",
+    }
+    role_hint = str(os.getenv("SERVICE_ROLE") or os.getenv("DB_ROLE") or "").strip().lower()
+    if decomposed and requested in {"all", "all/dev"} and role_hint in {
+        "frontdoor", "front-door", "webhook",
+    }:
+        logger.warning(
+            "[runtime_ownership] correcting stale RUN_MODE=%s from explicit role_hint=%s",
+            requested,
+            role_hint,
+        )
+        requested = "frontdoor"
+
     ownership = process_ownership(requested)
     if ownership.mode not in {RunMode.FRONTDOOR, RunMode.ALL_DEV}:
         raise RuntimeError(
@@ -523,7 +546,9 @@ def _log_railway_env_readiness() -> None:
     if not running_on_railway:
         return
 
+    has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
     has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+    has_ai_provider = bool(has_openai or has_gemini)
     has_mt5_token = bool((os.getenv("META_API_TOKEN") or "").strip())
     has_encryption = bool((os.getenv("ENCRYPTION_KEY") or "").strip())
     has_owner = bool((os.getenv("OWNER_IDS") or "").strip() or (os.getenv("OWNER_TELEGRAM_ID") or "").strip() or (os.getenv("TELEGRAM_OWNER_ID") or "").strip())
@@ -531,10 +556,12 @@ def _log_railway_env_readiness() -> None:
     has_domain = bool((os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_URL") or "").strip())
 
     logger.info(
-        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s gemini=%s mt5_token=%s encryption=%s",
+        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s ai_provider=%s openai=%s gemini=%s mt5_token=%s encryption=%s",
         has_telegram_token,
         has_domain,
         has_owner,
+        has_ai_provider,
+        has_openai,
         has_gemini,
         has_mt5_token,
         has_encryption,
@@ -547,8 +574,8 @@ def _log_railway_env_readiness() -> None:
         missing.append("RAILWAY_PUBLIC_DOMAIN|WEBHOOK_DOMAIN")
     if not has_owner:
         missing.append("OWNER_IDS|OWNER_TELEGRAM_ID")
-    if not has_gemini:
-        missing.append("GEMINI_API_KEY")
+    if not has_ai_provider:
+        missing.append("OPENAI_API_KEY|GEMINI_API_KEY")
     if not has_mt5_token:
         missing.append("META_API_TOKEN")
     if not has_encryption:
@@ -2876,6 +2903,36 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "performance_ledger": performance_ledger,
         "ml_calibration": ml_calibration,
     }
+
+    # Secret-safe AI provider observability. OpenAI is optional by default
+    # because Gemini/local fallback keeps trading analysis available when the
+    # owner has not connected an OpenAI key yet. Set
+    # OPENAI_REQUIRED_FOR_READINESS=1 only after the key is provisioned and
+    # /ai_test has verified connectivity.
+    try:
+        from services.openai_ai import provider_status as _openai_provider_status
+
+        _openai_status = dict(_openai_provider_status() or {})
+        _openai_required = _env_bool("OPENAI_REQUIRED_FOR_READINESS", False)
+        checks["openai_ai"] = {
+            **_openai_status,
+            "required": _openai_required,
+            "ok": bool(_openai_status.get("available")) if _openai_required else True,
+            "detail": (
+                "available"
+                if _openai_status.get("available")
+                else ("not_configured_optional" if not _openai_required else "required_but_unavailable")
+            ),
+        }
+    except Exception as exc:
+        _openai_required = _env_bool("OPENAI_REQUIRED_FOR_READINESS", False)
+        checks["openai_ai"] = {
+            "ok": not _openai_required,
+            "required": _openai_required,
+            "configured": False,
+            "available": False,
+            "detail": f"provider_status_failed:{type(exc).__name__}",
+        }
 
     distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
     allow_shared_dev = (

@@ -18,6 +18,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
     raw=os.getenv(name)
     return default if raw is None else raw.strip().lower() in {"1","true","yes","on"}
 
+def _learning_db_priority() -> str:
+    role=str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
+
 def _to_ms(value: Any) -> int | None:
     if isinstance(value, (int, float)):
         n=int(value); return n*1000 if n < 1_000_000_000_000 else n
@@ -75,7 +79,12 @@ class AssetLearningWorker:
         from db.priority import DBPriority
         from db.session import NoncriticalWriteDropped, get_session
         try:
-            async with get_session(priority=DBPriority.BACKGROUND,label="asset_learning_candle_write") as session:
+            async with get_session(
+                priority=_learning_db_priority(),
+                label="asset_learning_candle_write",
+                timeout_seconds=max(10.0, float(os.getenv("ASSET_LEARNING_DB_TIMEOUT_SECONDS", "60") or 60)),
+                drop_if_busy=False,
+            ) as session:
                 for asset,tf,ts,o,h,l,c,v in rows:
                     await upsert_market_candle(session,symbol=asset,timeframe=tf,open_time_ms=ts,open=o,high=h,low=l,close=c,volume=v,is_final=True)
                 await session.commit()

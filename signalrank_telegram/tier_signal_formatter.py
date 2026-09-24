@@ -108,6 +108,62 @@ def _order_block_text(signal: DictType[str, Any]) -> Optional[str]:
     return f"Price rejecting {tf} Supply Zone"
 
 
+def _candle_price_action_lines(
+    signal: DictType[str, Any],
+    *,
+    detailed: bool = False,
+) -> List[str]:
+    """Render structured candle evidence without presenting it as certainty."""
+    evidence = signal.get("candle_evidence")
+    if not isinstance(evidence, dict) or not evidence:
+        return []
+
+    def _label(value: Any, fallback: str = "unknown") -> str:
+        return str(value or fallback).replace("_", " ").strip()
+
+    try:
+        score = max(0.0, min(100.0, float(evidence.get("evidence_score_pct") or 0.0)))
+    except Exception:
+        score = 0.0
+    try:
+        body_pct = float(evidence.get("body_ratio") or 0.0) * 100.0
+        upper_pct = float(evidence.get("upper_wick_ratio") or 0.0) * 100.0
+        lower_pct = float(evidence.get("lower_wick_ratio") or 0.0) * 100.0
+    except Exception:
+        body_pct = upper_pct = lower_pct = 0.0
+
+    body = _label(evidence.get("body_classification"))
+    close_control = _label(evidence.get("close_control"))
+    rejection = _label(evidence.get("rejection"), "no dominant wick rejection")
+    context = _label(evidence.get("market_context"))
+    confirmation = _label(evidence.get("confirmation"), "pending")
+    volume = evidence.get("relative_volume")
+    volume_text = "unavailable"
+    try:
+        if volume is not None:
+            volume_text = f"{float(volume):.2f}x baseline"
+    except Exception:
+        pass
+
+    lines = [
+        f"🕯️ <b>Price Action Evidence: {score:.0f}/100</b> (evidence, not proof)",
+        _h(
+            f"Body: {body} ({body_pct:.0f}% of range) • "
+            f"Wicks: upper {upper_pct:.0f}% / lower {lower_pct:.0f}% • Rejection: {rejection}"
+        ),
+    ]
+    if detailed:
+        lines.append(
+            _h(
+                f"Close: {close_control} • Context: {context} • "
+                f"Volume: {volume_text} • Next candle: {confirmation}"
+            )
+        )
+    else:
+        lines.append(_h(f"Close: {close_control} • Context: {context} • Confirmation: {confirmation}"))
+    return lines
+
+
 def _fmt_price_clean(price: Any, asset: str = "") -> str:
     """Format a price value cleanly without currency prefix."""
     try:
@@ -405,8 +461,9 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
     explanation such as "Local AI fallback 8.7/10" instead of
     "ai_review_status=rate_limited_degraded;local_ai:...".
     """
-    score = _safe_float(signal.get("gemini_review_score") or signal.get("ai_review_score"))
-    raw_reason = str(signal.get("gemini_review_reason") or signal.get("ai_review_reason") or "").strip()
+    score = _safe_float(signal.get("ai_review_score") or signal.get("gemini_review_score"))
+    raw_reason = str(signal.get("ai_review_reason") or signal.get("gemini_review_reason") or "").strip()
+    provider = str(signal.get("ai_review_provider") or "").strip().lower()
     if score is None and not raw_reason:
         return None
     if raw_reason in {"gemini_disabled", "gemini_disabled_no_key"}:
@@ -429,7 +486,14 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
     if not reason:
         reason = "quality checks passed"
 
-    label = "Local AI fallback" if local else "Gemini"
+    if local:
+        label = "Local AI fallback"
+    elif provider == "openai" or raw_reason.startswith("openai_"):
+        label = "OpenAI"
+    elif provider == "gemini" or raw_reason.startswith("gemini_"):
+        label = "Gemini"
+    else:
+        label = "AI review"
     parts: List[str] = []
     if score is not None and score > 0:
         parts.append(f"{label} {score:.1f}/10")
@@ -611,6 +675,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
+    lines.extend(_candle_price_action_lines(signal))
 
     lines += [
         "",
@@ -793,6 +858,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     ai_review = _ai_review_text(signal)
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
+    lines.extend(_candle_price_action_lines(signal, detailed=True))
 
     # HTF Bias
     htf_bias = signal.get("htf_bias") or signal.get("higher_timeframe_bias")

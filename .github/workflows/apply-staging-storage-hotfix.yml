@@ -1,0 +1,48 @@
+name: Apply staging storage hotfix
+
+on:
+  push:
+    branches:
+      - fix/remaining-staging-blockers
+    paths:
+      - .github/workflows/apply-staging-storage-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/remaining-staging-blockers
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: python scripts/apply_staging_storage_hotfix.py
+
+      - name: Validate syntax and strict JSON behavior
+        run: |
+          python -m compileall -q utils/json_safety.py db/storage_maintenance.py db/repository.py railway_main.py
+          PYTHONPATH=. python - <<'PY'
+          import json
+          from utils.json_safety import strict_json_safe
+          value = strict_json_safe({"adx": float("nan"), "nested": [float("inf"), 1.0]})
+          assert value == {"adx": None, "nested": [None, 1.0]}
+          json.dumps(value, allow_nan=False)
+          print("strict JSON sanitizer validation passed")
+          PY
+
+      - name: Commit source hotfix only
+        run: |
+          git config user.name "signalrank-staging-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add db/repository.py railway_main.py
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "fix staging DB JSON safety and retention"
+          git push origin HEAD:fix/remaining-staging-blockers

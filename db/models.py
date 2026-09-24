@@ -60,6 +60,12 @@ class User(Base):
     accepted_terms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    # Durable Telegram reachability state added by migration 0035. A fresh
+    # inbound update reactivates the user through services.platform.identity.
+    telegram_reachable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    telegram_unreachable_reason: Mapped[Optional[str]] = mapped_column(String(128))
+    telegram_unreachable_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    notification_suppressed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     execution_mode: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)
     auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)

@@ -871,6 +871,7 @@ async def get_or_create_signal_impl(
             # strategy scope. Hidden regime changes or adjacent timeframe scans
             # must not admit two near-identical user-visible trade ideas.
             semantic_scope = f"signal-thesis:{signal_thesis_scope(thesis_payload)}"
+            exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
                 {"fingerprint": thesis_fingerprint},
@@ -878,6 +879,15 @@ async def get_or_create_signal_impl(
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
                 {"scope": semantic_scope},
+            )
+            # The database uniqueness guard is broader than a strategy thesis:
+            # only one unresolved asset+direction+timeframe row may exist.
+            # Serialize that exact bucket too, otherwise two different strategy
+            # scopes can race through their separate thesis locks and collide
+            # on ix_signals_active_thesis at flush time.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:bucket_scope))"),
+                {"bucket_scope": exact_bucket_scope},
             )
     except Exception as lock_error:
         from core.env import runtime_environment_name
@@ -1031,22 +1041,36 @@ async def get_or_create_signal_impl(
                 Signal.asset == asset,
                 Signal.direction == direction,
                 Signal.timeframe == timeframe,
-                Signal.expired.is_(False),
-                Signal.archived.is_(False),
+                Signal.status == "active",
             )
             .order_by(Signal.created_at.desc())
             .limit(1)
         )
     ).scalars().first()
     if exact_active is not None:
-        logger.info(
-            "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
-            asset,
-            timeframe,
-            direction,
-            exact_active.signal_id,
-        )
-        return exact_active
+        # The partial unique index is WHERE status='active'. A legacy/inconsistent
+        # row may therefore block INSERT even when expired/archived flags already
+        # say it is inactive. Clear that stale index membership under the same
+        # exact-bucket advisory lock; otherwise reuse the canonical active row.
+        if bool(exact_active.expired) or bool(exact_active.archived):
+            exact_active.status = "superseded"
+            await session.flush()
+            logger.info(
+                "[dedup] reconciled stale active-index row asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+        else:
+            logger.info(
+                "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                exact_active.signal_id,
+            )
+            return exact_active
 
     logger.info(
         "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
@@ -2573,6 +2597,8 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
             SignalDelivery.sent_ok.is_(True),
             SignalDelivery.telegram_chat_id.is_not(None),
             SignalDelivery.telegram_message_id.is_not(None),
+            User.telegram_reachable.is_(True),
+            User.notification_suppressed.is_(False),
             func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
             or_(UserSignalMonitoring.id.is_(None), UserSignalMonitoring.status.in_(("auto_continue", "continued"))),
         )
@@ -2928,22 +2954,19 @@ async def expire_old_free_signal_summaries(session: AsyncSession, max_age_hours:
     return int(getattr(res, "rowcount", 0) or 0)
 
 
-async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_user_id: int) -> str:
-    """Return one durable referral code for a Telegram user.
-
-    The referrer row is locked so concurrent /invite and /referral commands do
-    not create multiple active codes. No synthetic fallback code is returned:
-    every code exposed to users must already exist in PostgreSQL.
-    """
-    referrer: User = await get_or_create_user(
-        session,
-        telegram_user_id=int(referrer_telegram_user_id),
-    )
+async def get_or_create_referral_code_for_user(
+    session: AsyncSession,
+    *,
+    referrer_user_id: int,
+) -> str:
+    """Return one durable referral code for any canonical SignalRank account."""
     locked_referrer = (
         await session.execute(
-            select(User).where(User.id == int(referrer.id)).with_for_update()
+            select(User).where(User.id == int(referrer_user_id)).with_for_update()
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if locked_referrer is None:
+        raise ValueError("referrer_user_missing")
 
     existing = (
         await session.execute(
@@ -2956,8 +2979,6 @@ async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_u
     if existing is not None:
         return str(existing.code)
 
-    # Telegram start parameters allow URL-safe characters. Keep the code short
-    # enough for sharing while including the internal id for collision resistance.
     for _ in range(5):
         token = secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
         code = f"SRK{int(locked_referrer.id):X}{token}"[:32]
@@ -2972,13 +2993,23 @@ async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_u
         session.add(row)
         await session.flush()
         logger.info(
-            "[referral_code_created] referrer_user_id=%s telegram_user_id=%s code=%s",
+            "[referral_code_created] referrer_user_id=%s channel=canonical",
             locked_referrer.id,
-            referrer_telegram_user_id,
-            code,
         )
         return str(row.code)
     raise RuntimeError("Unable to allocate a unique referral code")
+
+
+async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_user_id: int) -> str:
+    """Backward-compatible Telegram wrapper around canonical referral ownership."""
+    referrer: User = await get_or_create_user(
+        session,
+        telegram_user_id=int(referrer_telegram_user_id),
+    )
+    return await get_or_create_referral_code_for_user(
+        session,
+        referrer_user_id=int(referrer.id),
+    )
 
 
 async def _count_referrals(session: AsyncSession, referrer_user_id: int) -> int:
@@ -3044,6 +3075,195 @@ async def _resolve_referral_reward_tier(
     tiers = [normalize_tier(str(getattr(referrer_user, "tier", "free") or "free"))]
     tiers.extend(normalize_tier(str(value or "free")) for value in active_tiers)
     return "vip" if "vip" in tiers else "premium"
+
+
+async def process_referral_signup_for_user(
+    session: AsyncSession,
+    *,
+    referred_user_id: int,
+    referral_code: str,
+    signup_channel: str = "web",
+) -> dict[str, Any]:
+    """Attribute a newly-created canonical account, including web-only users."""
+    result: dict[str, Any] = {
+        "status": "ignored",
+        "referrer_user_id": None,
+        "referrals_total": 0,
+        "days_granted": 0,
+    }
+    code = str(referral_code or "").strip()
+    if not code:
+        result["status"] = "no_code"
+        return result
+
+    rc = (
+        await session.execute(
+            select(ReferralCode).where(func.lower(ReferralCode.code) == code.lower())
+        )
+    ).scalar_one_or_none()
+    if rc is None:
+        result["status"] = "invalid_code"
+        return result
+
+    referrer = (
+        await session.execute(
+            select(User).where(User.id == int(rc.referrer_user_id)).with_for_update()
+        )
+    ).scalar_one_or_none()
+    referred = (
+        await session.execute(
+            select(User).where(User.id == int(referred_user_id)).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if referrer is None or referred is None:
+        result["status"] = "user_missing"
+        return result
+    if int(referrer.id) == int(referred.id):
+        result["status"] = "self_referral"
+        return result
+
+    result["referrer_user_id"] = int(referrer.id)
+    existing = (
+        await session.execute(
+            select(ReferralAttribution).where(
+                ReferralAttribution.referred_user_id == int(referred.id)
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        result["status"] = "already_referred"
+        result["referrer_user_id"] = int(existing.referrer_user_id)
+        return result
+
+    now = _utcnow()
+    session.add(
+        ReferralAttribution(
+            referred_user_id=int(referred.id),
+            referrer_user_id=int(referrer.id),
+            is_successful=True,
+            successful_at=now,
+            reward_applied=False,
+        )
+    )
+    if not getattr(referred, "referred_by", None) and referrer.telegram_user_id is not None:
+        referred.referred_by = int(referrer.telegram_user_id)
+
+    signup_reference = f"REFERRAL_SIGNUP:{int(referred.id)}"
+    if (
+        await session.execute(
+            select(ReferralReward.id).where(ReferralReward.reference == signup_reference)
+        )
+    ).scalar_one_or_none() is None:
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer.id),
+                referred_user_id=int(referred.id),
+                reward_type="referral_signup",
+                reward_value=1,
+                reference=signup_reference,
+                meta={"referral_code": code, "qualified_on": f"new_{signup_channel}_account"},
+            )
+        )
+    await session.flush()
+
+    total = await _count_referrals(session, referrer_user_id=int(referrer.id))
+    referrer.referral_count = int(total)
+    result["referrals_total"] = int(total)
+    requirement = max(1, int(os.getenv("REFERRALS_PER_REWARD", "3") or 3))
+    grant_days = max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7))
+    if total % requirement:
+        result["status"] = "attributed"
+        return result
+
+    batch_number = int(total // requirement)
+    identity_ref = str(int(referrer.telegram_user_id)) if referrer.telegram_user_id is not None else f"USER{int(referrer.id)}"
+    reward_ref = f"REFERRAL:{identity_ref}:{batch_number}"[:128]
+    existing_reward = (
+        await session.execute(
+            select(ReferralReward).where(ReferralReward.reference == reward_ref)
+        )
+    ).scalar_one_or_none()
+    if existing_reward is not None:
+        result["status"] = "reward_already_granted"
+        result["days_granted"] = int(existing_reward.reward_value or 0)
+        return result
+
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_cap = max(grant_days, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28))
+    used = int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+                    ReferralReward.referrer_user_id == int(referrer.id),
+                    ReferralReward.reward_type == "premium_days",
+                    ReferralReward.created_at >= month_start,
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    remaining = max(0, monthly_cap - used)
+    if remaining <= 0:
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer.id),
+                referred_user_id=int(referred.id),
+                reward_type="premium_days_capped",
+                reward_value=0,
+                reference=reward_ref,
+                meta={"batch": batch_number, "monthly_cap_days": monthly_cap},
+            )
+        )
+        result["status"] = "reward_capped"
+        return result
+
+    granted = min(grant_days, remaining)
+    tier_to_extend = await _resolve_referral_reward_tier(session, referrer)
+    await activate_subscription(
+        session,
+        telegram_user_id=(int(referrer.telegram_user_id) if referrer.telegram_user_id is not None else None),
+        user_id=int(referrer.id),
+        tier=tier_to_extend,
+        duration_days=int(granted),
+        paystack_reference=reward_ref,
+        meta={
+            "source": "referral",
+            "referred_user_id": int(referred.id),
+            "signup_channel": str(signup_channel or "web")[:32],
+            "batch": batch_number,
+            "grant_days": int(granted),
+        },
+    )
+    session.add(
+        ReferralReward(
+            referrer_user_id=int(referrer.id),
+            referred_user_id=int(referred.id),
+            reward_type="premium_days",
+            reward_value=int(granted),
+            reference=reward_ref,
+            meta={"batch": batch_number, "tier_extended": tier_to_extend},
+        )
+    )
+    pending = list(
+        (
+            await session.execute(
+                select(ReferralAttribution)
+                .where(
+                    ReferralAttribution.referrer_user_id == int(referrer.id),
+                    ReferralAttribution.reward_applied.is_(False),
+                )
+                .order_by(ReferralAttribution.created_at.asc())
+                .limit(requirement)
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    for row in pending:
+        row.reward_applied = True
+    await session.flush()
+    result["status"] = "reward_granted"
+    result["days_granted"] = int(granted)
+    return result
 
 
 async def process_referral_start(

@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import tempfile
+import time
 from pathlib import Path
 import logging
 
@@ -46,6 +47,39 @@ def _resolve_model_path() -> str:
 
 MODEL_PATH = _resolve_model_path()
 logger = logging.getLogger(__name__)
+_DURABLE_SYNC_STATE = {"last_attempt": 0.0}
+
+
+def _sync_durable_model_if_due(path: str) -> bool:
+    if not _env_bool("ML_DURABLE_ARTIFACT_SYNC_ENABLED", True):
+        return False
+    try:
+        interval = max(
+            15.0,
+            float(os.getenv("ML_DURABLE_ARTIFACT_SYNC_INTERVAL_SECONDS", "60") or 60),
+        )
+    except Exception:
+        interval = 60.0
+    now = time.monotonic()
+    if now - float(_DURABLE_SYNC_STATE.get("last_attempt") or 0.0) < interval:
+        return False
+    _DURABLE_SYNC_STATE["last_attempt"] = now
+    try:
+        from ml.artifact_store import restore_active_model_artifact_from_database_sync
+
+        restored = restore_active_model_artifact_from_database_sync(
+            path,
+            model_name="primary",
+            connect_timeout_seconds=int(
+                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
+            ),
+        )
+        if restored:
+            logger.info("[ml] MLFilter synchronized durable primary artifact")
+        return bool(restored)
+    except Exception as exc:
+        logger.warning("[ml] MLFilter durable sync skipped error=%s", type(exc).__name__)
+        return False
 
 
 def calculate_dynamic_threshold(base_threshold: float, current_auc: float, target_auc: float = 0.85) -> float:
@@ -89,6 +123,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _fail_closed_on_unavailable() -> bool:
+    """Whether missing/broken ML evidence must veto a filtered candidate."""
+    return _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False)
 
 
 def _ml_enabled() -> bool:
@@ -157,13 +196,16 @@ class MLFilter:
         self.feature_cols = None
         self.schema_version = None
         self.model_format_version = None
+        self.feature_encoding_version = None
         self.calibration_x = None
         self.calibration_y = None
         self.calibration_kind = None
         try:
             model_data = None
+            model_path = _resolve_model_path()
+            _sync_durable_model_if_due(model_path)
             try:
-                with open(_resolve_model_path(), 'r') as f:
+                with open(model_path, 'r') as f:
                     model_data = normalize_model_payload(json.load(f))
             except Exception:
                 model_data = None
@@ -182,6 +224,7 @@ class MLFilter:
             self.feature_cols = model_data.get("feature_cols", [])
             self.schema_version = model_data.get("schema_version")
             self.model_format_version = model_data.get("model_format_version")
+            self.feature_encoding_version = str(model_data.get("feature_encoding_version") or "")
             self.calibration_kind = str(model_data.get("calibration_kind") or "")
             self.calibration_x = model_data.get("calibration_x") or []
             self.calibration_y = model_data.get("calibration_y") or []
@@ -189,6 +232,17 @@ class MLFilter:
             if not model_b64:
                 self.active = False
                 return
+
+            if _env_bool("ML_REQUIRE_FEATURE_ENCODING_CONTRACT", False):
+                from ml.features import FEATURE_ENCODING_VERSION
+                if self.feature_encoding_version != FEATURE_ENCODING_VERSION:
+                    logger.warning(
+                        "[ml] model encoding contract mismatch expected=%s actual=%s",
+                        FEATURE_ENCODING_VERSION,
+                        self.feature_encoding_version or "missing",
+                    )
+                    self.active = False
+                    return
             
             # Decode base64 and load model directly from bytes (ubj format)
             model_bytes = base64.b64decode(model_b64)
@@ -228,7 +282,7 @@ class MLFilter:
             (approved: bool, probability: float | None)
         """
         if not self.active or self.model is None:
-            return True, None
+            return (not _fail_closed_on_unavailable()), None
         
         try:
             # Map input features to model's expected feature order
@@ -243,10 +297,13 @@ class MLFilter:
                 feature_vector.append(float(normalized.get(col, 0.0)))
             
             if not feature_vector:
-                return True, None
+                return (not _fail_closed_on_unavailable()), None
             
             import numpy as np
-            dmatrix = xgb.DMatrix(np.array([feature_vector]))
+            dmatrix = xgb.DMatrix(
+                np.array([feature_vector], dtype=np.float32),
+                feature_names=list(self.feature_cols or []),
+            )
             prob = self.model.predict(dmatrix)[0]
             prob = self._apply_calibration(float(prob))
             if threshold is None:
@@ -259,5 +316,11 @@ class MLFilter:
                 return True, float(prob)
             approved = prob >= thresh_val
             return approved, float(prob)
-        except Exception:
+        except Exception as exc:
+            if _fail_closed_on_unavailable():
+                logger.warning(
+                    "[ml] inference unavailable; fail-closed veto active error=%s",
+                    type(exc).__name__,
+                )
+                return False, None
             return True, None

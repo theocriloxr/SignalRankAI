@@ -206,12 +206,21 @@ def _record_engine_pulse_health(
     stats: dict[str, Any] | None = None,
     error: str | None = None,
     recipients: int = 0,
+    recipients_attempted: int = 0,
 ) -> None:
     payload = {
         "status": str(status or "unknown"),
         "heartbeat_at": datetime.now(timezone.utc).isoformat(),
         "interval_seconds": max(60, int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600)),
+        # "recipients" is retained for backward-compatible consumers and means
+        # successfully delivered pulse notifications.
         "recipients": int(recipients or 0),
+        "recipients_delivered": int(recipients or 0),
+        "recipients_attempted": int(recipients_attempted or 0),
+        "notification_complete": bool(
+            int(recipients_attempted or 0) > 0
+            and int(recipients or 0) == int(recipients_attempted or 0)
+        ),
         "error": str(error or "") or None,
     }
     if isinstance(stats, dict):
@@ -746,12 +755,29 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             except Exception:
                 continue
         invariant_ok = int(stats.get("unaccounted") or 0) == 0
-        status = "healthy" if invariant_ok and sent == len(recipients) else "degraded"
-        error = None if status == "healthy" else (
-            "counter_invariant_failed" if not invariant_ok else f"telegram_sent_{sent}_of_{len(recipients)}"
-        )
+        # Engine health and notification fanout are different concerns. A stale
+        # admin chat must not make correct engine counters fail readiness, while
+        # a total Telegram delivery outage still remains a degraded pulse.
+        notification_reachable = sent > 0
+        status = "healthy" if invariant_ok and notification_reachable else "degraded"
+        error = None
+        if not invariant_ok:
+            error = "counter_invariant_failed"
+        elif not notification_reachable:
+            error = f"telegram_unreachable_0_of_{len(recipients)}"
+        elif sent < len(recipients):
+            logger.warning(
+                "[admin_pulse] partial Telegram fanout delivered=%s attempted=%s; "
+                "engine health remains valid",
+                sent,
+                len(recipients),
+            )
         _record_engine_pulse_health(
-            status=status, stats=stats, error=error, recipients=sent
+            status=status,
+            stats=stats,
+            error=error,
+            recipients=sent,
+            recipients_attempted=len(recipients),
         )
         return status == "healthy"
     except Exception as exc:
@@ -761,7 +787,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
 
 
 async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool:
-    """Run Gemini weekly filter-efficacy review and post summary to admins.
+    """Run the configured AI weekly filter-efficacy review and post summary to admins.
 
     This delegates to services.gemini_ml.run_gemini_review_pipeline which already
     collects DB aggregates and stores the review in runtime_state.
@@ -777,17 +803,18 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
             logger.debug("[admin_pulse] no recipients configured for weekly report")
             return False
 
-        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-        if not api_key:
-            logger.debug("[admin_pulse] GEMINI_API_KEY not configured; skipping weekly filter efficacy")
+        has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
+        has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+        if not (has_openai or has_gemini):
+            logger.debug("[admin_pulse] no external AI provider configured; skipping weekly filter efficacy")
             return False
 
-        # run the gemini weekly pipeline (it persists results and returns review)
+        # run the provider-routed weekly pipeline (it persists results and returns review)
         try:
             from services import gemini_ml
             review = await gemini_ml.run_gemini_review_pipeline(trigger="weekly_filter_efficacy", scope="weekly")
         except Exception as exc:
-            logger.exception("[admin_pulse] gemini weekly review failed: %s", exc)
+            logger.exception("[admin_pulse] AI weekly review failed: %s", exc)
             return False
 
         # Build message: concise top-level summary + short delivered vs shadow outcome table

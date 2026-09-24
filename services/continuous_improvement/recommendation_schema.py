@@ -32,6 +32,8 @@ class Recommendation:
     status: RecommendationStatus = RecommendationStatus.PROPOSED
     requires_owner_approval: bool = True
     auto_apply: bool = False
+    provider: str = "local"
+    acceptance_tests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.recommendation_id or not self.title or not self.rationale:
@@ -56,6 +58,7 @@ class ReviewReport:
     recommendations: tuple[Recommendation, ...] = field(default_factory=tuple)
     incidents: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     external_review_status: str = "not_requested"
+    provider_reviews: Mapping[str, Any] = field(default_factory=dict)
     guardrail: str = "recommendations_only_no_unattended_changes"
 
     def as_dict(self) -> dict[str, Any]:

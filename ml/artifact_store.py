@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import hashlib
 import json
 import logging
@@ -9,6 +11,34 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _artifact_db_priority() -> str:
+    explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
+    role = str(
+        os.getenv("DB_ROLE")
+        or os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or ""
+    ).strip().lower()
+    # Model persistence is part of the analytics-owned training transaction.
+    # A dedicated analytics service must not fall back to the generic
+    # background lane, whose foreground reservation can reject this durable
+    # write after a successful fit.
+    if role == "analytics" or role.startswith("analytics-"):
+        if explicit in {"interactive", "critical", "analytics"}:
+            return explicit
+        return "analytics"
+    if explicit in {"interactive", "critical", "background", "analytics"}:
+        return explicit
+    return "background"
+
+
+def _artifact_query_timeout() -> float:
+    try:
+        return max(5.0, float(os.getenv("ML_ARTIFACT_DB_TIMEOUT_SECONDS", "20") or 20))
+    except Exception:
+        return 20.0
 
 
 def _payload_hash(payload: dict[str, Any]) -> str:
@@ -50,18 +80,21 @@ async def persist_active_model_artifact(
     normalized_model_name = str(model_name or "primary").strip().lower() or "primary"
     try:
         async with get_session(
-            priority=str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background"),
+            priority=_artifact_db_priority(),
             label="ml_model_artifact_persist",
             timeout_seconds=float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30),
             drop_if_busy=False,
         ) as session:
-            await session.execute(
-                update(MLModelArtifact)
-                .where(
-                    MLModelArtifact.model_name == normalized_model_name,
-                    MLModelArtifact.is_active.is_(True),
-                )
-                .values(is_active=False)
+            await asyncio.wait_for(
+                session.execute(
+                    update(MLModelArtifact)
+                    .where(
+                        MLModelArtifact.model_name == normalized_model_name,
+                        MLModelArtifact.is_active.is_(True),
+                    )
+                    .values(is_active=False)
+                ),
+                timeout=_artifact_query_timeout(),
             )
             session.add(
                 MLModelArtifact(
@@ -80,7 +113,7 @@ async def persist_active_model_artifact(
                     trained_at=now_utc_naive(),
                 )
             )
-            await session.commit()
+            await asyncio.wait_for(session.commit(), timeout=_artifact_query_timeout())
         # A candidate artifact is NOT the active champion: make the role
         # explicit so logs can never imply promotion happened.
         role = (
@@ -166,4 +199,44 @@ def restore_active_model_artifact_sync(
     except Exception as exc:
         # Missing table is expected before migration 0033 or on a fresh local DB.
         logger.warning("[ml_artifact] restore skipped: %s", exc)
+        return False
+
+
+def restore_active_model_artifact_from_database_sync(
+    target_path: str | Path,
+    *,
+    model_name: str = "primary",
+    connect_timeout_seconds: int = 5,
+) -> bool:
+    """Restore an active artifact without relying on monolith startup ops.
+
+    Dedicated Railway roles skip db.auto_ops, so serving roles need a small,
+    bounded recovery path of their own to consume analytics-owned promotions.
+    """
+    try:
+        from config import resolve_database_url
+        import psycopg2
+
+        dsn = resolve_database_url(async_driver=False) or ""
+        if not dsn:
+            return False
+        connection = psycopg2.connect(
+            dsn,
+            connect_timeout=max(1, min(10, int(connect_timeout_seconds or 5))),
+        )
+        connection.autocommit = True
+        try:
+            return restore_active_model_artifact_sync(
+                connection,
+                target_path,
+                model_name=model_name,
+            )
+        finally:
+            connection.close()
+    except Exception as exc:
+        logger.warning(
+            "[ml_artifact] direct restore skipped name=%s error=%s",
+            model_name,
+            type(exc).__name__,
+        )
         return False

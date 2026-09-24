@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.isotonic import IsotonicRegression
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
 # Add parent dir to path
@@ -39,8 +38,15 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _training_db_priority() -> str:
-    value = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "background").strip().lower()
-    return value if value in {"interactive", "critical", "background", "analytics"} else "background"
+    explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
+    if explicit in {"interactive", "critical", "background", "analytics"}:
+        return explicit
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
+    # Dedicated analytics workers should not contend in the generic background
+    # lane. They own the analytics lane and may wait boundedly for it.
+    if role == "analytics" or role.startswith("analytics-"):
+        return "analytics"
+    return "background"
 
 
 def _training_db_timeout() -> float:
@@ -48,6 +54,30 @@ def _training_db_timeout() -> float:
         return max(5.0, float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30))
     except Exception:
         return 30.0
+
+
+def _training_query_timeout() -> float:
+    try:
+        return max(5.0, float(os.getenv("ML_TRAIN_QUERY_TIMEOUT_SECONDS", "20") or 20))
+    except Exception:
+        return 20.0
+
+
+def _training_dataset_timeout() -> float:
+    try:
+        return max(30.0, float(os.getenv("ML_TRAIN_DATASET_TIMEOUT_SECONDS", "120") or 120))
+    except Exception:
+        return 120.0
+
+
+def _normalize_shadow_outcome(value: object) -> str | None:
+    """Map shadow-tracker barrier vocabulary into the trainer's binary label."""
+    outcome = str(value or "").lower().strip()
+    if outcome in {"win", "tp", "tp1", "tp2", "tp3", "partial_tp"}:
+        return "win"
+    if outcome in {"loss", "sl", "stop", "stop_loss"}:
+        return "loss"
+    return None
 
 
 def _training_session_kwargs(label: str) -> dict:
@@ -111,15 +141,38 @@ def _promotion_quality_gate(
     balanced_acc = float(metrics.get("balanced_accuracy", accuracy) or 0.0)
     positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
     pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
+    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
     expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
     majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
+
+    min_pr_auc = float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
+    min_pr_auc_floor = float(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25)
+    min_pr_auc_lift = float(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0)
+    pr_auc_lift = (pr_auc / positive_rate) if positive_rate > 0 else 0.0
+    # PR-AUC is prevalence-sensitive. Keep the existing strong absolute gate,
+    # but also recognize a candidate that clears a conservative absolute floor
+    # while materially outperforming the random/prevalence baseline. This is
+    # stricter than accepting raw accuracy on an imbalanced dataset.
+    pr_auc_ok = bool(
+        pr_auc >= min_pr_auc
+        or (
+            positive_rate > 0
+            and pr_auc >= min_pr_auc_floor
+            and pr_auc_lift >= min_pr_auc_lift
+        )
+    )
+
+    # Do not require raw accuracy to beat the majority-class baseline. On an
+    # imbalanced outcome set that condition rewards predicting the dominant
+    # class and can reject a genuinely useful minority-class model. The
+    # imbalance-aware gates below plus expected-R are the actual protection
+    # against majority collapse.
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and accuracy > majority_baseline
         and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
         and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
-        and pr_auc >= float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
+        and pr_auc_ok
         and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
     )
     return ok, min_accuracy, min_auc
@@ -348,6 +401,43 @@ async def load_training_data(lookback_days: int = 90):
                     return 0.0
 
         candle_cache: dict[tuple[str, str], tuple[list[int], list[object]]] = {}
+        training_lookback_days = max(1, int(lookback_days or 90))
+        training_now = now_utc_naive()
+
+        def _timeframe_seconds(raw_timeframe: str) -> int:
+            text = str(raw_timeframe or "").strip().lower()
+            aliases = {"d": "1d", "day": "1d", "daily": "1d", "h": "1h", "hour": "1h"}
+            text = aliases.get(text, text)
+            try:
+                if text.endswith("m"):
+                    return max(60, int(float(text[:-1] or 1) * 60))
+                if text.endswith("h"):
+                    return max(3600, int(float(text[:-1] or 1) * 3600))
+                if text.endswith("d"):
+                    return max(86400, int(float(text[:-1] or 1) * 86400))
+            except (TypeError, ValueError):
+                pass
+            return 3600
+
+        def _candle_cache_bounds(timeframe: str) -> tuple[int, int]:
+            bar_seconds = _timeframe_seconds(timeframe)
+            # Retain the full evidence window plus enough pre-window bars for
+            # ATR/SMA/velocity features on the earliest training observation.
+            feature_buffer_bars = max(
+                160,
+                int(os.getenv("ML_CANDLE_FEATURE_BUFFER_BARS", "180") or 180),
+            )
+            span_seconds = training_lookback_days * 86400 + feature_buffer_bars * bar_seconds
+            floor_ms = int((training_now - timedelta(seconds=span_seconds)).timestamp() * 1000)
+            expected_rows = int(span_seconds / max(1, bar_seconds)) + 32
+            hard_cap = max(
+                500,
+                min(
+                    150000,
+                    int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000),
+                ),
+            )
+            return floor_ms, max(500, min(hard_cap, expected_rows))
 
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
@@ -355,23 +445,35 @@ async def load_training_data(lookback_days: int = 90):
             key = (str(symbol).upper(), str(timeframe).lower())
             cached = candle_cache.get(key)
             if cached is None:
-                max_rows = max(500, min(100000, int(os.getenv("ML_CANDLE_CACHE_MAX_ROWS_PER_SERIES", "40000") or 40000)))
+                floor_ms, max_rows = _candle_cache_bounds(key[1])
                 async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
                     q = (
                         select(MarketCandle)
                         .where(
                             MarketCandle.symbol == key[0],
                             MarketCandle.timeframe == key[1],
+                            MarketCandle.open_time_ms >= floor_ms,
                         )
                         .order_by(desc(MarketCandle.open_time_ms))
                         .limit(max_rows)
                     )
-                    res = await candle_session.execute(q)
+                    res = await asyncio.wait_for(
+                        candle_session.execute(q),
+                        timeout=_training_query_timeout(),
+                    )
                     all_rows = list(res.scalars().all())
                 all_rows.reverse()
                 open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
                 cached = (open_times, all_rows)
                 candle_cache[key] = cached
+                logger.info(
+                    "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
+                    key[0],
+                    key[1],
+                    len(all_rows),
+                    max_rows,
+                    training_lookback_days,
+                )
             open_times, all_rows = cached
             cutoff_ms = int(created_at.timestamp() * 1000)
             stop = bisect_right(open_times, cutoff_ms)
@@ -430,7 +532,10 @@ async def load_training_data(lookback_days: int = 90):
                 .where(Signal.created_at >= cutoff, delivered_proof)
             )
             try:
-                res = await session.execute(stmt)
+                res = await asyncio.wait_for(
+                    session.execute(stmt),
+                    timeout=_training_query_timeout(),
+                )
                 rows = list(res.all())
             except Exception as exc:
                 # Live proof is the strongest source, but a temporary query or
@@ -449,6 +554,11 @@ async def load_training_data(lookback_days: int = 90):
             )
 
         live_proof_rows = len(rows)
+        logger.info(
+            "[ml_dataset_stage] stage=live_proof_loaded rows=%s lookback_days=%s",
+            live_proof_rows,
+            training_lookback_days,
+        )
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
@@ -595,7 +705,7 @@ async def load_training_data(lookback_days: int = 90):
             async with get_session(**_training_session_kwargs("ml_training_archive_read")) as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
-                await session.execute(text(
+                await asyncio.wait_for(session.execute(text(
                     """
                     CREATE TABLE IF NOT EXISTS ml_past_training_data (
                         id SERIAL PRIMARY KEY,
@@ -621,10 +731,13 @@ async def load_training_data(lookback_days: int = 90):
                         archived_at TIMESTAMP NOT NULL DEFAULT NOW()
                     )
                     """
-                ))
+                )), timeout=_training_query_timeout())
                 archive_rows = (
-                    await session.execute(
-                        select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                        ),
+                        timeout=_training_query_timeout(),
                     )
                 ).scalars().all()
                 await session.commit()
@@ -746,19 +859,28 @@ async def load_training_data(lookback_days: int = 90):
 
             async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
                 rejected_rows = (
-                    await session.execute(
-                        select(MLRejectedSignal).where(
-                            and_(
-                                MLRejectedSignal.created_at >= cutoff,
-                                MLRejectedSignal.outcome_tracked_at.is_not(None),
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLRejectedSignal).where(
+                                and_(
+                                    MLRejectedSignal.created_at >= cutoff,
+                                    MLRejectedSignal.outcome_tracked_at.is_not(None),
+                                )
                             )
-                        )
+                        ),
+                        timeout=_training_query_timeout(),
                     )
                 ).scalars().all()
 
             for rj in rejected_rows:
                 outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
-                if outcome not in {"win", "loss"}:
+                # ShadowOutcomeWorker persists barrier outcomes (tp1/tp2/tp3/sl)
+                # while older rows may use win/loss. Normalize both vocabularies
+                # so rejected/non-issued decisions actually feed counterfactual learning.
+                normalized_outcome = _normalize_shadow_outcome(outcome)
+                if normalized_outcome is None:
+                    # ambiguous/time-only outcomes do not prove which decision
+                    # policy was correct and must stay out of binary training.
                     continue
 
                 feat = getattr(rj, "features", None) or {}
@@ -782,7 +904,7 @@ async def load_training_data(lookback_days: int = 90):
                     except Exception:
                         continue
 
-                barrier = "upper" if outcome == "win" else "lower"
+                barrier = "upper" if normalized_outcome == "win" else "lower"
                 target = 1 if barrier == "upper" else 0
                 sample_weight = (1.0 if target == 1 else 0.9) * 0.60
                 if false_breakout:
@@ -850,15 +972,18 @@ async def load_training_data(lookback_days: int = 90):
         try:
             existing_signal_ids = {str(item.get("signal_id") or "") for item in data}
             async with get_session(**_training_session_kwargs("ml_training_paper_read")) as session:
-                paper_result = await session.execute(
-                    select(PaperPosition, Signal)
-                    .join(Signal, Signal.signal_id == PaperPosition.signal_id)
-                    .where(
-                        PaperPosition.closed_at.is_not(None),
-                        PaperPosition.closed_at >= cutoff,
-                        func.lower(PaperPosition.status).in_(("closed", "complete", "completed")),
-                    )
-                    .order_by(desc(PaperPosition.closed_at))
+                paper_result = await asyncio.wait_for(
+                    session.execute(
+                        select(PaperPosition, Signal)
+                        .join(Signal, Signal.signal_id == PaperPosition.signal_id)
+                        .where(
+                            PaperPosition.closed_at.is_not(None),
+                            PaperPosition.closed_at >= cutoff,
+                            func.lower(PaperPosition.status).in_(("closed", "complete", "completed")),
+                        )
+                        .order_by(desc(PaperPosition.closed_at))
+                    ),
+                    timeout=_training_query_timeout(),
                 )
                 paper_pairs = list(paper_result.all())
 
@@ -973,18 +1098,20 @@ def engineer_features(df):
     """Build feature matrix with domain-specific features."""
     X = df.copy()
 
-    # Encode categorical features
-    le_direction = LabelEncoder()
-    le_regime = LabelEncoder()
-    le_strategy = LabelEncoder()
-    le_asset = LabelEncoder()
-    le_timeframe = LabelEncoder()
-
-    X['direction_enc'] = le_direction.fit_transform(X['direction'].fillna('long'))
-    X['regime_enc'] = le_regime.fit_transform(X['regime'].fillna('neutral'))
-    X['strategy_enc'] = le_strategy.fit_transform(X['strategy_name'].fillna('unknown'))
-    X['asset_enc'] = le_asset.fit_transform(X['asset'].fillna('UNKNOWN'))
-    X['timeframe_enc'] = le_timeframe.fit_transform(X['timeframe'].fillna('1d'))
+    # Deterministic categorical encoding shared with inference. Fitted
+    # LabelEncoder mappings are dataset-dependent and cannot be reconstructed
+    # reliably at serving time.
+    from ml.features import (
+        direction_to_int,
+        regime_model_to_int,
+        stable_category_to_int,
+        strategy_model_to_int,
+    )
+    X['direction_enc'] = X['direction'].fillna('long').map(direction_to_int)
+    X['regime_enc'] = X['regime'].fillna('neutral').map(regime_model_to_int)
+    X['strategy_enc'] = X['strategy_name'].fillna('unknown').map(strategy_model_to_int)
+    X['asset_enc'] = X['asset'].fillna('UNKNOWN').map(stable_category_to_int)
+    X['timeframe_enc'] = X['timeframe'].fillna('1d').map(stable_category_to_int)
 
     # Domain features
     X['risk_reward_ratio'] = X['rr_ratio'].fillna(1.0)
@@ -1093,6 +1220,144 @@ def _temporal_three_way_indices(
     return ordered[:train_end], ordered[train_end:calibration_end], ordered[calibration_end:]
 
 
+def _class_balance_scale(y_values, sample_weights=None) -> float:
+    """Return a bounded positive-class boost for imbalanced model-fit rows.
+
+    The boost is derived only from the model-fit window. Existing per-row
+    provenance/outcome weights remain authoritative; this multiplier prevents a
+    high raw accuracy from being achieved by almost always predicting the
+    dominant negative class.
+    """
+    if not _env_bool("ML_CLASS_BALANCE_ENABLED", True):
+        return 1.0
+    y = np.asarray(y_values, dtype=int)
+    if y.size == 0 or len(np.unique(y)) < 2:
+        return 1.0
+    if sample_weights is None:
+        weights = np.ones(y.shape[0], dtype=float)
+    else:
+        weights = np.asarray(sample_weights, dtype=float)
+        if weights.shape[0] != y.shape[0]:
+            weights = np.ones(y.shape[0], dtype=float)
+        weights = np.where(np.isfinite(weights) & (weights > 0), weights, 1.0)
+    positive_mass = float(weights[y == 1].sum())
+    negative_mass = float(weights[y == 0].sum())
+    if positive_mass <= 0 or negative_mass <= 0:
+        return 1.0
+
+    # Square-root balancing is deliberately gentler than the raw class ratio,
+    # reducing majority collapse without turning rare positives into an
+    # over-weighted objective.
+    raw_scale = math.sqrt(negative_mass / positive_mass)
+    try:
+        minimum = max(1.0, float(os.getenv("ML_CLASS_BALANCE_MIN_SCALE", "1.0") or 1.0))
+    except Exception:
+        minimum = 1.0
+    try:
+        maximum = max(minimum, float(os.getenv("ML_CLASS_BALANCE_MAX_SCALE", "4.0") or 4.0))
+    except Exception:
+        maximum = 4.0
+    return float(max(minimum, min(maximum, raw_scale)))
+
+
+def _select_classification_threshold(y_true, probabilities) -> float:
+    """Choose an out-of-sample trading-utility cutoff on calibration rows only.
+
+    The old selector maximized balanced accuracy and could choose a very low
+    threshold with strong recall but negative 2R/-1R expectancy. This selector
+    keeps minimum recall/coverage safeguards, then prefers positive expected-R
+    utility and balanced accuracy. The untouched validation window remains
+    completely unseen until after the threshold is frozen.
+    """
+    if not _env_bool("ML_CLASSIFICATION_THRESHOLD_TUNING_ENABLED", True):
+        return 0.5
+    y = np.asarray(y_true, dtype=int)
+    proba = np.asarray(probabilities, dtype=float)
+    if y.size < 20 or y.size != proba.size or len(np.unique(y)) < 2:
+        return 0.5
+    proba = np.clip(proba, 0.0, 1.0)
+    try:
+        lower = max(0.05, min(0.45, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MIN", "0.15") or 0.15)))
+    except Exception:
+        lower = 0.15
+    try:
+        upper = min(0.95, max(0.50, float(os.getenv("ML_CLASSIFICATION_THRESHOLD_MAX", "0.85") or 0.85)))
+    except Exception:
+        upper = 0.85
+    if upper <= lower:
+        return 0.5
+
+    min_recall = max(
+        0.05,
+        min(0.95, float(os.getenv("ML_THRESHOLD_MIN_POSITIVE_RECALL", "0.20") or 0.20)),
+    )
+    min_coverage = max(
+        0.005,
+        min(0.50, float(os.getenv("ML_THRESHOLD_MIN_POSITIVE_COVERAGE", "0.03") or 0.03)),
+    )
+    min_selected = max(
+        5,
+        int(os.getenv("ML_THRESHOLD_MIN_SELECTED_ROWS", "20") or 20),
+    )
+
+    best_threshold = 0.5
+    best_key = None
+    fallback_threshold = 0.5
+    fallback_key = (-1.0, -1.0, -1.0, -1.0)
+    total_positives = max(1, int((y == 1).sum()))
+
+    for threshold in np.linspace(lower, upper, 71):
+        pred = (proba >= float(threshold)).astype(int)
+        tp = int(((pred == 1) & (y == 1)).sum())
+        tn = int(((pred == 0) & (y == 0)).sum())
+        fp = int(((pred == 1) & (y == 0)).sum())
+        fn = int(((pred == 0) & (y == 1)).sum())
+        selected = tp + fp
+        if selected <= 0:
+            continue
+
+        recall = tp / max(1, tp + fn)
+        specificity = tn / max(1, tn + fp)
+        precision = tp / max(1, selected)
+        balanced = 0.5 * (recall + specificity)
+        coverage = selected / max(1, len(y))
+        # Same conservative utility contract used by ml.metrics:
+        # winning selection = +2R, losing selection = -1R.
+        expected_r = ((2.0 * tp) - fp) / max(1, selected)
+        recall_capture = tp / total_positives
+
+        fallback = (balanced, recall, precision, -abs(float(threshold) - 0.5))
+        if fallback > fallback_key:
+            fallback_key = fallback
+            fallback_threshold = float(threshold)
+
+        if (
+            selected < min_selected
+            or coverage < min_coverage
+            or recall < min_recall
+            or recall_capture < min_recall
+            or expected_r <= 0.0
+        ):
+            continue
+
+        # Prefer expectancy first, then broad enough coverage and balanced
+        # discrimination. This avoids a tiny high-precision slice winning merely
+        # because it selected one or two positives.
+        key = (
+            expected_r,
+            min(coverage, 0.50),
+            balanced,
+            recall,
+            precision,
+            -abs(float(threshold) - 0.5),
+        )
+        if best_key is None or key > best_key:
+            best_key = key
+            best_threshold = float(threshold)
+
+    return float(best_threshold if best_key is not None else fallback_threshold)
+
+
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
     """Train and calibrate an XGBoost classifier without validation leakage.
 
@@ -1140,7 +1405,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # Train model
+    # Train model with a bounded minority-class correction computed only from
+    # the model-fit window. This complements, rather than replaces, provenance
+    # and outcome sample weights.
+    class_balance_scale = _class_balance_scale(y_tr, w_tr)
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -1148,19 +1416,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
+        scale_pos_weight=class_balance_scale,
         random_state=42,
         verbosity=1,
     )
+    logger.info(
+        "[ml_class_balance] positive_scale=%.4f train_positive=%s train_negative=%s",
+        class_balance_scale,
+        int((np.asarray(y_tr) == 1).sum()),
+        int((np.asarray(y_tr) == 0).sum()),
+    )
     model.fit(X_tr, y_tr, sample_weight=w_tr)
 
-    # Evaluate
-    y_pred = model.predict(X_te)
+    # Choose the classification diagnostic threshold from calibration-fit rows
+    # only, then evaluate that frozen threshold on the untouched validation
+    # window. Probability calibration remains separately measured below.
     y_proba = model.predict_proba(X_te)[:, 1]
+    calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
+    classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)
+    y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)
+    logger.info(
+        "[ml_classification_threshold] selected=%.4f calibration_rows=%s",
+        classification_threshold,
+        len(y_cal),
+    )
+
     calibration_x: list[float] = []
     calibration_y: list[float] = []
     calibrated_proba = np.asarray(y_proba, dtype=float)
     try:
-        calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
         if len(np.unique(calibration_fit_proba)) >= 2 and len(np.unique(y_cal)) >= 2:
             calibrator = IsotonicRegression(out_of_bounds='clip')
             calibrator.fit(calibration_fit_proba, y_cal)
@@ -1183,7 +1467,12 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     try:
         from ml.metrics import evaluate_classification, render_metrics_log
 
-        _full_report = evaluate_classification(y_te, y_pred, y_proba)
+        _full_report = evaluate_classification(
+            y_te,
+            y_pred,
+            y_proba,
+            decision_threshold=classification_threshold,
+        )
         _full_metrics = _full_report.to_dict()
         logger.info("[%s]", render_metrics_log(_full_report))
     except Exception as _metrics_exc:  # noqa: BLE001 - full metrics are additive
@@ -1259,6 +1548,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     metrics = {
         "accuracy": float(acc),
         "auc": float(auc),
+        "classification_threshold": float(classification_threshold),
+        "scale_pos_weight": float(class_balance_scale),
         "train_rows": int(len(X_tr)),
         "calibration_fit_rows": calibration_fit_rows,
         "validation_rows": validation_rows,
@@ -1273,6 +1564,12 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         "negative_precision": _full_metrics.get("negative_precision"),
         "negative_recall": _full_metrics.get("negative_recall"),
         "pr_auc": _full_metrics.get("pr_auc"),
+        "positive_rate": _full_metrics.get("positive_rate"),
+        "pr_auc_lift": (
+            (_full_metrics.get("pr_auc") or 0.0) / max(1e-9, (_full_metrics.get("positive_rate") or 0.0))
+            if (_full_metrics.get("positive_rate") or 0.0) > 0
+            else 0.0
+        ),
         "brier": _full_metrics.get("brier"),
         "ece": _full_metrics.get("ece"),
         "log_loss": _full_metrics.get("log_loss"),
@@ -1307,14 +1604,26 @@ def save_model(
     model_bytes = booster.save_raw('ubj')  # Binary format, no warnings
     
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
+    from ml.model_registry import compute_feature_schema_hash
+    from ml.features import FEATURE_ENCODING_VERSION
+    from ml.schema_version import CURRENT_SCHEMA_VERSION, MODEL_FORMAT_VERSION
+    ordered_feature_cols = [str(col).strip() for col in feature_cols]
+    feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
         "type": "xgboost",
         "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
-        "feature_cols": feature_cols,
+        "feature_cols": ordered_feature_cols,
         "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
         "trained_at": now_utc_naive().isoformat(),
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
+        "feature_schema_hash_sha256": feature_schema_hash_sha256,
+        "schema_version": int(CURRENT_SCHEMA_VERSION),
+        "model_format_version": int(MODEL_FORMAT_VERSION),
+        "feature_encoding_version": FEATURE_ENCODING_VERSION,
+        "training_run_id": str((training_meta or {}).get("run_id") or ""),
+        "dataset_version": str((training_meta or {}).get("dataset_version") or ""),
+        "parent_model_hash_sha256": str((training_meta or {}).get("parent_model_hash_sha256") or ""),
         "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
         "calibration_x": calibration_x or [],
         "calibration_y": calibration_y or [],
@@ -1358,7 +1667,33 @@ async def main(lookback_days: int | None = None):
         except Exception:
             lookback_days = 90
 
-    df = await load_training_data(int(lookback_days or 90))
+    logger.info(
+        "[ml_training_run] id=%s stage=dataset_load_start lookback_days=%s db_priority=%s session_timeout=%.1fs query_timeout=%.1fs dataset_timeout=%.1fs",
+        run_id,
+        int(lookback_days or 90),
+        _training_db_priority(),
+        _training_db_timeout(),
+        _training_query_timeout(),
+        _training_dataset_timeout(),
+    )
+    try:
+        df = await asyncio.wait_for(
+            load_training_data(int(lookback_days or 90)),
+            timeout=_training_dataset_timeout(),
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[ml_training_run] id=%s status=deferred reason=dataset_timeout timeout_seconds=%.1f current_model_preserved=true",
+            run_id,
+            _training_dataset_timeout(),
+        )
+        return False
+    logger.info(
+        "[ml_training_run] id=%s stage=dataset_load_complete rows=%s read_status=%s",
+        run_id,
+        0 if df is None else len(df),
+        str((df.attrs.get("read_status") if df is not None else "failed") or "failed"),
+    )
     read_status = str((df.attrs.get("read_status") if df is not None else "failed") or "failed")
     if read_status != "success":
         logger.warning(
@@ -1446,8 +1781,15 @@ async def main(lookback_days: int | None = None):
     if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
-            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f current_model_preserved=true",
+            "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
+            "majority_baseline=%s balanced_accuracy=%s positive_recall=%s "
+            "pr_auc=%s expected_r=%s current_model_preserved=true",
             run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+            metrics.get("majority_baseline_accuracy"),
+            metrics.get("balanced_accuracy"),
+            metrics.get("positive_recall"),
+            metrics.get("pr_auc"),
+            metrics.get("expected_r"),
         )
         return False
 

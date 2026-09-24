@@ -1,4 +1,116 @@
 import os
+import hashlib
+
+
+FEATURE_ENCODING_VERSION = "stable-sha256-v1"
+
+
+def stable_category_to_int(value, buckets=1024):
+    """Deterministic categorical encoder shared by training and inference."""
+    raw = str(value or "").strip().lower().encode("utf-8")
+    digest = hashlib.sha256(raw).digest()
+    return int.from_bytes(digest[:4], "big") % int(buckets)
+
+
+def direction_to_int(value):
+    return stable_category_to_int(str(value or "long").lower())
+
+
+def regime_model_to_int(value):
+    return stable_category_to_int(str(value or "neutral").lower())
+
+
+def strategy_model_to_int(value):
+    return stable_category_to_int(str(value or "unknown").lower())
+
+
+def build_model_feature_values(signal, market_data=None):
+    """Build the exact v3 model feature contract for one inference candidate."""
+    signal = dict(signal or {})
+    market_data = market_data or {}
+    tf = str(signal.get("timeframe") or "1h").lower()
+    tf_data = market_data.get(tf) or {}
+    candles = tf_data.get("candles") or []
+    closes = [_safe_float(x.get("close"), 0.0) for x in candles if isinstance(x, dict) and x.get("close") is not None]
+    highs = [_safe_float(x.get("high"), 0.0) for x in candles if isinstance(x, dict) and x.get("high") is not None]
+    lows = [_safe_float(x.get("low"), 0.0) for x in candles if isinstance(x, dict) and x.get("low") is not None]
+    vols = [_safe_float(x.get("volume"), 0.0) for x in candles if isinstance(x, dict) and x.get("volume") is not None]
+    macro = dict(market_data.get("_macro") or signal.get("_macro") or {})
+
+    score = _safe_float(signal.get("score"), 0.0)
+    entry = _safe_float(signal.get("entry"), 0.0)
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"), 0.0)
+    target = signal.get("take_profit") or signal.get("tp") or 0.0
+    if isinstance(target, (list, tuple)):
+        target = target[0] if target else 0.0
+    if isinstance(target, dict):
+        target = next(iter(target.values()), 0.0)
+    target = _safe_float(target, 0.0)
+    rr = _safe_float(signal.get("rr_ratio") or signal.get("rr_estimate") or signal.get("rr"), 1.0)
+    strength = _safe_float(signal.get("strength") or signal.get("confidence"), 0.0)
+    if strength > 1.0:
+        strength /= 100.0
+
+    vel3 = _safe_float(signal.get("price_velocity_3"), _pct_change(closes, 3))
+    vel5 = _safe_float(signal.get("price_velocity_5"), _pct_change(closes, 5))
+    vel10 = _safe_float(signal.get("price_velocity_10"), _pct_change(closes, 10))
+    atr14 = _atr(highs, lows, closes, 14)
+    atr50 = _atr(highs, lows, closes, 50)
+    atr_rel = _safe_float(signal.get("atr_rel"), (atr14 / closes[-1]) if closes and closes[-1] > 0 else 0.0)
+    atr_regime = _safe_float(signal.get("atr_regime"), (atr14 / atr50) if atr50 > 0 else 0.0)
+    rel_vol = 0.0
+    if len(vols) >= 21:
+        baseline = sum(vols[-21:-1]) / 20.0
+        rel_vol = (vols[-1] / baseline) if baseline > 0 else 0.0
+    rel_vol = _safe_float(signal.get("relative_volume"), rel_vol)
+
+    price_range = abs(target - entry) / (entry + 1e-6) if entry > 0 else 0.0
+    risk_amount = abs(entry - stop) / (entry + 1e-6) if entry > 0 else 0.0
+    direction = str(signal.get("direction") or "long").lower()
+    strategy = str(signal.get("strategy_name") or signal.get("strategy") or "unknown").lower()
+    regime = str(signal.get("regime") or "neutral").lower()
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper()
+
+    def mv(name, default=0.0):
+        return _safe_float(signal.get(name), _safe_float(macro.get(name), default))
+
+    return {
+        "score_normalized": score / 100.0,
+        "risk_reward_ratio": rr,
+        "price_range": price_range,
+        "risk_amount": risk_amount,
+        "spread_ratio": risk_amount / (price_range + 1e-6),
+        "strength_normalized": strength,
+        "direction_enc": float(direction_to_int(direction)),
+        "regime_enc": float(regime_model_to_int(regime)),
+        "strategy_enc": float(strategy_model_to_int(strategy)),
+        "high_score": 1.0 if score >= 75 else 0.0,
+        "medium_score": 1.0 if 60 <= score < 75 else 0.0,
+        "is_long": 1.0 if direction == "long" else 0.0,
+        "asset_class_enc": _safe_float(signal.get("asset_class_enc"), _asset_class_to_int(asset)),
+        "price_velocity_3": vel3,
+        "price_velocity_5": vel5,
+        "price_velocity_10": vel10,
+        "price_acceleration_3_10": _safe_float(signal.get("price_acceleration_3_10"), vel3 - vel10),
+        "velocity_abs_3": abs(vel3),
+        "velocity_abs_10": abs(vel10),
+        "atr_rel": atr_rel,
+        "atr_regime_clamped": max(0.0, min(5.0, atr_regime)),
+        "relative_volume_clamped": max(0.0, min(10.0, rel_vol)),
+        "mtf_4h_trend": _safe_float(signal.get("mtf_4h_trend"), _mtf_trend(market_data, "4h")),
+        "mtf_1d_trend": _safe_float(signal.get("mtf_1d_trend"), _mtf_trend(market_data, "1d")),
+        "funding_rate": mv("funding_rate"),
+        "open_interest_change": mv("open_interest_change"),
+        "dxy_trend": mv("dxy_trend"),
+        "vix_trend": mv("vix_trend"),
+        "us10y_trend": mv("us10y_trend"),
+        "yield_spread": mv("yield_spread"),
+        "minutes_since_high_impact_news": mv("minutes_since_high_impact_news"),
+        "minutes_until_high_impact_news": mv("minutes_until_high_impact_news"),
+        "news_event_impact_score": mv("news_event_impact_score"),
+        "spx_trend": mv("spx_trend"),
+        "btc_corr": mv("btc_corr"),
+    }
 
 
 def timeframe_to_int(tf):
@@ -131,7 +243,7 @@ def extract_features(signal, market_data):
             confluence_total = float(len(drivers))
     confluence_norm = (confluence_score / confluence_total) if confluence_total and confluence_total > 0 else 0.0
 
-    return {
+    features = {
         "rsi": float(signal.get("rsi") if signal.get("rsi") is not None else (ind.get("rsi") or 0)),
         "atr": float(signal.get("atr") if signal.get("atr") is not None else (ind.get("atr") or 0)),
         "trend_strength": float(signal.get("trend_strength") if signal.get("trend_strength") is not None else (ind.get("adx") or 0)),
@@ -178,3 +290,7 @@ def extract_features(signal, market_data):
         "spx_trend": float(signal.get("spx_trend") if signal.get("spx_trend") is not None else macro.get("spx_trend") or 0.0),
         "btc_corr": float(signal.get("btc_corr") if signal.get("btc_corr") is not None else macro.get("btc_corr") or 0.0),
     }
+    # Canonical model fields override any legacy aliases above so every inference
+    # path uses the same v3 semantics and categorical encoding as training.
+    features.update(build_model_feature_values(signal, market_data))
+    return features

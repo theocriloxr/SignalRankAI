@@ -963,17 +963,19 @@ async def fetch_market_data_cached(
                 yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
                     yf_candles = _sanitize_ohlcv(yf_candles)
-                    # Add data age calculation
-                    if yf_candles:
-                        latest_ts = _check_staleness(yf_candles, tf)[1]
-                        data_age = int(latest_ts) if latest_ts and latest_ts > 0 else None
-                    else:
-                        data_age = None
+                    is_fresh, data_age = _check_staleness(yf_candles, tf, log_stale=True)
+                    if not is_fresh and _env_bool("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", True):
+                        logger.warning(
+                            "[market_data] rejecting stale yfinance payload asset=%s tf=%s age_seconds=%.0f",
+                            asset, tf, data_age,
+                        )
+                        return tf, {}
                     
                     return tf, {
                         "candles": yf_candles,
                         "source": "yfinance",
-                        "data_age_seconds": data_age
+                        "data_age_seconds": int(data_age) if data_age > 0 else None,
+                        "stale": not is_fresh,
                     }
                 else:
                     # FIX: Add QUALITY_GATE logging for visibility into data rejection reasons
@@ -1078,12 +1080,19 @@ async def fetch_market_data_cached(
                 logger.warning(f"REST candles for {asset} {tf} failed OHLCV validation, skipping")
                 continue
             
-            # Calculate data age for REST candles (note: REST data is freshly fetched,
-            # so we don't reject it for staleness, only report age for monitoring)
+            # A provider request can succeed while returning an old historical
+            # tail. Never equate HTTP freshness with candle freshness.
             if candles:
-                _, data_age = _check_staleness(candles, tf)
+                is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
                 if "data_age_seconds" not in payload:
                     payload["data_age_seconds"] = data_age
+                payload["stale"] = not is_fresh
+                if not is_fresh and _env_bool("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", True):
+                    logger.warning(
+                        "[market_data] rejecting stale provider payload asset=%s tf=%s source=%s age_seconds=%.0f",
+                        asset, tf, payload.get("source") or "unknown", data_age,
+                    )
+                    continue
             
             # Never replace an already accepted live/cache payload with a
             # later fallback result.

@@ -2,6 +2,7 @@ from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
 import gc
+import time
 import os
 import threading
 import logging
@@ -39,6 +40,51 @@ logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
 _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
 _MODEL_RELOAD_LOCK = threading.Lock()
+_DURABLE_MODEL_SYNC_STATE: dict[str, float] = {"last_attempt": 0.0}
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _durable_model_retry_due() -> bool:
+    try:
+        interval = max(
+            15.0,
+            float(os.getenv("ML_DURABLE_ARTIFACT_SYNC_INTERVAL_SECONDS", "60") or 60),
+        )
+    except Exception:
+        interval = 60.0
+    now = time.monotonic()
+    if now - float(_DURABLE_MODEL_SYNC_STATE.get("last_attempt") or 0.0) < interval:
+        return False
+    _DURABLE_MODEL_SYNC_STATE["last_attempt"] = now
+    return True
+
+
+def _restore_durable_primary_if_enabled(path: Path) -> bool:
+    if not _env_bool("ML_DURABLE_ARTIFACT_SYNC_ENABLED", True):
+        return False
+    try:
+        from ml.artifact_store import restore_active_model_artifact_from_database_sync
+
+        restored = restore_active_model_artifact_from_database_sync(
+            path,
+            model_name="primary",
+            connect_timeout_seconds=int(
+                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
+            ),
+        )
+        if restored:
+            logger.info("[ml] durable primary artifact synchronized path=%s", path)
+        return bool(restored)
+    except Exception as exc:
+        logger.warning("[ml] durable artifact synchronization skipped error=%s", type(exc).__name__)
+        return False
+
 
 
 def _asset_class_to_int(asset: str) -> float:
@@ -74,8 +120,23 @@ def _model_path() -> Path:
 
 
 def _load_model() -> None:
+    should_sync_durable = False
     if _MODEL_CACHE["loaded"]:
-        return
+        if _MODEL_CACHE.get("booster") is not None:
+            return
+        # A dedicated serving role may have started before analytics persisted
+        # a fresh compatible champion. Retry durable recovery at a bounded
+        # cadence instead of caching "no model" forever.
+        if not _durable_model_retry_due():
+            return
+        should_sync_durable = True
+        _MODEL_CACHE.update({
+            "loaded": False,
+            "feature_cols": [],
+            "booster": None,
+            "path": None,
+            "error": None,
+        })
     _MODEL_CACHE.update({"loaded": True, "feature_cols": [], "booster": None, "path": str(_model_path()), "error": None})
 
     if xgb is None:
@@ -84,6 +145,10 @@ def _load_model() -> None:
     assert xgb is not None
 
     path = _model_path()
+    # Dedicated roles do not run db.auto_ops, so synchronize the analytics-owned
+    # durable champion before trusting the image-baked local artifact.
+    if should_sync_durable or (not path.exists() and _durable_model_retry_due()):
+        _restore_durable_primary_if_enabled(path)
     if not path.exists():
         _MODEL_CACHE["error"] = f"model_missing:{path}"
         return
@@ -248,19 +313,14 @@ def _load_shadow_model() -> None:
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
     try:
-        payload = json.loads(p.read_text(encoding="utf-8"))
-        feature_cols: List[str] = list(payload.get("feature_cols") or [])
-        model_bytes_b64 = payload.get("model_bytes_b64")
-        if not model_bytes_b64 or not feature_cols:
-            _SHADOW_CACHE["error"] = "invalid_candidate_payload"
+        booster, feature_cols, metadata, err = load_model_with_metadata(p, xgb)
+        if err or booster is None or not feature_cols:
+            _SHADOW_CACHE["error"] = err or "invalid_candidate_payload"
             return
-        raw_bytes = base64.b64decode(model_bytes_b64)
-        booster = xgb.Booster()
         booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
-        booster.load_model(bytearray(raw_bytes))
         _SHADOW_CACHE["booster"] = booster
-        _SHADOW_CACHE["feature_cols"] = feature_cols
-        _SHADOW_CACHE["version"] = str(payload.get("version") or "unknown")
+        _SHADOW_CACHE["feature_cols"] = list(feature_cols)
+        _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
     except Exception as exc:
         _SHADOW_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
@@ -313,112 +373,32 @@ def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: b
 
 def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Optional[np.ndarray]:
     try:
-        s_score = float(signal.get("score") or 0.0)
-        rr = float(signal.get("rr_ratio") or signal.get("rr_estimate") or 1.0)
-        entry = float(signal.get("entry") or 0.0)
-        sl = float(signal.get("stop_loss") or 0.0)
-        tp = float(signal.get("take_profit") or 0.0)
-        direction = str(signal.get("direction") or "long").lower()
-        regime = str(signal.get("regime") or "neutral").lower()
-        strategy = str(signal.get("strategy_name") or "unknown").lower()
-        asset = str(signal.get("asset") or "unknown").upper()
-        timeframe = str(signal.get("timeframe") or "1d").lower()
-        macro = dict(signal.get("_macro") or {})
-        strength = float(signal.get("strength") or 0.0)
-        partial_tp_progress = _num(signal.get("partial_tp_progress"), 0.0)
-        price_velocity_3 = _num(signal.get("price_velocity_3"), 0.0)
-        price_velocity_5 = _num(signal.get("price_velocity_5"), 0.0)
-        price_velocity_10 = _num(signal.get("price_velocity_10"), 0.0)
-        price_acceleration_3_10 = _num(signal.get("price_acceleration_3_10"), price_velocity_3 - price_velocity_10)
-        atr_rel = _num(signal.get("atr_rel"), 0.0)
-        atr_regime = _num(signal.get("atr_regime"), 0.0)
-        relative_volume = _num(signal.get("relative_volume"), 0.0)
-        mtf_4h_trend = _num(signal.get("mtf_4h_trend"), 0.0)
-        mtf_1d_trend = _num(signal.get("mtf_1d_trend"), 0.0)
-        funding_rate = _num(signal.get("funding_rate"), 0.0)
-        open_interest_change = _num(signal.get("open_interest_change"), 0.0)
-        dxy_trend = _num(signal.get("dxy_trend"), 0.0)
-        spx_trend = _num(signal.get("spx_trend"), 0.0)
-        btc_corr = _num(signal.get("btc_corr"), 0.0)
+        from ml.features import build_model_feature_values
 
-        price_range = abs(tp - entry) / (entry + 1e-6)
-        risk_amount = abs(entry - sl) / (entry + 1e-6)
-        spread_ratio = risk_amount / (price_range + 1e-6)
-        strength_norm = strength / 100.0 if strength > 1 else strength
-        high_score = 1.0 if s_score >= 75 else 0.0
-        medium_score = 1.0 if 60 <= s_score < 75 else 0.0
-        is_long = 1.0 if direction == "long" else 0.0
-
-        # Simple hash encodings for categorical features to stay deterministic without fitted encoders.
-        def _hash_bucket(val: str, buckets: int = 64) -> float:
-            return float(abs(hash(val)) % buckets)
-
-        values = {
-            "score_normalized": s_score / 100.0,
-            "risk_reward_ratio": rr,
-            "price_range": price_range,
-            "risk_amount": risk_amount,
-            "spread_ratio": spread_ratio,
-            "strength_normalized": strength_norm,
-            "direction_enc": _hash_bucket(direction),
-            "regime_enc": _hash_bucket(regime),
-            "strategy_enc": _hash_bucket(strategy),
-            "asset_enc": _hash_bucket(asset),
-            "timeframe_enc": _hash_bucket(timeframe),
-            "asset_class_enc": _num(signal.get("asset_class_enc"), _asset_class_to_int(asset)),
-            "high_score": high_score,
-            "medium_score": medium_score,
-            "is_long": is_long,
-            "partial_tp_progress_norm": max(0.0, min(1.0, partial_tp_progress / 3.0)),
-            "price_velocity_3": price_velocity_3,
-            "price_velocity_5": price_velocity_5,
-            "price_velocity_10": price_velocity_10,
-            "price_acceleration_3_10": price_acceleration_3_10,
-            "velocity_abs_3": abs(price_velocity_3),
-            "velocity_abs_10": abs(price_velocity_10),
-            "atr_rel": atr_rel,
-            "atr_regime_clamped": max(0.0, min(5.0, atr_regime)),
-            "relative_volume_clamped": max(0.0, min(10.0, relative_volume)),
-            "mtf_4h_trend": mtf_4h_trend,
-            "mtf_1d_trend": mtf_1d_trend,
-            "funding_rate": funding_rate,
-            "open_interest_change": open_interest_change,
-            "dxy_trend": _num(signal.get("dxy_trend"), _num(macro.get("dxy_trend"), dxy_trend)),
-            "vix_trend": _num(signal.get("vix_trend"), _num(macro.get("vix_trend"), 0.0)),
-            "us10y_trend": _num(signal.get("us10y_trend"), _num(macro.get("us10y_trend"), 0.0)),
-            "yield_spread": _num(signal.get("yield_spread"), _num(macro.get("yield_spread"), 0.0)),
-            "minutes_since_high_impact_news": _num(signal.get("minutes_since_high_impact_news"), _num(macro.get("minutes_since_high_impact_news"), 0.0)),
-            "minutes_until_high_impact_news": _num(signal.get("minutes_until_high_impact_news"), _num(macro.get("minutes_until_high_impact_news"), 0.0)),
-            "news_event_impact_score": _num(signal.get("news_event_impact_score"), _num(macro.get("news_event_impact_score"), 0.0)),
-            "exchange_net_flow": _num(signal.get("exchange_net_flow"), _num(macro.get("exchange_net_flow"), 0.0)),
-            "exchange_inflow": _num(signal.get("exchange_inflow"), _num(macro.get("exchange_inflow"), 0.0)),
-            "exchange_outflow": _num(signal.get("exchange_outflow"), _num(macro.get("exchange_outflow"), 0.0)),
-            "liquidation_heatmap_score": _num(signal.get("liquidation_heatmap_score"), _num(macro.get("liquidation_heatmap_score"), 0.0)),
-"liquidation_heatmap_density": _num(signal.get("liquidation_heatmap_density"), _num(macro.get("liquidation_heatmap_density"), 0.0)),
-            "onchain_source_flag": _num(signal.get("onchain_source_flag"), 1.0 if macro.get("onchain_source") not in (None, "", "none") else 0.0),
-            "spx_trend": _num(signal.get("spx_trend"), _num(macro.get("spx_trend"), spx_trend)),
-            "btc_corr": _num(signal.get("btc_corr"), _num(macro.get("btc_corr"), btc_corr)),
-        }
-
+        values = build_model_feature_values(signal, signal.get("_market_data") or {})
         missing = [col for col in feature_cols if col not in values]
         if missing:
             preview = ",".join(missing[:8])
             suffix = f" (+{len(missing)-8} more)" if len(missing) > 8 else ""
             logger.warning("[ml] schema mismatch: missing features=%s%s", preview, suffix)
-            # Log more details when features are missing for debugging
-            logger.debug("[ml] signal data keys: %s", list(signal.keys()))
-            logger.debug("[ml] signal score: %s", signal.get("score"))
-            logger.debug("[ml] signal entry: %s", signal.get("entry"))
-            # Use 0.0 for missing features instead of returning None - this ensures ML scoring runs
-            # even with incomplete feature data from 429 errors or missing indicators
-            if str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {"1", "true", "yes", "on"}:
-                logger.debug("[ml] strict schema mode - using default values for missing features")
-        # Always use 0.0 for any missing features instead of failing
+            strict_schema = str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+            if strict_schema:
+                logger.error(
+                    "[ml] strict schema rejection: missing=%s%s asset=%s",
+                    preview, suffix, signal.get("asset"),
+                )
+                return None
         vec = [float(values.get(col, 0.0)) for col in feature_cols]
         return np.asarray([vec], dtype=np.float32)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[ml] feature vector exception asset=%s error=%s",
+            signal.get("asset"),
+            type(exc).__name__,
+        )
         return None
-
 
 def score_signal(signal: Dict[str, Any]) -> Optional[float]:
     """Return ML probability (0-1) for a signal or None if unavailable.

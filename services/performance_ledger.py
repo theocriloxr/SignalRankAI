@@ -113,6 +113,11 @@ def _sanitize_exception(exc: BaseException, *, limit: int = 400) -> str:
     return text[: max(32, int(limit))]
 
 
+def _unresolved_dead_letter_count(records: Iterable[dict[str, Any]]) -> int:
+    """Count actionable DLQ entries while retaining resolved audit records."""
+    return sum(1 for record in records if not record.get("resolved_at"))
+
+
 def _failure_reason(exc: BaseException) -> str:
     message = str(exc or "").lower()
     if "delivery_confirmed_at" in message or "missing_delivery_timestamp" in message:
@@ -818,6 +823,14 @@ async def reconcile_all_performance_ledgers(
                 ) or 0)
             if not dry_run:
                 retry_by_id.pop(int(internal_user_id), None)
+                resolved_at = now_utc_naive().isoformat()
+                for record in dead_letter_records:
+                    if (
+                        not record.get("resolved_at")
+                        and int(record.get("internal_user_id") or 0) == int(internal_user_id)
+                    ):
+                        record["resolved_at"] = resolved_at
+                        record["resolved_reconciliation_id"] = reconciliation_id
         except Exception as exc:
             failed += 1
             failed_ids.append(int(internal_user_id))
@@ -878,7 +891,7 @@ async def reconcile_all_performance_ledgers(
         certification_failed=certification_failed,
         failed_user_ids=tuple(failed_ids),
         retry_queue_size=len(final_retry_records),
-        dead_letter_count=len(dead_letter_records),
+        dead_letter_count=_unresolved_dead_letter_count(dead_letter_records),
         retry_queue_records=final_retry_records,
         dead_letter_records=tuple(dead_letter_records),
     )
@@ -893,7 +906,7 @@ async def reconcile_all_performance_ledgers(
             reconciliation_id,
             failures,
             len(final_retry_records),
-            len(dead_letter_records),
+            _unresolved_dead_letter_count(dead_letter_records),
         )
     return result
 

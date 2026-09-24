@@ -27,6 +27,7 @@ from .mt5_commands import mt5_link_command, mt5_status_command
 from .utils import tier_rank, _effective_tier, _public_guard
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
+from .command_resilience import safe_command_error
 
 TIER_RANKS: dict[str, int] = {
 	tier: canonical_tier_rank(tier)
@@ -1179,7 +1180,7 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			lines.append(f"Postgres activity error: {pg.get('error')}")
 		await update.message.reply_text("\n".join(lines))
 	except Exception as exc:
-		await update.message.reply_text(f"Database health unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Database health is unavailable.", exc))
 
 
 async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1292,7 +1293,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 			await update.message.reply_text(message[:3900])
 	except Exception as exc:
 		logger.exception("[delivery_debug] failed: %s", exc)
-		await update.message.reply_text(f"Delivery debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Delivery diagnostics failed.", exc))
 
 
 async def _load_signal_debug_payload(ref: str) -> dict | None:
@@ -1337,7 +1338,7 @@ async def signal_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 		await update.message.reply_text("\n".join(lines)[:3900])
 	except Exception as exc:
 		logger.exception("[signal_debug] failed: %s", exc)
-		await update.message.reply_text(f"Signal debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Signal diagnostics failed.", exc))
 
 
 async def format_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1372,7 +1373,7 @@ async def format_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 		await update.message.reply_text(message[:3900])
 	except Exception as exc:
 		logger.exception("[format_debug] failed: %s", exc)
-		await update.message.reply_text(f"Format debug failed: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Formatting diagnostics failed.", exc))
 
 
 async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1453,7 +1454,7 @@ async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 			lines.extend(["", f"Class counts: {class_counts}"])
 		await update.message.reply_text("\n".join(lines))
 	except Exception as exc:
-		await update.message.reply_text(f"Engine debug unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Engine diagnostics are unavailable.", exc))
 
 def _load_last_engine_cycle() -> dict:
     """Return the latest engine heartbeat without exposing Redis details."""
@@ -1760,9 +1761,7 @@ async def delivery_eligibility_command(update: Update, context: ContextTypes.DEF
         await update.message.reply_text("\n".join(lines)[:3900])
     except Exception as exc:
         logger.exception("[delivery_eligibility] failed: %s", exc)
-        await update.message.reply_text(
-            f"Delivery eligibility is temporarily unavailable ({type(exc).__name__})."
-        )
+        await update.message.reply_text(safe_command_error("Delivery eligibility is temporarily unavailable.", exc))
 
 
 async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1816,7 +1815,7 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
         logger.info("[test_delivery_completed] user=%s asset=%s", user_id, spec.symbol)
     except Exception as exc:
         logger.exception("[test_delivery_failed] user=%s asset=%s", user_id, spec.symbol)
-        await update.message.reply_text(f"Infrastructure test failed: {type(exc).__name__}")
+        await update.message.reply_text(safe_command_error("Infrastructure test failed.", exc))
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1934,9 +1933,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as exc:
 		logger.exception("[profile] command failed user=%s args=%s", user_id, args)
 		action = "load" if is_read else "update"
-		await update.message.reply_text(
-			f"Could not {action} trading profile: {type(exc).__name__}"
-		)
+		await update.message.reply_text(safe_command_error(f"Could not {action} the trading profile.", exc))
 
 
 async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1999,7 +1996,7 @@ async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		snapshot = build_mission_snapshot(payload, current_price=payload.get("current_price") or payload.get("live_price"))
 		await update.message.reply_text(format_mission(snapshot))
 	except Exception as exc:
-		await update.message.reply_text(f"Mission control unavailable. Reference logged: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Mission control is unavailable.", exc))
 
 
 @require_tier("ADMIN")
@@ -2532,7 +2529,7 @@ async def assets_command(update, context) -> None:
 			from data.pair_discovery import get_asset_discovery_snapshot
 			snapshot = get_asset_discovery_snapshot(force_refresh=subcmd in {"discovered", "health"})
 		except Exception as exc:
-			await update.message.reply_text(f"Asset discovery diagnostics unavailable: {type(exc).__name__}")
+			await update.message.reply_text(safe_command_error("Asset-discovery diagnostics are unavailable.", exc))
 			return
 
 		counts = dict(snapshot.get("counts") or {})
@@ -2733,7 +2730,7 @@ async def selfcheck_command(update, context) -> None:
 	# Redis check
 	try:
 		from core.redis_state import state
-		state.get_sync("health_check")
+		await asyncio.wait_for(asyncio.to_thread(state.get_sync, "health_check"), timeout=3.0)
 		checks.append("✅ Redis: connected")
 	except Exception:
 		checks.append("❌ Redis: not connected")
@@ -2743,6 +2740,7 @@ async def selfcheck_command(update, context) -> None:
 		checks.append("✅ Railway: detected")
 		checks.append("✅ GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "❌ GEMINI_API_KEY: missing")
 		checks.append("✅ META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "❌ META_API_TOKEN: missing")
+		checks.append("✅ META_API_ACCOUNT_ID: set" if (os.getenv("META_API_ACCOUNT_ID") or "").strip() else "⚠️ META_API_ACCOUNT_ID: missing (broker discovery disabled)")
 		checks.append("✅ ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "❌ ENCRYPTION_KEY: missing")
 		_owner_ids_raw = (os.getenv("OWNER_IDS") or "").strip()
 		checks.append("✅ OWNER_IDS: set" if _owner_ids_raw else "⚠️ OWNER_IDS: missing (owner-only commands disabled)")
@@ -2750,8 +2748,10 @@ async def selfcheck_command(update, context) -> None:
 	# yfinance check
 	try:
 		import yfinance as yf
-		t = yf.Ticker("AAPL")
-		p = t.fast_info.get('lastPrice')
+		def _yfinance_probe():
+			t = yf.Ticker("AAPL")
+			return t.fast_info.get("lastPrice")
+		p = await asyncio.wait_for(asyncio.to_thread(_yfinance_probe), timeout=6.0)
 		checks.append(f"✅ yfinance: working (AAPL=${p:.2f})" if p else "⚠️ yfinance: no price")
 	except Exception:
 		checks.append("❌ yfinance: not available")
@@ -2940,7 +2940,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		)
 		await update.message.reply_text(msg, parse_mode="HTML")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ ops health failed: {exc}")
+		await update.message.reply_text(safe_command_error("Operations health check failed.", exc))
 
 from telegram import Update
 from telegram.helpers import escape_markdown
@@ -3012,7 +3012,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		await update.message.reply_text("Notification preferences are temporarily busy. Please retry /notify.")
 	except Exception as exc:
 		logger.exception("[notify] preference update failed user=%s", user_id)
-		await update.message.reply_text(f"Could not update notification preferences: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Could not update notification preferences.", exc))
 # --------- FEEDBACK COMMAND ---------
 from .feedback import feedback_store
 @require_tier("PREMIUM")
@@ -3165,13 +3165,13 @@ def _help_authorized_pages(user_id: int) -> list[int]:
 	pages = [1, 2, 3]
 	try:
 		uid = int(user_id)
-		if uid in ADMIN_IDS:
+		if uid in ADMIN_IDS or uid in OWNER_IDS:
 			pages.append(4)
 		if uid in OWNER_IDS:
-			pages.extend((4, 5))
+			pages.append(5)
 	except Exception:
 		pass
-	return pages
+	return list(dict.fromkeys(pages))
 
 
 def _help_page_is_locked(user_id: int, page: int) -> bool:
@@ -3257,10 +3257,13 @@ async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		page = int(data.rsplit("_", 1)[-1])
 	except Exception:
 		page = 1
-	if page == 4:
+	if page in {4, 5}:
 		try:
 			uid = int(update.effective_user.id)
-			if uid not in ADMIN_IDS and uid not in OWNER_IDS:
+			if page == 5 and uid not in OWNER_IDS:
+				await query.answer("Access denied.", show_alert=True)
+				return
+			if page == 4 and uid not in ADMIN_IDS and uid not in OWNER_IDS:
 				await query.answer("Access denied.", show_alert=True)
 				return
 		except Exception:
@@ -3789,7 +3792,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as exc:
 		_audit_logger.exception("[signals_command] failed user=%s err=%s", user_id, exc)
 		if not await _reply_with_cached_response():
-			await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
+			await message.reply_text(safe_command_error("Could not load signals.", exc))
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4787,7 +4790,7 @@ async def analyze_command(update, context) -> None:
 		await update.message.reply_text("\n".join(msg_lines))
 		return
 	except Exception as e:
-		await update.message.reply_text(f"Analysis failed: {e}")
+		await update.message.reply_text(safe_command_error("Analysis failed.", e))
 
 
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4987,7 +4990,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 	except Exception as e:
 		logger.error(f"[admin] admin_command failed: {e}")
-		await update.message.reply_text(f"Admin query failed: {e}")
+		await update.message.reply_text(safe_command_error("Admin query failed.", e))
 
 
 # ── Admin broadcast ────────────────────────────────────────────────────────
@@ -5054,7 +5057,7 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 
 	except Exception as e:
 		logger.error(f"[admin] admin_broadcast_command failed: {e}")
-		await update.message.reply_text(f"Broadcast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast failed.", e))
 
 
 # ── Terms blast (send disclaimer to all users without accepted_terms) ──────
@@ -5139,7 +5142,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
-		await update.message.reply_text(f"⚠️ Blast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast blast failed.", e))
 
 	try:
 		from db.session import get_engine_for_event_loop, get_session as _gs_bt
@@ -5210,7 +5213,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
-		await update.message.reply_text(f"Blast failed: {e}")
+		await update.message.reply_text(safe_command_error("Broadcast blast failed.", e))
 
 
 # /policy or /refunds command
@@ -6132,24 +6135,133 @@ async def quality_command(update, context) -> None:
 
 		await update.message.reply_text(msg)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not build quality report: {exc}")
+		await update.message.reply_text(safe_command_error("Could not build the quality report.", exc))
 
 
-async def gemini_command(update, context) -> None:
-	"""Admin-only: trigger Gemini review over all-time aggregate and retrain ML."""
+async def ai_status_command(update, context) -> None:
+	"""Owner/admin: show secret-safe AI provider routing and OpenAI circuit state."""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
 		await update.message.reply_text("Admin only.")
 		return
-	if not (os.getenv("GEMINI_API_KEY") or "").strip():
-		await update.message.reply_text(_railway_env_hint("Gemini", ["GEMINI_API_KEY"]))
+	try:
+		from services.openai_ai import provider_status
+		status = provider_status()
+		gemini_configured = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+		circuit = dict(status.get("circuit") or {})
+		budget = dict(status.get("budget") or {})
+		cache = dict(status.get("cache") or {})
+		usage = dict(status.get("usage_totals") or {})
+		lines = [
+			"🤖 AI Provider Status",
+			"",
+			f"Primary: {status.get('primary_provider', 'openai')}",
+			f"Order: {' → '.join(status.get('provider_order') or [])}",
+			f"OpenAI configured: {'yes' if status.get('configured') else 'no'}",
+			f"OpenAI available: {'yes' if status.get('available') else 'no'}",
+			f"Gemini fallback configured: {'yes' if gemini_configured else 'no'}",
+			f"Signal model: {status.get('signal_model', 'n/a')}",
+			f"Deep model: {status.get('deep_model', 'n/a')}",
+			f"Responses API: {'enabled' if status.get('responses_api') else 'off'}",
+			f"Storage: {'disabled' if status.get('store') is False else 'unknown'}",
+			f"Circuit: {'OPEN' if circuit.get('open') else 'closed'}"
+			+ (f" ({circuit.get('reason')}, {circuit.get('seconds_remaining')}s)" if circuit.get('open') else ""),
+			f"Budget: {budget.get('calls_used', 0)}/{budget.get('max_calls', 0)} per {budget.get('window_seconds', 0)}s",
+			f"Cache: {cache.get('hits', 0)} hits / {cache.get('misses', 0)} misses ({cache.get('entries', 0)} entries)",
+			f"OpenAI tokens this process: in {usage.get('input_tokens', 0)} / out {usage.get('output_tokens', 0)}",
+		]
+		if not status.get("configured"):
+			lines += [
+				"",
+				"To connect OpenAI, add OPENAI_API_KEY as a Railway secret and redeploy.",
+				"Do not paste the API key into Telegram or chat logs.",
+			]
+		await update.message.reply_text("\n".join(lines))
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("Could not read AI provider status.", exc))
+
+
+async def ai_improve_command(update, context) -> None:
+	"""Owner/admin: generate one governed improvement proposal with no auto-apply."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from core.evolution_agent import evolution_agent
+		await update.message.reply_text(
+			"Reviewing recent runtime/shadow evidence. No code, thresholds, or deployments will be changed automatically..."
+		)
+		proposal = await evolution_agent.trigger_system_audit(days=7)
+		if not proposal:
+			await update.message.reply_text("No improvement proposal is available right now.")
+			return
+		tests = list(proposal.get("test_plan") or [])
+		test_line = str(tests[0])[:300] if tests else "Add regression and forward-test evidence."
+		await update.message.reply_text(
+			"🛠 Governed improvement proposal\n\n"
+			f"Provider: {proposal.get('provider', 'local')}\n"
+			f"Severity: {proposal.get('severity', 'LOW')}\n"
+			f"Target: {proposal.get('target_file', 'review')}\n"
+			f"Reasoning: {str(proposal.get('reasoning') or '')[:1200]}\n\n"
+			f"First validation: {test_line}\n\n"
+			"Status: review only. Owner approval + tests + forward/shadow/staging evidence are required."
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("AI improvement review failed.", exc))
+
+
+async def ai_test_command(update, context) -> None:
+	"""Owner/admin: make one minimal structured OpenAI Responses API probe."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from services.openai_ai import provider_status, test_connection
+		status = provider_status()
+		if not status.get("configured"):
+			await update.message.reply_text(
+				"OpenAI is not connected. Add OPENAI_API_KEY as a Railway secret, redeploy, then run /ai_test again."
+			)
+			return
+		result = await test_connection()
+		if result.get("connected"):
+			await update.message.reply_text(
+				"✅ OpenAI connection verified.\n"
+				f"Model: {result.get('model', status.get('signal_model', 'n/a'))}\n"
+				f"Latency: {result.get('latency_ms', 'n/a')} ms\n"
+				"Provider order remains OpenAI → Gemini → local."
+			)
+			return
+		error = str(result.get("error") or "unknown_error")
+		await update.message.reply_text(
+			"❌ OpenAI connectivity probe failed.\n"
+			f"Reason: {error}\n"
+			"SignalRank will keep using the configured fallback providers; deterministic safety gates are unchanged."
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("OpenAI connectivity test failed.", exc))
+
+
+async def gemini_command(update, context) -> None:
+	"""Admin-only: trigger the configured AI review over all-time aggregates."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	if not ((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip() or (os.getenv("GEMINI_API_KEY") or "").strip()):
+		await update.message.reply_text(_railway_env_hint("AI provider", ["OPENAI_API_KEY", "GEMINI_API_KEY"]))
 		return
 
 	from services.gemini_ml import run_gemini_review_pipeline
 
 	await update.message.reply_text(
-		"Running Gemini all-time review and ML retrain. This can take up to 2 minutes..."
+		"Running governed AI all-time review. Model retraining remains a separate evidence-gated job..."
 	)
 	try:
 		result = await run_gemini_review_pipeline(
@@ -6158,7 +6270,7 @@ async def gemini_command(update, context) -> None:
 		)
 		err = str(result.get("error") or "").strip()
 		if not bool(result.get("ok", False)):
-			await update.message.reply_text(f"Gemini run failed: {err or 'unknown error'}")
+			await update.message.reply_text(f"AI review failed: {err or 'unknown error'}")
 			return
 
 		received = dict(result.get("received") or {})
@@ -6167,8 +6279,12 @@ async def gemini_command(update, context) -> None:
 		review = str(result.get("review") or "").strip()
 		feature_suggestions = list(result.get("feature_suggestions") or [])
 
+		provider = str(result.get("provider") or "local").strip()
+		model = str(result.get("model") or "n/a").strip()
 		msg = (
-			"Gemini run completed.\n\n"
+			"AI review completed.\n\n"
+			f"Provider: {provider}\n"
+			f"Model: {model}\n"
 			"Received:\n"
 			f"- outcomes: {int(received.get('outcomes_total', 0))}\n"
 			f"- wins/losses: {int(received.get('wins', 0))}/{int(received.get('losses', 0))}\n"
@@ -6190,14 +6306,14 @@ async def gemini_command(update, context) -> None:
 			)
 		if review:
 			await update.message.reply_text(
-				"Gemini review:\n" + review[:3500]
+				"AI review:\n" + review[:3500]
 			)
 	except Exception as exc:
-		await update.message.reply_text(f"Gemini run exception: {exc}")
+		await update.message.reply_text(safe_command_error("AI analysis failed.", exc))
 
 
 async def gemini_review_command(update, context) -> None:
-	"""Admin-only: show latest Gemini review/training rundown."""
+	"""Admin-only: show the latest provider-routed AI review rundown."""
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
@@ -6210,7 +6326,7 @@ async def gemini_review_command(update, context) -> None:
 		result = await get_last_gemini_review()
 		if not result:
 			await update.message.reply_text(
-				"No Gemini review found yet. Run /gemini first or wait for the weekly job."
+				"No AI review found yet. Run /gemini first or wait for the scheduled review."
 			)
 			return
 
@@ -6220,8 +6336,12 @@ async def gemini_review_command(update, context) -> None:
 		review = str(result.get("review") or "").strip()
 		feature_suggestions = list(result.get("feature_suggestions") or [])
 
+		provider = str(result.get("provider") or "legacy/local").strip()
+		model = str(result.get("model") or "n/a").strip()
 		msg = (
-			"Latest Gemini review.\n\n"
+			"Latest AI review.\n\n"
+			f"Provider: {provider}\n"
+			f"Model: {model}\n"
 			f"Trigger: {str(result.get('trigger') or 'unknown')}\n"
 			f"Scope: {str(result.get('scope') or 'unknown')}\n"
 			f"Finished: {str(result.get('finished_at') or 'unknown')}\n\n"
@@ -6244,9 +6364,9 @@ async def gemini_review_command(update, context) -> None:
 				"Feature suggestions:\n" + "\n".join(feat_lines)
 			)
 		if review:
-			await update.message.reply_text("Gemini review:\n" + review[:3500])
+			await update.message.reply_text("AI review:\n" + review[:3500])
 	except Exception as exc:
-		await update.message.reply_text(f"Could not load Gemini review: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the AI review.", exc))
 
 
 async def gemini_analyze_command(update, context) -> None:
@@ -6271,7 +6391,7 @@ async def gemini_analyze_command(update, context) -> None:
 			return
 		await update.message.reply_text(f"Analysis for {asset}: {len(res.get('recent_signals', []))} signals, {len(res.get('recent_rejections', []))} rejections")
 	except Exception as exc:
-		await update.message.reply_text(f"Analyze error: {exc}")
+		await update.message.reply_text(safe_command_error("Analysis failed.", exc))
 
 
 async def gemini_audit_command(update, context) -> None:
@@ -6293,7 +6413,7 @@ async def gemini_audit_command(update, context) -> None:
 			return
 		await update.message.reply_text(f"Recent losses: {len(res.get('recent_losses', []))}, recent rejections: {len(res.get('recent_rejections', []))}")
 	except Exception as exc:
-		await update.message.reply_text(f"Audit error: {exc}")
+		await update.message.reply_text(safe_command_error("Audit failed.", exc))
 
 
 async def codex_audit_command(update, context) -> None:
@@ -6351,7 +6471,7 @@ async def codex_audit_command(update, context) -> None:
 			if ai_findings:
 				await update.message.reply_text("OpenAI aggregate review findings:\n" + "\n".join(f"- {x[:220]}" for x in ai_findings[:6]))
 	except Exception as exc:
-		await update.message.reply_text(f"Codex audit error: {exc}")
+		await update.message.reply_text(safe_command_error("Codex audit failed.", exc))
 
 
 async def gemini_predict_command(update, context) -> None:
@@ -6377,7 +6497,7 @@ async def gemini_predict_command(update, context) -> None:
 		else:
 			candidate = {"asset": args[0], "timeframe": args[1], "direction": args[2], "entry": float(args[3])}
 	except Exception as exc:
-		await update.message.reply_text(f"Candidate parse error: {exc}")
+		await update.message.reply_text(safe_command_error("Candidate parsing failed.", exc))
 		return
 	from services.gemini_ml import predict_candidate
 
@@ -6389,7 +6509,7 @@ async def gemini_predict_command(update, context) -> None:
 		dup = bool(res.get("is_duplicate"))
 		await update.message.reply_text(f"Duplicate: {dup}. Neighbors: {len(res.get('recent_neighbors', []))}")
 	except Exception as exc:
-		await update.message.reply_text(f"Predict error: {exc}")
+		await update.message.reply_text(safe_command_error("Prediction failed.", exc))
 
 
 # -------- Premium commands --------
@@ -6564,7 +6684,7 @@ async def history_command(update, context):
 
 	except Exception as exc:
 		if update.message is not None:
-			await update.message.reply_text(f"❌ Could not load history: {exc}")
+			await update.message.reply_text(safe_command_error("Could not load signal history.", exc))
 
 
 @require_tier("VIP")
@@ -6737,7 +6857,7 @@ async def risk_command(update, context) -> None:
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update risk: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update the risk setting.", exc))
 
 
 @require_tier("PREMIUM")
@@ -6855,7 +6975,7 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 			)
 			await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"Could not update mode: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update execution mode.", exc))
 		return
 
 	await update.message.reply_text(f"Mode updated: {final_mode.upper()}")
@@ -7025,7 +7145,7 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Error fetching price: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch the live price.", exc))
 
 
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7167,7 +7287,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load portfolio: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the portfolio.", exc))
 
 
 async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7224,7 +7344,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not fetch market data: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch market data.", exc))
 
 
 # --------- MT5 LINK COMMAND ---------
@@ -7322,17 +7442,12 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 				)
 		else:
 			err = result.get("error", "Unknown error")
-			reply = (
-				"❌ MT5 Link Failed\n\n"
-				f"Error: {err}\n\n"
-				"Please check your login, password and server name, then try again.\n"
-				"Use /mt5_link <login> <password> <server>"
+			reply = safe_command_error(
+				"MT5 account linking failed.",
+				RuntimeError(str(err)),
 			)
 	except Exception as exc:
-		reply = (
-			f"❌ MT5 Link Error\n\n{type(exc).__name__}: {exc}\n\n"
-			"Please try again or contact support with /support"
-		)
+		reply = safe_command_error("MT5 account linking failed.", exc)
 
 	try:
 		await processing_msg.edit_text(reply)
@@ -7393,7 +7508,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)
 		await update.message.reply_text(reply)
 	except Exception as exc:
-		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
+		await update.message.reply_text(safe_command_error("Could not fetch MT5 status.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -7450,7 +7565,7 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				row.fixed_lot_size = lot
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save lot size: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the lot size.", exc))
 		return
 
 	await update.message.reply_text(
@@ -7519,7 +7634,7 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				row.max_risk_percentage = pct
 				await session.commit()
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save risk setting: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the risk setting.", exc))
 		return
 
 	await update.message.reply_text(
@@ -7585,7 +7700,7 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			await session.commit()
 		await update.message.reply_text("✅ VIP execution webhook saved.")
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not save webhook: {exc}")
+		await update.message.reply_text(safe_command_error("Could not save the webhook.", exc))
 
 
 async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7707,7 +7822,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update execution mode: {type(exc).__name__}")
+		await update.message.reply_text(safe_command_error("Could not update execution mode.", exc))
 
 
 async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7785,7 +7900,7 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			parse_mode="HTML",
 		)
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not update drawdown setting: {exc}")
+		await update.message.reply_text(safe_command_error("Could not update the drawdown limit.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -7962,7 +8077,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		await update.message.reply_text(msg, parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"⚠️ Could not load stats: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load performance statistics.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -8184,7 +8299,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 	except Exception as exc:
-		await update.message.reply_text(f"❌ Could not load leaderboard: {exc}")
+		await update.message.reply_text(safe_command_error("Could not load the leaderboard.", exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # the engine fast by degrading to local AI review for a cooldown window.
 _GEMINI_REVIEW_LOCK = threading.Lock()
 _GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
+_GEMINI_CIRCUIT_REASON = ""
 _GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
 _GEMINI_REVIEW_WINDOW_CALLS = 0
 
@@ -84,7 +85,7 @@ except Exception:
             return False
     exposure_manager = _DummyExposureManager()
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
-from db.repository import persist_decision_log, persist_signal
+from db.repository import persist_decision_log, persist_decision_logs_batch, persist_signal
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from core.redis_state import state
@@ -473,135 +474,103 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
 
 
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
+    """Backward-compatible entry point for provider-neutral AI signal review.
+
+    The historical name is retained for compatibility. OpenAI/Gemini routing,
+    failover and optional consensus are owned by services.ai_review_router.
+    Deterministic local review remains the final fallback and no AI path can
+    bypass freshness, risk, exposure or execution controls.
+    """
     fallback_enabled = _env_bool("AI_REVIEW_FALLBACK_ENABLED", True)
-    def _fallback() -> tuple[bool, float | None, str]:
+
+    def _fallback(reason_prefix: str = "") -> tuple[bool, float | None, str]:
         if not fallback_enabled:
-            return True, None, "ai_review_fallback_disabled"
+            suffix = f":{reason_prefix}" if reason_prefix else ""
+            return True, None, f"ai_review_fallback_disabled{suffix}"
         ok, score, reason = _local_ai_review_signal(signal, candles)
+        if reason_prefix:
+            return ok, score, f"ai_review_status={reason_prefix};{reason}"
         return ok, score, reason
 
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        return _fallback()
-    if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
-        return _fallback()
+    try:
+        from services.ai_review_router import review_signal as _review_signal
 
-    model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
+        result = await _review_signal(signal, candles, news_sentiment)
+    except Exception as exc:
+        logger.warning("[engine] provider-neutral AI review failed error=%s", type(exc).__name__)
+        return _fallback(f"router_error_{type(exc).__name__}")
 
-    # Fast degradation guard. If Gemini is rate-limited or over per-window
-    # budget, skip the external HTTP call and use deterministic local review.
-    # This prevents a full engine cycle from taking many minutes while signals
-    # become stale.
-    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
-    if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
-        now_mono = time.monotonic()
-        with _GEMINI_REVIEW_LOCK:
-            until = float(_GEMINI_RATE_LIMIT_UNTIL_MONO or 0.0)
-            if until and now_mono < until:
-                ok, score, reason = _fallback()
-                return ok, score, f"ai_review_status=rate_limited_circuit_open;{reason}"
+    if not bool(result.get("ok")):
+        error = str(result.get("error") or "external_review_unavailable")[:120]
+        logger.info("[engine] AI review degraded error=%s action=local_fallback", error)
+        return _fallback(error)
 
-            window_s = max(10, _env_int("GEMINI_SIGNAL_REVIEW_WINDOW_SECONDS", 60))
-            max_calls = max(0, _env_int("GEMINI_SIGNAL_REVIEW_MAX_CALLS_PER_WINDOW", 6))
-            if not _GEMINI_REVIEW_WINDOW_STARTED_MONO or (now_mono - _GEMINI_REVIEW_WINDOW_STARTED_MONO) > window_s:
-                _GEMINI_REVIEW_WINDOW_STARTED_MONO = now_mono
-                _GEMINI_REVIEW_WINDOW_CALLS = 0
-            if max_calls == 0 or _GEMINI_REVIEW_WINDOW_CALLS >= max_calls:
-                ok, score, reason = _fallback()
-                return ok, score, f"ai_review_status=budget_degraded;{reason}"
-            _GEMINI_REVIEW_WINDOW_CALLS += 1
+    data = dict(result.get("data") or {})
+    try:
+        score = max(0.0, min(10.0, float(data.get("score"))))
+    except (TypeError, ValueError):
+        return _fallback("invalid_ai_score")
+    try:
+        confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
+    except (TypeError, ValueError):
+        confidence = 0.0
 
-    payload = {
-        "prompt": "Review this trade. Is this a high-probability institutional move or a retail trap? Rate 1-10. Only approve if > 8.",
-        "technical_signal": {
-            "asset": signal.get("asset"),
-            "timeframe": signal.get("timeframe"),
-            "direction": signal.get("direction"),
-            "strategy_name": signal.get("strategy_name"),
-            "strategy_group": signal.get("strategy_group"),
-            "entry": signal.get("entry"),
-            "stop_loss": signal.get("stop_loss"),
-            "take_profit": signal.get("take_profit"),
-            "score": signal.get("score"),
-            "confidence": signal.get("confidence"),
-            "rr_ratio": signal.get("rr_ratio"),
-            "regime": signal.get("regime"),
-            "news_sentiment": news_sentiment,
-        },
-        "recent_ohlcv": candles[-50:],
-        "indicators": {
-            k: signal.get(k)
-            for k in (
-                "rsi", "macd_trend", "macd_hist", "trend_ema", "trend_sma",
-                "adx_trend", "volume_ratio", "atr_rel", "atr_regime", "relative_volume",
-                "mtf_4h_trend", "mtf_1d_trend", "imp_poc", "imp_h4_ema200", "imp_h1_ema50",
-            )
-        },
-    }
-    body = json.dumps({
-        "contents": [{"parts": [{"text": json.dumps(payload)}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 160},
-    }).encode("utf-8")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    provider = str(result.get("provider") or "unknown").strip().lower()
+    model = str(result.get("model") or "").strip()
+    risk_level = str(data.get("risk_level") or "unknown").strip().lower()
+    summary = " ".join(str(data.get("summary") or "").split())[:260]
+    disagreement = _safe_float(data.get("provider_disagreement"), 0.0)
+    decision_disagreement = bool(data.get("decision_disagreement"))
+    min_score = _env_float("AI_SIGNAL_REVIEW_APPROVAL_SCORE", 8.0)
+    approved = (
+        bool(data.get("approved"))
+        and score >= min_score
+        and not decision_disagreement
+    )
 
-    def _do_request() -> tuple[bool, float | None, str]:
-        global _GEMINI_RATE_LIMIT_UNTIL_MONO
-        req = urllib.request.Request(url, data=body, method="POST")
-        req.add_header("Content-Type", "application/json")
-        try:
-            timeout_s = max(2, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "4") or 4))
-            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-                raw = resp.read().decode("utf-8", errors="ignore")
-            lower = raw.lower()
-            score: float | None = None
-            for token in ("\"score\":", "score:", "rating:"):
-                if token in lower:
-                    try:
-                        after = lower.split(token, 1)[1]
-                        num = ""
-                        for ch in after:
-                            if ch.isdigit() or ch == ".":
-                                num += ch
-                            elif num:
-                                break
-                        if num:
-                            score = float(num)
-                            break
-                    except Exception:
-                        pass
-            if score is None:
-                for digit in range(10, 0, -1):
-                    if f"{digit}" in lower:
-                        score = float(digit)
-                        break
-            if score is None:
-                return _fallback()
-            return (score > 8.0), score, "gemini_ok"
-        except urllib.error.HTTPError as exc:
-            status_code = getattr(exc, "code", None)
-            if status_code == 429:
-                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
-                    try:
-                        cooldown_s = max(30, _env_int("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 900))
-                        with _GEMINI_REVIEW_LOCK:
-                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
-                    except Exception:
-                        pass
-                _local_ok, local_score, local_reason = _fallback()
-                reason = f"ai_review_status=rate_limited_degraded;{local_reason}"
-                logger.warning(
-                    "[engine] gemini review http_error=429 %s action=fail_open",
-                    reason,
-                )
-                return True, local_score, reason
-            logger.warning("[engine] gemini review http_error=%s", status_code or "?")
-            return _fallback()
-        except Exception as exc:
-            logger.debug("[engine] gemini review failed: %s", exc)
-            return _fallback()
+    # Attach provider-neutral provenance to the signal so downstream decision
+    # logs, formatters and learning jobs can evaluate whether AI added edge.
+    signal["ai_review_provider"] = provider
+    signal["ai_review_model"] = model
+    signal["ai_review_score"] = score
+    signal["ai_review_confidence"] = confidence
+    signal["ai_review_risk_level"] = risk_level
+    signal["ai_review_reason"] = summary
+    signal["ai_review_disagreement"] = disagreement
+    signal["ai_review_decision_disagreement"] = decision_disagreement
+    signal["ai_review_latency_ms"] = _safe_float(result.get("latency_ms"), 0.0)
+    if isinstance(result.get("usage"), dict):
+        signal["ai_review_usage"] = {
+            str(k): v
+            for k, v in dict(result.get("usage") or {}).items()
+            if isinstance(v, (int, float, str, bool)) or v is None
+        }
+    provider_results = result.get("provider_results")
+    if isinstance(provider_results, list):
+        signal["ai_review_provider_results"] = [
+            {
+                "provider": str(row.get("provider") or "")[:32],
+                "model": str(row.get("model") or "")[:96],
+                "approved": bool(row.get("approved")),
+                "score": _safe_float(row.get("score"), 0.0),
+                "confidence": _safe_float(row.get("confidence"), 0.0),
+                "latency_ms": _safe_float(row.get("latency_ms"), 0.0),
+            }
+            for row in provider_results[:3]
+            if isinstance(row, dict)
+        ]
 
-    return await asyncio.to_thread(_do_request)
+    # Legacy fields remain populated so old dashboards/formatters do not break.
+    signal["gemini_review_score"] = score
+    signal["gemini_review_reason"] = (
+        f"{provider}:{summary}" if summary else provider
+    )
 
+    reason = (
+        f"ai_ok;provider={provider};model={model};risk={risk_level};"
+        f"confidence={confidence:.2f};disagreement={disagreement:.3f};summary={summary}"
+    )
+    return approved, score, reason
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
     try:
@@ -615,6 +584,21 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         _meta.setdefault("ml_probability", sig.get("ml_probability"))
         _meta.setdefault("strategy_name", sig.get("strategy_name"))
         _meta.setdefault("strategy_group", sig.get("strategy_group"))
+        for _ai_key in (
+            "ai_review_provider",
+            "ai_review_model",
+            "ai_review_score",
+            "ai_review_confidence",
+            "ai_review_risk_level",
+            "ai_review_reason",
+            "ai_review_disagreement",
+            "ai_review_decision_disagreement",
+            "ai_review_latency_ms",
+            "ai_review_usage",
+            "ai_review_provider_results",
+        ):
+            if sig.get(_ai_key) is not None:
+                _meta.setdefault(_ai_key, sig.get(_ai_key))
         try:
             from services.decision_intelligence import build_decision_record, validate_decision_record
 
@@ -643,11 +627,18 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 news_assessment["sentiment_score"] = _meta.get("news_sentiment")
             if "news_action" in _meta:
                 news_assessment["signal_action"] = _meta.get("news_action")
-            gemini_summary = {}
-            if "gemini_score" in _meta:
-                gemini_summary["score"] = _meta.get("gemini_score")
-            if "gemini_reason" in _meta:
-                gemini_summary["summary"] = _meta.get("gemini_reason")
+            gemini_summary = {
+                "provider": _meta.get("ai_review_provider"),
+                "model": _meta.get("ai_review_model"),
+                "score": _meta.get("ai_review_score", _meta.get("gemini_score")),
+                "confidence": _meta.get("ai_review_confidence"),
+                "risk_level": _meta.get("ai_review_risk_level"),
+                "summary": _meta.get("ai_review_reason", _meta.get("gemini_reason")),
+                "disagreement": _meta.get("ai_review_disagreement"),
+                "decision_disagreement": _meta.get("ai_review_decision_disagreement"),
+                "latency_ms": _meta.get("ai_review_latency_ms"),
+            }
+            gemini_summary = {key: value for key, value in gemini_summary.items() if value is not None}
 
             decision_record = build_decision_record(
                 decision_signal,
@@ -679,7 +670,7 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
             _meta["decision_intelligence_validation"] = validate_decision_record(decision_record)
         except Exception as exc:
             logger.debug("[engine] decision intelligence enrichment skipped: %s", exc)
-        run_sync(
+        decision_log_id = run_sync(
             persist_decision_log(
                 sig.get("signal_id"),
                 sig.get("asset"),
@@ -695,7 +686,16 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         try:
             if decision in ("rejected", "skipped"):
                 try:
-                    features = dict(_meta or {})
+                    feature_keys = (
+                        "score", "score_raw", "score_heuristic", "score_components",
+                        "score_empirical_shadow", "confidence", "ml_probability", "rr_ratio",
+                        "rr_estimate", "strategy_name", "strategy_group", "regime", "session",
+                        "asset_class", "candle_evidence_score", "candle_confirmation",
+                        "candle_evidence_alignment", "volume_ratio", "volatility", "adx", "rsi",
+                    )
+                    features = {key: sig.get(key) for key in feature_keys if sig.get(key) is not None}
+                    features.update(dict(_meta or {}))
+                    features["decision_log_id"] = decision_log_id or None
                     from engine.signal_deduplicator import MLRejectionTracker
 
                     # Best-effort synchronous persist
@@ -713,13 +713,6 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                             rejection_type="engine",
                         )
                     )
-                    # Also persist a shadow copy to signals table for offline analysis
-                    try:
-                        shadow_payload = dict(sig or {})
-                        shadow_payload["status"] = "shadow_rejected"
-                        run_sync(persist_signal(shadow_payload), timeout=10.0)
-                    except Exception:
-                        logger.debug("[engine] persist shadow signal failed", exc_info=True)
                 except Exception:
                     logger.debug("[engine] persist_rejection best-effort failed", exc_info=True)
         except Exception:
@@ -727,6 +720,49 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
     except Exception as e:
         logger.warning(f"[engine] Failed to publish analytics event: {e}")
         pass
+
+
+def _log_market_observations(
+    asset: str,
+    timeframes: list[str],
+    *,
+    reason: str,
+    regime: str = "unknown",
+    market_data: Dict[str, Any] | None = None,
+) -> None:
+    """Persist bounded per-timeframe scan evidence when no trade thesis exists."""
+    if not _env_bool("FULL_MARKET_LEARNING_ENABLED", True):
+        return
+    payload = market_data if isinstance(market_data, dict) else {}
+    rows = []
+    for timeframe in list(timeframes or ["unknown"]):
+        tf_data = payload.get(timeframe, {}) if isinstance(payload, dict) else {}
+        indicators = tf_data.get("indicators", {}) if isinstance(tf_data, dict) else {}
+        safe_indicators = {}
+        if isinstance(indicators, dict):
+            for key in (
+                "rsi", "adx", "atr", "atr_rel", "volatility", "volume_ratio",
+                "relative_volume", "trend", "trend_strength", "ema_fast", "ema_slow",
+            ):
+                if indicators.get(key) is not None:
+                    safe_indicators[key] = indicators.get(key)
+        rows.append({
+            "signal_id": None, "asset": asset, "timeframe": timeframe,
+            "decision": "observed", "reason": reason,
+            "meta": {
+                "observation_scope": "market_scan",
+                "asset_class": _asset_class_key(asset),
+                "regime": regime,
+                "scan_result": reason,
+                "indicators": safe_indicators,
+                "candle_count": len(tf_data.get("candles") or []) if isinstance(tf_data, dict) else 0,
+                "data_age_seconds": tf_data.get("data_age_seconds") if isinstance(tf_data, dict) else None,
+            },
+        })
+    try:
+        run_sync(persist_decision_logs_batch(rows), timeout=10.0)
+    except Exception:
+        logger.debug("[engine] market observation batch deferred asset=%s", asset, exc_info=True)
 
 try:
     from engine.advanced_exit_manager import advanced_exit
@@ -952,10 +988,31 @@ def _signal_adx_value(signal: Dict[str, Any]) -> float:
 
 
 def _staging_quality_advisory_enabled() -> bool:
-    return bool(
-        _env_bool("STAGING_QUALITY_GATES_ADVISORY", False)
-        and str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1"
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    if environment in {"production", "prod"}:
+        return False
+    if not _env_bool("PUBLIC_TESTING_MODE", False):
+        return False
+    if not _env_bool("STAGING_QUALITY_GATES_ADVISORY", False):
+        return False
+    # Advisory quality is strictly a no-live-execution staging experiment.
+    # Paper trading may remain enabled, but every real/copy execution path must
+    # be hard-disabled before a quality veto can become advisory.
+    unsafe_execution_flags = (
+        "REAL_EXECUTION_ENABLED",
+        "AUTO_EXECUTION_ENABLED",
+        "AUTO_TRADE_ENABLED",
+        "COPY_TRADE_ENABLED",
+        "BYBIT_EXECUTION_ENABLED",
+        "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
     )
+    return not any(_env_bool(name, False) for name in unsafe_execution_flags)
 
 
 def _append_staging_advisory(signal: Dict[str, Any], gate: str, reason: Any) -> None:
@@ -1090,7 +1147,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         max_stop_loss_pct_defaults.get(asset_class, 2.0),
     )
     max_rr = _env_float_for_class("QUALITY_MAX_RR", asset_class, max_rr_defaults.get(asset_class, 4.0))
-    min_gemini_score = _env_float_for_class("QUALITY_MIN_GEMINI_SCORE", asset_class, 8.0)
+    min_ai_score = _env_float_for_class(
+        "QUALITY_MIN_AI_SCORE",
+        asset_class,
+        _env_float_for_class("QUALITY_MIN_GEMINI_SCORE", asset_class, 8.0),
+    )
 
     if score < min_score:
         return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
@@ -1105,8 +1166,8 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
     if confluence_pct is not None and confluence_pct < min_confluence:
         return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
-    if gemini_score > 0 and gemini_score < min_gemini_score:
-        return False, f"quality_gemini {gemini_score:.1f} < {min_gemini_score:.1f} ({asset_class})"
+    if gemini_score > 0 and gemini_score < min_ai_score:
+        return False, f"quality_ai {gemini_score:.1f} < {min_ai_score:.1f} ({asset_class})"
     if adx > 0 and adx < min_adx:
         return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
 
@@ -2169,10 +2230,12 @@ def main_loop(DRY_RUN: bool = False):
                 from utils.async_runner import run_sync as _run_profile_demand_sync
 
                 async def _load_profile_demand():
+                    _metadata_timeout = max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                     async with _get_profile_demand_session(
-                        priority="background",
+                        priority="critical",
                         label="engine.profile_demand",
-                        timeout_seconds=4.0,
+                        timeout_seconds=_metadata_timeout,
+                        drop_if_busy=False,
                     ) as _demand_session:
                         return await _get_profile_demand(
                             _demand_session,
@@ -2181,7 +2244,10 @@ def main_loop(DRY_RUN: bool = False):
 
                 _profile_demand_snapshot = _run_profile_demand_sync(
                     _load_profile_demand(),
-                    timeout=max(5.0, float(os.getenv("PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "8") or 8)),
+                    timeout=max(
+                        _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                        float(os.getenv("PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS", "12") or 12),
+                    ),
                 )
                 logger.info(
                     "[engine_profile_demand] active_profiles=%s asset_classes=%s timeframes=%s preferred_assets=%s source=%s",
@@ -2210,10 +2276,12 @@ def main_loop(DRY_RUN: bool = False):
                 from db.pg_features import get_active_managed_assets
                 from utils.async_runner import run_sync as _run_sync
                 async def _fetch_managed():
+                    _metadata_timeout = max(3.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                     async with get_session(
-                        priority="background",
+                        priority="critical",
                         label="engine.managed_assets",
-                        timeout_seconds=3.0,
+                        timeout_seconds=_metadata_timeout,
+                        drop_if_busy=False,
                     ) as _session:
                         return await get_active_managed_assets(_session)
                 _managed_assets = [
@@ -2222,7 +2290,10 @@ def main_loop(DRY_RUN: bool = False):
                         list(
                             _run_sync(
                                 _fetch_managed(),
-                                timeout=float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "5") or 5),
+                                timeout=max(
+                                    _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                                    float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "12") or 12),
+                                ),
                             )
                             or []
                         )
@@ -2246,10 +2317,12 @@ def main_loop(DRY_RUN: bool = False):
                     )
 
                     async def _fetch_database_universe():
+                        _metadata_timeout = max(4.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
                         async with _get_universe_session(
-                            priority="background",
+                            priority="critical",
                             label="engine.database_universe",
-                            timeout_seconds=4.0,
+                            timeout_seconds=_metadata_timeout,
+                            drop_if_busy=False,
                         ) as _universe_session:
                             return await load_database_universe(
                                 _universe_session,
@@ -2261,7 +2334,10 @@ def main_loop(DRY_RUN: bool = False):
                         _normalize_asset_symbol(s)
                         for s in list(_run_universe_sync(
                             _fetch_database_universe(),
-                            timeout=float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "7") or 7),
+                            timeout=max(
+                                _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
+                                float(os.getenv("ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "12") or 12),
+                            ),
                         ) or [])
                     ]
                     from data.class_universe import build_class_complete_universe, default_discoverers
@@ -2717,11 +2793,16 @@ def main_loop(DRY_RUN: bool = False):
                 from sqlalchemy import select as _sel_open, func as _func_open
 
                 async def _load_open_signal_counts() -> list[tuple[str, int]]:
-                    from db.models import SignalDelivery as _OpenDelivery
+                    from db.models import Outcome as _OpenOutcome, SignalDelivery as _OpenDelivery, SignalLifecycle as _OpenLifecycle
                     from db.priority import DBPriority as _OpenPriority
                     from sqlalchemy import exists as _exists_open, or_ as _or_open
 
                     now_open = now_utc_naive()
+                    open_unresolved_hours = max(
+                        1.0,
+                        _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0),
+                    )
+                    open_proof_cutoff = now_open - _timedelta(hours=open_unresolved_hours)
                     delivered_open = _exists_open().where(
                         _OpenDelivery.signal_id == _OpenSig.signal_id,
                         _OpenDelivery.sent_ok.is_(True),
@@ -2731,6 +2812,42 @@ def main_loop(DRY_RUN: bool = False):
                         )),
                         _OpenDelivery.telegram_chat_id.is_not(None),
                         _OpenDelivery.telegram_message_id.is_not(None),
+                        _func_open.coalesce(
+                            _OpenDelivery.delivery_confirmed_at,
+                            _OpenDelivery.delivered_at_utc,
+                            _OpenDelivery.delivered_at,
+                        ) >= open_proof_cutoff,
+                    )
+                    terminal_lifecycle_states = (
+                        "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+                    )
+                    terminal_lifecycle_open_count = _exists_open().where(
+                        _OpenLifecycle.signal_id == _OpenSig.signal_id,
+                        _or_open(
+                            _OpenLifecycle.closed_at.is_not(None),
+                            _OpenLifecycle.terminal_event_type.is_not(None),
+                            _func_open.upper(
+                                _func_open.coalesce(_OpenLifecycle.state, "")
+                            ).in_(terminal_lifecycle_states),
+                        ),
+                    )
+                    terminal_outcome_statuses = (
+                        "tp", "tp3", "sl", "partial_win", "partial_win_be",
+                        "time_stop", "missed_entry", "expired", "invalid",
+                        "invalidated", "cancel", "cancelled", "canceled",
+                    )
+                    terminal_outcome_open_count = _exists_open().where(
+                        _OpenOutcome.signal_id == _OpenSig.signal_id,
+                        _or_open(
+                            _OpenOutcome.closed_at.is_not(None),
+                            _func_open.lower(
+                                _func_open.coalesce(
+                                    _OpenOutcome.canonical_outcome,
+                                    _OpenOutcome.status,
+                                    "",
+                                )
+                            ).in_(terminal_outcome_statuses),
+                        ),
                     )
                     async with _get_s_open(
                         priority=_OpenPriority.CRITICAL,
@@ -2743,6 +2860,8 @@ def main_loop(DRY_RUN: bool = False):
                                 _OpenSig.archived.is_(False),
                                 _or_open(_OpenSig.expires_at.is_(None), _OpenSig.expires_at >= now_open),
                                 delivered_open,
+                                ~terminal_lifecycle_open_count,
+                                ~terminal_outcome_open_count,
                             )
                             .group_by(_OpenSig.asset)
                         )).fetchall()
@@ -2839,6 +2958,9 @@ def main_loop(DRY_RUN: bool = False):
                             )
                         _increment_engine_veto("other")
                         _record_gate_failure(asset, "market_data", "no_candles")
+                        _log_market_observations(
+                            asset, asset_to_tfs.get(asset, []), reason="no_usable_candles", market_data=market_data,
+                        )
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
@@ -2877,6 +2999,9 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats["stale_data"] += 1
                                 _increment_engine_veto("other")
                                 _record_gate_failure(asset, "stale_data", f"{tf}:{data_age:.0f}s>{max_age:.0f}s")
+                                _log_market_observations(
+                                    asset, [tf], reason="stale_market_data", market_data=market_data,
+                                )
                                 _maybe_log_heatmap(asset, cycle_no, 0)
                                 stale_data = True
                                 break
@@ -2889,6 +3014,9 @@ def main_loop(DRY_RUN: bool = False):
                             logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)")
                             _increment_engine_veto("regime")
                             _record_gate_failure(asset, "macro", "no_trade_zone_60m")
+                            _log_market_observations(
+                                asset, list(usable_timeframes.keys()), reason="macro_no_trade_zone", market_data=market_data,
+                            )
                             _maybe_log_heatmap(asset, cycle_no, 0)
                             continue
                     except Exception:
@@ -2956,6 +3084,10 @@ def main_loop(DRY_RUN: bool = False):
                         _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
                         logger.info(f"[engine] No strategy signals for {asset} regime={regime} tfs={_tf_list} ind_sample={_ind_keys[:5]}")
                         _record_gate_failure(asset, "strategy_generation", "no_strategy_signals")
+                        _log_market_observations(
+                            asset, list(usable_timeframes.keys()), reason="no_strategy_setup",
+                            regime=str(regime or "unknown"), market_data=market_data,
+                        )
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
@@ -3181,12 +3313,24 @@ def main_loop(DRY_RUN: bool = False):
                         prob = None
                         features = {}
                         try:
-                            if ml_filter and getattr(ml_filter, 'active', False):
+                            if ml_filter:
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold()
+                                # Always consult MLFilter when constructed. It owns the
+                                # configured fail-open/fail-closed availability policy,
+                                # including the case where the model is inactive.
                                 approved, prob = ml_filter.ml_filter(features, threshold=threshold)
-                        except Exception:
-                            approved, prob = True, None
+                            elif _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                                approved, prob = False, None
+                        except Exception as _ml_filter_error:
+                            if _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                                approved, prob = False, None
+                                logger.warning(
+                                    "[engine] ML unavailable; fail-closed candidate veto error=%s",
+                                    type(_ml_filter_error).__name__,
+                                )
+                            else:
+                                approved, prob = True, None
 
                         # NEW: Log ML prediction to database for drift analysis
                         # Must happen BEFORE decision to ensure all predictions recorded
@@ -3210,24 +3354,10 @@ def main_loop(DRY_RUN: bool = False):
                         if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
                             _increment_engine_veto("ml")
-                            _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
-                            try:
-                                run_sync(
-                                    _ml_rejection_tracker.persist_rejection(
-                                        asset=str(sig.get("asset") or ""),
-                                        timeframe=str(sig.get("timeframe") or ""),
-                                        direction=str(sig.get("direction") or ""),
-                                        entry_price=float(sig.get("entry") or 0),
-                                        stop_loss=float(sig.get("stop_loss") or 0),
-                                        take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
-                                        ml_probability=float(prob or 0),
-                                        rejection_reason="ml_filter",
-                                        features=features if isinstance(features, dict) else {},
-                                    )
-                                )
-                            except Exception as e:
-                                logger.debug(f"[engine] Failed to record ML rejection: {e}")
-                                pass
+                            _log_decision("rejected", sig, reason="ml_filter", meta={
+                                "ml_probability": prob,
+                                "ml_features": features if isinstance(features, dict) else {},
+                            })
                             continue
                         # LOWERED from 0.55 to 0.40 to allow drifted model predictions (~56%) through
                         # This addresses the ML drift issue where model outputs 56% but threshold was too high
@@ -3659,23 +3789,6 @@ def main_loop(DRY_RUN: bool = False):
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
                                 _increment_engine_veto("score")
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
-                                try:
-                                    run_sync(
-                                        _ml_rejection_tracker.persist_rejection(
-                                            asset=str(sig.get("asset") or ""),
-                                            timeframe=str(sig.get("timeframe") or ""),
-                                            direction=str(sig.get("direction") or ""),
-                                            entry_price=float(sig.get("entry") or 0),
-                                            stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
-                                            take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
-                                            ml_probability=float(sig.get("ml_probability") or 0.0),
-                                            rejection_reason=str(sig['rejection_reason']),
-                                            features=dict(sig),
-                                            rejection_type="final_score_gate",
-                                        )
-                                    )
-                                except Exception as e:
-                                    logger.debug(f"[engine] Failed to record score rejection: {e}")
                                 continue
 
                             # Optional hard block remains available via env toggle.
@@ -3685,23 +3798,6 @@ def main_loop(DRY_RUN: bool = False):
                                 _increment_engine_veto("score")
                                 _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
-                                try:
-                                    run_sync(
-                                        _ml_rejection_tracker.persist_rejection(
-                                            asset=str(sig.get("asset") or ""),
-                                            timeframe=str(sig.get("timeframe") or ""),
-                                            direction=str(sig.get("direction") or ""),
-                                            entry_price=float(sig.get("entry") or 0),
-                                            stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
-                                            take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
-                                            ml_probability=float(sig.get("ml_probability") or 0.0),
-                                            rejection_reason=str(sig['rejection_reason']),
-                                            features=dict(sig),
-                                            rejection_type="expectancy_gate",
-                                        )
-                                    )
-                                except Exception as e:
-                                    logger.debug(f"[engine] Failed to record expectancy rejection: {e}")
                                 continue
 
                             # Attach regime + timeframe-aware expiration so higher-timeframe
@@ -3736,12 +3832,35 @@ def main_loop(DRY_RUN: bool = False):
                                         candles if isinstance(candles, list) else [],
                                         float(sig.get('news_sentiment') or 0.0) if sig.get('news_sentiment') is not None else None,
                                     ),
-                                    timeout=max(3.0, _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0)),
+                                    timeout=max(
+                                        3.0,
+                                        _env_float(
+                                            "AI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC",
+                                            _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0),
+                                        ),
+                                    ),
                                 )
+                                ai_provider = str(sig.get("ai_review_provider") or "").strip().lower()
+                                if not ai_provider:
+                                    _reason_text = str(gemini_reason or "")
+                                    if "provider=openai" in _reason_text:
+                                        ai_provider = "openai"
+                                    elif "provider=gemini" in _reason_text:
+                                        ai_provider = "gemini"
+                                    elif "provider=consensus" in _reason_text:
+                                        ai_provider = "consensus"
+                                    else:
+                                        ai_provider = "local"
+                                sig['ai_review_provider'] = ai_provider
+                                if sig.get('ai_review_score') is None:
+                                    sig['ai_review_score'] = gemini_score
+                                if not sig.get('ai_review_reason'):
+                                    sig['ai_review_reason'] = gemini_reason
+                                # Compatibility aliases for existing formatters/quality gates.
                                 sig['gemini_review_score'] = gemini_score
                                 sig['gemini_review_reason'] = gemini_reason
                                 if not gemini_ok:
-                                    sig['rejection_reason'] = f"gemini:{gemini_reason}"
+                                    sig['rejection_reason'] = f"ai:{ai_provider}:{gemini_reason}"
                                     _record_gate_failure(asset, "gemini", sig['rejection_reason'])
                                     if _staging_quality_advisory_enabled():
                                         _append_staging_advisory(sig, "gemini", sig['rejection_reason'])
@@ -3752,23 +3871,6 @@ def main_loop(DRY_RUN: bool = False):
                                             "gemini_score": gemini_score,
                                             "rejection_bucket": _rejection_bucket,
                                         })
-                                        try:
-                                            run_sync(
-                                                _ml_rejection_tracker.persist_rejection(
-                                                    asset=str(sig.get("asset") or ""),
-                                                    timeframe=str(sig.get("timeframe") or ""),
-                                                    direction=str(sig.get("direction") or ""),
-                                                    entry_price=float(sig.get("entry") or 0),
-                                                    stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
-                                                    take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
-                                                    ml_probability=float(sig.get("ml_probability") or 0.0),
-                                                    rejection_reason=str(sig['rejection_reason']),
-                                                    features=dict(sig),
-                                                    rejection_type="gemini_gate",
-                                                )
-                                            )
-                                        except Exception as e:
-                                            logger.debug(f"[engine] Failed to record gemini rejection: {e}")
                                         continue
                             except Exception:
                                 pass
@@ -3791,21 +3893,6 @@ def main_loop(DRY_RUN: bool = False):
                                     "final_rr": _quality_decision.final_rr,
                                     "thesis_fingerprint": _quality_decision.thesis_fingerprint,
                                 })
-                                try:
-                                    run_sync(_ml_rejection_tracker.persist_rejection(
-                                        asset=str(sig.get("asset") or ""),
-                                        timeframe=str(sig.get("timeframe") or ""),
-                                        direction=str(sig.get("direction") or ""),
-                                        entry_price=float(sig.get("entry") or 0),
-                                        stop_loss=float(sig.get("stop_loss") or 0),
-                                        take_profit_levels=sig.get("take_profit") or [],
-                                        ml_probability=float(sig.get("ml_probability") or 0.0),
-                                        rejection_reason=str(sig["rejection_reason"]),
-                                        features=dict(sig),
-                                        rejection_type="production_quality_gate",
-                                    ))
-                                except Exception as _quality_track_error:
-                                    logger.debug("[engine] quality rejection persistence failed: %s", _quality_track_error)
                                 continue
                             final_signals.append(sig)
                         except Exception:
@@ -4051,6 +4138,7 @@ def main_loop(DRY_RUN: bool = False):
                                             f"[engine] duplicate_trade: skipping {_asset_name} "
                                             "(already in an active trade)"
                                         )
+                                        _log_decision("skipped", sig, reason="duplicate_active_trade")
                                         continue
                             except Exception as _dup_err:
                                 logger.warning("[engine] duplicate trade check failed; blocking candidate: %s", _dup_err)
@@ -4091,6 +4179,7 @@ def main_loop(DRY_RUN: bool = False):
                                             f"class={_sig_asset_cls} direction={_direction} "
                                             "(exposure limit reached)"
                                         )
+                                        _log_decision("skipped", sig, reason="portfolio_exposure_limit")
                                         continue
                             except Exception as _pex:
                                 logger.warning("[engine] portfolio exposure check failed: %s", _pex)
@@ -4135,6 +4224,10 @@ def main_loop(DRY_RUN: bool = False):
                             stored_signal_id = store_signal_compat(sig)
                             if stored_signal_id:
                                 sig["signal_id"] = str(stored_signal_id)
+                                _log_decision(
+                                    "issued", sig, reason="stored_for_delivery",
+                                    meta={"asset_class": _asset_class_key(sig.get("asset") or asset)},
+                                )
                                 try:
                                     if _env_bool("TRADING_LEDGER_ENABLED", True):
                                         async def _record_generated_event() -> None:

@@ -45,3 +45,6 @@ Thumbs.db
 !.env.example
 !docs/
 !docs/**
+# Release-critical pytest gate runs inside the Railway image build.
+!tests/
+!tests/**

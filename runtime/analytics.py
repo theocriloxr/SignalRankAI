@@ -24,6 +24,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
     if _enabled("ASSET_LEARNING_ENABLED", True):
         from worker.asset_learning_worker import asset_learning_worker
         tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
+    if _enabled("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+        from services.instrument_catalogue_refresh import instrument_catalogue_refresh_loop
+        tasks.append(
+            asyncio.create_task(
+                instrument_catalogue_refresh_loop(stop),
+                name="instrument-catalogue-refresh",
+            )
+        )
     if _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
         async def _ml_loop() -> None:
             delay=max(60, int(os.getenv("ANALYTICS_ML_TRAIN_STARTUP_DELAY_SECONDS", "900") or 900))
@@ -45,6 +53,22 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
                 except asyncio.TimeoutError:
                     pass
         tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
+    if _enabled("LEARNING_HISTORY_RETENTION_ENABLED", False):
+        from db.storage_maintenance import learning_history_maintenance_loop
+        tasks.append(
+            asyncio.create_task(
+                learning_history_maintenance_loop(),
+                name="learning-history-retention",
+            )
+        )
+    if _enabled("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
+        from services.continuous_improvement.scheduler import continuous_improvement_loop
+        tasks.append(
+            asyncio.create_task(
+                continuous_improvement_loop(stop),
+                name="continuous-improvement-review",
+            )
+        )
     logger.info("[analytics] started shadow=%s tasks=%s",bool(shadow),[task.get_name() for task in tasks])
     try:
         await stop.wait()

@@ -95,10 +95,51 @@ required environment variable in this codebase.
 
 ## AI and Governance
 
+OpenAI is the preferred external intelligence provider. Gemini remains a
+compatibility/failover provider, and deterministic local review remains the
+final fallback. The AI layer is advisory: it cannot bypass market-data
+freshness, stop/target geometry, portfolio exposure, calibration, financial
+activation, owner approval, or the global execution kill switch.
+
+Set the OpenAI key as a Railway secret; never paste it into Telegram commands,
+logs, tickets, or chat transcripts.
+
 ```text
-GEMINI_API_KEY=<required for Gemini analysis>
-GEMINI_MODEL=gemini-2.0-flash
-GEMINI_SIGNAL_REVIEW_MODEL=gemini-2.0-flash
+AI_PRIMARY_PROVIDER=openai
+AI_PROVIDER_ORDER=openai,gemini,local
+OPENAI_API_KEY=<Railway secret>
+OPENAI_AI_ENABLED=1
+OPENAI_SIGNAL_REVIEW_ENABLED=1
+OPENAI_MODEL=gpt-5.6-terra
+OPENAI_SIGNAL_REVIEW_MODEL=gpt-5.6-terra
+OPENAI_DEEP_MODEL=gpt-5.6-sol
+OPENAI_REASONING_EFFORT=low
+OPENAI_DEEP_REASONING_EFFORT=medium
+OPENAI_SIGNAL_REVIEW_TIMEOUT_SECONDS=5
+OPENAI_DEEP_TIMEOUT_SECONDS=25
+OPENAI_AI_CIRCUIT_BREAKER_ENABLED=1
+OPENAI_AI_WINDOW_SECONDS=60
+OPENAI_AI_MAX_CALLS_PER_WINDOW=6
+OPENAI_RATE_LIMIT_COOLDOWN_SECONDS=900
+OPENAI_CONFIG_ERROR_COOLDOWN_SECONDS=3600
+```
+
+The integration uses the OpenAI Responses API with strict structured output and
+`store=false`. Operator commands:
+
+- `/ai`: run the governed aggregate AI review;
+- `/ai_review`: inspect the latest provider-routed review;
+- `/ai_analyze`, `/ai_audit`, `/ai_predict`: provider-neutral aliases for
+  the existing analysis/audit compatibility surfaces;
+- `/ai_status`: secret-safe provider/model/budget/circuit diagnostics;
+- `/ai_test`: one minimal structured OpenAI connectivity probe.
+
+Gemini fallback:
+
+```text
+GEMINI_API_KEY=<optional fallback provider key>
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_SIGNAL_REVIEW_MODEL=gemini-3.8-flash
 GEMINI_API_TIMEOUT_SECONDS=8
 GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC=8
 GEMINI_SIGNAL_REVIEW_ENABLED=1
@@ -108,13 +149,13 @@ GEMINI_INLINE_TOP_N=3
 GEMINI_DAILY_LIMIT=10
 ```
 
-Optional Codex/OpenAI governance review:
+Legacy Codex/OpenAI aggregate governance variables remain supported where those
+older audit paths are still enabled:
 
 ```text
-OPENAI_API_KEY=<OpenAI API key>
-CODEX_OPENAI_API_KEY=<optional fallback if OPENAI_API_KEY is not used>
-OPENAI_CODEX_REVIEW_ENABLED=0
-OPENAI_CODEX_REVIEW_MODEL=gpt-4.1-mini
+CODEX_OPENAI_API_KEY=<optional fallback alias>
+OPENAI_CODEX_REVIEW_ENABLED=1
+OPENAI_CODEX_REVIEW_MODEL=gpt-5.6-sol
 OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS=25
 OPENAI_CODEX_REVIEW_MAX_TOKENS=1200
 ```

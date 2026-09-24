@@ -874,6 +874,57 @@ async def _fetch_twelvedata_quote(symbol: str) -> LivePriceQuote | LivePriceFail
                 reason = "rate_limit:twelvedata"
             elif payload.get("code"):
                 reason = f"provider_error_code:{payload.get('code')}"
+
+            # Some Twelve Data commodity entitlements expose timestamped
+            # time-series data even when the high-demand /quote endpoint is
+            # unavailable. Use one 1-minute provider-stamped bar as a fallback.
+            # Downstream freshness validation still rejects stale/closed data.
+            try:
+                ts_response = await asyncio.to_thread(
+                    requests.get,
+                    "https://api.twelvedata.com/time_series",
+                    params={
+                        "symbol": provider_symbol,
+                        "interval": "1min",
+                        "outputsize": 1,
+                        "timezone": "UTC",
+                        "apikey": api_key,
+                    },
+                    timeout=5,
+                )
+                ts_payload = ts_response.json() if ts_response.ok else {}
+                values = ts_payload.get("values") if isinstance(ts_payload, dict) else None
+                if (
+                    ts_response.ok
+                    and str(ts_payload.get("status") or "").lower() != "error"
+                    and isinstance(values, list)
+                    and values
+                    and isinstance(values[0], dict)
+                ):
+                    latest = values[0]
+                    fallback_quote = _typed_quote(
+                        symbol=canonical,
+                        provider=provider,
+                        price=latest.get("close"),
+                        source_timestamp=latest.get("timestamp") or latest.get("datetime"),
+                        started=started,
+                        received_at=time.time(),
+                        quote_kind=QuoteKind.TICKER.value,
+                        market_status="unknown",
+                        confidence_reasons=("quote_endpoint_fallback_time_series",),
+                    )
+                    if isinstance(fallback_quote, LivePriceQuote):
+                        breaker.record_success()
+                        return fallback_quote
+                ts_status = getattr(ts_response, "status_code", "unknown")
+                reason = f"{reason};time_series_unavailable:{ts_status}"
+            except Exception as fallback_exc:
+                logger.debug(
+                    "[price] Twelve Data time-series fallback failed for %s: %s",
+                    canonical,
+                    fallback_exc,
+                )
+                reason = f"{reason};time_series_fallback_error:{type(fallback_exc).__name__}"
             breaker.record_failure()
             return _typed_failure(canonical, provider, reason)
 

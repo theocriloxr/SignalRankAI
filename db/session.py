@@ -291,6 +291,20 @@ def _default_session_gate_limit() -> int:
     return max(1, min(configured_capacity, default_cap))
 
 
+def _dedicated_analytics_min_sessions() -> int:
+    role = _database_role()
+    if role == "analytics" or role.startswith("analytics-"):
+        return max(
+            2,
+            _pool_int(
+                "DB_ANALYTICS_DEDICATED_MIN_CONCURRENT_SESSIONS",
+                2,
+                minimum=1,
+            ),
+        )
+    return 1
+
+
 def _effective_session_gate_limit() -> int:
     requested = max(
         1,
@@ -302,7 +316,18 @@ def _effective_session_gate_limit() -> int:
     )
     pool_size, max_overflow = _effective_pool_settings()
     if pool_size == 0 and max_overflow == 0:
-        return requested
+        # Dedicated analytics uses NullPool by design. A stale generic
+        # DB_MAX_CONCURRENT_SESSIONS=1 must not serialize ML training, shadow
+        # outcome tracking, and learning maintenance into starvation.
+        minimum = _dedicated_analytics_min_sessions()
+        if requested < minimum:
+            logger.warning(
+                "[db_admission_config] raising dedicated analytics session gate "
+                "requested=%s minimum=%s",
+                requested,
+                minimum,
+            )
+        return max(requested, minimum)
     physical_capacity = max(1, int(pool_size) + int(max_overflow))
     effective = min(requested, physical_capacity)
     if effective != requested:
@@ -354,19 +379,26 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # for a real DB session. This lets heavy features run continuously without
 # starving interactive Telegram commands, signal delivery proof writes, or
 # signal storage. The value is intentionally smaller than the main gate.
+_dedicated_noninteractive_db_roles = {
+    "analytics", "scheduler",
+}
 _default_foreground_reserve = (
-    1
-    if _session_gate_limit <= 2
-    else min(4, max(2, _session_gate_limit // 4))
+    0
+    if _database_role() in _dedicated_noninteractive_db_roles
+    else (
+        1
+        if _session_gate_limit <= 2
+        else min(4, max(2, _session_gate_limit // 4))
+    )
 )
 _foreground_reserved_sessions = max(
-    1,
+    0,
     min(
         _session_gate_limit,
         _pool_int(
             "DB_FOREGROUND_RESERVED_SESSIONS",
             _default_foreground_reserve,
-            minimum=1,
+            minimum=0,
         ),
     ),
 )
@@ -402,19 +434,59 @@ _critical_session_limit = max(
         _pool_int("DB_CRITICAL_MAX_CONCURRENT_SESSIONS", _default_critical_limit, minimum=1),
     ),
 )
+_dedicated_analytics_role = bool(
+    _database_role() == "analytics" or _database_role().startswith("analytics-")
+)
+
+
+def _effective_analytics_session_limit(
+    session_gate_limit: int,
+    foreground_reserved_sessions: int,
+) -> int:
+    default_limit = 2 if _dedicated_analytics_role else 1
+    requested = _pool_int(
+        "DB_ANALYTICS_MAX_CONCURRENT_SESSIONS",
+        default_limit,
+        minimum=1,
+    )
+    if _dedicated_analytics_role:
+        requested = max(requested, _dedicated_analytics_min_sessions())
+    return max(
+        1,
+        min(
+            max(1, int(session_gate_limit) - int(foreground_reserved_sessions)),
+            requested,
+        ),
+    )
+
+
+_analytics_session_limit = _effective_analytics_session_limit(
+    _session_gate_limit,
+    _foreground_reserved_sessions,
+)
 _priority_admission = DBAdmissionController(
     _session_gate_limit,
     foreground_reserve=_foreground_reserved_sessions,
     interactive_limit=_interactive_session_limit,
     critical_limit=_critical_session_limit,
     background_limit=_background_gate_limit,
-    analytics_limit=max(1, min(_session_gate_limit - _foreground_reserved_sessions, 1)),
+    analytics_limit=_analytics_session_limit,
     analytics_enabled=bool(
         _session_gate_limit > 2
         or _database_role() == "analytics"
         or _database_role().startswith("analytics-")
         or _pool_bool("DB_ANALYTICS_ALLOW_SHARED_POOL", False)
     ),
+)
+
+logger.info(
+    "[db_admission_config] role=%s session_limit=%s foreground_reserve=%s "
+    "background_limit=%s analytics_limit=%s",
+    _database_role(),
+    _session_gate_limit,
+    _foreground_reserved_sessions,
+    _background_gate_limit,
+    _analytics_session_limit,
 )
 
 _session_metrics_lock = threading.Lock()
@@ -1015,7 +1087,9 @@ async def get_session(
         is_background
         and (configured_drop_background if drop_if_busy is None else bool(drop_if_busy))
     )
-    nonblocking = bool(is_analytics or drop_background)
+    # Analytics is nonblocking by default, but a durable analytics caller may
+    # explicitly pass drop_if_busy=False to wait within its bounded timeout.
+    nonblocking = bool((is_analytics and drop_if_busy is not False) or drop_background)
 
     acquired = False
     bg_acquired = False
@@ -1107,7 +1181,7 @@ async def get_session(
         # Durable background work (drop_if_busy=False) may wait for the shared
         # session gate after it has been admitted to the non-reserved capacity.
         # Drop-on-busy jobs and analytics remain nonblocking.
-        main_nonblocking = bool(is_analytics or drop_background)
+        main_nonblocking = bool((is_analytics and drop_if_busy is not False) or drop_background)
         if not main_nonblocking:
             with _session_metrics_lock:
                 _session_metrics["waiting"] += 1

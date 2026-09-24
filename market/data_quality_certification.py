@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping
 
 from core.asset_classes import AssetClass, canonical_asset_class
@@ -36,10 +36,54 @@ def _is_expected_closure(previous_ms: int, current_ms: int, asset_class: AssetCl
         return False
     previous = datetime.fromtimestamp(previous_ms / 1000, tz=timezone.utc)
     current = datetime.fromtimestamp(current_ms / 1000, tz=timezone.utc)
-    if previous.weekday() >= 4 and current.weekday() <= 1:
-        return True
     if asset_class in {AssetClass.EQUITY, AssetClass.INDEX} and previous.date() != current.date():
         return True
+    elapsed_hours = (current - previous).total_seconds() / 3600.0
+
+    def _dates_between():
+        cursor = previous.date()
+        while cursor <= current.date():
+            yield cursor
+            cursor += timedelta(days=1)
+
+    # FX and commodity feeds legitimately skip the Friday-close to Sunday-open
+    # interval. Keep this bounded so a week-long outage is never normalized as
+    # a routine closure merely because it crosses a Saturday.
+    if elapsed_hours <= 80.0 and any(day.weekday() == 5 for day in _dates_between()):
+        return True
+
+    # Calendar holidays are expected closures, but only for bounded gaps. This
+    # prevents a multi-day provider outage from being excused merely because a
+    # holiday happened somewhere inside the interval.
+    if elapsed_hours <= 96.0 and asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}:
+        try:
+            from data.market_hours import CME_HOLIDAYS, FX_REDUCED_LIQUIDITY
+            holiday_set = CME_HOLIDAYS if asset_class is AssetClass.COMMODITY else FX_REDUCED_LIQUIDITY
+            if any(day in holiday_set for day in _dates_between()):
+                return True
+        except Exception:
+            pass
+
+    # Many FX and futures feeds omit a short rollover/maintenance window. A
+    # bounded overnight gap is expected; an equivalent intraday hole is not.
+    if (
+        asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}
+        and previous.date() != current.date()
+        and elapsed_hours <= 8.0
+    ):
+        return True
+
+    # CME-style commodity feeds commonly omit the daily 21:00-22:00 UTC
+    # maintenance window. Treat only a tightly bounded gap that overlaps that
+    # window as expected; arbitrary same-day holes still fail closed.
+    if asset_class is AssetClass.COMMODITY and elapsed_hours <= 6.0:
+        cursor = previous.date()
+        while cursor <= current.date():
+            maintenance_start = datetime.combine(cursor, datetime.min.time(), tzinfo=timezone.utc).replace(hour=21)
+            maintenance_end = maintenance_start + timedelta(hours=1)
+            if previous <= maintenance_end and current >= maintenance_start:
+                return True
+            cursor += timedelta(days=1)
     return False
 
 
@@ -95,6 +139,12 @@ def certify_market_candles(
         if not contract_valid:
             reasons.append("missing_contract_roll_metadata")
     elif canonical is AssetClass.INDEX:
+        if feed_type is None:
+            provider_name = str(provider or "").strip().lower()
+            if any(token in provider_name for token in ("yahoo", "yfinance")):
+                feed_type = "cash_index"
+            elif any(token in provider_name for token in ("metaapi", "oanda", "broker")):
+                feed_type = "cfd"
         if feed_type not in {"cash_index", "cfd", "future", "continuous_future"}:
             reasons.append("ambiguous_index_feed_type")
     elif canonical is AssetClass.CRYPTO and meta.get("exchange_outage"):

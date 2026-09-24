@@ -28,7 +28,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends, Header, Re
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, Response, FileResponse
+from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -97,6 +97,10 @@ if os.path.isdir(_PLATFORM_DIR):
     @app.get("/app/service-worker.js", include_in_schema=False)
     async def platform_service_worker() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "service-worker.js"), media_type="application/javascript", headers={"Service-Worker-Allowed": "/app"})
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def platform_favicon() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "icon.svg"), media_type="image/svg+xml")
 
 # Preserve the dedicated Paystack ingress router as a compatibility alias.
 # The inline routes below remain available for existing clients; this mounts
@@ -200,9 +204,12 @@ class PayoutFinalizeRequest(BaseModel):
 
 
 @app.get("/")
-async def root() -> dict[str, str]:
-    """Small authenticated-surface landing response for health-aware clients."""
-    return {"service": "signalrankai", "status": "ok"}
+async def root(request: Request):
+    """Open the first-party app for browsers while preserving API discovery."""
+    accept = str(request.headers.get("accept") or "").lower()
+    if "text/html" in accept:
+        return RedirectResponse(url="/app", status_code=307)
+    return {"service": "signalrankai", "status": "ok", "app": "/app"}
 
 
 def _normalize_exchange_provider(provider: str) -> str:

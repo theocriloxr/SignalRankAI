@@ -173,7 +173,7 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
         ])
     else:
         keyboard.append([
-            InlineKeyboardButton("⭐ Compare Plans & Unlock Workflow", callback_data="upgrade_menu")
+            InlineKeyboardButton("⭐ Compare Plans & Unlock Workflow", callback_data="nav_upgrade")
         ])
     
     tv_url = f"https://www.tradingview.com/symbols/{asset.replace('USDT', '')}"

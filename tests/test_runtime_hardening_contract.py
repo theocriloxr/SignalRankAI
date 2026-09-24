@@ -112,3 +112,40 @@ def test_paystack_recovery_never_occupies_the_critical_db_lane():
     recovery = source[source.index("async def recover_paystack_events_once"):source.index("async def paystack_webhook_recovery_loop")]
     assert "priority=DBPriority.BACKGROUND" in recovery
     assert "timeout_seconds=2.0" in recovery
+
+
+def test_paystack_recovery_retries_quickly_after_background_contention():
+    source = text("payments/paystack_events.py")
+    loop = source[source.index("async def paystack_webhook_recovery_loop"):]
+    assert "except NoncriticalWriteDropped:" in loop
+    assert "PAYSTACK_WEBHOOK_BUSY_RETRY_SECONDS" in loop
+    assert "sleep_for = min(interval, busy_retry)" in loop
+
+
+def test_outcome_tracker_skips_reprocessing_already_recorded_tp():
+    source = text("engine/realtime_outcome_tracker.py")
+    hit = source[source.index("if hit:"):source.index("# Time-stop stale unresolved delivered signals")]
+    assert "if target_tp <= prev_tp:" in hit
+    assert "await publish_snapshot()" in hit
+    assert "return" in hit
+    assert hit.index("if target_tp <= prev_tp:") < hit.index('logger.info(\n                    "[outcome_tracker] Hit detected:')
+
+
+def test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default():
+    source = text("worker/worker.py")
+    assert '_discovery_default = not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False)' in source
+    assert '_env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", _discovery_default)' in source
+    assert "DynamicInstrumentDiscovery disabled for decomposed worker" in source
+
+
+def test_analytics_owns_dynamic_instrument_catalogue_refresh():
+    analytics = text("runtime/analytics.py")
+    refresh = text("services/instrument_catalogue_refresh.py")
+    assert 'DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED' in analytics
+    assert 'instrument_catalogue_refresh_loop(stop)' in analytics
+    assert 'name="instrument-catalogue-refresh"' in analytics
+    assert 'priority=_db_priority()' in refresh
+    assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in refresh
+    assert 'asyncio.to_thread(discover, top=top)' in refresh
+    assert 'await asyncio.wait_for(' in refresh
+    assert 'label="analytics.instrument_discovery.persist"' in refresh

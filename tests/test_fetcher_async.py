@@ -1,11 +1,12 @@
 import os
 import asyncio
+import time
 import unittest
 from unittest.mock import patch
 
 
 def make_dummy_candles(n=30):
-    now = 1700000000000
+    now = int(time.time() * 1000) - n * 60000
     out = []
     for i in range(n):
         out.append({
@@ -153,6 +154,19 @@ class TestAsyncFetcher(unittest.TestCase):
         self.assertEqual(snap["failure_count"], 1)
         self.assertEqual(snap["avg_latency_ms"], 180)
         self.assertEqual(snap["error_rate"], 0.5)
+
+    def test_symbol_capability_miss_does_not_mark_provider_unhealthy(self):
+        import data.fetcher as fetcher
+
+        fetcher._PROVIDER_HEALTH.clear()
+        fetcher.mark_provider_result("okx_connector", True, latency_ms=100)
+        for _ in range(5):
+            fetcher.mark_provider_capability_miss("okx_connector", latency_ms=50)
+
+        snap = fetcher.get_provider_health_snapshot()["okx_connector"]
+        self.assertTrue(snap["healthy"])
+        self.assertEqual(snap["failure_count"], 0)
+        self.assertEqual(snap["capability_miss_count"], 5)
 
     def test_all_provider_failures_do_not_break_asset_loop(self):
         async def run_test():

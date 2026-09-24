@@ -169,3 +169,24 @@ def test_r4_soak_certification_contract():
     assert "latestDeployment.createdAt" in text
     assert "$ageHours -lt $Hours" in text
     assert '"--filter", $blockerFilter' in text
+
+
+def test_production_migration_fast_path_skips_backup_and_lock_at_head():
+    source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
+    migrate = source[source.index("def migrate()"):source.index("def main()")]
+    fast_path = migrate.index("if before == expected:")
+    backup_check = migrate.index("backup_errors = _backup_errors()")
+    lock_loop = migrate.index('SELECT pg_try_advisory_lock(%s)')
+    assert fast_path < backup_check < lock_loop
+    assert "migration_required = False" in migrate
+    assert '"advisory_lock_acquired": lock_acquired' in migrate
+
+
+def test_production_migration_lock_wait_is_bounded_and_nonblocking():
+    source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
+    migrate = source[source.index("def migrate()"):source.index("def main()")]
+    assert "pg_try_advisory_lock" in migrate
+    assert "pg_advisory_lock(" not in migrate
+    assert "PRODUCTION_MIGRATION_LOCK_WAIT_SECONDS" in migrate
+    assert "migration advisory lock busy after" in migrate
+    assert "time.monotonic()" in migrate

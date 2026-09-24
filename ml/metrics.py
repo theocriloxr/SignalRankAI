@@ -153,7 +153,11 @@ def log_loss_score(y_true: Sequence[int], y_proba: Sequence[float]) -> float:
 
 
 def coverage_and_selective_accuracy(
-    y_true: Sequence[int], y_proba: Sequence[float], *, top_fraction: float = 0.5,
+    y_true: Sequence[int],
+    y_proba: Sequence[float],
+    *,
+    top_fraction: float = 0.5,
+    decision_threshold: float = 0.5,
 ) -> dict[str, float]:
     """Accuracy at the most-confident ``top_fraction`` of predictions."""
     if not y_true:
@@ -161,8 +165,9 @@ def coverage_and_selective_accuracy(
     order = sorted(range(len(y_true)), key=lambda i: -float(y_proba[i]))
     keep = max(1, int(round(len(order) * float(top_fraction))))
     selected = order[:keep]
-    sel_correct = sum(1 for i in selected if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= 0.5 else 0))
-    full_correct = sum(1 for i in range(len(y_true)) if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= 0.5 else 0))
+    threshold = min(0.99, max(0.01, float(decision_threshold)))
+    sel_correct = sum(1 for i in selected if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0))
+    full_correct = sum(1 for i in range(len(y_true)) if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0))
     return {
         "coverage": round(keep / len(order), 4),
         "selective_accuracy": round(sel_correct / keep, 4),
@@ -170,9 +175,14 @@ def coverage_and_selective_accuracy(
     }
 
 
-def expected_r_utility(y_true: Sequence[int], y_proba: Sequence[float]) -> dict[str, float]:
-    """Expected R multiple under threshold selection (reward = 2R, loss = 1R)."""
-    threshold = 0.5
+def expected_r_utility(
+    y_true: Sequence[int],
+    y_proba: Sequence[float],
+    *,
+    decision_threshold: float = 0.5,
+) -> dict[str, float]:
+    """Expected R multiple at the selected decision threshold (reward = 2R, loss = 1R)."""
+    threshold = min(0.99, max(0.01, float(decision_threshold)))
     predicted_positive = sum(1 for p in y_proba if float(p) >= threshold)
     if predicted_positive == 0:
         return {"expected_r": 0.0, "predicted_positive": 0}
@@ -206,6 +216,7 @@ class EvaluationReport:
     confusion: dict[str, int]
     expected_r: float
     calibrated_win_probability: float | None = None
+    decision_threshold: float = 0.5
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -230,6 +241,7 @@ class EvaluationReport:
             "confusion": self.confusion,
             "expected_r": round(self.expected_r, 4),
             "calibrated_win_probability": self.calibrated_win_probability,
+            "decision_threshold": round(self.decision_threshold, 4),
         }
 
 
@@ -240,6 +252,7 @@ def evaluate_classification(
     *,
     calibrated_probability: float | None = None,
     top_fraction: float = 0.5,
+    decision_threshold: float = 0.5,
 ) -> EvaluationReport:
     """Full binary-classification evaluation with imbalance-safe metrics."""
     y_true = [1 if int(v) == 1 else 0 for v in y_true]
@@ -255,8 +268,17 @@ def evaluate_classification(
     n_rec = _safe_div(conf["tn"], conf["tn"] + conf["fp"])
     p_f1 = _safe_div(2 * p_prec * p_rec, p_prec + p_rec)
     n_f1 = _safe_div(2 * n_prec * n_rec, n_prec + n_rec)
-    selection = coverage_and_selective_accuracy(y_true, y_proba, top_fraction=top_fraction)
-    utility = expected_r_utility(y_true, y_proba)
+    selection = coverage_and_selective_accuracy(
+        y_true,
+        y_proba,
+        top_fraction=top_fraction,
+        decision_threshold=decision_threshold,
+    )
+    utility = expected_r_utility(
+        y_true,
+        y_proba,
+        decision_threshold=decision_threshold,
+    )
     return EvaluationReport(
         accuracy=_safe_div(conf["tp"] + conf["tn"], len(y_true)),
         balanced_accuracy=bal_acc,
@@ -279,6 +301,7 @@ def evaluate_classification(
         confusion=conf,
         expected_r=utility["expected_r"],
         calibrated_win_probability=calibrated_probability,
+        decision_threshold=float(decision_threshold),
     )
 
 

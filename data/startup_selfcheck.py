@@ -116,6 +116,19 @@ def check_binance(timeout_seconds: float = 6.0) -> bool:
         return False
 
 
+def _alphavantage_payload_reason(payload) -> str:
+    if not isinstance(payload, dict):
+        return "invalid_payload"
+    for key in ("Note", "Information", "Error Message"):
+        if key in payload:
+            return {
+                "Note": "rate_limited",
+                "Information": "provider_information_or_rate_limit",
+                "Error Message": "provider_error",
+            }[key]
+    return "unexpected_payload"
+
+
 def check_alphavantage(timeout_seconds: float = 8.0) -> Optional[bool]:
     """Return True/False if check was performed, or None if not applicable."""
     fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
@@ -152,17 +165,26 @@ def check_alphavantage(timeout_seconds: float = 8.0) -> Optional[bool]:
         resp = requests.get(url, params=params, timeout=timeout_seconds)
         payload = resp.json() if resp.ok else {}
         if not resp.ok:
-            _warn(f"AlphaVantage unreachable: HTTP {resp.status_code} | pair={first_pair} | payload={payload}")
+            _warn(
+                f"AlphaVantage unreachable: HTTP {resp.status_code} | pair={first_pair} "
+                f"| reason={_alphavantage_payload_reason(payload)}"
+            )
             return False
 
         # AlphaVantage often returns throttling messages with HTTP 200.
         if any(k in payload for k in ("Note", "Information", "Error Message")):
-            _warn(f"AlphaVantage returned throttle/error payload for {first_pair}: {payload}")
+            _warn(
+                f"AlphaVantage returned throttle/error payload for {first_pair}: "
+                f"reason={_alphavantage_payload_reason(payload)}"
+            )
             return False
 
         series = payload.get("Time Series FX (Daily)")
         if not isinstance(series, dict) or not series:
-            _warn(f"AlphaVantage returned empty daily series for {first_pair}: {payload}")
+            _warn(
+                f"AlphaVantage returned empty daily series for {first_pair}: "
+                f"reason={_alphavantage_payload_reason(payload)}"
+            )
             return False
 
         return True

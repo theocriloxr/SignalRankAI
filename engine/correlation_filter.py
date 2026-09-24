@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from typing import Any, Dict, List, Tuple
 
 from utils.timeutils import now_utc_naive
@@ -235,18 +236,57 @@ class PortfolioExposureManager:
         """Internal method to check exposure limits."""
         try:
             # Import here to avoid circular imports
-            from db.models import Signal, SignalDelivery
+            from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
             from sqlalchemy import select, func, exists, or_
 
             # Signal.expires_at is stored as PostgreSQL TIMESTAMP WITHOUT TIME ZONE.
             # Bind a naïve UTC value so asyncpg never mixes offset-aware and
             # offset-naïve datetimes (which previously blocked every candidate).
             now = now_utc_naive()
+            unresolved_hours = max(
+                1.0,
+                _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0),
+            )
+            unresolved_cutoff = now - timedelta(hours=unresolved_hours)
             active_filters = [
                 Signal.expired.is_(False),
                 Signal.archived.is_(False),
                 or_(Signal.expires_at.is_(None), Signal.expires_at >= now),
             ]
+            # Terminal outcome truth must release portfolio capacity even when the
+            # legacy Signal.expired/archive projection lags behind. TP1/TP2 remain
+            # active; only a genuinely terminal close is excluded.
+            terminal_lifecycle_states = (
+                "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+            )
+            terminal_lifecycle_exists = exists().where(
+                SignalLifecycle.signal_id == Signal.signal_id,
+                or_(
+                    SignalLifecycle.closed_at.is_not(None),
+                    SignalLifecycle.terminal_event_type.is_not(None),
+                    func.upper(func.coalesce(SignalLifecycle.state, "")).in_(
+                        terminal_lifecycle_states
+                    ),
+                ),
+            )
+            active_filters.append(~terminal_lifecycle_exists)
+
+            terminal_outcome_statuses = (
+                "tp", "tp3", "sl", "partial_win", "partial_win_be",
+                "time_stop", "missed_entry", "expired", "invalid",
+                "invalidated", "cancel", "cancelled", "canceled",
+            )
+            terminal_outcome_exists = exists().where(
+                Outcome.signal_id == Signal.signal_id,
+                or_(
+                    Outcome.closed_at.is_not(None),
+                    func.lower(
+                        func.coalesce(Outcome.canonical_outcome, Outcome.status, "")
+                    ).in_(terminal_outcome_statuses),
+                ),
+            )
+            active_filters.append(~terminal_outcome_exists)
+
             # Generated rows are not positions. Only Telegram-acknowledged signals
             # may consume portfolio capacity.
             if str(os.getenv("PORTFOLIO_EXPOSURE_REQUIRE_DELIVERED", "1")).strip().lower() in {
@@ -262,6 +302,11 @@ class PortfolioExposureManager:
                         )),
                         SignalDelivery.telegram_chat_id.is_not(None),
                         SignalDelivery.telegram_message_id.is_not(None),
+                        func.coalesce(
+                            SignalDelivery.delivery_confirmed_at,
+                            SignalDelivery.delivered_at_utc,
+                            SignalDelivery.delivered_at,
+                        ) >= unresolved_cutoff,
                     )
                 )
 

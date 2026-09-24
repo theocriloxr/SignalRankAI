@@ -139,88 +139,93 @@ async def gather_performance_stats(days: int = 7) -> PerformanceStats:
 
 
 async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
-    """Ask Gemini for parameter adjustment recommendation."""
+    """Return a governed AI threshold proposal; OpenAI first, Gemini/rules fallback."""
+    stats_payload = {
+        "win_rate": float(stats.win_rate),
+        "total_trades": int(stats.total_trades),
+        "profit_factor": float(stats.profit_factor),
+        "current_base_threshold": float(stats.current_base_threshold),
+        "average_ml_auc": float(stats.average_ml_auc),
+        "avg_signal_score": float(stats.avg_score),
+        "signals_issued": int(stats.signals_issued),
+        "signals_rejected": int(stats.signals_rejected),
+    }
     try:
-        # Try to use GeminiValidator if available
-        from services.gemini_ml import GeminiValidator
-        
-        validator = GeminiValidator()
-        
-        prompt = f"""
-You are an AI Trading Systems Architect. Review the following {7}-day performance data for our trading engine:
+        from services.openai_ai import openai_available, provider_order, threshold_recommendation
+        order = provider_order()
+        if openai_available() and "openai" in order and (
+            "gemini" not in order or order.index("openai") < order.index("gemini")
+        ):
+            response = await threshold_recommendation(stats_payload)
+            if response.get("ok"):
+                data = dict(response.get("data") or {})
+                return {
+                    "new_threshold": max(0.15, min(0.60, float(data.get("new_threshold")))),
+                    "reason": str(data.get("reason") or "OpenAI governed proposal")[:800],
+                    "provider": "openai",
+                    "model": response.get("model"),
+                    "confidence": float(data.get("confidence") or 0.0),
+                    "requires_forward_test": True,
+                }
+    except Exception as exc:
+        logger.debug("[ai_feedback] OpenAI proposal unavailable: %s", type(exc).__name__)
 
-{json.dumps({
-    "win_rate": f"{stats.win_rate:.1%}",
-    "total_trades": stats.total_trades,
-    "profit_factor": f"{stats.profit_factor:.2f}",
-    "current_base_threshold": stats.current_base_threshold,
-    "average_ml_auc": f"{stats.average_ml_auc:.3f}",
-    "avg_signal_score": f"{stats.avg_score:.1f}",
-    "signals_issued": stats.signals_issued,
-    "signals_rejected": stats.signals_rejected,
-})}
+    # Gemini compatibility fallback. Older deployments may not expose the
+    # historical GeminiValidator class, so failure drops into deterministic rules.
+    try:
+        from services.gemini_ml import _call_gemini, gemini_available
 
-Our targets:
-- Win rate: > 55%
-- Profit factor: > 1.5
-- ML AUC: > 0.80
+        if gemini_available():
+            prompt = f"""
+You are an AI Trading Systems Architect. Review this aggregate performance data:
+{json.dumps(stats_payload)}
 
-Based on the current metrics, should we increase or decrease the 'base_threshold' to improve signal quality? 
+Propose one ML probability threshold between 0.15 and 0.60.
+Do not optimize win rate alone. Consider sample size, expectancy and model quality.
+This is a proposal only and must be forward-tested before any owner-approved change.
 
-Respond ONLY with a JSON object containing:
-- "new_threshold": float (recommended base threshold, e.g., 0.35)
-- "reason": string (short explanation)
-
-Example: {{"new_threshold": 0.35, "reason": "Low win rate suggests we are taking too many low-quality trades. Increasing threshold to filter noise."}}
+Reply ONLY as JSON:
+{{"new_threshold": 0.35, "reason": "brief evidence-based reason"}}
 """
-        
-        response = await validator.generate_content(prompt)
-        
-        # Parse JSON response
-        try:
-            # Try direct JSON parse first
-            recom = json.loads(response)
-        except json.JSONDecodeError:
-            # Extract JSON from text response
-            import re
-            match = re.search(r'\{[^{}]*\}', response)
-            if match:
-                recom = json.loads(match.group())
-            else:
-                recom = {"new_threshold": stats.current_base_threshold, "reason": "Failed to parse Gemini response"}
-        
-        return recom
-        
-    except ImportError:
-        # Fallback: simple rule-based adjustment
-        logger.info("[ai_feedback] Gemini not available, using rule-based adjustment")
-        
-        new_threshold = stats.current_base_threshold
-        reason = "rule_based"
-        
-        if stats.win_rate < 0.45:
-            # Poor win rate - tighten threshold
-            new_threshold = min(0.60, stats.current_base_threshold + 0.05)
-            reason = "win_rate_low"
-        elif stats.win_rate > 0.60:
-            # Excellent win rate - loosen threshold
-            new_threshold = max(0.15, stats.current_base_threshold - 0.02)
-            reason = "win_rate_high"
-        elif stats.average_ml_auc < 0.60:
-            # Poor ML model - tighten threshold
-            new_threshold = min(0.60, stats.current_base_threshold + 0.03)
-            reason = "ml_auc_low"
-        elif stats.average_ml_auc > 0.80:
-            # Excellent ML model - loosen threshold
-            new_threshold = max(0.15, stats.current_base_threshold - 0.02)
-            reason = "ml_auc_high"
-        
-        return {"new_threshold": new_threshold, "reason": reason}
-        
-    except Exception as e:
-        logger.warning(f"[ai_feedback] Gemini recommendation failed: {e}")
-        return {"new_threshold": stats.current_base_threshold, "reason": f"error: {e}"}
+            raw = await _call_gemini(prompt, max_tokens=220)
+            if raw:
+                try:
+                    recom = json.loads(raw)
+                except json.JSONDecodeError:
+                    import re
+                    match = re.search(r'\{[^{}]*\}', raw)
+                    recom = json.loads(match.group()) if match else {}
+                if isinstance(recom, dict) and recom.get("new_threshold") is not None:
+                    return {
+                        "new_threshold": max(0.15, min(0.60, float(recom["new_threshold"]))),
+                        "reason": str(recom.get("reason") or "Gemini governed proposal")[:800],
+                        "provider": "gemini",
+                        "requires_forward_test": True,
+                    }
+    except Exception as exc:
+        logger.debug("[ai_feedback] Gemini proposal unavailable: %s", type(exc).__name__)
 
+    # Deterministic proposal fallback. Never auto-applied.
+    new_threshold = stats.current_base_threshold
+    reason = "rule_based"
+    if stats.total_trades < 30:
+        reason = "insufficient_resolved_sample_hold_threshold"
+    elif stats.win_rate < 0.45:
+        new_threshold = min(0.60, stats.current_base_threshold + 0.05)
+        reason = "win_rate_low_tighten_candidate"
+    elif stats.win_rate > 0.60 and stats.profit_factor > 1.5 and stats.average_ml_auc >= 0.70:
+        new_threshold = max(0.15, stats.current_base_threshold - 0.02)
+        reason = "strong_multi_metric_evidence_loosen_candidate"
+    elif stats.average_ml_auc < 0.60:
+        new_threshold = min(0.60, stats.current_base_threshold + 0.03)
+        reason = "ml_auc_low_tighten_candidate"
+
+    return {
+        "new_threshold": new_threshold,
+        "reason": reason,
+        "provider": "local",
+        "requires_forward_test": True,
+    }
 
 async def apply_recommendation(recommendation: dict) -> bool:
     """Record a proposal without changing runtime or production configuration.
@@ -300,7 +305,7 @@ async def run_ai_feedback(force: bool = False) -> dict:
     
     # Get Gemini recommendation
     recommendation = await get_gemini_recommendation(stats)
-    logger.info(f"[ai_feedback] Recommendation: {recommendation}")
+    logger.info(f"[ai_feedback] AI recommendation proposal: {recommendation}")
     
     # Record recommendation only. This never mutates the active threshold.
     success = await apply_recommendation(recommendation)

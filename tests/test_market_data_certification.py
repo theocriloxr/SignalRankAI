@@ -28,6 +28,40 @@ def test_stock_overnight_closure_is_not_an_intraday_gap():
     assert result.session_gap_count == 0
 
 
+def test_fx_friday_to_sunday_open_is_not_a_provider_gap():
+    friday = int(datetime(2026, 8, 28, 21, tzinfo=timezone.utc).timestamp())
+    sunday = int(datetime(2026, 8, 30, 22, tzinfo=timezone.utc).timestamp())
+    rows = _rows(15, seconds=3600, start=friday - (14 * 3600))
+    rows += _rows(15, seconds=3600, start=sunday)
+    result = certify_market_candles(rows, asset_class="fx", timeframe="1h")
+    assert result.session_gap_count == 0
+
+
+def test_commodity_daily_maintenance_gap_is_expected():
+    start = int(datetime(2026, 9, 22, 18, tzinfo=timezone.utc).timestamp())
+    rows = _rows(4, seconds=3600, start=start)
+    # Futures-style feed skips the 21:00 maintenance bar: 20:00 -> 22:00.
+    rows += _rows(26, seconds=3600, start=int(datetime(2026, 9, 22, 22, tzinfo=timezone.utc).timestamp()))
+    result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")
+    assert result.session_gap_count == 0
+
+
+def test_commodity_unexplained_intraday_gap_still_quarantines():
+    rows = _rows()
+    rows[20]["timestamp"] += 4 * 3600 * 1000
+    result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")
+    assert result.quarantined
+    assert any(reason.startswith("unexpected_session_gaps") for reason in result.reasons)
+
+
+def test_fx_midweek_gap_is_quarantined():
+    rows = _rows()
+    rows[20]["timestamp"] += 4 * 3600 * 1000
+    result = certify_market_candles(rows, asset_class="fx", timeframe="1h")
+    assert result.quarantined
+    assert any(reason.startswith("unexpected_session_gaps") for reason in result.reasons)
+
+
 def test_impossible_ohlc_and_duplicate_timestamp_quarantine():
     rows = _rows()
     rows[4]["high"] = 90
@@ -51,3 +85,14 @@ def test_index_feed_type_must_be_explicit_when_certified():
     result = certify_market_candles(_rows(), asset_class="index", timeframe="1h")
     assert result.quarantined
     assert "ambiguous_index_feed_type" in result.reasons
+
+
+def test_yfinance_index_feed_is_inferred_as_cash_index():
+    result = certify_market_candles(
+        _rows(),
+        asset_class="index",
+        timeframe="1h",
+        provider="yfinance",
+    )
+    assert result.usable
+    assert result.feed_type == "cash_index"

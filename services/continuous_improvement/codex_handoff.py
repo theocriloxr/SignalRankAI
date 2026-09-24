@@ -14,6 +14,8 @@ def build_codex_task(recommendation: Recommendation) -> dict[str, Any]:
         "kind": recommendation.kind.value,
         "evidence": list(recommendation.evidence),
         "proposed_change": dict(recommendation.proposed_change),
+        "provider": recommendation.provider,
+        "acceptance_tests": list(recommendation.acceptance_tests),
         "required_workflow": ["branch", "implement", "test", "review", "owner_approval"],
         "production_mutation_authorized": False,
         "real_execution_authorized": False,

@@ -348,6 +348,41 @@ async def test_twelvedata_metals_quote_preserves_source_time(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_twelvedata_quote_falls_back_to_timestamped_one_minute_bar(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    now = int(time.time())
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/quote"):
+            return SimpleNamespace(ok=False, status_code=404, json=lambda: {})
+        return SimpleNamespace(
+            ok=True,
+            status_code=200,
+            json=lambda: {
+                "status": "ok",
+                "values": [{"datetime": datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), "close": "38.250"}],
+            },
+        )
+
+    monkeypatch.setenv("TWELVEDATA_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", fake_get)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_twelvedata_quote("XAGUSD")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.provider_symbol == "XAG/USD"
+    assert quote.price == pytest.approx(38.250)
+    assert quote.source_timestamp == pytest.approx(now, abs=1.0)
+    assert "quote_endpoint_fallback_time_series" in quote.confidence_reasons
+    assert calls[-1][1]["params"]["interval"] == "1min"
+    assert calls[-1][1]["params"]["outputsize"] == 1
+
+
+@pytest.mark.asyncio
 async def test_binance_adapter_preserves_source_time_and_bid_ask(monkeypatch):
     import requests
     import data.get_live_price as prices

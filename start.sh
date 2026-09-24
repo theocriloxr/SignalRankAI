@@ -30,6 +30,24 @@ case "${SIGNALRANK_ENV_PROFILE:-}" in
         fi
         ;;
 esac
+# Every protected Railway runtime must match the explicitly approved source.
+# This prevents staging-branch commits from ever becoming a live production
+# process even when Railway services temporarily share the same repo branch.
+if { [ -n "${RAILWAY_SERVICE_NAME:-}" ] || [ -n "${RAILWAY_PROJECT_ID:-}" ]; } && [ "${RELEASE_SOURCE_GATE_ENABLED:-1}" != "0" ]; then
+    if ! python scripts/assert_release_source.py; then
+        echo "[FATAL] Release source identity check failed; refusing to start." >&2
+        exit 79
+    fi
+fi
+
+# Dedicated migration-owner role. This is the only protected Railway role
+# allowed to mutate schema; scripts/controlled_migrate.py enforces exact source
+# identity, the advisory lock, and production backup evidence before upgrading.
+if [ "${SERVICE_ROLE:-${RUN_MODE:-}}" = "migration" ] || [ "${RUN_MODE:-}" = "migration" ]; then
+    echo "[boot] migration-owner role selected; running guarded migration only"
+    exec python scripts/controlled_migrate.py --output "${SIGNALRANK_MIGRATION_EVIDENCE:-/tmp/signalrank_migration_evidence.json}"
+fi
+
 # Run migrations only during a controlled deployment. A failed migration is a
 # hard startup failure; the service must never run against an unknown schema.
 if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}" ]; then
@@ -62,9 +80,21 @@ _start_frontdoor() {
     export DECOMPOSED_TOPOLOGY_ENABLED="1"
     export RUN_ENGINE_LOOP="0"
     export RUN_WORKER_LOOP="0"
+
+    _app_port="${PORT:-8000}"
+    if [ "${CUSTOM_DOMAIN_PORT_BRIDGE_ENABLED:-0}" = "1" ] || [ "${CUSTOM_DOMAIN_PORT_BRIDGE_ENABLED:-false}" = "true" ]; then
+        _bridge_port="${CUSTOM_DOMAIN_PORT_BRIDGE_PORT:-443}"
+        if [ "${_bridge_port}" != "${_app_port}" ]; then
+            echo "[boot] starting custom-domain TCP bridge port=${_bridge_port} target=${_app_port}"
+            python scripts/tcp_port_bridge.py \
+                --listen-port "${_bridge_port}" \
+                --target-port "${_app_port}" &
+        fi
+    fi
+
     exec uvicorn railway_main:app \
         --host 0.0.0.0 \
-        --port "${PORT:-8000}" \
+        --port "${_app_port}" \
         --workers 1
 }
 
@@ -85,9 +115,11 @@ if [ -n "${RAILWAY_SERVICE_NAME:-}" ] || [ -n "${RAILWAY_ENVIRONMENT:-}" ]; then
 fi
 
 _honor_run_mode_on_railway="false"
-if [ "${HONOR_RUN_MODE_ON_RAILWAY:-false}" = "true" ]; then
-    _honor_run_mode_on_railway="true"
-fi
+case "${HONOR_RUN_MODE_ON_RAILWAY:-false}" in
+    1|true|TRUE|yes|YES|on|ON)
+        _honor_run_mode_on_railway="true"
+        ;;
+esac
 
 # Optional decomposed roles remain available for future multi-service scaling.
 # On Railway the safe default is always the HTTP monolith unless explicitly

@@ -3,6 +3,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_session, get_engine_for_event_loop
 from db.repository import get_or_create_user
+from signalrank_telegram.command_resilience import safe_command_error
 # --- ADMIN COMMAND: /broadcast ---
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
@@ -52,7 +53,7 @@ async def add_vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await session.commit()
         await update.message.reply_text(f"User {user_id} upgraded to VIP.")
     except Exception as e:
-        await update.message.reply_text(f"Failed to add VIP: {e}")
+        await update.message.reply_text(safe_command_error("Could not add the VIP user.", e))
 
 # --- ADMIN COMMAND: /remove_user ---
 async def remove_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -71,7 +72,7 @@ async def remove_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await session.commit()
         await update.message.reply_text(f"User {user_id} downgraded to FREE.")
     except Exception as e:
-        await update.message.reply_text(f"Failed to remove user: {e}")
+        await update.message.reply_text(safe_command_error("Could not remove the user.", e))
 
 # --- ADMIN COMMAND: /pause_signals ---
 async def pause_signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -389,7 +390,7 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
 
         await update.message.reply_text("\n".join(parts) or "No provider data available.")
     except Exception as e:
-        await update.message.reply_text(f"Failed to get provider status: {e}")
+        await update.message.reply_text(safe_command_error("Could not load provider status.", e))
 
 
 async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -942,7 +943,7 @@ async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        await update.message.reply_text(f"❌ Error correcting signal: {e}")
+        await update.message.reply_text(safe_command_error("Could not correct the signal.", e))
 
 
 async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1048,7 +1049,7 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(message)
     
     except Exception as e:
-        await update.message.reply_text(f"Error checking provider status: {str(e)}")
+        await update.message.reply_text(safe_command_error("Could not check provider status.", e))
 
 
 async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1980,7 +1981,7 @@ async def system_health_command(update: Update, context: ContextTypes.DEFAULT_TY
             await session.execute(text("SELECT 1"))
     except Exception as exc:
         db_ok = False
-        db_error = f"{exc.__class__.__name__}: {str(exc)[:200]}"
+        db_error = safe_command_error("Database health probe failed.", exc).replace("\n", " | ")
 
     await update.message.reply_text(
         "System health\n"

@@ -18,6 +18,7 @@ from utils.timeutils import now_utc_naive
 
 import logging
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -193,25 +194,38 @@ class AutoOptimizerRunner:
     
     async def apply_recommended_sl(self, result: OptimizationResult) -> bool:
         """
-        Apply recommended SL to system config.
+        Record a stop-loss experiment proposal without changing live config.
         
         Args:
             result: OptimizationResult from run_optimization
             
         Returns:
-            True if successfully applied
+            True if the proposal was recorded
         """
         if not result or result.confidence < 0.7:
             logger.info(f"[auto_opt] Confidence too low: {result.confidence if result else 0}")
             return False
         
         try:
-            # Update environment variable (would need to persist to DB in production)
-            new_sl = str(result.recommended_sl)
-            os.environ["STOP_LOSS_PCT"] = new_sl
-            
-            logger.warning(f"[auto_opt] APPLIED: New SL = {new_sl}%")
-            
+            from core.redis_state import state
+
+            proposal = {
+                "kind": "stop_loss_experiment",
+                "recommended_sl": result.recommended_sl,
+                "current_sl": result.current_sl,
+                "confidence": result.confidence,
+                "analysis_trade_count": result.analysis_trade_count,
+                "reasoning": result.reasoning,
+                "requires_owner_approval": True,
+                "auto_apply": False,
+                "activation": "shadow_only",
+            }
+            state.set_sync(
+                "signalrankai:continuous_improvement:last_stop_loss_proposal",
+                json.dumps(proposal, sort_keys=True),
+                ex=2592000,
+            )
+            logger.warning("[auto_opt] PROPOSED: SL=%s%%; live configuration unchanged", result.recommended_sl)
             return True
             
         except Exception as e:

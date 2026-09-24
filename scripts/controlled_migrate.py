@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 LOCK_ID = 915_337_121
 MAX_BACKUP_AGE = timedelta(hours=24)
+DEFAULT_LOCK_WAIT_SECONDS = 10.0
 
 
 def _value(name: str) -> str:
@@ -124,9 +126,9 @@ def _database_urls() -> tuple[str, str]:
 
 
 def migrate() -> dict[str, Any]:
-    errors = _source_errors() + _backup_errors()
-    if errors:
-        raise RuntimeError("; ".join(errors))
+    source_errors = _source_errors()
+    if source_errors:
+        raise RuntimeError("; ".join(source_errors))
 
     import psycopg2
     from alembic import command
@@ -135,27 +137,76 @@ def migrate() -> dict[str, Any]:
     expected = _expected_head()
     db_url, db_dsn = _database_urls()
     started_at = datetime.now(timezone.utc)
+    before: str | None = None
+    after: str | None = None
+    lock_acquired = False
+    migration_required = False
+
     with closing(psycopg2.connect(db_dsn, connect_timeout=10)) as connection:
         connection.autocommit = True
+
+        # Fast-path routine deploys: if schema is already at repository head,
+        # do not require a fresh backup and do not contend on the migration lock.
         with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_lock(%s)", (LOCK_ID,))
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                row = cursor.fetchone()
-                before = str(row[0]) if row else None
-            config = Config(str(ROOT / "alembic.ini"))
-            config.set_main_option("sqlalchemy.url", db_url)
-            command.upgrade(config, "head")
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                row = cursor.fetchone()
-                after = str(row[0]) if row else None
-            if after != expected:
-                raise RuntimeError(f"migration verification failed: current={after} expected={expected}")
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s)", (LOCK_ID,))
+            cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+            row = cursor.fetchone()
+            before = str(row[0]) if row else None
+        if before == expected:
+            after = before
+        else:
+            migration_required = True
+            backup_errors = _backup_errors()
+            if backup_errors:
+                raise RuntimeError("; ".join(backup_errors))
+
+            raw_wait = _value("PRODUCTION_MIGRATION_LOCK_WAIT_SECONDS")
+            try:
+                lock_wait_seconds = max(
+                    1.0,
+                    min(20.0, float(raw_wait or DEFAULT_LOCK_WAIT_SECONDS)),
+                )
+            except (TypeError, ValueError):
+                lock_wait_seconds = DEFAULT_LOCK_WAIT_SECONDS
+            deadline = time.monotonic() + lock_wait_seconds
+            while True:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_ID,))
+                    row = cursor.fetchone()
+                    lock_acquired = bool(row and row[0])
+                if lock_acquired:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"migration advisory lock busy after {lock_wait_seconds:.1f}s"
+                    )
+                time.sleep(0.5)
+
+            try:
+                # Re-read under the lock because another migration owner may
+                # have completed while this deployment was waiting.
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+                    row = cursor.fetchone()
+                    before = str(row[0]) if row else None
+                if before == expected:
+                    after = before
+                    migration_required = False
+                else:
+                    config = Config(str(ROOT / "alembic.ini"))
+                    config.set_main_option("sqlalchemy.url", db_url)
+                    command.upgrade(config, "head")
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+                        row = cursor.fetchone()
+                        after = str(row[0]) if row else None
+                    if after != expected:
+                        raise RuntimeError(
+                            f"migration verification failed: current={after} expected={expected}"
+                        )
+            finally:
+                if lock_acquired:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s)", (LOCK_ID,))
 
     return {
         "status": "PASS",
@@ -168,6 +219,8 @@ def migrate() -> dict[str, Any]:
         "alembic_before": before,
         "alembic_current": after,
         "alembic_expected_head": expected,
+        "migration_required": migration_required,
+        "advisory_lock_acquired": lock_acquired,
         "advisory_lock_id": LOCK_ID,
     }
 

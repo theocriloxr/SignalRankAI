@@ -228,7 +228,7 @@ _INDEX_MAP: Dict[str, Dict[str, str]] = {
 # Additional registry-backed instruments that previously drifted into the US
 # equity default or had no deterministic provider mapping.
 _INDEX_MAP.update({
-    "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "NIKKEI", "mt5": "JP225"},
+    "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "N225", "mt5": "JP225"},
     "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
     "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
     "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
@@ -236,7 +236,7 @@ _INDEX_MAP.update({
 })
 _COMMODITY_MAP.update({
     "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
-    "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "BRENT/USD", "mt5": "UKOIL"},
+    "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "XBR/USD", "mt5": "UKOIL"},
 })
 _CRYPTO_MAP.update({
     "XAUTUSDT": {"binance": "XAUTUSDT", "coingecko": "tether-gold", "yfinance": "XAUT-USD", "polygon": None, "twelvedata": "XAUT/USD", "mt5": "XAUTUSD"},

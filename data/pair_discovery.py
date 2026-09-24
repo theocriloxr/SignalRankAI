@@ -1,21 +1,33 @@
 import os
 # --- Commodity asset discovery ---
 def get_trending_commodity_tickers(top_n=10):
-    """Discover commodities from the configured broker, then explicit config."""
+    """Discover broker commodities and verify configured symbols via provider reference data."""
+    manual = (os.getenv("COMMODITY_TICKERS") or "").strip()
+    manual_symbols = _record_provider_symbols(
+        _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
+        "manual_config",
+    ) if manual else []
     try:
         broker_symbols = _metaapi_symbols()
-    except NameError:  # function is defined before the helper during module import
+    except NameError:  # helpers are defined later in the module
         broker_symbols = []
     markers = ("XAU", "XAG", "XPT", "XPD", "GOLD", "SILVER", "WTI", "BRENT", "OIL", "NGAS", "COPPER")
     discovered = [symbol for symbol in broker_symbols if any(marker in str(symbol).upper() for marker in markers)]
-    if discovered:
-        return _record_provider_symbols(_dedupe_limit(discovered, max(1, int(top_n))), "metaapi")
-    manual = (os.getenv("COMMODITY_TICKERS") or "").strip()
-    if manual:
-        return _record_provider_symbols(_dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))), "manual_config")
+    broker_commodities = _record_provider_symbols(
+        _dedupe_limit(discovered, max(1, int(top_n))),
+        "metaapi",
+    ) if discovered else []
+    verified_manual = _twelvedata_verified_configured(manual_symbols, "commodities")
+    merged = _merge_provider_results(
+        [broker_commodities, verified_manual, manual_symbols],
+        limit=max(1, int(top_n), len(manual_symbols)),
+    )
+    if merged:
+        return merged
     if _is_true(os.getenv("ALLOW_STATIC_ASSET_FALLBACK"), False):
         return _record_provider_symbols(["XAUUSD", "XAGUSD", "WTI", "BRENT"][:top_n], "static_fallback")
     return []
+
 
 import logging
 import sys
@@ -35,6 +47,15 @@ _ASSET_UNIVERSE_THREAD: threading.Thread | None = None
 _ASSET_UNIVERSE_THREAD_LOCK = threading.Lock()
 _ASSET_DISCOVERY_PROVENANCE: dict[str, set[str]] = {}
 _ASSET_DISCOVERY_PROVENANCE_LOCK = threading.Lock()
+_METAAPI_SYMBOL_CACHE: list[str] = []
+_METAAPI_SYMBOL_CACHE_AT = 0.0
+_METAAPI_SYMBOL_CACHE_LOCK = threading.Lock()
+_TWELVEDATA_REFERENCE_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_TWELVEDATA_REFERENCE_CACHE_LOCK = threading.Lock()
+_TWELVEDATA_SYMBOL_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+_TWELVEDATA_SYMBOL_PROBE_CACHE_LOCK = threading.Lock()
+_YAHOO_SYMBOL_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+_YAHOO_SYMBOL_PROBE_CACHE_LOCK = threading.Lock()
 
 
 def _record_provider_symbols(symbols: list[str], provider: str) -> list[str]:
@@ -154,6 +175,16 @@ STABLECOIN_PAIRS: set[str] = {
 }
 
 
+def _is_non_trading_quote_asset(symbol: str) -> bool:
+    """Reject quote/stablecoin inventory mapped into synthetic USDT pairs."""
+    value = str(symbol or "").upper().strip()
+    base = value[:-4] if value.endswith("USDT") else value
+    return base in {"U", "UB"} or base.startswith("USD") or base in {
+        "USAT", "USBD", "USDCV", "DAI", "BUSD", "FDUSD", "TUSD",
+        "USDE", "USDD", "FRAX", "MIM",
+    }
+
+
 def _load_crypto_blacklist() -> set[str]:
     raw = (os.getenv("CRYPTO_BLACKLIST") or "").strip()
     extra = {x.strip().upper() for x in raw.split(",") if x.strip()}
@@ -181,7 +212,7 @@ def _filter_blacklisted(pairs: list[str]) -> list[str]:
         if sym in _CRYPTO_BLACKLIST or sym in EXCLUDE_ALWAYS:
             continue
         # Bug Fix: Filter stablecoin pairs to prevent "Stablecoin Trap" signals
-        if sym in STABLECOIN_PAIRS:
+        if sym in STABLECOIN_PAIRS or _is_non_trading_quote_asset(sym):
             logger.info(f"[pair_discovery] Filtering stablecoin pair: {sym}")
             continue
         out.append(sym)
@@ -210,22 +241,28 @@ def _is_true(raw: str | None, default: bool = False) -> bool:
 
 
 def _merge_provider_results(provider_results: list[list[str]], limit: int) -> list[str]:
-    """Merge provider lists in round-robin order for diversification."""
+    """Merge provider lists in round-robin order without duplicate slot loss."""
     merged: list[str] = []
+    seen: set[str] = set()
     max_n = max(1, int(limit))
     idx = 0
     while len(merged) < max_n:
         progressed = False
         for arr in provider_results:
-            if idx < len(arr):
-                merged.append(arr[idx])
-                progressed = True
-                if len(merged) >= max_n:
-                    break
+            if idx >= len(arr):
+                continue
+            progressed = True
+            sym = str(arr[idx] or "").upper().strip()
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            merged.append(sym)
+            if len(merged) >= max_n:
+                break
         if not progressed:
             break
         idx += 1
-    return _dedupe_limit(merged, max_n)
+    return merged
 
 
 def _binance_top_crypto_pairs(top_n: int) -> list[str]:
@@ -462,25 +499,246 @@ def _coinbase_top_crypto_pairs(top_n: int) -> list[str]:
 
 def _metaapi_symbols() -> list[str]:
     """Discover the exact instrument universe available on the configured MT account."""
-    token = str(os.getenv("META_API_TOKEN") or "").strip()
-    account_id = str(os.getenv("META_API_ACCOUNT_ID") or "").strip()
+    global _METAAPI_SYMBOL_CACHE, _METAAPI_SYMBOL_CACHE_AT
+    token = str(
+        os.getenv("META_API_TOKEN")
+        or os.getenv("METAAPI_TOKEN")
+        or ""
+    ).strip()
+    account_id = str(
+        os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
+        or os.getenv("META_API_ACCOUNT_ID")
+        or os.getenv("METAAPI_ACCOUNT_ID")
+        or ""
+    ).strip()
     if not token or not account_id:
         return []
     region = str(os.getenv("META_API_REGION") or "new-york").strip().lower()
     host = f"https://mt-client-api-v1.{region}.agiliumtrade.ai"
+    ttl = max(30.0, float(os.getenv("METAAPI_SYMBOL_CACHE_SECONDS", "300") or 300))
+    with _METAAPI_SYMBOL_CACHE_LOCK:
+        if _METAAPI_SYMBOL_CACHE and time.time() - _METAAPI_SYMBOL_CACHE_AT < ttl:
+            return _record_provider_symbols(list(_METAAPI_SYMBOL_CACHE), "metaapi")
+        try:
+            response = requests.get(
+                f"{host}/users/current/accounts/{account_id}/symbols",
+                headers={"auth-token": token, "Accept": "application/json"},
+                timeout=12,
+            )
+            payload = response.json() if response.ok else []
+            if not isinstance(payload, list):
+                return []
+            _METAAPI_SYMBOL_CACHE = _dedupe_limit(
+                [str(item or "").upper().strip() for item in payload],
+                5000,
+            )
+            _METAAPI_SYMBOL_CACHE_AT = time.time()
+            return _record_provider_symbols(list(_METAAPI_SYMBOL_CACHE), "metaapi")
+        except Exception as exc:
+            logger.debug("[pair_discovery] MetaApi symbol discovery failed: %s", exc)
+            return []
+
+
+def _twelvedata_api_key() -> str:
+    return str(
+        os.getenv("TWELVEDATA_API_KEY")
+        or os.getenv("TWELVE_DATA_API_KEY")
+        or ""
+    ).strip()
+
+
+def _twelvedata_reference_rows(endpoint: str) -> list[dict]:
+    """Fetch one daily-updated Twelve Data reference catalogue with a bounded cache."""
+    api_key = _twelvedata_api_key()
+    endpoint_name = str(endpoint or "").strip().strip("/")
+    if not api_key or endpoint_name not in {"forex_pairs", "stocks", "commodities", "indices"}:
+        return []
+    ttl = max(60.0, float(os.getenv("TWELVEDATA_REFERENCE_CACHE_SECONDS", "3600") or 3600))
+    now = time.time()
+    with _TWELVEDATA_REFERENCE_CACHE_LOCK:
+        cached = _TWELVEDATA_REFERENCE_CACHE.get(endpoint_name)
+        if cached and now - float(cached[0]) < ttl:
+            return list(cached[1])
     try:
+        params = {"apikey": api_key}
+        if endpoint_name == "stocks":
+            params.update({"country": "United States", "outputsize": 5000})
         response = requests.get(
-            f"{host}/users/current/accounts/{account_id}/symbols",
-            headers={"auth-token": token, "Accept": "application/json"},
+            f"https://api.twelvedata.com/{endpoint_name}",
+            params=params,
             timeout=12,
         )
-        payload = response.json() if response.ok else []
-        if not isinstance(payload, list):
+        payload = response.json() if response.ok else {}
+        if (
+            not response.ok
+            or not isinstance(payload, dict)
+            or str(payload.get("status") or "ok").lower() == "error"
+        ):
             return []
-        return _record_provider_symbols(_dedupe_limit([str(item or "").upper().strip() for item in payload], 5000), "metaapi")
+        rows = payload.get("data")
+        if not isinstance(rows, list):
+            result = payload.get("result")
+            rows = result.get("list") if isinstance(result, dict) else []
+        clean = [row for row in (rows or []) if isinstance(row, dict)]
+        with _TWELVEDATA_REFERENCE_CACHE_LOCK:
+            _TWELVEDATA_REFERENCE_CACHE[endpoint_name] = (now, clean)
+        return list(clean)
     except Exception as exc:
-        logger.debug("[pair_discovery] MetaApi symbol discovery failed: %s", exc)
+        logger.warning("[pair_discovery] Twelve Data %s catalogue failed: %s", endpoint_name, exc)
         return []
+
+
+def _twelvedata_verified_configured(symbols: list[str], endpoint: str) -> list[str]:
+    """Verify configured canonical symbols against a provider-owned reference catalogue."""
+    if not symbols:
+        return []
+    try:
+        from services.asset_mapper import map_symbol
+    except Exception:
+        return []
+    expected: dict[str, str] = {}
+    for canonical in symbols:
+        provider_symbol = str(map_symbol(canonical, "twelvedata") or "").upper().strip()
+        if provider_symbol:
+            expected[provider_symbol] = str(canonical).upper().strip()
+    if not expected:
+        return []
+    confirmed: list[str] = []
+    for row in _twelvedata_reference_rows(endpoint):
+        provider_symbol = str(row.get("symbol") or "").upper().strip()
+        canonical = expected.get(provider_symbol)
+        if canonical and canonical not in confirmed:
+            confirmed.append(canonical)
+    return _record_provider_symbols(confirmed, "twelvedata_catalog")
+
+
+def _twelvedata_probe_configured(symbols: list[str]) -> list[str]:
+    """Verify a small configured set through timestamped Twelve Data time-series."""
+    api_key = _twelvedata_api_key()
+    if not api_key or not symbols:
+        return []
+    try:
+        from services.asset_mapper import map_symbol
+    except Exception:
+        return []
+
+    ttl = max(60.0, float(os.getenv("TWELVEDATA_REFERENCE_CACHE_SECONDS", "3600") or 3600))
+    now = time.time()
+
+    def _probe(canonical: str) -> tuple[str, bool]:
+        canonical = str(canonical or "").upper().strip()
+        provider_symbol = str(map_symbol(canonical, "twelvedata") or "").strip()
+        if not canonical or not provider_symbol:
+            return canonical, False
+        cache_key = provider_symbol.upper()
+        with _TWELVEDATA_SYMBOL_PROBE_CACHE_LOCK:
+            cached = _TWELVEDATA_SYMBOL_PROBE_CACHE.get(cache_key)
+            if cached and now - float(cached[0]) < ttl:
+                return canonical, bool(cached[1])
+        ok = False
+        try:
+            response = requests.get(
+                "https://api.twelvedata.com/time_series",
+                params={
+                    "symbol": provider_symbol,
+                    "interval": "1day",
+                    "outputsize": 1,
+                    "timezone": "UTC",
+                    "apikey": api_key,
+                },
+                timeout=8,
+            )
+            payload = response.json() if response.ok else {}
+            values = payload.get("values") if isinstance(payload, dict) else None
+            ok = bool(
+                response.ok
+                and isinstance(payload, dict)
+                and str(payload.get("status") or "ok").lower() != "error"
+                and isinstance(values, list)
+                and values
+            )
+        except Exception:
+            ok = False
+        with _TWELVEDATA_SYMBOL_PROBE_CACHE_LOCK:
+            _TWELVEDATA_SYMBOL_PROBE_CACHE[cache_key] = (now, ok)
+        return canonical, ok
+
+    confirmed: list[str] = []
+    workers = min(4, max(1, len(symbols)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_probe, symbol) for symbol in symbols]
+        for future in as_completed(futures):
+            canonical, ok = future.result()
+            if ok and canonical and canonical not in confirmed:
+                confirmed.append(canonical)
+    return _record_provider_symbols(confirmed, "twelvedata_timeseries")
+
+
+
+def _yahoo_verified_configured(symbols: list[str]) -> list[str]:
+    """Verify configured symbols against Yahoo's timestamped chart feed."""
+    if not symbols:
+        return []
+    try:
+        from services.asset_mapper import map_symbol
+    except Exception:
+        return []
+
+    ttl = max(60.0, float(os.getenv("YAHOO_REFERENCE_CACHE_SECONDS", "1800") or 1800))
+    now = time.time()
+
+    def _probe(canonical: str) -> tuple[str, bool]:
+        canonical = str(canonical or "").upper().strip()
+        provider_symbol = str(map_symbol(canonical, "yfinance") or "").strip()
+        if not canonical or not provider_symbol:
+            return canonical, False
+        cache_key = provider_symbol.upper()
+        with _YAHOO_SYMBOL_PROBE_CACHE_LOCK:
+            cached = _YAHOO_SYMBOL_PROBE_CACHE.get(cache_key)
+            if cached and now - float(cached[0]) < ttl:
+                return canonical, bool(cached[1])
+
+        ok = False
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{provider_symbol}",
+                params={"range": "5d", "interval": "1d", "includePrePost": "false"},
+                headers={"User-Agent": "Mozilla/5.0 SignalRankAI/1.0"},
+                timeout=8,
+            )
+            payload = response.json() if response.ok else {}
+            chart = payload.get("chart") if isinstance(payload, dict) else None
+            result = chart.get("result") if isinstance(chart, dict) else None
+            first = result[0] if isinstance(result, list) and result else {}
+            timestamps = first.get("timestamp") if isinstance(first, dict) else None
+            indicators = first.get("indicators") if isinstance(first, dict) else None
+            quotes = indicators.get("quote") if isinstance(indicators, dict) else None
+            quote = quotes[0] if isinstance(quotes, list) and quotes else {}
+            closes = quote.get("close") if isinstance(quote, dict) else None
+            ok = bool(
+                response.ok
+                and isinstance(timestamps, list)
+                and timestamps
+                and isinstance(closes, list)
+                and any(value is not None for value in closes)
+            )
+        except Exception:
+            ok = False
+
+        with _YAHOO_SYMBOL_PROBE_CACHE_LOCK:
+            _YAHOO_SYMBOL_PROBE_CACHE[cache_key] = (now, ok)
+        return canonical, ok
+
+    confirmed: list[str] = []
+    workers = min(4, max(1, len(symbols)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_probe, symbol) for symbol in symbols]
+        for future in as_completed(futures):
+            canonical, ok = future.result()
+            if ok and canonical and canonical not in confirmed:
+                confirmed.append(canonical)
+    return _record_provider_symbols(confirmed, "yahoo")
+
 
 
 # Discover trending crypto pairs from Binance
@@ -624,23 +882,42 @@ def get_trending_crypto_pairs(top_n=20):
     return []
 
 def get_trending_fx_pairs():
-    """Discover broker-supported FX pairs, with explicit configuration as fallback."""
+    """Discover/verify FX pairs from trusted providers, preserving configured scope."""
+    raw = (os.getenv("FX_PAIRS") or "").strip()
+    manual_symbols = _record_provider_symbols(
+        _dedupe_limit([x.strip().upper() for x in raw.split(",") if x.strip()], 100),
+        "manual_config",
+    ) if raw else []
+
     broker_symbols = _metaapi_symbols()
     fx = []
     for raw_symbol in broker_symbols:
         symbol = str(raw_symbol or "").upper().replace(".", "").replace("_", "")
-        if len(symbol) >= 6 and symbol[:6].isalpha() and symbol[:3] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"} and symbol[3:6] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}:
+        if (
+            len(symbol) >= 6
+            and symbol[:6].isalpha()
+            and symbol[:3] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
+            and symbol[3:6] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
+        ):
             fx.append(raw_symbol)
-    if fx:
-        return _record_provider_symbols(
-            _dedupe_limit(fx, max(1, int(os.getenv("FX_UNIVERSE_TOP_N", "40") or 40))),
-            "metaapi",
-        )
-    raw = (os.getenv("FX_PAIRS") or "").strip()
-    if raw:
-        return _record_provider_symbols(_dedupe_limit([x.strip().upper() for x in raw.split(",") if x.strip()], 100), "manual_config")
+    broker_fx = _record_provider_symbols(
+        _dedupe_limit(fx, max(1, int(os.getenv("FX_UNIVERSE_TOP_N", "40") or 40))),
+        "metaapi",
+    ) if fx else []
+    verified_manual = _twelvedata_verified_configured(manual_symbols, "forex_pairs")
+    limit = max(
+        1,
+        int(os.getenv("FX_UNIVERSE_TOP_N", "40") or 40),
+        len(manual_symbols),
+    )
+    merged = _merge_provider_results([broker_fx, verified_manual, manual_symbols], limit=limit)
+    if merged:
+        return merged
     if _is_true(os.getenv("ALLOW_STATIC_ASSET_FALLBACK"), False):
-        return _record_provider_symbols(["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP"], "static_fallback")
+        return _record_provider_symbols(
+            ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP"],
+            "static_fallback",
+        )
     return []
 
 # Combine all pairs for strategy engine
@@ -680,7 +957,13 @@ def get_trending_stock_tickers(top_n=20):
         _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
         "manual_config",
     ) if manual else []
-    if manual_symbols and str(os.getenv("ASSET_DISCOVERY_MODE") or "auto").strip().lower() in {"manual", "fixed", "allowlist"}:
+    discovery_mode = str(os.getenv("ASSET_DISCOVERY_MODE") or "auto").strip().lower()
+    twelvedata_verified = _twelvedata_verified_configured(manual_symbols, "stocks")
+    yahoo_verified = _yahoo_verified_configured(manual_symbols)
+    if manual_symbols and discovery_mode in {"manual", "fixed", "allowlist"}:
+        # Manual/fixed mode controls the admitted symbols, but provider
+        # provenance still comes from live verification. This keeps production
+        # readiness fail-closed when a configured ticker cannot be confirmed.
         return manual_symbols
 
     broker_symbols = _metaapi_symbols()
@@ -724,6 +1007,8 @@ def get_trending_stock_tickers(top_n=20):
     provider_results = [
         _polygon_provider(),
         _record_provider_symbols(broker_equities, "metaapi"),
+        twelvedata_verified,
+        yahoo_verified,
         manual_symbols,
     ]
     merged = _merge_provider_results(provider_results, limit=max(1, int(top_n)))
@@ -735,20 +1020,33 @@ def get_trending_stock_tickers(top_n=20):
 
 
 def get_trending_index_tickers(top_n=20):
-    """Discover broker index/CFD symbols, preserving broker-native names."""
+    """Discover broker indices and provider-verify the configured index universe."""
+    manual = (os.getenv("INDEX_TICKERS") or "").strip()
+    manual_symbols = _record_provider_symbols(
+        _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
+        "manual_config",
+    ) if manual else []
+
     broker_symbols = _metaapi_symbols()
     markers = ("US500", "SPX", "NAS", "USTEC", "US30", "DJ", "GER", "DE40", "UK100", "FTSE", "JP225", "NIKKEI", "FRA40", "EU50", "AUS200", "HK50")
     discovered = [symbol for symbol in broker_symbols if any(marker in str(symbol).upper() for marker in markers)]
-    if discovered:
-        return _record_provider_symbols(
-            _dedupe_limit(discovered, max(1, int(top_n))),
-            "metaapi",
-        )
-    manual = (os.getenv("INDEX_TICKERS") or "").strip()
-    if manual:
-        return _record_provider_symbols(_dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))), "manual_config")
+    broker_indices = _record_provider_symbols(
+        _dedupe_limit(discovered, max(1, int(top_n))),
+        "metaapi",
+    ) if discovered else []
+    verified_manual = _twelvedata_verified_configured(manual_symbols, "indices")
+    yahoo_verified = _yahoo_verified_configured(manual_symbols)
+    merged = _merge_provider_results(
+        [broker_indices, verified_manual, yahoo_verified, manual_symbols],
+        limit=max(1, int(top_n), len(manual_symbols)),
+    )
+    if merged:
+        return merged
     if _is_true(os.getenv("ALLOW_STATIC_ASSET_FALLBACK"), False):
-        return _record_provider_symbols(["US500", "NAS100", "US30", "GER40", "UK100", "JP225", "FRA40", "EU50", "AUS200", "HK50"][:top_n], "static_fallback")
+        return _record_provider_symbols(
+            ["US500", "NAS100", "US30", "GER40", "UK100", "JP225", "FRA40", "EU50", "AUS200", "HK50"][:top_n],
+            "static_fallback",
+        )
     return []
 
 
@@ -759,19 +1057,29 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     Returns:
         dict with keys: crypto, fx, stocks, indices, commodities
     """
-    crypto = get_trending_crypto_pairs(crypto_limit)
-    fx = get_trending_fx_pairs()
-    stocks = get_trending_stock_tickers(stock_limit)
-    indices = get_trending_index_tickers(max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))
-    commodities = get_trending_commodity_tickers(10)
-    
-    return {
-        "crypto": crypto,
-        "fx": fx,
-        "stocks": stocks,
-        "indices": indices,
-        "commodities": commodities,
+    jobs = {
+        "crypto": partial(get_trending_crypto_pairs, top_n=max(1, int(crypto_limit))),
+        "fx": get_trending_fx_pairs,
+        "stocks": partial(get_trending_stock_tickers, top_n=max(1, int(stock_limit))),
+        "indices": partial(
+            get_trending_index_tickers,
+            top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))),
+        ),
+        "commodities": partial(get_trending_commodity_tickers, 10),
     }
+    universe: dict[str, list[str]] = {name: [] for name in jobs}
+    # Provider discovery is independent by class. Running it concurrently keeps
+    # a slow broker catalogue from serially delaying the engine startup for each
+    # FX/equity/index/commodity query.
+    with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+        future_map = {executor.submit(job): name for name, job in jobs.items()}
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                universe[name] = list(future.result() or [])
+            except Exception as exc:
+                logger.warning("[pair_discovery] %s universe discovery failed: %s", name, exc)
+    return universe
 
 
 def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:

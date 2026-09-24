@@ -66,6 +66,7 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.webhook_deliveries') IS NOT NULL AS webhook_deliveries,
           to_regclass('public.auth_identities') IS NOT NULL AS auth_identities,
           to_regclass('public.user_sessions') IS NOT NULL AS user_sessions,
+          to_regclass('public.user_acquisition') IS NOT NULL AS user_acquisition,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -94,6 +95,7 @@ def check_schema() -> dict[str, Any]:
             "webhook_deliveries",
             "auth_identities",
             "user_sessions",
+            "user_acquisition",
             "users_public_user_id",
         )
     }
