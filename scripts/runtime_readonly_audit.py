@@ -103,6 +103,17 @@ def main() -> int:
                             WHEN lower(d.last_error) LIKE '%bad request%' THEN 'telegram_bad_request'
                             WHEN lower(d.last_error) LIKE '%database%' OR lower(d.last_error) LIKE '%sql%' OR lower(d.last_error) LIKE '%asyncpg%' THEN 'database_error'
                             WHEN lower(d.last_error) LIKE '%proof%' THEN 'delivery_proof_error'
+                            WHEN lower(d.last_error) = 'asset_delivery_locked' THEN 'asset_delivery_locked'
+                            WHEN lower(d.last_error) = 'asset_lock_check_failed_closed' THEN 'asset_lock_check_failed_closed'
+                            WHEN lower(d.last_error) = 'final_validation_timeout' THEN 'final_validation_timeout'
+                            WHEN lower(d.last_error) LIKE 'final_validation_error:%' THEN 'final_validation_error'
+                            WHEN lower(d.last_error) LIKE 'live_price_unavailable:%' OR lower(d.last_error) = 'live_price_unavailable' THEN 'freshness_live_price_unavailable'
+                            WHEN lower(d.last_error) LIKE 'price_drift:%' OR lower(d.last_error) LIKE 'final_entry_drift:%' THEN 'freshness_entry_drift'
+                            WHEN lower(d.last_error) LIKE '%tp1%hit%' OR lower(d.last_error) LIKE '%target%hit%' THEN 'freshness_target_already_hit'
+                            WHEN lower(d.last_error) LIKE '%stop%hit%' OR lower(d.last_error) LIKE '%sl%hit%' THEN 'freshness_stop_already_hit'
+                            WHEN lower(d.last_error) LIKE '%reward%risk%' OR lower(d.last_error) LIKE '%rr_%' OR lower(d.last_error) LIKE '%rr %' THEN 'freshness_reward_risk'
+                            WHEN lower(d.last_error) LIKE '%stale%' OR lower(d.last_error) LIKE '%age%' OR lower(d.last_error) LIKE '%queue%' THEN 'freshness_stale_or_queue'
+                            WHEN lower(d.last_error) LIKE '%missing_generated_at%' OR lower(d.last_error) LIKE '%missing_created_at%' THEN 'freshness_missing_timestamp'
                             ELSE 'other_error'
                         END AS error_class,
                         COUNT(*) AS rows,
