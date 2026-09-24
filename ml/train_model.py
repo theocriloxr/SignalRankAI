@@ -1560,6 +1560,8 @@ def save_model(
     
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
     from ml.model_registry import compute_feature_schema_hash
+    from ml.features import FEATURE_ENCODING_VERSION
+    from ml.schema_version import CURRENT_SCHEMA_VERSION, MODEL_FORMAT_VERSION
     ordered_feature_cols = [str(col).strip() for col in feature_cols]
     feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
@@ -1571,6 +1573,9 @@ def save_model(
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
         "feature_schema_hash_sha256": feature_schema_hash_sha256,
+        "schema_version": int(CURRENT_SCHEMA_VERSION),
+        "model_format_version": int(MODEL_FORMAT_VERSION),
+        "feature_encoding_version": FEATURE_ENCODING_VERSION,
         "training_run_id": str((training_meta or {}).get("run_id") or ""),
         "dataset_version": str((training_meta or {}).get("dataset_version") or ""),
         "parent_model_hash_sha256": str((training_meta or {}).get("parent_model_hash_sha256") or ""),
