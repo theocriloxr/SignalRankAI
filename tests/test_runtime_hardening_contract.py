@@ -129,3 +129,10 @@ def test_outcome_tracker_skips_reprocessing_already_recorded_tp():
     assert "await publish_snapshot()" in hit
     assert "return" in hit
     assert hit.index("if target_tp <= prev_tp:") < hit.index('logger.info(\n                    "[outcome_tracker] Hit detected:')
+
+
+def test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default():
+    source = text("worker/worker.py")
+    assert '_discovery_default = not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False)' in source
+    assert '_env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", _discovery_default)' in source
+    assert "DynamicInstrumentDiscovery disabled for decomposed worker" in source
