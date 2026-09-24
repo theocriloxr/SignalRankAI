@@ -6182,6 +6182,37 @@ async def ai_status_command(update, context) -> None:
 		await update.message.reply_text(safe_command_error("Could not read AI provider status.", exc))
 
 
+async def ai_improve_command(update, context) -> None:
+	"""Owner/admin: generate one governed improvement proposal with no auto-apply."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from core.evolution_agent import evolution_agent
+		await update.message.reply_text(
+			"Reviewing recent runtime/shadow evidence. No code, thresholds, or deployments will be changed automatically..."
+		)
+		proposal = await evolution_agent.trigger_system_audit(days=7)
+		if not proposal:
+			await update.message.reply_text("No improvement proposal is available right now.")
+			return
+		tests = list(proposal.get("test_plan") or [])
+		test_line = str(tests[0])[:300] if tests else "Add regression and forward-test evidence."
+		await update.message.reply_text(
+			"🛠 Governed improvement proposal\n\n"
+			f"Provider: {proposal.get('provider', 'local')}\n"
+			f"Severity: {proposal.get('severity', 'LOW')}\n"
+			f"Target: {proposal.get('target_file', 'review')}\n"
+			f"Reasoning: {str(proposal.get('reasoning') or '')[:1200]}\n\n"
+			f"First validation: {test_line}\n\n"
+			"Status: review only. Owner approval + tests + forward/shadow/staging evidence are required."
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("AI improvement review failed.", exc))
+
+
 async def ai_test_command(update, context) -> None:
 	"""Owner/admin: make one minimal structured OpenAI Responses API probe."""
 	if update.effective_user is None or update.message is None:
