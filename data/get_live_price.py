@@ -387,7 +387,12 @@ def _epoch_seconds(value: Any) -> float | None:
         return timestamp
     except (TypeError, ValueError):
         try:
-            normalized = str(value or "").strip().replace("Z", "+00:00")
+            normalized = (
+                str(value or "")
+                .strip()
+                .replace(" UTC", "+00:00")
+                .replace("Z", "+00:00")
+            )
             parsed = datetime.fromisoformat(normalized)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
@@ -720,16 +725,37 @@ async def _fetch_fcs_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         )
         received_at = time.time()
         payload = response.json() if response.ok else {}
-        rows = payload.get("response") if isinstance(payload, dict) else None
-        row = rows[0] if isinstance(rows, list) and rows else None
+        response_data = payload.get("response") if isinstance(payload, dict) else None
+        row = None
+        if isinstance(response_data, list) and response_data:
+            row = response_data[0] if isinstance(response_data[0], dict) else None
+        elif isinstance(response_data, dict):
+            data_rows = response_data.get("data")
+            if isinstance(data_rows, list) and data_rows and isinstance(data_rows[0], dict):
+                row = data_rows[0]
+            else:
+                row = response_data
+
         active = row.get("active") if isinstance(row, dict) else None
-        if not response.ok or not isinstance(active, dict):
+        if not isinstance(active, dict) and isinstance(row, dict) and any(
+            key in row for key in ("c", "close", "b", "bid", "a", "ask")
+        ):
+            active = row
+
+        if (
+            not response.ok
+            or not isinstance(payload, dict)
+            or payload.get("status") is False
+            or not isinstance(active, dict)
+        ):
             breaker.record_failure()
-            return _typed_failure(
-                symbol,
-                provider,
-                f"invalid_response:{getattr(response, 'status_code', 'unknown')}",
+            provider_code = payload.get("code") if isinstance(payload, dict) else None
+            reason = (
+                f"provider_error_code:{provider_code}"
+                if provider_code not in (None, 200, "200")
+                else f"invalid_response:{getattr(response, 'status_code', 'unknown')}"
             )
+            return _typed_failure(symbol, provider, reason)
         bid = active.get("b") or active.get("bid")
         ask = active.get("a") or active.get("ask")
         price = active.get("c") or active.get("close")
@@ -741,7 +767,10 @@ async def _fetch_fcs_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         source_timestamp = (
             active.get("t")
             or active.get("timestamp")
+            or active.get("tm")
+            or row.get("t")
             or row.get("timestamp")
+            or row.get("tm")
             or (payload.get("info") or {}).get("server_time")
         )
         if source_timestamp is None:
