@@ -2954,22 +2954,19 @@ async def expire_old_free_signal_summaries(session: AsyncSession, max_age_hours:
     return int(getattr(res, "rowcount", 0) or 0)
 
 
-async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_user_id: int) -> str:
-    """Return one durable referral code for a Telegram user.
-
-    The referrer row is locked so concurrent /invite and /referral commands do
-    not create multiple active codes. No synthetic fallback code is returned:
-    every code exposed to users must already exist in PostgreSQL.
-    """
-    referrer: User = await get_or_create_user(
-        session,
-        telegram_user_id=int(referrer_telegram_user_id),
-    )
+async def get_or_create_referral_code_for_user(
+    session: AsyncSession,
+    *,
+    referrer_user_id: int,
+) -> str:
+    """Return one durable referral code for any canonical SignalRank account."""
     locked_referrer = (
         await session.execute(
-            select(User).where(User.id == int(referrer.id)).with_for_update()
+            select(User).where(User.id == int(referrer_user_id)).with_for_update()
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if locked_referrer is None:
+        raise ValueError("referrer_user_missing")
 
     existing = (
         await session.execute(
@@ -2982,8 +2979,6 @@ async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_u
     if existing is not None:
         return str(existing.code)
 
-    # Telegram start parameters allow URL-safe characters. Keep the code short
-    # enough for sharing while including the internal id for collision resistance.
     for _ in range(5):
         token = secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
         code = f"SRK{int(locked_referrer.id):X}{token}"[:32]
@@ -2998,13 +2993,23 @@ async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_u
         session.add(row)
         await session.flush()
         logger.info(
-            "[referral_code_created] referrer_user_id=%s telegram_user_id=%s code=%s",
+            "[referral_code_created] referrer_user_id=%s channel=canonical",
             locked_referrer.id,
-            referrer_telegram_user_id,
-            code,
         )
         return str(row.code)
     raise RuntimeError("Unable to allocate a unique referral code")
+
+
+async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_user_id: int) -> str:
+    """Backward-compatible Telegram wrapper around canonical referral ownership."""
+    referrer: User = await get_or_create_user(
+        session,
+        telegram_user_id=int(referrer_telegram_user_id),
+    )
+    return await get_or_create_referral_code_for_user(
+        session,
+        referrer_user_id=int(referrer.id),
+    )
 
 
 async def _count_referrals(session: AsyncSession, referrer_user_id: int) -> int:
