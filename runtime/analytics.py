@@ -24,6 +24,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
     if _enabled("ASSET_LEARNING_ENABLED", True):
         from worker.asset_learning_worker import asset_learning_worker
         tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
+    if _enabled("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+        from services.instrument_catalogue_refresh import instrument_catalogue_refresh_loop
+        tasks.append(
+            asyncio.create_task(
+                instrument_catalogue_refresh_loop(stop),
+                name="instrument-catalogue-refresh",
+            )
+        )
     if _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
         async def _ml_loop() -> None:
             delay=max(60, int(os.getenv("ANALYTICS_ML_TRAIN_STARTUP_DELAY_SECONDS", "900") or 900))
