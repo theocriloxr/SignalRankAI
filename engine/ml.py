@@ -248,19 +248,14 @@ def _load_shadow_model() -> None:
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
     try:
-        payload = json.loads(p.read_text(encoding="utf-8"))
-        feature_cols: List[str] = list(payload.get("feature_cols") or [])
-        model_bytes_b64 = payload.get("model_bytes_b64")
-        if not model_bytes_b64 or not feature_cols:
-            _SHADOW_CACHE["error"] = "invalid_candidate_payload"
+        booster, feature_cols, metadata, err = load_model_with_metadata(p, xgb)
+        if err or booster is None or not feature_cols:
+            _SHADOW_CACHE["error"] = err or "invalid_candidate_payload"
             return
-        raw_bytes = base64.b64decode(model_bytes_b64)
-        booster = xgb.Booster()
         booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
-        booster.load_model(bytearray(raw_bytes))
         _SHADOW_CACHE["booster"] = booster
-        _SHADOW_CACHE["feature_cols"] = feature_cols
-        _SHADOW_CACHE["version"] = str(payload.get("version") or "unknown")
+        _SHADOW_CACHE["feature_cols"] = list(feature_cols)
+        _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
     except Exception as exc:
         _SHADOW_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
