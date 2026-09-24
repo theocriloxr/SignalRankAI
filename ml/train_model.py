@@ -186,6 +186,7 @@ def _champion_comparison_gate(
     primary_path: str | Path,
     *,
     deployed_runtime: bool | None = None,
+    champion_metrics: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Require a new candidate to be non-inferior to the active champion.
 
@@ -198,18 +199,26 @@ def _champion_comparison_gate(
         deployed_runtime = _is_production_runtime()
     if not _env_bool("ML_CHAMPION_COMPARISON_ENABLED", deployed_runtime):
         return True, {"enabled": False, "reason": "disabled"}
-    path = Path(primary_path)
-    if not path.exists():
-        return True, {"enabled": True, "reason": "no_existing_champion"}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        champion_metrics = dict(
-            payload.get("metrics")
-            or (payload.get("training_meta") or {}).get("metrics")
-            or {}
-        )
-    except Exception as exc:
-        return False, {"enabled": True, "reason": "champion_metrics_unreadable", "error": type(exc).__name__}
+    source = "durable_registry" if champion_metrics else "local_primary"
+    champion_metrics = dict(champion_metrics or {})
+    if not champion_metrics:
+        path = Path(primary_path)
+        if not path.exists():
+            return True, {"enabled": True, "reason": "no_existing_champion", "source": source}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            champion_metrics = dict(
+                payload.get("metrics")
+                or (payload.get("training_meta") or {}).get("metrics")
+                or {}
+            )
+        except Exception as exc:
+            return False, {
+                "enabled": True,
+                "reason": "champion_metrics_unreadable",
+                "source": source,
+                "error": type(exc).__name__,
+            }
 
     tolerances = {
         "auc": float(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01),
@@ -254,15 +263,70 @@ def _champion_comparison_gate(
         return False, {
             "enabled": True,
             "reason": "insufficient_comparable_champion_metrics",
+            "source": source,
             "compared": compared,
             "required": minimum_comparable,
         }
     return not regressions, {
         "enabled": True,
         "reason": "noninferior" if not regressions else "material_regression",
+        "source": source,
         "compared": compared,
         "regressions": regressions,
     }
+
+
+async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Load the serving champion evidence from the durable model registry.
+
+    Analytics containers may start from a repository-bundled model file that is
+    older than the database champion. Promotion comparisons must therefore use
+    the durable active artifact whenever it is available.
+    """
+    try:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(**_training_session_kwargs("ml_champion_compare")) as session:
+            result = await asyncio.wait_for(
+                session.execute(
+                    text(
+                        """
+                        SELECT artifact_hash_sha256, trained_at, metrics, payload
+                        FROM ml_model_artifacts
+                        WHERE model_name='primary' AND is_active IS TRUE
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    )
+                ),
+                timeout=_training_query_timeout(),
+            )
+            row = result.mappings().first()
+            await session.rollback()
+        if not row:
+            return None, {"source": "durable_registry", "reason": "no_active_primary"}
+        payload = dict(row.get("payload") or {})
+        metrics = dict(
+            row.get("metrics")
+            or payload.get("metrics")
+            or (payload.get("training_meta") or {}).get("metrics")
+            or {}
+        )
+        return metrics or None, {
+            "source": "durable_registry",
+            "artifact_hash_sha256": str(row.get("artifact_hash_sha256") or ""),
+            "trained_at": str(row.get("trained_at") or payload.get("trained_at") or ""),
+            "metric_count": len(metrics),
+        }
+    except Exception as exc:
+        logger.warning("[ml_champion_compare] durable lookup unavailable error=%s", type(exc).__name__)
+        return None, {
+            "source": "durable_registry",
+            "reason": "lookup_failed",
+            "error": type(exc).__name__,
+        }
+
 
 def _offline_bootstrap_allowed() -> bool:
     """Synthetic rows are opt-in and can never replace a Railway model."""
@@ -2030,11 +2094,14 @@ async def main(lookback_days: int | None = None):
     primary_path = _primary_model_path()
     champion_comparison = {"enabled": False, "reason": "not_evaluated"}
     if promotion_eligible:
+        durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
         champion_ok, champion_comparison = _champion_comparison_gate(
             metrics,
             primary_path,
             deployed_runtime=deployed_runtime,
+            champion_metrics=durable_champion_metrics,
         )
+        champion_comparison["durable_lookup"] = durable_champion_evidence
         if not champion_ok:
             promotion_eligible = False
             logger.warning(
