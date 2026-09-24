@@ -346,6 +346,11 @@ class MLFilter:
                 thresh_val = None
             if thresh_val is None:
                 return True, float(prob)
+            try:
+                from ml.live_drift import record_live_prediction
+                record_live_prediction(raw_prob, prob, thresh_val)
+            except Exception:
+                pass
             # Training selects the classification cutoff in raw model space.
             # Keep the accept/reject decision in that same space; calibrated
             # probability remains the confidence exposed downstream.
