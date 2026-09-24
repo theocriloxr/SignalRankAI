@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.isotonic import IsotonicRegression
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
 # Add parent dir to path
@@ -1054,18 +1053,20 @@ def engineer_features(df):
     """Build feature matrix with domain-specific features."""
     X = df.copy()
 
-    # Encode categorical features
-    le_direction = LabelEncoder()
-    le_regime = LabelEncoder()
-    le_strategy = LabelEncoder()
-    le_asset = LabelEncoder()
-    le_timeframe = LabelEncoder()
-
-    X['direction_enc'] = le_direction.fit_transform(X['direction'].fillna('long'))
-    X['regime_enc'] = le_regime.fit_transform(X['regime'].fillna('neutral'))
-    X['strategy_enc'] = le_strategy.fit_transform(X['strategy_name'].fillna('unknown'))
-    X['asset_enc'] = le_asset.fit_transform(X['asset'].fillna('UNKNOWN'))
-    X['timeframe_enc'] = le_timeframe.fit_transform(X['timeframe'].fillna('1d'))
+    # Deterministic categorical encoding shared with inference. Fitted
+    # LabelEncoder mappings are dataset-dependent and cannot be reconstructed
+    # reliably at serving time.
+    from ml.features import (
+        direction_to_int,
+        regime_model_to_int,
+        stable_category_to_int,
+        strategy_model_to_int,
+    )
+    X['direction_enc'] = X['direction'].fillna('long').map(direction_to_int)
+    X['regime_enc'] = X['regime'].fillna('neutral').map(regime_model_to_int)
+    X['strategy_enc'] = X['strategy_name'].fillna('unknown').map(strategy_model_to_int)
+    X['asset_enc'] = X['asset'].fillna('UNKNOWN').map(stable_category_to_int)
+    X['timeframe_enc'] = X['timeframe'].fillna('1d').map(stable_category_to_int)
 
     # Domain features
     X['risk_reward_ratio'] = X['rr_ratio'].fillna(1.0)
