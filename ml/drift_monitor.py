@@ -81,3 +81,69 @@ def detect_feature_drift(
         "psi_scores": per_feature,
     }
 
+
+
+def detect_prediction_starvation(
+    samples: list[dict[str, Any]],
+    *,
+    minimum_samples: int = 50,
+    minimum_pass_rate: float = 0.01,
+) -> dict[str, Any]:
+    """Detect persistent model-output starvation without relaxing the certified cutoff."""
+    clean: list[tuple[float, float, float, float]] = []
+    for item in samples or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            raw = float(item.get("raw_probability"))
+            calibrated = float(item.get("calibrated_probability"))
+            threshold = float(item.get("threshold"))
+            passed = float(item.get("passed"))
+        except Exception:
+            continue
+        if not all(__import__("math").isfinite(v) for v in (raw, calibrated, threshold, passed)):
+            continue
+        clean.append((raw, calibrated, threshold, passed))
+
+    required = max(10, int(minimum_samples or 50))
+    actionable = len(clean) >= required
+    if not clean:
+        return {
+            "actionable": False,
+            "starvation_detected": False,
+            "samples": 0,
+            "minimum_samples": required,
+            "minimum_pass_rate": float(minimum_pass_rate),
+            "pass_rate": None,
+            "raw_max": None,
+            "raw_mean": None,
+            "calibrated_max": None,
+            "threshold_mean": None,
+            "threshold_min": None,
+        }
+
+    raws = [item[0] for item in clean]
+    calibrated = [item[1] for item in clean]
+    thresholds = [item[2] for item in clean]
+    pass_rate = sum(1 for item in clean if item[3] >= 0.5) / len(clean)
+    raw_mean = sum(raws) / len(raws)
+    threshold_mean = sum(thresholds) / len(thresholds)
+    starvation = bool(
+        actionable
+        and pass_rate <= max(0.0, min(1.0, float(minimum_pass_rate)))
+        and max(raws) < min(thresholds)
+    )
+    return {
+        "actionable": actionable,
+        "starvation_detected": starvation,
+        "samples": len(clean),
+        "minimum_samples": required,
+        "minimum_pass_rate": float(minimum_pass_rate),
+        "pass_rate": round(pass_rate, 6),
+        "raw_max": round(max(raws), 6),
+        "raw_mean": round(raw_mean, 6),
+        "calibrated_max": round(max(calibrated), 6),
+        "threshold_mean": round(threshold_mean, 6),
+        "threshold_min": round(min(thresholds), 6),
+        "raw_to_threshold_gap": round(max(raws) - min(thresholds), 6),
+    }
