@@ -56,6 +56,13 @@ def _training_db_timeout() -> float:
         return 30.0
 
 
+def _training_query_timeout() -> float:
+    try:
+        return max(5.0, float(os.getenv("ML_TRAIN_QUERY_TIMEOUT_SECONDS", "20") or 20))
+    except Exception:
+        return 20.0
+
+
 def _training_session_kwargs(label: str) -> dict:
     return {
         "priority": _training_db_priority(),
@@ -433,7 +440,10 @@ async def load_training_data(lookback_days: int = 90):
                         .order_by(desc(MarketCandle.open_time_ms))
                         .limit(max_rows)
                     )
-                    res = await candle_session.execute(q)
+                    res = await asyncio.wait_for(
+                        candle_session.execute(q),
+                        timeout=_training_query_timeout(),
+                    )
                     all_rows = list(res.scalars().all())
                 all_rows.reverse()
                 open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
@@ -505,7 +515,10 @@ async def load_training_data(lookback_days: int = 90):
                 .where(Signal.created_at >= cutoff, delivered_proof)
             )
             try:
-                res = await session.execute(stmt)
+                res = await asyncio.wait_for(
+                    session.execute(stmt),
+                    timeout=_training_query_timeout(),
+                )
                 rows = list(res.all())
             except Exception as exc:
                 # Live proof is the strongest source, but a temporary query or
@@ -675,7 +688,7 @@ async def load_training_data(lookback_days: int = 90):
             async with get_session(**_training_session_kwargs("ml_training_archive_read")) as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
-                await session.execute(text(
+                await asyncio.wait_for(session.execute(text(
                     """
                     CREATE TABLE IF NOT EXISTS ml_past_training_data (
                         id SERIAL PRIMARY KEY,
@@ -701,10 +714,13 @@ async def load_training_data(lookback_days: int = 90):
                         archived_at TIMESTAMP NOT NULL DEFAULT NOW()
                     )
                     """
-                ))
+                )), timeout=_training_query_timeout())
                 archive_rows = (
-                    await session.execute(
-                        select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                        ),
+                        timeout=_training_query_timeout(),
                     )
                 ).scalars().all()
                 await session.commit()
@@ -826,13 +842,16 @@ async def load_training_data(lookback_days: int = 90):
 
             async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
                 rejected_rows = (
-                    await session.execute(
-                        select(MLRejectedSignal).where(
-                            and_(
-                                MLRejectedSignal.created_at >= cutoff,
-                                MLRejectedSignal.outcome_tracked_at.is_not(None),
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLRejectedSignal).where(
+                                and_(
+                                    MLRejectedSignal.created_at >= cutoff,
+                                    MLRejectedSignal.outcome_tracked_at.is_not(None),
+                                )
                             )
-                        )
+                        ),
+                        timeout=_training_query_timeout(),
                     )
                 ).scalars().all()
 
@@ -930,15 +949,18 @@ async def load_training_data(lookback_days: int = 90):
         try:
             existing_signal_ids = {str(item.get("signal_id") or "") for item in data}
             async with get_session(**_training_session_kwargs("ml_training_paper_read")) as session:
-                paper_result = await session.execute(
-                    select(PaperPosition, Signal)
-                    .join(Signal, Signal.signal_id == PaperPosition.signal_id)
-                    .where(
-                        PaperPosition.closed_at.is_not(None),
-                        PaperPosition.closed_at >= cutoff,
-                        func.lower(PaperPosition.status).in_(("closed", "complete", "completed")),
-                    )
-                    .order_by(desc(PaperPosition.closed_at))
+                paper_result = await asyncio.wait_for(
+                    session.execute(
+                        select(PaperPosition, Signal)
+                        .join(Signal, Signal.signal_id == PaperPosition.signal_id)
+                        .where(
+                            PaperPosition.closed_at.is_not(None),
+                            PaperPosition.closed_at >= cutoff,
+                            func.lower(PaperPosition.status).in_(("closed", "complete", "completed")),
+                        )
+                        .order_by(desc(PaperPosition.closed_at))
+                    ),
+                    timeout=_training_query_timeout(),
                 )
                 paper_pairs = list(paper_result.all())
 
