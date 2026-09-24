@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from engine.signal_lifecycle import _lifecycle_lock_timeout_ms
 from services.profile_demand import aggregate_profile_demand
@@ -166,6 +167,34 @@ def test_signal_detail_ui_and_tool_handlers_use_query_selector_all():
         assert f"$('.{selector}').forEach" in js
     assert ".signal-detail-panel" in css
     assert ".timeline-event" in css
+    assert re.search(r"(?<!\\$)\\$\\([^)]*\\)\\.forEach", js) is None
+
+
+def test_paper_trading_web_controls_match_telegram_lifecycle_actions():
+    api = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+    html = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    for route in (
+        '@router.get("/paper/detail")',
+        '@router.put("/paper/settings")',
+        '@router.post("/paper/close-all")',
+        '@router.post("/paper/reset")',
+        '@router.post("/paper/retry")',
+    ):
+        assert route in api
+    for element_id in (
+        'id="paperSettingsForm"',
+        'id="paperCloseAll"',
+        'id="paperReset"',
+        'id="paperHistory"',
+        'id="paperActivity"',
+    ):
+        assert element_id in html
+    assert "allow_last_mark_fallback" in api
+    assert "Explicit confirmation is required" in api
+    assert "request('/paper/settings'" in js
+    assert "request('/paper/close-all'" in js
+    assert "request('/paper/reset'" in js
 
 
 def test_notification_preferences_expose_quiet_hours_and_locale_on_web():
