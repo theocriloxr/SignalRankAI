@@ -1558,14 +1558,21 @@ def save_model(
     model_bytes = booster.save_raw('ubj')  # Binary format, no warnings
     
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
+    from ml.model_registry import compute_feature_schema_hash
+    ordered_feature_cols = [str(col).strip() for col in feature_cols]
+    feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
         "type": "xgboost",
         "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
-        "feature_cols": feature_cols,
+        "feature_cols": ordered_feature_cols,
         "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
         "trained_at": now_utc_naive().isoformat(),
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
+        "feature_schema_hash_sha256": feature_schema_hash_sha256,
+        "training_run_id": str((training_meta or {}).get("run_id") or ""),
+        "dataset_version": str((training_meta or {}).get("dataset_version") or ""),
+        "parent_model_hash_sha256": str((training_meta or {}).get("parent_model_hash_sha256") or ""),
         "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
         "calibration_x": calibration_x or [],
         "calibration_y": calibration_y or [],
