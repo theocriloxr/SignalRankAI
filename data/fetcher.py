@@ -1359,12 +1359,16 @@ def is_commodity(asset):
 
 
 INDEX_SYMBOL_ALIASES = {
+    # Keep every runtime/index-provider alias aligned with core.asset_registry.
+    # These aliases must never fall through to the generic "stock" fallback.
     "US500": "^GSPC",
     "SP500": "^GSPC",
+    "SPX500": "^GSPC",
     "SPX": "^GSPC",
     "GSPC": "^GSPC",
     "US100": "^NDX",
     "NAS100": "^NDX",
+    "USTEC": "^NDX",
     "NDX": "^NDX",
     "NASDAQ100": "^NDX",
     "US30": "^DJI",
@@ -1375,16 +1379,20 @@ INDEX_SYMBOL_ALIASES = {
     "GER40": "^GDAXI",
     "DAX": "^GDAXI",
     "DE40": "^GDAXI",
+    "DAX40": "^GDAXI",
     "UK100": "^FTSE",
     "FTSE": "^FTSE",
+    "FTSE100": "^FTSE",
     "JPN225": "^N225",
     "JP225": "^N225",
     "NIKKEI": "^N225",
+    "NIKKEI225": "^N225",
     "HK50": "^HSI",
     "HSI": "^HSI",
     "FRA40": "^FCHI",
     "CAC40": "^FCHI",
     "EU50": "^STOXX50E",
+    "STOXX50": "^STOXX50E",
     "AUS200": "^AXJO",
     "ASX200": "^AXJO",
 }
