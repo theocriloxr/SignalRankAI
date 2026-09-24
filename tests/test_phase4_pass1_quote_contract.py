@@ -466,3 +466,101 @@ async def test_oanda_metals_quote_preserves_bid_ask_and_source_time(monkeypatch)
     assert quote.source_timestamp is not None
     assert "api-fxpractice.oanda.com" in captured["url"]
     assert captured["params"]["instruments"] == "XAG_USD"
+
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected"),
+    [
+        ("META", "META"),
+        ("EURUSD", "EURUSD"),
+        ("SPX500", "^GSPC"),
+        ("NAS100", "^NDX"),
+        ("XAUUSD", "GCUSD"),
+        ("XAGUSD", "SIUSD"),
+        ("WTI", "CLUSD"),
+    ],
+)
+def test_fmp_symbol_mapping_is_asset_correct(symbol, expected):
+    from services.asset_mapper import map_symbol
+
+    assert map_symbol(symbol, "fmp") == expected
+
+
+def test_fmp_is_preferred_before_rate_limited_public_traditional_fallbacks(monkeypatch):
+    from data.get_live_price import _get_providers_for_asset
+
+    monkeypatch.setenv("FMP_API_KEY", "test-fmp")
+    monkeypatch.setenv("TWELVEDATA_API_KEY", "test-twelve")
+    monkeypatch.setenv("POLYGON_API_KEY", "test-polygon")
+    monkeypatch.delenv("META_API_TOKEN", raising=False)
+    monkeypatch.delenv("METAAPI_TOKEN", raising=False)
+    monkeypatch.delenv("OANDA_API_KEY", raising=False)
+    monkeypatch.delenv("OANDA_TOKEN", raising=False)
+    monkeypatch.delenv("OANDA_ACCOUNT_ID", raising=False)
+
+    assert _get_providers_for_asset("EURUSD")[0] == "fmp"
+    assert _get_providers_for_asset("META")[0] == "fmp"
+    assert _get_providers_for_asset("US500")[0] == "fmp"
+    assert _get_providers_for_asset("XAUUSD")[0] == "fmp"
+
+
+@pytest.mark.asyncio
+async def test_fmp_final_quote_preserves_provider_timestamp(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    now = int(time.time())
+    captured = {}
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: [{
+            "symbol": "^GSPC",
+            "price": 6712.25,
+            "timestamp": now,
+        }],
+    )
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setenv("FMP_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", fake_get)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_fmp_quote("US500")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.provider == "fmp"
+    assert quote.provider_symbol == "^GSPC"
+    assert quote.asset_class == "index"
+    assert quote.price == pytest.approx(6712.25)
+    assert quote.source_timestamp == pytest.approx(now)
+    assert quote.quote_kind == QuoteKind.TICKER.value
+    assert quote.confidence == pytest.approx(1.0)
+    assert "timestamped_fmp_stable_quote" in quote.confidence_reasons
+    assert captured["url"] == "https://financialmodelingprep.com/stable/quote"
+    assert captured["params"]["symbol"] == "^GSPC"
+    assert captured["params"]["apikey"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_fmp_quote_without_source_timestamp_fails_closed(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: [{"symbol": "META", "price": 742.10}],
+    )
+    monkeypatch.setenv("FMP_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: response)
+    prices._price_breakers.clear()
+
+    result = await prices._fetch_fmp_quote("META")
+    assert isinstance(result, LivePriceFailure)
+    assert result.provider == "fmp"
+    assert result.reason == "source_timestamp_missing"
