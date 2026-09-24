@@ -58,6 +58,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_ai_review_router_consensus.py \
       tests/test_ai_governance_hardening.py \
       tests/test_ml_calibration_audit.py \
+      tests/test_ml_serving_threshold_governance.py \
       tests/test_ml_registry.py \
       tests/test_ml_strict_schema.py \
       tests/test_ml_retrain_governance.py \
