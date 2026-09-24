@@ -18,12 +18,18 @@ from typing import Any, Mapping
 from core.redis_state import state
 
 _KEY = "signalrankai:ml:live_feature_stats"
+_PREDICTION_KEY = "signalrankai:ml:live_prediction_stats"
 _LOCK = threading.Lock()
 _SAMPLES: dict[str, deque[float]] = defaultdict(
     lambda: deque(maxlen=max(32, int(os.getenv("ML_DRIFT_LIVE_SAMPLE_POINTS", "256") or 256)))
 )
+_PREDICTIONS: deque[dict[str, float]] = deque(
+    maxlen=max(64, int(os.getenv("ML_DRIFT_LIVE_PREDICTION_POINTS", "512") or 512))
+)
 _COUNT = 0
 _LAST_PUBLISH_MONO = 0.0
+_PREDICTION_COUNT = 0
+_LAST_PREDICTION_PUBLISH_MONO = 0.0
 
 
 def _finite(value: Any) -> float | None:
@@ -72,6 +78,83 @@ def record_live_feature_vector(features: Mapping[str, Any] | None) -> None:
     except Exception:
         # Drift telemetry can never break signal inference.
         return
+
+
+def snapshot_prediction_samples() -> list[dict[str, float]]:
+    with _LOCK:
+        return [dict(item) for item in _PREDICTIONS]
+
+
+def _publish_prediction_snapshot(snapshot: list[dict[str, float]]) -> None:
+    if not snapshot:
+        return
+    ttl = max(600, int(os.getenv("ML_DRIFT_LIVE_SAMPLE_TTL_SECONDS", "7200") or 7200))
+    state.set_sync(_PREDICTION_KEY, json.dumps(snapshot, separators=(",", ":")), ex=ttl)
+
+
+def record_live_prediction(
+    raw_probability: Any,
+    calibrated_probability: Any,
+    threshold: Any,
+) -> None:
+    """Record bounded model-output telemetry without storing signal/user identity."""
+    global _PREDICTION_COUNT, _LAST_PREDICTION_PUBLISH_MONO
+    raw = _finite(raw_probability)
+    calibrated = _finite(calibrated_probability)
+    cutoff = _finite(threshold)
+    if raw is None or calibrated is None or cutoff is None:
+        return
+    try:
+        with _LOCK:
+            _PREDICTIONS.append({
+                "raw_probability": raw,
+                "calibrated_probability": calibrated,
+                "threshold": cutoff,
+                "passed": 1.0 if raw >= cutoff else 0.0,
+            })
+            _PREDICTION_COUNT += 1
+            count = _PREDICTION_COUNT
+            last_publish = _LAST_PREDICTION_PUBLISH_MONO
+        now = time.monotonic()
+        publish_every = max(10, int(os.getenv("ML_DRIFT_PREDICTION_PUBLISH_EVERY", "25") or 25))
+        publish_seconds = max(15.0, float(os.getenv("ML_DRIFT_PREDICTION_PUBLISH_SECONDS", "60") or 60))
+        if count % publish_every and now - last_publish < publish_seconds:
+            return
+        snapshot = snapshot_prediction_samples()
+        _publish_prediction_snapshot(snapshot)
+        with _LOCK:
+            _LAST_PREDICTION_PUBLISH_MONO = now
+    except Exception:
+        return
+
+
+def load_live_prediction_samples() -> list[dict[str, float]]:
+    raw = state.get_sync(_PREDICTION_KEY)
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    result: list[dict[str, float]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        raw_prob = _finite(item.get("raw_probability"))
+        calibrated = _finite(item.get("calibrated_probability"))
+        threshold = _finite(item.get("threshold"))
+        passed = _finite(item.get("passed"))
+        if None in {raw_prob, calibrated, threshold, passed}:
+            continue
+        result.append({
+            "raw_probability": float(raw_prob),
+            "calibrated_probability": float(calibrated),
+            "threshold": float(threshold),
+            "passed": float(passed),
+        })
+    return result
 
 
 def load_live_feature_samples() -> dict[str, list[float]]:
@@ -139,6 +222,9 @@ async def load_durable_feature_baseline() -> dict[str, list[float]]:
 __all__ = [
     "load_durable_feature_baseline",
     "load_live_feature_samples",
+    "load_live_prediction_samples",
     "record_live_feature_vector",
+    "record_live_prediction",
     "snapshot_feature_samples",
+    "snapshot_prediction_samples",
 ]
