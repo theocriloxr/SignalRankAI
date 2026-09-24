@@ -94,6 +94,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("force_signal", "Generate a controlled diagnostic signal", "ADMIN", "Admin"),
     CommandSpec("ai", "Run the configured AI review diagnostics", "ADMIN", "Admin"),
     CommandSpec("ai_review", "Inspect the current AI review pipeline", "ADMIN", "Admin"),
+    CommandSpec("ai_improve", "Generate one governed improvement proposal", "ADMIN", "Admin"),
     CommandSpec("qa_report", "Run the deployment QA report", "ADMIN", "Admin"),
     CommandSpec("selfcheck", "Run internal command and callback checks", "ADMIN", "Admin"),
     CommandSpec("ops_health", "View operational health and queues", "ADMIN", "Admin"),
