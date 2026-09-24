@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 from data.provider_types import (
     BreakerState,
+    FinalQuotePolicy,
     LivePriceFailure,
     LivePriceQuote,
     ProviderHealthState,
@@ -1322,6 +1323,8 @@ async def _fetch_structured_quote(
 async def get_live_price_result(
     symbol: str,
     timeout: float = 5.0,
+    *,
+    require_delivery_freshness: bool = False,
 ) -> LivePriceQuote | LivePriceFailure:
     """Get a typed quote or a typed terminal failure after provider failover.
 
@@ -1337,6 +1340,7 @@ async def get_live_price_result(
     providers = _get_providers_for_asset(symbol)
     analysis_fallback: LivePriceQuote | None = None
     failures: list[LivePriceFailure] = []
+    final_policy = FinalQuotePolicy() if require_delivery_freshness else None
     deadline = time.perf_counter() + max(0.1, float(timeout))
 
     for provider in providers:
@@ -1366,6 +1370,33 @@ async def get_live_price_result(
                     result.quote_kind,
                 )
                 continue
+
+            if final_policy is not None:
+                max_age = final_policy.max_source_age_seconds.get(str(result.asset_class or "").lower())
+                source_age = result.source_age_seconds()
+                if (
+                    result.is_stale
+                    or source_age is None
+                    or max_age is None
+                    or source_age < -float(final_policy.max_future_clock_skew_seconds)
+                    or source_age > float(max_age)
+                ):
+                    reason = (
+                        result.stale_reason
+                        or (
+                            f"source_age_exceeded:{float(source_age):.3f}s>{float(max_age):.3f}s"
+                            if source_age is not None and max_age is not None and source_age >= 0
+                            else "delivery_freshness_not_satisfied"
+                        )
+                    )
+                    failures.append(_typed_failure(symbol, provider, reason))
+                    logger.info(
+                        "[price] %s provider=%s quote skipped for delivery freshness reason=%s",
+                        symbol,
+                        provider,
+                        reason,
+                    )
+                    continue
 
             logger.info(
                 "[price] %s price=%s provider=%s latency_ms=%s source_age_ms=%s request_id=%s",
