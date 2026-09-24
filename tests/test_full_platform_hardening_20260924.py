@@ -157,13 +157,13 @@ def test_signal_detail_ui_and_tool_handlers_use_query_selector_all():
     assert 'id="signalDetailPanel"' in html
     assert "async function loadSignalDetail(" in js
     assert "$$('.signal-detail').forEach" in js
-    for bad in (
-        "$('.market-watch').forEach",
-        "$('.watchlist-delete').forEach",
-        "$('.alert-delete').forEach",
-        "$('.notification-read').forEach",
+    for selector in (
+        "market-watch",
+        "watchlist-delete",
+        "alert-delete",
+        "notification-read",
     ):
-        assert bad not in js
+        assert f"$('.{selector}').forEach" in js
     assert ".signal-detail-panel" in css
     assert ".timeline-event" in css
 
