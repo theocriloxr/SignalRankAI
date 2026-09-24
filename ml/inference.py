@@ -162,6 +162,7 @@ class MLFilter:
         self.feature_cols = None
         self.schema_version = None
         self.model_format_version = None
+        self.feature_encoding_version = None
         self.calibration_x = None
         self.calibration_y = None
         self.calibration_kind = None
@@ -187,6 +188,7 @@ class MLFilter:
             self.feature_cols = model_data.get("feature_cols", [])
             self.schema_version = model_data.get("schema_version")
             self.model_format_version = model_data.get("model_format_version")
+            self.feature_encoding_version = str(model_data.get("feature_encoding_version") or "")
             self.calibration_kind = str(model_data.get("calibration_kind") or "")
             self.calibration_x = model_data.get("calibration_x") or []
             self.calibration_y = model_data.get("calibration_y") or []
@@ -194,6 +196,17 @@ class MLFilter:
             if not model_b64:
                 self.active = False
                 return
+
+            if _env_bool("ML_REQUIRE_FEATURE_ENCODING_CONTRACT", False):
+                from ml.features import FEATURE_ENCODING_VERSION
+                if self.feature_encoding_version != FEATURE_ENCODING_VERSION:
+                    logger.warning(
+                        "[ml] model encoding contract mismatch expected=%s actual=%s",
+                        FEATURE_ENCODING_VERSION,
+                        self.feature_encoding_version or "missing",
+                    )
+                    self.active = False
+                    return
             
             # Decode base64 and load model directly from bytes (ubj format)
             model_bytes = base64.b64decode(model_b64)
@@ -251,7 +264,10 @@ class MLFilter:
                 return (not _fail_closed_on_unavailable()), None
             
             import numpy as np
-            dmatrix = xgb.DMatrix(np.array([feature_vector]))
+            dmatrix = xgb.DMatrix(
+                np.array([feature_vector], dtype=np.float32),
+                feature_names=list(self.feature_cols or []),
+            )
             prob = self.model.predict(dmatrix)[0]
             prob = self._apply_calibration(float(prob))
             if threshold is None:
