@@ -822,6 +822,7 @@ from .commands import (
     gemini_review_command,
     ai_status_command,
     ai_test_command,
+    ai_improve_command,
     pricing_command,
     upgrade_command,
     policy_command,
@@ -6243,6 +6244,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("ai_predict", _audit_handler("ai_predict", gemini_predict_command)))
     application.add_handler(CommandHandler("ai_status", _audit_handler("ai_status", ai_status_command)))
     application.add_handler(CommandHandler("ai_test", _audit_handler("ai_test", ai_test_command)))
+    application.add_handler(CommandHandler("ai_improve", _audit_handler("ai_improve", ai_improve_command)))
     application.add_handler(CommandHandler("codex_audit", _audit_handler("codex_audit", codex_audit_command)))
     application.add_handler(CommandHandler("codex_log_review", _audit_handler("codex_log_review", codexops_command)))
     application.add_handler(CommandHandler("codex_fix_plan", _audit_handler("codex_fix_plan", codexops_command)))
