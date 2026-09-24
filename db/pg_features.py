@@ -2237,7 +2237,16 @@ async def mark_signal_delivery_result(
     # Telegram API attempt into two in diagnostics.
     if int(getattr(row, "attempt_count", 0) or 0) < 1:
         row.attempt_count = 1
-    row.last_error = (str(error)[:1000] if error else None)
+    incoming_error = str(error or "").strip()
+    existing_error = str(getattr(row, "last_error", None) or "").strip()
+    preserve_block_reason = bool(
+        current_state is DeliveryState.BLOCKED
+        and target_state is DeliveryState.BLOCKED
+        and existing_error
+        and incoming_error in {"", "delivery_not_confirmed", "missing_telegram_ack"}
+    )
+    if not preserve_block_reason:
+        row.last_error = (incoming_error[:1000] if incoming_error else None)
     await session.flush()
     return True
 
