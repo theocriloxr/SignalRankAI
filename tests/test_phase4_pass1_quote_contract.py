@@ -658,3 +658,71 @@ def test_final_delivery_fetch_requests_delivery_fresh_provider_failover():
         source.index("async def fetch_trusted_live_quote")
     ]
     assert "require_delivery_freshness=True" in section
+
+
+
+@pytest.mark.asyncio
+async def test_fcs_current_v4_flat_response_is_accepted(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    now = int(time.time())
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: {
+            "status": True,
+            "code": 200,
+            "response": [{
+                "ticker": "FX:EURUSD",
+                "symbol": "EURUSD",
+                "a": 1.1740,
+                "b": 1.1738,
+                "c": 1.1739,
+                "t": now,
+            }],
+            "info": {"server_time": datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")},
+        },
+    )
+    monkeypatch.setenv("FCS_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: response)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_fcs_quote("EURUSD")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.provider == "fcs"
+    assert quote.bid == pytest.approx(1.1738)
+    assert quote.ask == pytest.approx(1.1740)
+    assert quote.source_timestamp == pytest.approx(now)
+
+
+@pytest.mark.asyncio
+async def test_fcs_current_v4_data_wrapper_and_utc_server_time_are_accepted(monkeypatch):
+    import requests
+    import data.get_live_price as prices
+
+    now = int(time.time())
+    server_time = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        json=lambda: {
+            "status": True,
+            "code": 200,
+            "response": {
+                "data": [{
+                    "ticker": "FX:USDJPY",
+                    "active": {"a": 148.34, "b": 148.32, "c": 148.33},
+                }]
+            },
+            "info": {"server_time": server_time},
+        },
+    )
+    monkeypatch.setenv("FCS_API_KEY", "test-key")
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: response)
+    prices._price_breakers.clear()
+
+    quote = await prices._fetch_fcs_quote("USDJPY")
+    assert isinstance(quote, LivePriceQuote)
+    assert quote.source_timestamp == pytest.approx(now, abs=1.0)
+    assert quote.confidence == pytest.approx(1.0)
