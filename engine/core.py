@@ -3313,12 +3313,24 @@ def main_loop(DRY_RUN: bool = False):
                         prob = None
                         features = {}
                         try:
-                            if ml_filter and getattr(ml_filter, 'active', False):
+                            if ml_filter:
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold()
+                                # Always consult MLFilter when constructed. It owns the
+                                # configured fail-open/fail-closed availability policy,
+                                # including the case where the model is inactive.
                                 approved, prob = ml_filter.ml_filter(features, threshold=threshold)
-                        except Exception:
-                            approved, prob = True, None
+                            elif _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                                approved, prob = False, None
+                        except Exception as _ml_filter_error:
+                            if _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                                approved, prob = False, None
+                                logger.warning(
+                                    "[engine] ML unavailable; fail-closed candidate veto error=%s",
+                                    type(_ml_filter_error).__name__,
+                                )
+                            else:
+                                approved, prob = True, None
 
                         # NEW: Log ML prediction to database for drift analysis
                         # Must happen BEFORE decision to ensure all predictions recorded
