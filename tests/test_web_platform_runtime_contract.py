@@ -5,7 +5,7 @@ APP_JS = Path("web/platform_app/app.js").read_text(encoding="utf-8")
 
 
 def test_multi_element_dom_operations_use_query_selector_all_helper():
-    bad = re.findall(r"\$\('#[^']+'\)\.(?:map|forEach)\(", APP_JS)
+    bad = re.findall(r"(?<!\$)\$\('#[^']+'\)\.(?:map|forEach)\(", APP_JS)
     assert bad == []
 
 
