@@ -136,3 +136,15 @@ def test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default(
     assert '_discovery_default = not _env_bool("DECOMPOSED_TOPOLOGY_ENABLED", False)' in source
     assert '_env_bool("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", _discovery_default)' in source
     assert "DynamicInstrumentDiscovery disabled for decomposed worker" in source
+
+
+def test_analytics_owns_dynamic_instrument_catalogue_refresh():
+    analytics = text("runtime/analytics.py")
+    refresh = text("services/instrument_catalogue_refresh.py")
+    assert 'DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED' in analytics
+    assert 'instrument_catalogue_refresh_loop(stop)' in analytics
+    assert 'name="instrument-catalogue-refresh"' in analytics
+    assert 'priority=_db_priority()' in refresh
+    assert 'return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"' in refresh
+    assert 'await asyncio.to_thread(discover, top=top)' in refresh
+    assert 'label="analytics.instrument_discovery.persist"' in refresh
