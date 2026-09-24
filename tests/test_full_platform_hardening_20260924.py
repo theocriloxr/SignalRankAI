@@ -98,3 +98,90 @@ def test_lifecycle_observation_uses_short_postgres_lock_wait():
     assert "SET LOCAL lock_timeout" in block
     assert "outcome.lifecycle_observation" in block
     assert "lifecycle_observation_deferred" in block
+
+
+def test_web_tools_cover_live_quote_recap_ai_watchlists_alerts_and_notifications():
+    api = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+    html = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    for route in (
+        '@router.get("/live-price")',
+        '@router.get("/recap")',
+        '@router.post("/ai/analyze")',
+        '@router.get("/watchlists")',
+        '@router.get("/alerts")',
+        '@router.get("/notifications")',
+    ):
+        assert route in api
+    for element_id in (
+        'id="toolsView"',
+        'id="liveQuoteForm"',
+        'id="aiAnalyzeForm"',
+        'id="watchlistForm"',
+        'id="alertForm"',
+        'id="notificationCenter"',
+    ):
+        assert element_id in html
+    assert "async function loadTools()" in js
+    assert "get_live_price_result" in api
+    assert "get_market_state_async" in api
+    assert "explain_signal" in api
+
+
+def test_paid_web_surfaces_enforce_canonical_tier_policy_without_breaking_login_boot():
+    api = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    assert '_assert_feature(user, "paper_trading")' in api
+    assert '_assert_feature(user, "portfolio_analytics")' in api
+    assert '_assert_feature(user, "performance_analytics")' in api
+    assert '_assert_feature(user, "custom_alerts")' in api
+    assert '_assert_command(user, "analyze")' in api
+    assert "Promise.allSettled(initial)" in js
+    assert "if(hasFeature('paper_trading'))initial.push(loadPaper())" in js
+
+
+def test_signal_detail_exposes_delivery_proof_outcome_and_lifecycle_without_cross_user_access():
+    api = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+    block = api[api.index('@router.get("/signals/{signal_id}")'):api.index('@router.get("/live-price")')]
+    assert "d.user_id=:uid" in block
+    assert "d.sent_ok=TRUE" in block
+    assert "signal_lifecycles" in block
+    assert "signal_tracking_events" in block
+    assert '"delivery_proven"' in block
+
+
+def test_signal_detail_ui_and_tool_handlers_use_query_selector_all():
+    html = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "web/platform_app/styles.css").read_text(encoding="utf-8")
+    assert 'id="signalDetailPanel"' in html
+    assert "async function loadSignalDetail(" in js
+    assert "$$('.signal-detail').forEach" in js
+    for bad in (
+        "$('.market-watch').forEach",
+        "$('.watchlist-delete').forEach",
+        "$('.alert-delete').forEach",
+        "$('.notification-read').forEach",
+    ):
+        assert bad not in js
+    assert ".signal-detail-panel" in css
+    assert ".timeline-event" in css
+
+
+def test_notification_preferences_expose_quiet_hours_and_locale_on_web():
+    html = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    assert 'name="locale"' in html
+    assert 'name="quiet_hours_start"' in html
+    assert 'name="quiet_hours_end"' in html
+    assert "quiet_hours_start','quiet_hours_end','timezone" in js
+
+
+def test_weekly_recap_uses_delivery_proof_not_raw_generated_signals():
+    api = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+    block = api[api.index('@router.get("/recap")'):api.index('@router.post("/ai/analyze")')]
+    assert "signal_deliveries" in block
+    assert "d.sent_ok=TRUE" in block
+    assert "delivery_confirmed_at" in block
+    assert "resolved_win_rate" in block
+    assert "not a forecast" in block
