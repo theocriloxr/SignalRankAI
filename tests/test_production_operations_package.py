@@ -125,10 +125,21 @@ async def test_dependency_report_checks_distinct_state_and_delivery_redis(
     )
     rendered = json.dumps(result)
     assert result["ok"] is True
-    assert result["summary"] == {"passed": 4, "failed": 0, "total": 4}
+    assert result["summary"] == {"passed": 5, "failed": 0, "total": 5}
     assert "DO_NOT_PRINT" not in rendered
     assert "STATE_SECRET" not in rendered
     assert "DELIVERY_SECRET" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_shadow_learning_health_is_explicitly_gated() -> None:
+    check = await production_health.check_shadow_learning_heartbeat(
+        "redis://unused",
+        timeout_seconds=1,
+        environ={"PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING": "0"},
+    )
+    assert check.ok is True
+    assert check.detail == "not_required"
 
 
 def test_redis_topology_fails_when_delivery_redis_is_shared() -> None:
