@@ -133,6 +133,8 @@ def _provider_is_configured(provider: str) -> bool:
         return bool((os.getenv("POLYGON_API_KEY") or "").strip())
     if provider == "fcs":
         return bool((os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip())
+    if provider == "fmp":
+        return bool((os.getenv("FMP_API_KEY") or "").strip())
     return True
 
 
@@ -151,9 +153,9 @@ def _get_providers_for_asset(asset: str) -> List[str]:
     if cls == "crypto":
         providers = ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
     elif cls in {"forex", "commodity"}:
-        providers = ["metaapi", "oanda", "twelvedata", "fcs", "yahoo"]
+        providers = ["metaapi", "oanda", "fmp", "twelvedata", "fcs", "yahoo"]
     else:
-        providers = ["twelvedata", "polygon", "yahoo"]
+        providers = ["fmp", "twelvedata", "polygon", "yahoo"]
     return [provider for provider in providers if _provider_is_configured(provider)]
 
 
@@ -835,6 +837,70 @@ async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+async def _fetch_fmp_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch a timestamped FMP stable quote for supported traditional markets."""
+    import requests
+
+    provider = "fmp"
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+
+    api_key = str(os.getenv("FMP_API_KEY") or "").strip()
+    if not api_key:
+        return _typed_failure(symbol, provider, "provider_not_configured", retryable=False)
+
+    canonical, provider_symbol, asset_class = _provider_identity(symbol, provider)
+    if asset_class not in {"forex", "commodity", "stock", "index"} or not provider_symbol:
+        return _typed_failure(canonical, provider, "unsupported_symbol", retryable=False)
+
+    started = time.perf_counter()
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://financialmodelingprep.com/stable/quote",
+            params={"symbol": provider_symbol, "apikey": api_key},
+            timeout=5,
+        )
+        received_at = time.time()
+        payload = response.json() if response.ok else []
+        rows = payload if isinstance(payload, list) else (
+            payload.get("data") if isinstance(payload, dict) else []
+        )
+        row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+        if not response.ok or row is None:
+            breaker.record_failure()
+            status = getattr(response, "status_code", "unknown")
+            reason = "rate_limit:fmp" if status == 429 else f"invalid_response:{status}"
+            return _typed_failure(canonical, provider, reason)
+
+        source_timestamp = row.get("timestamp")
+        if source_timestamp in (None, ""):
+            breaker.record_failure()
+            return _typed_failure(canonical, provider, "source_timestamp_missing")
+
+        quote = _typed_quote(
+            symbol=canonical,
+            provider=provider,
+            price=row.get("price"),
+            source_timestamp=source_timestamp,
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.TICKER.value,
+            market_status="unknown",
+            confidence_reasons=("timestamped_fmp_stable_quote",),
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] FMP typed quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
 async def _fetch_twelvedata_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     """Fetch a source-timestamped quote for FX, metals, indices, and stocks."""
     import requests
@@ -1235,6 +1301,7 @@ async def _fetch_structured_quote(
         "cryptocompare": _fetch_cryptocompare_quote,
         "metaapi": _fetch_metaapi_quote,
         "fcs": _fetch_fcs_quote,
+        "fmp": _fetch_fmp_quote,
         "yahoo": _fetch_yahoo_quote,
         "twelvedata": _fetch_twelvedata_quote,
         "polygon": _fetch_polygon_quote,
