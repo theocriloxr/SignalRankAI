@@ -3072,6 +3072,195 @@ async def _resolve_referral_reward_tier(
     return "vip" if "vip" in tiers else "premium"
 
 
+async def process_referral_signup_for_user(
+    session: AsyncSession,
+    *,
+    referred_user_id: int,
+    referral_code: str,
+    signup_channel: str = "web",
+) -> dict[str, Any]:
+    """Attribute a newly-created canonical account, including web-only users."""
+    result: dict[str, Any] = {
+        "status": "ignored",
+        "referrer_user_id": None,
+        "referrals_total": 0,
+        "days_granted": 0,
+    }
+    code = str(referral_code or "").strip()
+    if not code:
+        result["status"] = "no_code"
+        return result
+
+    rc = (
+        await session.execute(
+            select(ReferralCode).where(func.lower(ReferralCode.code) == code.lower())
+        )
+    ).scalar_one_or_none()
+    if rc is None:
+        result["status"] = "invalid_code"
+        return result
+
+    referrer = (
+        await session.execute(
+            select(User).where(User.id == int(rc.referrer_user_id)).with_for_update()
+        )
+    ).scalar_one_or_none()
+    referred = (
+        await session.execute(
+            select(User).where(User.id == int(referred_user_id)).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if referrer is None or referred is None:
+        result["status"] = "user_missing"
+        return result
+    if int(referrer.id) == int(referred.id):
+        result["status"] = "self_referral"
+        return result
+
+    result["referrer_user_id"] = int(referrer.id)
+    existing = (
+        await session.execute(
+            select(ReferralAttribution).where(
+                ReferralAttribution.referred_user_id == int(referred.id)
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        result["status"] = "already_referred"
+        result["referrer_user_id"] = int(existing.referrer_user_id)
+        return result
+
+    now = _utcnow()
+    session.add(
+        ReferralAttribution(
+            referred_user_id=int(referred.id),
+            referrer_user_id=int(referrer.id),
+            is_successful=True,
+            successful_at=now,
+            reward_applied=False,
+        )
+    )
+    if not getattr(referred, "referred_by", None) and referrer.telegram_user_id is not None:
+        referred.referred_by = int(referrer.telegram_user_id)
+
+    signup_reference = f"REFERRAL_SIGNUP:{int(referred.id)}"
+    if (
+        await session.execute(
+            select(ReferralReward.id).where(ReferralReward.reference == signup_reference)
+        )
+    ).scalar_one_or_none() is None:
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer.id),
+                referred_user_id=int(referred.id),
+                reward_type="referral_signup",
+                reward_value=1,
+                reference=signup_reference,
+                meta={"referral_code": code, "qualified_on": f"new_{signup_channel}_account"},
+            )
+        )
+    await session.flush()
+
+    total = await _count_referrals(session, referrer_user_id=int(referrer.id))
+    referrer.referral_count = int(total)
+    result["referrals_total"] = int(total)
+    requirement = max(1, int(os.getenv("REFERRALS_PER_REWARD", "3") or 3))
+    grant_days = max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7))
+    if total % requirement:
+        result["status"] = "attributed"
+        return result
+
+    batch_number = int(total // requirement)
+    identity_ref = str(int(referrer.telegram_user_id)) if referrer.telegram_user_id is not None else f"USER{int(referrer.id)}"
+    reward_ref = f"REFERRAL:{identity_ref}:{batch_number}"[:128]
+    existing_reward = (
+        await session.execute(
+            select(ReferralReward).where(ReferralReward.reference == reward_ref)
+        )
+    ).scalar_one_or_none()
+    if existing_reward is not None:
+        result["status"] = "reward_already_granted"
+        result["days_granted"] = int(existing_reward.reward_value or 0)
+        return result
+
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_cap = max(grant_days, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28))
+    used = int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+                    ReferralReward.referrer_user_id == int(referrer.id),
+                    ReferralReward.reward_type == "premium_days",
+                    ReferralReward.created_at >= month_start,
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    remaining = max(0, monthly_cap - used)
+    if remaining <= 0:
+        session.add(
+            ReferralReward(
+                referrer_user_id=int(referrer.id),
+                referred_user_id=int(referred.id),
+                reward_type="premium_days_capped",
+                reward_value=0,
+                reference=reward_ref,
+                meta={"batch": batch_number, "monthly_cap_days": monthly_cap},
+            )
+        )
+        result["status"] = "reward_capped"
+        return result
+
+    granted = min(grant_days, remaining)
+    tier_to_extend = await _resolve_referral_reward_tier(session, referrer)
+    await activate_subscription(
+        session,
+        telegram_user_id=(int(referrer.telegram_user_id) if referrer.telegram_user_id is not None else None),
+        user_id=int(referrer.id),
+        tier=tier_to_extend,
+        duration_days=int(granted),
+        paystack_reference=reward_ref,
+        meta={
+            "source": "referral",
+            "referred_user_id": int(referred.id),
+            "signup_channel": str(signup_channel or "web")[:32],
+            "batch": batch_number,
+            "grant_days": int(granted),
+        },
+    )
+    session.add(
+        ReferralReward(
+            referrer_user_id=int(referrer.id),
+            referred_user_id=int(referred.id),
+            reward_type="premium_days",
+            reward_value=int(granted),
+            reference=reward_ref,
+            meta={"batch": batch_number, "tier_extended": tier_to_extend},
+        )
+    )
+    pending = list(
+        (
+            await session.execute(
+                select(ReferralAttribution)
+                .where(
+                    ReferralAttribution.referrer_user_id == int(referrer.id),
+                    ReferralAttribution.reward_applied.is_(False),
+                )
+                .order_by(ReferralAttribution.created_at.asc())
+                .limit(requirement)
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    for row in pending:
+        row.reward_applied = True
+    await session.flush()
+    result["status"] = "reward_granted"
+    result["days_granted"] = int(granted)
+    return result
+
+
 async def process_referral_start(
     session: AsyncSession,
     referred_telegram_user_id: int,
