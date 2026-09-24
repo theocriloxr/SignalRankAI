@@ -164,6 +164,24 @@ def _tuple_from(value: Any, default: tuple[str, ...] = ()) -> tuple[str, ...]:
     return tuple(out) if out else default
 
 
+def _normalize_asset_classes(value: Any) -> tuple[str, ...]:
+    aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "stocks": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    values = _tuple_from(value, DEFAULT_ASSET_CLASSES if value is None else ())
+    out: list[str] = []
+    for raw in values:
+        item = aliases.get(str(raw or "").strip().lower(), str(raw or "").strip().lower())
+        if item in DEFAULT_ASSET_CLASSES and item not in out:
+            out.append(item)
+    return tuple(out) if out else DEFAULT_ASSET_CLASSES
+
+
 def _normalize_timeframes(value: Any) -> tuple[str, ...]:
     aliases = {
         "60m": "1h",
@@ -247,7 +265,7 @@ def preferences_from_payload(payload: dict[str, Any] | None) -> UserTradingPrefe
     return UserTradingPreferences(
         trade_profile=normalize_trade_profile(data.get("trade_profile") or data.get("profile"), default="all"),
         risk_profile=risk_profile,
-        asset_classes=_tuple_from(asset_classes_raw, DEFAULT_ASSET_CLASSES),
+        asset_classes=_normalize_asset_classes(asset_classes_raw),
         preferred_assets=preferred_assets,
         blocked_assets=blocked_assets,
         preferred_timeframes=_normalize_timeframes(data.get("preferred_timeframes") or data.get("notification_timeframes")),
