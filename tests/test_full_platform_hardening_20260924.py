@@ -243,3 +243,8 @@ def test_market_data_asset_type_keeps_index_aliases_canonical():
         assert not is_stock(symbol), symbol
         assert get_asset_type(symbol) == "index", symbol
         assert normalize_index_symbol(symbol) == provider_symbol
+
+
+def test_requirements_install_sqlalchemy_asyncio_extra():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "SQLAlchemy[asyncio]>=2.0,<3" in requirements
