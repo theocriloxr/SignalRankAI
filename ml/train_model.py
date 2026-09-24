@@ -864,7 +864,16 @@ async def load_training_data(lookback_days: int = 90):
 
             for rj in rejected_rows:
                 outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
-                if outcome not in {"win", "loss"}:
+                # ShadowOutcomeWorker persists barrier outcomes (tp1/tp2/tp3/sl)
+                # while older rows may use win/loss. Normalize both vocabularies
+                # so rejected/non-issued decisions actually feed counterfactual learning.
+                if outcome in {"win", "tp", "tp1", "tp2", "tp3", "partial_tp"}:
+                    normalized_outcome = "win"
+                elif outcome in {"loss", "sl", "stop", "stop_loss"}:
+                    normalized_outcome = "loss"
+                else:
+                    # ambiguous/time-only outcomes do not prove which decision
+                    # policy was correct and must stay out of binary training.
                     continue
 
                 feat = getattr(rj, "features", None) or {}
@@ -888,7 +897,7 @@ async def load_training_data(lookback_days: int = 90):
                     except Exception:
                         continue
 
-                barrier = "upper" if outcome == "win" else "lower"
+                barrier = "upper" if normalized_outcome == "win" else "lower"
                 target = 1 if barrier == "upper" else 0
                 sample_weight = (1.0 if target == 1 else 0.9) * 0.60
                 if false_breakout:
