@@ -45,4 +45,6 @@ def test_ai_status_reports_cache_and_token_usage_without_key_material() -> None:
     assert 'status.get("cache")' in block
     assert 'status.get("usage_totals")' in block
     assert "OpenAI tokens this process" in block
-    assert "OPENAI_API_KEY" not in block
+    assert "provider_status()" in block
+    assert "_api_key()" not in block
+    assert 'os.getenv("OPENAI_API_KEY")' not in block
