@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import hashlib
 import json
 import logging
@@ -30,6 +32,13 @@ def _artifact_db_priority() -> str:
     if explicit in {"interactive", "critical", "background", "analytics"}:
         return explicit
     return "background"
+
+
+def _artifact_query_timeout() -> float:
+    try:
+        return max(5.0, float(os.getenv("ML_ARTIFACT_DB_TIMEOUT_SECONDS", "20") or 20))
+    except Exception:
+        return 20.0
 
 
 def _payload_hash(payload: dict[str, Any]) -> str:
@@ -76,13 +85,16 @@ async def persist_active_model_artifact(
             timeout_seconds=float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30),
             drop_if_busy=False,
         ) as session:
-            await session.execute(
-                update(MLModelArtifact)
-                .where(
-                    MLModelArtifact.model_name == normalized_model_name,
-                    MLModelArtifact.is_active.is_(True),
-                )
-                .values(is_active=False)
+            await asyncio.wait_for(
+                session.execute(
+                    update(MLModelArtifact)
+                    .where(
+                        MLModelArtifact.model_name == normalized_model_name,
+                        MLModelArtifact.is_active.is_(True),
+                    )
+                    .values(is_active=False)
+                ),
+                timeout=_artifact_query_timeout(),
             )
             session.add(
                 MLModelArtifact(
@@ -101,7 +113,7 @@ async def persist_active_model_artifact(
                     trained_at=now_utc_naive(),
                 )
             )
-            await session.commit()
+            await asyncio.wait_for(session.commit(), timeout=_artifact_query_timeout())
         # A candidate artifact is NOT the active champion: make the role
         # explicit so logs can never imply promotion happened.
         role = (
