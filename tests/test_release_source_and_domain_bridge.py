@@ -62,3 +62,28 @@ def test_startup_bridge_is_frontdoor_only_and_opt_in() -> None:
 def test_tcp_port_bridge_compiles() -> None:
     source = (ROOT / "scripts" / "tcp_port_bridge.py").read_text(encoding="utf-8")
     compile(source, "scripts/tcp_port_bridge.py", "exec")
+
+
+def test_startup_requires_auth_secret_for_web_roles() -> None:
+    source = (ROOT / "start.sh").read_text(encoding="utf-8")
+    assert "_require_web_auth_secret()" in source
+    assert "APP_AUTH_SECRET must be configured with at least 32 random characters" in source
+    frontdoor = source[source.index("_start_frontdoor()"):source.index("_start_monolith()")]
+    monolith = source[source.index("_start_monolith()"):source.index("_on_railway=")]
+    assert "_require_web_auth_secret" in frontdoor
+    assert "_require_web_auth_secret" in monolith
+
+
+def test_platform_theme_and_brand_contract() -> None:
+    html = (ROOT / "web" / "platform_app" / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "platform_app" / "styles.css").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "platform_app" / "app.js").read_text(encoding="utf-8")
+    icon = (ROOT / "web" / "platform_app" / "icon.svg").read_text(encoding="utf-8")
+    assert 'id="themeToggle"' in html
+    assert '/app-assets/icon.svg' in html
+    assert ':root[data-theme="light"]' in css
+    assert "prefers-color-scheme:light" in css
+    assert "signalrank.theme" in js
+    assert "Switch to" in js
+    assert "linearGradient" in icon
+    assert "SignalRank" in icon
