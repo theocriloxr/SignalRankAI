@@ -167,7 +167,7 @@ def test_signal_detail_ui_and_tool_handlers_use_query_selector_all():
         assert f"$('.{selector}').forEach" in js
     assert ".signal-detail-panel" in css
     assert ".timeline-event" in css
-    assert re.search(r"(?<!\\$)\\$\\([^)]*\\)\\.forEach", js) is None
+    assert re.search(r"(?<!\$)\$\([^)]*\)\.forEach", js) is None
 
 
 def test_paper_trading_web_controls_match_telegram_lifecycle_actions():
