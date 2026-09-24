@@ -564,3 +564,97 @@ async def test_fmp_quote_without_source_timestamp_fails_closed(monkeypatch):
     assert isinstance(result, LivePriceFailure)
     assert result.provider == "fmp"
     assert result.reason == "source_timestamp_missing"
+
+
+
+@pytest.mark.asyncio
+async def test_delivery_fresh_failover_skips_stale_provider_quote(monkeypatch):
+    import data.get_live_price as prices
+
+    now = time.time()
+    stale = _quote(
+        symbol="EURUSD",
+        asset_class="fx",
+        price=1.17,
+        source_age=45.0,
+    )
+    fresh = _quote(
+        symbol="EURUSD",
+        asset_class="fx",
+        price=1.1702,
+        source_age=2.0,
+    )
+    stale = LivePriceQuote(
+        **{
+            field: getattr(stale, field)
+            for field in stale.__dataclass_fields__
+            if field not in {"provider", "source_timestamp", "request_id"}
+        },
+        provider="fmp",
+        source_timestamp=now - 45.0,
+    )
+    fresh = LivePriceQuote(
+        **{
+            field: getattr(fresh, field)
+            for field in fresh.__dataclass_fields__
+            if field not in {"provider", "source_timestamp", "request_id"}
+        },
+        provider="twelvedata",
+        source_timestamp=now - 2.0,
+    )
+
+    monkeypatch.setattr(prices, "_get_providers_for_asset", lambda _symbol: ["fmp", "twelvedata"])
+
+    async def fake_fetch(provider, _symbol, timeout):
+        return stale if provider == "fmp" else fresh
+
+    monkeypatch.setattr(prices, "_fetch_structured_quote", fake_fetch)
+
+    result = await prices.get_live_price_result(
+        "EURUSD",
+        timeout=4.0,
+        require_delivery_freshness=True,
+    )
+    assert isinstance(result, LivePriceQuote)
+    assert result.provider == "twelvedata"
+    assert result.price == pytest.approx(1.1702)
+
+
+@pytest.mark.asyncio
+async def test_analysis_quote_path_keeps_backward_compatible_first_timestamped_quote(monkeypatch):
+    import data.get_live_price as prices
+
+    stale = _quote(symbol="EURUSD", asset_class="fx", source_age=45.0)
+    stale = LivePriceQuote(
+        **{
+            field: getattr(stale, field)
+            for field in stale.__dataclass_fields__
+            if field not in {"provider", "request_id"}
+        },
+        provider="fmp",
+    )
+    monkeypatch.setattr(prices, "_get_providers_for_asset", lambda _symbol: ["fmp", "twelvedata"])
+
+    calls = []
+
+    async def fake_fetch(provider, _symbol, timeout):
+        calls.append(provider)
+        return stale
+
+    monkeypatch.setattr(prices, "_fetch_structured_quote", fake_fetch)
+
+    result = await prices.get_live_price_result("EURUSD", timeout=4.0)
+    assert isinstance(result, LivePriceQuote)
+    assert result.provider == "fmp"
+    assert calls == ["fmp"]
+
+
+def test_final_delivery_fetch_requests_delivery_fresh_provider_failover():
+    from pathlib import Path
+
+    source = Path("engine/delivery_freshness.py").read_text(encoding="utf-8")
+    section = source[
+        source.index("async def _fetch_final_live_quote"):
+        source.index("async def fetch_trusted_live_quote")
+    ]
+    assert "require_delivery_freshness=True" in section
