@@ -305,6 +305,7 @@ async def _fetch_final_live_quote(symbol: str) -> LivePriceQuote | None:
         result = await get_live_price_result(
             symbol,
             timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)),
+            require_delivery_freshness=True,
         )
         if isinstance(result, LivePriceFailure):
             logger.info(
