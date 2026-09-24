@@ -16,7 +16,7 @@ def test_multi_element_dom_operations_use_query_selector_all_helper():
 
 def test_trading_profile_market_checkboxes_use_multi_selector():
     assert "$$('#tradingProfileForm input[name=\"asset_class\"]').forEach(" in APP_JS
-    assert "$$('#tradingProfileForm input[name=\"asset_class\"]:checked').map(" in APP_JS
+    assert "document.querySelectorAll(\'#tradingProfileForm input[name=\"asset_class\"]:checked\')" in APP_JS
 
 
 def test_signal_filters_cover_every_supported_market_class():
