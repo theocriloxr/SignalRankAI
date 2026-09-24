@@ -91,6 +91,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _fail_closed_on_unavailable() -> bool:
+    """Whether missing/broken ML evidence must veto a filtered candidate."""
+    return _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False)
+
+
 def _ml_enabled() -> bool:
     """ML switch with compatibility across env naming.
 
@@ -228,7 +233,7 @@ class MLFilter:
             (approved: bool, probability: float | None)
         """
         if not self.active or self.model is None:
-            return True, None
+            return (not _fail_closed_on_unavailable()), None
         
         try:
             # Map input features to model's expected feature order
@@ -243,7 +248,7 @@ class MLFilter:
                 feature_vector.append(float(normalized.get(col, 0.0)))
             
             if not feature_vector:
-                return True, None
+                return (not _fail_closed_on_unavailable()), None
             
             import numpy as np
             dmatrix = xgb.DMatrix(np.array([feature_vector]))
@@ -259,5 +264,11 @@ class MLFilter:
                 return True, float(prob)
             approved = prob >= thresh_val
             return approved, float(prob)
-        except Exception:
+        except Exception as exc:
+            if _fail_closed_on_unavailable():
+                logger.warning(
+                    "[ml] inference unavailable; fail-closed veto active error=%s",
+                    type(exc).__name__,
+                )
+                return False, None
             return True, None
