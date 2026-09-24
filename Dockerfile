@@ -37,6 +37,7 @@ RUN python -m compileall -q engine db data worker services ml signalrank_telegra
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_retries_quickly_after_background_contention \
       tests/test_runtime_hardening_contract.py::test_outcome_tracker_skips_reprocessing_already_recorded_tp \
       tests/test_runtime_hardening_contract.py::test_decomposed_worker_does_not_own_dynamic_instrument_catalogue_by_default \
+      tests/test_runtime_hardening_contract.py::test_analytics_owns_dynamic_instrument_catalogue_refresh \
       tests/test_phase4_pass2_db_priority_and_command_speed.py::test_dedicated_analytics_role_cannot_be_pinned_to_one_session \
       tests/test_phase4_pass1_quote_contract.py::test_twelvedata_quote_falls_back_to_timestamped_one_minute_bar \
       tests/test_production_endgame_20260725.py::test_engine_uses_provider_neutral_ai_router_instead_of_raw_gemini_http \
