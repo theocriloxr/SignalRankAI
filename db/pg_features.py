@@ -4282,7 +4282,7 @@ async def expire_signal(session: AsyncSession, signal_id: str) -> None:
     await session.execute(
         update(Signal)
         .where(Signal.signal_id == str(signal_id))
-        .values(expired=True)
+        .values(expired=True, status="expired")
     )
 
 
