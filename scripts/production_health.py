@@ -213,6 +213,73 @@ async def check_redis_url(
     )
 
 
+async def check_shadow_learning_heartbeat(
+    state_url: str,
+    *,
+    timeout_seconds: float,
+    environ: Mapping[str, str] | None = None,
+) -> HealthCheck:
+    """Verify the rejected-signal learner is alive using its shared Redis heartbeat."""
+    env = os.environ if environ is None else environ
+    required = str(env.get("PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING") or "0").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if not required:
+        return HealthCheck("shadow_learning", True, 0, "not_required")
+    if not str(state_url or "").strip():
+        return HealthCheck("shadow_learning", False, 0, "missing_state_redis")
+
+    started = time.monotonic()
+    client = None
+    try:
+        import redis.asyncio as redis
+        client = redis.from_url(
+            state_url,
+            decode_responses=True,
+            max_connections=1,
+            socket_connect_timeout=timeout_seconds,
+            socket_timeout=timeout_seconds,
+        )
+        raw = await asyncio.wait_for(client.get("shadow:tracker:health"), timeout=timeout_seconds)
+        payload = json.loads(raw) if isinstance(raw, str) and raw else raw
+        if not isinstance(payload, dict):
+            return HealthCheck(
+                "shadow_learning",
+                False,
+                int((time.monotonic() - started) * 1_000),
+                "heartbeat_missing",
+            )
+        heartbeat_raw = str(payload.get("heartbeat_at") or "").strip()
+        status = str(payload.get("status") or "").strip().lower()
+        if not heartbeat_raw:
+            ok = False
+            detail = "heartbeat_timestamp_missing"
+        else:
+            from datetime import datetime, timezone
+            heartbeat = datetime.fromisoformat(heartbeat_raw.replace("Z", "+00:00"))
+            if heartbeat.tzinfo is None:
+                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+            age = max(0.0, (datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc)).total_seconds())
+            max_age = max(120.0, float(env.get("SHADOW_LEARNING_HEARTBEAT_MAX_AGE_SECONDS") or 300))
+            ok = status in {"starting", "healthy", "idle"} and age <= max_age
+            detail = f"status={status or 'unknown'};age_seconds={int(age)};max_age_seconds={int(max_age)}"
+    except Exception as exc:
+        ok = False
+        detail = _safe_error(exc)
+    finally:
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+    return HealthCheck(
+        "shadow_learning",
+        ok,
+        int((time.monotonic() - started) * 1_000),
+        detail,
+    )
+
+
 def check_redis_topology(environ: Mapping[str, str] | None = None) -> HealthCheck:
     env = os.environ if environ is None else environ
     state_url = str(env.get("STATE_REDIS_URL") or env.get("REDIS_URL") or "").strip()
@@ -271,6 +338,11 @@ async def collect_health(
                 "delivery_redis",
                 delivery_url,
                 timeout_seconds=timeout_seconds,
+            ),
+            check_shadow_learning_heartbeat(
+                state_url,
+                timeout_seconds=timeout_seconds,
+                environ=env,
             ),
         )
         checks.append(check_redis_topology(env))
