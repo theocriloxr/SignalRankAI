@@ -30,6 +30,14 @@ case "${SIGNALRANK_ENV_PROFILE:-}" in
         fi
         ;;
 esac
+# Dedicated migration-owner role. This is the only protected Railway role
+# allowed to mutate schema; scripts/controlled_migrate.py enforces exact source
+# identity, the advisory lock, and production backup evidence before upgrading.
+if [ "${SERVICE_ROLE:-${RUN_MODE:-}}" = "migration" ] || [ "${RUN_MODE:-}" = "migration" ]; then
+    echo "[boot] migration-owner role selected; running guarded migration only"
+    exec python scripts/controlled_migrate.py --output "${SIGNALRANK_MIGRATION_EVIDENCE:-/tmp/signalrank_migration_evidence.json}"
+fi
+
 # Run migrations only during a controlled deployment. A failed migration is a
 # hard startup failure; the service must never run against an unknown schema.
 if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}" ]; then
