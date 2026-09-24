@@ -851,7 +851,7 @@ async def signal_detail(
             "SELECT "
             "s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
             "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
-            "s.ml_probability,s.ml_probability_calibrated,s.confidence,"
+            "s.ml_probability,s.ml_probability_calibrated,"
             "d.delivered_at,d.delivered_at_utc,d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
             "d.signal_age_at_delivery_seconds,d.telegram_message_id,"
             "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,o.opened_at AS outcome_opened_at,"
