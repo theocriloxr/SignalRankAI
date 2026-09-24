@@ -86,6 +86,37 @@ def main() -> int:
                     GROUP BY 1 ORDER BY 1
                     """,
                 ),
+                "delivery_failures_7d": _query(
+                    cur,
+                    """
+                    SELECT
+                        COALESCE(s.asset_class,'unknown') AS asset_class,
+                        lower(COALESCE(d.delivery_state,'unknown')) AS delivery_state,
+                        CASE
+                            WHEN d.sent_ok IS TRUE THEN 'sent_ok'
+                            WHEN d.last_error IS NULL OR btrim(d.last_error) = '' THEN 'no_error_recorded'
+                            WHEN lower(d.last_error) LIKE '%blocked%' THEN 'telegram_blocked'
+                            WHEN lower(d.last_error) LIKE '%chat not found%' OR lower(d.last_error) LIKE '%chat not accessible%' THEN 'telegram_chat_unreachable'
+                            WHEN lower(d.last_error) LIKE '%deactivated%' THEN 'telegram_user_deactivated'
+                            WHEN lower(d.last_error) LIKE '%retry after%' OR lower(d.last_error) LIKE '%too many requests%' OR lower(d.last_error) LIKE '%rate limit%' THEN 'telegram_rate_limited'
+                            WHEN lower(d.last_error) LIKE '%timeout%' OR lower(d.last_error) LIKE '%timed out%' THEN 'telegram_timeout'
+                            WHEN lower(d.last_error) LIKE '%bad request%' THEN 'telegram_bad_request'
+                            WHEN lower(d.last_error) LIKE '%database%' OR lower(d.last_error) LIKE '%sql%' OR lower(d.last_error) LIKE '%asyncpg%' THEN 'database_error'
+                            WHEN lower(d.last_error) LIKE '%proof%' THEN 'delivery_proof_error'
+                            ELSE 'other_error'
+                        END AS error_class,
+                        COUNT(*) AS rows,
+                        COUNT(*) FILTER (WHERE d.telegram_chat_id IS NULL) AS missing_chat_id,
+                        COUNT(*) FILTER (WHERE d.telegram_message_id IS NULL) AS missing_message_id,
+                        MAX(d.attempt_count) AS max_attempts
+                    FROM signal_deliveries d
+                    JOIN signals s ON s.signal_id=d.signal_id
+                    WHERE d.delivered_at >= NOW()-INTERVAL '7 days'
+                    GROUP BY 1,2,3
+                    ORDER BY rows DESC, 1,2,3
+                    LIMIT 100
+                    """,
+                ),
                 "outcomes_7d": _query(
                     cur,
                     """
