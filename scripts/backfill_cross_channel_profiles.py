@@ -9,6 +9,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.session import get_session
 from services.user_intelligence import backfill_linked_platform_trading_preferences
