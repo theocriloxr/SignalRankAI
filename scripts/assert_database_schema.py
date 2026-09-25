@@ -70,6 +70,7 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.broker_connections') IS NOT NULL AS broker_connections,
           to_regclass('public.trading_account_policies') IS NOT NULL AS trading_account_policies,
           to_regclass('public.broker_reconciliation_state') IS NOT NULL AS broker_reconciliation_state,
+          to_regclass('public.trading_account_ledger_entries') IS NOT NULL AS trading_account_ledger_entries,
           to_regclass('public.broker_execution_decisions') IS NOT NULL AS broker_execution_decisions,
           EXISTS (
             SELECT 1 FROM information_schema.columns
@@ -122,6 +123,7 @@ def check_schema() -> dict[str, Any]:
             "broker_connections",
             "trading_account_policies",
             "broker_reconciliation_state",
+            "trading_account_ledger_entries",
             "broker_execution_decisions",
             "broker_executions_connection_id",
             "mt5_executions_connection_id",
