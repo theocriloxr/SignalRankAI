@@ -245,8 +245,11 @@ def test_engine_uses_provider_neutral_ai_router_instead_of_raw_gemini_http():
     assert "signal[\"ai_review_disagreement\"]" in review
     assert "async def review_signal_structured(" in gemini
     assert "_call_gemini_result(prompt, max_tokens=420)" in gemini
-    assert "rate_limited_circuit_open" in gemini
-    assert "provider_http_404_degraded" in gemini
+    assert "def _gemini_provider_admit()" in gemini
+    assert "def _open_gemini_provider_circuit" in gemini
+    assert 'return False, f"{base}_circuit_open"' in gemini
+    assert 'return "rate_limited_degraded", True' in gemini
+    assert 'return f"{reason}_degraded", True' in gemini
     assert '"temperature": 0.1' not in gemini[gemini.index("async def review_signal_structured"):gemini.index("async def quantize_news_sentiment")]
 
 
