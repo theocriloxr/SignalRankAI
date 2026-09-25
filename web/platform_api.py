@@ -3740,8 +3740,80 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                 {"uid": uid},
             )
         ).mappings().all()
+        mt5_account_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT connection_id,
+                           COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE realized_pnl > 0) AS wins,
+                           COUNT(*) FILTER (WHERE realized_pnl < 0) AS losses,
+                           COUNT(*) FILTER (WHERE realized_pnl = 0) AS breakeven,
+                           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL),0) AS realized_pnl
+                    FROM mt5_executions
+                    WHERE user_id=:uid AND connection_id IS NOT NULL
+                    GROUP BY connection_id
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
+        provider_account_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT connection_id,provider,
+                           COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE LOWER(status)='closed') AS closed,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct > 0) AS wins,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct < 0) AS losses,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct = 0) AS breakeven
+                    FROM broker_executions
+                    WHERE user_id=:uid AND connection_id IS NOT NULL
+                    GROUP BY connection_id,provider
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
         await session.rollback()
     account_payload = dict(account or {})
+    connection_by_id = {
+        str(item.get("connection_id")): item
+        for item in connections
+        if item.get("connection_id")
+    }
+    account_stats: list[dict[str, Any]] = []
+    for row in mt5_account_stats:
+        item = dict(row)
+        connection = connection_by_id.get(str(item.get("connection_id"))) or {}
+        account_stats.append(
+            {
+                **item,
+                "provider": str(connection.get("platform") or "mt5"),
+                "account_mode": str(
+                    connection.get("account_classification") or "UNKNOWN"
+                ),
+                "environment": str(connection.get("environment") or "unknown"),
+                "metric_scope": "single_account",
+                "realized_pnl_pct": None,
+            }
+        )
+    for row in provider_account_stats:
+        item = dict(row)
+        connection = connection_by_id.get(str(item.get("connection_id"))) or {}
+        account_stats.append(
+            {
+                **item,
+                "account_mode": str(
+                    connection.get("account_classification") or "UNKNOWN"
+                ),
+                "environment": str(connection.get("environment") or "unknown"),
+                "metric_scope": "single_account",
+                "realized_pnl": None,
+            }
+        )
+
     return {
         "mt5": mt5,
         "connections": connections,
@@ -3756,8 +3828,17 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             "telegram_linked": account_payload.get("telegram_user_id") is not None,
         },
         "stats": {
-            "mt5": dict(mt5_stats or {}),
-            "providers": [dict(row) for row in provider_stats],
+            "accounts": account_stats,
+            "composition_required": True,
+            "aggregate_disclaimer": (
+                "Provider/user aggregates can combine DEMO, LIVE_PERSONAL and PROP "
+                "accounts. User-facing performance must use the single-account "
+                "composition rows instead."
+            ),
+            "mixed_account_diagnostics": {
+                "mt5": dict(mt5_stats or {}),
+                "providers": [dict(row) for row in provider_stats],
+            },
         },
         "safety": {
             "live_execution_requested": bool(
