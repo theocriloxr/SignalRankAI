@@ -13,10 +13,13 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0039_web_signup_acquisition"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0040_cross_channel_paper_receipts"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
+    paper_receipts = _source("db/migrations/versions/0040_cross_channel_paper_receipts.py")
+    assert 'down_revision = "0039_web_signup_acquisition"' in paper_receipts
+    assert "ALTER COLUMN delivery_id DROP NOT NULL" in paper_receipts
 
 
 def test_direct_signup_accepts_acquisition_and_referral_context() -> None:
