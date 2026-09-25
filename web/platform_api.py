@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -346,6 +347,40 @@ class BrokerExecutionToggleRequest(BaseModel):
 
 class BrokerDefaultRequest(BaseModel):
     confirm: bool
+
+
+class TradingAccountPolicyUpdateRequest(BaseModel):
+    """Per-account hard-risk policy. Percentage values are decimal fractions."""
+
+    confirm: bool
+    account_mode: str = Field(pattern=r"^(PAPER|DEMO|LIVE_PERSONAL|PROP)$")
+    execution_permission: str = Field(
+        pattern=r"^(READ_ONLY|SIGNALS_ONLY|PAPER_ONLY|MANUAL|ASSISTED_EXECUTION|AUTO_EXECUTION)$"
+    )
+    reset_timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    currency: str = Field(default="USD", min_length=3, max_length=8)
+    max_risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"), ge=0, le=Decimal("0.20"))
+    max_daily_loss_pct: Decimal = Field(default=Decimal("0.04"), ge=0, le=Decimal("0.50"))
+    max_total_drawdown_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
+    max_open_positions: int = Field(default=3, ge=0, le=1000)
+    max_leverage: Decimal = Field(default=Decimal("1"), ge=0, le=Decimal("200"))
+    safety_buffer_pct: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("0.50"))
+    external_max_daily_loss_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.50"))
+    external_max_total_drawdown_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.90"))
+    allowed_instruments: list[str] = Field(default_factory=list, max_length=500)
+    allowed_asset_classes: list[str] = Field(default_factory=list, max_length=30)
+    news_trading_allowed: bool = True
+    weekend_holding_allowed: bool = True
+    prop_firm: str | None = Field(default=None, max_length=128)
+    prop_phase: str | None = Field(default=None, max_length=64)
+    prop_rules_version: str | None = Field(default=None, max_length=128)
+    external_rules: dict[str, Any] = Field(default_factory=dict)
+
+
+class AccountFreezeRequest(BaseModel):
+    frozen: bool
+    confirm: bool
+    reason: str | None = Field(default=None, max_length=256)
 
 
 class BrokerLinkRequest(BaseModel):
@@ -3280,6 +3315,121 @@ async def create_broker_metatrader_secure_link(
             detail=str(result.get("error") or "Secure MetaTrader linking failed"),
         )
     return result
+
+
+@router.get("/broker/connections/{connection_id}/policy")
+async def broker_account_policy(
+    connection_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.account_policies import get_account_policy, reconciliation_snapshot
+
+    try:
+        policy = await get_account_policy(int(user["id"]), connection_id)
+        reconciliation = await reconciliation_snapshot(int(user["id"]), connection_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"policy": policy, "reconciliation": reconciliation}
+
+
+@router.put("/broker/connections/{connection_id}/policy")
+async def update_broker_account_policy(
+    connection_id: str,
+    payload: TradingAccountPolicyUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    if payload.account_mode == "PROP":
+        if not payload.prop_firm or not payload.prop_rules_version:
+            raise HTTPException(
+                status_code=422,
+                detail="PROP accounts require prop_firm and prop_rules_version",
+            )
+        if (
+            payload.external_max_daily_loss_pct is None
+            or payload.external_max_total_drawdown_pct is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="PROP accounts require the firm's daily-loss and drawdown limits",
+            )
+
+    from services.account_policies import configure_account_policy
+
+    try:
+        policy = await configure_account_policy(
+            int(user["id"]),
+            connection_id,
+            account_mode=payload.account_mode,
+            execution_permission=payload.execution_permission,
+            reset_timezone=payload.reset_timezone,
+            currency=payload.currency,
+            max_risk_per_trade_pct=payload.max_risk_per_trade_pct,
+            max_daily_loss_pct=payload.max_daily_loss_pct,
+            max_total_drawdown_pct=payload.max_total_drawdown_pct,
+            max_open_positions=payload.max_open_positions,
+            max_leverage=payload.max_leverage,
+            safety_buffer_pct=payload.safety_buffer_pct,
+            external_max_daily_loss_pct=payload.external_max_daily_loss_pct,
+            external_max_total_drawdown_pct=payload.external_max_total_drawdown_pct,
+            allowed_instruments=payload.allowed_instruments,
+            allowed_asset_classes=payload.allowed_asset_classes,
+            news_trading_allowed=payload.news_trading_allowed,
+            weekend_holding_allowed=payload.weekend_holding_allowed,
+            prop_firm=payload.prop_firm,
+            prop_phase=payload.prop_phase,
+            prop_rules_version=payload.prop_rules_version,
+            external_rules=payload.external_rules,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "policy": policy,
+        "execution_remains_disabled": True,
+        "prop_certification_required": payload.account_mode == "PROP",
+    }
+
+
+@router.post("/broker/connections/{connection_id}/safety-freeze")
+async def broker_account_safety_freeze(
+    connection_id: str,
+    payload: AccountFreezeRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if payload.frozen and not str(payload.reason or "").strip():
+        raise HTTPException(status_code=422, detail="A freeze reason is required")
+    from services.account_policies import set_account_frozen
+
+    try:
+        policy = await set_account_frozen(
+            int(user["id"]),
+            connection_id,
+            frozen=payload.frozen,
+            reason=str(payload.reason or "user_unfreeze"),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "policy": policy,
+        "execution_enabled": False,
+        "message": (
+            "Account frozen; new broker execution is disabled."
+            if payload.frozen
+            else "Safety freeze cleared. Execution remains disabled until explicitly re-enabled."
+        ),
+    }
 
 
 @router.post("/broker/connections/{connection_id}/verify")
