@@ -1,0 +1,190 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+
+from core.account_policy import (
+    AccountRiskSnapshot,
+    TradingAccountPolicy,
+    evaluate_account_policy,
+)
+
+
+def _snapshot(**overrides):
+    values = {
+        "current_equity": Decimal("10000"),
+        "day_start_equity": Decimal("10000"),
+        "peak_equity": Decimal("10000"),
+        "daily_realized_pnl": Decimal("0"),
+        "open_positions": 0,
+        "proposed_risk_pct": Decimal("0.005"),
+        "proposed_leverage": Decimal("1"),
+        "symbol": "EURUSD",
+        "asset_class": "FX",
+        "account_is_demo": True,
+        "reconciliation_ready": True,
+        "loss_baselines_verified": False,
+    }
+    values.update(overrides)
+    return AccountRiskSnapshot(**values)
+
+
+def _policy(**overrides):
+    values = {
+        "connection_id": "acct-1",
+        "user_id": 10,
+        "account_mode": "DEMO",
+        "execution_permission": "AUTO_EXECUTION",
+        "status": "configured",
+        "max_risk_per_trade_pct": Decimal("0.01"),
+        "max_daily_loss_pct": Decimal("0.04"),
+        "max_total_drawdown_pct": Decimal("0.08"),
+        "max_open_positions": 3,
+        "max_leverage": Decimal("2"),
+    }
+    values.update(overrides)
+    return TradingAccountPolicy(**values)
+
+
+def test_demo_policy_can_allow_without_live_loss_baseline():
+    decision = evaluate_account_policy(
+        _policy(),
+        _snapshot(),
+        execution_mode="auto",
+    )
+    assert decision.allowed is True
+    assert decision.reasons == ()
+
+
+def test_paper_never_crosses_broker_boundary():
+    decision = evaluate_account_policy(
+        _policy(account_mode="PAPER"),
+        _snapshot(account_is_demo=None),
+        execution_mode="manual_confirmed",
+    )
+    assert decision.allowed is False
+    assert "paper_account_broker_execution_forbidden" in decision.reasons
+
+
+@pytest.mark.parametrize("mode", ["LIVE_PERSONAL", "PROP"])
+def test_real_money_requires_verified_loss_baselines(mode):
+    kwargs = {
+        "account_mode": mode,
+        "execution_permission": "AUTO_EXECUTION",
+    }
+    if mode == "PROP":
+        kwargs.update(
+            certified=True,
+            certification_ref="cert-1",
+            prop_firm="example",
+            prop_rules_version="2026-09",
+            external_max_daily_loss_pct=Decimal("0.05"),
+            external_max_total_drawdown_pct=Decimal("0.10"),
+        )
+    decision = evaluate_account_policy(
+        _policy(**kwargs),
+        _snapshot(account_is_demo=False, loss_baselines_verified=False),
+        execution_mode="auto",
+    )
+    assert decision.allowed is False
+    assert "loss_baseline_unavailable" in decision.reasons
+
+
+def test_certified_prop_uses_conservative_internal_buffered_external_limit():
+    policy = _policy(
+        account_mode="PROP",
+        certified=True,
+        certification_ref="cert-7",
+        prop_firm="example-prop",
+        prop_rules_version="rules-v3",
+        safety_buffer_pct=Decimal("0.01"),
+        max_daily_loss_pct=Decimal("0.04"),
+        max_total_drawdown_pct=Decimal("0.08"),
+        external_max_daily_loss_pct=Decimal("0.05"),
+        external_max_total_drawdown_pct=Decimal("0.10"),
+    )
+    snapshot = _snapshot(
+        current_equity=Decimal("9650"),
+        day_start_equity=Decimal("10000"),
+        peak_equity=Decimal("10000"),
+        account_is_demo=False,
+        loss_baselines_verified=True,
+    )
+    decision = evaluate_account_policy(policy, snapshot, execution_mode="auto")
+    assert decision.allowed is True
+    assert decision.effective_daily_loss_limit == Decimal("0.04")
+    assert decision.effective_drawdown_limit == Decimal("0.08")
+
+    blocked = evaluate_account_policy(
+        policy,
+        _snapshot(
+            current_equity=Decimal("9600"),
+            day_start_equity=Decimal("10000"),
+            peak_equity=Decimal("10000"),
+            account_is_demo=False,
+            loss_baselines_verified=True,
+        ),
+        execution_mode="auto",
+    )
+    assert blocked.allowed is False
+    assert "daily_loss_limit" in blocked.reasons
+
+
+def test_prop_cannot_self_certify_by_only_supplying_limits():
+    policy = _policy(
+        account_mode="PROP",
+        prop_firm="example-prop",
+        prop_rules_version="rules-v3",
+        external_max_daily_loss_pct=Decimal("0.05"),
+        external_max_total_drawdown_pct=Decimal("0.10"),
+    )
+    decision = evaluate_account_policy(
+        policy,
+        _snapshot(account_is_demo=False, loss_baselines_verified=True),
+        execution_mode="auto",
+    )
+    assert decision.allowed is False
+    assert "prop_policy_not_certified" in decision.reasons
+
+
+def test_reconciliation_discrepancy_blocks_new_risk():
+    decision = evaluate_account_policy(
+        _policy(),
+        _snapshot(reconciliation_ready=False),
+        execution_mode="auto",
+    )
+    assert decision.allowed is False
+    assert "account_reconciliation_unready" in decision.reasons
+
+
+def test_assisted_permission_cannot_auto_trade():
+    decision = evaluate_account_policy(
+        _policy(execution_permission="ASSISTED_EXECUTION"),
+        _snapshot(),
+        execution_mode="auto",
+    )
+    assert decision.allowed is False
+    assert "execution_permission_blocked" in decision.reasons
+
+    manual = evaluate_account_policy(
+        _policy(execution_permission="ASSISTED_EXECUTION"),
+        _snapshot(),
+        execution_mode="manual_confirmed",
+    )
+    assert manual.allowed is True
+
+
+def test_account_policy_is_account_specific():
+    a = _policy(connection_id="personal", max_risk_per_trade_pct=Decimal("0.01"))
+    b = _policy(connection_id="prop", max_risk_per_trade_pct=Decimal("0.0025"))
+    snapshot = _snapshot(proposed_risk_pct=Decimal("0.005"))
+    assert evaluate_account_policy(a, snapshot, execution_mode="auto").allowed
+    decision = evaluate_account_policy(b, snapshot, execution_mode="auto")
+    assert not decision.allowed
+    assert "risk_per_trade_limit" in decision.reasons
+
+
+def test_invalid_timezone_is_rejected():
+    with pytest.raises(ValueError, match="invalid_reset_timezone"):
+        _policy(reset_timezone="Definitely/Not-A-Timezone")
