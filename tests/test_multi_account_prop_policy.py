@@ -188,3 +188,26 @@ def test_account_policy_is_account_specific():
 def test_invalid_timezone_is_rejected():
     with pytest.raises(ValueError, match="invalid_reset_timezone"):
         _policy(reset_timezone="Definitely/Not-A-Timezone")
+
+
+def test_execution_claims_are_isolated_by_trading_account():
+    from core.execution_claims import execution_claim_key
+
+    first = execution_claim_key(10, "sig-1", account_scope="broker:personal")
+    same = execution_claim_key(10, "sig-1", account_scope="broker:personal")
+    second = execution_claim_key(10, "sig-1", account_scope="broker:prop-01")
+    paper = execution_claim_key(10, "sig-1", account_scope="paper:10")
+
+    assert first == same
+    assert len({first, second, paper}) == 3
+
+
+def test_execution_evidence_api_accepts_account_scope():
+    import inspect
+    from services.execution_evidence import (
+        get_execution_evidence,
+        get_platform_execution_evidence,
+    )
+
+    assert "connection_id" in inspect.signature(get_execution_evidence).parameters
+    assert "connection_id" in inspect.signature(get_platform_execution_evidence).parameters
