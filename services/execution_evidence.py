@@ -175,6 +175,7 @@ async def get_execution_evidence(
     telegram_user_id: int,
     signal_id: str,
     expected_reference: str | None = None,
+    connection_id: str | None = None,
 ) -> dict[str, Any]:
     """Telegram compatibility path; Telegram proof semantics remain strict."""
     user = (await session.execute(
