@@ -23,7 +23,7 @@ COPY . .
 # Release-critical regression gate. GitHub-hosted CI can be unavailable before a
 # runner starts; these deterministic tests therefore also execute in the image
 # build and must pass before Railway can deploy the artifact.
-RUN echo "release_gate=20260925_web_broker_parity_v1" \
+RUN echo "release_gate=20260925_cross_channel_paper_v2" \
     && python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
     && python -m pytest -q \
       tests/test_provider_backed_asset_discovery.py \
@@ -79,6 +79,7 @@ RUN echo "release_gate=20260925_web_broker_parity_v1" \
       tests/test_startup_selfcheck_secret_redaction.py \
       tests/test_web_first_signup_contract.py \
       tests/test_web_platform_runtime_contract.py \
+      tests/test_cross_channel_paper_parity.py \
       tests/test_cross_channel_profile_parity.py \
       tests/test_release_source_and_domain_bridge.py \
       tests/test_production_operations_package.py \
