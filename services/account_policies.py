@@ -327,8 +327,13 @@ async def set_account_frozen(
         ).scalar_one_or_none()
         if row is None:
             raise LookupError("account_policy_not_found")
+        existing_reason = str(row.frozen_reason or "").strip()
+        if not frozen and row.frozen_at is not None and existing_reason and not existing_reason.startswith("user:"):
+            raise PermissionError("system_safety_freeze_requires_reconciliation")
         row.frozen_at = now_utc_naive() if frozen else None
-        row.frozen_reason = reason_value[:256] if frozen else None
+        row.frozen_reason = (
+            f"user:{reason_value}"[:256] if frozen else None
+        )
         row.updated_at = now_utc_naive()
         if frozen:
             connection.execution_enabled = False
