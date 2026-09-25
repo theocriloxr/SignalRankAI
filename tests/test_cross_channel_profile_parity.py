@@ -109,3 +109,43 @@ def test_web_fanout_reuses_canonical_platform_preferences():
     assert "preferences_from_payload" in source
     assert "signal_matches_preferences" in source
     assert "telegram_user_id" not in source
+
+
+
+def test_mt5_router_uses_one_identity_aware_execution_path():
+    source = Path("services/mt5_signal_router.py").read_text(encoding="utf-8")
+    assert "async def route_platform_signal_to_mt5(" in source
+    assert 'user_identity="platform"' in source
+    assert "get_platform_user_trading_preferences" in source
+    assert "get_platform_execution_evidence" in source
+    assert "reserve_platform_user_execution_quota" in source
+    assert "ensure_platform_mt5_account_id" in source
+    assert "canonical_id = await self._resolve_canonical_user_id(" in source
+    assert "user_id=canonical_id" in source
+
+
+def test_platform_execution_optins_are_canonical_and_telegram_mirrored_when_linked():
+    source = Path("web/platform_api.py").read_text(encoding="utf-8")
+    section = source[
+        source.index('@router.put("/execution-settings")'):
+        source.index('@router.delete("/devices/{session_id}")')
+    ]
+    assert "autoexec_platform_optin:" in section
+    assert "copyexec_platform_optin:" in section
+    assert "autoexec_user_optin:" in section
+    assert "copyexec_user_optin:" in section
+    assert '"source": "platform"' in section
+
+
+def test_execution_quota_and_evidence_have_platform_entrypoints():
+    quota = Path("services/execution_quota.py").read_text(encoding="utf-8")
+    evidence = Path("services/execution_evidence.py").read_text(encoding="utf-8")
+    assert "async def reserve_platform_user_execution_quota(" in quota
+    assert "get_platform_user_trading_preferences" in quota
+    assert "async def get_platform_execution_evidence(" in evidence
+    assert "notification_events" in evidence
+    telegram_section = evidence[
+        evidence.index("async def get_execution_evidence("):
+        evidence.index("__all__")
+    ]
+    assert "web_receipt_count=0" in telegram_section
