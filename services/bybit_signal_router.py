@@ -411,6 +411,8 @@ async def _route_signal_to_bybit_for_identity(
                 expected_slippage_bps=slippage_bps,
                 confidence=confidence,
                 expected_rr=expected_rr,
+                proposed_order_size=Decimal(str(quantity)),
+                order_size_unit="BASE_UNITS",
                 symbol=symbol,
                 asset_class=str(signal.get("asset_class") or "crypto"),
                 strategy=str(signal.get("strategy_name") or signal.get("strategy") or ""),
