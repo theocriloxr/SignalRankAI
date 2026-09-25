@@ -1242,6 +1242,8 @@ class MT5SignalRouter:
                         expected_slippage_bps=slippage_bps,
                         confidence=confidence,
                         expected_rr=expected_rr,
+                        proposed_order_size=Decimal(str(volume)),
+                        order_size_unit="LOT",
                         symbol=asset,
                         asset_class=str(signal.get("asset_class") or ""),
                         strategy=str(signal.get("strategy_name") or signal.get("strategy") or ""),
