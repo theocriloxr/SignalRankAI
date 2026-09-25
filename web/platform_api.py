@@ -16,6 +16,7 @@ from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -310,6 +311,7 @@ class TradingProfileUpdateRequest(BaseModel):
 class SignalExecutionRequest(BaseModel):
     confirm: bool
     provider: str = Field(default="mt5", pattern=r"^(mt4|mt5)$")
+    connection_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SignalFeedbackRequest(BaseModel):
@@ -558,7 +560,7 @@ async def professional_api_user(
         if not row:
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
         user = await user_snapshot(session, int(row["user_id"]))
-        if not user:
+        if not user or user.get("account_status") != "active":
             raise HTTPException(status_code=401, detail="Account unavailable")
         _assert_feature(user, "rest_api")
         await session.execute(
@@ -653,6 +655,10 @@ def _token_response(tokens, client_type: str) -> dict[str, Any]:
 
 
 def _auth_token(request: Request, bearer: HTTPAuthorizationCredentials | None) -> str:
+    # An explicit but malformed Authorization header must never fall back to
+    # ambient browser cookies.
+    if request.headers.get("authorization") and not bearer:
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
     return str((bearer.credentials if bearer else None) or request.cookies.get(ACCESS_COOKIE) or "").strip()
 
 
@@ -686,7 +692,7 @@ async def current_user(
             raise HTTPException(status_code=401, detail="Session is no longer active")
         user = await user_snapshot(session, int(claims["user_id"]))
         await session.rollback()
-    if not user or str(user.get("account_status") or "active") != "active":
+    if not user or user.get("account_status") != "active":
         raise HTTPException(status_code=401, detail="Account unavailable")
     user["session_id"] = claims.get("sid")
     return user
@@ -699,8 +705,24 @@ async def _create_login_response(
     user_id: int,
     client_type: str,
     device_id: str | None,
+    mfa_verified: bool = False,
 ) -> dict[str, Any]:
     async with get_session() as session:
+        user = await user_snapshot(session, int(user_id))
+        if not user or user.get("account_status") != "active":
+            raise HTTPException(status_code=401, detail="Account unavailable")
+        # Every first-factor path (including Telegram and activation) passes
+        # through the same MFA gate before any session or cookie is issued.
+        status = await mfa_status(session, user_id=int(user_id))
+        if status["enabled"] and not mfa_verified:
+            challenge = await create_mfa_login_challenge(session, user_id=int(user_id))
+            await session.commit()
+            return {
+                "authenticated": False,
+                "mfa_required": True,
+                "mfa_token": challenge.token,
+                "expires_at": challenge.expires_at.isoformat(),
+            }
         tokens = await create_session_tokens(
             session,
             user_id=int(user_id),
@@ -708,7 +730,6 @@ async def _create_login_response(
             ip_address=_client_ip(request),
             device_id=device_id,
         )
-        user = await user_snapshot(session, int(user_id))
         await session.commit()
     csrf = _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
     payload = {**_token_response(tokens, client_type), "user": user}
@@ -803,16 +824,6 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     try:
         async with get_session() as session:
             user_id = await authenticate_email_password(session, email=payload.email, password=payload.password)
-            status = await mfa_status(session, user_id=user_id)
-            if status["enabled"]:
-                challenge = await create_mfa_login_challenge(session, user_id=user_id)
-                await session.commit()
-                return {
-                    "authenticated": False,
-                    "mfa_required": True,
-                    "mfa_token": challenge.token,
-                    "expires_at": challenge.expires_at.isoformat(),
-                }
             await session.commit()
     except (AuthenticationError, ValueError) as exc:
         raise HTTPException(status_code=401, detail="Invalid credentials") from exc
@@ -832,17 +843,26 @@ async def refresh(payload: RefreshRequest, request: Request, response: Response)
         raise HTTPException(status_code=401, detail="Refresh token required")
     try:
         async with get_session() as session:
-            tokens = await rotate_refresh_token(
-                session,
-                refresh_token=raw,
-                user_agent=request.headers.get("user-agent"),
-                ip_address=_client_ip(request),
-            )
+            try:
+                tokens = await rotate_refresh_token(
+                    session,
+                    refresh_token=raw,
+                    user_agent=request.headers.get("user-agent"),
+                    ip_address=_client_ip(request),
+                )
+            except AuthenticationError:
+                # Replay detection/expiry can revoke sessions before rejecting
+                # the credential. Preserve those security writes on rejection.
+                await session.commit()
+                raise
             user = await user_snapshot(session, decode_access_token(tokens.access_token)["user_id"])
+            if not user or user.get("account_status") != "active":
+                raise HTTPException(status_code=401, detail="Account unavailable")
             await session.commit()
     except AuthenticationError as exc:
-        _clear_session_cookies(response)
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        rejected = JSONResponse(status_code=401, content={"detail": str(exc)})
+        _clear_session_cookies(rejected)
+        return rejected
     _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
     return {**_token_response(tokens, payload.client_type), "user": user}
 
@@ -1234,6 +1254,7 @@ async def execute_signal_from_platform(
         uid,
         platform=payload.provider,
         execution_mode="manual_confirmed",
+        connection_id=payload.connection_id,
     )
     if not result.success:
         error = str(result.error or "execution_blocked")
@@ -2556,12 +2577,17 @@ async def mfa_login_complete(
 ) -> dict[str, Any]:
     try:
         async with get_session() as session:
-            user_id = await complete_mfa_login(
-                session,
-                token=payload.token,
-                code=payload.code,
-                ip_address=_client_ip(request),
-            )
+            try:
+                user_id = await complete_mfa_login(
+                    session,
+                    token=payload.token,
+                    code=payload.code,
+                    ip_address=_client_ip(request),
+                )
+            except AuthenticationError:
+                # Failed codes increment the bounded challenge attempt counter.
+                await session.commit()
+                raise
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -2571,6 +2597,7 @@ async def mfa_login_complete(
         user_id=user_id,
         client_type=payload.client_type,
         device_id=payload.device_id,
+        mfa_verified=True,
     )
 
 
@@ -2595,16 +2622,6 @@ async def magic_link_complete(
     try:
         async with get_session() as session:
             user_id = await consume_magic_login(session, token=payload.token, ip_address=_client_ip(request))
-            status = await mfa_status(session, user_id=user_id)
-            if status["enabled"]:
-                challenge = await create_mfa_login_challenge(session, user_id=user_id)
-                await session.commit()
-                return {
-                    "authenticated": False,
-                    "mfa_required": True,
-                    "mfa_token": challenge.token,
-                    "expires_at": challenge.expires_at.isoformat(),
-                }
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -2681,13 +2698,16 @@ async def get_mfa_status(user: dict[str, Any] = Depends(current_user)) -> dict[s
 
 @router.post("/security/mfa/setup")
 async def setup_mfa(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    async with get_session() as session:
-        setup = await begin_totp_setup(
-            session,
-            user_id=int(user["id"]),
-            account_label=str(user.get("primary_email") or user.get("public_user_id") or user["id"]),
-        )
-        await session.commit()
+    try:
+        async with get_session() as session:
+            setup = await begin_totp_setup(
+                session,
+                user_id=int(user["id"]),
+                account_label=str(user.get("primary_email") or user.get("public_user_id") or user["id"]),
+            )
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"secret": setup.secret, "provisioning_uri": setup.provisioning_uri, "expires_at": setup.expires_at.isoformat()}
 
 

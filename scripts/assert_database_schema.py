@@ -60,13 +60,19 @@ def check_schema() -> dict[str, Any]:
 
     query = """
         SELECT
-          (SELECT version_num FROM alembic_version LIMIT 1) AS deployed_revision,
+          (SELECT array_agg(version_num ORDER BY version_num) FROM alembic_version) AS deployed_revisions,
           to_regclass('public.subscription_products') IS NOT NULL AS subscription_products,
           to_regclass('public.instruments') IS NOT NULL AS instruments,
           to_regclass('public.webhook_deliveries') IS NOT NULL AS webhook_deliveries,
           to_regclass('public.auth_identities') IS NOT NULL AS auth_identities,
           to_regclass('public.user_sessions') IS NOT NULL AS user_sessions,
           to_regclass('public.user_acquisition') IS NOT NULL AS user_acquisition,
+          to_regclass('public.broker_connections') IS NOT NULL AS broker_connections,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'signals'
+              AND column_name = 'ml_recovery_mode'
+          ) AS signals_ml_recovery_mode,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -79,14 +85,16 @@ def check_schema() -> dict[str, Any]:
           inet_server_port() AS server_port
     """
     with closing(psycopg2.connect(url, connect_timeout=10)) as connection:
-        connection.autocommit = True
+        connection.set_session(readonly=True, autocommit=True)
         with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '10000ms'")
             cursor.execute(query)
             row = cursor.fetchone()
             columns = [getattr(item, "name", item[0]) for item in cursor.description]
 
     record = dict(zip(columns, row, strict=True))
-    deployed = str(record.pop("deployed_revision") or "")
+    revisions = list(record.pop("deployed_revisions") or [])
+    deployed = str(revisions[0]) if len(revisions) == 1 else ""
     required = {
         key: bool(record.pop(key))
         for key in (
@@ -96,6 +104,8 @@ def check_schema() -> dict[str, Any]:
             "auth_identities",
             "user_sessions",
             "user_acquisition",
+            "broker_connections",
+            "signals_ml_recovery_mode",
             "users_public_user_id",
         )
     }
@@ -105,6 +115,7 @@ def check_schema() -> dict[str, Any]:
         "status": "PASS" if ok else "BLOCKED",
         "ok": ok,
         "alembic_current": deployed or None,
+        "alembic_revisions": revisions,
         "alembic_expected_head": expected,
         "required_schema": required,
         "missing": missing,
@@ -123,13 +134,13 @@ def main() -> int:
     try:
         payload = check_schema()
     except RuntimeError as exc:
-        payload = {"status": "BLOCKED", "ok": False, "error": str(exc)}
+        payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
         code = EXIT_CONFIGURATION
     except Exception as exc:  # pragma: no cover - environment/network dependent
         payload = {
             "status": "BLOCKED",
             "ok": False,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
         code = EXIT_UNREACHABLE
     else:

@@ -23,6 +23,7 @@ from services.bybit_client import (
 )
 from services.security import decrypt_secret
 from services.execution_quota import release_user_execution_quota, reserve_user_execution_quota
+from services.broker_connections import account_classification, resolve_execution_connection
 from utils.timeutils import now_utc_naive
 
 
@@ -83,6 +84,8 @@ async def route_signal_to_bybit(
     signal: Mapping[str, Any],
     telegram_user_id: int,
     execution_mode: str = "auto",
+    *,
+    connection_id: str | None = None,
 ) -> BybitRouteResult:
     if str(execution_mode or "").strip().lower() in {"auto", "copy", "copy_trade"}:
         from core.live_execution_integrity import evaluate_live_signal_admission
@@ -106,6 +109,12 @@ async def route_signal_to_bybit(
         user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one_or_none()
         if user is None:
             return BybitRouteResult(False, "User profile not found", error="user_not_found")
+        try:
+            connection = await resolve_execution_connection(
+                int(user.id), platform="bybit", connection_id=connection_id,
+            )
+        except (LookupError, PermissionError) as exc:
+            return BybitRouteResult(False, "Broker account selection blocked", error=str(exc))
         try:
             from services.user_intelligence import (
                 get_user_trading_preferences,
@@ -153,6 +162,7 @@ async def route_signal_to_bybit(
         duplicate_asset = int((await session.execute(
             select(func.count(BrokerExecution.id)).where(
                 BrokerExecution.user_id == int(user.id),
+                BrokerExecution.account_ref == connection.connection_id,
                 BrokerExecution.symbol == symbol,
                 func.lower(BrokerExecution.status).in_(open_statuses),
             )
@@ -162,8 +172,13 @@ async def route_signal_to_bybit(
             return BybitRouteResult(False, "An open execution already exists for this asset", error="duplicate_open_asset")
         if bybit_open_count + mt5_open_count >= max_positions:
             return BybitRouteResult(False, "User profile maximum concurrent positions reached", error="profile_max_concurrent_positions")
-        state_row = await session.get(RuntimeState, _state_key(int(telegram_user_id)))
-        value = dict(getattr(state_row, "value", {}) or {}) if state_row else {}
+        try:
+            decoded = decrypt_secret(str(connection.secret_encrypted or ""))
+            value = json.loads(decoded) if decoded else {}
+            if not isinstance(value, dict):
+                raise ValueError("invalid credential envelope")
+        except (ValueError, TypeError):
+            return BybitRouteResult(False, "Broker credentials unavailable", error="broker_credentials_invalid")
         delivery = (await session.execute(
             select(SignalDelivery).where(
                 SignalDelivery.user_id == int(user.id),
@@ -176,8 +191,12 @@ async def route_signal_to_bybit(
     secret_enc = str(value.get("api_secret_enc") or "")
     api_key = decrypt_secret(key_enc) if key_enc else None
     api_secret = decrypt_secret(secret_enc) if secret_enc else None
-    sandbox = bool(value.get("sandbox", True))
-    permissions = dict(value.get("permissions") or {})
+    sandbox = value.get("sandbox")
+    if type(sandbox) is not bool or (
+        (account_classification(connection) == "DEMO") != sandbox
+    ):
+        return BybitRouteResult(False, "Broker account classification mismatch", error="account_classification_mismatch")
+    permissions = dict(connection.permissions or {})
     account_ready = bool(api_key and api_secret and permissions.get("trade") and not permissions.get("withdraw") and not permissions.get("internal_transfer"))
 
     client = BybitV5Client(BybitCredentials(str(api_key or ""), str(api_secret or ""), sandbox))
@@ -253,7 +272,7 @@ async def route_signal_to_bybit(
         risk_allowed=risk_allowed,
         evidence_allowed=delivery is not None,
         kill_switch=kill_switch,
-        account_id=str(value.get("masked_key") or "bybit"),
+        account_id=connection.connection_id,
         user_enabled=user_enabled,
         account_is_demo=sandbox,
         credentials_encrypted=bool(key_enc and secret_enc),
@@ -263,12 +282,22 @@ async def route_signal_to_bybit(
         resources_available=await _resources_available(),
         reconciliation_ready=reconciliation_ok,
         broker_provider="bybit",
+        canonical_user_id=int(user.id),
+        account_classification=account_classification(connection),
     )
     gate = ExecutionGate()
     idempotency_key = gate_request.key()
     client_order_id = f"sr-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:30]}"
 
     async def submit(_: ExecutionRequest) -> dict[str, Any]:
+        try:
+            current = await resolve_execution_connection(
+                int(user.id), platform="bybit", connection_id=connection.connection_id,
+            )
+        except (LookupError, PermissionError) as exc:
+            return {"success": False, "status": "BLOCKED", "error": str(exc)}
+        if current.secret_encrypted != connection.secret_encrypted or current.environment != connection.environment:
+            return {"success": False, "status": "BLOCKED", "error": "broker_connection_changed"}
         quota_user_id: int | None = None
         async with get_session(label="bybit.reserve", timeout_seconds=8.0) as session:
             existing = (await session.execute(select(BrokerExecution).where(
@@ -294,7 +323,7 @@ async def route_signal_to_bybit(
                 }
             row = BrokerExecution(
                 user_id=int(user.id), signal_id=signal_id, provider="bybit",
-                account_ref=str(value.get("masked_key") or "bybit"), idempotency_key=idempotency_key,
+                account_ref=connection.connection_id, idempotency_key=idempotency_key,
                 provider_client_order_id=client_order_id, symbol=symbol, direction=direction,
                 quantity=float(quantity), entry_price=entry, stop_loss=stop, take_profit=take_profit,
                 status="reserved", tier_at_execution=str(getattr(user, "tier", "vip") or "vip"),

@@ -8,6 +8,8 @@ contract.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -175,6 +177,7 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "account_ref_masked": _mask_account_ref(get("account_ref")),
         "external_account_id": get("external_account_id"),
         "environment": str(get("environment") or "unknown"),
+        "account_classification": account_classification(row),
         "auth_mode": str(get("auth_mode") or "existing"),
         "server": get("server"),
         "status": str(get("status") or "pending"),
@@ -190,6 +193,100 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "created_at": get("created_at"),
         "updated_at": get("updated_at"),
     }
+
+
+def account_classification(row: BrokerConnection | dict[str, Any]) -> str:
+    """Normalize persisted account mode without downgrading explicit prop policy."""
+    meta = row.get("meta", {}) if isinstance(row, dict) else row.meta
+    environment = row.get("environment") if isinstance(row, dict) else row.environment
+    explicit = (meta or {}).get("account_classification")
+    if explicit is not None:
+        return str(explicit).strip().upper()
+    return {"paper": "PAPER", "demo": "DEMO", "live": "LIVE_PERSONAL", "prop": "PROP"}.get(
+        str(environment or "").strip().lower(), "UNKNOWN"
+    )
+
+
+def execution_connection_error(row: BrokerConnection, user_id: int) -> str | None:
+    """Evaluate persisted owner, permissions and account health before broker I/O."""
+    if row.user_id != user_id or not str(row.connection_id or "").strip():
+        return "broker_connection_not_found"
+    mode = account_classification(row)
+    if mode == "PAPER":
+        return "paper_account_broker_execution_forbidden"
+    if mode == "PROP":
+        return "prop_policy_certification_required"
+    if mode not in {"DEMO", "LIVE_PERSONAL"}:
+        return "account_classification_required"
+    if str(row.status or "").strip().lower() not in {"linked", "ready", "verified"}:
+        return "broker_account_not_ready"
+    permissions = dict(row.permissions or {})
+    if permissions.get("trade") is not True:
+        return "broker_trade_permission_required"
+    if permissions.get("withdraw", False) is not False or permissions.get("internal_transfer", False) is not False:
+        return "broker_trade_only_permissions_required"
+    if row.execution_enabled is not True:
+        return "account_execution_disabled"
+    return None
+
+
+async def resolve_execution_connection(
+    user_id: int, *, platform: str, connection_id: str | None = None,
+) -> BrokerConnection:
+    """Resolve one owned account; a preferred account cannot resolve ambiguity."""
+    async with get_session(label="broker.execution.resolve", timeout_seconds=6.0) as session:
+        query = select(BrokerConnection).where(
+            BrokerConnection.user_id == int(user_id),
+            BrokerConnection.platform == str(platform).strip().lower(),
+        )
+        if connection_id is not None:
+            if not str(connection_id).strip():
+                raise LookupError("broker_connection_not_found")
+            query = query.where(BrokerConnection.connection_id == str(connection_id).strip())
+        rows = (await session.execute(query.limit(2))).scalars().all()
+        if not rows:
+            raise LookupError("broker_connection_not_found")
+        if len(rows) != 1:
+            raise PermissionError("explicit_broker_connection_required")
+        row = rows[0]
+        error = execution_connection_error(row, int(user_id))
+        if error:
+            raise PermissionError(error)
+        # The returned ORM row is a detached snapshot, not an implicit account cursor.
+        session.expunge(row)
+        await session.rollback()
+        return row
+
+
+async def register_exchange_connection(
+    telegram_user_id: int, *, provider: str, api_key: str, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Migrate encrypted exchange linkage into the canonical account registry."""
+    from services.security import encrypt_secret
+
+    async with get_session(label="broker.exchange.owner", timeout_seconds=6.0) as session:
+        owner = (await session.execute(
+            select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+        )).scalar_one_or_none()
+        await session.rollback()
+    if owner is None:
+        raise LookupError("canonical user not found")
+    encrypted = encrypt_secret(json.dumps(payload, sort_keys=True))
+    if not encrypted:
+        raise ValueError("Broker credential encryption failed")
+    sandbox = payload.get("sandbox")
+    if type(sandbox) is not bool:
+        raise ValueError("Broker demo/live classification is required")
+    # API fingerprints are internal identifiers; masked keys are display-only.
+    account_ref = hashlib.sha256(f"{provider}:{sandbox}:{api_key}".encode()).hexdigest()
+    return await upsert_connection(
+        user_id=int(owner), platform=provider, connector=provider,
+        account_ref=account_ref, external_account_id=None,
+        environment="demo" if sandbox else "live", auth_mode="api_key",
+        secret_encrypted=encrypted, status="verified",
+        permissions=dict(payload.get("permissions") or {}),
+        meta={"account_classification": "DEMO" if sandbox else "LIVE_PERSONAL"},
+    )
 
 
 async def assert_connection_capacity(user_id: int, tier: str) -> None:
@@ -299,7 +396,12 @@ async def upsert_connection(
             if external_account_id
             else row.external_account_id
         )
-        row.environment = str(environment or "unknown").strip().lower()[:16]
+        next_environment = str(environment or "unknown").strip().lower()[:16]
+        if row.environment != next_environment or (
+            secret_encrypted is not None and row.secret_encrypted != secret_encrypted
+        ):
+            row.execution_enabled = False
+        row.environment = next_environment
         row.auth_mode = str(auth_mode or "existing").strip().lower()[:32]
         if secret_encrypted is not None:
             row.secret_encrypted = str(secret_encrypted)
@@ -318,7 +420,11 @@ async def upsert_connection(
         row.last_error_message = (
             str(last_error_message).strip()[:512] if last_error_message else None
         )
-        row.meta = dict(meta or row.meta or {})
+        next_meta = dict(meta or row.meta or {})
+        if (row.meta or {}).get("account_classification") is not None:
+            # Relinking credentials must never downgrade a PROP account policy.
+            next_meta["account_classification"] = row.meta["account_classification"]
+        row.meta = next_meta
         row.updated_at = datetime.utcnow()
         await session.commit()
         await session.refresh(row)
@@ -348,8 +454,9 @@ async def set_execution_enabled(
                 raise PermissionError("Execution-risk terms must be accepted first")
             if str(row.status or "").lower() not in {"linked", "ready", "verified"}:
                 raise PermissionError("Verify the broker connection before enabling execution")
-            if not bool((row.permissions or {}).get("trade", False)):
-                raise PermissionError("This broker connection is read-only")
+            reason = execution_connection_error(row, int(user_id))
+            if reason and reason != "account_execution_disabled":
+                raise PermissionError(reason)
         row.execution_enabled = bool(enabled)
         row.updated_at = datetime.utcnow()
         await session.commit()

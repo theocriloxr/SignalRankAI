@@ -330,10 +330,19 @@ async def authenticate_email_password(session: Any, *, email: str, password: str
     ).first()
     if not row or not verify_password(password, str(row[1])):
         raise AuthenticationError("invalid_credentials")
-    if str(row[2] or "active") != "active":
+    if row[2] != "active":
         raise AuthenticationError("account_unavailable")
     await session.execute(text("UPDATE users SET last_active_at=NOW(),updated_at=NOW() WHERE id=:uid"), {"uid": int(row[0])})
     return int(row[0])
+
+
+async def _require_active_account(session: Any, user_id: int) -> None:
+    row = (await session.execute(
+        text("SELECT account_status FROM users WHERE id=:uid"),
+        {"uid": int(user_id)},
+    )).first()
+    if not row or row[0] != "active":
+        raise AuthenticationError("account_unavailable")
 
 
 async def create_session_tokens(
@@ -344,6 +353,7 @@ async def create_session_tokens(
     ip_address: str | None = None,
     device_id: str | None = None,
 ) -> SessionTokens:
+    await _require_active_account(session, user_id)
     session_id = str(uuid4())
     family_id = str(uuid4())
     raw_refresh = "srr_" + secrets.token_urlsafe(48)
@@ -429,6 +439,7 @@ async def rotate_refresh_token(
         )
         raise AuthenticationError("refresh_token_expired")
 
+    await _require_active_account(session, int(user_id))
     new_session_id = str(uuid4())
     raw_refresh = "srr_" + secrets.token_urlsafe(48)
     refresh_expires = now + timedelta(days=max(1, int(os.getenv("APP_REFRESH_TOKEN_TTL_DAYS", "30"))))
@@ -948,6 +959,7 @@ async def _consume_account_challenge(
     token: str,
     purpose: str,
     ip_address: str | None = None,
+    consume: bool = True,
 ) -> tuple[int | None, dict[str, Any]]:
     row = (
         await session.execute(
@@ -966,12 +978,13 @@ async def _consume_account_challenge(
         raise AuthenticationError("challenge_expired")
     if int(row["attempts"] or 0) >= int(row["max_attempts"] or 5):
         raise AuthenticationError("challenge_attempt_limit")
-    await session.execute(
-        text(
-            "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:challenge_id"
-        ),
-        {"challenge_id": row["challenge_id"], "ip": _fingerprint(ip_address)},
-    )
+    if consume:
+        await session.execute(
+            text(
+                "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:challenge_id"
+            ),
+            {"challenge_id": row["challenge_id"], "ip": _fingerprint(ip_address)},
+        )
     return (int(row["user_id"]) if row["user_id"] is not None else None, dict(row["metadata"] or {}))
 
 
@@ -1089,14 +1102,17 @@ async def begin_totp_setup(session: Any, *, user_id: int, account_label: str) ->
     if not encrypted:
         raise RuntimeError("MFA secret encryption unavailable")
     expires_at = now_utc_naive() + timedelta(minutes=10)
-    await session.execute(
+    result = await session.execute(
         text(
             "INSERT INTO user_mfa_totp(user_id,encrypted_secret,enabled,created_at,updated_at) "
             "VALUES(:uid,:secret,FALSE,NOW(),NOW()) ON CONFLICT(user_id) DO UPDATE SET "
-            "encrypted_secret=EXCLUDED.encrypted_secret,enabled=FALSE,verified_at=NULL,last_used_step=NULL,created_at=NOW(),updated_at=NOW()"
+            "encrypted_secret=EXCLUDED.encrypted_secret,enabled=FALSE,verified_at=NULL,last_used_step=NULL,created_at=NOW(),updated_at=NOW() "
+            "WHERE user_mfa_totp.enabled=FALSE RETURNING user_id"
         ),
         {"uid": int(user_id), "secret": encrypted},
     )
+    if not result.first():
+        raise AuthenticationError("mfa_already_enabled")
     issuer = str(os.getenv("APP_NAME") or "SignalRankAI")
     uri = f"otpauth://totp/{quote(issuer)}:{quote(account_label)}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30"
     await record_security_event(session, user_id=int(user_id), event_type="mfa.setup_started")
@@ -1104,7 +1120,7 @@ async def begin_totp_setup(session: Any, *, user_id: int, account_label: str) ->
 
 
 async def enable_totp(session: Any, *, user_id: int, code: str) -> list[str]:
-    row = (await session.execute(text("SELECT encrypted_secret,last_used_step FROM user_mfa_totp WHERE user_id=:uid AND created_at>NOW()-INTERVAL '15 minutes' FOR UPDATE"), {"uid": int(user_id)})).first()
+    row = (await session.execute(text("SELECT encrypted_secret,last_used_step FROM user_mfa_totp WHERE user_id=:uid AND enabled=FALSE AND created_at>NOW()-INTERVAL '10 minutes' FOR UPDATE"), {"uid": int(user_id)})).first()
     if not row:
         raise AuthenticationError("mfa_setup_not_started")
     secret = decrypt_secret(str(row[0]))
@@ -1155,10 +1171,24 @@ async def create_mfa_login_challenge(session: Any, *, user_id: int) -> AccountCh
 
 
 async def complete_mfa_login(session: Any, *, token: str, code: str, ip_address: str | None = None) -> int:
-    user_id, _ = await _consume_account_challenge(session, token=token, purpose="mfa_login", ip_address=ip_address)
+    # Keep the challenge row locked through verification. Failure consumes an
+    # attempt; only a valid code consumes the challenge itself. The HTTP caller
+    # commits AuthenticationError outcomes so failures cannot reset the budget.
+    user_id, _ = await _consume_account_challenge(
+        session, token=token, purpose="mfa_login", ip_address=ip_address, consume=False,
+    )
     if user_id is None:
         raise AuthenticationError("invalid_mfa_challenge")
+    await _require_active_account(session, int(user_id))
+    await session.execute(
+        text("UPDATE login_challenges SET attempts=attempts+1 WHERE token_hash=:token_hash AND purpose='mfa_login'"),
+        {"token_hash": _sha256(token)},
+    )
     method = await verify_user_mfa(session, user_id=int(user_id), code=code)
+    await session.execute(
+        text("UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE token_hash=:token_hash AND purpose='mfa_login'"),
+        {"token_hash": _sha256(token), "ip": _fingerprint(ip_address)},
+    )
     await record_security_event(session, user_id=int(user_id), event_type="mfa.login_completed", metadata={"method": method}, ip_address=ip_address)
     return int(user_id)
 

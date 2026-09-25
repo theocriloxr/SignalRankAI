@@ -1716,7 +1716,7 @@ async def ensure_platform_metatrader_account_id(
     )
     if not connection:
         # Legacy MT5 fallback during migration.
-        if platform in (None, "mt5") and not require_execution_enabled:
+        if connection_id is None and platform in (None, "mt5") and not require_execution_enabled:
             return await ensure_platform_mt5_account_id(int(user_id))
         return None
     account_id = str(connection.get("external_account_id") or "").strip()

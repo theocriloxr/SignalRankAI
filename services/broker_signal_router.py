@@ -34,6 +34,8 @@ async def route_signal_to_broker(
     signal: Mapping[str, Any],
     telegram_user_id: int,
     execution_mode: str = "auto",
+    *,
+    connection_id: str | None = None,
 ) -> BrokerRouteResult:
     from core.execution_claims import execution_destination_lock
     from db.session import get_session
@@ -87,12 +89,14 @@ async def route_signal_to_broker(
 
             routed = await route_signal_to_bybit(
                 signal, int(telegram_user_id), execution_mode=execution_mode,
+                connection_id=connection_id,
             )
         elif provider == "mt5":
             from services.mt5_signal_router import route_signal_to_mt5
 
             routed = await route_signal_to_mt5(
                 dict(signal), int(telegram_user_id), execution_mode=execution_mode,
+                connection_id=connection_id,
             )
         else:
             return BrokerRouteResult(

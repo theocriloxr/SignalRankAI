@@ -179,7 +179,7 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
         )
 
     return {
-        "status": "PASS",
+        "status": "BLOCKED" if certification is not None and certification["returncode"] != 0 else "PASS",
         "evidence_type": "staging_integration",
         "environment": environment,
         "started_at": started_at.isoformat(),
@@ -192,7 +192,7 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
         "bootstrap": bootstrap,
         "structural_proof": structural_proof,
         "certification": certification,
-        "certification_passed": certification is None or certification["returncode"] == 0,
+        "certification_passed": None if certification is None else certification["returncode"] == 0,
     }
 
 
@@ -210,14 +210,14 @@ def main() -> int:
             top=args.top,
             run_certification=not args.skip_certification,
         )
-        code = 0
+        code = 0 if payload["status"] == "PASS" else 1
     except Exception as exc:
         payload = {
             "status": "BLOCKED",
             "evidence_type": "staging_integration",
             "environment": _environment(),
             "finished_at": datetime.now(timezone.utc).isoformat(),
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
         code = 1
 

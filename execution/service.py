@@ -61,20 +61,30 @@ class ExecutionRequest:
     # every existing Telegram caller and positional constructor compatible.
     user_identity: str = "telegram"
     canonical_user_id: int | None = None
+    account_classification: str = ""
 
     def key(self) -> str:
         if self.idempotency_key:
-            return str(self.idempotency_key)
+            # Caller keys must never share a reservation across owners/accounts.
+            owner = self.canonical_user_id if self.canonical_user_id is not None else self.user_id
+            scope = "platform" if self.canonical_user_id is not None else self.user_identity
+            payload = f"{scope}:{owner}|{self.account_id}|{self.idempotency_key}"
+            return hashlib.sha256(payload.encode("utf-8")).hexdigest()
         identity = str(self.user_identity or "telegram").strip().lower()
-        if identity == "telegram":
+        if self.canonical_user_id is not None:
+            payload = (
+                f"platform:{self.canonical_user_id}|{self.account_id}|"
+                f"{self.signal_id}|{str(self.mode).strip().lower()}"
+            )
+        elif identity == "telegram":
             # Preserve historical Telegram idempotency keys exactly.
             payload = (
-                f"{int(self.user_id)}|{self.account_id}|"
+                f"{self.user_id}|{self.account_id}|"
                 f"{self.signal_id}|{str(self.mode).strip().lower()}"
             )
         else:
             payload = (
-                f"{identity}:{int(self.user_id)}|{self.account_id}|"
+                f"{identity}:{self.user_id}|{self.account_id}|"
                 f"{self.signal_id}|{str(self.mode).strip().lower()}"
             )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -116,6 +126,35 @@ class ExecutionGate:
 
     def preflight(self, request: ExecutionRequest) -> GateDecision:
         reasons: list[str] = []
+        identity = str(request.user_identity or "").strip().lower()
+        if identity not in {"telegram", "platform"}:
+            reasons.append("unsupported_execution_identity")
+        if type(request.user_id) is not int or request.user_id <= 0:
+            reasons.append("execution_user_required")
+        if not str(request.account_id or "").strip():
+            reasons.append("execution_account_required")
+        if request.canonical_user_id is not None and (
+            type(request.canonical_user_id) is not int or request.canonical_user_id <= 0
+        ):
+            reasons.append("canonical_user_required")
+        if identity == "platform" and request.canonical_user_id != request.user_id:
+            reasons.append("canonical_user_identity_mismatch")
+        provider = str(request.broker_provider or "").strip().lower()
+        if provider not in {"mt4", "mt5", "bybit"}:
+            reasons.append("unsupported_broker_provider")
+        classification = str(request.account_classification or "").strip().upper()
+        if classification == "PAPER":
+            reasons.append("paper_account_broker_execution_forbidden")
+        elif classification == "PROP":
+            # PROP activation requires a separately certified account policy path.
+            reasons.append("prop_policy_certification_required")
+        elif classification and classification not in {"DEMO", "LIVE_PERSONAL"}:
+            reasons.append("unknown_account_classification")
+        elif classification and (
+            (classification == "DEMO" and request.account_is_demo is not True)
+            or (classification == "LIVE_PERSONAL" and request.account_is_demo is not False)
+        ):
+            reasons.append("account_classification_mismatch")
         mode = str(request.mode or "signals_only").strip().lower()
         if mode not in {"manual_confirmed", "auto", "copy_trade", "live"}:
             reasons.append("execution_mode_not_live")
@@ -137,7 +176,7 @@ class ExecutionGate:
             reasons.append("broker_account_not_ready")
         if not request.credentials_encrypted:
             reasons.append("encrypted_credentials_required")
-        if request.account_is_demo is None:
+        if type(request.account_is_demo) is not bool:
             reasons.append("account_demo_live_classification_required")
         elif request.account_is_demo:
             if not _env_enabled("DEMO_EXECUTION_ENABLED", True):
@@ -200,8 +239,6 @@ class ExecutionGate:
                 reasons.append("METATRADER_LIVE_ACCOUNTS_DISABLED")
             if provider == "bybit" and not self.safety_flags.bybit_execution_enabled:
                 reasons.append("BYBIT_EXECUTION_DISABLED")
-            if provider not in {"mt4", "mt5", "bybit"}:
-                reasons.append("unsupported_broker_provider")
         if not request.quote_trusted:
             reasons.append("trusted_quote_required")
         try:
@@ -249,8 +286,10 @@ class ExecutionGate:
         except (TypeError, ValueError):
             entry, stop = 0.0, 0.0
         direction = str(signal.get("direction") or signal.get("side") or "").lower()
-        if entry <= 0 or stop <= 0:
+        if not math.isfinite(entry) or not math.isfinite(stop) or entry <= 0 or stop <= 0:
             reasons.append("broker_native_stop_required")
+        elif direction not in {"long", "buy", "short", "sell"}:
+            reasons.append("execution_direction_required")
         elif direction in {"long", "buy"} and stop >= entry:
             reasons.append("long_stop_must_be_below_entry")
         elif direction in {"short", "sell"} and stop <= entry:

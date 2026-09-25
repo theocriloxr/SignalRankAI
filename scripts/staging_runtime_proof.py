@@ -19,7 +19,17 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-EXPECTED_HEAD = "0038_account_security_product"
+REQUIRED_TABLES = (
+    "subscription_products", "subscription_prices", "subscription_entitlements",
+    "instruments", "provider_instruments", "auth_identities", "user_sessions",
+    "webhook_deliveries", "payment_receipts", "email_outbox",
+)
+
+
+def _expected_head() -> str:
+    from scripts.assert_database_schema import _expected_head as repository_head
+
+    return repository_head()
 
 
 def _raw(name: str) -> str:
@@ -56,11 +66,12 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
         "evidence_type": "staging_database_runtime_proof",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window_hours": max(1, int(window_hours)),
-        "expected_head": EXPECTED_HEAD,
+        "expected_head": _expected_head(),
     }
     with psycopg2.connect(_dsn(), connect_timeout=15) as conn:
         conn.set_session(readonly=True, autocommit=True)
         with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = '15000ms'")
             cur.execute("SELECT current_database(), current_user, COALESCE(inet_server_addr()::text,'local'), inet_server_port()")
             db_name, db_user, db_host, db_port = cur.fetchone()
             report["database"] = {
@@ -69,9 +80,10 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 "server_address": str(db_host),
                 "server_port": int(db_port or 0),
             }
-            cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cur.fetchone()
-            report["alembic_current"] = str(row[0]) if row else None
+            cur.execute("SELECT version_num FROM alembic_version ORDER BY version_num")
+            revisions = [str(row[0]) for row in cur.fetchall()]
+            report["alembic_revisions"] = revisions
+            report["alembic_current"] = revisions[0] if len(revisions) == 1 else None
 
             cur.execute("""
                 SELECT
@@ -195,18 +207,26 @@ def evaluate(
     require_email: bool = False,
 ) -> list[str]:
     blockers: list[str] = []
-    if report.get("alembic_current") != EXPECTED_HEAD:
-        blockers.append(f"alembic:{report.get('alembic_current')}!={EXPECTED_HEAD}")
-    for name, present in (report.get("required_tables") or {}).items():
-        if not present:
+    expected = _expected_head()
+    if report.get("alembic_current") != expected or report.get("alembic_revisions") != [expected]:
+        blockers.append(f"alembic:{report.get('alembic_current')}!={expected}")
+    if report.get("expected_head") != expected:
+        blockers.append("repository_head_mismatch")
+    for name in REQUIRED_TABLES:
+        if (report.get("required_tables") or {}).get(name) is not True:
             blockers.append(f"missing_table:{name}")
     if not report.get("users_public_user_id"):
         blockers.append("missing_column:users.public_user_id")
     counts = report.get("catalogue_counts") or {}
+    if not report.get("catalogue_minimums"):
+        blockers.append("catalogue_minimums_missing")
     for key, minimum in (report.get("catalogue_minimums") or {}).items():
         if int(counts.get(key) or 0) < int(minimum):
             blockers.append(f"{key}:{int(counts.get(key) or 0)}<{int(minimum)}")
     runtime = report.get("runtime") or {}
+    for key in ("duplicate_delivery_groups", "duplicate_paper_position_groups"):
+        if key not in runtime:
+            blockers.append(f"runtime:missing_{key}")
     if int(runtime.get("duplicate_delivery_groups") or 0) != 0:
         blockers.append("duplicate_delivery_groups")
     if int(runtime.get("duplicate_paper_position_groups") or 0) != 0:
