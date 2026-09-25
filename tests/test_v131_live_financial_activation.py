@@ -338,7 +338,10 @@ def test_mt5_and_bybit_use_the_same_execution_quota_ledger():
     mt5 = (ROOT / "services" / "mt5_signal_router.py").read_text(encoding="utf-8")
     bybit = (ROOT / "services" / "bybit_signal_router.py").read_text(encoding="utf-8")
     shared = (ROOT / "services" / "execution_quota.py").read_text(encoding="utf-8")
-    assert "from services.execution_quota import reserve_user_execution_quota" in mt5
+    assert "from services.execution_quota import (" in mt5
+    assert "reserve_user_execution_quota," in mt5
+    assert "reserve_platform_user_execution_quota," in mt5
+    assert "release_user_execution_quota" in mt5
     assert "reserve_user_execution_quota" in bybit
     assert "MT5Execution.realized_pnl_pct" in shared
     assert "BrokerExecution.realized_pnl_pct" in shared
