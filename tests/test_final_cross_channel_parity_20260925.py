@@ -16,14 +16,18 @@ def test_final_schema_head_is_exact_cross_channel_receipts_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0040_cross_channel_paper_receipts"
+        "0041_broker_connection_registry"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
     )
-    assert 'revision = "0040_cross_channel_paper_receipts"' in migration
+    assert 'revision = "0040_cross_channel_paper_receipt"' in migration
+    assert len("0040_cross_channel_paper_receipt") <= 32
     assert 'down_revision = "0039_web_signup_acquisition"' in migration
     assert "ALTER COLUMN delivery_id DROP NOT NULL" in migration
+    broker = source("db/migrations/versions/0041_broker_connection_registry.py")
+    assert 'revision = "0041_broker_connection_registry"' in broker
+    assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker
 
 
 def test_paper_is_free_education_but_live_features_remain_paid() -> None:
