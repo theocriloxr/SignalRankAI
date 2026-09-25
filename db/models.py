@@ -702,6 +702,10 @@ class TradingAccountPolicyRecord(Base):
     external_rules: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     certified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     certification_ref: Mapped[Optional[str]] = mapped_column(String(160))
+    certified_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    certified_by_authority: Mapped[Optional[str]] = mapped_column(String(16))
     frozen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     frozen_reason: Mapped[Optional[str]] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
