@@ -60,13 +60,22 @@ def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
         "reset_timezone": row.reset_timezone,
         "max_risk_per_trade_pct": str(row.max_risk_per_trade_pct),
         "max_daily_loss_pct": str(row.max_daily_loss_pct),
+        "max_weekly_loss_pct": str(row.max_weekly_loss_pct),
         "max_total_drawdown_pct": str(row.max_total_drawdown_pct),
         "max_open_positions": row.max_open_positions,
         "max_leverage": str(row.max_leverage),
+        "max_spread_bps": str(row.max_spread_bps),
+        "max_slippage_bps": str(row.max_slippage_bps),
+        "min_confidence": str(row.min_confidence),
+        "min_expected_rr": str(row.min_expected_rr),
         "safety_buffer_pct": str(row.safety_buffer_pct),
         "external_max_daily_loss_pct": (
             str(row.external_max_daily_loss_pct)
             if row.external_max_daily_loss_pct is not None else None
+        ),
+        "external_max_weekly_loss_pct": (
+            str(row.external_max_weekly_loss_pct)
+            if row.external_max_weekly_loss_pct is not None else None
         ),
         "external_max_total_drawdown_pct": (
             str(row.external_max_total_drawdown_pct)
@@ -74,6 +83,8 @@ def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
         ),
         "allowed_instruments": list(row.allowed_instruments or []),
         "allowed_asset_classes": list(row.allowed_asset_classes or []),
+        "allowed_strategies": list(row.allowed_strategies or []),
+        "trading_windows": list(row.trading_windows or []),
         "news_trading_allowed": bool(row.news_trading_allowed),
         "weekend_holding_allowed": bool(row.weekend_holding_allowed),
         "prop_firm": row.prop_firm,
@@ -145,14 +156,22 @@ async def configure_account_policy(
     currency: str = "USD",
     max_risk_per_trade_pct: Decimal | str = Decimal("0.005"),
     max_daily_loss_pct: Decimal | str = Decimal("0.04"),
+    max_weekly_loss_pct: Decimal | str = Decimal("0.08"),
     max_total_drawdown_pct: Decimal | str = Decimal("0.08"),
     max_open_positions: int = 3,
     max_leverage: Decimal | str = Decimal("1"),
+    max_spread_bps: Decimal | str = Decimal("50"),
+    max_slippage_bps: Decimal | str = Decimal("25"),
+    min_confidence: Decimal | str = Decimal("0"),
+    min_expected_rr: Decimal | str = Decimal("0"),
     safety_buffer_pct: Decimal | str = Decimal("0"),
     external_max_daily_loss_pct: Decimal | str | None = None,
+    external_max_weekly_loss_pct: Decimal | str | None = None,
     external_max_total_drawdown_pct: Decimal | str | None = None,
     allowed_instruments: list[str] | tuple[str, ...] | None = None,
     allowed_asset_classes: list[str] | tuple[str, ...] | None = None,
+    allowed_strategies: list[str] | tuple[str, ...] | None = None,
+    trading_windows: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...] | None = None,
     news_trading_allowed: bool = True,
     weekend_holding_allowed: bool = True,
     prop_firm: str | None = None,
@@ -173,13 +192,22 @@ async def configure_account_policy(
         reset_timezone=reset_timezone,
         max_risk_per_trade_pct=Decimal(str(max_risk_per_trade_pct)),
         max_daily_loss_pct=Decimal(str(max_daily_loss_pct)),
+        max_weekly_loss_pct=Decimal(str(max_weekly_loss_pct)),
         max_total_drawdown_pct=Decimal(str(max_total_drawdown_pct)),
         max_open_positions=int(max_open_positions),
         max_leverage=Decimal(str(max_leverage)),
+        max_spread_bps=Decimal(str(max_spread_bps)),
+        max_slippage_bps=Decimal(str(max_slippage_bps)),
+        min_confidence=Decimal(str(min_confidence)),
+        min_expected_rr=Decimal(str(min_expected_rr)),
         safety_buffer_pct=Decimal(str(safety_buffer_pct)),
         external_max_daily_loss_pct=(
             Decimal(str(external_max_daily_loss_pct))
             if external_max_daily_loss_pct is not None else None
+        ),
+        external_max_weekly_loss_pct=(
+            Decimal(str(external_max_weekly_loss_pct))
+            if external_max_weekly_loss_pct is not None else None
         ),
         external_max_total_drawdown_pct=(
             Decimal(str(external_max_total_drawdown_pct))
@@ -187,6 +215,8 @@ async def configure_account_policy(
         ),
         allowed_instruments=tuple(allowed_instruments or ()),
         allowed_asset_classes=tuple(allowed_asset_classes or ()),
+        allowed_strategies=tuple(allowed_strategies or ()),
+        trading_windows=tuple(dict(window) for window in (trading_windows or ())),
         news_trading_allowed=bool(news_trading_allowed),
         weekend_holding_allowed=bool(weekend_holding_allowed),
         prop_firm=prop_firm,
@@ -228,14 +258,22 @@ async def configure_account_policy(
         row.reset_timezone = candidate.reset_timezone
         row.max_risk_per_trade_pct = candidate.max_risk_per_trade_pct
         row.max_daily_loss_pct = candidate.max_daily_loss_pct
+        row.max_weekly_loss_pct = candidate.max_weekly_loss_pct
         row.max_total_drawdown_pct = candidate.max_total_drawdown_pct
         row.max_open_positions = int(candidate.max_open_positions)
         row.max_leverage = candidate.max_leverage
+        row.max_spread_bps = candidate.max_spread_bps
+        row.max_slippage_bps = candidate.max_slippage_bps
+        row.min_confidence = candidate.min_confidence
+        row.min_expected_rr = candidate.min_expected_rr
         row.safety_buffer_pct = candidate.safety_buffer_pct
         row.external_max_daily_loss_pct = candidate.external_max_daily_loss_pct
+        row.external_max_weekly_loss_pct = candidate.external_max_weekly_loss_pct
         row.external_max_total_drawdown_pct = candidate.external_max_total_drawdown_pct
         row.allowed_instruments = list(candidate.allowed_instruments)
         row.allowed_asset_classes = list(candidate.allowed_asset_classes)
+        row.allowed_strategies = list(candidate.allowed_strategies)
+        row.trading_windows = [dict(window) for window in candidate.trading_windows]
         row.news_trading_allowed = candidate.news_trading_allowed
         row.weekend_holding_allowed = candidate.weekend_holding_allowed
         row.prop_firm = candidate.prop_firm
