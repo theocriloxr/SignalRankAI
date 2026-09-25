@@ -13,7 +13,7 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0041_broker_connection_registry"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0042_ml_recovery_provenance"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
@@ -23,6 +23,11 @@ def test_web_signup_migration_is_single_head() -> None:
     broker_registry = _source("db/migrations/versions/0041_broker_connection_registry.py")
     assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker_registry
     assert '"broker_connections"' in broker_registry
+    recovery_provenance = _source(
+        "db/migrations/versions/0042_ml_starvation_recovery_provenance.py"
+    )
+    assert 'revision = "0042_ml_recovery_provenance"' in recovery_provenance
+    assert 'down_revision = "0041_broker_connection_registry"' in recovery_provenance
 
 
 def test_direct_signup_accepts_acquisition_and_referral_context() -> None:
@@ -56,7 +61,7 @@ def test_custom_domain_is_canonical_production_origin() -> None:
         assert "APP_BASE_URL=https://signalrank.criloxsolutions.com" in profile
         assert "APP_ALLOWED_ORIGINS=https://signalrank.criloxsolutions.com" in profile
         assert "APP_COOKIE_SECURE=1" in profile
-        assert "EXPECTED_ALEMBIC_HEAD=0041_broker_connection_registry" in profile
+        assert "EXPECTED_ALEMBIC_HEAD=0042_ml_recovery_provenance" in profile
 
 
 def test_email_links_prefer_configured_app_base_url_over_railway_domain() -> None:
