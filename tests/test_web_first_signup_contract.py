@@ -53,7 +53,7 @@ def test_custom_domain_is_canonical_production_origin() -> None:
         assert "APP_BASE_URL=https://signalrank.criloxsolutions.com" in profile
         assert "APP_ALLOWED_ORIGINS=https://signalrank.criloxsolutions.com" in profile
         assert "APP_COOKIE_SECURE=1" in profile
-        assert "EXPECTED_ALEMBIC_HEAD=0039_web_signup_acquisition" in profile
+        assert "EXPECTED_ALEMBIC_HEAD=0040_cross_channel_paper_receipts" in profile
 
 
 def test_email_links_prefer_configured_app_base_url_over_railway_domain() -> None:
