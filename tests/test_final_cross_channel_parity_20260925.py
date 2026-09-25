@@ -269,3 +269,32 @@ def test_web_ui_exposes_final_parity_controls_without_tier_breakage() -> None:
 def test_pwa_shell_cache_rotated_for_final_parity_release() -> None:
     worker = source("web/platform_app/service-worker.js")
     assert "signalrank-shell-v" in worker
+
+
+def test_web_multi_account_policy_editor_exposes_hard_risk_controls() -> None:
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    api = source("web/platform_api.py")
+    for marker in (
+        'id="brokerPolicyEditor"',
+        'name="account_mode"',
+        'name="execution_permission"',
+        'name="max_risk_per_trade_pct"',
+        'name="max_daily_loss_pct"',
+        'name="max_weekly_loss_pct"',
+        'name="max_total_drawdown_pct"',
+        'name="max_spread_bps"',
+        'name="max_slippage_bps"',
+        'name="min_confidence"',
+        'name="min_expected_rr"',
+        'name="allowed_strategies"',
+        'name="trading_days"',
+        'name="prop_rules_version"',
+    ):
+        assert marker in html
+    assert "openBrokerPolicy" in app
+    assert "brokerPolicyPayload" in app
+    assert "/safety-freeze" in app
+    assert '@router.get("/broker/connections/{connection_id}/policy")' in api
+    assert '@router.put("/broker/connections/{connection_id}/policy")' in api
+    assert '@router.post("/broker/connections/{connection_id}/safety-freeze")' in api
