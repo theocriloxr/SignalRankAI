@@ -1,13 +1,13 @@
 """persist ML starvation recovery provenance on signals
 
-Revision ID: 0042_ml_starvation_recovery_provenance
+Revision ID: 0042_ml_recovery_provenance
 Revises: 0041_broker_connection_registry
 """
 from __future__ import annotations
 
 from alembic import op
 
-revision = "0042_ml_starvation_recovery_provenance"
+revision = "0042_ml_recovery_provenance"
 down_revision = "0041_broker_connection_registry"
 branch_labels = None
 depends_on = None
