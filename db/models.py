@@ -674,16 +674,26 @@ class TradingAccountPolicyRecord(Base):
     max_daily_loss_pct: Mapped[Any] = mapped_column(
         Numeric(12, 8), default=0.04, nullable=False
     )
+    max_weekly_loss_pct: Mapped[Any] = mapped_column(
+        Numeric(12, 8), default=0.08, nullable=False
+    )
     max_total_drawdown_pct: Mapped[Any] = mapped_column(
         Numeric(12, 8), default=0.08, nullable=False
     )
     max_open_positions: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_leverage: Mapped[Any] = mapped_column(Numeric(18, 8), default=1, nullable=False)
+    max_spread_bps: Mapped[Any] = mapped_column(Numeric(18, 8), default=50, nullable=False)
+    max_slippage_bps: Mapped[Any] = mapped_column(Numeric(18, 8), default=25, nullable=False)
+    min_confidence: Mapped[Any] = mapped_column(Numeric(12, 8), default=0, nullable=False)
+    min_expected_rr: Mapped[Any] = mapped_column(Numeric(18, 8), default=0, nullable=False)
     safety_buffer_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0, nullable=False)
     external_max_daily_loss_pct: Mapped[Optional[Any]] = mapped_column(Numeric(12, 8))
+    external_max_weekly_loss_pct: Mapped[Optional[Any]] = mapped_column(Numeric(12, 8))
     external_max_total_drawdown_pct: Mapped[Optional[Any]] = mapped_column(Numeric(12, 8))
     allowed_instruments: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
     allowed_asset_classes: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    allowed_strategies: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    trading_windows: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
     news_trading_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     weekend_holding_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     prop_firm: Mapped[Optional[str]] = mapped_column(String(128))
