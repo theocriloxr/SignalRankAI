@@ -17,7 +17,7 @@ def test_web_signup_migration_is_single_head() -> None:
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
-    paper_receipts = _source("db/migrations/versions/0040_cross_channel_paper_receipt.py")
+    paper_receipts = _source("db/migrations/versions/0040_cross_channel_paper_receipts.py")
     assert 'down_revision = "0039_web_signup_acquisition"' in paper_receipts
     assert "ALTER COLUMN delivery_id DROP NOT NULL" in paper_receipts
 
