@@ -79,6 +79,12 @@ def check_schema() -> dict[str, Any]:
           ) AS broker_executions_connection_id,
           EXISTS (
             SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'mt5_executions'
+              AND column_name = 'connection_id'
+          ) AS mt5_executions_connection_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema() AND table_name = 'signals'
               AND column_name = 'ml_recovery_mode'
           ) AS signals_ml_recovery_mode,
@@ -118,6 +124,7 @@ def check_schema() -> dict[str, Any]:
             "broker_reconciliation_state",
             "broker_execution_decisions",
             "broker_executions_connection_id",
+            "mt5_executions_connection_id",
             "signals_ml_recovery_mode",
             "users_public_user_id",
         )
