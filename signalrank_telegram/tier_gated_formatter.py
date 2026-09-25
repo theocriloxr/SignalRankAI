@@ -163,11 +163,22 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
         else:
             lines.append(f"🧠 **AI Confidence:** `{score_val:.1f}%`")
     
+    if bool(signal.get("ml_recovery_mode")):
+        lines.extend([
+            "————————————————————",
+            "🧪 **Model Health Recovery:** strict deterministic gates passed, but the serving ML champion is currently starving live candidates.",
+            "🔒 **Execution:** paper-only; live broker execution is disabled for this signal.",
+        ])
+
     # Build keyboard
     keyboard = []
     signal_id = signal.get("signal_id", "")
     
-    if evaluate_feature_access(tier, "execution_preflight").allowed:
+    if bool(signal.get("ml_recovery_mode")):
+        keyboard.append([
+            InlineKeyboardButton("🧪 Paper-only recovery signal", callback_data="nav_paper")
+        ])
+    elif evaluate_feature_access(tier, "execution_preflight").allowed:
         keyboard.append([
             InlineKeyboardButton("⚙️ Execution Preflight", callback_data=f"mt5_trade_{signal_id}")
         ])
