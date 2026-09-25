@@ -158,6 +158,69 @@ def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
         "model_unique_constraint": model_unique,
     }
 
+def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object]:
+    """Verify the rendered head contains the canonical immutable broker ledger."""
+    env = os.environ.copy()
+    env["DATABASE_MIGRATION_URL"] = (
+        "postgresql+psycopg2://audit:audit@localhost/audit"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return {
+            "ok": False,
+            "missing_columns": [],
+            "error": f"alembic_offline_exit={proc.returncode}",
+        }
+
+    from db.models import TradingAccountLedgerEntry
+
+    rendered = proc.stdout
+    create_match = re.search(
+        r"CREATE TABLE trading_account_ledger_entries \((.*?)\n\);",
+        rendered,
+        re.S | re.I,
+    )
+    migrated: set[str] = set()
+    if create_match:
+        for raw_line in create_match.group(1).splitlines():
+            line = raw_line.strip().rstrip(",")
+            if not line or line.upper().startswith(
+                ("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")
+            ):
+                continue
+            migrated.add(line.split()[0].strip('"').lower())
+
+    expected = {
+        column.name.lower()
+        for column in TradingAccountLedgerEntry.__table__.columns
+    }
+    missing = sorted(expected - migrated)
+    immutable_trigger = bool(
+        re.search(
+            r"CREATE TRIGGER trg_trading_account_ledger_immutable",
+            rendered,
+            re.I,
+        )
+    )
+    idempotency_constraint = (
+        "uq_trading_account_ledger_provider_event" in rendered
+    )
+    return {
+        "ok": not missing and immutable_trigger and idempotency_constraint,
+        "missing_columns": missing,
+        "immutable_trigger": immutable_trigger,
+        "idempotency_constraint": idempotency_constraint,
+    }
+
+
 def audit_live_financial_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify execution/payout tables and idempotency constraints exist in head."""
     migration = (root / "db/migrations/versions/0029_live_financial_ledger.py").read_text(encoding="utf-8", errors="replace")
@@ -187,16 +250,19 @@ def main() -> int:
     rejected_contract = audit_ml_rejected_runtime_contract()
     outcome_contract = audit_outcome_projection_contract()
     financial_contract = audit_live_financial_contract()
+    account_ledger_contract = audit_trading_account_ledger_contract()
     result["signal_runtime_contract"] = signal_contract
     result["ml_rejected_runtime_contract"] = rejected_contract
     result["outcome_projection_contract"] = outcome_contract
     result["live_financial_contract"] = financial_contract
+    result["trading_account_ledger_contract"] = account_ledger_contract
     result["ok"] = bool(
         result["ok"]
         and signal_contract["ok"]
         and rejected_contract["ok"]
         and outcome_contract["ok"]
         and financial_contract["ok"]
+        and account_ledger_contract["ok"]
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1
