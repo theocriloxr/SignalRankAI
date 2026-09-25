@@ -11,9 +11,15 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+from pathlib import Path
 import signal
+import sys
 import threading
 from typing import Mapping
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from core.financial_activation import force_invalid_financial_flags_off
 from runtime.roles import RunMode, process_ownership
