@@ -290,13 +290,41 @@ class TradingProfileUpdateRequest(BaseModel):
 
 class SignalExecutionRequest(BaseModel):
     confirm: bool
-    provider: str = Field(default="mt5", pattern=r"^mt5$")
+    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5)$")
 
 
 class SignalFeedbackRequest(BaseModel):
     rating: int | None = Field(default=None, ge=1, le=5)
     issue: str | None = Field(default=None, max_length=64)
     comment: str | None = Field(default=None, max_length=4000)
+
+
+class MetaTraderBrokerLinkRequest(BaseModel):
+    platform: str = Field(pattern=r"^(mt4|mt5)$")
+    login: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+    server: str = Field(min_length=2, max_length=128)
+    broker_name: str | None = Field(default=None, max_length=128)
+    account_label: str | None = Field(default=None, max_length=128)
+    environment: str = Field(default="unknown", pattern=r"^(unknown|demo|live)$")
+
+
+class MetaTraderSecureLinkRequest(BaseModel):
+    platform: str = Field(pattern=r"^(mt4|mt5)$")
+    server: str = Field(min_length=2, max_length=128)
+    broker_name: str | None = Field(default=None, max_length=128)
+    account_label: str | None = Field(default=None, max_length=128)
+    environment: str = Field(default="unknown", pattern=r"^(unknown|demo|live)$")
+    ttl_days: int = Field(default=3, ge=1, le=14)
+
+
+class BrokerExecutionToggleRequest(BaseModel):
+    enabled: bool
+    confirm: bool
+
+
+class BrokerDefaultRequest(BaseModel):
+    confirm: bool
 
 
 class BrokerLinkRequest(BaseModel):
@@ -311,7 +339,7 @@ class ExecutionSettingsUpdateRequest(BaseModel):
         pattern=r"^(signals_only|none|manual|manual_confirmed|semi_auto|auto|copy|copy_trade)$",
     )
     trading_mode: str | None = Field(default=None, pattern=r"^(paper|live|both)$")
-    execution_provider: str | None = Field(default=None, pattern=r"^(auto|mt5|bybit)$")
+    execution_provider: str | None = Field(default=None, pattern=r"^(auto|mt4|mt5|bybit)$")
     fixed_lot_size: float | None = Field(default=None, ge=0.001, le=1.0)
     auto_signals_daily_limit: int | None = Field(default=None, ge=-1, le=100)
 
@@ -2777,6 +2805,224 @@ async def strategy_leaderboard(
         ).mappings().all()
         await session.rollback()
     return {"window_days": int(days), "strategies": [dict(row) for row in rows]}
+
+
+@router.get("/broker/platforms")
+async def broker_platforms(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.broker_connections import platform_catalog
+
+    return {
+        "platforms": platform_catalog(str(user.get("tier") or "free")),
+        "trust_model": {
+            "connection_does_not_enable_execution": True,
+            "demo_first_recommended": True,
+            "live_requires_separate_activation": True,
+            "secrets_returned_to_browser": False,
+        },
+    }
+
+
+@router.get("/broker/connections")
+async def broker_connections(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.broker_connections import list_connections
+
+    return {"connections": await list_connections(int(user["id"]))}
+
+
+@router.post("/broker/metatrader")
+async def link_broker_metatrader(
+    payload: MetaTraderBrokerLinkRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if not is_encryption_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Secure broker credential storage is unavailable",
+        )
+    if not str(os.getenv("META_API_TOKEN") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="MetaTrader connection service is not configured",
+        )
+    from services.broker_connections import assert_connection_capacity
+    from services.mt5_client import link_platform_metatrader_account
+
+    try:
+        await assert_connection_capacity(
+            int(user["id"]),
+            str(user.get("tier") or "free"),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    result = await link_platform_metatrader_account(
+        int(user["id"]),
+        platform=payload.platform,
+        login=payload.login,
+        password=payload.password,
+        server=payload.server,
+        broker_name=payload.broker_name,
+        account_label=payload.account_label,
+        environment=payload.environment,
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=502,
+            detail=str(result.get("error") or "MetaTrader account linking failed"),
+        )
+    return result
+
+
+@router.post("/broker/metatrader/secure-link")
+async def create_broker_metatrader_secure_link(
+    payload: MetaTraderSecureLinkRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if not str(os.getenv("META_API_TOKEN") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="MetaTrader connection service is not configured",
+        )
+    from services.broker_connections import assert_connection_capacity
+    from services.mt5_client import create_platform_metatrader_secure_link
+
+    try:
+        await assert_connection_capacity(
+            int(user["id"]),
+            str(user.get("tier") or "free"),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    result = await create_platform_metatrader_secure_link(
+        int(user["id"]),
+        platform=payload.platform,
+        server=payload.server,
+        broker_name=payload.broker_name,
+        account_label=payload.account_label,
+        environment=payload.environment,
+        ttl_days=payload.ttl_days,
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=502,
+            detail=str(result.get("error") or "Secure MetaTrader linking failed"),
+        )
+    return result
+
+
+@router.post("/broker/connections/{connection_id}/verify")
+async def verify_broker_connection(
+    connection_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.broker_connections import list_connections
+    from services.mt5_client import verify_platform_metatrader_connection
+
+    connections = await list_connections(int(user["id"]))
+    selected = next(
+        (row for row in connections if row.get("connection_id") == connection_id),
+        None,
+    )
+    if selected is None:
+        raise HTTPException(status_code=404, detail="Broker connection not found")
+    if str(selected.get("connector") or "") != "metaapi":
+        raise HTTPException(
+            status_code=409,
+            detail="This connector does not yet expose a verification adapter",
+        )
+    result = await verify_platform_metatrader_connection(
+        int(user["id"]),
+        connection_id,
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=409,
+            detail=str(result.get("error") or "Broker verification failed"),
+        )
+    return result
+
+
+@router.post("/broker/connections/{connection_id}/execution")
+async def toggle_broker_connection_execution(
+    connection_id: str,
+    payload: BrokerExecutionToggleRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if payload.enabled:
+        # Connection-level permission is necessary but not sufficient. Auto/copy
+        # still requires the VIP execution_preflight entitlement and all runtime
+        # ExecutionGate checks.
+        async with get_session(label="platform.broker.execution_terms", timeout_seconds=6.0) as session:
+            accepted_terms = bool(
+                (
+                    await session.execute(
+                        text("SELECT accepted_terms FROM users WHERE id=:uid"),
+                        {"uid": int(user["id"])},
+                    )
+                ).scalar_one_or_none()
+            )
+            await session.rollback()
+    else:
+        accepted_terms = True
+
+    from services.broker_connections import set_execution_enabled
+
+    try:
+        connection = await set_execution_enabled(
+            int(user["id"]),
+            connection_id,
+            enabled=payload.enabled,
+            accepted_terms=accepted_terms,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"connection": connection}
+
+
+@router.post("/broker/connections/{connection_id}/default")
+async def set_broker_default(
+    connection_id: str,
+    payload: BrokerDefaultRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    from services.broker_connections import set_default_connection
+
+    try:
+        connection = await set_default_connection(int(user["id"]), connection_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"connection": connection}
+
+
+@router.delete("/broker/connections/{connection_id}")
+async def remove_broker_connection(
+    connection_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.broker_connections import delete_connection
+
+    try:
+        await delete_connection(int(user["id"]), connection_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"removed": True}
 
 
 @router.get("/broker")
