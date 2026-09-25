@@ -1080,6 +1080,126 @@ class MT5SignalRouter:
             )
             risk_allowed = bool(volume > 0 and symbol_ready and account_ready)
 
+            # Evaluate the immutable per-account policy separately from the
+            # global execution gate. Market intelligence is shared, but every
+            # user's account owns its own risk/prop policy and reconciliation.
+            account_policy_payload = policy.get("account_policy")
+            account_policy_allowed = False
+            account_policy_version = 0
+            execution_permission = ""
+            prop_policy_certified = False
+            prop_policy_version = ""
+            account_frozen = False
+            account_policy_reasons: tuple[str, ...] = ("account_policy_missing",)
+            canonical_user_id = policy.get("canonical_user_id")
+            connection_id_value = str(policy.get("connection_id") or "")
+            reconciliation_ready = bool(reconciliation.get("ready"))
+
+            if canonical_user_id and connection_id_value:
+                try:
+                    from services.account_policies import record_reconciliation
+
+                    await record_reconciliation(
+                        int(canonical_user_id),
+                        connection_id_value,
+                        status="HEALTHY" if reconciliation_ready else "RECONCILING",
+                        discrepancy_code=None if reconciliation_ready else "provider_reconciliation_pending",
+                        details={
+                            "provider": str(reconciliation.get("provider") or platform),
+                            "positions_count": len(reconciliation.get("positions") or []),
+                            "checked_at": str(reconciliation.get("checked_at") or ""),
+                            "equity": (
+                                float(account_info.get("equity"))
+                                if isinstance(account_info, dict)
+                                and isinstance(account_info.get("equity"), (int, float))
+                                else None
+                            ),
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] account reconciliation evidence unavailable; blocking",
+                        exc_info=True,
+                    )
+                    reconciliation_ready = False
+
+            if isinstance(account_policy_payload, dict):
+                try:
+                    from core.account_policy import (
+                        AccountRiskSnapshot,
+                        evaluate_account_policy,
+                        policy_from_mapping,
+                    )
+
+                    account_policy = policy_from_mapping(account_policy_payload)
+                    account_policy_version = int(account_policy.policy_version)
+                    execution_permission = account_policy.execution_permission
+                    prop_policy_certified = bool(account_policy.certified)
+                    prop_policy_version = str(account_policy.prop_rules_version or "")
+                    account_frozen = bool(account_policy.frozen)
+
+                    current_equity = Decimal(str(account_info.get("equity") or 0))
+                    raw_day_start = account_info.get("day_start_equity")
+                    raw_peak = account_info.get("peak_equity")
+                    baseline_verified = bool(
+                        isinstance(raw_day_start, (int, float))
+                        and float(raw_day_start) > 0
+                        and isinstance(raw_peak, (int, float))
+                        and float(raw_peak) > 0
+                    )
+                    day_start_equity = Decimal(
+                        str(raw_day_start if baseline_verified else current_equity)
+                    )
+                    peak_equity = Decimal(
+                        str(raw_peak if baseline_verified else current_equity)
+                    )
+                    daily_realized_pnl = Decimal(
+                        str(account_info.get("daily_realized_pnl") or 0)
+                    )
+                    profile_risk_fraction = Decimal(
+                        str(profile_policy.get("risk_per_trade_pct") or 0)
+                    ) / Decimal("100")
+                    contract_size = Decimal(
+                        str(symbol_spec.get("contract_size") or 0)
+                    )
+                    entry_decimal = Decimal(str(signal.get("entry") or 0))
+                    proposed_leverage = Decimal("0")
+                    if current_equity > 0 and contract_size > 0 and entry_decimal > 0:
+                        proposed_leverage = (
+                            Decimal(str(volume)) * contract_size * entry_decimal
+                        ) / current_equity
+
+                    policy_snapshot = AccountRiskSnapshot(
+                        current_equity=current_equity,
+                        day_start_equity=day_start_equity,
+                        peak_equity=peak_equity,
+                        daily_realized_pnl=daily_realized_pnl,
+                        open_positions=len(reconciliation.get("positions") or []),
+                        proposed_risk_pct=profile_risk_fraction,
+                        proposed_leverage=proposed_leverage,
+                        symbol=asset,
+                        asset_class=str(signal.get("asset_class") or ""),
+                        high_impact_news_window=bool(signal.get("high_impact_news_window")),
+                        weekend_hold_expected=bool(signal.get("weekend_hold_expected")),
+                        account_is_demo=account_is_demo,
+                        reconciliation_ready=reconciliation_ready,
+                        loss_baselines_verified=baseline_verified,
+                    )
+                    account_policy_decision = evaluate_account_policy(
+                        account_policy,
+                        policy_snapshot,
+                        execution_mode=execution_mode,
+                    )
+                    account_policy_allowed = account_policy_decision.allowed
+                    account_policy_reasons = account_policy_decision.reasons
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] account policy evaluation unavailable; blocking",
+                        exc_info=True,
+                    )
+                    account_policy_allowed = False
+                    account_policy_reasons = ("account_policy_unavailable",)
+
             gate_request = GateRequest(
                 user_id=int(user_id),
                 signal_id=signal_id,
@@ -1100,12 +1220,18 @@ class MT5SignalRouter:
                 evidence_allowed=bool(evidence),
                 broker_healthy=bool(account_ready and quote_trusted and symbol_ready),
                 resources_available=self._resource_pressure_clear(),
-                reconciliation_ready=bool(reconciliation.get("ready")),
+                reconciliation_ready=reconciliation_ready,
                 kill_switch=kill_switch,
                 broker_provider=platform,
                 user_identity=identity,
                 canonical_user_id=policy.get("canonical_user_id"),
                 account_classification=str(policy.get("account_classification") or "UNKNOWN"),
+                account_policy_allowed=account_policy_allowed,
+                account_policy_version=account_policy_version,
+                execution_permission=execution_permission,
+                prop_policy_certified=prop_policy_certified,
+                prop_policy_version=prop_policy_version,
+                account_frozen=account_frozen,
             )
             idempotency_key = gate_request.key()
 
@@ -1114,6 +1240,53 @@ class MT5SignalRouter:
             # integrity contract. This preserves precise operator diagnostics and
             # keeps demo certification usable without weakening real accounts.
             preflight = self._execution_gate.preflight(gate_request)
+
+            # Append-only decision evidence is best-effort for demo/advisory
+            # diagnostics, but inability to persist it blocks any real-money
+            # account because auditability is part of the live safety contract.
+            decision_evidence_ok = False
+            if canonical_user_id and connection_id_value:
+                try:
+                    from services.account_policies import record_execution_decision
+
+                    await record_execution_decision(
+                        user_id=int(canonical_user_id),
+                        connection_id=connection_id_value,
+                        signal_id=signal_id,
+                        execution_mode=execution_mode,
+                        account_mode=str(policy.get("account_classification") or "UNKNOWN"),
+                        policy_version=account_policy_version,
+                        allowed=preflight.allowed,
+                        reasons=tuple(preflight.reasons) + tuple(account_policy_reasons),
+                        market_snapshot={
+                            "asset": asset,
+                            "asset_class": str(signal.get("asset_class") or ""),
+                            "quote_age_seconds": quote_age,
+                            "market_open": bool(market.market_open and market.trading_allowed),
+                        },
+                        risk_snapshot={
+                            "account_policy_allowed": account_policy_allowed,
+                            "reconciliation_ready": reconciliation_ready,
+                            "volume": str(volume),
+                        },
+                        request_snapshot={
+                            "signal_id": signal_id,
+                            "execution_mode": execution_mode,
+                            "connection_id": connection_id_value,
+                        },
+                    )
+                    decision_evidence_ok = True
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] execution decision evidence unavailable",
+                        exc_info=True,
+                    )
+            if account_is_demo is False and not decision_evidence_ok:
+                return ExecutionResult(
+                    success=False,
+                    message="Execution blocked: decision_provenance_unavailable",
+                    error="decision_provenance_unavailable",
+                )
             if not preflight.allowed:
                 reasons = ", ".join(preflight.reasons)
                 return ExecutionResult(
