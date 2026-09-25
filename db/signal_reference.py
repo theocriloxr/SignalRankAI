@@ -50,6 +50,7 @@ async def resolve_signal_reference(
     reference: object,
     *,
     telegram_user_id: int | None = None,
+    canonical_user_id: int | None = None,
     require_delivery_proof: bool = False,
 ) -> ResolvedSignalReference:
     """Resolve UUID, public display ID, legacy prefix, or Telegram message link.
@@ -63,14 +64,23 @@ async def resolve_signal_reference(
         raise SignalReferenceNotFound("signal reference is required")
 
     user_id: int | None = None
-    if telegram_user_id is not None:
+    identity = "none"
+    if canonical_user_id is not None:
+        user_id = (
+            await session.execute(
+                select(User.id).where(User.id == int(canonical_user_id)).limit(1)
+            )
+        ).scalar_one_or_none()
+        identity = "platform"
+    elif telegram_user_id is not None:
         user_id = (
             await session.execute(
                 select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
             )
         ).scalar_one_or_none()
-        if require_delivery_proof and user_id is None:
-            raise SignalReferenceNotFound("signal was not delivered to this user")
+        identity = "telegram"
+    if require_delivery_proof and user_id is None:
+        raise SignalReferenceNotFound("signal was not delivered to this user")
 
     coordinates = _message_coordinates(raw)
     if coordinates is not None:
@@ -110,7 +120,7 @@ async def resolve_signal_reference(
         if require_delivery_proof and matches:
             permitted: list[Signal] = []
             for row in matches:
-                proof = (
+                telegram_proof = (
                     await session.execute(
                         select(SignalDelivery.id).where(
                             SignalDelivery.user_id == int(user_id),
@@ -121,7 +131,26 @@ async def resolve_signal_reference(
                         ).limit(1)
                     )
                 ).scalar_one_or_none()
-                if proof is not None:
+                web_proof = None
+                if identity == "platform":
+                    from sqlalchemy import text
+
+                    web_proof = (
+                        await session.execute(
+                            text(
+                                """
+                                SELECT 1 FROM notification_events
+                                WHERE user_id=:uid
+                                  AND event_type='signal'
+                                  AND channel_data->>'channel'='web'
+                                  AND channel_data->>'signal_id'=:sid
+                                LIMIT 1
+                                """
+                            ),
+                            {"uid": int(user_id), "sid": str(row.signal_id)},
+                        )
+                    ).scalar_one_or_none()
+                if telegram_proof is not None or web_proof is not None:
                     permitted.append(row)
             matches = permitted
 
