@@ -76,6 +76,30 @@ async def _touch_strategy_stat(session: AsyncSession, *, strategy_name: str, str
     await session.flush()
 
 
+async def record_user_event(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    event_type: str,
+    meta: Dict[str, Any] | None = None,
+) -> None:
+    """Record a generic canonical-account event; caller owns the transaction."""
+    canonical_id = int(user_id)
+    exists = (
+        await session.execute(select(User.id).where(User.id == canonical_id).limit(1))
+    ).scalar_one_or_none()
+    if exists is None:
+        raise ValueError("canonical user not found")
+    session.add(
+        BotEvent(
+            user_id=canonical_id,
+            event_type=str(event_type or "unknown")[:64],
+            meta=dict(meta or {}),
+        )
+    )
+    await session.flush()
+
+
 async def record_bot_event(
     session: AsyncSession,
     *,
@@ -84,15 +108,18 @@ async def record_bot_event(
     meta: Dict[str, Any] | None = None,
     username: str | None = None,
 ) -> None:
-    """Record a generic bot audit event (best-effort; caller commits)."""
-    user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id), username=username)
-    ev = BotEvent(
-        user_id=int(user.id),
-        event_type=str(event_type or "unknown")[:64],
-        meta=dict(meta or {}),
+    """Record a Telegram event through the same canonical event ledger."""
+    user: User = await get_or_create_user(
+        session,
+        telegram_user_id=int(telegram_user_id),
+        username=username,
     )
-    session.add(ev)
-    await session.flush()
+    await record_user_event(
+        session,
+        user_id=int(user.id),
+        event_type=event_type,
+        meta=meta,
+    )
 
 
 def _env_int(name: str, default: int) -> int:
