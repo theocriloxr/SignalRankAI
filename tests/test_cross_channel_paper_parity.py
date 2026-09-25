@@ -171,3 +171,42 @@ def test_all_web_paper_account_operations_use_platform_identity() -> None:
     ]
     assert block.count('user_identity="platform"') >= 8
     assert "_telegram_identity_or_409" not in api
+
+
+
+def test_paper_feature_is_free_like_telegram_education_commands() -> None:
+    policy = _source("core/tier_policy.py")
+    assert '"paper_trading",' in policy[
+        policy.index("_BASIC_FEATURES"):
+        policy.index("_PREMIUM_FEATURES")
+    ]
+    feature_map = policy[
+        policy.index("FEATURE_MINIMUM_TIER"):
+        policy.index("FEATURE_VALUE")
+    ]
+    assert '"paper_trading": Tier.FREE' in feature_map
+    assert '"paper_balance": Tier.FREE' in policy
+    assert '"paper_settings": Tier.FREE' in policy
+
+
+def test_paper_worker_rechecks_entitlement_before_account_creation() -> None:
+    service = _source("core/paper_trading_service.py")
+    block = service[
+        service.index("async def _open_candidate_locked"):
+        service.index("async def _record_skipped")
+    ]
+    assert "resolve_product_tier(session, user)" in block
+    assert 'evaluate_feature_access(' in block
+    assert '"paper_trading"' in block
+    assert "if not paper_access.allowed:" in block
+
+
+def test_paper_summary_initializes_canonical_account_for_first_web_load() -> None:
+    api = _source("web/platform_api.py")
+    block = api[
+        api.index('@router.get("/paper")'):
+        api.index("def _paper_snapshot_dict")
+    ]
+    assert "paper_trading_service.snapshot(" in block
+    assert 'user_identity="platform"' in block
+    assert '"snapshot": _paper_snapshot_dict(snapshot)' in block
