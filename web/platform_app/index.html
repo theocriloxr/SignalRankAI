@@ -385,6 +385,86 @@
           </div>
           <div class="panel-heading"><div><h3>Connected accounts</h3><p>Verify health, choose the default route and separately grant or revoke execution permission per account.</p></div></div>
           <div id="brokerConnections" class="data-list"></div>
+          <section id="brokerPolicyEditor" class="subpanel" hidden>
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">ACCOUNT POLICY</p>
+                <h3 id="brokerPolicyTitle">Trading account risk policy</h3>
+                <p class="muted">Every connected account has its own immutable-version policy. Saving changes disables execution until you explicitly re-enable the account.</p>
+              </div>
+              <button id="closeBrokerPolicy" class="ghost" type="button">Close</button>
+            </div>
+            <form id="brokerPolicyForm" class="stack-form">
+              <input type="hidden" name="connection_id" />
+              <div class="split-grid">
+                <div>
+                  <label>Account mode
+                    <select name="account_mode">
+                      <option value="PAPER">Paper only</option>
+                      <option value="DEMO">Demo</option>
+                      <option value="LIVE_PERSONAL">Live personal</option>
+                      <option value="PROP">Prop / funded account</option>
+                    </select>
+                  </label>
+                  <label>Execution permission
+                    <select name="execution_permission">
+                      <option value="SIGNALS_ONLY">Signals only</option>
+                      <option value="MANUAL">Manual confirmation</option>
+                      <option value="ASSISTED_EXECUTION">Assisted execution</option>
+                      <option value="AUTO_EXECUTION">Auto execution</option>
+                      <option value="READ_ONLY">Read only</option>
+                      <option value="PAPER_ONLY">Paper only</option>
+                    </select>
+                  </label>
+                  <label>Reset timezone<input name="reset_timezone" maxlength="64" value="UTC" placeholder="Africa/Lagos" /></label>
+                  <label>Account currency<input name="currency" maxlength="8" value="USD" /></label>
+                  <label>Risk per trade %<input name="max_risk_per_trade_pct" type="number" min="0" max="20" step="0.05" value="0.5" /></label>
+                  <label>Daily loss limit %<input name="max_daily_loss_pct" type="number" min="0" max="50" step="0.1" value="4" /></label>
+                  <label>Weekly loss limit %<input name="max_weekly_loss_pct" type="number" min="0" max="90" step="0.1" value="8" /></label>
+                  <label>Total drawdown limit %<input name="max_total_drawdown_pct" type="number" min="0" max="90" step="0.1" value="8" /></label>
+                  <label>Max open positions<input name="max_open_positions" type="number" min="0" max="1000" step="1" value="3" /></label>
+                  <label>Max leverage<input name="max_leverage" type="number" min="0" max="200" step="0.1" value="1" /></label>
+                </div>
+                <div>
+                  <label>Max spread (bps)<input name="max_spread_bps" type="number" min="0" max="10000" step="0.1" value="50" /></label>
+                  <label>Max slippage (bps)<input name="max_slippage_bps" type="number" min="0" max="10000" step="0.1" value="25" /></label>
+                  <label>Minimum confidence %<input name="min_confidence" type="number" min="0" max="100" step="0.1" value="0" /></label>
+                  <label>Minimum reward:risk<input name="min_expected_rr" type="number" min="0" max="100" step="0.1" value="0" /></label>
+                  <label>Allowed instruments<input name="allowed_instruments" maxlength="2000" placeholder="EURUSD, XAUUSD, BTCUSDT (blank = any)" /></label>
+                  <label>Allowed asset classes<input name="allowed_asset_classes" maxlength="500" placeholder="FX, CRYPTO, EQUITY (blank = any)" /></label>
+                  <label>Allowed strategies<input name="allowed_strategies" maxlength="1000" placeholder="TREND, MOMENTUM (blank = any)" /></label>
+                  <label>Trading days<input name="trading_days" maxlength="32" placeholder="0,1,2,3,4  (Mon=0)" /></label>
+                  <label>Trading window start<input name="trading_window_start" type="time" /></label>
+                  <label>Trading window end<input name="trading_window_end" type="time" /></label>
+                  <label><input name="news_trading_allowed" type="checkbox" checked /> Allow high-impact-news trading</label>
+                  <label><input name="weekend_holding_allowed" type="checkbox" checked /> Allow weekend holding</label>
+                </div>
+              </div>
+              <fieldset>
+                <legend>Prop / funded account rules</legend>
+                <div class="split-grid">
+                  <div>
+                    <label>Prop firm<input name="prop_firm" maxlength="128" /></label>
+                    <label>Phase<input name="prop_phase" maxlength="64" placeholder="challenge / funded" /></label>
+                    <label>Rules version<input name="prop_rules_version" maxlength="128" placeholder="Firm ruleset / date" /></label>
+                  </div>
+                  <div>
+                    <label>Firm daily loss %<input name="external_max_daily_loss_pct" type="number" min="0.01" max="50" step="0.1" /></label>
+                    <label>Firm weekly loss %<input name="external_max_weekly_loss_pct" type="number" min="0.01" max="90" step="0.1" /></label>
+                    <label>Firm total drawdown %<input name="external_max_total_drawdown_pct" type="number" min="0.01" max="90" step="0.1" /></label>
+                    <label>Safety buffer %<input name="safety_buffer_pct" type="number" min="0" max="50" step="0.1" value="0" /></label>
+                  </div>
+                </div>
+                <p class="muted">PROP execution remains blocked until this exact policy version is independently certified. Editing any rule clears prior certification.</p>
+              </fieldset>
+              <div id="brokerPolicyState" class="detail-list"></div>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save account policy</button>
+                <button id="freezeBrokerAccount" class="danger" type="button">Safety freeze</button>
+                <button id="unfreezeBrokerAccount" class="ghost" type="button">Clear my safety freeze</button>
+              </div>
+            </form>
+          </section>
           <div id="brokerStatus" class="detail-list"></div>
         </article>
         <article class="panel"><h2>Refer and earn</h2><p>Share SignalRankAI from the website or Telegram. Your account keeps one referral code across every channel.</p><div id="referralPanel" class="detail-list"></div><h3>Referral leaderboard</h3><div id="referralLeaderboard" class="data-list"></div></article>
