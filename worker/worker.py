@@ -180,6 +180,14 @@ class Worker:
         if _env_bool("EMAIL_DELIVERY_ENABLED", True):
             _register_task("email_delivery", lambda: self._email_delivery_loop(), restart_on_failure=True)
 
+        if _env_bool("WEB_SIGNAL_FANOUT_ENABLED", True):
+            _register_task(
+                "web_signal_fanout",
+                lambda: self._web_signal_fanout_loop(),
+                restart_on_failure=True,
+            )
+            logger.info("[worker] WebSignalFanout started")
+
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
         # Default to ON in all deployments so every generated signal is tracked.
@@ -548,6 +556,42 @@ class Worker:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 continue
+
+    async def _web_signal_fanout_loop(self) -> None:
+        """Deliver freshly generated, fully gated signals to the web channel."""
+        interval = max(
+            5.0,
+            _env_float("WEB_SIGNAL_FANOUT_INTERVAL_SECONDS", 10.0, minimum=5.0),
+        )
+        initial_delay = _env_float(
+            "WEB_SIGNAL_FANOUT_STARTUP_DELAY_SECONDS",
+            15.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+        while not self._stop.is_set():
+            try:
+                from services.platform.signal_delivery import deliver_recent_web_signals
+
+                result = await deliver_recent_web_signals()
+                if int(result.get("delivered") or 0) or int(result.get("quote_failures") or 0):
+                    logger.info("[web_signal_fanout] %s", result)
+            except Exception as exc:
+                logger.warning(
+                    "[web_signal_fanout] cycle failed err=%s",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
 
     async def _expiry_loop(self) -> None:
         # Runs periodically; safe no-op when DATABASE_URL not configured.
