@@ -214,9 +214,9 @@ def execution_connection_error(row: BrokerConnection, user_id: int) -> str | Non
     mode = account_classification(row)
     if mode == "PAPER":
         return "paper_account_broker_execution_forbidden"
-    if mode == "PROP":
-        return "prop_policy_certification_required"
-    if mode not in {"DEMO", "LIVE_PERSONAL"}:
+    # PROP accounts are allowed to reach the canonical execution gate; they
+    # remain fail-closed there until the versioned prop policy is certified.
+    if mode not in {"DEMO", "LIVE_PERSONAL", "PROP"}:
         return "account_classification_required"
     if str(row.status or "").strip().lower() not in {"linked", "ready", "verified"}:
         return "broker_account_not_ready"
