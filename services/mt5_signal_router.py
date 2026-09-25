@@ -349,7 +349,7 @@ class MT5SignalRouter:
                 }:
                     return {**result, "reason": "profile_manual_confirmation_disabled"}
                 provider = str(prefs.execution_provider or "auto").strip().lower()
-                if provider not in {"auto", "mt5", "metaapi"}:
+                if provider not in {"auto", "mt4", "mt5", "metaapi"}:
                     return {**result, "reason": "profile_provider_mismatch"}
 
                 open_statuses = ("pending", "submitted", "confirmed", "open", "submitting", "ambiguous", "reconciliation_pending")
@@ -408,48 +408,109 @@ class MT5SignalRouter:
         account_id: str,
         requested_execution_mode: str,
         user_identity: str = "telegram",
+        broker_platform: str = "mt5",
     ) -> Dict[str, Any]:
-        """Load user mode, current terms, explicit opt-in and encrypted credentials."""
+        """Load terms, mode, explicit opt-in and secured broker credentials."""
         policy: Dict[str, Any] = {
             "found": False,
             "accepted_terms": False,
             "consent": False,
             "user_enabled": False,
             "credentials_encrypted": False,
+            "connection_execution_enabled": False,
             "mode": "",
+            "platform": str(broker_platform or "mt5").lower(),
         }
         requested = str(requested_execution_mode or "").strip().lower()
+        platform = str(broker_platform or "mt5").strip().lower()
         try:
-            from db.models import MT5Credentials, RuntimeState, User
+            from db.models import (
+                BrokerConnection,
+                MT5Credentials,
+                RuntimeState,
+                User,
+            )
             from db.session import get_session
             from services.security import decrypt_secret, is_encryption_available
             from sqlalchemy import select
 
-            async with get_session() as session:
+            async with get_session(label="metatrader.execution_policy", timeout_seconds=8.0) as session:
                 identity = str(user_identity or "telegram").strip().lower()
                 user_filter = (
                     User.id == int(user_id)
                     if identity == "platform"
                     else User.telegram_user_id == int(user_id)
                 )
-                result = await session.execute(
-                    select(
-                        User.id,
-                        User.telegram_user_id,
-                        User.accepted_terms,
-                        User.execution_mode,
-                        MT5Credentials.password_encrypted,
-                        MT5Credentials.metaapi_account_id,
+                user = (
+                    await session.execute(
+                        select(User).where(user_filter).limit(1)
                     )
-                    .join(MT5Credentials, MT5Credentials.user_id == User.id)
-                    .where(user_filter)
-                    .limit(1)
-                )
-                row = result.fetchone()
-                if not row:
+                ).scalar_one_or_none()
+                if user is None:
                     return policy
-                canonical_id = int(row[0])
-                telegram_id = int(row[1]) if row[1] is not None else None
+                canonical_id = int(user.id)
+                telegram_id = (
+                    int(user.telegram_user_id)
+                    if user.telegram_user_id is not None
+                    else None
+                )
+                accepted_terms = bool(user.accepted_terms)
+                stored_mode = str(user.execution_mode or "").strip().lower()
+
+                connection = (
+                    await session.execute(
+                        select(BrokerConnection).where(
+                            BrokerConnection.user_id == canonical_id,
+                            BrokerConnection.connector == "metaapi",
+                            BrokerConnection.platform == platform,
+                            BrokerConnection.external_account_id == str(account_id),
+                        ).limit(1)
+                    )
+                ).scalar_one_or_none()
+
+                credentials_valid = False
+                connection_execution_enabled = False
+                if connection is not None:
+                    auth_mode = str(connection.auth_mode or "").strip().lower()
+                    provider_managed = auth_mode == "provider_secure_link"
+                    locally_encrypted = bool(
+                        connection.secret_encrypted
+                        and is_encryption_available()
+                        and decrypt_secret(str(connection.secret_encrypted))
+                    )
+                    credentials_valid = bool(
+                        str(connection.external_account_id or "").strip()
+                        == str(account_id).strip()
+                        and (provider_managed or locally_encrypted)
+                    )
+                    connection_execution_enabled = bool(
+                        connection.execution_enabled
+                        and str(connection.status or "").lower()
+                        in {"linked", "ready", "verified"}
+                    )
+
+                # Backward-compatible MT5 credential proof while legacy rows are
+                # being migrated into broker_connections.
+                if connection is None and platform == "mt5":
+                    legacy = (
+                        await session.execute(
+                            select(MT5Credentials).where(
+                                MT5Credentials.user_id == canonical_id
+                            ).limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if legacy is not None:
+                        credentials_valid = bool(
+                            legacy.password_encrypted
+                            and legacy.metaapi_account_id
+                            and str(legacy.metaapi_account_id).strip()
+                            == str(account_id).strip()
+                            and is_encryption_available()
+                            and decrypt_secret(str(legacy.password_encrypted))
+                        )
+                        # Legacy connection rows are deliberately not auto-enabled.
+                        connection_execution_enabled = False
+
                 if identity == "platform":
                     optin_keys = (
                         f"autoexec_platform_optin:{canonical_id}",
@@ -460,27 +521,20 @@ class MT5SignalRouter:
                         f"autoexec_user_optin:{int(user_id)}",
                         f"copyexec_user_optin:{int(user_id)}",
                     )
-                optin_result = await session.execute(
-                    select(RuntimeState.key, RuntimeState.value).where(
-                        RuntimeState.key.in_(optin_keys)
-                    )
-                )
-                optins = {
-                    str(item[0]): item[1]
-                    for item in optin_result.all()
-                    if item and len(item) >= 2
-                }
-            accepted_terms = bool(row[2])
-            stored_mode = str(row[3] or "").strip().lower()
-            encrypted = str(row[4] or "").strip()
-            stored_account = str(row[5] or "").strip()
-            credentials_valid = bool(
-                encrypted
-                and stored_account
-                and stored_account == str(account_id).strip()
-                and is_encryption_available()
-                and decrypt_secret(encrypted)
-            )
+                optins = {}
+                if optin_keys:
+                    rows = (
+                        await session.execute(
+                            select(RuntimeState.key, RuntimeState.value).where(
+                                RuntimeState.key.in_(optin_keys)
+                            )
+                        )
+                    ).all()
+                    optins = {
+                        str(item[0]): item[1]
+                        for item in rows
+                        if item and len(item) >= 2
+                    }
 
             if requested == ExecutionMode.COPY_TRADE:
                 optin = optins.get(
@@ -488,30 +542,39 @@ class MT5SignalRouter:
                     if identity == "platform"
                     else f"copyexec_user_optin:{int(user_id)}"
                 )
-                explicitly_enabled = bool(
+                explicit_mode_optin = bool(
                     isinstance(optin, dict) and optin.get("enabled") is True
                 )
-                user_enabled = stored_mode == ExecutionMode.COPY_TRADE
-                consent = bool(accepted_terms and user_enabled and explicitly_enabled)
+                mode_enabled = stored_mode == ExecutionMode.COPY_TRADE
+                user_enabled = bool(mode_enabled and connection_execution_enabled)
+                consent = bool(
+                    accepted_terms
+                    and user_enabled
+                    and explicit_mode_optin
+                )
             elif requested in {ExecutionMode.AUTO, "live"}:
                 optin = optins.get(
                     f"autoexec_platform_optin:{canonical_id}"
                     if identity == "platform"
                     else f"autoexec_user_optin:{int(user_id)}"
                 )
-                explicitly_enabled = bool(
+                explicit_mode_optin = bool(
                     isinstance(optin, dict) and optin.get("enabled") is True
                 )
-                user_enabled = stored_mode in {ExecutionMode.AUTO, "live"}
-                consent = bool(accepted_terms and user_enabled and explicitly_enabled)
+                mode_enabled = stored_mode in {ExecutionMode.AUTO, "live"}
+                user_enabled = bool(mode_enabled and connection_execution_enabled)
+                consent = bool(
+                    accepted_terms
+                    and user_enabled
+                    and explicit_mode_optin
+                )
             elif requested == ExecutionMode.MANUAL_CONFIRMED:
-                # The authenticated callback is the per-action consent. The
-                # durable profile must still permit manual/semi-auto execution.
-                user_enabled = stored_mode in {
+                mode_enabled = stored_mode in {
                     ExecutionMode.MANUAL,
                     ExecutionMode.MANUAL_CONFIRMED,
                     "semi_auto",
                 }
+                user_enabled = bool(mode_enabled and connection_execution_enabled)
                 consent = bool(accepted_terms and user_enabled)
             else:
                 user_enabled = False
@@ -524,7 +587,9 @@ class MT5SignalRouter:
                     "consent": consent,
                     "user_enabled": user_enabled,
                     "credentials_encrypted": credentials_valid,
+                    "connection_execution_enabled": connection_execution_enabled,
                     "mode": stored_mode,
+                    "platform": platform,
                 }
             )
         except Exception:
@@ -579,6 +644,7 @@ class MT5SignalRouter:
         idempotency_key: str,
         broker_result: Dict[str, Any],
         user_identity: str = "telegram",
+        broker_platform: str = "mt5",
     ) -> bool:
         """Persist one canonical MT5Execution row after broker acknowledgement."""
         try:
@@ -611,7 +677,8 @@ class MT5SignalRouter:
             stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
             identity = str(user_identity or "telegram").strip().lower()
             meta = {
-                "source": "canonical_mt5_signal_router",
+                "source": "canonical_metatrader_signal_router",
+                "broker_platform": str(broker_platform or "mt5").lower(),
                 "execution_mode": str(execution_mode),
                 "user_identity": identity,
                 "request_user_id": int(user_id),
@@ -769,6 +836,7 @@ class MT5SignalRouter:
         execution_mode: str = "manual",
         *,
         user_identity: str = "telegram",
+        broker_platform: str = "mt5",
     ) -> ExecutionResult:
         """
         Route signal to appropriate execution handler.
@@ -837,6 +905,13 @@ class MT5SignalRouter:
                 signal.get("signal_id") or signal.get("id") or ""
             ).strip()
             identity = str(user_identity or "telegram").strip().lower()
+            platform = str(broker_platform or "mt5").strip().lower()
+            if platform not in {"mt4", "mt5"}:
+                return ExecutionResult(
+                    success=False,
+                    message="Unsupported MetaTrader platform",
+                    error="unsupported_metatrader_platform",
+                )
             if identity not in {"telegram", "platform"}:
                 return ExecutionResult(
                     success=False,
@@ -851,11 +926,12 @@ class MT5SignalRouter:
             mt5_account_id = await self._get_user_mt5_account(
                 user_id,
                 user_identity=identity,
+                broker_platform=platform,
             )
             if not mt5_account_id:
                 return ExecutionResult(
                     success=False,
-                    message="No MT5 linked - use /mt5_link to connect your account",
+                    message=f"No {platform.upper()} account is ready for execution",
                     error="broker_account_not_ready",
                 )
 
@@ -879,6 +955,7 @@ class MT5SignalRouter:
                     mt5_account_id,
                     execution_mode,
                     user_identity=identity,
+                    broker_platform=platform,
                 ),
                 self._get_user_profile_policy(
                     user_id,
@@ -992,7 +1069,7 @@ class MT5SignalRouter:
                 resources_available=self._resource_pressure_clear(),
                 reconciliation_ready=bool(reconciliation.get("ready")),
                 kill_switch=kill_switch,
-                broker_provider="mt5",
+                broker_provider=platform,
                 user_identity=identity,
                 canonical_user_id=int(user_id) if identity == "platform" else None,
             )
@@ -1067,6 +1144,7 @@ class MT5SignalRouter:
                     execution_authorized=True,
                     idempotency_key=idempotency_key,
                     user_identity=identity,
+                    broker_platform=platform,
                 )
                 broker_result_holder["result"] = routed
                 if not routed.success:
@@ -1132,8 +1210,9 @@ class MT5SignalRouter:
         execution_authorized: bool = False,
         idempotency_key: Optional[str] = None,
         user_identity: str = "telegram",
+        broker_platform: str = "mt5",
     ) -> ExecutionResult:
-        """Execute signal via MT5/MetaApi."""
+        """Execute signal via MetaApi for MT4 or MT5."""
         if not execution_authorized or not str(idempotency_key or "").strip():
             return ExecutionResult(
                 success=False,
@@ -1180,6 +1259,7 @@ class MT5SignalRouter:
                     idempotency_key=str(idempotency_key),
                     broker_result=dict(result),
                     user_identity=user_identity,
+                    broker_platform=broker_platform,
                 )
                 await self._sync_to_paper_ledger(
                     signal=signal,
@@ -1211,7 +1291,7 @@ class MT5SignalRouter:
                 )
                 
         except Exception as e:
-            logger.error(f"[SignalRouter] MT5 execution error: {e}")
+            logger.error(f"[SignalRouter] MetaTrader execution error: {e}")
             return ExecutionResult(
                 success=False,
                 message=f"Execution error: {str(e)}",
@@ -1405,17 +1485,37 @@ class MT5SignalRouter:
         self,
         user_id: int,
         user_identity: str = "telegram",
+        broker_platform: str = "mt5",
     ) -> Optional[str]:
-        """Resolve or safely reprovision the user's MetaApi account ID."""
+        """Resolve or safely reprovision an MT4/MT5 MetaApi account ID."""
         try:
             from services.mt5_client import (
-                ensure_platform_mt5_account_id,
+                ensure_platform_metatrader_account_id,
                 ensure_user_mt5_account_id,
             )
 
-            if str(user_identity or "telegram").strip().lower() == "platform":
-                return await ensure_platform_mt5_account_id(int(user_id))
-            return await ensure_user_mt5_account_id(int(user_id))
+            identity = str(user_identity or "telegram").strip().lower()
+            platform = str(broker_platform or "mt5").strip().lower()
+            if identity == "platform":
+                return await ensure_platform_metatrader_account_id(
+                    int(user_id),
+                    platform=platform,
+                )
+            if platform == "mt5":
+                # Preserve old Telegram MT5 installations.
+                legacy = await ensure_user_mt5_account_id(int(user_id))
+                if legacy:
+                    return legacy
+            canonical_id = await self._resolve_canonical_user_id(
+                int(user_id),
+                user_identity="telegram",
+            )
+            if canonical_id is None:
+                return None
+            return await ensure_platform_metatrader_account_id(
+                canonical_id,
+                platform=platform,
+            )
         except Exception:
             return None
 
@@ -1618,17 +1718,34 @@ async def route_signal_to_mt5(
     return await router.route_signal(signal, user_id, execution_mode)
 
 
-async def route_platform_signal_to_mt5(
+async def route_platform_signal_to_metatrader(
     signal: Dict[str, Any],
     user_id: int,
+    *,
+    platform: str = "mt5",
     execution_mode: str = "manual_confirmed",
 ) -> ExecutionResult:
-    """Route an authenticated canonical platform signal through the same gate."""
+    """Route an authenticated MT4/MT5 signal through the same safety gate."""
     return await router.route_signal(
         signal,
         int(user_id),
         execution_mode,
         user_identity="platform",
+        broker_platform=str(platform or "mt5").lower(),
+    )
+
+
+async def route_platform_signal_to_mt5(
+    signal: Dict[str, Any],
+    user_id: int,
+    execution_mode: str = "manual_confirmed",
+) -> ExecutionResult:
+    """Backward-compatible MT5 platform route."""
+    return await route_platform_signal_to_metatrader(
+        signal,
+        int(user_id),
+        platform="mt5",
+        execution_mode=execution_mode,
     )
 
 
