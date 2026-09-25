@@ -169,3 +169,32 @@ def test_feedback_accepts_either_authorized_signal_receipt():
     assert "signal_deliveries" in section
     assert "notification_events" in section
     assert "record_user_event" in section
+
+
+
+def test_web_manual_execution_reuses_canonical_mt5_gate():
+    assert '@router.post("/signals/{signal_id}/execute")' in API
+    section = API[
+        API.index('@router.post("/signals/{signal_id}/execute"'):
+        API.index('@router.post("/signals/{signal_id}/feedback"')
+    ]
+    assert '_assert_feature(user, "broker_connection")' in section
+    assert "payload.confirm is not True" in section
+    assert "signal_deliveries" in section
+    assert "notification_events" in section
+    assert "route_platform_signal_to_mt5" in section
+    assert 'execution_mode="manual_confirmed"' in section
+    assert "execute_trade(" not in section
+    assert "/execute" in APP_JS
+    assert "Confirm and submit to MT5" in APP_JS
+    assert "The server will block the trade" in APP_JS
+
+
+def test_web_execution_settings_resolve_saved_provider_before_live_validation():
+    section = API[
+        API.index('@router.put("/execution-settings")'):
+        API.index('@router.delete("/devices/{session_id}")')
+    ]
+    assert "effective_provider" in section
+    assert "current.execution_provider" in section
+    assert 'effective_provider != "bybit"' in section
