@@ -12,7 +12,14 @@ from typing import Any, Mapping
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from db.models import BrokerExecution, MT5Execution, RuntimeState, SignalDelivery, User
+from db.models import (
+    BrokerExecution,
+    MT5Execution,
+    RuntimeState,
+    SignalDelivery,
+    TradingAccountPolicyRecord,
+    User,
+)
 from db.session import get_session
 from execution.service import ExecutionGate, ExecutionRequest
 from services.bybit_client import (
@@ -115,6 +122,24 @@ async def route_signal_to_bybit(
             )
         except (LookupError, PermissionError) as exc:
             return BybitRouteResult(False, "Broker account selection blocked", error=str(exc))
+        try:
+            from services.account_policies import public_account_policy
+            account_policy_row = (
+                await session.execute(
+                    select(TradingAccountPolicyRecord).where(
+                        TradingAccountPolicyRecord.user_id == int(user.id),
+                        TradingAccountPolicyRecord.connection_id == str(connection.connection_id),
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            account_policy_payload = (
+                public_account_policy(account_policy_row)
+                if account_policy_row is not None
+                else None
+            )
+        except Exception:
+            account_policy_payload = None
+
         try:
             from services.user_intelligence import (
                 get_user_trading_preferences,
@@ -246,6 +271,77 @@ async def route_signal_to_bybit(
         quantity = max_notional / entry
     risk_allowed = math.isfinite(quantity) and quantity > 0 and wallet_ok and not has_open_position
 
+    account_policy_allowed = False
+    account_policy_version = 0
+    execution_permission = ""
+    prop_policy_certified = False
+    prop_policy_version = ""
+    account_frozen = False
+    account_policy_reasons: tuple[str, ...] = ("account_policy_missing",)
+    try:
+        from core.account_policy import (
+            AccountRiskSnapshot,
+            evaluate_account_policy,
+            policy_from_mapping,
+        )
+        from services.account_policies import record_reconciliation
+
+        reconciliation_status = "HEALTHY" if reconciliation_ok else "RECONCILING"
+        await record_reconciliation(
+            int(user.id),
+            str(connection.connection_id),
+            status=reconciliation_status,
+            discrepancy_code=None if reconciliation_ok else "provider_reconciliation_pending",
+            details={
+                "provider": "bybit",
+                "positions_count": len(positions) if isinstance(positions, list) else None,
+                "equity": wallet_equity if wallet_equity > 0 else None,
+            },
+        )
+        if isinstance(account_policy_payload, dict):
+            account_policy = policy_from_mapping(account_policy_payload)
+            account_policy_version = int(account_policy.policy_version)
+            execution_permission = account_policy.execution_permission
+            prop_policy_certified = bool(account_policy.certified)
+            prop_policy_version = str(account_policy.prop_rules_version or "")
+            account_frozen = bool(account_policy.frozen)
+            policy_snapshot = AccountRiskSnapshot(
+                current_equity=Decimal(str(wallet_equity)),
+                day_start_equity=Decimal(str(wallet_equity)),
+                peak_equity=Decimal(str(wallet_equity)),
+                daily_realized_pnl=Decimal("0"),
+                open_positions=sum(
+                    1 for item in positions
+                    if isinstance(item, Mapping) and float(item.get("size") or 0) > 0
+                ) if isinstance(positions, list) else 0,
+                proposed_risk_pct=Decimal(str(risk_pct)) / Decimal("100"),
+                proposed_leverage=(
+                    Decimal(str(quantity)) * Decimal(str(entry)) / Decimal(str(wallet_equity))
+                    if wallet_equity > 0 else Decimal("0")
+                ),
+                symbol=symbol,
+                asset_class=str(signal.get("asset_class") or "crypto"),
+                high_impact_news_window=bool(signal.get("high_impact_news_window")),
+                weekend_hold_expected=bool(signal.get("weekend_hold_expected")),
+                account_is_demo=sandbox,
+                reconciliation_ready=reconciliation_ok,
+                # Bybit wallet/ticker endpoints do not prove session-start/peak
+                # equity. Real/prop accounts remain blocked until a certified
+                # baseline source is wired; testnet/demo does not require it.
+                loss_baselines_verified=False,
+            )
+            account_policy_decision = evaluate_account_policy(
+                account_policy,
+                policy_snapshot,
+                execution_mode=execution_mode,
+            )
+            account_policy_allowed = account_policy_decision.allowed
+            account_policy_reasons = account_policy_decision.reasons
+    except Exception:
+        reconciliation_ok = False
+        account_policy_allowed = False
+        account_policy_reasons = ("account_policy_unavailable",)
+
     optin_key = "copyexec_user_optin" if execution_mode == "copy_trade" else "autoexec_user_optin"
     async with get_session(label="bybit.consent", timeout_seconds=5.0) as session:
         optin = await session.get(RuntimeState, f"{optin_key}:{int(telegram_user_id)}")
@@ -284,10 +380,60 @@ async def route_signal_to_bybit(
         broker_provider="bybit",
         canonical_user_id=int(user.id),
         account_classification=account_classification(connection),
+        account_policy_allowed=account_policy_allowed,
+        account_policy_version=account_policy_version,
+        execution_permission=execution_permission,
+        prop_policy_certified=prop_policy_certified,
+        prop_policy_version=prop_policy_version,
+        account_frozen=account_frozen,
     )
     gate = ExecutionGate()
     idempotency_key = gate_request.key()
     client_order_id = f"sr-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:30]}"
+
+    preflight = gate.preflight(gate_request)
+    try:
+        from services.account_policies import record_execution_decision
+        await record_execution_decision(
+            user_id=int(user.id),
+            connection_id=str(connection.connection_id),
+            signal_id=signal_id,
+            execution_mode=execution_mode,
+            account_mode=account_classification(connection),
+            policy_version=account_policy_version,
+            allowed=preflight.allowed,
+            reasons=tuple(preflight.reasons) + tuple(account_policy_reasons),
+            market_snapshot={
+                "asset": symbol,
+                "asset_class": str(signal.get("asset_class") or "crypto"),
+                "quote_age_seconds": quote_age,
+                "market_open": True,
+            },
+            risk_snapshot={
+                "account_policy_allowed": account_policy_allowed,
+                "reconciliation_ready": reconciliation_ok,
+                "risk_pct": str(risk_pct),
+                "quantity": str(quantity),
+            },
+            request_snapshot={
+                "signal_id": signal_id,
+                "execution_mode": execution_mode,
+                "connection_id": str(connection.connection_id),
+            },
+        )
+    except Exception:
+        if sandbox is not True:
+            return BybitRouteResult(
+                False,
+                "Execution blocked: decision_provenance_unavailable",
+                error="decision_provenance_unavailable",
+            )
+    if not preflight.allowed:
+        return BybitRouteResult(
+            False,
+            "Execution blocked: " + ", ".join(preflight.reasons),
+            error=",".join(preflight.reasons),
+        )
 
     async def submit(_: ExecutionRequest) -> dict[str, Any]:
         try:
@@ -323,6 +469,7 @@ async def route_signal_to_bybit(
                 }
             row = BrokerExecution(
                 user_id=int(user.id), signal_id=signal_id, provider="bybit",
+                connection_id=connection.connection_id,
                 account_ref=connection.connection_id, idempotency_key=idempotency_key,
                 provider_client_order_id=client_order_id, symbol=symbol, direction=direction,
                 quantity=float(quantity), entry_price=entry, stop_loss=stop, take_profit=take_profit,
