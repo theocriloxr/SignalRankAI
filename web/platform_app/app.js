@@ -262,6 +262,8 @@ async function loadBroker(){
     const ex=data.execution||{};
     const connections=data.connections||[];
     const platforms=data.platforms||[];
+    const accountStats=data.stats?.accounts||[];
+    const accountStatsById=new Map(accountStats.map(row=>[String(row.connection_id||''),row]));
     const readyConnections=connections.filter(x=>['verified','ready','linked'].includes(String(x.status||'').toLowerCase()));
     const executableConnections=connections.filter(x=>x.execution_enabled===true);
     $('#brokerReadinessBadge').textContent=executableConnections.length?'EXECUTION READY':readyConnections.length?'CONNECTED':'NOT CONNECTED';
@@ -283,21 +285,25 @@ async function loadBroker(){
         const defaultTag=x.is_default?'Default · ':'';
         const account=x.account_ref_masked||'Account hidden';
         const verifyButton=x.connector==='metaapi'?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
-        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
+        const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
+        const perfParts=[
+          accountPerf.executions!==undefined?`${accountPerf.executions} executions`:'',
+          accountPerf.wins!==undefined?`${accountPerf.wins} wins`:'',
+          accountPerf.losses!==undefined?`${accountPerf.losses} losses`:'',
+          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`realized P/L ${fmt(accountPerf.realized_pnl||0)}`:''
+        ].filter(Boolean).join(' · ');
+        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
+        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
       }).join(''):'<p class="muted">No trading accounts connected yet.</p>';
     }
 
-    const providers=data.stats?.providers||[];
-    const mtStats=data.stats?.mt5||{};
     $('#brokerStats').innerHTML=[
       ['Connected accounts',connections.length],
       ['Execution-enabled',executableConnections.length],
-      ['MetaTrader executions',mtStats.executions||0],
-      ['Recorded wins',mtStats.wins||0],
-      ['Recorded losses',mtStats.losses||0],
-      ['Realized P/L',`$${fmt(mtStats.realized_pnl||0)}`],
-      ['Other provider executions',providers.reduce((n,p)=>n+Number(p.executions||0),0)]
-    ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+      ['Accounts with execution evidence',accountStats.filter(x=>Number(x.executions||0)>0).length],
+      ['Performance scope','Per account only']
+    ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')+
+      '<p class="muted">Demo, personal-live and PROP performance are not combined into one headline. Open each account policy/ledger for its own evidence.</p>';
 
     $('#brokerStatus').innerHTML=[
       ['Connection does not grant trading','Yes'],
