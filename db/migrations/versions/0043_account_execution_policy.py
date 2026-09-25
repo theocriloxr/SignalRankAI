@@ -220,11 +220,11 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE OR REPLACE FUNCTION prevent_trading_account_ledger_mutation()
-        RETURNS trigger AS $
+        RETURNS trigger AS $ledger_guard$
         BEGIN
             RAISE EXCEPTION 'trading_account_ledger_entries is append-only';
         END;
-        $ LANGUAGE plpgsql
+        $ledger_guard$ LANGUAGE plpgsql
         """
     )
     op.execute(
