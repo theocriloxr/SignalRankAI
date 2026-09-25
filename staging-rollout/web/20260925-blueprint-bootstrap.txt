@@ -1,0 +1,1 @@
+SignalRank staging blueprint web-only bootstrap trigger. Telegram webhook, scheduler, engine, worker, and real execution remain disabled during certification.
