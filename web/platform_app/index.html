@@ -455,6 +455,10 @@
                     <label>Safety buffer %<input name="safety_buffer_pct" type="number" min="0" max="50" step="0.1" value="0" /></label>
                   </div>
                 </div>
+                <label>Advanced firm hard rules (JSON)
+                  <textarea name="external_rules_json" rows="8" spellcheck="false" placeholder='{"hard_rules":[{"id":"lot-cap","type":"max_order_size","value":"1.5","unit":"LOT"}]}'></textarea>
+                  <small>Configuration-driven and account-specific. Supported hard-rule types are validated server-side; unknown rules fail closed and cannot be certified.</small>
+                </label>
                 <p class="muted">PROP execution remains blocked until this exact policy version is independently certified. Editing any rule clears prior certification.</p>
               </fieldset>
               <div id="brokerPolicyState" class="detail-list"></div>
