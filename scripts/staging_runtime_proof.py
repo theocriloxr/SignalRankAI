@@ -23,6 +23,8 @@ REQUIRED_TABLES = (
     "subscription_products", "subscription_prices", "subscription_entitlements",
     "instruments", "provider_instruments", "auth_identities", "user_sessions",
     "webhook_deliveries", "payment_receipts", "email_outbox",
+    "broker_connections", "trading_account_policies",
+    "broker_reconciliation_state", "broker_execution_decisions",
 )
 
 
@@ -96,13 +98,19 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                   to_regclass('public.user_sessions') IS NOT NULL,
                   to_regclass('public.webhook_deliveries') IS NOT NULL,
                   to_regclass('public.payment_receipts') IS NOT NULL,
-                  to_regclass('public.email_outbox') IS NOT NULL
+                  to_regclass('public.email_outbox') IS NOT NULL,
+                  to_regclass('public.broker_connections') IS NOT NULL,
+                  to_regclass('public.trading_account_policies') IS NOT NULL,
+                  to_regclass('public.broker_reconciliation_state') IS NOT NULL,
+                  to_regclass('public.broker_execution_decisions') IS NOT NULL
             """)
             values = cur.fetchone()
             names = (
                 "subscription_products", "subscription_prices", "subscription_entitlements",
                 "instruments", "provider_instruments", "auth_identities", "user_sessions",
                 "webhook_deliveries", "payment_receipts", "email_outbox",
+                "broker_connections", "trading_account_policies",
+                "broker_reconciliation_state", "broker_execution_decisions",
             )
             report["required_tables"] = dict(zip(names, map(bool, values)))
 
@@ -113,6 +121,16 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 )
             """)
             report["users_public_user_id"] = bool(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
+                    AND table_name='broker_executions'
+                    AND column_name='connection_id'
+                )
+            """)
+            report["broker_executions_connection_id"] = bool(cur.fetchone()[0])
 
             queries = {
                 "active_products": "SELECT COUNT(*) FROM subscription_products WHERE active=TRUE",
