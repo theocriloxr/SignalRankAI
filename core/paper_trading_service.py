@@ -175,7 +175,9 @@ def canonical_asset_class(asset: str, value: Any = None) -> str:
 
 @dataclass(frozen=True)
 class PaperSnapshot:
-    telegram_user_id: int
+    telegram_user_id: int | None
+    user_id: int
+    identity: str
     starting_balance: float
     cash_balance: float
     equity: float
@@ -207,36 +209,24 @@ class PaperTradingService:
     def _default_auto_enabled() -> bool:
         return _env_bool("PAPER_AUTO_TRADE_DEFAULT_ENABLED", False)
 
-    async def _user_row(self, session, telegram_user_id: int) -> User | None:
+    async def _user_row(
+        self,
+        session,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> User | None:
+        identity = str(user_identity or "telegram").strip().lower()
+        criterion = (
+            User.id == int(user_id)
+            if identity == "platform"
+            else User.telegram_user_id == int(user_id)
+        )
         return (
-            await session.execute(
-                select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-            )
+            await session.execute(select(User).where(criterion).limit(1))
         ).scalar_one_or_none()
 
-    async def ensure_account(self, telegram_user_id: int, *, session=None) -> PaperAccount | None:
-        if session is not None:
-            return await self._ensure_account_in_session(session, int(telegram_user_id))
-        async with get_session(priority="interactive", label="paper.ensure_account") as owned_session:
-            try:
-                account = await self._ensure_account_in_session(owned_session, int(telegram_user_id))
-                await owned_session.commit()
-                return account
-            except IntegrityError:
-                await owned_session.rollback()
-                user = await self._user_row(owned_session, int(telegram_user_id))
-                if user is None:
-                    return None
-                return (
-                    await owned_session.execute(
-                        select(PaperAccount).where(PaperAccount.user_id == int(user.id)).limit(1)
-                    )
-                ).scalar_one_or_none()
-
-    async def _ensure_account_in_session(self, session, telegram_user_id: int) -> PaperAccount | None:
-        user = await self._user_row(session, int(telegram_user_id))
-        if user is None:
-            return None
+    async def _ensure_account_for_user(self, session, user: User) -> PaperAccount:
         account = (
             await session.execute(
                 select(PaperAccount).where(PaperAccount.user_id == int(user.id)).limit(1)
@@ -274,6 +264,59 @@ class PaperTradingService:
             meta={"auto_trade_enabled": bool(account.auto_trade_enabled)},
         ))
         return account
+
+    async def ensure_account(
+        self,
+        user_id: int,
+        *,
+        session=None,
+        user_identity: str = "telegram",
+    ) -> PaperAccount | None:
+        if session is not None:
+            return await self._ensure_account_in_session(
+                session,
+                int(user_id),
+                user_identity=user_identity,
+            )
+        async with get_session(priority="interactive", label="paper.ensure_account") as owned_session:
+            try:
+                account = await self._ensure_account_in_session(
+                    owned_session,
+                    int(user_id),
+                    user_identity=user_identity,
+                )
+                await owned_session.commit()
+                return account
+            except IntegrityError:
+                await owned_session.rollback()
+                user = await self._user_row(
+                    owned_session,
+                    int(user_id),
+                    user_identity=user_identity,
+                )
+                if user is None:
+                    return None
+                return (
+                    await owned_session.execute(
+                        select(PaperAccount).where(PaperAccount.user_id == int(user.id)).limit(1)
+                    )
+                ).scalar_one_or_none()
+
+    async def _ensure_account_in_session(
+        self,
+        session,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> PaperAccount | None:
+        user = await self._user_row(
+            session,
+            int(user_id),
+            user_identity=user_identity,
+        )
+        if user is None:
+            return None
+        return await self._ensure_account_for_user(session, user)
 
     async def snapshot(self, telegram_user_id: int) -> PaperSnapshot | None:
         async with get_session(priority="interactive", label="paper.snapshot") as session:
