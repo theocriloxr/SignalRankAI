@@ -1858,10 +1858,22 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
             session,
             referrer_user_id=int(user["id"]),
         )
-        total = int(
+        total_attributions = int(
             (
                 await session.execute(
                     text("SELECT COUNT(*) FROM referrals WHERE referrer_user_id=:uid"),
+                    {"uid": int(user["id"])},
+                )
+            ).scalar()
+            or 0
+        )
+        total = int(
+            (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM referrals "
+                        "WHERE referrer_user_id=:uid AND is_successful IS TRUE"
+                    ),
                     {"uid": int(user["id"])},
                 )
             ).scalar()
@@ -1892,6 +1904,7 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
         "web_url": web_url,
         "telegram_url": telegram_url,
         "total_referrals": total,
+        "total_attributions": total_attributions,
         "premium_days_earned": rewards,
         "toward_next": toward_next,
         "needed_for_next": requirement if toward_next == 0 else requirement - toward_next,
@@ -3824,8 +3837,31 @@ async def cancel_billing_auto_renew(
         reason = str(result.get("reason") or "cancellation_failed")
         status_code = 409 if reason == "no_active_paid_subscription" else 404 if reason == "account_not_found" else 503
         raise HTTPException(status_code=status_code, detail=reason)
+    support_ticket_id = None
+    if result.get("provider_follow_up_required"):
+        try:
+            ticket = await create_support_ticket(
+                SupportTicketCreateRequest(
+                    subject="Subscription cancellation provider follow-up",
+                    category="billing",
+                    message=(
+                        "SignalRankAI recorded auto-renew as disabled, but the "
+                        "Paystack subscription-disable request could not be confirmed "
+                        "after retries. Please verify the provider subscription is "
+                        "stopped before the next billing date."
+                    ),
+                ),
+                user,
+            )
+            support_ticket_id = ticket.get("ticket_id")
+        except Exception:
+            logger.exception(
+                "[billing_cancel] automatic provider follow-up ticket failed user=%s",
+                user.get("id"),
+            )
     return {
         **result,
+        "support_ticket_id": support_ticket_id,
         "policy": (
             "Auto-renew is off. Current paid access remains until its expiry. "
             "This action does not issue a refund."
