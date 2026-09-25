@@ -2403,6 +2403,7 @@ async def referral_leaderboard_command(update, context) -> None:
 					ReferralAttribution.referrer_user_id,
 					func.count(ReferralAttribution.id).label("cnt"),
 				)
+				.where(ReferralAttribution.is_successful.is_(True))
 				.group_by(ReferralAttribution.referrer_user_id)
 				.order_by(desc("cnt"))
 				.limit(10)
@@ -7020,62 +7021,103 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
 async def elite_command(update, context) -> None:
+	"""Show only high-score signals proven delivered to this Telegram account."""
 	if update.message is None or update.effective_user is None:
 		return
 	try:
+		from db.models import Signal, SignalDelivery, User
 		from db.session import get_engine_for_event_loop, get_session
-		from sqlalchemy import select, desc
-		from datetime import datetime, timedelta, timezone
-		from db.models import Signal
-		engine = get_engine_for_event_loop()
-		if engine is None:
+		from sqlalchemy import and_, desc, func, select
+		from datetime import timedelta
+
+		if get_engine_for_event_loop() is None:
 			await update.message.reply_text("No elite signals available right now.")
 			return
-		cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-			res = await session.execute(
-				select(Signal)
-				.where(Signal.created_at >= cutoff)
-				.order_by(desc(Signal.score))
-				.limit(25)
+		cutoff = now_utc_naive() - timedelta(days=7)
+		telegram_user_id = int(update.effective_user.id)
+		async with get_session(
+			priority="interactive",
+			label="elite.delivered_signals",
+			timeout_seconds=8.0,
+		) as session:
+			user = (
+				await session.execute(
+					select(User).where(
+						User.telegram_user_id == telegram_user_id
+					).limit(1)
+				)
+			).scalar_one_or_none()
+			if user is None:
+				await session.rollback()
+				await update.message.reply_text(
+					"No elite signals available right now."
+				)
+				return
+			rows = list(
+				(
+					await session.execute(
+						select(Signal)
+						.join(
+							SignalDelivery,
+							SignalDelivery.signal_id == Signal.signal_id,
+						)
+						.where(
+							SignalDelivery.user_id == int(user.id),
+							SignalDelivery.sent_ok.is_(True),
+							SignalDelivery.telegram_chat_id.is_not(None),
+							SignalDelivery.telegram_message_id.is_not(None),
+							func.lower(
+								SignalDelivery.delivery_state
+							).in_(("sent", "delivered", "confirmed", "reconciled")),
+							Signal.created_at >= cutoff,
+							Signal.score >= 85.0,
+						)
+						.order_by(desc(Signal.score), desc(Signal.created_at))
+						.limit(5)
+					)
+				).scalars().all()
 			)
-			rows = list(res.scalars().all())
-			await session.commit()
-		elite = [r for r in rows if float(getattr(r, "score", 0) or 0) >= 85.0]
-		if not elite:
-			await update.message.reply_text("No elite signals available right now.")
+			await session.rollback()
+		if not rows:
+			await update.message.reply_text(
+				"No elite signals available right now."
+			)
 			return
 		from .formatter import format_signal
+
 		count = 0
-		for r in elite:
+		for row in rows:
 			sig = {
-				"signal_id": r.signal_id,
-				"asset": r.asset,
-				"timeframe": r.timeframe,
-				"direction": r.direction,
-				"entry": r.entry,
-				"stop_loss": r.stop_loss,
-				"take_profit": r.take_profit,
-				"rr_ratio": r.rr_estimate,
-				"score": r.score,
-				"regime": r.regime,
-				"strength": r.strength,
-				"strategy_name": r.strategy_name,
-				"strategy_group": r.strategy_group,
-				"ml_probability": r.ml_probability,
+				"signal_id": row.signal_id,
+				"asset": row.asset,
+				"timeframe": row.timeframe,
+				"direction": row.direction,
+				"entry": row.entry,
+				"stop_loss": row.stop_loss,
+				"take_profit": row.take_profit,
+				"rr_ratio": row.rr_estimate,
+				"score": row.score,
+				"regime": row.regime,
+				"strength": row.strength,
+				"strategy_name": row.strategy_name,
+				"strategy_group": row.strategy_group,
+				"ml_probability": row.ml_probability,
 			}
 			formatted = format_signal(sig, user_tier="VIP")
 			if not formatted:
 				continue
 			await update.message.reply_text(formatted)
 			count += 1
-			if count >= 5:
-				break
 		if count == 0:
-			await update.message.reply_text("No elite signals available right now.")
+			await update.message.reply_text(
+				"No elite signals available right now."
+			)
 	except Exception:
+		logger.exception(
+			"[/elite] delivered-signal lookup failed user=%s",
+			getattr(update.effective_user, "id", None),
+		)
 		await update.message.reply_text("No elite signals available right now.")
-
 
 @require_tier("VIP")
 async def early_command(update, context) -> None:
