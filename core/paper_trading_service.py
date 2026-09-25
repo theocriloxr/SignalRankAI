@@ -1493,6 +1493,7 @@ class PaperTradingService:
         async with execution_destination_lock(
             lock_user_id,
             str(candidate["signal_id"]),
+            account_scope=f"paper:{int(candidate['user_id'])}",
         ) as claimed:
             if not claimed:
                 logger.warning(
