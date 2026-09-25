@@ -31,6 +31,18 @@ EXECUTION_PERMISSIONS = frozenset(
 
 _LIVE_MODES = frozenset({"manual_confirmed", "auto", "live", "copy_trade"})
 
+PROP_HARD_RULE_TYPES = frozenset(
+    {
+        "trailing_drawdown_pct",
+        "max_order_size",
+        "max_notional_pct_equity",
+        "forbid_execution_modes",
+        "restricted_instruments",
+        "restricted_asset_classes",
+        "max_open_positions",
+    }
+)
+
 
 def _decimal(value: Any, *, field_name: str, default: str | None = None) -> Decimal:
     raw = default if value in (None, "") and default is not None else value
@@ -179,6 +191,11 @@ class TradingAccountPolicy:
             "trading_windows",
             tuple(dict(window) for window in (self.trading_windows or ()) if isinstance(window, Mapping)),
         )
+        if not isinstance(self.extra_rules, Mapping):
+            raise ValueError("invalid_prop_rule_config")
+        object.__setattr__(self, "extra_rules", dict(self.extra_rules or {}))
+        if mode == "PROP":
+            validate_prop_rule_config(self.extra_rules)
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +215,8 @@ class AccountRiskSnapshot:
     expected_slippage_bps: Decimal = Decimal("0")
     confidence: Decimal = Decimal("0")
     expected_rr: Decimal = Decimal("0")
+    proposed_order_size: Decimal = Decimal("0")
+    order_size_unit: str = ""
     symbol: str = ""
     asset_class: str = ""
     strategy: str = ""
@@ -225,6 +244,7 @@ class AccountRiskSnapshot:
             "expected_slippage_bps",
             "confidence",
             "expected_rr",
+            "proposed_order_size",
         ):
             object.__setattr__(
                 self,
@@ -246,6 +266,142 @@ class AccountPolicyDecision:
     effective_daily_loss_limit: Decimal | None = None
     effective_weekly_loss_limit: Decimal | None = None
     effective_drawdown_limit: Decimal | None = None
+
+
+def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[dict[str, Any], ...]:
+    """Validate generic account-specific hard rules without firm-specific code."""
+    payload = dict(extra_rules or {})
+    raw_rules = payload.get("hard_rules") or []
+    if not isinstance(raw_rules, (list, tuple)):
+        raise ValueError("invalid_prop_hard_rules")
+
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for raw in raw_rules:
+        if not isinstance(raw, Mapping):
+            raise ValueError("invalid_prop_hard_rule")
+        rule = dict(raw)
+        rule_id = str(rule.get("id") or "").strip()
+        rule_type = str(rule.get("type") or "").strip().lower()
+        if not rule_id or len(rule_id) > 64:
+            raise ValueError("invalid_prop_hard_rule_id")
+        if rule_id in seen_ids:
+            raise ValueError("duplicate_prop_hard_rule_id")
+        if rule_type not in PROP_HARD_RULE_TYPES:
+            raise ValueError(f"unsupported_prop_hard_rule:{rule_type or 'missing'}")
+        seen_ids.add(rule_id)
+
+        if rule_type in {
+            "trailing_drawdown_pct",
+            "max_notional_pct_equity",
+        }:
+            value = _decimal(rule.get("value"), field_name=f"prop_rule_{rule_id}")
+            if value <= 0 or value > 1:
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}")
+            rule["value"] = str(value)
+        elif rule_type == "max_order_size":
+            value = _decimal(rule.get("value"), field_name=f"prop_rule_{rule_id}")
+            unit = str(rule.get("unit") or "").strip().upper()
+            if value <= 0 or unit not in {"LOT", "BASE_UNITS", "CONTRACTS"}:
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}")
+            rule["value"] = str(value)
+            rule["unit"] = unit
+        elif rule_type == "forbid_execution_modes":
+            modes = {
+                str(item).strip().lower()
+                for item in (rule.get("modes") or [])
+                if str(item).strip()
+            }
+            if not modes or not modes.issubset(_LIVE_MODES):
+                raise ValueError(f"invalid_prop_hard_rule_modes:{rule_id}")
+            rule["modes"] = sorted(modes)
+        elif rule_type in {"restricted_instruments", "restricted_asset_classes"}:
+            values = _tuple_upper(rule.get("values"))
+            if not values:
+                raise ValueError(f"invalid_prop_hard_rule_values:{rule_id}")
+            rule["values"] = list(values)
+        elif rule_type == "max_open_positions":
+            try:
+                value = int(rule.get("value"))
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}") from None
+            if value < 0:
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}")
+            rule["value"] = value
+
+        rule["id"] = rule_id
+        rule["type"] = rule_type
+        normalized.append(rule)
+    return tuple(normalized)
+
+
+def _evaluate_prop_hard_rules(
+    policy: TradingAccountPolicy,
+    snapshot: AccountRiskSnapshot,
+    *,
+    execution_mode: str,
+) -> list[str]:
+    reasons: list[str] = []
+    try:
+        rules = validate_prop_rule_config(policy.extra_rules)
+    except ValueError:
+        return ["prop_rule_config_invalid"]
+
+    symbol = str(snapshot.symbol or "").strip().upper()
+    asset_class = str(snapshot.asset_class or "").strip().upper()
+    mode = str(execution_mode or "").strip().lower()
+    size_unit = str(snapshot.order_size_unit or "").strip().upper()
+
+    for rule in rules:
+        rule_id = str(rule["id"])
+        rule_type = str(rule["type"])
+        prefix = f"prop_rule:{rule_id}"
+
+        if rule_type == "trailing_drawdown_pct":
+            if snapshot.peak_equity <= 0 or snapshot.current_equity <= 0:
+                reasons.append(f"{prefix}:baseline_unavailable")
+                continue
+            drawdown = max(
+                Decimal("0"),
+                (snapshot.peak_equity - snapshot.current_equity) / snapshot.peak_equity,
+            )
+            if drawdown >= Decimal(str(rule["value"])):
+                reasons.append(f"{prefix}:trailing_drawdown_pct")
+
+        elif rule_type == "max_order_size":
+            if snapshot.proposed_order_size <= 0:
+                reasons.append(f"{prefix}:size_unavailable")
+                continue
+            if size_unit != str(rule["unit"]).upper():
+                reasons.append(f"{prefix}:size_unit_unverifiable")
+                continue
+            if snapshot.proposed_order_size > Decimal(str(rule["value"])):
+                reasons.append(f"{prefix}:max_order_size")
+
+        elif rule_type == "max_notional_pct_equity":
+            if snapshot.proposed_leverage < 0:
+                reasons.append(f"{prefix}:notional_unavailable")
+                continue
+            if snapshot.proposed_leverage > Decimal(str(rule["value"])):
+                reasons.append(f"{prefix}:max_notional_pct_equity")
+
+        elif rule_type == "forbid_execution_modes":
+            if mode in {str(item).lower() for item in rule["modes"]}:
+                reasons.append(f"{prefix}:execution_mode_forbidden")
+
+        elif rule_type == "restricted_instruments":
+            if symbol and symbol in set(rule["values"]):
+                reasons.append(f"{prefix}:instrument_restricted")
+
+        elif rule_type == "restricted_asset_classes":
+            if asset_class and asset_class in set(rule["values"]):
+                reasons.append(f"{prefix}:asset_class_restricted")
+
+        elif rule_type == "max_open_positions":
+            if snapshot.open_positions >= int(rule["value"]):
+                reasons.append(f"{prefix}:max_open_positions")
+
+    return reasons
 
 
 def _parse_clock(value: Any) -> time | None:
@@ -459,6 +615,15 @@ def evaluate_account_policy(
     if snapshot.weekend_hold_expected and not policy.weekend_holding_allowed:
         reasons.append("weekend_holding_blocked")
 
+    if policy.account_mode == "PROP":
+        reasons.extend(
+            _evaluate_prop_hard_rules(
+                policy,
+                snapshot,
+                execution_mode=execution_mode,
+            )
+        )
+
     if reasons:
         return AccountPolicyDecision(
             allowed=False,
@@ -602,9 +767,11 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
 __all__ = [
     "ACCOUNT_MODES",
     "EXECUTION_PERMISSIONS",
+    "PROP_HARD_RULE_TYPES",
     "TradingAccountPolicy",
     "AccountRiskSnapshot",
     "AccountPolicyDecision",
     "evaluate_account_policy",
+    "validate_prop_rule_config",
     "policy_from_mapping",
 ]
