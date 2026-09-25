@@ -17,7 +17,7 @@ from datetime import timedelta
 from typing import Any, Iterable, Optional
 from uuid import uuid4
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 
 from db.models import (
@@ -774,7 +774,7 @@ class PaperTradingService:
                 "partial_milestones": partial_milestones,
             }
 
-    async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
+    async def _telegram_delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
         # Fetch a broad window, then enforce the stricter timeframe-specific
         # freshness policy for each candidate. A single 15-minute cutoff caused
         # valid 1d candidates to disappear while older 1h candidates could still
@@ -847,7 +847,13 @@ class PaperTradingService:
             for delivery, signal, user, account, _, lifecycle in rows:
                 out.append({
                     "delivery_id": int(delivery.id),
-                    "telegram_user_id": int(user.telegram_user_id),
+                    "receipt_channel": "telegram",
+                    "receipt_reference": str(delivery.id),
+                    "telegram_user_id": (
+                        int(user.telegram_user_id)
+                        if user.telegram_user_id is not None
+                        else None
+                    ),
                     "user_id": int(user.id),
                     "signal_id": str(signal.signal_id),
                     "display_id": str(getattr(signal, "display_id", "") or ""),
@@ -883,6 +889,206 @@ class PaperTradingService:
                     "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
                 })
             return out
+    async def _web_delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
+        """Discover gated web receipts without manufacturing Telegram deliveries."""
+        max_age_s = _env_int(
+            "PAPER_DISCOVERY_MAX_AGE_SECONDS",
+            21600,
+            300,
+            86400,
+        )
+        now = now_utc_naive()
+        cutoff = now - timedelta(seconds=max_age_s)
+        terminal_statuses = (
+            "tp", "tp3", "sl", "stop", "stopped", "expired", "missed",
+            "cancelled", "closed", "win", "loss", "partial_win",
+            "invalid", "invalidated", "time_stop", "partial_win_be",
+            "missed_entry",
+        )
+        status_sql = ",".join(f"'{item}'" for item in terminal_statuses)
+        sql = f"""
+            SELECT
+                ne.notification_id,
+                ne.user_id,
+                ne.created_at AS confirmed_at,
+                u.telegram_user_id,
+                s.signal_id,
+                s.display_id,
+                s.asset,
+                s.asset_class,
+                s.timeframe,
+                s.direction,
+                s.entry,
+                s.stop_loss,
+                s.take_profit,
+                s.score,
+                s.created_at AS generated_at,
+                s.thesis_fingerprint,
+                s.strategy_name,
+                s.regime,
+                pa.id AS account_id,
+                sl.state AS lifecycle_state,
+                sl.entry_touched_at
+            FROM notification_events ne
+            JOIN users u ON u.id=ne.user_id
+            JOIN signals s
+              ON s.signal_id=ne.channel_data->>'signal_id'
+            LEFT JOIN paper_accounts pa ON pa.user_id=u.id
+            LEFT JOIN signal_lifecycles sl ON sl.signal_id=s.signal_id
+            LEFT JOIN outcomes o ON o.signal_id=s.signal_id
+            LEFT JOIN paper_positions pp
+              ON pp.user_id=u.id
+             AND pp.signal_id=s.signal_id
+             AND LOWER(pp.status) IN ('open','closed')
+            WHERE ne.event_type='signal'
+              AND ne.channel_data->>'channel'='web'
+              AND ne.created_at >= :cutoff
+              AND COALESCE(u.is_blocked,FALSE) IS FALSE
+              AND COALESCE(u.is_suspended,FALSE) IS FALSE
+              AND pp.position_id IS NULL
+              AND (o.id IS NULL OR LOWER(COALESCE(o.status,'')) NOT IN ({status_sql}))
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM paper_trade_attempts pta
+                    WHERE pta.user_id=u.id
+                      AND pta.signal_id=s.signal_id
+                      AND pta.decision='SKIPPED'
+                      AND pta.retryable IS FALSE
+                      AND pta.finalized_at IS NOT NULL
+                      AND NOT EXISTS (
+                            SELECT 1
+                            FROM paper_trade_attempts override_attempt
+                            WHERE override_attempt.user_id=u.id
+                              AND override_attempt.signal_id=s.signal_id
+                              AND override_attempt.decision='RETRY_PENDING'
+                              AND override_attempt.retry_deadline > :now
+                      )
+              )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM paper_trade_attempts backoff
+                    WHERE backoff.user_id=u.id
+                      AND backoff.signal_id=s.signal_id
+                      AND backoff.retryable IS TRUE
+                      AND backoff.next_retry_at IS NOT NULL
+                      AND backoff.next_retry_at > :now
+              )
+            ORDER BY ne.created_at DESC, ne.notification_id DESC
+            LIMIT :limit
+        """
+        async with get_session(
+            priority=_paper_worker_priority(),
+            label="paper.web_delivery_candidates",
+            timeout_seconds=_paper_db_timeout(8.0),
+        ) as session:
+            rows = (
+                await session.execute(
+                    text(sql),
+                    {
+                        "cutoff": cutoff,
+                        "now": now,
+                        "limit": max(1, min(500, int(limit))),
+                    },
+                )
+            ).mappings().all()
+            await session.rollback()
+
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            generated_at = row.get("generated_at")
+            freshness = evaluate_signal_freshness(
+                timeframe=row.get("timeframe"),
+                generated_at=generated_at,
+                now=now,
+                purpose="paper",
+            )
+            confirmed_at = row.get("confirmed_at")
+            age_seconds = None
+            try:
+                if confirmed_at is not None and generated_at is not None:
+                    age_seconds = max(
+                        0,
+                        int((confirmed_at - generated_at).total_seconds()),
+                    )
+            except Exception:
+                age_seconds = None
+            out.append(
+                {
+                    "delivery_id": None,
+                    "receipt_channel": "web",
+                    "receipt_reference": str(row["notification_id"]),
+                    "telegram_user_id": (
+                        int(row["telegram_user_id"])
+                        if row.get("telegram_user_id") is not None
+                        else None
+                    ),
+                    "user_id": int(row["user_id"]),
+                    "signal_id": str(row["signal_id"]),
+                    "display_id": str(row.get("display_id") or ""),
+                    "asset": str(row["asset"]),
+                    "asset_class": canonical_asset_class(
+                        str(row["asset"]),
+                        row.get("asset_class"),
+                    ),
+                    "timeframe": str(row.get("timeframe") or ""),
+                    "direction": canonical_direction(row.get("direction")),
+                    "entry": _safe_float(row.get("entry")),
+                    "stop_loss": _safe_float(row.get("stop_loss")),
+                    "take_profits": parse_targets(row.get("take_profit")),
+                    "score": _safe_float(row.get("score")),
+                    "generated_at": generated_at,
+                    "signal_age_at_delivery_seconds": age_seconds,
+                    "thesis_fingerprint": (
+                        row.get("thesis_fingerprint")
+                        or signal_thesis_fingerprint(
+                            {
+                                "asset": row.get("asset"),
+                                "direction": row.get("direction"),
+                                "strategy_name": row.get("strategy_name"),
+                                "regime": row.get("regime"),
+                                "entry": row.get("entry"),
+                                "timeframe": row.get("timeframe"),
+                            }
+                        )
+                    ),
+                    "confirmed_at": confirmed_at,
+                    "retry_deadline": (
+                        generated_at + timedelta(seconds=freshness.max_age_seconds)
+                        if generated_at is not None
+                        else confirmed_at
+                    ),
+                    "account_exists": row.get("account_id") is not None,
+                    "lifecycle_state": str(
+                        row.get("lifecycle_state") or ""
+                    ),
+                    "entry_touched_at": row.get("entry_touched_at"),
+                }
+            )
+        return out
+
+    async def _delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
+        """Merge Telegram proof and gated web receipts by canonical user/signal."""
+        batch = max(1, min(500, int(limit)))
+        telegram_rows, web_rows = await asyncio.gather(
+            self._telegram_delivery_candidates(batch),
+            self._web_delivery_candidates(batch),
+        )
+        merged: dict[tuple[int, str], dict[str, Any]] = {}
+        # Web goes first; Telegram overwrites it when both exist because it has
+        # an addressable delivery row and therefore richer historical evidence.
+        for candidate in [*web_rows, *telegram_rows]:
+            key = (
+                int(candidate["user_id"]),
+                str(candidate["signal_id"]),
+            )
+            merged[key] = candidate
+        ordered = sorted(
+            merged.values(),
+            key=lambda row: row.get("confirmed_at") or now_utc_naive(),
+            reverse=True,
+        )
+        return ordered[:batch]
+
     async def process_new_deliveries(self, *, limit: int = 100) -> dict[str, int]:
         candidates = await self._delivery_candidates(limit)
         if not candidates:
