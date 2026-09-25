@@ -94,11 +94,17 @@ async function openBrokerPolicy(connection){
   const editor=$('#brokerPolicyEditor');
   const form=$('#brokerPolicyForm');
   if(!editor||!form||!connection)return;
-  let data;
-  try{data=await request('/broker/connections/'+encodeURIComponent(connection.connection_id)+'/policy')}
+  let data,ledgerData;
+  try{
+    [data,ledgerData]=await Promise.all([
+      request('/broker/connections/'+encodeURIComponent(connection.connection_id)+'/policy'),
+      request('/broker/connections/'+encodeURIComponent(connection.connection_id)+'/ledger?limit=50')
+    ])
+  }
   catch(err){toast('Account policy could not be loaded: '+err.message,true);return}
   const p=data.policy||{};
   const reconciliation=data.reconciliation||{};
+  const ledgerEntries=ledgerData.entries||[];
   form.elements.connection_id.value=connection.connection_id;
   form.elements.account_mode.value=p.account_mode||'DEMO';
   form.elements.execution_permission.value=p.execution_permission||'SIGNALS_ONLY';
@@ -135,6 +141,21 @@ async function openBrokerPolicy(connection){
     ['Safety freeze',p.frozen?(p.frozen_reason||'Active'):'Clear'],
     ['Broker reconciliation',String(reconciliation.status||'UNKNOWN').toUpperCase()]
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  const ledger=$('#brokerAccountLedger');
+  if(ledger){
+    ledger.innerHTML=ledgerEntries.length?ledgerEntries.map(entry=>{
+      const financial=[
+        entry.amount!==null&&entry.amount!==undefined?`amount ${entry.currency||''} ${entry.amount}`:'',
+        entry.equity!==null&&entry.equity!==undefined?`equity ${entry.equity}`:'',
+        entry.balance!==null&&entry.balance!==undefined?`balance ${entry.balance}`:'',
+        entry.realized_pnl!==null&&entry.realized_pnl!==undefined?`realized P/L ${entry.realized_pnl}`:'',
+        entry.unrealized_pnl!==null&&entry.unrealized_pnl!==undefined?`unrealized P/L ${entry.unrealized_pnl}`:'',
+        entry.fees!==null&&entry.fees!==undefined?`fees ${entry.fees}`:''
+      ].filter(Boolean).join(' · ');
+      const refs=[entry.order_ref?`order ${entry.order_ref}`:'',entry.position_ref?`position ${entry.position_ref}`:''].filter(Boolean).join(' · ');
+      return `<div class="list-row"><div><strong>${esc(String(entry.entry_type||'ledger').replaceAll('_',' ').toUpperCase())}</strong><small>${esc(String(entry.provider||'broker').toUpperCase())} · ${esc(time(entry.provider_timestamp||entry.created_at))}</small><small>${esc(financial||refs||'Provider evidence recorded')}</small></div><span>${esc(entry.currency||'')}</span></div>`;
+    }).join(''):'<p class="muted">No broker-authoritative ledger events have been recorded for this account yet.</p>';
+  }
   $('#freezeBrokerAccount').disabled=Boolean(p.frozen);
   $('#unfreezeBrokerAccount').disabled=!p.frozen;
   editor.hidden=false;
