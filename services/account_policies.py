@@ -321,6 +321,29 @@ async def configure_account_policy(
         connection.meta = next_meta
         connection.execution_enabled = False
         connection.updated_at = now_utc_naive()
+        actor = await session.get(User, int(user_id))
+        session.add(
+            AdminEvent(
+                event_type="account_policy_configured",
+                actor_telegram_user_id=(
+                    int(actor.telegram_user_id)
+                    if actor is not None and actor.telegram_user_id is not None else None
+                ),
+                details={
+                    "user_id": int(user_id),
+                    "connection_id": str(connection_id),
+                    "policy_id": str(row.policy_id),
+                    "policy_version": int(row.policy_version),
+                    "account_mode": str(row.account_mode),
+                    "execution_permission": str(row.execution_permission),
+                    "hard_rule_count": len(
+                        list((row.external_rules or {}).get("hard_rules") or [])
+                    ),
+                    "execution_disabled": True,
+                },
+                created_at=now_utc_naive(),
+            )
+        )
         await session.commit()
         await session.refresh(row)
         return public_account_policy(row)
@@ -441,6 +464,31 @@ async def set_account_frozen(
         if frozen:
             connection.execution_enabled = False
         connection.updated_at = now_utc_naive()
+        actor = await session.get(User, int(user_id))
+        session.add(
+            AdminEvent(
+                event_type=(
+                    "account_policy_safety_frozen"
+                    if frozen else "account_policy_safety_unfrozen"
+                ),
+                actor_telegram_user_id=(
+                    int(actor.telegram_user_id)
+                    if actor is not None and actor.telegram_user_id is not None else None
+                ),
+                details={
+                    "user_id": int(user_id),
+                    "connection_id": str(connection_id),
+                    "policy_id": str(row.policy_id),
+                    "policy_version": int(row.policy_version),
+                    "reason": (
+                        str(row.frozen_reason or "")[:256]
+                        if frozen else "user_unfreeze"
+                    ),
+                    "execution_disabled": True,
+                },
+                created_at=now_utc_naive(),
+            )
+        )
         await session.commit()
         await session.refresh(row)
         return public_account_policy(row)
@@ -534,6 +582,23 @@ async def record_reconciliation(
                     discrepancy_code or f"reconciliation_{normalized.lower()}"
                 )[:256]
                 policy.updated_at = now_utc_naive()
+            session.add(
+                AdminEvent(
+                    event_type="account_reconciliation_safety_block",
+                    actor_telegram_user_id=None,
+                    details={
+                        "user_id": int(user_id),
+                        "connection_id": str(connection_id),
+                        "status": normalized,
+                        "discrepancy_code": (
+                            str(discrepancy_code)[:128]
+                            if discrepancy_code else None
+                        ),
+                        "execution_disabled": True,
+                    },
+                    created_at=now_utc_naive(),
+                )
+            )
         connection.updated_at = now_utc_naive()
         await session.commit()
     return await reconciliation_snapshot(int(user_id), str(connection_id))
