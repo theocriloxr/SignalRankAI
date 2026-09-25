@@ -288,6 +288,12 @@ class TradingProfileUpdateRequest(BaseModel):
     notify_on_sl: bool | None = None
 
 
+class SignalFeedbackRequest(BaseModel):
+    rating: int | None = Field(default=None, ge=1, le=5)
+    issue: str | None = Field(default=None, max_length=64)
+    comment: str | None = Field(default=None, max_length=4000)
+
+
 class BrokerLinkRequest(BaseModel):
     mt5_login: str = Field(min_length=1, max_length=64)
     mt5_password: str = Field(min_length=1, max_length=256)
@@ -932,6 +938,68 @@ async def signal_detail(
             "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
         },
     }
+
+
+@router.post("/signals/{signal_id}/feedback", status_code=201)
+async def submit_signal_feedback(
+    signal_id: str,
+    payload: SignalFeedbackRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Persist delivery-scoped signal feedback in the canonical account ledger."""
+    _assert_command(user, "feedback")
+    ref = str(signal_id or "").strip()
+    if not ref or len(ref) > 64:
+        raise HTTPException(status_code=422, detail="Invalid signal reference")
+    issue = str(payload.issue or "").strip().lower() or None
+    comment = str(payload.comment or "").strip() or None
+    if payload.rating is None and issue is None:
+        raise HTTPException(status_code=422, detail="Provide a rating or issue")
+    allowed_issues = {
+        "stale",
+        "bad_setup",
+        "wrong_levels",
+        "wrong_outcome",
+        "late_delivery",
+        "duplicate",
+        "unclear",
+        "other",
+    }
+    if issue is not None and issue not in allowed_issues:
+        raise HTTPException(status_code=422, detail="Unsupported feedback issue")
+
+    async with get_session(label="platform.signal_feedback", timeout_seconds=8.0) as session:
+        delivered = (
+            await session.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM signal_deliveries
+                    WHERE user_id=:uid AND signal_id=:sid AND sent_ok=TRUE
+                    LIMIT 1
+                    """
+                ),
+                {"uid": int(user["id"]), "sid": ref},
+            )
+        ).scalar_one_or_none()
+        if delivered is None:
+            raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
+        from db.pg_features import record_user_event
+        await record_user_event(
+            session,
+            user_id=int(user["id"]),
+            event_type="feedback",
+            meta={
+                "source": "web",
+                "signal_id": ref,
+                "rating": payload.rating,
+                "issue": issue,
+                "comment": comment,
+                "submitted_at": datetime.utcnow().isoformat(),
+            },
+        )
+        await session.commit()
+    return {"recorded": True, "signal_id": ref}
 
 
 @router.get("/live-price")
