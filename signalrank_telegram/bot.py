@@ -6916,22 +6916,80 @@ def run_bot() -> None:
             return
 
         try:
-            from services.mt5_signal_router import route_signal_to_mt5
-
-            routed = await route_signal_to_mt5(
-                {
-                    **dict(payload or {}),
-                    "signal_id": str(signal_id),
-                    "asset": str(asset),
-                    "direction": str(direction),
-                    "entry": float(entry),
-                    "stop_loss": float(sl),
-                    "take_profit": [float(tp)],
-                    "source": "telegram_manual_confirmed",
-                },
-                int(user_id),
-                execution_mode="manual_confirmed",
+            from services.broker_account_selection import (
+                consume_account_selection,
+                create_account_selection_choices,
             )
+
+            choices = await create_account_selection_choices(
+                int(user_id),
+                str(signal_id),
+            )
+            if not choices:
+                await query.edit_message_text(
+                    "⚠️ No verified execution-enabled trading account is available. "
+                    "Open /execution to connect, verify, configure and enable an account first."
+                )
+                return
+            if len(choices) > 1:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                buttons = [
+                    [
+                        InlineKeyboardButton(
+                            str(choice["label"]),
+                            callback_data=f"broker_pick_{choice['token']}",
+                        )
+                    ]
+                    for choice in choices
+                ]
+                await query.edit_message_text(
+                    "🏦 <b>Choose the trading account for this signal</b>\n\n"
+                    "Risk, prop rules and execution permission are evaluated separately "
+                    "for the selected account.",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                )
+                return
+
+            selection = await consume_account_selection(
+                str(choices[0]["token"]),
+                telegram_user_id=int(user_id),
+            )
+            selected_signal = {
+                **dict(payload or {}),
+                "signal_id": str(signal_id),
+                "asset": str(asset),
+                "direction": str(direction),
+                "entry": float(entry),
+                "stop_loss": float(sl),
+                "take_profit": [float(tp)],
+                "source": "telegram_manual_confirmed",
+            }
+            selected_platform = str(selection.get("platform") or "").lower()
+            if selected_platform == "bybit":
+                from services.bybit_signal_router import route_signal_to_bybit
+
+                routed = await route_signal_to_bybit(
+                    selected_signal,
+                    int(user_id),
+                    execution_mode="manual_confirmed",
+                    connection_id=str(selection["connection_id"]),
+                )
+            elif selected_platform in {"mt4", "mt5"}:
+                from services.mt5_signal_router import route_signal_to_metatrader
+
+                routed = await route_signal_to_metatrader(
+                    selected_signal,
+                    int(user_id),
+                    platform=selected_platform,
+                    execution_mode="manual_confirmed",
+                    connection_id=str(selection["connection_id"]),
+                )
+            else:
+                await query.edit_message_text("❌ That trading account provider is not executable.")
+                return
+
             if routed.success:
                 oid = str(routed.order_id or "")
                 await query.edit_message_text(
@@ -6974,6 +7032,120 @@ def run_bot() -> None:
             )
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
+
+    async def _broker_account_trade_callback(update, context):
+        """Resolve one opaque account choice and execute the bound signal."""
+        query = update.callback_query
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id is None:
+            try:
+                await query.answer()
+            except Exception:
+                pass
+            return
+        try:
+            await query.answer("Checking account…", show_alert=False)
+        except Exception:
+            pass
+        token = str(query.data or "").replace("broker_pick_", "", 1).strip()
+        try:
+            from services.broker_account_selection import consume_account_selection
+
+            selection = await consume_account_selection(
+                token,
+                telegram_user_id=int(user_id),
+            )
+            signal_id = str(selection["signal_id"])
+            payload = await _load_signal_payload(
+                signal_id,
+                telegram_user_id=int(user_id),
+            )
+            if not payload:
+                await query.edit_message_text(
+                    "❌ Signal data is no longer available in your confirmed deliveries."
+                )
+                return
+            asset = str(payload.get("asset") or "").upper().strip()
+            direction = str(payload.get("direction") or "").lower().strip()
+            entry = float(payload.get("entry") or 0)
+            sl = float(payload.get("stop_loss") or 0)
+            tp = float(_first_take_profit(payload) or 0)
+            if not asset or entry <= 0 or sl <= 0 or tp <= 0:
+                await query.edit_message_text(
+                    "⚠️ Trade data is incomplete for this signal."
+                )
+                return
+
+            selected_signal = {
+                **dict(payload),
+                "signal_id": signal_id,
+                "asset": asset,
+                "direction": direction,
+                "entry": entry,
+                "stop_loss": sl,
+                "take_profit": [tp],
+                "source": "telegram_manual_confirmed_account_selected",
+            }
+            platform = str(selection.get("platform") or "").lower()
+            if platform == "bybit":
+                from services.bybit_signal_router import route_signal_to_bybit
+
+                routed = await route_signal_to_bybit(
+                    selected_signal,
+                    int(user_id),
+                    execution_mode="manual_confirmed",
+                    connection_id=str(selection["connection_id"]),
+                )
+            elif platform in {"mt4", "mt5"}:
+                from services.mt5_signal_router import route_signal_to_metatrader
+
+                routed = await route_signal_to_metatrader(
+                    selected_signal,
+                    int(user_id),
+                    platform=platform,
+                    execution_mode="manual_confirmed",
+                    connection_id=str(selection["connection_id"]),
+                )
+            else:
+                await query.edit_message_text("❌ Unsupported trading account provider.")
+                return
+
+            if routed.success:
+                await query.edit_message_text(
+                    (
+                        "✅ <b>Trade Executed</b>\n\n"
+                        f"🏦 Account: <b>{html.escape(str(selection.get('label') or platform.upper()))}</b>\n"
+                        f"Asset: <b>{html.escape(asset)}</b> {html.escape(direction.upper())}\n"
+                        f"Order: <code>{html.escape(str(routed.order_id or ''))}</code>\n"
+                        f"Signal: <code>{html.escape(signal_id)}</code>"
+                    ),
+                    parse_mode="HTML",
+                )
+            else:
+                from signalrank_telegram.execution_messages import execution_failure_html
+
+                reason = str(routed.error or routed.message or "execution_blocked")
+                await query.edit_message_text(
+                    execution_failure_html(reason, asset=asset, mode="manual"),
+                    parse_mode="HTML",
+                )
+        except PermissionError as exc:
+            await query.edit_message_text(
+                "⚠️ That account-selection button expired or is no longer valid. "
+                "Open /signals and choose Trade Now again."
+            )
+            logger.info("[broker_pick] rejected user=%s reason=%s", user_id, exc)
+        except Exception as exc:
+            logger.exception("[broker_pick] account-selected execution failed")
+            from signalrank_telegram.command_resilience import safe_command_error
+
+            await query.edit_message_text(
+                safe_command_error("Broker execution failed.", exc),
+            )
+
+    application.add_handler(
+        _CQH(_broker_account_trade_callback, pattern=r"^broker_pick_")
+    )
 
     # \U0001F517 Open latest active signal message for this signal
     async def _open_signal_callback(update, context):
