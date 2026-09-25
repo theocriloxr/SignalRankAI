@@ -414,11 +414,13 @@ async def record_reconciliation(
                 ).with_for_update().limit(1)
             )
         ).scalar_one_or_none()
-        if normalized != "HEALTHY":
+        # A transient reconciliation pass blocks the current decision but
+        # does not silently revoke the user's account permission. Material
+        # discrepancies/disconnect/auth failures freeze new execution until
+        # explicitly resolved.
+        if normalized in {"DEGRADED", "FROZEN", "AUTH_EXPIRED", "DISCONNECTED"}:
             connection.execution_enabled = False
-            if policy is not None and normalized in {
-                "DEGRADED", "FROZEN", "AUTH_EXPIRED"
-            }:
+            if policy is not None:
                 policy.frozen_at = now_utc_naive()
                 policy.frozen_reason = str(
                     discrepancy_code or f"reconciliation_{normalized.lower()}"
