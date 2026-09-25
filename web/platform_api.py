@@ -338,6 +338,64 @@ class AlertCreateRequest(BaseModel):
 
 
 
+def _signal_targets_for_presentation(raw: Any) -> list[float]:
+    value = raw
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            value = [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+
+    targets: list[float] = []
+    for item in value:
+        candidate = item
+        if isinstance(item, dict):
+            candidate = (
+                item.get("price")
+                or item.get("tp")
+                or item.get("target")
+                or item.get("value")
+            )
+        try:
+            parsed = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            targets.append(parsed)
+    return targets
+
+
+def _present_signal_for_tier(
+    row: dict[str, Any] | Any,
+    tier: str,
+) -> dict[str, Any]:
+    """Project one signal through the same server-side tier visibility contract."""
+    payload = dict(row or {})
+    policy = get_entitlements(tier)
+    targets = _signal_targets_for_presentation(payload.get("take_profit"))
+    payload["take_profit"] = targets[: int(policy.max_tp_levels)]
+    payload["max_tp_levels"] = int(policy.max_tp_levels)
+    payload["exact_levels_locked"] = not bool(policy.has("exact_levels"))
+
+    if not policy.has("exact_levels"):
+        # Match the Telegram Free preview: TP1 may be illustrative, but the
+        # complete trade ticket and confidence are never exposed by the API.
+        payload["entry"] = None
+        payload["stop_loss"] = None
+        payload["rr_estimate"] = None
+        payload["score"] = None
+        payload["ml_probability"] = None
+        payload["ml_probability_calibrated"] = None
+        payload["expires_at"] = None
+    return payload
+
+
 def _assert_feature(user: dict[str, Any], feature: str) -> None:
     decision = evaluate_feature_access(str(user.get("tier") or "free"), feature)
     if not decision.allowed:
@@ -915,7 +973,14 @@ async def signal_feed(
     async with get_session() as session:
         rows = (await session.execute(text(sql), params)).mappings().all()
         await session.rollback()
-    return {"signals": [dict(row) for row in rows], "limit": limit, "offset": offset}
+    return {
+        "signals": [
+            _present_signal_for_tier(row, str(user.get("tier") or "free"))
+            for row in rows
+        ],
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/signals/{signal_id}")
@@ -978,7 +1043,10 @@ async def signal_detail(
     )
     web_proven = bool(channel == "web" and row.get("delivery_confirmed_at"))
     return {
-        "signal": dict(row),
+        "signal": _present_signal_for_tier(
+            row,
+            str(user.get("tier") or "free"),
+        ),
         "events": [dict(event) for event in events],
         "proof": {
             "access_proven": bool(telegram_proven or web_proven),
