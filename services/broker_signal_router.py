@@ -44,7 +44,16 @@ async def route_signal_to_broker(
     signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
     if not signal_id:
         return BrokerRouteResult(False, "Signal ID is required", error="signal_id_missing")
-    async with execution_destination_lock(int(telegram_user_id), signal_id) as claimed:
+    account_scope = (
+        f"broker:{str(connection_id).strip()}"
+        if connection_id is not None and str(connection_id).strip()
+        else "broker:unresolved"
+    )
+    async with execution_destination_lock(
+        int(telegram_user_id),
+        signal_id,
+        account_scope=account_scope,
+    ) as claimed:
         if not claimed:
             return BrokerRouteResult(
                 False,
@@ -54,7 +63,14 @@ async def route_signal_to_broker(
             )
         async with get_session(label="broker.destination_preflight", timeout_seconds=8.0) as session:
             before = await get_execution_evidence(
-                session, telegram_user_id=int(telegram_user_id), signal_id=signal_id,
+                session,
+                telegram_user_id=int(telegram_user_id),
+                signal_id=signal_id,
+                connection_id=(
+                    str(connection_id).strip()
+                    if connection_id is not None and str(connection_id).strip()
+                    else None
+                ),
             )
         if before.get("position_count"):
             position = before.get("position") or {}
@@ -119,6 +135,11 @@ async def route_signal_to_broker(
                 telegram_user_id=int(telegram_user_id),
                 signal_id=signal_id,
                 expected_reference=order_id,
+                connection_id=(
+                    str(connection_id).strip()
+                    if connection_id is not None and str(connection_id).strip()
+                    else None
+                ),
             )
         if not evidence.get("exactly_one"):
             return BrokerRouteResult(
