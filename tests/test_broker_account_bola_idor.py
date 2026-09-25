@@ -42,14 +42,14 @@ def test_all_normal_account_policy_routes_bind_authenticated_canonical_user():
 
     get_block = source[
         source.index('@router.get("/broker/connections/{connection_id}/policy")'):
-        source.index('@router.put("/broker/connections/{connection_id}/policy")'),
+        source.index('@router.put("/broker/connections/{connection_id}/policy")')
     ]
     assert "get_account_policy(int(user[\"id\"]), connection_id)" in get_block
     assert "reconciliation_snapshot(int(user[\"id\"]), connection_id)" in get_block
 
     update_block = source[
         source.index('@router.put("/broker/connections/{connection_id}/policy")'):
-        source.index('@router.post("/admin/broker/connections/{connection_id}/prop-certification")'),
+        source.index('@router.post("/admin/broker/connections/{connection_id}/prop-certification")')
     ]
     assert "configure_account_policy(" in update_block
     assert "int(user[\"id\"])," in update_block
@@ -57,7 +57,7 @@ def test_all_normal_account_policy_routes_bind_authenticated_canonical_user():
 
     freeze_block = source[
         source.index('@router.post("/broker/connections/{connection_id}/safety-freeze")'):
-        source.index('@router.post("/broker/connections/{connection_id}/verify")'),
+        source.index('@router.post("/broker/connections/{connection_id}/verify")')
     ]
     assert "set_account_frozen(" in freeze_block
     assert "int(user[\"id\"])," in freeze_block
@@ -68,7 +68,7 @@ def test_connection_execution_toggle_is_object_level_authorized():
     source = Path("services/broker_connections.py").read_text(encoding="utf-8")
     block = source[
         source.index("async def set_execution_enabled"):
-        source.index("async def set_default_connection"),
+        source.index("async def set_default_connection")
     ]
     assert "BrokerConnection.connection_id == str(connection_id)" in block
     assert "BrokerConnection.user_id == int(user_id)" in block
@@ -97,7 +97,7 @@ def test_prop_certification_checks_privilege_before_target_lookup():
     source = Path("web/platform_api.py").read_text(encoding="utf-8")
     block = source[
         source.index('@router.post("/admin/broker/connections/{connection_id}/prop-certification")'):
-        source.index('@router.post("/broker/connections/{connection_id}/safety-freeze")'),
+        source.index('@router.post("/broker/connections/{connection_id}/safety-freeze")')
     ]
     privilege = block.index("_platform_operator_authority(user)")
     target_lookup = block.index("SELECT user_id FROM broker_connections")
@@ -117,7 +117,7 @@ def test_account_ledger_route_binds_authenticated_canonical_user():
     source = Path("web/platform_api.py").read_text(encoding="utf-8")
     block = source[
         source.index('@router.get("/broker/connections/{connection_id}/ledger")'):
-        source.index('@router.put("/broker/connections/{connection_id}/policy")'),
+        source.index('@router.put("/broker/connections/{connection_id}/policy")')
     ]
     assert "list_account_ledger(" in block
     assert 'int(user["id"])' in block
