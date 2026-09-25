@@ -12,11 +12,11 @@ def source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_final_schema_head_is_exact_cross_channel_receipts_revision() -> None:
+def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0041_broker_connection_registry"
+        "0043_account_execution_policy"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -28,6 +28,15 @@ def test_final_schema_head_is_exact_cross_channel_receipts_revision() -> None:
     broker = source("db/migrations/versions/0041_broker_connection_registry.py")
     assert 'revision = "0041_broker_connection_registry"' in broker
     assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker
+    recovery = source("db/migrations/versions/0042_ml_starvation_recovery_provenance.py")
+    assert 'revision = "0042_ml_recovery_provenance"' in recovery
+    assert 'down_revision = "0041_broker_connection_registry"' in recovery
+    account_policy = source("db/migrations/versions/0043_account_execution_policy.py")
+    assert 'revision = "0043_account_execution_policy"' in account_policy
+    assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
+    assert "trading_account_policies" in account_policy
+    assert "broker_reconciliation_state" in account_policy
+    assert "broker_execution_decisions" in account_policy
 
 
 def test_paper_is_free_education_but_live_features_remain_paid() -> None:
