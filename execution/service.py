@@ -232,7 +232,12 @@ class ExecutionGate:
             reasons.append("reconciliation_unavailable")
         if request.kill_switch:
             reasons.append("kill_switch_enabled")
-        tier_decision = evaluate_feature_access(request.tier, "execution_preflight")
+        required_feature = (
+            "execution_preflight"
+            if mode in {"auto", "live", "copy_trade"}
+            else "broker_connection"
+        )
+        tier_decision = evaluate_feature_access(request.tier, required_feature)
         if not tier_decision.allowed:
             reasons.append("tier_not_eligible")
         signal = request.signal or {}
