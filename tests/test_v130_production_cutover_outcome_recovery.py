@@ -60,7 +60,10 @@ def test_staging_dependency_readiness_does_not_require_production_cutover(monkey
     import railway_main
 
     monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "staging")
     monkeypatch.setenv("RAILWAY_SERVICE_NAME", "signalrankai-staging")
+    assert railway_main._runtime_environment_name() == "staging"
     assert railway_main._production_readiness_required() is False
 
     check = railway_main._readiness_cutover_check(production=False)
