@@ -320,3 +320,158 @@ def test_prop_certifier_authority_uses_live_owner_list_not_stored_owner_tier(mon
     assert _operator_authority(
         SimpleNamespace(telegram_user_id=7777, tier="owner")
     ) is None
+
+
+def _certified_prop(**overrides):
+    values = {
+        "account_mode": "PROP",
+        "certified": True,
+        "certification_ref": "operator-cert-1",
+        "prop_firm": "generic-prop",
+        "prop_rules_version": "rules-v1",
+        "external_max_daily_loss_pct": Decimal("0.05"),
+        "external_max_total_drawdown_pct": Decimal("0.10"),
+    }
+    values.update(overrides)
+    return _policy(**values)
+
+
+def test_prop_trailing_drawdown_rule_returns_exact_rule_id():
+    policy = _certified_prop(
+        extra_rules={
+            "hard_rules": [
+                {
+                    "id": "trailing-dd",
+                    "type": "trailing_drawdown_pct",
+                    "value": "0.03",
+                }
+            ]
+        }
+    )
+    decision = evaluate_account_policy(
+        policy,
+        _snapshot(
+            current_equity=Decimal("9699"),
+            day_start_equity=Decimal("10000"),
+            week_start_equity=Decimal("10000"),
+            peak_equity=Decimal("10000"),
+            account_is_demo=False,
+            loss_baselines_verified=True,
+            weekly_baseline_verified=True,
+        ),
+        execution_mode="auto",
+    )
+    assert decision.allowed is False
+    assert "prop_rule:trailing-dd:trailing_drawdown_pct" in decision.reasons
+
+
+def test_prop_mt5_lot_cap_is_unit_aware_and_fail_closed():
+    policy = _certified_prop(
+        extra_rules={
+            "hard_rules": [
+                {
+                    "id": "lot-cap",
+                    "type": "max_order_size",
+                    "value": "1.50",
+                    "unit": "LOT",
+                }
+            ]
+        }
+    )
+    blocked = evaluate_account_policy(
+        policy,
+        _snapshot(
+            account_is_demo=False,
+            loss_baselines_verified=True,
+            weekly_baseline_verified=True,
+            proposed_order_size=Decimal("1.60"),
+            order_size_unit="LOT",
+        ),
+        execution_mode="auto",
+    )
+    assert "prop_rule:lot-cap:max_order_size" in blocked.reasons
+
+    unverifiable = evaluate_account_policy(
+        policy,
+        _snapshot(
+            account_is_demo=False,
+            loss_baselines_verified=True,
+            weekly_baseline_verified=True,
+            proposed_order_size=Decimal("1"),
+            order_size_unit="BASE_UNITS",
+        ),
+        execution_mode="auto",
+    )
+    assert "prop_rule:lot-cap:size_unit_unverifiable" in unverifiable.reasons
+
+
+def test_prop_can_forbid_specific_execution_modes_without_disabling_manual():
+    policy = _certified_prop(
+        execution_permission="AUTO_EXECUTION",
+        extra_rules={
+            "hard_rules": [
+                {
+                    "id": "no-ea",
+                    "type": "forbid_execution_modes",
+                    "modes": ["auto", "copy_trade"],
+                }
+            ]
+        },
+    )
+    snapshot = _snapshot(
+        account_is_demo=False,
+        loss_baselines_verified=True,
+        weekly_baseline_verified=True,
+    )
+    auto = evaluate_account_policy(policy, snapshot, execution_mode="auto")
+    assert "prop_rule:no-ea:execution_mode_forbidden" in auto.reasons
+    manual = evaluate_account_policy(policy, snapshot, execution_mode="manual_confirmed")
+    assert manual.allowed is True
+
+
+def test_prop_restricted_instrument_is_account_specific():
+    policy = _certified_prop(
+        extra_rules={
+            "hard_rules": [
+                {
+                    "id": "no-gold",
+                    "type": "restricted_instruments",
+                    "values": ["XAUUSD"],
+                }
+            ]
+        }
+    )
+    blocked = evaluate_account_policy(
+        policy,
+        _snapshot(
+            symbol="XAUUSD",
+            account_is_demo=False,
+            loss_baselines_verified=True,
+            weekly_baseline_verified=True,
+        ),
+        execution_mode="auto",
+    )
+    assert "prop_rule:no-gold:instrument_restricted" in blocked.reasons
+
+    allowed = evaluate_account_policy(
+        policy,
+        _snapshot(
+            symbol="EURUSD",
+            account_is_demo=False,
+            loss_baselines_verified=True,
+            weekly_baseline_verified=True,
+        ),
+        execution_mode="auto",
+    )
+    assert allowed.allowed is True
+
+
+def test_unknown_prop_hard_rule_cannot_enter_certifiable_policy():
+    with pytest.raises(ValueError, match="unsupported_prop_hard_rule"):
+        _certified_prop(
+            extra_rules={
+                "hard_rules": [
+                    {"id": "mystery", "type": "firm_magic_rule", "value": "1"}
+                ]
+            }
+        )
