@@ -66,6 +66,7 @@ def _full_env() -> dict[str, str]:
         "AUTO_TRADE_ENABLED": "1",
         "COPY_TRADE_ENABLED": "1",
         "MT5_ALLOW_LIVE_ACCOUNTS": "1",
+        "MT5_RECONCILIATION_ENABLED": "1",
         "BYBIT_EXECUTION_ENABLED": "1",
         "BYBIT_TESTNET": "0",
         "BYBIT_REQUIRE_IP_BINDING": "1",
@@ -114,6 +115,15 @@ def test_full_live_activation_contract_passes():
     assert report.requested is True
     assert report.ok is True
     assert all(check.ok for check in report.checks if check.blocking)
+
+
+def test_live_mt5_activation_requires_explicit_reconciliation_worker():
+    env = _full_env()
+    env["MT5_RECONCILIATION_ENABLED"] = "0"
+    report = evaluate_financial_activation(env)
+    assert report.ok is False
+    failed = {check.name for check in report.checks if check.blocking and not check.ok}
+    assert "mt5_reconciliation" in failed
 
 
 def test_execution_gate_requires_auto_execution_master():
@@ -253,6 +263,7 @@ def test_live_and_public_env_profiles_document_all_flags():
         "AUTO_TRADE_ENABLED=1",
         "COPY_TRADE_ENABLED=1",
         "MT5_ALLOW_LIVE_ACCOUNTS=1",
+        "MT5_RECONCILIATION_ENABLED=1",
         "BYBIT_EXECUTION_ENABLED=1",
         "BYBIT_TESTNET=0",
         f"BYBIT_DEDICATED_ACCOUNT_ACK={BYBIT_DEDICATED_ACCOUNT_ACK_VALUE}",
@@ -293,6 +304,21 @@ def test_vip_enrollment_can_be_unlimited():
     source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
     assert 'VIP_SEAT_LIMIT", "0"' in source
     assert 'Open enrollment' in source
+
+
+def test_mt5_reconciliation_is_exact_provider_history_and_account_ledger_wired():
+    worker = (ROOT / "worker" / "worker.py").read_text(encoding="utf-8")
+    client = (ROOT / "services" / "mt5_client.py").read_text(encoding="utf-8")
+    reconciler = (ROOT / "services" / "mt5_reconciler.py").read_text(encoding="utf-8")
+    activation = (ROOT / "core" / "financial_activation.py").read_text(encoding="utf-8")
+    assert "MT5_RECONCILIATION_ENABLED" in worker
+    assert "mt5_reconciliation_loop" in worker
+    assert "/history-deals/ticket/" in client
+    assert "/history-deals/position/" in client
+    assert "DEAL_ENTRY_OUT" in reconciler
+    assert "_append_account_ledger_in_session" in reconciler
+    assert 'source_event_id": f"deal:{deal_id}:profit"' in reconciler
+    assert '"mt5_reconciliation"' in activation
 
 
 def test_bybit_reconciliation_and_shared_quota_are_wired():
