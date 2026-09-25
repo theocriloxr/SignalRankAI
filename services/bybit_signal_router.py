@@ -271,6 +271,8 @@ async def _route_signal_to_bybit_for_identity(
     has_open_position = True
     quote_age = 0.0
     wallet_equity = 0.0
+    ticker: dict[str, Any] = {}
+    positions: list[dict[str, Any]] = []
     try:
         wallet = await client.get_wallet_balance(coin="USDT") if account_ready else {}
         accounts = list(wallet.get("list") or [])
@@ -333,30 +335,77 @@ async def _route_signal_to_bybit_for_identity(
             prop_policy_certified = bool(account_policy.certified)
             prop_policy_version = str(account_policy.prop_rules_version or "")
             account_frozen = bool(account_policy.frozen)
+            entry_decimal = Decimal(str(entry))
+            bid = Decimal(str(ticker.get("bid1Price") or 0))
+            ask = Decimal(str(ticker.get("ask1Price") or 0))
+            last = Decimal(str(ticker.get("lastPrice") or 0))
+            mid = (bid + ask) / Decimal("2") if bid > 0 and ask >= bid else last
+            spread_bps = Decimal("1000000")
+            if bid > 0 and ask >= bid and mid > 0:
+                spread_bps = ((ask - bid) / mid) * Decimal("10000")
+            raw_direction = str(direction or "").strip().lower()
+            executable_quote = ask if raw_direction in {"long", "buy"} else bid
+            slippage_bps = Decimal("1000000")
+            if entry_decimal > 0 and executable_quote > 0:
+                slippage_bps = (
+                    abs(executable_quote - entry_decimal) / entry_decimal
+                ) * Decimal("10000")
+
+            confidence = Decimal("0")
+            raw_confidence = (
+                signal.get("score_calibrated")
+                or signal.get("ml_probability_calibrated")
+                or signal.get("score_final")
+                or signal.get("score")
+                or 0
+            )
+            try:
+                confidence = Decimal(str(raw_confidence))
+                if confidence > 1:
+                    confidence = confidence / Decimal("100")
+                confidence = max(Decimal("0"), min(Decimal("1"), confidence))
+            except Exception:
+                confidence = Decimal("0")
+
+            expected_rr = Decimal("0")
+            stop_decimal = Decimal(str(stop))
+            tp_decimal = Decimal(str(take_profit))
+            risk_distance = abs(entry_decimal - stop_decimal)
+            if risk_distance > 0 and tp_decimal > 0:
+                expected_rr = abs(tp_decimal - entry_decimal) / risk_distance
+
             policy_snapshot = AccountRiskSnapshot(
                 current_equity=Decimal(str(wallet_equity)),
                 day_start_equity=Decimal(str(wallet_equity)),
                 peak_equity=Decimal(str(wallet_equity)),
                 daily_realized_pnl=Decimal("0"),
+                week_start_equity=Decimal("0"),
+                weekly_realized_pnl=Decimal("0"),
                 open_positions=sum(
                     1 for item in positions
                     if isinstance(item, Mapping) and float(item.get("size") or 0) > 0
                 ) if isinstance(positions, list) else 0,
                 proposed_risk_pct=Decimal(str(risk_pct)) / Decimal("100"),
                 proposed_leverage=(
-                    Decimal(str(quantity)) * Decimal(str(entry)) / Decimal(str(wallet_equity))
+                    Decimal(str(quantity)) * entry_decimal / Decimal(str(wallet_equity))
                     if wallet_equity > 0 else Decimal("0")
                 ),
+                spread_bps=spread_bps,
+                expected_slippage_bps=slippage_bps,
+                confidence=confidence,
+                expected_rr=expected_rr,
                 symbol=symbol,
                 asset_class=str(signal.get("asset_class") or "crypto"),
+                strategy=str(signal.get("strategy_name") or signal.get("strategy") or ""),
                 high_impact_news_window=bool(signal.get("high_impact_news_window")),
                 weekend_hold_expected=bool(signal.get("weekend_hold_expected")),
                 account_is_demo=sandbox,
                 reconciliation_ready=reconciliation_ok,
-                # Bybit wallet/ticker endpoints do not prove session-start/peak
-                # equity. Real/prop accounts remain blocked until a certified
-                # baseline source is wired; testnet/demo does not require it.
+                # Bybit wallet/ticker endpoints do not prove session/week-start
+                # or peak equity. Real/prop remains fail-closed until durable
+                # broker-authoritative baseline snapshots exist.
                 loss_baselines_verified=False,
+                weekly_baseline_verified=False,
             )
             account_policy_decision = evaluate_account_policy(
                 account_policy,
@@ -455,6 +504,10 @@ async def _route_signal_to_bybit_for_identity(
                 "reconciliation_ready": reconciliation_ok,
                 "risk_pct": str(risk_pct),
                 "quantity": str(quantity),
+                "spread_bps": str(spread_bps) if "spread_bps" in locals() else None,
+                "expected_slippage_bps": str(slippage_bps) if "slippage_bps" in locals() else None,
+                "confidence": str(confidence) if "confidence" in locals() else None,
+                "expected_rr": str(expected_rr) if "expected_rr" in locals() else None,
             },
             request_snapshot={
                 "signal_id": signal_id,
