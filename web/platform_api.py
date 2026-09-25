@@ -136,6 +136,20 @@ class CheckoutCreateRequest(BaseModel):
     currency: str = Field(default="NGN", pattern=r"^NGN$")
 
 
+class SubscriptionCancelRequest(BaseModel):
+    confirm: bool = False
+
+
+class RefundSupportRequest(BaseModel):
+    payment_reference: str = Field(min_length=3, max_length=128)
+    reason: str = Field(min_length=3, max_length=4000)
+
+
+class SimulationRequest(BaseModel):
+    starting_capital: float | None = Field(default=None, ge=50.0, le=100_000_000.0)
+    risk_pct: float | None = Field(default=None, ge=0.1, le=10.0)
+
+
 class PaperSettingsUpdateRequest(BaseModel):
     auto_trade_enabled: bool | None = None
     risk_pct: float | None = Field(default=None, ge=0.1, le=10.0)
@@ -204,6 +218,10 @@ class ApiKeyCreateRequest(BaseModel):
 class WebhookCreateRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
     events: list[str] = Field(default_factory=lambda: ["signal.generated", "signal.closed"], max_length=30)
+
+
+class ExecutionWebhookUpdateRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
 
 
 class OrganizationCreateRequest(BaseModel):
@@ -1881,6 +1899,60 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
     }
 
 
+@router.get("/referrals/leaderboard")
+async def referral_leaderboard(
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "referral_leaderboard")
+    async with get_session(label="platform.referral_leaderboard", timeout_seconds=8.0) as session:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT r.referrer_user_id,
+                           COUNT(*) AS valid_referrals,
+                           u.username,
+                           u.public_user_id
+                    FROM referrals r
+                    JOIN users u ON u.id=r.referrer_user_id
+                    WHERE r.is_successful IS TRUE
+                    GROUP BY r.referrer_user_id,u.username,u.public_user_id
+                    ORDER BY COUNT(*) DESC,r.referrer_user_id
+                    LIMIT 10
+                    """
+                )
+            )
+        ).mappings().all()
+        own = int(
+            (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM referrals "
+                        "WHERE referrer_user_id=:uid AND is_successful IS TRUE"
+                    ),
+                    {"uid": int(user["id"])},
+                )
+            ).scalar()
+            or 0
+        )
+        await session.rollback()
+
+    leaders = []
+    for rank, row in enumerate(rows, 1):
+        username = str(row.get("username") or "").strip()
+        public_id = str(row.get("public_user_id") or row.get("referrer_user_id") or "")
+        label = f"@{username}" if username else f"User •••{public_id[-6:]}"
+        leaders.append(
+            {
+                "rank": rank,
+                "label": label,
+                "valid_referrals": int(row.get("valid_referrals") or 0),
+                "is_current_user": int(row["referrer_user_id"]) == int(user["id"]),
+            }
+        )
+    return {"leaders": leaders, "your_valid_referrals": own}
+
+
 @router.post("/account/telegram-link")
 async def create_telegram_link(
     payload: TelegramLinkCreateRequest,
@@ -2197,6 +2269,68 @@ async def professional_signal_feed(
         "limit": int(limit),
         "offset": int(offset),
     }
+
+
+@router.get("/execution-webhook")
+async def execution_webhook_status(
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "setwebhook")
+    async with get_session(label="platform.execution_webhook", timeout_seconds=8.0) as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT webhook_url,is_active,created_at,updated_at "
+                    "FROM user_webhooks WHERE user_id=:uid LIMIT 1"
+                ),
+                {"uid": int(user["id"])},
+            )
+        ).mappings().first()
+        await session.rollback()
+    return {"webhook": dict(row) if row else None}
+
+
+@router.put("/execution-webhook")
+async def update_execution_webhook(
+    payload: ExecutionWebhookUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "setwebhook")
+    try:
+        destination = await validate_webhook_destination(payload.url.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    async with get_session(label="platform.execution_webhook.save", timeout_seconds=8.0) as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO user_webhooks(user_id,webhook_url,is_active,created_at,updated_at)
+                VALUES(:uid,:url,TRUE,NOW(),NOW())
+                ON CONFLICT(user_id) DO UPDATE
+                SET webhook_url=EXCLUDED.webhook_url,is_active=TRUE,updated_at=NOW()
+                """
+            ),
+            {"uid": int(user["id"]), "url": destination},
+        )
+        await session.commit()
+    return {"saved": True, "url": destination, "active": True}
+
+
+@router.delete("/execution-webhook")
+async def disable_execution_webhook(
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "setwebhook")
+    async with get_session(label="platform.execution_webhook.disable", timeout_seconds=8.0) as session:
+        await session.execute(
+            text(
+                "UPDATE user_webhooks SET is_active=FALSE,updated_at=NOW() "
+                "WHERE user_id=:uid"
+            ),
+            {"uid": int(user["id"])},
+        )
+        await session.commit()
+    return {"disabled": True}
 
 
 @router.get("/webhooks")
@@ -2668,6 +2802,161 @@ async def update_trading_profile(
         await set_platform_user_trading_preferences(session, int(user["id"]), updated)
         await session.commit()
     return {"preferences": preferences_to_payload(updated)}
+
+
+@router.post("/simulation")
+async def delivered_signal_simulation(
+    payload: SimulationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "simulate")
+    from core.paper_trading_service import paper_trading_service
+    from engine.risk_analytics import monte_carlo_monthly_projection
+
+    uid = int(user["id"])
+    snapshot = await paper_trading_service.snapshot(
+        uid,
+        user_identity="platform",
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Paper account is unavailable")
+    evidence = await paper_trading_service.delivered_r_samples(
+        uid,
+        user_identity="platform",
+    )
+    r_values = [float(value) for value in (evidence.get("r_values") or [])]
+    minimum = max(
+        5,
+        int(os.getenv("SIMULATION_MIN_CONFIRMED_OUTCOMES", "10") or 10),
+    )
+    if len(r_values) < minimum:
+        return {
+            "ready": False,
+            "completed_outcomes": len(r_values),
+            "minimum_required": minimum,
+            "delivered_total": int(evidence.get("delivered_total") or 0),
+            "pending_delivered": int(evidence.get("pending_delivered") or 0),
+            "partial_milestones": int(evidence.get("partial_milestones") or 0),
+            "paper_equity": float(snapshot.equity),
+            "open_paper_positions": int(snapshot.open_positions),
+            "methodology": (
+                "No default win rate or invented reward assumption is used. "
+                "Simulation unlocks only after enough delivered signals reach terminal outcomes."
+            ),
+        }
+
+    capital = float(
+        payload.starting_capital
+        if payload.starting_capital is not None
+        else snapshot.equity
+    )
+    risk_pct = float(
+        payload.risk_pct
+        if payload.risk_pct is not None
+        else snapshot.risk_pct
+    )
+    wins = [value for value in r_values if value > 0]
+    losses = [value for value in r_values if value <= 0]
+    win_rate = len(wins) / len(r_values)
+    avg_win_r = sum(wins) / max(1, len(wins))
+    avg_loss_r = (
+        abs(sum(losses) / max(1, len(losses)))
+        if losses
+        else 1.0
+    )
+    first = evidence.get("first")
+    last = evidence.get("last")
+    days = 30.0
+    try:
+        if first is not None and last is not None:
+            days = max(1.0, (last - first).total_seconds() / 86400.0)
+    except Exception:
+        days = 30.0
+    trades_per_month = max(
+        1,
+        min(300, int(round(len(r_values) / days * 30.0))),
+    )
+    runs = max(
+        500,
+        min(10000, int(os.getenv("SIMULATION_RUNS", "2000") or 2000)),
+    )
+    result = monte_carlo_monthly_projection(
+        starting_capital=capital,
+        risk_pct_per_trade=risk_pct,
+        win_rate=win_rate,
+        avg_win_r=avg_win_r,
+        avg_loss_r=avg_loss_r,
+        trades_per_month=trades_per_month,
+        runs=runs,
+    )
+    return {
+        "ready": True,
+        "evidence": {
+            "completed_outcomes": len(r_values),
+            "observed_win_rate": win_rate,
+            "observed_avg_win_r": avg_win_r,
+            "observed_avg_loss_r": avg_loss_r,
+            "observed_trades_per_month": trades_per_month,
+        },
+        "projection": result,
+        "paper_equity": float(snapshot.equity),
+        "open_paper_positions": int(snapshot.open_positions),
+        "disclaimer": (
+            "This is a statistical scenario based only on your delivered-signal history, "
+            "not a profit forecast or guarantee."
+        ),
+    }
+
+
+@router.get("/elite-signals")
+async def elite_signal_feed(
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "elite")
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    sql = (
+        "WITH receipt_rows AS ("
+        " SELECT sd.signal_id::text AS signal_id,sd.delivered_at"
+        " FROM signal_deliveries sd"
+        " WHERE sd.user_id=:uid AND sd.sent_ok IS TRUE"
+        " AND sd.telegram_chat_id IS NOT NULL AND sd.telegram_message_id IS NOT NULL"
+        " UNION ALL"
+        " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at"
+        " FROM notification_events ne"
+        " WHERE ne.user_id=:uid AND ne.event_type='signal'"
+        " AND ne.channel_data->>'channel'='web'"
+        "), receipts AS ("
+        " SELECT receipt_rows.*,"
+        " ROW_NUMBER() OVER(PARTITION BY signal_id ORDER BY delivered_at DESC) AS rn"
+        " FROM receipt_rows"
+        ")"
+        " SELECT s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,"
+        " s.entry,s.stop_loss,s.take_profit,s.rr_estimate,s.score,s.strategy_name,"
+        " s.strategy_group,s.regime,s.created_at,s.ml_probability_calibrated,"
+        " r.delivered_at,o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " FROM receipts r JOIN signals s ON s.signal_id=r.signal_id"
+        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " WHERE r.rn=1 AND s.created_at>=:cutoff AND s.score>=85"
+        " ORDER BY s.score DESC,r.delivered_at DESC LIMIT 5"
+    )
+    async with get_session(label="platform.elite_signals", timeout_seconds=8.0) as session:
+        rows = (
+            await session.execute(
+                text(sql),
+                {"uid": int(user["id"]), "cutoff": cutoff},
+            )
+        ).mappings().all()
+        await session.rollback()
+    return {
+        "signals": [
+            _present_signal_for_tier(row, str(user.get("tier") or "vip"))
+            for row in rows
+        ],
+        "priority_delivery_active": get_entitlements(
+            str(user.get("tier") or "free")
+        ).has("priority_delivery"),
+        "window_days": 7,
+    }
 
 
 @router.get("/quality")
@@ -3506,8 +3795,102 @@ async def billing(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any
             "SELECT receipt_number,provider,payment_reference,plan,amount,currency,status,payment_date,subscription_start,subscription_end "
             "FROM payment_receipts WHERE user_id=:uid ORDER BY payment_date DESC LIMIT 100"
         ), {"uid": uid})).mappings().all()
+        renewal = (await session.execute(text(
+            "SELECT auto_renew,(paystack_subscription_code IS NOT NULL) AS provider_subscription_linked "
+            "FROM users WHERE id=:uid"
+        ), {"uid": uid})).mappings().first()
         await session.rollback()
-    return {"subscriptions": [dict(row) for row in subscriptions], "receipts": [dict(row) for row in receipts]}
+    return {
+        "subscriptions": [dict(row) for row in subscriptions],
+        "receipts": [dict(row) for row in receipts],
+        "auto_renew": bool((renewal or {}).get("auto_renew")),
+        "provider_subscription_linked": bool(
+            (renewal or {}).get("provider_subscription_linked")
+        ),
+    }
+
+
+@router.post("/billing/cancel-auto-renew")
+async def cancel_billing_auto_renew(
+    payload: SubscriptionCancelRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit cancellation confirmation is required")
+    from services.subscription_cancellation import cancel_auto_renew_for_user
+
+    result = await cancel_auto_renew_for_user(int(user["id"]))
+    if not result.get("success"):
+        reason = str(result.get("reason") or "cancellation_failed")
+        status_code = 409 if reason == "no_active_paid_subscription" else 404 if reason == "account_not_found" else 503
+        raise HTTPException(status_code=status_code, detail=reason)
+    return {
+        **result,
+        "policy": (
+            "Auto-renew is off. Current paid access remains until its expiry. "
+            "This action does not issue a refund."
+        ),
+    }
+
+
+@router.post("/billing/refund-request", status_code=201)
+async def billing_refund_request(
+    payload: RefundSupportRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "refund_request")
+    reference = payload.payment_reference.strip()
+    uid = int(user["id"])
+    async with get_session(label="platform.refund_request", timeout_seconds=10.0) as session:
+        owned = (
+            await session.execute(
+                text(
+                    """
+                    SELECT 1 FROM (
+                        SELECT payment_reference AS ref
+                        FROM payment_receipts WHERE user_id=:uid
+                        UNION ALL
+                        SELECT paystack_reference AS ref
+                        FROM payment_events WHERE user_id=:uid
+                        UNION ALL
+                        SELECT paystack_reference AS ref
+                        FROM subscriptions WHERE user_id=:uid
+                    ) payment_refs
+                    WHERE ref=:reference
+                    LIMIT 1
+                    """
+                ),
+                {"uid": uid, "reference": reference},
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+    if owned is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Payment reference was not found on this account. "
+                "Use Billing support if the payment is still pending."
+            ),
+        )
+    ticket = await create_support_ticket(
+        SupportTicketCreateRequest(
+            subject=f"Refund review · {reference}"[:180],
+            category="refund",
+            message=(
+                f"Payment reference: {reference}\n\n"
+                f"Reason for review:\n{payload.reason.strip()}\n\n"
+                "Requested from the authenticated web account. "
+                "No automatic refund or payout was initiated."
+            ),
+        ),
+        user,
+    )
+    return {
+        **ticket,
+        "payment_reference": reference,
+        "automatic_refund": False,
+        "message": "Refund review ticket created for manual payment verification.",
+    }
 
 
 @router.get("/notifications")
