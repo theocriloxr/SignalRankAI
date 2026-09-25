@@ -187,7 +187,7 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
     )
 
     async with get_session(
-        priority="background",
+        priority="interactive",
         label="platform.web_signal_fanout.snapshot",
         timeout_seconds=max(
             3.0,
@@ -418,7 +418,7 @@ async def deliver_recent_web_signals() -> dict[str, int]:
         return counters
 
     async with get_session(
-        priority="background",
+        priority="interactive",
         label="platform.web_signal_fanout.persist",
         timeout_seconds=12.0,
         drop_if_busy=False,
