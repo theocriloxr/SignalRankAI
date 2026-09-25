@@ -1513,6 +1513,22 @@ class PaperTradingService:
             ).scalar_one_or_none()
             if user is None:
                 return "skipped"
+            from core.tier_policy import evaluate_feature_access
+            from db.access import resolve_product_tier
+
+            effective_tier = await resolve_product_tier(session, user)
+            paper_access = evaluate_feature_access(
+                effective_tier,
+                "paper_trading",
+            )
+            if not paper_access.allowed:
+                logger.info(
+                    "[paper_candidate] tier blocked user=%s tier=%s signal=%s",
+                    user.id,
+                    effective_tier,
+                    candidate.get("signal_id"),
+                )
+                return "skipped"
             account = (
                 await session.execute(
                     select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
