@@ -997,6 +997,7 @@ class MT5SignalRouter:
                 symbol_spec=symbol_spec,
                 symbol=asset,
                 user_identity=identity,
+                execution_mode=execution_mode,
             )
             volume = self._apply_position_weight(
                 volume,
@@ -1339,6 +1340,7 @@ class MT5SignalRouter:
         symbol_spec: Optional[Dict[str, Any]] = None,
         symbol: str = "",
         user_identity: str = "telegram",
+        execution_mode: str = "manual",
     ) -> float:
         """Calculate broker-compliant size or return zero on missing data.
 
@@ -1420,6 +1422,15 @@ class MT5SignalRouter:
                 max_risk_pct = float(os.getenv("MAX_LIVE_RISK_PCT", "5"))
             except (TypeError, ValueError):
                 max_risk_pct = 5.0
+            mode = str(execution_mode or "manual").strip().lower()
+            if mode in {"auto", "copy", "copy_trade"}:
+                try:
+                    auto_cap = float(
+                        os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0") or 3.0
+                    )
+                except (TypeError, ValueError):
+                    auto_cap = 3.0
+                max_risk_pct = min(max_risk_pct, max(0.0, auto_cap))
             if risk_pct > max(0.0, max_risk_pct):
                 return 0.0
 
