@@ -2726,8 +2726,26 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
         params[key] = value
     if not assignments:
         return {"user": user}
+    if "timezone" in values:
+        assignments.extend(
+            [
+                "timezone_updated_at=NOW()",
+                "timezone_source='profile'",
+            ]
+        )
+    elif "timezone_auto_update" in values:
+        assignments.append(
+            "timezone_updated_at=COALESCE(timezone_updated_at,NOW())"
+        )
     async with get_session() as session:
-        await session.execute(text("UPDATE users SET " + ",".join(assignments) + ",updated_at=NOW() WHERE id=:uid"), params)
+        await session.execute(
+            text(
+                "UPDATE users SET "
+                + ",".join(assignments)
+                + ",updated_at=NOW() WHERE id=:uid"
+            ),
+            params,
+        )
         updated = await user_snapshot(session, int(user["id"]))
         await session.commit()
     return {"user": updated}
@@ -2933,6 +2951,8 @@ async def elite_signal_feed(
         " FROM signal_deliveries sd"
         " WHERE sd.user_id=:uid AND sd.sent_ok IS TRUE"
         " AND sd.telegram_chat_id IS NOT NULL AND sd.telegram_message_id IS NOT NULL"
+        " AND sd.delivery_confirmed_at IS NOT NULL"
+        " AND LOWER(COALESCE(sd.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled')"
         " UNION ALL"
         " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at"
         " FROM notification_events ne"
