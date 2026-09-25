@@ -198,3 +198,12 @@ def test_web_execution_settings_resolve_saved_provider_before_live_validation():
     assert "effective_provider" in section
     assert "current.execution_provider" in section
     assert 'effective_provider != "bybit"' in section
+
+
+
+def test_web_notification_center_receives_signal_lifecycle_events():
+    tracker = (ROOT / "engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
+    assert "'signal_outcome'" in tracker
+    assert '"surface": "signal_lifecycle"' in tracker
+    assert '"outcome_status": status_l' in tracker
+    assert '@router.get("/notifications")' in API
