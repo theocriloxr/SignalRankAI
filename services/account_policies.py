@@ -562,6 +562,43 @@ async def record_reconciliation(
         )
         row.updated_at = now_utc_naive()
 
+        reconciliation_details = dict(details or {})
+        ledger_source_event_id = str(
+            reconciliation_details.get("ledger_source_event_id") or ""
+        ).strip()
+        if ledger_source_event_id:
+            from services.trading_account_ledger import (
+                _append_account_ledger_in_session,
+            )
+
+            await _append_account_ledger_in_session(
+                session,
+                user_id=int(user_id),
+                connection_id=str(connection_id),
+                provider=str(
+                    reconciliation_details.get("provider")
+                    or connection.platform
+                    or connection.connector
+                    or "broker"
+                ),
+                entry_type="equity_snapshot",
+                source_event_id=ledger_source_event_id,
+                currency=str(reconciliation_details.get("currency") or "USD"),
+                balance=reconciliation_details.get("balance"),
+                equity=reconciliation_details.get("equity"),
+                margin=reconciliation_details.get("margin"),
+                free_margin=reconciliation_details.get("free_margin"),
+                realized_pnl=reconciliation_details.get("realized_pnl"),
+                unrealized_pnl=reconciliation_details.get("unrealized_pnl"),
+                provider_timestamp=reconciliation_details.get("provider_timestamp"),
+                metadata={
+                    "reconciliation_status": normalized,
+                    "positions_count": reconciliation_details.get("positions_count"),
+                    "checked_at": reconciliation_details.get("checked_at"),
+                    "discrepancy_code": discrepancy_code,
+                },
+            )
+
         policy = (
             await session.execute(
                 select(TradingAccountPolicyRecord).where(
