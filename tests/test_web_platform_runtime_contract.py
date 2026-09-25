@@ -112,3 +112,20 @@ def test_quality_and_shadow_reports_are_kept_separate_from_live_performance():
     shadow = API[API.index('@router.get("/shadow-report")'):API.index('@router.get("/strategy-leaderboard")')]
     assert "counterfactual" in shadow.lower()
     assert '"claim_certified"] = False' in shadow
+
+
+
+def test_signal_feedback_is_delivery_scoped_and_canonical():
+    assert '@router.post("/signals/{signal_id}/feedback"' in API
+    section = API[
+        API.index('@router.post("/signals/{signal_id}/feedback"'):
+        API.index('@router.get("/live-price")')
+    ]
+    assert '_assert_command(user, "feedback")' in section
+    assert "signal_deliveries" in section
+    assert "sent_ok=TRUE" in section
+    assert "record_user_event" in section
+    assert '"source": "web"' in section
+    assert "/feedback" in APP_JS
+    assert 'id="signalFeedbackForm"' in APP_JS
+    assert "wrong_outcome" in APP_JS
