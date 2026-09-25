@@ -630,6 +630,41 @@ class VIPWaitlist(Base):
     invite_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
+class BrokerConnection(Base):
+    """Provider-neutral connected trading account registry.
+
+    Secret material is either encrypted in secret_encrypted or delegated
+    to a provider-managed OAuth/configuration flow. Linking never implies
+    that automated execution is enabled.
+    """
+
+    __tablename__ = "broker_connections"
+
+    connection_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    connector: Mapped[str] = mapped_column(String(32), nullable=False)
+    broker_name: Mapped[Optional[str]] = mapped_column(String(128))
+    account_label: Mapped[Optional[str]] = mapped_column(String(128))
+    account_ref: Mapped[Optional[str]] = mapped_column(String(128))
+    external_account_id: Mapped[Optional[str]] = mapped_column(String(128))
+    environment: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
+    auth_mode: Mapped[str] = mapped_column(String(32), default="existing", nullable=False)
+    secret_encrypted: Mapped[Optional[str]] = mapped_column(Text)
+    server: Mapped[Optional[str]] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True, nullable=False)
+    permissions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    capabilities: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_health_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_error_code: Mapped[Optional[str]] = mapped_column(String(128))
+    last_error_message: Mapped[Optional[str]] = mapped_column(String(512))
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
 class MT5Credentials(Base):
     __tablename__ = "mt5_credentials"
 
