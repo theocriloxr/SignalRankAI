@@ -766,6 +766,34 @@ class MT5SignalRouter:
                         meta=meta,
                     )
                 )
+                if connection_id:
+                    from services.trading_account_ledger import (
+                        _append_account_ledger_in_session,
+                    )
+
+                    await _append_account_ledger_in_session(
+                        session,
+                        user_id=int(user.id),
+                        connection_id=str(connection_id),
+                        provider=str(broker_platform or "mt5"),
+                        entry_type="order",
+                        source_event_id=f"order:{order}",
+                        correlation_id=str(idempotency_key),
+                        order_ref=order,
+                        metadata={
+                            "signal_id": signal_id,
+                            "symbol": symbol,
+                            "direction": direction,
+                            "order_size": str(volume),
+                            "order_size_unit": "LOT",
+                            "entry_price": str(entry),
+                            "stop_loss": str(stop),
+                            "take_profit": [str(value) for value in take_profit],
+                            "provider_status": str(
+                                broker_result.get("status") or "submitted"
+                            ),
+                        },
+                    )
                 await session.commit()
                 return True
         except Exception:
@@ -1112,11 +1140,26 @@ class MT5SignalRouter:
                             "provider": str(reconciliation.get("provider") or platform),
                             "positions_count": len(reconciliation.get("positions") or []),
                             "checked_at": str(reconciliation.get("checked_at") or ""),
-                            "equity": (
-                                float(account_info.get("equity"))
-                                if isinstance(account_info, dict)
-                                and isinstance(account_info.get("equity"), (int, float))
-                                else None
+                            "ledger_source_event_id": (
+                                f"reconciliation:{str(reconciliation.get('checked_at'))}"
+                                if reconciliation.get("checked_at")
+                                else ""
+                            ),
+                            "provider_timestamp": str(
+                                reconciliation.get("checked_at") or ""
+                            ) or None,
+                            "currency": str(
+                                account_info.get("currency") or "USD"
+                            ).upper(),
+                            "balance": account_info.get("balance"),
+                            "equity": account_info.get("equity"),
+                            "margin": account_info.get("margin"),
+                            "free_margin": account_info.get("free_margin"),
+                            "realized_pnl": account_info.get("realized_pnl"),
+                            "unrealized_pnl": (
+                                account_info.get("unrealized_pnl")
+                                if account_info.get("unrealized_pnl") is not None
+                                else account_info.get("profit")
                             ),
                         },
                     )
