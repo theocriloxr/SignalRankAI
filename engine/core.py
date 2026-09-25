@@ -375,7 +375,7 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         heatmap,
         _env_float("PREMIUM_SCORE_THRESHOLD", 48.0),
         _env_float("CONFLUENCE_GATE_MIN", 0.0),
-        _env_float("ML_PROB_THRESHOLD", 0.55),
+        _diagnostic_ml_threshold(),
     )
     _diagnostic_state.empty_cycles[asset_key] = 0
     _diagnostic_state.gate_counts[asset_key] = Counter()
@@ -2056,6 +2056,163 @@ def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
             threshold = float(certified)
     return max(0.05, min(0.95, float(threshold)))
 
+_ML_STARVATION_RECOVERY_CACHE: dict[str, Any] = {
+    "checked_at": 0.0,
+    "result": {
+        "actionable": False,
+        "starvation_detected": False,
+        "samples": 0,
+    },
+}
+
+
+def _ml_starvation_recovery_context() -> dict[str, Any]:
+    """Read live prediction health without mutating the certified threshold."""
+    if not _env_bool("ML_STARVATION_RECOVERY_ENABLED", False):
+        return {
+            "actionable": False,
+            "starvation_detected": False,
+            "samples": 0,
+            "reason": "recovery_disabled",
+        }
+    now_mono=time.monotonic()
+    cache_seconds=max(
+        5.0,
+        _env_float("ML_STARVATION_RECOVERY_CACHE_SECONDS", 30.0),
+    )
+    checked=float(_ML_STARVATION_RECOVERY_CACHE.get("checked_at") or 0.0)
+    if now_mono-checked < cache_seconds:
+        return dict(_ML_STARVATION_RECOVERY_CACHE.get("result") or {})
+    try:
+        from ml.drift_monitor import detect_prediction_starvation
+        from ml.live_drift import load_live_prediction_samples
+
+        result=detect_prediction_starvation(
+            load_live_prediction_samples(),
+            minimum_samples=max(
+                10,
+                _env_int("ML_STARVATION_MIN_LIVE_SAMPLES", 50),
+            ),
+            minimum_pass_rate=max(
+                0.0,
+                min(
+                    1.0,
+                    _env_float("ML_STARVATION_MIN_PASS_RATE", 0.01),
+                ),
+            ),
+        )
+    except Exception as exc:
+        result={
+            "actionable": False,
+            "starvation_detected": False,
+            "samples": 0,
+            "reason": f"starvation_health_error:{type(exc).__name__}",
+        }
+    _ML_STARVATION_RECOVERY_CACHE["checked_at"]=now_mono
+    _ML_STARVATION_RECOVERY_CACHE["result"]=dict(result)
+    return dict(result)
+
+
+def _ml_starvation_recovery_decision(
+    signal: Dict[str, Any],
+    *,
+    raw_probability: float | None,
+    certified_threshold: float,
+    challenger: dict[str, Any] | None,
+    pipeline_stats: dict[str, Any],
+) -> tuple[bool, dict[str, Any]]:
+    """Bounded delivery-only fallback for a demonstrably starving champion."""
+    health=_ml_starvation_recovery_context()
+    details={
+        "health": health,
+        "score": _signal_display_score(signal),
+        "confluence": _safe_float(signal.get("confluence_score"), 0.0),
+        "raw_probability": raw_probability,
+        "certified_threshold": certified_threshold,
+        "challenger": dict(challenger or {}),
+    }
+    if not bool(health.get("starvation_detected")):
+        return False, details
+    if raw_probability is None:
+        return False, details
+
+    max_per_cycle=max(
+        0,
+        _env_int("ML_STARVATION_RECOVERY_MAX_SIGNALS_PER_CYCLE", 1),
+    )
+    if max_per_cycle <= 0:
+        return False, details
+    if int(pipeline_stats.get("ml_recovery_passed") or 0) >= max_per_cycle:
+        details["reason"]="cycle_cap"
+        return False, details
+
+    min_score=max(
+        _current_min_score_threshold(),
+        _env_float("ML_STARVATION_RECOVERY_MIN_SCORE", 85.0),
+    )
+    min_confluence=max(
+        _env_float("CONFLUENCE_GATE_MIN", 0.0),
+        _env_float("ML_STARVATION_RECOVERY_MIN_CONFLUENCE", 50.0),
+    )
+    raw_floor=max(
+        0.05,
+        min(
+            float(certified_threshold),
+            _env_float("ML_STARVATION_RECOVERY_RAW_FLOOR", 0.40),
+        ),
+    )
+    if details["score"] < min_score:
+        details["reason"]="score_below_recovery_floor"
+        return False, details
+    if details["confluence"] < min_confluence:
+        details["reason"]="confluence_below_recovery_floor"
+        return False, details
+    if float(raw_probability) < raw_floor:
+        details["reason"]="raw_probability_below_recovery_floor"
+        return False, details
+
+    challenger_payload=dict(challenger or {})
+    if challenger_payload.get("available"):
+        challenger_prob=_safe_float(
+            challenger_payload.get("probability"),
+            0.0,
+        )
+        challenger_floor=max(
+            0.05,
+            min(
+                0.95,
+                _env_float("ML_STARVATION_RECOVERY_CHALLENGER_FLOOR", 0.45),
+            ),
+        )
+        if (
+            not bool(challenger_payload.get("passed"))
+            and challenger_prob < challenger_floor
+        ):
+            details["reason"]="challenger_disagrees"
+            return False, details
+    elif _env_bool("ML_STARVATION_RECOVERY_REQUIRE_CHALLENGER", False):
+        details["reason"]="challenger_unavailable"
+        return False, details
+
+    details.update({
+        "reason": "serving_model_starvation",
+        "min_score": min_score,
+        "min_confluence": min_confluence,
+        "raw_floor": raw_floor,
+    })
+    return True, details
+
+
+def _diagnostic_ml_threshold() -> float:
+    try:
+        raw=state.get_sync("signalrankai:engine:ml_threshold_raw")
+        if raw not in (None, ""):
+            return max(0.05, min(0.95, float(raw)))
+    except Exception:
+        pass
+    return _env_float("ML_PROB_THRESHOLD", 0.55)
+
+
 def load_tradable_assets() -> List[str]:
     raw = (os.getenv("TRADABLE_ASSETS") or "").strip()
     if not raw:
@@ -3299,6 +3456,7 @@ def main_loop(DRY_RUN: bool = False):
                             # confluence (only enforce if threshold configured or score available)
                             conf = calculate_confluence(sig)
                             if conf is not None:
+                                sig["confluence_score"] = float(conf)
                                 conf_raw = str(os.getenv("CONFLUENCE_GATE_MIN") or "").strip()
                                 conf_min = float(conf_raw) if conf_raw else None
                                 if conf_min is not None and conf < conf_min:
@@ -3352,88 +3510,284 @@ def main_loop(DRY_RUN: bool = False):
                     for sig in strict_candidates:
                         approved = True
                         prob = None
+                        raw_prob = None
+                        threshold = _env_float("ML_PROB_THRESHOLD", 0.55)
                         features = {}
+                        challenger: dict[str, Any] = {
+                            "available": False,
+                            "probability": None,
+                            "threshold": None,
+                            "passed": False,
+                            "version": None,
+                            "error": "not_scored",
+                        }
                         try:
                             if ml_filter:
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold(ml_filter)
                                 pipeline_stats["ml_threshold_raw"] = float(threshold)
-                                # Always consult MLFilter when constructed. It owns the
-                                # configured fail-open/fail-closed availability policy,
-                                # including the case where the model is inactive.
-                                approved, prob = ml_filter.ml_filter(features, threshold=threshold)
-                                raw_prob = getattr(ml_filter, "last_raw_probability", None)
+                                try:
+                                    state.set_sync(
+                                        "signalrankai:engine:ml_threshold_raw",
+                                        str(float(threshold)),
+                                        ex=7200,
+                                    )
+                                except Exception:
+                                    pass
+                                approved, prob = ml_filter.ml_filter(
+                                    features,
+                                    threshold=threshold,
+                                )
+                                raw_prob = getattr(
+                                    ml_filter,
+                                    "last_raw_probability",
+                                    None,
+                                )
                                 if raw_prob is not None:
                                     try:
-                                        current_raw_max = pipeline_stats.get("ml_raw_probability_max")
+                                        current_raw_max = pipeline_stats.get(
+                                            "ml_raw_probability_max"
+                                        )
                                         pipeline_stats["ml_raw_probability_max"] = max(
                                             float(raw_prob),
-                                            float(current_raw_max) if current_raw_max is not None else float(raw_prob),
+                                            float(current_raw_max)
+                                            if current_raw_max is not None
+                                            else float(raw_prob),
                                         )
                                     except Exception:
                                         pass
                                 if prob is not None:
                                     try:
-                                        current_cal_max = pipeline_stats.get("ml_calibrated_probability_max")
-                                        pipeline_stats["ml_calibrated_probability_max"] = max(
+                                        current_cal_max = pipeline_stats.get(
+                                            "ml_calibrated_probability_max"
+                                        )
+                                        pipeline_stats[
+                                            "ml_calibrated_probability_max"
+                                        ] = max(
                                             float(prob),
-                                            float(current_cal_max) if current_cal_max is not None else float(prob),
+                                            float(current_cal_max)
+                                            if current_cal_max is not None
+                                            else float(prob),
                                         )
                                     except Exception:
                                         pass
-                            elif _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                            elif _env_bool(
+                                "ML_FAIL_CLOSED_ON_UNAVAILABLE",
+                                False,
+                            ):
                                 approved, prob = False, None
                         except Exception as _ml_filter_error:
-                            if _env_bool("ML_FAIL_CLOSED_ON_UNAVAILABLE", False):
+                            if _env_bool(
+                                "ML_FAIL_CLOSED_ON_UNAVAILABLE",
+                                False,
+                            ):
                                 approved, prob = False, None
                                 logger.warning(
-                                    "[engine] ML unavailable; fail-closed candidate veto error=%s",
+                                    "[engine] ML unavailable; fail-closed "
+                                    "candidate veto error=%s",
                                     type(_ml_filter_error).__name__,
                                 )
                             else:
                                 approved, prob = True, None
 
-                        # NEW: Log ML prediction to database for drift analysis
-                        # Must happen BEFORE decision to ensure all predictions recorded
+                        # Evaluate the persisted challenger in shadow. It never
+                        # becomes serving champion through this path.
+                        if ml_filter and _env_bool(
+                            "ML_CHALLENGER_SHADOW_ENABLED",
+                            True,
+                        ):
+                            try:
+                                from engine.ml import score_shadow_signal
+
+                                sig["_market_data"] = market_data
+                                challenger = score_shadow_signal(sig)
+                                challenger_prob = challenger.get("probability")
+                                challenger_threshold = challenger.get("threshold")
+                                if challenger_threshold is not None:
+                                    pipeline_stats[
+                                        "ml_challenger_threshold_raw"
+                                    ] = float(challenger_threshold)
+                                if challenger_prob is not None:
+                                    current_candidate_max = pipeline_stats.get(
+                                        "ml_challenger_raw_probability_max"
+                                    )
+                                    pipeline_stats[
+                                        "ml_challenger_raw_probability_max"
+                                    ] = max(
+                                        float(challenger_prob),
+                                        float(current_candidate_max)
+                                        if current_candidate_max is not None
+                                        else float(challenger_prob),
+                                    )
+                                if challenger.get("passed"):
+                                    pipeline_stats[
+                                        "ml_challenger_passed"
+                                    ] = int(
+                                        pipeline_stats.get(
+                                            "ml_challenger_passed"
+                                        )
+                                        or 0
+                                    ) + 1
+                            except Exception as challenger_error:
+                                challenger = {
+                                    "available": False,
+                                    "probability": None,
+                                    "threshold": None,
+                                    "passed": False,
+                                    "version": None,
+                                    "error": type(challenger_error).__name__,
+                                }
+
                         if prob is not None and sig.get('signal_id'):
                             try:
-                                from engine.ml_logger import log_ml_prediction as _log_ml_pred
+                                from engine.ml_logger import (
+                                    log_ml_prediction as _log_ml_pred,
+                                )
                                 run_sync(
                                     _log_ml_pred(
-                                        session=None,  # Will create new session inside
-                                        signal_id=str(sig.get('signal_id') or ''),
+                                        session=None,
+                                        signal_id=str(
+                                            sig.get('signal_id') or ''
+                                        ),
                                         asset=str(sig.get('asset') or ''),
-                                        timeframe=str(sig.get('timeframe') or ''),
-                                        direction=str(sig.get('direction') or ''),
+                                        timeframe=str(
+                                            sig.get('timeframe') or ''
+                                        ),
+                                        direction=str(
+                                            sig.get('direction') or ''
+                                        ),
                                         ml_probability=float(prob),
-                                        features=features if isinstance(features, dict) else {},
+                                        features=(
+                                            features
+                                            if isinstance(features, dict)
+                                            else {}
+                                        ),
                                     )
                                 )
                             except Exception as _ml_log_err:
-                                logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
+                                logger.debug(
+                                    "[engine] ML prediction logging failed: %s",
+                                    _ml_log_err,
+                                )
 
                         if not approved:
-                            sig['ml_advisory'] = 'filtered_by_ml'
-                            _increment_engine_veto("ml")
-                            _log_decision("rejected", sig, reason="ml_filter", meta={
-                                "ml_probability": prob,
-                                "ml_raw_probability": getattr(ml_filter, "last_raw_probability", None),
-                                "ml_threshold_raw": threshold,
-                                "ml_features": features if isinstance(features, dict) else {},
-                            })
-                            continue
-                        # LOWERED from 0.55 to 0.40 to allow drifted model predictions (~56%) through
-                        # This addresses the ML drift issue where model outputs 56% but threshold was too high
+                            recovery_ok, recovery_details = (
+                                _ml_starvation_recovery_decision(
+                                    sig,
+                                    raw_probability=(
+                                        float(raw_prob)
+                                        if raw_prob is not None
+                                        else None
+                                    ),
+                                    certified_threshold=float(threshold),
+                                    challenger=challenger,
+                                    pipeline_stats=pipeline_stats,
+                                )
+                            )
+                            if recovery_ok:
+                                sig["ml_recovery_mode"] = True
+                                sig["ml_recovery_reason"] = (
+                                    "serving_model_starvation"
+                                )
+                                sig["ml_recovery_live_execution_allowed"] = False
+                                sig[
+                                    "ml_recovery_champion_raw_probability"
+                                ] = raw_prob
+                                sig[
+                                    "ml_recovery_certified_threshold"
+                                ] = float(threshold)
+                                sig[
+                                    "ml_recovery_challenger_probability"
+                                ] = challenger.get("probability")
+                                sig[
+                                    "ml_recovery_challenger_threshold"
+                                ] = challenger.get("threshold")
+                                sig[
+                                    "ml_recovery_challenger_version"
+                                ] = challenger.get("version")
+                                pipeline_stats["ml_recovery_passed"] = int(
+                                    pipeline_stats.get("ml_recovery_passed") or 0
+                                ) + 1
+                                logger.warning(
+                                    "[engine_ml_recovery] asset=%s score=%.2f "
+                                    "confluence=%.2f champion_raw=%s "
+                                    "certified=%.4f challenger=%s/%s version=%s",
+                                    sig.get("asset"),
+                                    float(recovery_details.get("score") or 0.0),
+                                    float(
+                                        recovery_details.get("confluence")
+                                        or 0.0
+                                    ),
+                                    raw_prob,
+                                    float(threshold),
+                                    challenger.get("probability"),
+                                    challenger.get("threshold"),
+                                    challenger.get("version"),
+                                )
+                                approved = True
+                            else:
+                                sig['ml_advisory'] = 'filtered_by_ml'
+                                _increment_engine_veto("ml")
+                                _log_decision(
+                                    "rejected",
+                                    sig,
+                                    reason="ml_filter",
+                                    meta={
+                                        "ml_probability": prob,
+                                        "ml_raw_probability": raw_prob,
+                                        "ml_threshold_raw": threshold,
+                                        "ml_features": (
+                                            features
+                                            if isinstance(features, dict)
+                                            else {}
+                                        ),
+                                        "ml_challenger": challenger,
+                                        "ml_recovery": recovery_details,
+                                    },
+                                )
+                                continue
+
                         try:
-                            ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.40") or 0.40)
+                            ml_hard_min = float(
+                                os.getenv(
+                                    "ML_HARD_FILTER_MIN",
+                                    "0.40",
+                                )
+                                or 0.40
+                            )
                         except Exception:
                             ml_hard_min = 0.40
-                        if prob is not None and float(prob) < ml_hard_min:
-                            sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
+                        if (
+                            prob is not None
+                            and float(prob) < ml_hard_min
+                            and not bool(sig.get("ml_recovery_mode"))
+                        ):
+                            sig[
+                                'ml_advisory'
+                            ] = 'filtered_by_ml_hard_threshold'
                             _increment_engine_veto("ml")
-                            _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
+                            _log_decision(
+                                "rejected",
+                                sig,
+                                reason="ml_hard_filter",
+                                meta={
+                                    "ml_probability": prob,
+                                    "threshold": ml_hard_min,
+                                    "ml_challenger": challenger,
+                                },
+                            )
                             continue
                         sig['ml_probability'] = prob
+                        sig['ml_probability_raw'] = raw_prob
+                        sig['ml_challenger_probability'] = challenger.get(
+                            "probability"
+                        )
+                        sig['ml_challenger_threshold'] = challenger.get(
+                            "threshold"
+                        )
+                        sig['ml_challenger_version'] = challenger.get(
+                            "version"
+                        )
                         risk_passed.append(sig)
 
                     pipeline_stats["risk_passed"] += len(risk_passed)
