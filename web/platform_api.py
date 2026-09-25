@@ -862,7 +862,7 @@ async def signal_feed(
     status: str | None = Query(default=None, max_length=32),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    filters = ["d.user_id=:uid", "d.sent_ok=TRUE"]
+    filters = ["d.rn=1"]
     params: dict[str, Any] = {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)}
     if asset:
         filters.append("s.asset=:asset")
@@ -882,11 +882,29 @@ async def signal_feed(
         filters.append("COALESCE(o.status,s.status)=:status")
         params["status"] = status.lower()
     sql = (
-        "SELECT s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
-        "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.created_at,s.ml_probability_calibrated,"
-        "d.delivered_at,d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,o.status AS outcome_status,o.r_multiple,o.pnl_pct "
-        "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
-        "LEFT JOIN outcomes o ON o.signal_id=s.signal_id WHERE " + " AND ".join(filters) +
+        "WITH receipt_rows AS ("
+        " SELECT d.signal_id::text AS signal_id,d.delivered_at,"
+        " d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,"
+        " 'telegram'::text AS delivery_channel"
+        " FROM signal_deliveries d WHERE d.user_id=:uid AND d.sent_ok=TRUE"
+        " UNION ALL"
+        " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at,"
+        " NULL::integer AS delivery_latency_seconds,NULL::integer AS signal_age_at_delivery_seconds,"
+        " 'web'::text AS delivery_channel"
+        " FROM notification_events ne"
+        " WHERE ne.user_id=:uid AND ne.event_type='signal'"
+        " AND COALESCE(ne.channel_data->>'signal_id','')<>''"
+        "), receipts AS ("
+        " SELECT receipt_rows.*,"
+        " ROW_NUMBER() OVER(PARTITION BY signal_id ORDER BY delivered_at DESC,delivery_channel) AS rn"
+        " FROM receipt_rows"
+        ")"
+        " SELECT s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
+        " s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.created_at,s.ml_probability_calibrated,"
+        " d.delivered_at,d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,d.delivery_channel,"
+        " o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " FROM receipts d JOIN signals s ON s.signal_id=d.signal_id"
+        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id WHERE " + " AND ".join(filters) +
         " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
     )
     async with get_session() as session:
@@ -905,21 +923,40 @@ async def signal_detail(
         raise HTTPException(status_code=422, detail="Invalid signal reference")
     async with get_session(label="platform.signal_detail", timeout_seconds=10.0) as session:
         row = (await session.execute(text(
-            "SELECT "
+            "WITH receipt_rows AS ("
+            " SELECT d.signal_id::text AS signal_id,d.delivered_at,d.delivered_at_utc,"
+            " d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
+            " d.signal_age_at_delivery_seconds,d.telegram_message_id,"
+            " 'telegram'::text AS delivery_channel"
+            " FROM signal_deliveries d"
+            " WHERE d.user_id=:uid AND d.sent_ok=TRUE AND d.signal_id=:sid"
+            " UNION ALL"
+            " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at,"
+            " ne.created_at AS delivered_at_utc,ne.created_at AS delivery_confirmed_at,"
+            " 'web_confirmed'::text AS delivery_state,NULL::integer AS delivery_latency_seconds,"
+            " NULL::integer AS signal_age_at_delivery_seconds,NULL::bigint AS telegram_message_id,"
+            " 'web'::text AS delivery_channel"
+            " FROM notification_events ne"
+            " WHERE ne.user_id=:uid AND ne.event_type='signal'"
+            " AND ne.channel_data->>'signal_id'=:sid"
+            "), receipt AS ("
+            " SELECT * FROM receipt_rows ORDER BY delivered_at DESC,delivery_channel LIMIT 1"
+            ")"
+            " SELECT "
             "s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
             "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
             "s.ml_probability,s.ml_probability_calibrated,"
             "d.delivered_at,d.delivered_at_utc,d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
-            "d.signal_age_at_delivery_seconds,d.telegram_message_id,"
+            "d.signal_age_at_delivery_seconds,d.telegram_message_id,d.delivery_channel,"
             "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,o.opened_at AS outcome_opened_at,"
             "o.closed_at AS outcome_closed_at,o.duration_seconds,o.provenance AS outcome_provenance,"
             "l.state AS lifecycle_state,l.entry_touched_at,l.tp1_hit_at,l.tp2_hit_at,l.tp3_hit_at,l.sl_hit_at,"
             "l.breakeven_at,l.expired_at,l.closed_at AS lifecycle_closed_at,l.last_price,l.last_checked_at,"
             "l.mfe_pct,l.mae_pct,l.mfe_r,l.mae_r,l.highest_tp_hit,l.terminal_event_type,l.terminal_price "
-            "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
+            "FROM receipt d JOIN signals s ON s.signal_id=d.signal_id "
             "LEFT JOIN outcomes o ON o.signal_id=s.signal_id "
             "LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id "
-            "WHERE d.user_id=:uid AND d.sent_ok=TRUE AND s.signal_id=:sid LIMIT 1"
+            "WHERE s.signal_id=:sid LIMIT 1"
         ), {"uid": int(user["id"]), "sid": ref})).mappings().first()
         if not row:
             raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
@@ -928,11 +965,21 @@ async def signal_detail(
             "FROM signal_tracking_events WHERE signal_id=:sid ORDER BY event_time,id LIMIT 100"
         ), {"sid": ref})).mappings().all()
         await session.rollback()
+    channel = str(row.get("delivery_channel") or "telegram")
+    telegram_proven = bool(
+        channel == "telegram"
+        and row.get("delivery_confirmed_at")
+        and row.get("telegram_message_id")
+    )
+    web_proven = bool(channel == "web" and row.get("delivery_confirmed_at"))
     return {
         "signal": dict(row),
         "events": [dict(event) for event in events],
         "proof": {
-            "delivery_proven": bool(row.get("delivery_confirmed_at") or row.get("telegram_message_id")),
+            "access_proven": bool(telegram_proven or web_proven),
+            "delivery_channel": channel,
+            "delivery_proven": telegram_proven,
+            "web_delivery_proven": web_proven,
             "delivery_state": row.get("delivery_state"),
             "delivery_confirmed_at": row.get("delivery_confirmed_at"),
             "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
@@ -973,9 +1020,16 @@ async def submit_signal_feedback(
             await session.execute(
                 text(
                     """
-                    SELECT 1
-                    FROM signal_deliveries
-                    WHERE user_id=:uid AND signal_id=:sid AND sent_ok=TRUE
+                    SELECT 1 FROM (
+                        SELECT sd.signal_id::text AS signal_id
+                        FROM signal_deliveries sd
+                        WHERE sd.user_id=:uid AND sd.signal_id=:sid AND sd.sent_ok=TRUE
+                        UNION ALL
+                        SELECT ne.channel_data->>'signal_id' AS signal_id
+                        FROM notification_events ne
+                        WHERE ne.user_id=:uid AND ne.event_type='signal'
+                          AND ne.channel_data->>'signal_id'=:sid
+                    ) receipt
                     LIMIT 1
                     """
                 ),
