@@ -72,6 +72,16 @@ async def route_signal_to_broker(
                     else None
                 ),
             )
+        if before.get("position_count") and not (
+            connection_id is not None and str(connection_id).strip()
+        ):
+            return BrokerRouteResult(
+                False,
+                "Select the trading account explicitly before reusing an execution action",
+                status="blocked",
+                error="explicit_broker_connection_required",
+                evidence=before,
+            )
         if before.get("position_count"):
             position = before.get("position") or {}
             if before.get("exactly_one") and position.get("destination") == "broker":
