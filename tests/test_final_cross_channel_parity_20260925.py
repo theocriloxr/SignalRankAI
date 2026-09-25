@@ -324,3 +324,48 @@ def test_prop_policy_certification_is_privileged_versioned_and_audited() -> None
     ]
     assert "row.certified_by_user_id = None" in configure
     assert "row.certified_by_authority = None" in configure
+
+
+def test_account_policy_changes_and_safety_blocks_are_durably_audited() -> None:
+    service = source("services/account_policies.py")
+    configure = service[
+        service.index("async def configure_account_policy"):
+        service.index("async def certify_prop_policy"),
+    ]
+    freeze = service[
+        service.index("async def set_account_frozen"):
+        service.index("async def reconciliation_snapshot"),
+    ]
+    reconcile = service[
+        service.index("async def record_reconciliation"):
+        service.index("async def evaluate_persisted_account_policy"),
+    ]
+
+    assert 'event_type="account_policy_configured"' in configure
+    assert '"policy_version": int(row.policy_version)' in configure
+    assert '"hard_rule_count": len(' in configure
+    assert '"execution_disabled": True' in configure
+    assert "connection.execution_enabled = False" in configure
+
+    assert '"account_policy_safety_frozen"' in freeze
+    assert '"account_policy_safety_unfrozen"' in freeze
+    assert '"execution_disabled": True' in freeze
+
+    assert 'event_type="account_reconciliation_safety_block"' in reconcile
+    assert 'normalized in {"DEGRADED", "FROZEN", "AUTH_EXPIRED", "DISCONNECTED"}' in reconcile
+    assert "connection.execution_enabled = False" in reconcile
+    assert '"discrepancy_code": (' in reconcile
+
+
+def test_prop_hard_rule_engine_is_generic_versioned_and_exactly_explainable() -> None:
+    policy = source("core/account_policy.py")
+    mt5 = source("services/mt5_signal_router.py")
+    bybit = source("services/bybit_signal_router.py")
+
+    assert "PROP_HARD_RULE_TYPES" in policy
+    assert "def validate_prop_rule_config" in policy
+    assert "def _evaluate_prop_hard_rules" in policy
+    assert 'prefix = f"prop_rule:{rule_id}"' in policy
+    assert "unsupported_prop_hard_rule" in policy
+    assert 'order_size_unit="LOT"' in mt5
+    assert 'order_size_unit="BASE_UNITS"' in bybit
