@@ -15,7 +15,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from typing import Any, Iterable, Optional
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
@@ -1219,7 +1219,7 @@ class PaperTradingService:
     async def _notify_paper_decision(
         self,
         *,
-        telegram_user_id: int,
+        telegram_user_id: int | None,
         candidate: dict[str, Any],
         decision: str,
         reason: str,
@@ -1236,16 +1236,174 @@ class PaperTradingService:
         if decision == "DEFERRED":
             return
         actionable_reasons = {
-            "score_below_paper_minimum", "direction_not_allowed", "asset_class_not_allowed",
-            "max_open_positions", "incomplete_signal_levels", "paper_entry_no_longer_valid",
-            "paper_entry_retry_deadline_expired", "auto_trade_disabled", "signal_stale",
-            "generated_at_missing", "duplicate_open_asset", "max_open_positions_asset_class",
-            "max_total_exposure", "max_open_risk", "paper_daily_loss_limit",
+            "score_below_paper_minimum", "direction_not_allowed",
+            "asset_class_not_allowed", "max_open_positions",
+            "incomplete_signal_levels", "paper_entry_no_longer_valid",
+            "paper_entry_retry_deadline_expired", "auto_trade_disabled",
+            "signal_stale", "generated_at_missing", "duplicate_open_asset",
+            "max_open_positions_asset_class", "max_total_exposure",
+            "max_open_risk", "paper_daily_loss_limit",
             "entry_deviation_too_large", "uncalibrated_signal",
-            "profile_preference_mismatch", "profile_trading_mode_excludes_paper",
+            "profile_preference_mismatch",
+            "profile_trading_mode_excludes_paper",
             "profile_daily_trade_limit", "profile_unavailable",
         }
         if decision != "OPENED" and reason not in actionable_reasons:
+            return
+
+        signal_ref = str(
+            candidate.get("display_id")
+            or candidate.get("signal_id")
+            or ""
+        )
+        if decision == "OPENED":
+            try:
+                from core.paper_sizing import paper_risk_report_text
+
+                risk_report = (
+                    paper_risk_report_text(sizing)
+                    if sizing is not None
+                    else (
+                        f"Requested risk budget: {float(risk_pct or 0):.2f}%\n"
+                        "Actual stop risk: unavailable\n"
+                        "Position-size cap: unknown"
+                    )
+                )
+            except Exception:
+                risk_report = (
+                    f"Requested risk budget: {float(risk_pct or 0):.2f}%\n"
+                    "Actual stop risk: unavailable\n"
+                    "Position-size cap: unknown"
+                )
+            message_text = (
+                "📄 Paper Trade Opened\n\n"
+                f"Asset: {candidate.get('asset')}\n"
+                f"Direction: {str(candidate.get('direction') or '').upper()}\n"
+                f"📌 Signal ID: {signal_ref}\n\n"
+                f"Virtual fill: {float(fill or 0):.8g}\n"
+                f"Virtual size: {float(getattr(sizing, 'quantity', 0) or 0):.8g}\n"
+                f"{risk_report}\n"
+                f"Stop Loss: {float(stop or 0):.8g}\n"
+                f"Selected target: {float(target or 0):.8g}\n"
+                f"Entry fee: ${float(getattr(sizing, 'entry_fee', 0) or 0):.4f}\n"
+                f"Remaining virtual cash: ${float(remaining_cash or 0):,.2f}\n\n"
+                "Execution evidence:\n"
+                f"- Paper position: {position_id}\n"
+                f"- Receipt: {candidate.get('receipt_channel') or 'telegram'}:"
+                f"{candidate.get('receipt_reference') or candidate.get('delivery_id')}\n"
+                f"- Attempt: {attempt_id}\n"
+                f"- Canonical position count: "
+                f"{int((execution_evidence or {}).get('position_count') or 0)}\n"
+                "- Auto-management: ACTIVE for this confirmed paper position\n\n"
+                "This uses virtual funds only."
+            )
+        else:
+            message_text = (
+                "⚠️ Paper Trade Not Opened\n\n"
+                f"Asset: {candidate.get('asset')}\n"
+                f"📌 Signal ID: {signal_ref}\n\n"
+                f"Reason: {reason.replace('_', ' ')}\n\n"
+                "Review your paper settings and signal status."
+            )
+
+        canonical_user_id = int(candidate.get("user_id") or 0)
+        if canonical_user_id > 0:
+            try:
+                event_key = (
+                    attempt_id
+                    or position_id
+                    or str(candidate.get("receipt_reference") or reason)
+                )
+                notification_id = str(
+                    uuid5(
+                        NAMESPACE_URL,
+                        f"signalrank:web-paper:{canonical_user_id}:"
+                        f"{candidate.get('signal_id')}:{decision}:{event_key}",
+                    )
+                )
+                async with get_session(
+                    priority="interactive",
+                    label="paper.web_notification",
+                    timeout_seconds=_paper_db_timeout(6.0),
+                ) as session:
+                    allowed = (
+                        await session.execute(
+                            text(
+                                """
+                                SELECT 1
+                                FROM users u
+                                LEFT JOIN notification_preferences np
+                                  ON np.user_id=u.id
+                                WHERE u.id=:uid
+                                  AND COALESCE(u.is_blocked,FALSE) IS FALSE
+                                  AND COALESCE(u.is_suspended,FALSE) IS FALSE
+                                  AND COALESCE(np.web_enabled,TRUE) IS TRUE
+                                LIMIT 1
+                                """
+                            ),
+                            {"uid": canonical_user_id},
+                        )
+                    ).scalar_one_or_none()
+                    if allowed is not None:
+                        await session.execute(
+                            text(
+                                """
+                                INSERT INTO notification_events(
+                                    notification_id,user_id,event_type,title,body,
+                                    severity,channel_data,created_at
+                                )
+                                VALUES(
+                                    :nid,:uid,'paper_trade',:title,:body,:severity,
+                                    CAST(:channel_data AS JSONB),NOW()
+                                )
+                                ON CONFLICT(notification_id) DO NOTHING
+                                """
+                            ),
+                            {
+                                "nid": notification_id,
+                                "uid": canonical_user_id,
+                                "title": (
+                                    f"Paper trade {decision.lower()}: "
+                                    f"{candidate.get('asset')}"
+                                )[:200],
+                                "body": message_text,
+                                "severity": (
+                                    "info" if decision == "OPENED" else "warning"
+                                ),
+                                "channel_data": json.dumps(
+                                    {
+                                        "channel": "web",
+                                        "surface": "paper_trading",
+                                        "signal_id": candidate.get("signal_id"),
+                                        "decision": decision,
+                                        "reason": reason,
+                                        "position_id": position_id,
+                                        "attempt_id": attempt_id,
+                                        "receipt_channel": candidate.get(
+                                            "receipt_channel"
+                                        ),
+                                        "receipt_reference": candidate.get(
+                                            "receipt_reference"
+                                        ),
+                                    },
+                                    separators=(",", ":"),
+                                    default=str,
+                                ),
+                            },
+                        )
+                        await session.commit()
+            except Exception as exc:
+                logger.warning(
+                    "[paper_web_notification_failed] user=%s signal=%s "
+                    "decision=%s error=%s",
+                    canonical_user_id,
+                    candidate.get("signal_id"),
+                    decision,
+                    type(exc).__name__,
+                    exc_info=True,
+                )
+
+        if telegram_user_id is None:
             return
         try:
             from config import config
@@ -1254,58 +1412,32 @@ class PaperTradingService:
             token = str(config.TELEGRAM_BOT_TOKEN or "").strip()
             if not token:
                 return
-            signal_ref = str(candidate.get("display_id") or candidate.get("signal_id") or "")
-            if decision == "OPENED":
-                try:
-                    from core.paper_sizing import paper_risk_report_text
-
-                    risk_report = paper_risk_report_text(sizing) if sizing is not None else (
-                        f"Requested risk budget: {float(risk_pct or 0):.2f}%\n"
-                        f"Actual stop risk: unavailable\nPosition-size cap: unknown"
-                    )
-                except Exception:
-                    risk_report = f"Requested risk budget: {float(risk_pct or 0):.2f}%\nActual stop risk: unavailable\nPosition-size cap: unknown"
-                text = (
-                    "📄 Paper Trade Opened\n\n"
-                    f"Asset: {candidate.get('asset')}\n"
-                    f"Direction: {str(candidate.get('direction') or '').upper()}\n"
-                    f"📌 Signal ID: {signal_ref}\n\n"
-                    f"Virtual fill: {float(fill or 0):.8g}\n"
-                    f"Virtual size: {float(getattr(sizing, 'quantity', 0) or 0):.8g}\n"
-                    f"{risk_report}\n"
-                    f"Stop Loss: {float(stop or 0):.8g}\n"
-                    f"Selected target: {float(target or 0):.8g}\n"
-                    f"Entry fee: ${float(getattr(sizing, 'entry_fee', 0) or 0):.4f}\n"
-                    f"Remaining virtual cash: ${float(remaining_cash or 0):,.2f}\n\n"
-                    "Execution evidence:\n"
-                    f"- Paper position: {position_id}\n"
-                    f"- Delivery row: {candidate.get('delivery_id')}\n"
-                    f"- Attempt: {attempt_id}\n"
-                    f"- Canonical position count: {int((execution_evidence or {}).get('position_count') or 0)}\n"
-                    "- Auto-management: ACTIVE for this confirmed paper position\n\n"
-                    "This uses virtual funds only."
-                )
-            else:
-                text = (
-                    "⚠️ Paper Trade Not Opened\n\n"
-                    f"Asset: {candidate.get('asset')}\n"
-                    f"📌 Signal ID: {signal_ref}\n\n"
-                    f"Reason: {reason.replace('_', ' ')}\n\n"
-                    "Use /paper_activity or /paper_settings to review your configuration."
-                )
             async with Bot(token=token) as bot:
-                await bot.send_message(chat_id=int(telegram_user_id), text=text)
+                await bot.send_message(
+                    chat_id=int(telegram_user_id),
+                    text=message_text,
+                )
         except Exception as exc:
             logger.warning(
                 "[paper_notification_failed] user=%s signal=%s decision=%s error=%s",
-                telegram_user_id, candidate.get("signal_id"), decision, type(exc).__name__,
+                telegram_user_id,
+                candidate.get("signal_id"),
+                decision,
+                type(exc).__name__,
             )
 
     async def _open_candidate(self, candidate: dict[str, Any], market_price: float | None) -> str:
         from core.execution_claims import execution_destination_lock
 
+        telegram_id = candidate.get("telegram_user_id")
+        lock_user_id = (
+            int(telegram_id)
+            if telegram_id is not None
+            else -(1_000_000_000_000 + int(candidate["user_id"]))
+        )
         async with execution_destination_lock(
-            int(candidate["telegram_user_id"]), str(candidate["signal_id"]),
+            lock_user_id,
+            str(candidate["signal_id"]),
         ) as claimed:
             if not claimed:
                 logger.warning(
@@ -1332,7 +1464,7 @@ class PaperTradingService:
                 )
             ).scalar_one_or_none()
             if account is None:
-                account = await self.ensure_account(int(user.telegram_user_id), session=session)
+                account = await self._ensure_account_for_user(session, user)
             if account is None:
                 return "skipped"
             execution_mode = str(getattr(user, "execution_mode", "manual") or "manual").strip().lower()
@@ -1362,27 +1494,35 @@ class PaperTradingService:
                 ).scalar_one_or_none()
                 if existing:
                     return "skipped"
-                from services.execution_evidence import get_execution_evidence
+                from services.execution_evidence import (
+                    get_platform_execution_evidence,
+                )
 
-                evidence_before = await get_execution_evidence(
+                evidence_before = await get_platform_execution_evidence(
                     session,
-                    telegram_user_id=int(user.telegram_user_id),
+                    user_id=int(user.id),
                     signal_id=str(candidate["signal_id"]),
                 )
-                if not evidence_before.get("delivery_proven") or evidence_before.get("position_count"):
+                if (
+                    not evidence_before.get("access_proven")
+                    or evidence_before.get("position_count")
+                ):
                     logger.warning(
-                        "[paper_candidate] blocked by canonical evidence user=%s signal=%s evidence=%s",
-                        user.telegram_user_id, candidate.get("signal_id"), evidence_before,
+                        "[paper_candidate] blocked by canonical evidence "
+                        "user=%s signal=%s evidence=%s",
+                        user.id,
+                        candidate.get("signal_id"),
+                        evidence_before,
                     )
                     return "skipped"
                 try:
                     from services.user_intelligence import (
-                        get_user_trading_preferences,
+                        get_platform_user_trading_preferences,
                         signal_matches_preferences,
                     )
-                    profile_prefs = await get_user_trading_preferences(
+                    profile_prefs = await get_platform_user_trading_preferences(
                         session,
-                        int(user.telegram_user_id),
+                        int(user.id),
                     )
                 except Exception as profile_error:
                     logger.warning(
@@ -1718,9 +1858,9 @@ class PaperTradingService:
                                                 "size_cap_reason": sizing.size_cap_reason,
                                             },
                                         )
-                                        execution_evidence = await get_execution_evidence(
+                                        execution_evidence = await get_platform_execution_evidence(
                                             session,
-                                            telegram_user_id=int(user.telegram_user_id),
+                                            user_id=int(user.id),
                                             signal_id=str(candidate["signal_id"]),
                                             expected_reference=str(position.position_id),
                                         )
@@ -1750,7 +1890,13 @@ class PaperTradingService:
                                         )
         if notify is not None:
             await self._notify_paper_decision(
-                telegram_user_id=int(candidate["telegram_user_id"]), candidate=candidate, **notify,
+                telegram_user_id=(
+                    int(candidate["telegram_user_id"])
+                    if candidate.get("telegram_user_id") is not None
+                    else None
+                ),
+                candidate=candidate,
+                **notify,
             )
         if result_status != "opened":
             logger.info(
