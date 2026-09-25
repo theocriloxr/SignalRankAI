@@ -55,9 +55,81 @@ Each role proved:
 6. all live-money/broker/payout switches disabled;
 7. role ownership resolves without hidden `all/dev` monolith fallback.
 
+## Active staging runtime cutover
+
+The long-lived staging roles were cut over only after their exact rollout
+commit passed the zero-secret clean-room verifier. Production remained isolated
+through service watch patterns and did not deploy any staging rollout marker.
+
+| Role | Railway service | Deployment | Commit | Runtime proof |
+|---|---|---|---|---|
+| Analytics | `signalrankai-analytics` | `3a1460b5-0f9a-4272-b5c3-b2fdb92253e3` | `eef229c4658003...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=analytics`; analytics tasks active |
+| Delivery / outcome worker | `bountiful-miracle` | `681bb02a-4abc-49a9-98c3-37b341d83832` | `bcc6e235facfe82c...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=delivery`; delivery/outcome/paper/MT5 reconciliation active |
+| Signal engine | `striking-optimism` | `3d0cb3c4-bbbe-4f02-8156-eb7308920509` | `6d12f5ad69eda516...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=engine`; engine loop active |
+| Frontdoor | `SignalRankAI` | `1598e967-7f6f-41ff-8ad9-36143d7aba02` | `61f3941021c574c...` | release/source PASS; Alembic 0043; schema PASS; `mode=frontdoor`; HTTP/Telegram/scheduler owned; engine/worker loops disabled |
+
+The commit differences between these role deployments contain only
+`staging-rollout/**` marker files. Git comparison showed no application-code
+difference between the active analytics, delivery, engine and frontdoor SHAs.
+
+### Engine multi-asset proof
+
+The active engine reported an all-class profile demand snapshot with six active
+profiles and classes `crypto`, `fx`, `commodity`, `index`, and `stock`.
+Provider discovery reported usable coverage for:
+
+- 250 crypto instruments from the database registry;
+- 16 FX instruments from provider discovery;
+- 23 equities from provider discovery;
+- 5 indices from provider discovery;
+- 4 commodities from provider discovery.
+
+The first post-cutover cycle was correctly crypto-heavy because it ran after
+the Friday close. Runtime market calendars explicitly rejected the non-crypto
+instruments for closed-market reasons: FX and commodities after 22:00 UTC,
+US/UK/European cash indices outside their local sessions, and US equities
+outside the New York cash session. This is evidence of market-hours gating,
+not a crypto-only universe defect.
+
+### Public frontdoor proof
+
+The frontdoor startup reported:
+
+- `runtime_ownership mode=frontdoor`;
+- `http=true`, `telegram=true`, `scheduler=true`;
+- `engine=false`, `worker=false`;
+- Uvicorn listening on port 8080;
+- Railway `GET /healthz` returned HTTP 200;
+- Telegram handlers registered and webhook mode active;
+- webhook URL already registered at the staging Railway domain;
+- webhook pending count = 0 and no last webhook error.
+
+An independent browser fetch of the public staging domain also returned
+`{"status":"ok", ... "resource_state":"OPTIMAL"}` from `/healthz`.
+The public root rendered the SignalRankAI command centre in PAPER mode with
+execution shown as DISABLED.
+
+### Financial safety and production isolation
+
+Throughout migration, certification and active staging cutover:
+
+- `GLOBAL_EXECUTION_KILL_SWITCH=1`;
+- live financial master switch off;
+- real/automatic/copy execution off;
+- live MT5 and Bybit execution off;
+- Hyperliquid mainnet execution off;
+- real/automatic payouts off;
+- Paystack transfers and public payments off;
+- boot-time database migrations off on normal runtime roles.
+
+The production environment received the staging rollout commits only as
+`SKIPPED` deployments. No production service was redeployed and no production
+database migration was performed.
+
 ## Cutover boundary
 
-This evidence certifies branch/schema compatibility. It does **not** enable live
-money, PROP execution, production deployment, or a staging business-loop
-cutover by itself. Actual staging role cutover must preserve the same source,
-schema and financial safety gates and must avoid duplicate ownership.
+Staging business-loop cutover is now verified for analytics, delivery, engine
+and frontdoor on the 0043 architecture. This evidence still does **not** enable
+live money, PROP execution, real payouts, or production deployment. Demo/live
+broker certification and owner-controlled financial activation remain separate
+gates.
