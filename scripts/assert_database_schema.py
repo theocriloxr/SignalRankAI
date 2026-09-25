@@ -68,6 +68,15 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.user_sessions') IS NOT NULL AS user_sessions,
           to_regclass('public.user_acquisition') IS NOT NULL AS user_acquisition,
           to_regclass('public.broker_connections') IS NOT NULL AS broker_connections,
+          to_regclass('public.trading_account_policies') IS NOT NULL AS trading_account_policies,
+          to_regclass('public.broker_reconciliation_state') IS NOT NULL AS broker_reconciliation_state,
+          to_regclass('public.broker_execution_decisions') IS NOT NULL AS broker_execution_decisions,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_executions'
+              AND column_name = 'connection_id'
+          ) AS broker_executions_connection_id,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema() AND table_name = 'signals'
@@ -105,6 +114,10 @@ def check_schema() -> dict[str, Any]:
             "user_sessions",
             "user_acquisition",
             "broker_connections",
+            "trading_account_policies",
+            "broker_reconciliation_state",
+            "broker_execution_decisions",
+            "broker_executions_connection_id",
             "signals_ml_recovery_mode",
             "users_public_user_id",
         )
