@@ -36,6 +36,10 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
     assert "trading_account_policies" in account_policy
     assert "broker_reconciliation_state" in account_policy
+    assert "trading_account_ledger_entries" in account_policy
+    assert "trg_trading_account_ledger_immutable" in account_policy
+    assert "prevent_trading_account_ledger_mutation" in account_policy
+    assert "uq_trading_account_ledger_provider_event" in account_policy
     assert "broker_execution_decisions" in account_policy
     for field in (
         "max_weekly_loss_pct",
@@ -300,7 +304,10 @@ def test_web_multi_account_policy_editor_exposes_hard_risk_controls() -> None:
     assert "JSON.stringify(p.external_rules||{},null,2)" in app
     assert "external_rules:externalRules" in app
     assert "/safety-freeze" in app
+    assert "/ledger?limit=50" in app
+    assert 'id="brokerAccountLedger"' in html
     assert '@router.get("/broker/connections/{connection_id}/policy")' in api
+    assert '@router.get("/broker/connections/{connection_id}/ledger")' in api
     assert '@router.put("/broker/connections/{connection_id}/policy")' in api
     assert '@router.post("/broker/connections/{connection_id}/safety-freeze")' in api
 
@@ -369,3 +376,26 @@ def test_prop_hard_rule_engine_is_generic_versioned_and_exactly_explainable() ->
     assert "unsupported_prop_hard_rule" in policy
     assert 'order_size_unit="LOT"' in mt5
     assert 'order_size_unit="BASE_UNITS"' in bybit
+
+
+def test_canonical_account_ledger_is_append_only_account_scoped_and_provider_authoritative() -> None:
+    migration = source("db/migrations/versions/0043_account_execution_policy.py")
+    model = source("db/models.py")
+    service = source("services/trading_account_ledger.py")
+    mt5 = source("services/mt5_signal_router.py")
+    bybit = source("services/bybit_signal_router.py")
+    reconciler = source("services/bybit_reconciler.py")
+
+    assert "trading_account_ledger_entries" in migration
+    assert "BEFORE UPDATE OR DELETE" in migration
+    assert "uq_trading_account_ledger_provider_event" in migration
+    assert "class TradingAccountLedgerEntry" in model
+    assert "BrokerConnection.user_id == int(user_id)" in service
+    assert "BrokerConnection.connection_id == str(connection_id)" in service
+    assert "on_conflict_do_nothing" in service
+    assert "_safe_metadata" in service
+    assert 'entry_type="order"' in mt5
+    assert 'entry_type="order"' in bybit
+    assert '"entry_type": "realized_pnl"' in reconciler
+    assert '"entry_type": "fee"' in reconciler
+    assert "broker_values_authoritative" in source("web/platform_api.py")
