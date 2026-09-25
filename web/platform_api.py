@@ -1500,6 +1500,16 @@ async def ai_analyze(
 async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "paper_trading")
     uid = int(user["id"])
+    from core.paper_trading_service import paper_trading_service
+
+    # Ensure first-time web users see a real canonical paper account rather
+    # than a transient empty shell before /paper/detail initializes it.
+    snapshot = await paper_trading_service.snapshot(
+        uid,
+        user_identity="platform",
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Paper account is unavailable")
     async with get_session() as session:
         account = (
             await session.execute(text("SELECT * FROM paper_accounts WHERE user_id=:uid LIMIT 1"), {"uid": uid})
@@ -1514,7 +1524,11 @@ async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[st
             )
         ).mappings().all()
         await session.rollback()
-    return {"account": dict(account or {}), "positions": [dict(row) for row in positions]}
+    return {
+        "account": dict(account or {}),
+        "positions": [dict(row) for row in positions],
+        "snapshot": _paper_snapshot_dict(snapshot),
+    }
 
 
 def _paper_snapshot_dict(snapshot: Any) -> dict[str, Any]:
