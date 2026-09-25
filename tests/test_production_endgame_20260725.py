@@ -137,30 +137,28 @@ def test_segment_quarantine_uses_delivery_proof():
 
 
 def test_gemini_429_opens_process_circuit(monkeypatch):
-    from engine import core
+    import services.gemini_ml as gemini
 
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_ENABLED", "1")
+    class RateLimited(Exception):
+        status_code = 429
+
+    class Models:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_content(self, **kwargs):
+            self.calls += 1
+            raise RateLimited("429 rate limited")
+
+    models = Models()
+    fake_client = type("FakeGeminiClient", (), {"models": models})()
+
+    monkeypatch.setattr(gemini, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini, "client", fake_client)
     monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", "1")
     monkeypatch.setenv("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", "900")
-    monkeypatch.setenv("QUALITY_MIN_LOCAL_AI_SCORE", "1")
+    gemini._reset_gemini_provider_circuit_for_tests()
 
-    core._GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
-    core._GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
-    core._GEMINI_REVIEW_WINDOW_CALLS = 0
-    calls = {"count": 0}
-
-    def _rate_limited(*args, **kwargs):
-        calls["count"] += 1
-        raise urllib.error.HTTPError(
-            url="https://example.invalid",
-            code=429,
-            msg="rate limited",
-            hdrs=None,
-            fp=None,
-        )
-
-    monkeypatch.setattr(core.urllib.request, "urlopen", _rate_limited)
     signal = {
         "asset": "BTCUSDT",
         "timeframe": "5m",
@@ -173,40 +171,41 @@ def test_gemini_429_opens_process_circuit(monkeypatch):
     }
     candles = [{"close": 100.0}] * 100
 
-    first = asyncio.run(core._gemini_review_signal(signal, candles, None))
-    second = asyncio.run(core._gemini_review_signal(signal, candles, None))
+    first = asyncio.run(gemini.review_signal_structured(signal, candles, None))
+    second = asyncio.run(gemini.review_signal_structured(signal, candles, None))
 
-    assert calls["count"] == 1
-    assert "rate_limited_degraded" in first[2]
-    assert "rate_limited_circuit_open" in second[2]
+    assert models.calls == 1
+    assert first["ok"] is False
+    assert first["error"] == "rate_limited_degraded"
+    assert second["ok"] is False
+    assert second["error"] == "rate_limited_circuit_open"
+    assert second["circuit_open"] is True
+    gemini._reset_gemini_provider_circuit_for_tests()
 
 
 def test_gemini_404_opens_provider_config_circuit(monkeypatch):
-    from engine import core
+    import services.gemini_ml as gemini
 
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_ENABLED", "1")
+    class MissingModel(Exception):
+        status_code = 404
+
+    class Models:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_content(self, **kwargs):
+            self.calls += 1
+            raise MissingModel("404 model not found")
+
+    models = Models()
+    fake_client = type("FakeGeminiClient", (), {"models": models})()
+
+    monkeypatch.setattr(gemini, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini, "client", fake_client)
     monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", "1")
     monkeypatch.setenv("GEMINI_CONFIG_ERROR_COOLDOWN_SECONDS", "3600")
-    monkeypatch.setenv("QUALITY_MIN_LOCAL_AI_SCORE", "1")
+    gemini._reset_gemini_provider_circuit_for_tests()
 
-    core._GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
-    core._GEMINI_CIRCUIT_REASON = ""
-    core._GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
-    core._GEMINI_REVIEW_WINDOW_CALLS = 0
-    calls = {"count": 0}
-
-    def _missing_model(*args, **kwargs):
-        calls["count"] += 1
-        raise urllib.error.HTTPError(
-            url="https://example.invalid",
-            code=404,
-            msg="model not found",
-            hdrs=None,
-            fp=None,
-        )
-
-    monkeypatch.setattr(core.urllib.request, "urlopen", _missing_model)
     signal = {
         "asset": "BTCUSDT",
         "timeframe": "5m",
@@ -219,12 +218,16 @@ def test_gemini_404_opens_provider_config_circuit(monkeypatch):
     }
     candles = [{"close": 100.0}] * 100
 
-    first = asyncio.run(core._gemini_review_signal(signal, candles, None))
-    second = asyncio.run(core._gemini_review_signal(signal, candles, None))
+    first = asyncio.run(gemini.review_signal_structured(signal, candles, None))
+    second = asyncio.run(gemini.review_signal_structured(signal, candles, None))
 
-    assert calls["count"] == 1
-    assert "provider_http_404_degraded" in first[2]
-    assert "provider_http_404_circuit_open" in second[2]
+    assert models.calls == 1
+    assert first["ok"] is False
+    assert first["error"] == "provider_http_404_degraded"
+    assert second["ok"] is False
+    assert second["error"] == "provider_http_404_circuit_open"
+    assert second["circuit_open"] is True
+    gemini._reset_gemini_provider_circuit_for_tests()
 
 
 def test_engine_uses_provider_neutral_ai_router_instead_of_raw_gemini_http():
