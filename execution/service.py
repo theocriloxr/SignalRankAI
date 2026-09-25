@@ -241,6 +241,8 @@ class ExecutionGate:
         if not tier_decision.allowed:
             reasons.append("tier_not_eligible")
         signal = request.signal or {}
+        if bool(signal.get("ml_recovery_mode")):
+            reasons.append("ML_RECOVERY_SIGNAL_PAPER_ONLY")
         try:
             entry = float(signal.get("entry") or 0)
             stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
