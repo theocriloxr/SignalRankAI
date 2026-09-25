@@ -330,6 +330,7 @@ def reload_shadow_model() -> dict[str, Any]:
             "name": "xgb_candidate",
             "version": None,
             "error": None,
+            "metrics": {},
         })
         _load_shadow_model()
         status = {
@@ -348,17 +349,40 @@ def reload_shadow_model() -> dict[str, Any]:
 
 
 def _load_shadow_model() -> None:
+    shadow_path = os.getenv(
+        "ML_CANDIDATE_MODEL_PATH",
+        str(Path(__file__).parent.parent / "ml" / "model_candidate.json"),
+    )
+    p = Path(shadow_path)
     if _SHADOW_CACHE.get("loaded"):
-        return
-    _SHADOW_CACHE.update({"loaded": True, "booster": None, "feature_cols": [], "error": None})
-    shadow_path = os.getenv("ML_CANDIDATE_MODEL_PATH", str(Path(__file__).parent.parent / "ml" / "model_candidate.json"))
+        if _SHADOW_CACHE.get("booster") is not None:
+            return
+        # A candidate may be persisted by analytics after the engine starts.
+        # Retry bounded durable synchronization instead of caching unavailable
+        # challenger state forever.
+        if not _restore_durable_candidate_if_enabled(p):
+            return
+        _SHADOW_CACHE.update({
+            "loaded": False,
+            "booster": None,
+            "feature_cols": [],
+            "metrics": {},
+            "error": None,
+        })
+    _SHADOW_CACHE.update({
+        "loaded": True,
+        "booster": None,
+        "feature_cols": [],
+        "metrics": {},
+        "error": None,
+    })
     if xgb is None:
         _SHADOW_CACHE["error"] = "xgboost_not_installed"
         return
     assert xgb is not None
-    p = Path(shadow_path)
-    if not p.exists():
-        _restore_durable_candidate_if_enabled(p)
+    # Synchronize the latest durable candidate before trusting an image-baked
+    # local file. Candidate artifacts never become champion implicitly.
+    _restore_durable_candidate_if_enabled(p)
     if not p.exists():
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
