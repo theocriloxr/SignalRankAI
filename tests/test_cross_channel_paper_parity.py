@@ -134,3 +134,35 @@ def test_professional_signal_feed_uses_current_schema_and_cross_channel_receipts
     assert "s.id AS signal_id" not in block
     assert "s.tp1" not in block
     assert "d.sent_at" not in block
+
+
+
+def test_web_paper_ui_no_longer_requires_telegram_link() -> None:
+    js = _source("web/platform_app/app.js")
+    assert "Telegram link required for automatic paper controls." not in js
+    assert "Link Telegram to access delivery-proven paper history" not in js
+    assert "Your account does not need Telegram to use web paper trading." in js
+    assert "receipt_channel||'account'" in js
+
+
+def test_platform_paper_retry_uses_canonical_web_receipt_when_needed() -> None:
+    service = _source("core/paper_trading_service.py")
+    block = service[
+        service.index("async def request_retry"):
+        service.index("async def _open_position_snapshots")
+    ]
+    assert 'canonical_user_id=int(user_id)' in block
+    assert "notification_events" in block
+    assert '"receipt_channel": receipt_channel' in block
+    assert '"delivery_id": delivery_id' in block
+    assert 'user_identity=identity' in block
+
+
+def test_all_web_paper_account_operations_use_platform_identity() -> None:
+    api = _source("web/platform_api.py")
+    block = api[
+        api.index('@router.get("/paper/detail")'):
+        api.index('@router.get("/instruments/search")')
+    ]
+    assert block.count('user_identity="platform"') >= 8
+    assert "_telegram_identity_or_409" not in api
