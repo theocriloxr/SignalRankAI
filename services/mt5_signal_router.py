@@ -427,8 +427,10 @@ class MT5SignalRouter:
         try:
             from db.models import (
                 BrokerConnection,
+                BrokerReconciliationState,
                 MT5Credentials,
                 RuntimeState,
+                TradingAccountPolicyRecord,
                 User,
             )
             from db.session import get_session
@@ -473,10 +475,35 @@ class MT5SignalRouter:
                 connection_execution_enabled = False
                 if connection is not None:
                     from services.broker_connections import account_classification, execution_connection_error
+                    from services.account_policies import public_account_policy
 
                     policy["canonical_user_id"] = canonical_id
                     policy["connection_id"] = str(connection.connection_id)
                     policy["account_classification"] = account_classification(connection)
+
+                    account_policy_row = (
+                        await session.execute(
+                            select(TradingAccountPolicyRecord).where(
+                                TradingAccountPolicyRecord.user_id == canonical_id,
+                                TradingAccountPolicyRecord.connection_id == str(connection.connection_id),
+                            ).limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    reconciliation_row = await session.get(
+                        BrokerReconciliationState,
+                        str(connection.connection_id),
+                    )
+                    policy["account_policy"] = (
+                        public_account_policy(account_policy_row)
+                        if account_policy_row is not None
+                        else None
+                    )
+                    policy["reconciliation_status"] = (
+                        str(reconciliation_row.status).upper()
+                        if reconciliation_row is not None
+                        else "UNKNOWN"
+                    )
+
                     auth_mode = str(connection.auth_mode or "").strip().lower()
                     provider_managed = auth_mode == "provider_secure_link"
                     locally_encrypted = bool(
