@@ -17,7 +17,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0040_cross_channel_paper_receipt"
+        "0041_broker_connection_registry"
     ]
     migration = _source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -27,6 +27,10 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     assert "ALTER COLUMN delivery_id DROP NOT NULL" in migration
     assert "ADD COLUMN IF NOT EXISTS receipt_channel" in migration
     assert "ADD COLUMN IF NOT EXISTS receipt_reference" in migration
+    broker_migration = _source(
+        "db/migrations/versions/0041_broker_connection_registry.py"
+    )
+    assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker_migration
 
 
 def test_paper_attempt_model_preserves_channel_neutral_provenance() -> None:
