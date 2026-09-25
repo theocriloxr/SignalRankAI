@@ -576,12 +576,52 @@ class Worker:
                 pass
 
         while not self._stop.is_set():
+            sleep_for = interval
             try:
+                from db.session import (
+                    AnalyticsWorkDeferred,
+                    DatabaseWorkDeferred,
+                    NoncriticalWriteDropped,
+                )
                 from services.platform.signal_delivery import deliver_recent_web_signals
 
                 result = await deliver_recent_web_signals()
                 if int(result.get("delivered") or 0) or int(result.get("quote_failures") or 0):
                     logger.info("[web_signal_fanout] %s", result)
+            except (NoncriticalWriteDropped, AnalyticsWorkDeferred, DatabaseWorkDeferred) as exc:
+                sleep_for = min(
+                    interval,
+                    max(
+                        2.0,
+                        _env_float(
+                            "WEB_SIGNAL_FANOUT_DB_BUSY_RETRY_SECONDS",
+                            3.0,
+                            minimum=2.0,
+                        ),
+                    ),
+                )
+                logger.info(
+                    "[web_signal_fanout] deferred reason=db_capacity "
+                    "retry_in_s=%.1f err=%s",
+                    sleep_for,
+                    type(exc).__name__,
+                )
+            except TimeoutError:
+                sleep_for = min(
+                    interval,
+                    max(
+                        2.0,
+                        _env_float(
+                            "WEB_SIGNAL_FANOUT_DB_BUSY_RETRY_SECONDS",
+                            3.0,
+                            minimum=2.0,
+                        ),
+                    ),
+                )
+                logger.info(
+                    "[web_signal_fanout] deferred reason=db_wait_timeout retry_in_s=%.1f",
+                    sleep_for,
+                )
             except Exception as exc:
                 logger.warning(
                     "[web_signal_fanout] cycle failed err=%s",
@@ -589,7 +629,7 @@ class Worker:
                     exc_info=True,
                 )
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+                await asyncio.wait_for(self._stop.wait(), timeout=sleep_for)
             except asyncio.TimeoutError:
                 pass
 
