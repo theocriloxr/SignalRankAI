@@ -13,7 +13,12 @@ from typing import Any
 
 from sqlalchemy import select
 
-from db.models import BrokerConnection, RuntimeState, User
+from db.models import (
+    BrokerConnection,
+    RuntimeState,
+    TradingAccountPolicyRecord,
+    User,
+)
 from db.session import get_session
 from utils.timeutils import now_utc_naive
 
@@ -58,14 +63,26 @@ async def create_account_selection_choices(
         if user is None:
             return []
 
-        query = select(BrokerConnection).where(
-            BrokerConnection.user_id == int(user.id),
-            BrokerConnection.execution_enabled.is_(True),
-            BrokerConnection.status.in_(("linked", "ready", "verified")),
+        query = (
+            select(BrokerConnection, TradingAccountPolicyRecord)
+            .join(
+                TradingAccountPolicyRecord,
+                TradingAccountPolicyRecord.connection_id == BrokerConnection.connection_id,
+            )
+            .where(
+                BrokerConnection.user_id == int(user.id),
+                TradingAccountPolicyRecord.user_id == int(user.id),
+                BrokerConnection.execution_enabled.is_(True),
+                BrokerConnection.status.in_(("linked", "ready", "verified")),
+                TradingAccountPolicyRecord.frozen_at.is_(None),
+                TradingAccountPolicyRecord.execution_permission.in_(
+                    ("MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION")
+                ),
+            )
         )
         if provider not in {"", "auto"}:
             query = query.where(BrokerConnection.platform == provider)
-        rows = (
+        pairs = (
             await session.execute(
                 query.order_by(
                     BrokerConnection.is_default.desc(),
@@ -73,12 +90,21 @@ async def create_account_selection_choices(
                     BrokerConnection.created_at.asc(),
                 ).limit(_MAX_CHOICES)
             )
-        ).scalars().all()
+        ).all()
 
         now = now_utc_naive()
         expires = now + timedelta(minutes=_TTL_MINUTES)
         choices: list[dict[str, str]] = []
-        for row in rows:
+        for row, policy in pairs:
+            mode = str(policy.account_mode or "").strip().upper()
+            if mode == "PAPER":
+                continue
+            if mode == "PROP" and (
+                policy.certified_at is None
+                or not str(policy.certification_ref or "").strip()
+                or not str(policy.prop_rules_version or "").strip()
+            ):
+                continue
             token = secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:14]
             state = RuntimeState(
                 key=f"{_TOKEN_PREFIX}{token}",
@@ -88,6 +114,7 @@ async def create_account_selection_choices(
                     "signal_id": signal_ref,
                     "connection_id": str(row.connection_id),
                     "platform": str(row.platform or "").strip().lower(),
+                    "policy_version": int(policy.policy_version),
                 },
                 expires_at=expires,
                 updated_at=now,
@@ -150,6 +177,14 @@ async def consume_account_selection(
                 ).limit(1)
             )
         ).scalar_one_or_none()
+        policy = (
+            await session.execute(
+                select(TradingAccountPolicyRecord).where(
+                    TradingAccountPolicyRecord.connection_id == connection_id,
+                    TradingAccountPolicyRecord.user_id == canonical_user_id,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
         if connection is None or connection.execution_enabled is not True:
             await session.delete(row)
             await session.commit()
@@ -158,6 +193,36 @@ async def consume_account_selection(
             await session.delete(row)
             await session.commit()
             raise PermissionError("account_selection_unavailable")
+        if policy is None:
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("account_policy_required")
+        if int(policy.policy_version or 0) != int(value.get("policy_version") or 0):
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("account_policy_changed")
+        if policy.frozen_at is not None:
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("account_policy_frozen")
+        permission = str(policy.execution_permission or "").strip().upper()
+        if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("execution_permission_blocked")
+        mode = str(policy.account_mode or "").strip().upper()
+        if mode == "PAPER":
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("paper_account_broker_execution_forbidden")
+        if mode == "PROP" and (
+            policy.certified_at is None
+            or not str(policy.certification_ref or "").strip()
+            or not str(policy.prop_rules_version or "").strip()
+        ):
+            await session.delete(row)
+            await session.commit()
+            raise PermissionError("prop_policy_certification_required")
 
         # One-time handle prevents replaying a stale Telegram callback.
         await session.delete(row)
