@@ -16,7 +16,7 @@ def test_release_identity_and_single_migration_head() -> None:
     assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
-    assert audit["heads"] == ["0041_broker_connection_registry"]
+    assert audit["heads"] == ["0043_account_execution_policy"]
 
 
 def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:
