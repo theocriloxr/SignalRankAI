@@ -536,6 +536,9 @@ class MT5Execution(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     signal_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("signals.signal_id"))
+    connection_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("broker_connections.connection_id"), index=True
+    )
     metaapi_account_id: Mapped[str] = mapped_column(String(128))
     order_id: Mapped[Optional[str]] = mapped_column(String(128))
     symbol: Mapped[str] = mapped_column(String(32))
