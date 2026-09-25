@@ -100,3 +100,12 @@ def test_telegram_and_web_events_share_the_canonical_event_writer():
     bot = source[source.index("async def record_bot_event("):source.index("def _env_int", source.index("async def record_bot_event("))]
     assert "record_user_event(" in bot
     assert "BotEvent(" not in bot
+
+
+
+def test_web_fanout_reuses_canonical_platform_preferences():
+    source = Path("services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    assert "get_platform_user_trading_preferences" in source
+    assert "preferences_from_payload" in source
+    assert "signal_matches_preferences" in source
+    assert "telegram_user_id" not in source
