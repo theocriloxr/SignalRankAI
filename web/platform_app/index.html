@@ -269,7 +269,14 @@
 
       <section id="performanceView" class="view" hidden>
         <div class="panel-heading"><div><p class="eyebrow">PROOF-BACKED HISTORY</p><h2>Performance</h2></div></div>
-        <div id="performanceSummary" class="card-grid"></div><p class="muted">Historical outcomes are not guarantees of future performance.</p><div id="performanceBreakdown" class="table-wrap"></div>
+        <div id="performanceSummary" class="card-grid"></div>
+        <p class="muted">Historical outcomes are not guarantees of future performance.</p>
+        <div id="performanceBreakdown" class="table-wrap"></div>
+        <div class="split-grid">
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">DECISION PIPELINE</p><h3>Signal quality</h3></div></div><div id="qualitySummary" class="card-grid compact-card-grid"></div><div id="qualityReasons" class="data-list"></div></article>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">COUNTERFACTUAL LEARNING</p><h3>Shadow report</h3></div></div><div id="shadowSummary" class="card-grid compact-card-grid"></div><p id="shadowMethodology" class="muted"></p><div id="shadowReasons" class="data-list"></div></article>
+        </div>
+        <article id="strategyLeaderboardPanel" class="panel" hidden><div class="panel-heading"><div><p class="eyebrow">ADMIN DIAGNOSTIC</p><h3>Strategy activity</h3></div></div><div id="strategyLeaderboard" class="table-wrap"></div></article>
       </section>
 
       <section id="journalView" class="view" hidden>
@@ -307,6 +314,35 @@
             <fieldset class="profile-span"><legend>Trade lifecycle alerts</legend><div class="choice-grid"><label><input type="checkbox" name="notify_on_entry" /> Entry</label><label><input type="checkbox" name="notify_on_tp" /> Take profit</label><label><input type="checkbox" name="notify_on_sl" /> Stop loss</label><label><input type="checkbox" name="notify_on_exit" /> Exit / close</label></div></fieldset>
             <div class="profile-span form-actions"><button class="primary" type="submit">Save trading profile</button><span id="tradingProfileSync" class="muted">Shared across channels</span></div>
           </form>
+        </article>
+        <article id="brokerPanel" class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">BROKER & EXECUTION</p><h2>MT5 / MetaApi</h2><p>Connect the same broker account used by Telegram, then control execution from this account.</p></div><span id="brokerReadinessBadge" class="status-pill">CHECKING</span></div>
+          <div class="split-grid">
+            <div>
+              <h3>Connection</h3>
+              <div id="brokerStatus" class="detail-list"></div>
+              <form id="brokerLinkForm" class="stack-form">
+                <label>MT5 login<input name="mt5_login" maxlength="64" autocomplete="username" required /></label>
+                <label>MT5 password<input name="mt5_password" type="password" maxlength="256" autocomplete="current-password" required /></label>
+                <label>Broker server<input name="mt5_server" maxlength="128" placeholder="MetaQuotes-Demo" required /></label>
+                <button class="primary" type="submit">Connect / replace MT5 account</button>
+              </form>
+              <p class="muted">The password is encrypted before storage and is never displayed again.</p>
+            </div>
+            <div>
+              <h3>Execution settings</h3>
+              <form id="executionSettingsForm" class="stack-form">
+                <label>Trading mode<select name="trading_mode"><option value="paper">Paper only</option><option value="both">Paper + live</option><option value="live">Live broker</option></select></label>
+                <label>Execution mode<select name="execution_mode"><option value="signals_only">Signals only</option><option value="manual">Manual confirmation</option><option value="auto">Auto execution (VIP)</option><option value="copy_trade">Copy execution (VIP)</option></select></label>
+                <label>Execution provider<select name="execution_provider"><option value="auto">Automatic routing</option><option value="mt5">MT5 / MetaApi</option><option value="bybit">Bybit</option></select></label>
+                <label>Fixed MT5 lot<input name="fixed_lot_size" type="number" min="0.001" max="1" step="0.001" /></label>
+                <label>Daily auto limit<input name="auto_signals_daily_limit" type="number" min="-1" max="100" step="1" /><small>Use -1 for all eligible signals. Safety/risk gates still apply.</small></label>
+                <button class="primary" type="submit">Save execution settings</button>
+              </form>
+              <div id="executionTermsPanel" class="detail-list"></div>
+              <div id="brokerStats" class="detail-list"></div>
+            </div>
+          </div>
         </article>
         <article class="panel"><h2>Refer and earn</h2><p>Share SignalRankAI from the website or Telegram. Your account keeps one referral code across every channel.</p><div id="referralPanel" class="detail-list"></div></article>
         <article class="panel"><h2>Notification preferences</h2><p>These channel and quiet-hour settings follow your account across Telegram, web and mobile.</p><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><label>Quiet from<input type="time" name="quiet_hours_start" /></label><label>Quiet until<input type="time" name="quiet_hours_end" /></label><label>Notification timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><button class="primary" type="submit">Save preferences</button></form></article>
