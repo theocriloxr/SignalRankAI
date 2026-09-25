@@ -1,0 +1,5 @@
+SignalRank staging delivery runtime cutover trigger r2.
+Base includes enforced requirements.lock installation with pip check and the exact-pin SQLAlchemy contract test.
+Purpose: deploy the dedicated delivery/outcome worker on the reproducible dependency graph.
+All real-money execution, payouts, copy trading, and broker live-account paths remain disabled in staging.
+No secrets are stored in this marker.
