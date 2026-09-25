@@ -196,11 +196,11 @@ class ExecutionGate:
                 reasons.append("LIVE_SYMBOL_NOT_ALLOWLISTED")
             if not self.safety_flags.real_execution_enabled:
                 reasons.append("REAL_EXECUTION_DISABLED")
-            if provider == "mt5" and not self.safety_flags.mt5_live_accounts_enabled:
-                reasons.append("MT5_LIVE_ACCOUNTS_DISABLED")
+            if provider in {"mt4", "mt5"} and not self.safety_flags.mt5_live_accounts_enabled:
+                reasons.append("METATRADER_LIVE_ACCOUNTS_DISABLED")
             if provider == "bybit" and not self.safety_flags.bybit_execution_enabled:
                 reasons.append("BYBIT_EXECUTION_DISABLED")
-            if provider not in {"mt5", "bybit"}:
+            if provider not in {"mt4", "mt5", "bybit"}:
                 reasons.append("unsupported_broker_provider")
         if not request.quote_trusted:
             reasons.append("trusted_quote_required")
