@@ -1,7 +1,7 @@
 """provider-neutral broker connection registry
 
 Revision ID: 0041_broker_connection_registry
-Revises: 0040_cross_channel_paper_receipts
+Revises: 0040_cross_channel_paper_receipt
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0041_broker_connection_registry"
-down_revision = "0040_cross_channel_paper_receipts"
+down_revision = "0040_cross_channel_paper_receipt"
 branch_labels = None
 depends_on = None
 
