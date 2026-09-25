@@ -94,6 +94,8 @@ def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
         "certified": row.certified_at is not None,
         "certified_at": _iso(row.certified_at),
         "certification_ref": row.certification_ref,
+        "certified_by_operator": row.certified_by_user_id is not None,
+        "certified_by_authority": row.certified_by_authority,
         "frozen": row.frozen_at is not None,
         "frozen_at": _iso(row.frozen_at),
         "frozen_reason": row.frozen_reason,
@@ -282,6 +284,8 @@ async def configure_account_policy(
         row.external_rules = dict(candidate.extra_rules or {})
         row.certified_at = None
         row.certification_ref = None
+        row.certified_by_user_id = None
+        row.certified_by_authority = None
         row.updated_at = now_utc_naive()
 
         next_meta = dict(connection.meta or {})
@@ -301,11 +305,18 @@ async def certify_prop_policy(
     *,
     certification_ref: str,
     expected_policy_version: int,
+    certified_by_user_id: int,
+    certified_by_authority: str,
 ) -> dict[str, Any]:
-    """Internal certification action; public users cannot self-certify PROP."""
+    """Certify one immutable PROP policy version with privileged provenance."""
     ref = str(certification_ref or "").strip()
     if not ref:
         raise ValueError("certification_ref_required")
+    authority = str(certified_by_authority or "").strip().upper()
+    if authority not in {"OWNER", "ADMIN"}:
+        raise PermissionError("prop_certification_operator_required")
+    if int(certified_by_user_id) <= 0:
+        raise PermissionError("prop_certification_operator_required")
     async with get_session(label="account_policy.certify", timeout_seconds=8.0) as session:
         await _owned_connection(
             session, user_id=int(user_id), connection_id=connection_id, lock=True
@@ -335,6 +346,8 @@ async def certify_prop_policy(
         row.status = "certified"
         row.certified_at = now_utc_naive()
         row.certification_ref = ref[:160]
+        row.certified_by_user_id = int(certified_by_user_id)
+        row.certified_by_authority = authority
         row.updated_at = now_utc_naive()
         await session.commit()
         await session.refresh(row)
