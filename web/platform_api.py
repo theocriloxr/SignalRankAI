@@ -393,7 +393,55 @@ def _present_signal_for_tier(
         payload["ml_probability"] = None
         payload["ml_probability_calibrated"] = None
         payload["expires_at"] = None
+
+    for index in range(int(policy.max_tp_levels) + 1, 4):
+        payload[f"tp{index}_hit_at"] = None
+    if not policy.has("performance_analytics"):
+        for key in (
+            "r_multiple",
+            "pnl_pct",
+            "duration_seconds",
+            "mfe_pct",
+            "mae_pct",
+            "mfe_r",
+            "mae_r",
+        ):
+            payload[key] = None
+    if not policy.has("detailed_provenance"):
+        payload["outcome_provenance"] = None
+    if not policy.has("lifecycle_updates"):
+        for key in (
+            "entry_touched_at",
+            "breakeven_at",
+            "last_price",
+            "last_checked_at",
+        ):
+            payload[key] = None
     return payload
+
+
+def _present_signal_events_for_tier(
+    rows: list[dict[str, Any]] | Any,
+    tier: str,
+) -> list[dict[str, Any]]:
+    policy = get_entitlements(tier)
+    visible: list[dict[str, Any]] = []
+    for row in rows or []:
+        item = dict(row)
+        event_type = str(item.get("event_type") or "").strip().lower()
+        tp_level = 0
+        for index in (1, 2, 3):
+            if f"tp{index}" in event_type:
+                tp_level = index
+                break
+        if tp_level > int(policy.max_tp_levels):
+            continue
+        if not policy.has("lifecycle_updates"):
+            item["price"] = None
+            item["r_multiple"] = None
+            item["meta"] = {}
+        visible.append(item)
+    return visible
 
 
 def _assert_feature(user: dict[str, Any], feature: str) -> None:
@@ -1047,7 +1095,10 @@ async def signal_detail(
             row,
             str(user.get("tier") or "free"),
         ),
-        "events": [dict(event) for event in events],
+        "events": _present_signal_events_for_tier(
+            [dict(event) for event in events],
+            str(user.get("tier") or "free"),
+        ),
         "proof": {
             "access_proven": bool(telegram_proven or web_proven),
             "delivery_channel": channel,
