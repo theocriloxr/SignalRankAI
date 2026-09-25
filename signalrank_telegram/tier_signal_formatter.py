@@ -550,6 +550,11 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
 
 
 def _execution_status_line(signal: DictType[str, Any]) -> str:
+    if bool(signal.get("ml_recovery_mode")):
+        return (
+            "Execution: PAPER ONLY — serving-model recovery signal; "
+            "live broker execution is disabled"
+        )
     mode = _execution_mode(signal)
     if mode == "broker_managed":
         return "Execution: Broker position confirmed — automated management is active for that order"
