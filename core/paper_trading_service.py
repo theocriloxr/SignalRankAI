@@ -318,12 +318,28 @@ class PaperTradingService:
             return None
         return await self._ensure_account_for_user(session, user)
 
-    async def snapshot(self, telegram_user_id: int) -> PaperSnapshot | None:
+    async def snapshot(
+        self,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> PaperSnapshot | None:
+        identity = str(user_identity or "telegram").strip().lower()
         async with get_session(priority="interactive", label="paper.snapshot") as session:
-            account = await self.ensure_account(int(telegram_user_id), session=session)
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
+            if user is None:
+                return None
+            account = await self.ensure_account(
+                int(user_id),
+                session=session,
+                user_identity=identity,
+            )
             if account is None:
                 return None
-            # Persist a newly created account before returning a snapshot.
             await session.commit()
             open_rows = (
                 await session.execute(
@@ -345,7 +361,13 @@ class PaperTradingService:
             unrealized = sum(_safe_float(row.unrealized_pnl) for row in open_rows)
             equity = _safe_float(account.cash_balance) + reserved + unrealized
             return PaperSnapshot(
-                telegram_user_id=int(telegram_user_id),
+                telegram_user_id=(
+                    int(user.telegram_user_id)
+                    if user.telegram_user_id is not None
+                    else None
+                ),
+                user_id=int(user.id),
+                identity=identity,
                 starting_balance=_safe_float(account.starting_balance),
                 cash_balance=_safe_float(account.cash_balance),
                 equity=equity,
@@ -363,28 +385,41 @@ class PaperTradingService:
                 fee_bps=_safe_float(account.fee_bps),
                 target_mode=str(account.target_mode or "TP1").upper(),
                 allowed_directions=str(account.allowed_directions or "both").lower(),
-                allowed_asset_classes=[str(x).lower() for x in (account.allowed_asset_classes or [])],
+                allowed_asset_classes=[
+                    str(x).lower() for x in (account.allowed_asset_classes or [])
+                ],
             )
 
-    async def update_settings(self, telegram_user_id: int, **changes: Any) -> PaperSnapshot | None:
+    async def update_settings(
+        self,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+        **changes: Any,
+    ) -> PaperSnapshot | None:
+        identity = str(user_identity or "telegram").strip().lower()
         allowed = {
             "auto_trade_enabled", "risk_pct", "max_open_positions", "min_signal_score",
             "spread_bps", "slippage_bps", "fee_bps", "target_mode",
             "allowed_directions", "allowed_asset_classes",
         }
         async with get_session(priority="interactive", label="paper.update_settings") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return None
             account = (
                 await session.execute(
-                    select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
+                    select(PaperAccount)
+                    .where(PaperAccount.user_id == int(user.id))
+                    .with_for_update()
                 )
             ).scalar_one_or_none()
             if account is None:
-                account = await self.ensure_account(int(telegram_user_id), session=session)
-            if account is None:
-                return None
+                account = await self._ensure_account_for_user(session, user)
             changed: dict[str, Any] = {}
             for key, value in changes.items():
                 if key not in allowed:
@@ -406,7 +441,11 @@ class PaperTradingService:
                     if value not in {"both", "long", "short"}:
                         raise ValueError("allowed_directions must be both, long, or short")
                 elif key == "allowed_asset_classes":
-                    value = sorted({str(x).strip().lower() for x in (value or []) if str(x).strip()})
+                    value = sorted({
+                        str(x).strip().lower()
+                        for x in (value or [])
+                        if str(x).strip()
+                    })
                 elif key == "auto_trade_enabled":
                     value = bool(value)
                 setattr(account, key, value)
@@ -419,26 +458,46 @@ class PaperTradingService:
                 amount=0.0,
                 balance_after=_safe_float(account.cash_balance),
                 description="Paper settings updated",
-                meta=changed,
+                meta={**changed, "identity": identity},
             ))
             await session.commit()
-        return await self.snapshot(int(telegram_user_id))
+        return await self.snapshot(
+            int(user_id),
+            user_identity=identity,
+        )
 
-    async def reset_account(self, telegram_user_id: int, starting_balance: float) -> PaperSnapshot | None:
-        balance = max(50.0, min(100_000_000.0, _safe_float(starting_balance, self._default_balance())))
+    async def reset_account(
+        self,
+        user_id: int,
+        starting_balance: float,
+        *,
+        user_identity: str = "telegram",
+    ) -> PaperSnapshot | None:
+        identity = str(user_identity or "telegram").strip().lower()
+        balance = max(
+            50.0,
+            min(
+                100_000_000.0,
+                _safe_float(starting_balance, self._default_balance()),
+            ),
+        )
         async with get_session(priority="interactive", label="paper.reset") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return None
             account = (
                 await session.execute(
-                    select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
+                    select(PaperAccount)
+                    .where(PaperAccount.user_id == int(user.id))
+                    .with_for_update()
                 )
             ).scalar_one_or_none()
             if account is None:
-                account = await self.ensure_account(int(telegram_user_id), session=session)
-            if account is None:
-                return None
+                account = await self._ensure_account_for_user(session, user)
             open_count = int((
                 await session.execute(
                     select(func.count(PaperPosition.position_id)).where(
@@ -448,9 +507,13 @@ class PaperTradingService:
                 )
             ).scalar() or 0)
             if open_count:
-                raise ValueError("Close or wait for all paper positions before resetting the account")
+                raise ValueError(
+                    "Close or wait for all paper positions before resetting the account"
+                )
             await session.execute(
-                PaperPosition.__table__.delete().where(PaperPosition.user_id == int(user.id))
+                PaperPosition.__table__.delete().where(
+                    PaperPosition.user_id == int(user.id)
+                )
             )
             account.starting_balance = balance
             account.cash_balance = balance
@@ -463,22 +526,43 @@ class PaperTradingService:
                 amount=0.0,
                 balance_after=balance,
                 description="Paper account reset",
-                meta={"starting_balance": balance},
+                meta={"starting_balance": balance, "identity": identity},
             ))
             await session.commit()
-        return await self.snapshot(int(telegram_user_id))
+        return await self.snapshot(
+            int(user_id),
+            user_identity=identity,
+        )
 
-    async def list_positions(self, telegram_user_id: int, *, status: str = "open", limit: int = 20) -> list[dict[str, Any]]:
+    async def list_positions(
+        self,
+        user_id: int,
+        *,
+        status: str = "open",
+        limit: int = 20,
+        user_identity: str = "telegram",
+    ) -> list[dict[str, Any]]:
+        identity = str(user_identity or "telegram").strip().lower()
         async with get_session(priority="interactive", label="paper.list_positions") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return []
-            query = select(PaperPosition).where(PaperPosition.user_id == int(user.id))
+            query = select(PaperPosition).where(
+                PaperPosition.user_id == int(user.id)
+            )
             if status:
-                query = query.where(PaperPosition.status == str(status).lower())
+                query = query.where(
+                    PaperPosition.status == str(status).lower()
+                )
             rows = (
                 await session.execute(
-                    query.order_by(PaperPosition.opened_at.desc()).limit(max(1, min(100, int(limit))))
+                    query.order_by(PaperPosition.opened_at.desc()).limit(
+                        max(1, min(500, int(limit)))
+                    )
                 )
             ).scalars().all()
             return [self._position_dict(row) for row in rows]
@@ -550,29 +634,62 @@ class PaperTradingService:
             "meta": dict(row.meta or {}),
         }
 
-    async def performance(self, telegram_user_id: int) -> dict[str, Any]:
-        snapshot = await self.snapshot(int(telegram_user_id))
+    async def performance(
+        self,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> dict[str, Any]:
+        identity = str(user_identity or "telegram").strip().lower()
+        snapshot = await self.snapshot(
+            int(user_id),
+            user_identity=identity,
+        )
         if snapshot is None:
             return {}
-        rows = await self.list_positions(int(telegram_user_id), status="closed", limit=500)
+        rows = await self.list_positions(
+            int(user_id),
+            status="closed",
+            limit=500,
+            user_identity=identity,
+        )
         wins = [r for r in rows if _safe_float(r.get("realized_pnl")) > 0]
         losses = [r for r in rows if _safe_float(r.get("realized_pnl")) < 0]
-        flat = [r for r in rows if abs(_safe_float(r.get("realized_pnl"))) < 1e-9]
+        flat = [
+            r for r in rows
+            if abs(_safe_float(r.get("realized_pnl"))) < 1e-9
+        ]
         net = sum(_safe_float(r.get("realized_pnl")) for r in rows)
         gross_win = sum(_safe_float(r.get("realized_pnl")) for r in wins)
         gross_loss = abs(sum(_safe_float(r.get("realized_pnl")) for r in losses))
-        r_values = [_safe_float(r.get("r_multiple")) for r in rows if r.get("r_multiple") is not None]
+        r_values = [
+            _safe_float(r.get("r_multiple"))
+            for r in rows
+            if r.get("r_multiple") is not None
+        ]
         return {
             "snapshot": asdict(snapshot),
             "sample_size": len(rows),
             "wins": len(wins),
             "losses": len(losses),
             "flat": len(flat),
-            "win_rate_pct": (len(wins) / len(rows) * 100.0) if rows else 0.0,
+            "win_rate_pct": (
+                len(wins) / len(rows) * 100.0 if rows else 0.0
+            ),
             "net_pnl": net,
-            "return_pct": (net / snapshot.starting_balance * 100.0) if snapshot.starting_balance > 0 else 0.0,
-            "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else (float("inf") if gross_win > 0 else 0.0),
-            "avg_r": (sum(r_values) / len(r_values)) if r_values else 0.0,
+            "return_pct": (
+                net / snapshot.starting_balance * 100.0
+                if snapshot.starting_balance > 0
+                else 0.0
+            ),
+            "profit_factor": (
+                gross_win / gross_loss
+                if gross_loss > 0
+                else (float("inf") if gross_win > 0 else 0.0)
+            ),
+            "avg_r": (
+                sum(r_values) / len(r_values) if r_values else 0.0
+            ),
         }
 
     async def delivered_r_samples(self, telegram_user_id: int) -> dict[str, Any]:
@@ -1415,30 +1532,60 @@ class PaperTradingService:
             market_price=market_price, finalized=True,
         )
     async def list_attempts(
-        self, telegram_user_id: int, *, decision: str | None = None, limit: int = 20,
+        self,
+        user_id: int,
+        *,
+        decision: str | None = None,
+        limit: int = 20,
+        user_identity: str = "telegram",
     ) -> list[dict[str, Any]]:
+        identity = str(user_identity or "telegram").strip().lower()
         async with get_session(priority="interactive", label="paper.activity") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return []
-            query = select(PaperTradeAttempt, Signal).join(
-                Signal, Signal.signal_id == PaperTradeAttempt.signal_id
-            ).where(PaperTradeAttempt.user_id == int(user.id))
+            query = (
+                select(PaperTradeAttempt, Signal)
+                .join(Signal, Signal.signal_id == PaperTradeAttempt.signal_id)
+                .where(PaperTradeAttempt.user_id == int(user.id))
+            )
             if decision:
-                query = query.where(PaperTradeAttempt.decision == str(decision).upper())
-            rows = (await session.execute(
-                query.order_by(PaperTradeAttempt.created_at.desc()).limit(max(1, min(100, int(limit))))
-            )).all()
+                query = query.where(
+                    PaperTradeAttempt.decision == str(decision).upper()
+                )
+            rows = (
+                await session.execute(
+                    query.order_by(PaperTradeAttempt.created_at.desc()).limit(
+                        max(1, min(100, int(limit)))
+                    )
+                )
+            ).all()
             return [
                 {
                     "attempt_id": attempt.attempt_id,
                     "signal_id": attempt.signal_id,
-                    "display_id": str(getattr(signal, "display_id", "") or attempt.signal_id[:12]),
+                    "display_id": str(
+                        getattr(signal, "display_id", "")
+                        or attempt.signal_id[:12]
+                    ),
                     "asset": signal.asset,
                     "decision": attempt.decision,
                     "reason": attempt.reason,
                     "retryable": bool(attempt.retryable),
                     "attempt_number": int(attempt.attempt_number or 0),
+                    "receipt_channel": str(
+                        getattr(attempt, "receipt_channel", "telegram")
+                        or "telegram"
+                    ),
+                    "receipt_reference": getattr(
+                        attempt,
+                        "receipt_reference",
+                        None,
+                    ),
                     "created_at": attempt.created_at,
                     "next_retry_at": attempt.next_retry_at,
                     "retry_deadline": attempt.retry_deadline,
@@ -1446,11 +1593,24 @@ class PaperTradingService:
                 for attempt, signal in rows
             ]
 
-    async def status_detail(self, telegram_user_id: int) -> dict[str, Any] | None:
-        snapshot = await self.snapshot(int(telegram_user_id))
+    async def status_detail(
+        self,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> dict[str, Any] | None:
+        identity = str(user_identity or "telegram").strip().lower()
+        snapshot = await self.snapshot(
+            int(user_id),
+            user_identity=identity,
+        )
         if snapshot is None:
             return None
-        activity = await self.list_attempts(int(telegram_user_id), limit=100)
+        activity = await self.list_attempts(
+            int(user_id),
+            limit=100,
+            user_identity=identity,
+        )
         counts: dict[str, int] = {}
         for row in activity:
             key = str(row["decision"]).lower()
@@ -1641,71 +1801,118 @@ class PaperTradingService:
 
     async def close_all_positions(
         self,
-        telegram_user_id: int,
+        user_id: int,
         *,
         reason: str = "MANUAL_CLOSE_ALL",
         allow_last_mark_fallback: bool = False,
+        user_identity: str = "telegram",
     ) -> dict[str, int]:
-        """Close every open virtual position at a fresh live quote.
-
-        The command is intentionally explicit and paper-only. Positions without a
-        trustworthy quote remain open and are reported as failed instead of being
-        silently written off at an invented price.
-        """
-        async with get_session(priority="interactive", label="paper.close_all.list") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+        """Close every open virtual position at a fresh live quote."""
+        identity = str(user_identity or "telegram").strip().lower()
+        async with get_session(
+            priority="interactive",
+            label="paper.close_all.list",
+        ) as session:
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return {"open": 0, "closed": 0, "failed": 0}
-            rows = (await session.execute(
-                select(
-                    PaperPosition.position_id,
-                    PaperPosition.asset,
-                    PaperPosition.current_price,
-                    PaperPosition.updated_at,
-                ).where(
-                    PaperPosition.user_id == int(user.id),
-                    func.lower(PaperPosition.status) == "open",
+            rows = (
+                await session.execute(
+                    select(
+                        PaperPosition.position_id,
+                        PaperPosition.asset,
+                        PaperPosition.current_price,
+                        PaperPosition.updated_at,
+                    ).where(
+                        PaperPosition.user_id == int(user.id),
+                        func.lower(PaperPosition.status) == "open",
+                    )
                 )
-            )).all()
+            ).all()
         if not rows:
             return {"open": 0, "closed": 0, "failed": 0}
-        assets = sorted({str(asset) for _, asset, _current_price, _updated_at in rows})
+        assets = sorted({
+            str(asset)
+            for _, asset, _current_price, _updated_at in rows
+        })
         try:
             from engine.price_fetcher import get_live_price_batch
+
             prices = await get_live_price_batch(
-                assets, max_concurrent=_env_int("PAPER_PRICE_CONCURRENCY", 4, 1, 20)
+                assets,
+                max_concurrent=_env_int(
+                    "PAPER_PRICE_CONCURRENCY",
+                    4,
+                    1,
+                    20,
+                ),
             )
         except Exception:
-            logger.exception("[paper_close_all] quote batch failed user=%s", telegram_user_id)
+            logger.exception(
+                "[paper_close_all] quote batch failed user=%s identity=%s",
+                user_id,
+                identity,
+            )
             prices = {}
-        result = {"open": len(rows), "closed": 0, "failed": 0, "last_mark_fallback": 0}
-        max_last_mark_age = _env_int("PAPER_CLOSE_ALL_LAST_MARK_MAX_AGE_SECONDS", 300, 30, 3600)
+        result = {
+            "open": len(rows),
+            "closed": 0,
+            "failed": 0,
+            "last_mark_fallback": 0,
+        }
+        max_last_mark_age = _env_int(
+            "PAPER_CLOSE_ALL_LAST_MARK_MAX_AGE_SECONDS",
+            300,
+            30,
+            3600,
+        )
         now = now_utc_naive()
         for position_id, asset, last_mark, last_updated_at in rows:
             price = _safe_float(prices.get(str(asset)))
             if price <= 0 and allow_last_mark_fallback:
                 try:
-                    mark_age = (now - last_updated_at).total_seconds() if last_updated_at else float("inf")
+                    mark_age = (
+                        (now - last_updated_at).total_seconds()
+                        if last_updated_at
+                        else float("inf")
+                    )
                 except Exception:
                     mark_age = float("inf")
-                if _safe_float(last_mark) > 0 and mark_age <= max_last_mark_age:
+                if (
+                    _safe_float(last_mark) > 0
+                    and mark_age <= max_last_mark_age
+                ):
                     price = _safe_float(last_mark)
                     result["last_mark_fallback"] += 1
                     logger.warning(
-                        "[paper_close_all] using fresh last mark position=%s asset=%s age_s=%.1f",
-                        position_id, asset, mark_age,
+                        "[paper_close_all] using fresh last mark "
+                        "position=%s asset=%s age_s=%.1f",
+                        position_id,
+                        asset,
+                        mark_age,
                     )
             if price <= 0:
                 result["failed"] += 1
                 continue
             try:
                 closed = await self._mark_one(
-                    str(position_id), price, force_exit_reason=str(reason or "MANUAL_CLOSE_ALL")
+                    str(position_id),
+                    price,
+                    force_exit_reason=str(
+                        reason or "MANUAL_CLOSE_ALL"
+                    ),
                 )
                 result["closed" if closed else "failed"] += 1
             except Exception:
                 result["failed"] += 1
-                logger.exception("[paper_close_all] position=%s failed", position_id)
+                logger.exception(
+                    "[paper_close_all] position=%s failed",
+                    position_id,
+                )
         return result
 
     async def loop(self, stop_event: asyncio.Event) -> None:
