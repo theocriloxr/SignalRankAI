@@ -37,10 +37,21 @@ _MODEL_CACHE: dict[str, Any] = {
     "calibration_metrics": {},
 }
 logger = logging.getLogger(__name__)
-_SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
+_SHADOW_CACHE: dict[str, Any] = {
+    "loaded": False,
+    "booster": None,
+    "feature_cols": [],
+    "name": "xgb_candidate",
+    "version": None,
+    "metrics": {},
+    "error": None,
+}
 _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
 _MODEL_RELOAD_LOCK = threading.Lock()
-_DURABLE_MODEL_SYNC_STATE: dict[str, float] = {"last_attempt": 0.0}
+_DURABLE_MODEL_SYNC_STATE: dict[str, float] = {
+    "last_attempt": 0.0,
+    "candidate_last_attempt": 0.0,
+}
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -85,6 +96,42 @@ def _restore_durable_primary_if_enabled(path: Path) -> bool:
         logger.warning("[ml] durable artifact synchronization skipped error=%s", type(exc).__name__)
         return False
 
+
+
+def _restore_durable_candidate_if_enabled(path: Path) -> bool:
+    if not _env_bool("ML_DURABLE_ARTIFACT_SYNC_ENABLED", True):
+        return False
+    try:
+        interval=max(
+            15.0,
+            float(os.getenv("ML_DURABLE_ARTIFACT_SYNC_INTERVAL_SECONDS", "60") or 60),
+        )
+    except Exception:
+        interval=60.0
+    now=time.monotonic()
+    last=float(_DURABLE_MODEL_SYNC_STATE.get("candidate_last_attempt") or 0.0)
+    if now-last < interval:
+        return path.exists()
+    _DURABLE_MODEL_SYNC_STATE["candidate_last_attempt"]=now
+    try:
+        from ml.artifact_store import restore_active_model_artifact_from_database_sync
+
+        restored=restore_active_model_artifact_from_database_sync(
+            path,
+            model_name="candidate",
+            connect_timeout_seconds=int(
+                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
+            ),
+        )
+        if restored:
+            logger.info("[ml-shadow] durable candidate artifact synchronized path=%s", path)
+        return bool(restored or path.exists())
+    except Exception as exc:
+        logger.warning(
+            "[ml-shadow] durable candidate synchronization skipped error=%s",
+            type(exc).__name__,
+        )
+        return path.exists()
 
 
 def _asset_class_to_int(asset: str) -> float:
@@ -136,6 +183,7 @@ def _load_model() -> None:
             "booster": None,
             "path": None,
             "error": None,
+            "metrics": {},
         })
     _MODEL_CACHE.update({"loaded": True, "feature_cols": [], "booster": None, "path": str(_model_path()), "error": None})
 
@@ -310,6 +358,8 @@ def _load_shadow_model() -> None:
     assert xgb is not None
     p = Path(shadow_path)
     if not p.exists():
+        _restore_durable_candidate_if_enabled(p)
+    if not p.exists():
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
     try:
@@ -321,9 +371,69 @@ def _load_shadow_model() -> None:
         _SHADOW_CACHE["booster"] = booster
         _SHADOW_CACHE["feature_cols"] = list(feature_cols)
         _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
+        _SHADOW_CACHE["metrics"] = dict(metadata.get("metrics") or {})
     except Exception as exc:
         _SHADOW_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
+
+
+def score_shadow_signal(signal: Dict[str, Any]) -> dict[str, Any]:
+    """Score one signal with the durable candidate without promoting it."""
+    _load_shadow_model()
+    booster=_SHADOW_CACHE.get("booster")
+    feature_cols: List[str]=_SHADOW_CACHE.get("feature_cols") or []
+    metrics=dict(_SHADOW_CACHE.get("metrics") or {})
+    try:
+        threshold=float(metrics.get("classification_threshold"))
+    except Exception:
+        threshold=0.5
+    threshold=max(0.05, min(0.95, threshold))
+    if booster is None or not feature_cols:
+        return {
+            "available": False,
+            "probability": None,
+            "threshold": threshold,
+            "passed": False,
+            "version": _SHADOW_CACHE.get("version"),
+            "error": _SHADOW_CACHE.get("error") or "candidate_unavailable",
+        }
+    x=_feature_vector(signal, feature_cols)
+    if x is None:
+        return {
+            "available": False,
+            "probability": None,
+            "threshold": threshold,
+            "passed": False,
+            "version": _SHADOW_CACHE.get("version"),
+            "error": "candidate_feature_vector_failed",
+        }
+    try:
+        assert xgb is not None
+        dm=xgb.DMatrix(x, feature_names=feature_cols)
+        preds=booster.predict(dm)
+        del dm
+        if preds is None or len(preds)==0:
+            raise ValueError("empty_candidate_prediction")
+        probability=float(preds[0])
+        if not 0.0 <= probability <= 1.0:
+            raise ValueError("candidate_probability_out_of_range")
+        return {
+            "available": True,
+            "probability": probability,
+            "threshold": threshold,
+            "passed": probability >= threshold,
+            "version": _SHADOW_CACHE.get("version"),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "probability": None,
+            "threshold": threshold,
+            "passed": False,
+            "version": _SHADOW_CACHE.get("version"),
+            "error": type(exc).__name__,
+        }
 
 
 def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool, prob_source: str = "model") -> None:
