@@ -3381,6 +3381,35 @@ async def broker_account_policy(
     return {"policy": policy, "reconciliation": reconciliation}
 
 
+@router.get("/broker/connections/{connection_id}/ledger")
+async def broker_account_ledger(
+    connection_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.trading_account_ledger import list_account_ledger
+
+    try:
+        entries = await list_account_ledger(
+            int(user["id"]),
+            connection_id,
+            limit=limit,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "connection_id": str(connection_id),
+        "entries": entries,
+        "count": len(entries),
+        "broker_values_authoritative": True,
+        "note": (
+            "Only values proven by the broker/provider are recorded. Missing "
+            "deposit, withdrawal, fee, funding or swap data is never inferred."
+        ),
+    }
+
+
 @router.put("/broker/connections/{connection_id}/policy")
 async def update_broker_account_policy(
     connection_id: str,
