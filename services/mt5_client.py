@@ -1006,3 +1006,244 @@ async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
     except Exception:
         logger.debug("[mt5_client] get link status failed", exc_info=True)
     return status
+
+
+
+async def link_platform_mt5_account(
+    user_id: int,
+    mt5_login: str,
+    mt5_password: str,
+    mt5_server: str,
+) -> Dict[str, Any]:
+    """Link MT5 credentials directly to the canonical platform user.
+
+    This is the web/mobile counterpart to link_mt5_account. Credentials are
+    encrypted before persistence and the plaintext password is never returned
+    or logged.
+    """
+    from services.security import encrypt_secret, is_encryption_available
+    from db.session import get_session
+    from sqlalchemy import text
+
+    result: Dict[str, Any] = {
+        "success": False,
+        "credentials_saved": False,
+        "executable": False,
+        "metaapi_account_id": None,
+        "error": None,
+    }
+    canonical_id = int(user_id)
+    login = str(mt5_login or "").strip()
+    server = str(mt5_server or "").strip()
+    password = str(mt5_password or "")
+    if not login or not server or not password:
+        result["error"] = "MT5 login, password and server are required"
+        return result
+    if not is_encryption_available():
+        result["error"] = "Encryption not configured (ENCRYPTION_KEY missing)"
+        return result
+    encrypted_pw = encrypt_secret(password)
+    if not encrypted_pw:
+        result["error"] = "Failed to encrypt password"
+        return result
+
+    metaapi_account_id: Optional[str] = None
+    if _check_token():
+        try:
+            data = await _http_post(
+                _provisioning_base(),
+                {
+                    "name": f"SignalRankAI-user-{canonical_id}",
+                    "type": "cloud",
+                    "login": login,
+                    "password": password,
+                    "server": server,
+                    "platform": "mt5",
+                    "magic": 12345,
+                },
+            )
+            if data and data.get("id"):
+                metaapi_account_id = str(data["id"])
+            else:
+                logger.warning(
+                    "[mt5_client] platform MetaApi provisioning returned no account ID user=%s",
+                    canonical_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "[mt5_client] platform MetaApi provisioning failed user=%s err=%s",
+                canonical_id,
+                type(exc).__name__,
+            )
+
+    try:
+        async with get_session(label="mt5.platform.link", timeout_seconds=10.0) as session:
+            exists = (
+                await session.execute(
+                    text("SELECT 1 FROM users WHERE id=:uid LIMIT 1"),
+                    {"uid": canonical_id},
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                result["error"] = "Canonical user not found"
+                return result
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO mt5_credentials
+                        (user_id, mt5_login, password_encrypted, server,
+                         metaapi_account_id, created_at, updated_at)
+                    VALUES (:uid, :login, :pw_enc, :server, :ma_id, NOW(), NOW())
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET mt5_login=EXCLUDED.mt5_login,
+                            password_encrypted=EXCLUDED.password_encrypted,
+                            server=EXCLUDED.server,
+                            metaapi_account_id=COALESCE(
+                                EXCLUDED.metaapi_account_id,
+                                mt5_credentials.metaapi_account_id
+                            ),
+                            updated_at=NOW()
+                    """
+                ),
+                {
+                    "uid": canonical_id,
+                    "login": login,
+                    "pw_enc": encrypted_pw,
+                    "server": server,
+                    "ma_id": metaapi_account_id,
+                },
+            )
+            await session.commit()
+        result.update(
+            {
+                "success": True,
+                "credentials_saved": True,
+                "executable": bool(metaapi_account_id),
+                "metaapi_account_id": metaapi_account_id,
+            }
+        )
+    except Exception as exc:
+        result["error"] = f"DB save failed: {type(exc).__name__}"
+        logger.error(
+            "[mt5_client] platform credential save failed user=%s err=%s",
+            canonical_id,
+            type(exc).__name__,
+        )
+    return result
+
+
+async def get_platform_mt5_account_id(user_id: int) -> Optional[str]:
+    """Return the stored executable MetaApi account ID for one canonical user."""
+    try:
+        from db.session import get_session
+        from sqlalchemy import text
+
+        async with get_session(label="mt5.platform.account_id", timeout_seconds=5.0) as session:
+            value = (
+                await session.execute(
+                    text(
+                        "SELECT metaapi_account_id FROM mt5_credentials "
+                        "WHERE user_id=:uid LIMIT 1"
+                    ),
+                    {"uid": int(user_id)},
+                )
+            ).scalar_one_or_none()
+            await session.rollback()
+        return str(value).strip() if value else None
+    except Exception:
+        return None
+
+
+async def ensure_platform_mt5_account_id(user_id: int) -> Optional[str]:
+    """Re-provision saved canonical-user MT5 credentials when possible."""
+    existing = await get_platform_mt5_account_id(int(user_id))
+    if existing:
+        return existing
+    if not _check_token():
+        return None
+    try:
+        from db.session import get_session
+        from services.security import decrypt_secret
+        from sqlalchemy import text
+
+        async with get_session(label="mt5.platform.ensure", timeout_seconds=8.0) as session:
+            found = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT mt5_login,password_encrypted,server
+                        FROM mt5_credentials
+                        WHERE user_id=:uid
+                        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                        LIMIT 1
+                        """
+                    ),
+                    {"uid": int(user_id)},
+                )
+            ).first()
+            await session.rollback()
+        if not found:
+            return None
+        password = decrypt_secret(str(found[1] or ""))
+        if not password:
+            return None
+        result = await link_platform_mt5_account(
+            int(user_id),
+            str(found[0] or ""),
+            password,
+            str(found[2] or ""),
+        )
+        return str(result.get("metaapi_account_id") or "").strip() or None
+    except Exception:
+        logger.debug("[mt5_client] platform ensure account id failed", exc_info=True)
+        return None
+
+
+async def get_platform_mt5_link_status(user_id: int) -> Dict[str, Any]:
+    """Return canonical-user MT5 state without exposing encrypted credentials."""
+    status: Dict[str, Any] = {
+        "linked": False,
+        "executable": False,
+        "metaapi_account_id": None,
+        "mt5_login": None,
+        "server": None,
+    }
+    try:
+        from db.session import get_session
+        from sqlalchemy import text
+
+        async with get_session(label="mt5.platform.status", timeout_seconds=5.0) as session:
+            found = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT mt5_login,server,metaapi_account_id
+                        FROM mt5_credentials
+                        WHERE user_id=:uid
+                        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                        LIMIT 1
+                        """
+                    ),
+                    {"uid": int(user_id)},
+                )
+            ).first()
+            await session.rollback()
+        if not found:
+            return status
+        status.update(
+            {
+                "linked": True,
+                "mt5_login": str(found[0] or ""),
+                "server": str(found[1] or ""),
+                "metaapi_account_id": str(found[2] or "") or None,
+                "executable": bool(found[2]),
+            }
+        )
+        if status["linked"] and not status["executable"]:
+            recovered = await ensure_platform_mt5_account_id(int(user_id))
+            if recovered:
+                status["metaapi_account_id"] = recovered
+                status["executable"] = True
+    except Exception:
+        logger.debug("[mt5_client] platform link status failed", exc_info=True)
+    return status
