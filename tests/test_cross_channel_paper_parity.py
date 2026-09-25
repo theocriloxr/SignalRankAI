@@ -23,6 +23,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
         "db/migrations/versions/0040_cross_channel_paper_receipt.py"
     )
     assert 'down_revision = "0039_web_signup_acquisition"' in migration
+    assert len("0040_cross_channel_paper_receipt") <= 32
     assert "ALTER COLUMN delivery_id DROP NOT NULL" in migration
     assert "ADD COLUMN IF NOT EXISTS receipt_channel" in migration
     assert "ADD COLUMN IF NOT EXISTS receipt_reference" in migration
