@@ -142,7 +142,7 @@ def test_subscription_cancel_is_shared_and_never_immediate_downgrade() -> None:
     assert "cancel_auto_renew_for_telegram_user" in telegram
     endpoint = api[
         api.index('@router.post("/billing/cancel-auto-renew")'):
-        api.index('@router.post("/billing/refund-request")')
+        api.index('@router.post("/billing/refund-request", status_code=201)')
     ]
     assert "payload.confirm is not True" in endpoint
     assert "cancel_auto_renew_for_user" in endpoint
@@ -327,7 +327,7 @@ def test_prop_policy_certification_is_privileged_versioned_and_audited() -> None
     assert "certified_by_authority" in models
     configure = service[
         service.index("async def configure_account_policy"):
-        service.index("async def certify_prop_policy"),
+        service.index("async def certify_prop_policy")
     ]
     assert "row.certified_by_user_id = None" in configure
     assert "row.certified_by_authority = None" in configure
@@ -337,15 +337,15 @@ def test_account_policy_changes_and_safety_blocks_are_durably_audited() -> None:
     service = source("services/account_policies.py")
     configure = service[
         service.index("async def configure_account_policy"):
-        service.index("async def certify_prop_policy"),
+        service.index("async def certify_prop_policy")
     ]
     freeze = service[
         service.index("async def set_account_frozen"):
-        service.index("async def reconciliation_snapshot"),
+        service.index("async def reconciliation_snapshot")
     ]
     reconcile = service[
         service.index("async def record_reconciliation"):
-        service.index("async def evaluate_persisted_account_policy"),
+        service.index("async def evaluate_persisted_account_policy")
     ]
 
     assert 'event_type="account_policy_configured"' in configure
@@ -414,7 +414,7 @@ def test_broker_performance_is_composed_per_account_not_mixed_headline() -> None
     app = source("web/platform_app/app.js")
     block = api[
         api.index('@router.get("/broker")'):
-        api.index('@router.post("/broker/mt5")'),
+        api.index('@router.post("/broker/mt5")')
     ]
     assert "mt5_account_stats" in block
     assert "provider_account_stats" in block
