@@ -227,7 +227,12 @@ class BybitV5Client:
         rows = list((payload.get("result") or {}).get("list") or [])
         if not rows:
             raise BybitError("ticker_not_found")
-        return dict(rows[0])
+        ticker = dict(rows[0])
+        # Bybit v5 returns a top-level provider timestamp in milliseconds.
+        # Preserve it so execution can prove quote freshness rather than
+        # assigning a synthetic zero age.
+        ticker["_provider_time_ms"] = payload.get("time")
+        return ticker
 
     async def get_order(
         self,
