@@ -1,0 +1,5 @@
+SignalRank staging engine runtime cutover trigger r3.
+Base includes enforced requirements.lock installation with pip check and exact-pin release contracts.
+Purpose: rebuild the true RUN_MODE=engine signal-generation service on the reproducible dependency graph.
+All real-money execution, payout, copy-trade, and live-broker paths remain disabled in staging.
+No secrets are stored in this marker.
