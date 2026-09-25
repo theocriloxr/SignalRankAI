@@ -410,3 +410,71 @@ async def test_router_submits_only_after_gate_and_durable_reservation(
     assert execute.await_args.kwargs["execution_authorized"] is True
     assert execute.await_args.kwargs["idempotency_key"]
     record.assert_awaited_once()
+
+
+
+def test_premium_manual_confirmed_is_allowed_but_automation_stays_vip() -> None:
+    gate = ExecutionGate(safety_flags=_enabled_safety_flags())
+
+    manual = gate.preflight(
+        _allowed_request(
+            tier="PREMIUM",
+            mode="manual_confirmed",
+        )
+    )
+    automatic = gate.preflight(
+        _allowed_request(
+            tier="PREMIUM",
+            mode="auto",
+        )
+    )
+
+    assert manual.allowed is True
+    assert automatic.allowed is False
+    assert "tier_not_eligible" in automatic.reasons
+
+
+def test_platform_execution_uses_separate_real_account_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("REAL_EXECUTION_ENABLED", "1")
+    monkeypatch.setenv("MT5_LIVE_ACCOUNTS_ENABLED", "1")
+    monkeypatch.setenv("LIVE_EXECUTION_ALLOWED_PLATFORM_USERS", "77")
+    monkeypatch.setenv("LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS", "700")
+    monkeypatch.setenv("LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS", "account-7")
+    monkeypatch.setenv("LIVE_EXECUTION_ALLOWED_PROVIDERS", "mt5")
+    monkeypatch.setenv("LIVE_EXECUTION_ALLOWED_SYMBOLS", "BTCUSD")
+    gate = ExecutionGate(safety_flags=_enabled_safety_flags())
+    request = _allowed_request(
+        user_id=77,
+        signal={
+            "asset": "BTCUSD",
+            "entry": 100.0,
+            "stop_loss": 95.0,
+            "take_profit": 110.0,
+            "direction": "long",
+        },
+        account_is_demo=False,
+        mode="manual_confirmed",
+        tier="PREMIUM",
+        user_identity="platform",
+        canonical_user_id=77,
+    )
+
+    decision = gate.preflight(request)
+
+    # Financial activation may still block a real account in tests; the
+    # identity-specific allowlist itself must not misclassify the platform user.
+    assert "LIVE_PLATFORM_USER_NOT_ALLOWLISTED" not in decision.reasons
+    assert "LIVE_USER_NOT_ALLOWLISTED" not in decision.reasons
+
+
+def test_platform_idempotency_key_is_namespaced_from_telegram() -> None:
+    common = dict(
+        user_id=77,
+        signal_id="sig-77",
+        signal={"entry": 100.0, "stop_loss": 95.0, "direction": "long"},
+        account_id="acct",
+        mode="manual_confirmed",
+    )
+    telegram = ExecutionRequest(**common, user_identity="telegram")
+    platform = ExecutionRequest(**common, user_identity="platform", canonical_user_id=77)
+    assert telegram.key() != platform.key()
