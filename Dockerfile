@@ -24,7 +24,7 @@ COPY . .
 # runner starts; these deterministic tests therefore also execute in the image
 # build and must pass before Railway can deploy the artifact.
 RUN echo "release_gate=20260925_web_broker_parity_v1" \
-    && python -m compileall -q engine db data worker services ml signalrank_telegram \
+    && python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
     && python -m pytest -q \
       tests/test_provider_backed_asset_discovery.py \
       tests/test_cpu_only_xgboost_dependency.py \
