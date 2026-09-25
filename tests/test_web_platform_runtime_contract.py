@@ -207,3 +207,39 @@ def test_web_notification_center_receives_signal_lifecycle_events():
     assert '"surface": "signal_lifecycle"' in tracker
     assert '"outcome_status": status_l' in tracker
     assert '@router.get("/notifications")' in API
+
+
+
+def test_signal_api_enforces_telegram_equivalent_tier_visibility():
+    assert "def _present_signal_for_tier(" in API
+    section = API[
+        API.index("def _present_signal_for_tier("):
+        API.index("def _assert_feature(")
+    ]
+    assert 'payload["entry"] = None' in section
+    assert 'payload["stop_loss"] = None' in section
+    assert 'payload["rr_estimate"] = None' in section
+    assert 'payload["score"] = None' in section
+    assert 'payload["ml_probability"] = None' in section
+    assert 'payload["ml_probability_calibrated"] = None' in section
+    assert 'payload["take_profit"] = targets[: int(policy.max_tp_levels)]' in section
+    assert 'payload["exact_levels_locked"]' in section
+    assert "performance_analytics" in section
+    assert "detailed_provenance" in section
+    assert "lifecycle_updates" in section
+    feed = API[API.index('@router.get("/signals")'):API.index('@router.get("/signals/{signal_id}")')]
+    detail = API[API.index('@router.get("/signals/{signal_id}")'):API.index('@router.post("/signals/{signal_id}/execute")')]
+    assert "_present_signal_for_tier" in feed
+    assert "_present_signal_for_tier" in detail
+    assert "_present_signal_events_for_tier" in detail
+    assert "Premium only" in APP_JS
+
+
+def test_web_signal_fanout_honors_tier_asset_and_delay_policy():
+    source = (ROOT / "services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    assert '"delivery_delay_minutes": int(policy.delivery_delay_minutes)' in source
+    assert '"allowed_asset_classes": tuple(policy.allowed_asset_classes)' in source
+    assert 'signal_class not in set(user["allowed_asset_classes"])' in source
+    assert 'signal_age_minutes < float(user["delivery_delay_minutes"])' in source
+    assert 'counters["blocked_entitlement"]' in source
+    assert 'counters["blocked_delay"]' in source
