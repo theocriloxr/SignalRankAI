@@ -23,10 +23,12 @@ from core.account_policy import (
     policy_from_mapping,
 )
 from db.models import (
+    AdminEvent,
     BrokerConnection,
     BrokerExecutionDecision,
     BrokerReconciliationState,
     TradingAccountPolicyRecord,
+    User,
 )
 from db.session import get_session
 from utils.timeutils import now_utc_naive
@@ -45,6 +47,31 @@ _RECONCILIATION_BLOCKING = {
 
 def _iso(value: Any) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else None
+
+
+def _operator_authority(user: User) -> str | None:
+    """Resolve privileged certification authority from live operator policy."""
+    from config import (
+        ADMIN_IDS,
+        OWNER_IDS,
+        OWNER_TELEGRAM_ID,
+        OWNER_TELEGRAM_IDS,
+    )
+
+    telegram_user_id = int(getattr(user, "telegram_user_id", 0) or 0)
+    owner_ids = {int(value) for value in (OWNER_IDS or set())}
+    owner_ids.update(int(value) for value in (OWNER_TELEGRAM_IDS or set()))
+    if int(OWNER_TELEGRAM_ID or 0) > 0:
+        owner_ids.add(int(OWNER_TELEGRAM_ID))
+    if telegram_user_id > 0 and telegram_user_id in owner_ids:
+        return "OWNER"
+
+    admin_ids = {int(value) for value in (ADMIN_IDS or set())}
+    if telegram_user_id > 0 and telegram_user_id in admin_ids:
+        return "ADMIN"
+    if str(getattr(user, "tier", "") or "").strip().upper() == "ADMIN":
+        return "ADMIN"
+    return None
 
 
 def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
@@ -306,18 +333,25 @@ async def certify_prop_policy(
     certification_ref: str,
     expected_policy_version: int,
     certified_by_user_id: int,
-    certified_by_authority: str,
 ) -> dict[str, Any]:
     """Certify one immutable PROP policy version with privileged provenance."""
     ref = str(certification_ref or "").strip()
     if not ref:
         raise ValueError("certification_ref_required")
-    authority = str(certified_by_authority or "").strip().upper()
-    if authority not in {"OWNER", "ADMIN"}:
-        raise PermissionError("prop_certification_operator_required")
     if int(certified_by_user_id) <= 0:
         raise PermissionError("prop_certification_operator_required")
     async with get_session(label="account_policy.certify", timeout_seconds=8.0) as session:
+        certifier = (
+            await session.execute(
+                select(User).where(User.id == int(certified_by_user_id)).limit(1)
+            )
+        ).scalar_one_or_none()
+        if certifier is None:
+            raise PermissionError("prop_certification_operator_required")
+        authority = _operator_authority(certifier)
+        if authority not in {"OWNER", "ADMIN"}:
+            raise PermissionError("prop_certification_operator_required")
+
         await _owned_connection(
             session, user_id=int(user_id), connection_id=connection_id, lock=True
         )
@@ -349,6 +383,24 @@ async def certify_prop_policy(
         row.certified_by_user_id = int(certified_by_user_id)
         row.certified_by_authority = authority
         row.updated_at = now_utc_naive()
+        session.add(
+            AdminEvent(
+                event_type="prop_policy_certified",
+                actor_telegram_user_id=(
+                    int(certifier.telegram_user_id)
+                    if certifier.telegram_user_id is not None else None
+                ),
+                details={
+                    "target_user_id": int(user_id),
+                    "connection_id": str(connection_id),
+                    "policy_id": str(row.policy_id),
+                    "policy_version": int(row.policy_version),
+                    "certification_ref": ref[:160],
+                    "authority": authority,
+                },
+                created_at=now_utc_naive(),
+            )
+        )
         await session.commit()
         await session.refresh(row)
         return public_account_policy(row)
