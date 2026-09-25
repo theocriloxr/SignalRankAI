@@ -8591,86 +8591,32 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _cancel_and_disable_paystack(user_id: int) -> dict:
-	"""Shared helper: call Paystack /subscription/disable and set auto_renew=False in DB.
-
-	Returns:
-	  {"success": bool, "gateway_cancelled": bool, "tier": str, "retry_attempts": int, "escalate_admin": bool}
-	Used by cancel_confirm_callback to perform the actual cancellation work.
-	"""
+	"""Compatibility wrapper around the canonical account cancellation service."""
 	try:
-		from db.session import get_session
-		from db.models import User
-		from sqlalchemy import select, update as sa_update
-
-		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-			row = await session.execute(
-				select(User).where(User.telegram_user_id == int(user_id))
-			)
-			user = row.scalars().first()
-
-			if not user:
-				return {"success": False, "gateway_cancelled": False, "tier": "free"}
-
-			current_tier = getattr(user, "tier", "free").lower()
-			sub_code = getattr(user, "paystack_subscription_code", None)
-
-			# Disable Paystack recurring billing (2-step: fetch email_token → POST disable)
-			gateway_cancelled = False
-			retry_attempts = 0
-			if sub_code:
-				try:
-					import httpx as _httpx, os as _os
-					secret = _os.getenv("PAYSTACK_SECRET_KEY", "").strip()
-					if secret:
-						try:
-							max_retries = max(1, int(_os.getenv("PAYSTACK_CANCEL_RETRY_ATTEMPTS", "3") or 3))
-						except Exception:
-							max_retries = 3
-						headers = {
-							"Authorization": f"Bearer {secret}",
-							"Content-Type": "application/json",
-						}
-						for attempt in range(1, max_retries + 1):
-							retry_attempts = attempt
-							async with _httpx.AsyncClient(timeout=15) as client:
-								# Step 1: fetch subscription to get email_token
-								r1 = await client.get(
-									f"https://api.paystack.co/subscription/{sub_code}",
-									headers=headers,
-								)
-								email_token = ""
-								if r1.status_code < 400:
-									email_token = (r1.json().get("data") or {}).get("email_token", "")
-								# Step 2: disable with code + email_token
-								r2 = await client.post(
-									"https://api.paystack.co/subscription/disable",
-									json={"code": sub_code, "token": email_token},
-									headers=headers,
-								)
-								gateway_cancelled = r2.status_code < 400
-								if gateway_cancelled:
-									break
-				except Exception as _ge:
-					# Non-fatal — DB cancellation still proceeds
-					logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
-
-			# Mark auto_renew=False; access expires naturally at period end (no downgrade)
-			await session.execute(
-				sa_update(User).where(User.id == user.id).values(auto_renew=False)
-			)
-			await session.commit()
-			return {
-				"success": True,
-				"gateway_cancelled": gateway_cancelled,
-				"tier": current_tier,
-				"retry_attempts": int(retry_attempts),
-				"escalate_admin": bool(sub_code and not gateway_cancelled),
-			}
-
-	except Exception as e:
-		logger.error(f"[cancel] _cancel_and_disable_paystack failed for user {user_id}: {e}")
-		return {"success": False, "gateway_cancelled": False, "tier": "free", "retry_attempts": 0, "escalate_admin": True}
-
+		from services.subscription_cancellation import (
+			cancel_auto_renew_for_telegram_user,
+		)
+		result = await cancel_auto_renew_for_telegram_user(int(user_id))
+		return {
+			"success": bool(result.get("success")),
+			"gateway_cancelled": bool(result.get("gateway_cancelled")),
+			"tier": str(result.get("tier") or "free"),
+			"retry_attempts": int(result.get("retry_attempts") or 0),
+			"escalate_admin": bool(result.get("provider_follow_up_required")),
+		}
+	except Exception as exc:
+		logger.exception(
+			"[cancel] canonical cancellation failed user=%s error=%s",
+			user_id,
+			type(exc).__name__,
+		)
+		return {
+			"success": False,
+			"gateway_cancelled": False,
+			"tier": "free",
+			"retry_attempts": 0,
+			"escalate_admin": True,
+		}
 
 async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Step 2 of /cancel (confirmed) — execute Paystack disable + set auto_renew=False.
