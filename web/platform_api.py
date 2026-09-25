@@ -311,7 +311,7 @@ class TradingProfileUpdateRequest(BaseModel):
 
 class SignalExecutionRequest(BaseModel):
     confirm: bool
-    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5)$")
+    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5|bybit)$")
     connection_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
@@ -1282,15 +1282,25 @@ async def execute_signal_from_platform(
     signal["evidence_signal_id"] = ref
     signal["execution_source"] = "web_manual_confirmed"
 
-    from services.mt5_signal_router import route_platform_signal_to_metatrader
+    if payload.provider == "bybit":
+        from services.bybit_signal_router import route_platform_signal_to_bybit
 
-    result = await route_platform_signal_to_metatrader(
-        signal,
-        uid,
-        platform=payload.provider,
-        execution_mode="manual_confirmed",
-        connection_id=payload.connection_id,
-    )
+        result = await route_platform_signal_to_bybit(
+            signal,
+            uid,
+            execution_mode="manual_confirmed",
+            connection_id=payload.connection_id,
+        )
+    else:
+        from services.mt5_signal_router import route_platform_signal_to_metatrader
+
+        result = await route_platform_signal_to_metatrader(
+            signal,
+            uid,
+            platform=payload.provider,
+            execution_mode="manual_confirmed",
+            connection_id=payload.connection_id,
+        )
     if not result.success:
         error = str(result.error or "execution_blocked")
         blocked_markers = (
