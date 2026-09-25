@@ -819,12 +819,13 @@ class PaperTradingService:
                 ).scalar()
                 or 0
             )
+            terminal_count = len(seen)
             return {
                 "r_values": r_values,
                 "first": min(times) if times else None,
                 "last": max(times) if times else None,
                 "delivered_total": delivered_total,
-                "pending_delivered": max(0, delivered_total - len(seen)),
+                "pending_delivered": max(0, delivered_total - terminal_count),
                 "partial_milestones": partial_milestones,
             }
 
