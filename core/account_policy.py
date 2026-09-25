@@ -366,7 +366,11 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             field_name="max_total_drawdown_pct",
             default="0.08",
         ),
-        max_open_positions=int(value.get("max_open_positions") or 0),
+        max_open_positions=int(
+            value.get("max_open_positions")
+            if value.get("max_open_positions") is not None
+            else 3
+        ),
         max_leverage=_decimal(
             value.get("max_leverage"),
             field_name="max_leverage",
