@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Mapping
@@ -280,8 +281,24 @@ async def _route_signal_to_bybit_for_identity(
             wallet_equity = float(accounts[0].get("totalEquity") or accounts[0].get("totalWalletBalance") or 0)
         ticker = await client.get_ticker(symbol) if account_ready else {}
         quote_value = float(ticker.get("lastPrice") or 0)
+        provider_time_ms = int(float(ticker.get("_provider_time_ms") or 0))
+        quote_age = (
+            max(0.0, time.time() - (provider_time_ms / 1000.0))
+            if provider_time_ms > 0
+            else float("inf")
+        )
+        max_quote_age = max(
+            1.0,
+            float(os.getenv("BYBIT_MAX_QUOTE_AGE_SECONDS", "10") or 10),
+        )
         wallet_ok = wallet_equity > 0
-        quote_ok = quote_value > 0 and abs(quote_value - entry) / entry <= float(os.getenv("BYBIT_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
+        quote_ok = (
+            quote_value > 0
+            and math.isfinite(quote_age)
+            and quote_age <= max_quote_age
+            and abs(quote_value - entry) / entry
+            <= float(os.getenv("BYBIT_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
+        )
         positions = await client.get_positions(symbol=symbol) if account_ready else []
         reconciliation_ok = isinstance(positions, list)
         has_open_position = any(float(item.get("size") or 0) > 0 for item in positions)
@@ -462,7 +479,7 @@ async def _route_signal_to_bybit_for_identity(
         account_is_demo=sandbox,
         credentials_encrypted=bool(key_enc and secret_enc),
         quote_age_seconds=quote_age,
-        max_quote_age_seconds=10.0,
+        max_quote_age_seconds=max_quote_age if "max_quote_age" in locals() else 10.0,
         broker_healthy=bool(account_ready and wallet_ok and quote_ok),
         resources_available=await _resources_available(),
         reconciliation_ready=reconciliation_ok,
