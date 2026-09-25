@@ -178,15 +178,13 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
             (
                 await session.execute(
                     select(User)
-                    .join(
-                        text("notification_preferences"),
-                        text("notification_preferences.user_id = users.id"),
-                        isouter=True,
-                    )
                     .where(
                         User.is_blocked.is_(False),
                         User.is_suspended.is_(False),
-                        text("COALESCE(notification_preferences.web_enabled, TRUE) IS TRUE"),
+                        text(
+                            "COALESCE((SELECT np.web_enabled FROM notification_preferences np "
+                            "WHERE np.user_id=users.id), TRUE) IS TRUE"
+                        ),
                     )
                     .order_by(User.id)
                     .limit(
