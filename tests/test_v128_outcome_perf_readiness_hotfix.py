@@ -43,3 +43,13 @@ def test_readiness_requires_direct_railway_observability_routes() -> None:
 def test_current_environment_profiles_are_present() -> None:
     assert (ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").exists()
     assert (ROOT / "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example").exists()
+
+
+
+def test_web_receipts_are_additive_to_strict_telegram_outcome_proof() -> None:
+    source = (ROOT / "engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
+    assert "def _verified_telegram_delivery_exists(" in source
+    assert "SignalDelivery.sent_ok.is_(True)" in source
+    assert "SignalDelivery.telegram_message_id.is_not(None)" in source
+    assert "_web_signal_receipt_exists_clause()" in source
+    assert "notification_events" in source
