@@ -498,6 +498,7 @@ class MT5SignalRouter:
                         if account_policy_row is not None
                         else None
                     )
+                    policy["policy_persisted"] = account_policy_row is not None
                     policy["reconciliation_status"] = (
                         str(reconciliation_row.status).upper()
                         if reconciliation_row is not None
@@ -1095,7 +1096,7 @@ class MT5SignalRouter:
             connection_id_value = str(policy.get("connection_id") or "")
             reconciliation_ready = bool(reconciliation.get("ready"))
 
-            if canonical_user_id and connection_id_value:
+            if canonical_user_id and connection_id_value and policy.get("policy_persisted"):
                 try:
                     from services.account_policies import record_reconciliation
 
@@ -1245,7 +1246,7 @@ class MT5SignalRouter:
             # diagnostics, but inability to persist it blocks any real-money
             # account because auditability is part of the live safety contract.
             decision_evidence_ok = False
-            if canonical_user_id and connection_id_value:
+            if canonical_user_id and connection_id_value and policy.get("policy_persisted"):
                 try:
                     from services.account_policies import record_execution_decision
 
