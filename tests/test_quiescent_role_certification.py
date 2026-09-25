@@ -122,3 +122,18 @@ def test_start_sh_invokes_quiescent_runner_as_module() -> None:
     root = Path(__file__).resolve().parents[1]
     start = (root / "start.sh").read_text(encoding="utf-8")
     assert "exec python -u -m scripts.quiescent_role" in start
+
+
+def test_quiescent_certification_accepts_frontdoor_without_starting_business_loops() -> None:
+    env = _base()
+    env["RUN_MODE"] = "frontdoor"
+    env["SERVICE_ROLE"] = "frontdoor"
+    env["DB_ROLE"] = "frontdoor"
+    report = validate_quiescent_environment(env)
+    assert report["status"] == "PASS"
+    assert report["role"] == "frontdoor"
+    assert report["http_owned"] is True
+    assert report["telegram_owned"] is True
+    assert report["scheduler_owned"] is True
+    assert report["engine_owned"] is False
+    assert report["worker_owned"] is False
