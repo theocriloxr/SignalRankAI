@@ -2613,14 +2613,28 @@ async def update_execution_settings(
         if mode in {"auto", "copy_trade"}:
             _assert_feature(user, "execution_preflight")
     trading_mode = values.get("trading_mode")
-    if trading_mode in {"live", "both"}:
-        from services.mt5_client import get_platform_mt5_link_status
-        broker = await get_platform_mt5_link_status(uid)
-        if not broker.get("executable") and str(values.get("execution_provider") or "auto") != "bybit":
-            raise HTTPException(status_code=409, detail="Link and verify an executable broker account before enabling live mode")
 
     async with get_session(label="platform.execution_settings", timeout_seconds=10.0) as session:
         current = await get_platform_user_trading_preferences(session, uid)
+        effective_provider = str(
+            values.get("execution_provider")
+            or current.execution_provider
+            or "auto"
+        ).strip().lower()
+        effective_trading_mode = str(
+            trading_mode
+            or current.trading_mode
+            or "paper"
+        ).strip().lower()
+        if effective_trading_mode in {"live", "both"} and effective_provider != "bybit":
+            from services.mt5_client import get_platform_mt5_link_status
+
+            broker = await get_platform_mt5_link_status(uid)
+            if not broker.get("executable"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Link and verify an executable MT5 account before enabling live mode",
+                )
         merged = preferences_to_payload(current)
         for key in ("execution_mode", "trading_mode", "execution_provider"):
             if key in values and values[key] is not None:
@@ -2647,18 +2661,40 @@ async def update_execution_settings(
                 {"uid": uid},
             )
         ).scalar_one_or_none()
+        optin_keys = [
+            f"autoexec_platform_optin:{uid}",
+            f"copyexec_platform_optin:{uid}",
+        ]
         if telegram_id is not None:
-            for key_name in (
-                f"autoexec_user_optin:{int(telegram_id)}",
-                f"copyexec_user_optin:{int(telegram_id)}",
-            ):
-                await session.execute(text("DELETE FROM runtime_state WHERE key=:key"), {"key": key_name})
-            if updated.execution_mode in {"auto", "copy_trade"}:
-                key_name = (
-                    f"copyexec_user_optin:{int(telegram_id)}"
+            optin_keys.extend(
+                [
+                    f"autoexec_user_optin:{int(telegram_id)}",
+                    f"copyexec_user_optin:{int(telegram_id)}",
+                ]
+            )
+        for key_name in optin_keys:
+            await session.execute(
+                text("DELETE FROM runtime_state WHERE key=:key"),
+                {"key": key_name},
+            )
+
+        if updated.execution_mode in {"auto", "copy_trade"}:
+            selected_keys = [
+                (
+                    f"copyexec_platform_optin:{uid}"
                     if updated.execution_mode == "copy_trade"
-                    else f"autoexec_user_optin:{int(telegram_id)}"
+                    else f"autoexec_platform_optin:{uid}"
                 )
+            ]
+            if telegram_id is not None:
+                selected_keys.append(
+                    (
+                        f"copyexec_user_optin:{int(telegram_id)}"
+                        if updated.execution_mode == "copy_trade"
+                        else f"autoexec_user_optin:{int(telegram_id)}"
+                    )
+                )
+            for key_name in selected_keys:
                 await session.execute(
                     text(
                         """
@@ -2671,7 +2707,11 @@ async def update_execution_settings(
                     {
                         "key": key_name,
                         "value": json.dumps(
-                            {"enabled": True, "provider": updated.execution_provider},
+                            {
+                                "enabled": True,
+                                "provider": updated.execution_provider,
+                                "source": "platform",
+                            },
                             separators=(",", ":"),
                         ),
                     },
