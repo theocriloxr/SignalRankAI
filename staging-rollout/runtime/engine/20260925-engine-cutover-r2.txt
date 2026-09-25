@@ -1,0 +1,5 @@
+SignalRank staging engine runtime cutover trigger r2.
+Purpose: rebuild the true RUN_MODE=engine service from the certified 0043 blueprint after topology remapping.
+Delivery service ownership has been moved to staging-rollout/runtime/delivery/**.
+All live-money execution and payout flags remain hard-disabled for staging.
+No secrets are stored in this marker.
