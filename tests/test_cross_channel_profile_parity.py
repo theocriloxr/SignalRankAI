@@ -71,3 +71,23 @@ def test_profile_backfill_is_idempotent_and_never_overwrites_canonical_records()
     assert "sys.path.insert(0, str(Path(__file__).resolve().parents[1]))" in script
     assert "if apply:" in script
     assert "await session.rollback()" in script
+
+
+
+def test_canonical_mt5_helpers_do_not_require_telegram_identity():
+    source = Path("services/mt5_client.py").read_text(encoding="utf-8")
+    assert "async def link_platform_mt5_account(" in source
+    assert "async def get_platform_mt5_link_status(" in source
+    section = source[source.index("async def link_platform_mt5_account("):]
+    assert "WHERE id=:uid" in section
+    assert "WHERE user_id=:uid" in section
+    assert "telegram_user_id" not in section[:section.index("async def get_platform_mt5_account_id")]
+
+
+def test_web_execution_settings_reuse_canonical_cross_channel_preferences():
+    source = Path("web/platform_api.py").read_text(encoding="utf-8")
+    section = source[source.index('@router.put("/execution-settings")'):source.index('@router.delete("/devices/{session_id}")')]
+    assert "get_platform_user_trading_preferences" in section
+    assert "set_platform_user_trading_preferences" in section
+    assert "autoexec_user_optin:" in section
+    assert "copyexec_user_optin:" in section
