@@ -151,6 +151,15 @@ async def list_connections(user_id: int) -> list[dict[str, Any]]:
     return [public_connection(row) for row in rows]
 
 
+def _mask_account_ref(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if len(raw) <= 4:
+        return "*" * len(raw)
+    return ("*" * min(8, len(raw) - 4)) + raw[-4:]
+
+
 def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
     def get(name: str, default: Any = None) -> Any:
         if isinstance(row, dict):
@@ -163,7 +172,7 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "connector": str(get("connector") or ""),
         "broker_name": get("broker_name"),
         "account_label": get("account_label"),
-        "account_ref": get("account_ref"),
+        "account_ref_masked": _mask_account_ref(get("account_ref")),
         "external_account_id": get("external_account_id"),
         "environment": str(get("environment") or "unknown"),
         "auth_mode": str(get("auth_mode") or "existing"),
