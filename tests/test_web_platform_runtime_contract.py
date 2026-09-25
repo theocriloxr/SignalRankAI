@@ -258,6 +258,19 @@ def test_web_signal_fanout_waits_for_db_capacity_instead_of_dropping():
         fanout.index("async def deliver_recent_web_signals")
     ]
     assert 'label="platform.web_signal_fanout.snapshot"' in snapshot
+    assert 'priority="interactive"' in snapshot
     assert "drop_if_busy=False" in snapshot
     assert "WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS" in snapshot
     assert "drop_if_busy=True" not in snapshot
+    persist = fanout[fanout.index('label="platform.web_signal_fanout.persist"') - 80:]
+    assert 'priority="interactive"' in persist[:220]
+
+
+
+def test_web_delivery_priority_matches_authoritative_telegram_receipts():
+    fanout = (ROOT / "services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    telegram = (ROOT / "delivery/worker.py").read_text(encoding="utf-8")
+    assert 'priority="interactive"' in fanout
+    assert "priority=DBPriority.INTERACTIVE" in telegram
+    assert 'label="platform.web_signal_fanout.snapshot"' in fanout
+    assert 'label="platform.web_signal_fanout.persist"' in fanout
