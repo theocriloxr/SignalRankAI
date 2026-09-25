@@ -159,6 +159,9 @@ class AccountRiskSnapshot:
     weekend_hold_expected: bool = False
     account_is_demo: bool | None = None
     reconciliation_ready: bool = True
+    # Real-money decisions require broker/reconciliation-derived daily and
+    # peak-equity baselines; current equity alone cannot prove loss headroom.
+    loss_baselines_verified: bool = False
 
     def __post_init__(self) -> None:
         for name in (
@@ -247,6 +250,8 @@ def evaluate_account_policy(
     elif policy.account_mode in {"LIVE_PERSONAL", "PROP"}:
         if snapshot.account_is_demo is not False:
             reasons.append("live_account_classification_mismatch")
+        if not snapshot.loss_baselines_verified:
+            reasons.append("loss_baseline_unavailable")
 
     if policy.account_mode == "PROP":
         if not policy.certified or not str(policy.certification_ref or "").strip():
