@@ -1,13 +1,13 @@
 """canonical web paper-trading receipt provenance
 
-Revision ID: 0040_cross_channel_paper_receipt
+Revision ID: 0040_cross_channel_paper_receipts
 Revises: 0039_web_signup_acquisition
 """
 from __future__ import annotations
 
 from alembic import op
 
-revision = "0040_cross_channel_paper_receipt"
+revision = "0040_cross_channel_paper_receipts"
 down_revision = "0039_web_signup_acquisition"
 branch_labels = None
 depends_on = None
