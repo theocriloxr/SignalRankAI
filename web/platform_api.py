@@ -1202,11 +1202,12 @@ async def execute_signal_from_platform(
     signal["evidence_signal_id"] = ref
     signal["execution_source"] = "web_manual_confirmed"
 
-    from services.mt5_signal_router import route_platform_signal_to_mt5
+    from services.mt5_signal_router import route_platform_signal_to_metatrader
 
-    result = await route_platform_signal_to_mt5(
+    result = await route_platform_signal_to_metatrader(
         signal,
         uid,
+        platform=payload.provider,
         execution_mode="manual_confirmed",
     )
     if not result.success:
@@ -1235,14 +1236,14 @@ async def execute_signal_from_platform(
                 "code": error,
                 "message": result.message,
                 "signal_id": ref,
-                "provider": "mt5",
+                "provider": payload.provider,
             },
         )
 
     return {
         "submitted": True,
         "signal_id": ref,
-        "provider": "mt5",
+        "provider": payload.provider,
         "order_id": result.order_id,
         "message": result.message,
         "executed_at": result.executed_at,
@@ -3029,9 +3030,12 @@ async def remove_broker_connection(
 async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "broker_connection")
     uid = int(user["id"])
+    from services.broker_connections import list_connections, platform_catalog
     from services.mt5_client import get_platform_mt5_link_status
 
     mt5 = await get_platform_mt5_link_status(uid)
+    connections = await list_connections(uid)
+    platforms = platform_catalog(str(user.get("tier") or "free"))
     async with get_session(label="platform.broker.status", timeout_seconds=8.0) as session:
         account = (
             await session.execute(
@@ -3079,6 +3083,8 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
     account_payload = dict(account or {})
     return {
         "mt5": mt5,
+        "connections": connections,
+        "platforms": platforms,
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
             "trading_mode": str(prefs.trading_mode or "paper"),
@@ -3110,27 +3116,42 @@ async def link_broker_mt5(
     payload: BrokerLinkRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    """Backward-compatible MT5 endpoint routed through the generic registry."""
     _assert_feature(user, "broker_connection")
     if not is_encryption_available():
-        raise HTTPException(status_code=503, detail="Secure broker credential storage is unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="Secure broker credential storage is unavailable",
+        )
     if not str(os.getenv("META_API_TOKEN") or "").strip():
-        raise HTTPException(status_code=503, detail="MT5/MetaApi connection is not configured")
-    from services.mt5_client import link_platform_mt5_account, get_platform_mt5_link_status
+        raise HTTPException(
+            status_code=503,
+            detail="MT5/MetaApi connection is not configured",
+        )
+    from services.broker_connections import assert_connection_capacity
+    from services.mt5_client import link_platform_metatrader_account
 
-    result = await link_platform_mt5_account(
+    try:
+        await assert_connection_capacity(
+            int(user["id"]),
+            str(user.get("tier") or "free"),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    result = await link_platform_metatrader_account(
         int(user["id"]),
-        payload.mt5_login,
-        payload.mt5_password,
-        payload.mt5_server,
+        platform="mt5",
+        login=payload.mt5_login,
+        password=payload.mt5_password,
+        server=payload.mt5_server,
+        account_label="MetaTrader 5",
     )
     if not result.get("success"):
-        raise HTTPException(status_code=502, detail=str(result.get("error") or "MT5 account linking failed"))
-    return {
-        "linked": True,
-        "credentials_saved": bool(result.get("credentials_saved")),
-        "executable": bool(result.get("executable")),
-        "status": await get_platform_mt5_link_status(int(user["id"])),
-    }
+        raise HTTPException(
+            status_code=502,
+            detail=str(result.get("error") or "MT5 account linking failed"),
+        )
+    return result
 
 
 @router.post("/execution-terms/accept")
@@ -3190,13 +3211,28 @@ async def update_execution_settings(
             or "paper"
         ).strip().lower()
         if effective_trading_mode in {"live", "both"} and effective_provider != "bybit":
-            from services.mt5_client import get_platform_mt5_link_status
+            from services.mt5_client import get_platform_metatrader_connection
 
-            broker = await get_platform_mt5_link_status(uid)
-            if not broker.get("executable"):
+            platform_filter = (
+                effective_provider
+                if effective_provider in {"mt4", "mt5"}
+                else None
+            )
+            broker = await get_platform_metatrader_connection(
+                uid,
+                platform=platform_filter,
+            )
+            if not broker or not broker.get("external_account_id"):
                 raise HTTPException(
                     status_code=409,
-                    detail="Link and verify an executable MT5 account before enabling live mode",
+                    detail="Link a MetaTrader account before enabling broker mode",
+                )
+            if str(broker.get("status") or "").lower() not in {
+                "linked", "ready", "verified"
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Verify the MetaTrader connection before enabling broker mode",
                 )
         merged = preferences_to_payload(current)
         for key in ("execution_mode", "trading_mode", "execution_provider"):
