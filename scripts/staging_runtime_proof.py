@@ -245,6 +245,10 @@ def evaluate(
             blockers.append(f"missing_table:{name}")
     if not report.get("users_public_user_id"):
         blockers.append("missing_column:users.public_user_id")
+    if report.get("broker_executions_connection_id") is not True:
+        blockers.append("missing_column:broker_executions.connection_id")
+    if report.get("mt5_executions_connection_id") is not True:
+        blockers.append("missing_column:mt5_executions.connection_id")
     counts = report.get("catalogue_counts") or {}
     if not report.get("catalogue_minimums"):
         blockers.append("catalogue_minimums_missing")
