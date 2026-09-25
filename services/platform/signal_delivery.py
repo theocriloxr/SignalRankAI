@@ -30,6 +30,8 @@ class WebFanoutResult:
     duplicates: int = 0
     blocked_profile: int = 0
     blocked_quality: int = 0
+    blocked_entitlement: int = 0
+    blocked_delay: int = 0
     blocked_quota: int = 0
     blocked_cooldown: int = 0
     blocked_freshness: int = 0
@@ -43,6 +45,8 @@ class WebFanoutResult:
             "duplicates": self.duplicates,
             "blocked_profile": self.blocked_profile,
             "blocked_quality": self.blocked_quality,
+            "blocked_entitlement": self.blocked_entitlement,
+            "blocked_delay": self.blocked_delay,
             "blocked_quota": self.blocked_quota,
             "blocked_cooldown": self.blocked_cooldown,
             "blocked_freshness": self.blocked_freshness,
@@ -55,6 +59,37 @@ def _signal_payload(signal: Signal) -> dict[str, Any]:
         column.key: getattr(signal, column.key, None)
         for column in signal.__table__.columns
     }
+
+
+def _normalized_asset_class(signal: dict[str, Any]) -> str:
+    raw = str(signal.get("asset_class") or "").strip().lower()
+    aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    if raw:
+        return aliases.get(raw, raw)
+    try:
+        from services.asset_mapper import classify_asset
+
+        inferred = str(
+            classify_asset(str(signal.get("asset") or signal.get("symbol") or ""))
+            or ""
+        ).strip().lower()
+        return aliases.get(inferred, inferred)
+    except Exception:
+        return ""
+
+
+def _signal_age_minutes(signal: dict[str, Any], now: datetime) -> float:
+    raw = signal.get("created_at") or signal.get("generated_at")
+    if not isinstance(raw, datetime):
+        return float("inf")
+    created = raw.astimezone(timezone.utc).replace(tzinfo=None) if raw.tzinfo else raw
+    return max(0.0, (now - created).total_seconds() / 60.0)
 
 
 def _notification_id(user_id: int, signal_id: str) -> str:
@@ -230,6 +265,8 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
                     "tier": tier,
                     "minimum_signal_score": float(policy.minimum_signal_score),
                     "daily_limit": float(policy.daily_signal_limit),
+                    "delivery_delay_minutes": int(policy.delivery_delay_minutes),
+                    "allowed_asset_classes": tuple(policy.allowed_asset_classes),
                     "delivered_today": delivered_today,
                     "locked_assets": locked_assets,
                     "preferences": preferences_to_payload(prefs),
@@ -257,6 +294,8 @@ async def deliver_recent_web_signals() -> dict[str, int]:
         "duplicates": 0,
         "blocked_profile": 0,
         "blocked_quality": 0,
+        "blocked_entitlement": 0,
+        "blocked_delay": 0,
         "blocked_quota": 0,
         "blocked_cooldown": 0,
         "blocked_freshness": 0,
@@ -294,8 +333,16 @@ async def deliver_recent_web_signals() -> dict[str, int]:
             counters["blocked_quality"] += len(users)
             continue
 
+        signal_class = _normalized_asset_class(signal)
+        signal_age_minutes = _signal_age_minutes(signal, now_utc_naive())
         for user in users:
             uid = int(user["id"])
+            if signal_class and signal_class not in set(user["allowed_asset_classes"]):
+                counters["blocked_entitlement"] += 1
+                continue
+            if signal_age_minutes < float(user["delivery_delay_minutes"]):
+                counters["blocked_delay"] += 1
+                continue
             if per_user_sent[uid] >= int(user["per_cycle_limit"]):
                 continue
             daily_limit = float(user["daily_limit"])
