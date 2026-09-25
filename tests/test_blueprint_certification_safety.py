@@ -81,7 +81,10 @@ class FakeCursor:
             **dict.fromkeys((
                 "subscription_products", "instruments", "webhook_deliveries",
                 "auth_identities", "user_sessions", "user_acquisition",
-                "broker_connections", "signals_ml_recovery_mode", "users_public_user_id",
+                "broker_connections", "trading_account_policies",
+                "broker_reconciliation_state", "broker_execution_decisions",
+                "broker_executions_connection_id",
+                "signals_ml_recovery_mode", "users_public_user_id",
             ), True),
         }
         record.update({name: False for name in missing})
@@ -123,6 +126,14 @@ def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, ext
     assert report["ok"] is allowed
     assert settings == {"readonly": True, "autocommit": True}
     assert "statement_timeout" in cursor.queries[0]
+    required = report["required_schema"]
+    for key in (
+        "trading_account_policies",
+        "broker_reconciliation_state",
+        "broker_execution_decisions",
+        "broker_executions_connection_id",
+    ):
+        assert key in required
 
 
 def test_schema_driver_failure_does_not_disclose_credentials(monkeypatch, capsys):
@@ -141,6 +152,7 @@ def test_runtime_proof_uses_current_repository_head_and_rejects_incomplete_evide
     report = {
         "alembic_current": head, "alembic_revisions": [head], "expected_head": head,
         "users_public_user_id": True,
+        "broker_executions_connection_id": True,
         "required_tables": dict.fromkeys(runtime_proof.REQUIRED_TABLES, True),
         "catalogue_counts": {"active_products": 6}, "catalogue_minimums": {"active_products": 6},
         "runtime": {"duplicate_delivery_groups": 0, "duplicate_paper_position_groups": 0},
