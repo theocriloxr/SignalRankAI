@@ -15,7 +15,7 @@ def _enabled(name: str, default: bool=True) -> bool:
 
 
 async def _ml_drift_loop(stop: asyncio.Event) -> None:
-    """Observe feature drift and model-output starvation in the analytics owner."""
+    """Observe independent feature drift and model-output starvation health."""
     from core.redis_state import state
     from ml.drift_monitor import detect_feature_drift, detect_prediction_starvation
     from ml.live_drift import (
@@ -34,91 +34,210 @@ async def _ml_drift_loop(stop: asyncio.Event) -> None:
             pass
 
     while not stop.is_set():
+        feature_result = {
+            "actionable": False,
+            "drift_detected": False,
+            "psi_scores": {},
+            "reason": "not_evaluated",
+        }
+        prediction_result = {
+            "actionable": False,
+            "starvation_detected": False,
+            "samples": 0,
+            "reason": "not_evaluated",
+        }
         try:
-            baseline=await load_durable_feature_baseline()
-            live=load_live_feature_samples()
-            predictions=load_live_prediction_samples()
-            if not baseline or not live:
-                raise FileNotFoundError("durable baseline/live feature sample not available yet")
+            # Prediction health is independent of PSI baseline availability.
+            # This prevents a missing feature baseline from masking a serving
+            # model that rejects every live candidate.
+            try:
+                predictions=load_live_prediction_samples()
+                prediction_result=detect_prediction_starvation(
+                    list(predictions or []),
+                    minimum_samples=max(
+                        10,
+                        int(os.getenv("ML_STARVATION_MIN_LIVE_SAMPLES", "50") or 50),
+                    ),
+                    minimum_pass_rate=max(
+                        0.0,
+                        min(
+                            1.0,
+                            float(os.getenv("ML_STARVATION_MIN_PASS_RATE", "0.01") or 0.01),
+                        ),
+                    ),
+                )
+            except Exception as exc:
+                prediction_result={
+                    "actionable": False,
+                    "starvation_detected": False,
+                    "samples": 0,
+                    "reason": f"prediction_health_error:{type(exc).__name__}",
+                }
 
-            feature_result=detect_feature_drift(
-                baseline_features=dict(baseline),
-                live_features=dict(live),
-                psi_threshold=float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25),
-                minimum_samples=max(10, int(os.getenv("ML_DRIFT_MIN_LIVE_SAMPLES", "50") or 50)),
-                minimum_features=max(1, int(os.getenv("ML_DRIFT_MIN_EVALUATED_FEATURES", "5") or 5)),
-            )
-            prediction_result=detect_prediction_starvation(
-                list(predictions or []),
-                minimum_samples=max(10, int(os.getenv("ML_STARVATION_MIN_LIVE_SAMPLES", "50") or 50)),
-                minimum_pass_rate=max(
-                    0.0,
-                    min(1.0, float(os.getenv("ML_STARVATION_MIN_PASS_RATE", "0.01") or 0.01)),
-                ),
-            )
+            # PSI remains useful but must not gate prediction-health evaluation.
+            try:
+                baseline=await load_durable_feature_baseline()
+                live=load_live_feature_samples()
+                if baseline and live:
+                    feature_result=detect_feature_drift(
+                        baseline_features=dict(baseline),
+                        live_features=dict(live),
+                        psi_threshold=float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25),
+                        minimum_samples=max(
+                            10,
+                            int(os.getenv("ML_DRIFT_MIN_LIVE_SAMPLES", "50") or 50),
+                        ),
+                        minimum_features=max(
+                            1,
+                            int(os.getenv("ML_DRIFT_MIN_EVALUATED_FEATURES", "5") or 5),
+                        ),
+                    )
+                else:
+                    feature_result={
+                        "actionable": False,
+                        "drift_detected": False,
+                        "psi_scores": {},
+                        "reason": "baseline_or_live_features_unavailable",
+                    }
+            except Exception as exc:
+                feature_result={
+                    "actionable": False,
+                    "drift_detected": False,
+                    "psi_scores": {},
+                    "reason": f"feature_health_error:{type(exc).__name__}",
+                }
+
             logger.info(
-                "[analytics_ml_drift] feature_actionable=%s feature_drift=%s prediction_actionable=%s "
-                "prediction_starvation=%s samples=%s pass_rate=%s raw_max=%s threshold_min=%s",
+                "[analytics_ml_drift] feature_actionable=%s feature_drift=%s feature_reason=%s "
+                "prediction_actionable=%s prediction_starvation=%s samples=%s pass_rate=%s "
+                "raw_max=%s threshold_min=%s prediction_reason=%s",
                 feature_result.get("actionable"),
                 feature_result.get("drift_detected"),
+                feature_result.get("reason"),
                 prediction_result.get("actionable"),
                 prediction_result.get("starvation_detected"),
                 prediction_result.get("samples"),
                 prediction_result.get("pass_rate"),
                 prediction_result.get("raw_max"),
                 prediction_result.get("threshold_min"),
+                prediction_result.get("reason"),
             )
 
             feature_drift=bool(feature_result.get("drift_detected"))
             starvation=bool(prediction_result.get("starvation_detected"))
+            ttl=max(1800, interval * 2)
             state.set_sync(
                 "signalrankai:ml:drift:mode",
                 "penalize" if feature_drift else "normal",
-                ex=max(1800, interval * 2),
+                ex=ttl,
             )
             try:
-                severity=max(float(v) for v in (feature_result.get("psi_scores") or {}).values()) if feature_drift else 0.0
+                severity=(
+                    max(float(v) for v in (feature_result.get("psi_scores") or {}).values())
+                    if feature_drift
+                    else 0.0
+                )
             except Exception:
-                severity=float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25) if feature_drift else 0.0
-            state.set_sync("signalrankai:ml:drift:severity", f"{severity:.6f}", ex=max(1800, interval * 2))
+                severity=(
+                    float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
+                    if feature_drift
+                    else 0.0
+                )
+            state.set_sync(
+                "signalrankai:ml:drift:severity",
+                f"{severity:.6f}",
+                ex=ttl,
+            )
             state.set_sync(
                 "signalrankai:ml:starvation:mode",
                 "detected" if starvation else "normal",
-                ex=max(1800, interval * 2),
+                ex=ttl,
+            )
+            state.set_sync(
+                "signalrankai:ml:starvation:summary",
+                __import__("json").dumps(
+                    prediction_result,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+                ex=ttl,
             )
             if starvation:
-                state.set_sync(
-                    "signalrankai:ml:starvation:summary",
-                    __import__("json").dumps(prediction_result, separators=(",", ":")),
-                    ex=max(1800, interval * 2),
+                logger.warning(
+                    "[analytics_ml_prediction_starvation] %s",
+                    prediction_result,
                 )
-                logger.warning("[analytics_ml_prediction_starvation] %s", prediction_result)
 
             should_retrain=(
                 feature_drift and _enabled("ML_DRIFT_RETRAIN_ON_DETECT", True)
             ) or (
                 starvation and _enabled("ML_STARVATION_RETRAIN_ON_DETECT", False)
             )
-            if should_retrain:
-                reason="feature_drift" if feature_drift else "prediction_starvation"
-                key=f"signalrankai:ml:{reason}:consecutive"
+            active_reason=(
+                "feature_drift"
+                if feature_drift
+                else "prediction_starvation"
+                if starvation
+                else ""
+            )
+            if should_retrain and active_reason:
+                key=f"signalrankai:ml:{active_reason}:consecutive"
                 prior=int(state.get_sync(key) or 0)
                 consecutive=prior+1
                 state.set_sync(key, str(consecutive), ex=max(1800, interval * 4))
-                required=max(1, int(os.getenv("ML_DRIFT_REQUIRED_CONSECUTIVE_CHECKS", "2") or 2))
-                if consecutive >= required and str(state.get_sync("signalrankai:ml:drift:retrain_running") or "") != "1":
-                    state.set_sync("signalrankai:ml:drift:retrain_running", "1", ex=max(1800, interval * 2))
+                required=max(
+                    1,
+                    int(os.getenv("ML_DRIFT_REQUIRED_CONSECUTIVE_CHECKS", "2") or 2),
+                )
+                if (
+                    consecutive >= required
+                    and str(
+                        state.get_sync("signalrankai:ml:drift:retrain_running") or ""
+                    ) != "1"
+                ):
+                    state.set_sync(
+                        "signalrankai:ml:drift:retrain_running",
+                        "1",
+                        ex=ttl,
+                    )
                     try:
                         from ml import train_model as ml_train
-                        ok=await ml_train.main(lookback_days=max(1, int(os.getenv("ML_DRIFT_RETRAIN_LOOKBACK_DAYS", "7") or 7)))
-                        logger.info("[analytics_ml_drift_retrain] reason=%s status=%s", reason, "success" if ok else "skipped_or_failed")
+
+                        ok=await ml_train.main(
+                            lookback_days=max(
+                                1,
+                                int(os.getenv("ML_DRIFT_RETRAIN_LOOKBACK_DAYS", "7") or 7),
+                            )
+                        )
+                        logger.info(
+                            "[analytics_ml_drift_retrain] reason=%s status=%s",
+                            active_reason,
+                            "success" if ok else "skipped_or_failed",
+                        )
                     finally:
-                        state.set_sync("signalrankai:ml:drift:retrain_running", "0", ex=300)
+                        state.set_sync(
+                            "signalrankai:ml:drift:retrain_running",
+                            "0",
+                            ex=300,
+                        )
             else:
-                state.set_sync("signalrankai:ml:feature_drift:consecutive", "0", ex=max(600, interval))
-                state.set_sync("signalrankai:ml:prediction_starvation:consecutive", "0", ex=max(600, interval))
+                if not feature_drift:
+                    state.set_sync(
+                        "signalrankai:ml:feature_drift:consecutive",
+                        "0",
+                        ex=max(600, interval),
+                    )
+                if not starvation:
+                    state.set_sync(
+                        "signalrankai:ml:prediction_starvation:consecutive",
+                        "0",
+                        ex=max(600, interval),
+                    )
         except Exception as exc:
-            logger.info("[analytics_ml_drift] skipped reason=%s", type(exc).__name__)
+            logger.exception(
+                "[analytics_ml_drift] cycle_failed error=%s",
+                type(exc).__name__,
+            )
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
