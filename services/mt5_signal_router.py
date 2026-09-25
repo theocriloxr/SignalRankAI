@@ -303,6 +303,7 @@ class MT5SignalRouter:
         user_id: int,
         signal: Dict[str, Any],
         requested_execution_mode: str,
+        user_identity: str = "telegram",
     ) -> Dict[str, Any]:
         """Evaluate the canonical user profile before any broker-side work."""
         result: Dict[str, Any] = {
@@ -314,18 +315,24 @@ class MT5SignalRouter:
             from db.models import BrokerExecution, MT5Execution, User
             from db.session import get_session
             from services.user_intelligence import (
-                get_user_trading_preferences,
+                get_platform_user_trading_preferences,
                 signal_matches_preferences,
             )
             from sqlalchemy import func, select
 
             async with get_session(label="mt5.profile_policy", timeout_seconds=8.0) as session:
+                identity = str(user_identity or "telegram").strip().lower()
+                user_filter = (
+                    User.id == int(user_id)
+                    if identity == "platform"
+                    else User.telegram_user_id == int(user_id)
+                )
                 user = (await session.execute(
-                    select(User).where(User.telegram_user_id == int(user_id)).limit(1)
+                    select(User).where(user_filter).limit(1)
                 )).scalar_one_or_none()
                 if user is None:
                     return {**result, "reason": "user_profile_missing"}
-                prefs = await get_user_trading_preferences(session, int(user_id))
+                prefs = await get_platform_user_trading_preferences(session, int(user.id))
                 profile_ok, profile_reason = signal_matches_preferences(signal, prefs)
                 if not profile_ok:
                     return {**result, "reason": f"signal_profile_mismatch:{profile_reason}"}
@@ -400,6 +407,7 @@ class MT5SignalRouter:
         user_id: int,
         account_id: str,
         requested_execution_mode: str,
+        user_identity: str = "telegram",
     ) -> Dict[str, Any]:
         """Load user mode, current terms, explicit opt-in and encrypted credentials."""
         policy: Dict[str, Any] = {
@@ -418,26 +426,43 @@ class MT5SignalRouter:
             from sqlalchemy import select
 
             async with get_session() as session:
+                identity = str(user_identity or "telegram").strip().lower()
+                user_filter = (
+                    User.id == int(user_id)
+                    if identity == "platform"
+                    else User.telegram_user_id == int(user_id)
+                )
                 result = await session.execute(
                     select(
+                        User.id,
+                        User.telegram_user_id,
                         User.accepted_terms,
                         User.execution_mode,
                         MT5Credentials.password_encrypted,
                         MT5Credentials.metaapi_account_id,
                     )
                     .join(MT5Credentials, MT5Credentials.user_id == User.id)
-                    .where(User.telegram_user_id == int(user_id))
+                    .where(user_filter)
                     .limit(1)
                 )
                 row = result.fetchone()
+                if not row:
+                    return policy
+                canonical_id = int(row[0])
+                telegram_id = int(row[1]) if row[1] is not None else None
+                if identity == "platform":
+                    optin_keys = (
+                        f"autoexec_platform_optin:{canonical_id}",
+                        f"copyexec_platform_optin:{canonical_id}",
+                    )
+                else:
+                    optin_keys = (
+                        f"autoexec_user_optin:{int(user_id)}",
+                        f"copyexec_user_optin:{int(user_id)}",
+                    )
                 optin_result = await session.execute(
                     select(RuntimeState.key, RuntimeState.value).where(
-                        RuntimeState.key.in_(
-                            (
-                                f"autoexec_user_optin:{int(user_id)}",
-                                f"copyexec_user_optin:{int(user_id)}",
-                            )
-                        )
+                        RuntimeState.key.in_(optin_keys)
                     )
                 )
                 optins = {
@@ -445,13 +470,10 @@ class MT5SignalRouter:
                     for item in optin_result.all()
                     if item and len(item) >= 2
                 }
-            if not row:
-                return policy
-
-            accepted_terms = bool(row[0])
-            stored_mode = str(row[1] or "").strip().lower()
-            encrypted = str(row[2] or "").strip()
-            stored_account = str(row[3] or "").strip()
+            accepted_terms = bool(row[2])
+            stored_mode = str(row[3] or "").strip().lower()
+            encrypted = str(row[4] or "").strip()
+            stored_account = str(row[5] or "").strip()
             credentials_valid = bool(
                 encrypted
                 and stored_account
@@ -461,14 +483,22 @@ class MT5SignalRouter:
             )
 
             if requested == ExecutionMode.COPY_TRADE:
-                optin = optins.get(f"copyexec_user_optin:{int(user_id)}")
+                optin = optins.get(
+                    f"copyexec_platform_optin:{canonical_id}"
+                    if identity == "platform"
+                    else f"copyexec_user_optin:{int(user_id)}"
+                )
                 explicitly_enabled = bool(
                     isinstance(optin, dict) and optin.get("enabled") is True
                 )
                 user_enabled = stored_mode == ExecutionMode.COPY_TRADE
                 consent = bool(accepted_terms and user_enabled and explicitly_enabled)
             elif requested in {ExecutionMode.AUTO, "live"}:
-                optin = optins.get(f"autoexec_user_optin:{int(user_id)}")
+                optin = optins.get(
+                    f"autoexec_platform_optin:{canonical_id}"
+                    if identity == "platform"
+                    else f"autoexec_user_optin:{int(user_id)}"
+                )
                 explicitly_enabled = bool(
                     isinstance(optin, dict) and optin.get("enabled") is True
                 )
@@ -510,10 +540,20 @@ class MT5SignalRouter:
         *,
         tier: str,
         execution_mode: str,
+        user_identity: str = "telegram",
     ) -> tuple[bool, str, int | None]:
-        """Delegate MT5 and Bybit to one shared quota/drawdown ledger."""
-        from services.execution_quota import reserve_user_execution_quota
+        """Delegate every channel to one canonical quota/drawdown ledger."""
+        from services.execution_quota import (
+            reserve_platform_user_execution_quota,
+            reserve_user_execution_quota,
+        )
 
+        if str(user_identity or "telegram").strip().lower() == "platform":
+            return await reserve_platform_user_execution_quota(
+                int(user_id),
+                tier=tier,
+                execution_mode=execution_mode,
+            )
         return await reserve_user_execution_quota(
             int(user_id),
             tier=tier,
@@ -538,6 +578,7 @@ class MT5SignalRouter:
         execution_mode: str,
         idempotency_key: str,
         broker_result: Dict[str, Any],
+        user_identity: str = "telegram",
     ) -> bool:
         """Persist one canonical MT5Execution row after broker acknowledgement."""
         try:
@@ -568,10 +609,12 @@ class MT5SignalRouter:
                 or 0
             )
             stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
+            identity = str(user_identity or "telegram").strip().lower()
             meta = {
                 "source": "canonical_mt5_signal_router",
                 "execution_mode": str(execution_mode),
-                "telegram_user_id": int(user_id),
+                "user_identity": identity,
+                "request_user_id": int(user_id),
                 "idempotency_key": str(idempotency_key),
                 "hard_stop_attached": bool(
                     broker_result.get("hard_stop_attached", True)
@@ -581,11 +624,14 @@ class MT5SignalRouter:
                 ),
             }
             async with get_session() as session:
+                user_filter = (
+                    User.id == int(user_id)
+                    if identity == "platform"
+                    else User.telegram_user_id == int(user_id)
+                )
                 user = (
                     await session.execute(
-                        select(User)
-                        .where(User.telegram_user_id == int(user_id))
-                        .limit(1)
+                        select(User).where(user_filter).limit(1)
                     )
                 ).scalar_one_or_none()
                 if user is None:
@@ -628,32 +674,36 @@ class MT5SignalRouter:
             )
             return False
 
-    async def _has_execution_evidence(self, user_id: int, signal_id: str) -> bool:
-        """Require a proven delivery to this user before broker execution."""
+    async def _has_execution_evidence(
+        self,
+        user_id: int,
+        signal_id: str,
+        user_identity: str = "telegram",
+    ) -> bool:
+        """Require channel-authentic access evidence before broker execution."""
         if not str(signal_id or "").strip():
             return False
         try:
             from db.session import get_session
-            from sqlalchemy import text
+            from services.execution_evidence import (
+                get_execution_evidence,
+                get_platform_execution_evidence,
+            )
 
             async with get_session() as session:
-                result = await session.execute(
-                    text(
-                        """
-                        SELECT 1
-                        FROM signal_deliveries sd
-                        JOIN users u ON u.id = sd.user_id
-                        WHERE u.telegram_user_id = :tid
-                          AND sd.signal_id = :signal_id
-                          AND sd.sent_ok IS TRUE
-                          AND COALESCE(sd.delivery_state, 'delivered')
-                              IN ('delivered', 'confirmed', 'sent')
-                        LIMIT 1
-                        """
-                    ),
-                    {"tid": int(user_id), "signal_id": str(signal_id)},
+                if str(user_identity or "telegram").strip().lower() == "platform":
+                    evidence = await get_platform_execution_evidence(
+                        session,
+                        user_id=int(user_id),
+                        signal_id=str(signal_id),
+                    )
+                    return bool(evidence.get("access_proven"))
+                evidence = await get_execution_evidence(
+                    session,
+                    telegram_user_id=int(user_id),
+                    signal_id=str(signal_id),
                 )
-                return result.fetchone() is not None
+                return bool(evidence.get("delivery_proven"))
         except Exception:
             logger.warning(
                 "[SignalRouter] execution evidence unavailable; blocking",
@@ -717,13 +767,15 @@ class MT5SignalRouter:
         signal: Dict[str, Any],
         user_id: int,
         execution_mode: str = "manual",
+        *,
+        user_identity: str = "telegram",
     ) -> ExecutionResult:
         """
         Route signal to appropriate execution handler.
         
         Args:
             signal: Signal dict with asset, direction, entry, stop_loss, take_profit
-            user_id: Telegram user ID
+            user_id: Telegram user ID by default, or canonical users.id for platform identity
             execution_mode: manual, auto, or none
             
         Returns:
@@ -784,8 +836,22 @@ class MT5SignalRouter:
             signal_id = str(
                 signal.get("signal_id") or signal.get("id") or ""
             ).strip()
-            tier = self._get_user_tier(user_id)
-            mt5_account_id = await self._get_user_mt5_account(user_id)
+            identity = str(user_identity or "telegram").strip().lower()
+            if identity not in {"telegram", "platform"}:
+                return ExecutionResult(
+                    success=False,
+                    message="Unsupported execution identity",
+                    error="unsupported_execution_identity",
+                )
+            tier = (
+                await self._get_platform_user_tier(user_id)
+                if identity == "platform"
+                else self._get_user_tier(user_id)
+            )
+            mt5_account_id = await self._get_user_mt5_account(
+                user_id,
+                user_identity=identity,
+            )
             if not mt5_account_id:
                 return ExecutionResult(
                     success=False,
@@ -808,11 +874,22 @@ class MT5SignalRouter:
                 get_account_info(mt5_account_id),
                 get_symbol_specification(mt5_account_id, asset),
                 get_live_quote(mt5_account_id, asset),
-                self._get_user_execution_policy(user_id, mt5_account_id, execution_mode),
-                self._get_user_profile_policy(user_id, signal, execution_mode),
+                self._get_user_execution_policy(
+                    user_id,
+                    mt5_account_id,
+                    execution_mode,
+                    user_identity=identity,
+                ),
+                self._get_user_profile_policy(
+                    user_id,
+                    signal,
+                    execution_mode,
+                    user_identity=identity,
+                ),
                 self._has_execution_evidence(
                     user_id,
                     str(signal.get("evidence_signal_id") or signal_id),
+                    user_identity=identity,
                 ),
             )
             if not bool(profile_policy.get("allowed")):
@@ -842,6 +919,7 @@ class MT5SignalRouter:
                 account_info=account_info,
                 symbol_spec=symbol_spec,
                 symbol=asset,
+                user_identity=identity,
             )
             volume = self._apply_position_weight(
                 volume,
@@ -915,6 +993,8 @@ class MT5SignalRouter:
                 reconciliation_ready=bool(reconciliation.get("ready")),
                 kill_switch=kill_switch,
                 broker_provider="mt5",
+                user_identity=identity,
+                canonical_user_id=int(user_id) if identity == "platform" else None,
             )
             idempotency_key = gate_request.key()
 
@@ -962,6 +1042,7 @@ class MT5SignalRouter:
                         int(user_id),
                         tier=tier,
                         execution_mode=execution_mode,
+                        user_identity=identity,
                     )
                 )
                 if not quota_reserved:
@@ -985,6 +1066,7 @@ class MT5SignalRouter:
                     execution_mode=execution_mode,
                     execution_authorized=True,
                     idempotency_key=idempotency_key,
+                    user_identity=identity,
                 )
                 broker_result_holder["result"] = routed
                 if not routed.success:
@@ -1049,6 +1131,7 @@ class MT5SignalRouter:
         *,
         execution_authorized: bool = False,
         idempotency_key: Optional[str] = None,
+        user_identity: str = "telegram",
     ) -> ExecutionResult:
         """Execute signal via MT5/MetaApi."""
         if not execution_authorized or not str(idempotency_key or "").strip():
@@ -1096,12 +1179,14 @@ class MT5SignalRouter:
                     execution_mode=str(execution_mode),
                     idempotency_key=str(idempotency_key),
                     broker_result=dict(result),
+                    user_identity=user_identity,
                 )
                 await self._sync_to_paper_ledger(
                     signal=signal,
                     user_id=user_id,
                     order_id=order_id,
                     volume=volume,
+                    user_identity=user_identity,
                 )
                 message = f"Executed: {asset} {direction}"
                 error = None
@@ -1173,6 +1258,7 @@ class MT5SignalRouter:
         account_info: Optional[Dict[str, Any]] = None,
         symbol_spec: Optional[Dict[str, Any]] = None,
         symbol: str = "",
+        user_identity: str = "telegram",
     ) -> float:
         """Calculate broker-compliant size or return zero on missing data.
 
@@ -1244,7 +1330,10 @@ class MT5SignalRouter:
             ):
                 return 0.0
 
-            risk_pct = await self._get_user_risk_pct(user_id)
+            risk_pct = await self._get_user_risk_pct(
+                user_id,
+                user_identity=user_identity,
+            )
             if risk_pct is None or not math.isfinite(risk_pct) or risk_pct <= 0:
                 return 0.0
             try:
@@ -1284,14 +1373,22 @@ class MT5SignalRouter:
         user_id: int,
         order_id: Optional[str],
         volume: float,
+        user_identity: str = "telegram",
     ) -> None:
         """Sync executed trade to paper ledger for tracking."""
         try:
             from core.paper_ledger import sync_execution
-            
+
+            canonical_id = await self._resolve_canonical_user_id(
+                user_id,
+                user_identity=user_identity,
+            )
+            if canonical_id is None:
+                logger.error("[SignalRouter] paper mirror blocked: canonical user unavailable")
+                return
             await sync_execution(
                 signal_id=signal.get("signal_id", ""),
-                user_id=user_id,
+                user_id=canonical_id,
                 order_id=order_id or "",
                 asset=signal.get("asset", ""),
                 direction=signal.get("direction", "long"),
@@ -1304,14 +1401,68 @@ class MT5SignalRouter:
         except Exception as e:
             logger.error(f"[SignalRouter] Paper ledger sync error: {e}")
     
-    async def _get_user_mt5_account(self, user_id: int) -> Optional[str]:
+    async def _get_user_mt5_account(
+        self,
+        user_id: int,
+        user_identity: str = "telegram",
+    ) -> Optional[str]:
         """Resolve or safely reprovision the user's MetaApi account ID."""
         try:
-            from services.mt5_client import ensure_user_mt5_account_id
+            from services.mt5_client import (
+                ensure_platform_mt5_account_id,
+                ensure_user_mt5_account_id,
+            )
 
-            return await ensure_user_mt5_account_id(user_id)
+            if str(user_identity or "telegram").strip().lower() == "platform":
+                return await ensure_platform_mt5_account_id(int(user_id))
+            return await ensure_user_mt5_account_id(int(user_id))
         except Exception:
             return None
+
+    async def _resolve_canonical_user_id(
+        self,
+        user_id: int,
+        user_identity: str = "telegram",
+    ) -> Optional[int]:
+        try:
+            from db.models import User
+            from db.session import get_session
+            from sqlalchemy import select
+
+            identity = str(user_identity or "telegram").strip().lower()
+            async with get_session(label="mt5.identity.resolve", timeout_seconds=5.0) as session:
+                query = select(User.id).where(
+                    User.id == int(user_id)
+                    if identity == "platform"
+                    else User.telegram_user_id == int(user_id)
+                ).limit(1)
+                value = (await session.execute(query)).scalar_one_or_none()
+                await session.rollback()
+            return int(value) if value is not None else None
+        except Exception:
+            return None
+
+    async def _get_platform_user_tier(self, user_id: int) -> str:
+        """Resolve effective tier for a canonical platform account."""
+        try:
+            from db.access import resolve_product_tier
+            from db.models import User
+            from db.session import get_session
+            from sqlalchemy import select
+
+            async with get_session(label="mt5.platform.tier", timeout_seconds=5.0) as session:
+                user = (
+                    await session.execute(
+                        select(User).where(User.id == int(user_id)).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    return "FREE"
+                tier = await resolve_product_tier(session, user)
+                await session.rollback()
+            return str(tier or "free").upper()
+        except Exception:
+            return "FREE"
     
     def _get_user_tier(self, user_id: int) -> str:
         """Get user's current tier."""
@@ -1322,26 +1473,40 @@ class MT5SignalRouter:
         except Exception:
             return "FREE"
     
-    async def _get_user_risk_pct(self, user_id: int) -> Optional[float]:
-        """Load the user's configured risk percentage from PostgreSQL."""
+    async def _get_user_risk_pct(
+        self,
+        user_id: int,
+        user_identity: str = "telegram",
+    ) -> Optional[float]:
+        """Load canonical risk percentage from PostgreSQL."""
         try:
             from db.session import get_session
             from db.models import User
             from sqlalchemy import select
 
             async with get_session() as session:
+                identity = str(user_identity or "telegram").strip().lower()
+                user_filter = (
+                    User.id == int(user_id)
+                    if identity == "platform"
+                    else User.telegram_user_id == int(user_id)
+                )
                 result = await session.execute(
-                    select(User.max_risk_percentage)
-                    .where(User.telegram_user_id == int(user_id))
+                    select(User.id, User.max_risk_percentage)
+                    .where(user_filter)
                     .limit(1)
                 )
                 row = result.fetchone()
-                if not row or row[0] is None:
+                if not row or row[1] is None:
                     return None
-                value = float(row[0])
+                canonical_id = int(row[0])
+                value = float(row[1])
                 try:
-                    from services.user_intelligence import get_user_trading_preferences
-                    prefs = await get_user_trading_preferences(session, int(user_id))
+                    from services.user_intelligence import get_platform_user_trading_preferences
+                    prefs = await get_platform_user_trading_preferences(
+                        session,
+                        canonical_id,
+                    )
                     profile_risk = float(getattr(prefs, "risk_per_trade_pct", value) or value)
                     if profile_risk > 0:
                         value = min(value, profile_risk)
@@ -1449,8 +1614,22 @@ async def route_signal_to_mt5(
     user_id: int,
     execution_mode: str = "manual",
 ) -> ExecutionResult:
-    """Route signal to MT5 for execution."""
+    """Route a Telegram-originated signal to MT5 for execution."""
     return await router.route_signal(signal, user_id, execution_mode)
+
+
+async def route_platform_signal_to_mt5(
+    signal: Dict[str, Any],
+    user_id: int,
+    execution_mode: str = "manual_confirmed",
+) -> ExecutionResult:
+    """Route an authenticated canonical platform signal through the same gate."""
+    return await router.route_signal(
+        signal,
+        int(user_id),
+        execution_mode,
+        user_identity="platform",
+    )
 
 
 async def get_user_execution_mode(user_id: int) -> str:
