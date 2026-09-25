@@ -276,6 +276,26 @@
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">DECISION PIPELINE</p><h3>Signal quality</h3></div></div><div id="qualitySummary" class="card-grid compact-card-grid"></div><div id="qualityReasons" class="data-list"></div></article>
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">COUNTERFACTUAL LEARNING</p><h3>Shadow report</h3></div></div><div id="shadowSummary" class="card-grid compact-card-grid"></div><p id="shadowMethodology" class="muted"></p><div id="shadowReasons" class="data-list"></div></article>
         </div>
+        <article id="vipResearchPanel" class="panel" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">VIP RESEARCH</p><h3>Delivered-history lab</h3><p>Research only from signals actually delivered to your account. No default win rate or invented return assumptions.</p></div><span id="priorityDeliveryBadge" class="status-pill">VIP</span></div>
+          <div class="split-grid">
+            <div>
+              <h3>Scenario simulation</h3>
+              <form id="simulationForm" class="stack-form">
+                <label>Starting capital (optional)<input name="starting_capital" type="number" min="50" max="100000000" step="50" placeholder="Use current paper equity" /></label>
+                <label>Risk per trade % (optional)<input name="risk_pct" type="number" min="0.1" max="10" step="0.1" placeholder="Use current paper risk" /></label>
+                <button class="primary" type="submit">Run delivered-history simulation</button>
+              </form>
+              <div id="simulationResult" class="detail-list"></div>
+              <p class="muted">Simulation is a statistical scenario, not a forecast or profit guarantee.</p>
+            </div>
+            <div>
+              <h3>Elite receipts</h3>
+              <p class="muted">High-score signals from the last 7 days that were actually delivered to your account.</p>
+              <div id="eliteSignalList" class="data-list"></div>
+            </div>
+          </div>
+        </article>
         <article id="strategyLeaderboardPanel" class="panel" hidden><div class="panel-heading"><div><p class="eyebrow">ADMIN DIAGNOSTIC</p><h3>Strategy activity</h3></div></div><div id="strategyLeaderboard" class="table-wrap"></div></article>
       </section>
 
@@ -292,7 +312,7 @@
 
       <section id="accountView" class="view" hidden>
         <div class="two-column">
-          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><label><input name="timezone_auto_update" type="checkbox" /> Travel mode <small>Allow SignalRankAI to periodically prompt you to refresh your timezone when travelling. No continuous location tracking is required.</small></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
           <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
         </div>
         <article class="panel trading-profile-panel">
@@ -367,9 +387,10 @@
           <div id="brokerConnections" class="data-list"></div>
           <div id="brokerStatus" class="detail-list"></div>
         </article>
-        <article class="panel"><h2>Refer and earn</h2><p>Share SignalRankAI from the website or Telegram. Your account keeps one referral code across every channel.</p><div id="referralPanel" class="detail-list"></div></article>
+        <article class="panel"><h2>Refer and earn</h2><p>Share SignalRankAI from the website or Telegram. Your account keeps one referral code across every channel.</p><div id="referralPanel" class="detail-list"></div><h3>Referral leaderboard</h3><div id="referralLeaderboard" class="data-list"></div></article>
         <article class="panel"><h2>Notification preferences</h2><p>These channel and quiet-hour settings follow your account across Telegram, web and mobile.</p><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><label>Quiet from<input type="time" name="quiet_hours_start" /></label><label>Quiet until<input type="time" name="quiet_hours_end" /></label><label>Notification timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><button class="primary" type="submit">Save preferences</button></form></article>
-        <article class="panel"><h2>Plans and billing</h2><p>Prices are resolved securely by the server. Professional and Institutional plans use contact sales.</p><div id="billingProducts" class="card-grid"></div><h3>Billing history</h3><div id="billingHistory" class="data-list"></div></article>
+        <article class="panel"><h2>Plans and billing</h2><p>Prices are resolved securely by the server. Professional and Institutional plans use contact sales.</p><div id="billingProducts" class="card-grid"></div><div id="renewalPanel" class="detail-list"></div><button id="cancelAutoRenewButton" class="danger" type="button" hidden>Cancel auto-renew</button><h3>Billing history</h3><div id="billingHistory" class="data-list"></div><h3>Request a refund review</h3><p class="muted">Refunds are never automatic. SignalRankAI verifies that the payment reference belongs to your account, then opens a support review.</p><form id="refundReviewForm" class="stack-form"><label>Payment reference<input name="payment_reference" maxlength="128" required /></label><label>Reason<textarea name="reason" rows="4" maxlength="4000" required></textarea></label><button class="ghost" type="submit">Submit refund review</button></form></article>
+        <article id="executionWebhookPanel" class="panel" hidden><div class="panel-heading"><div><p class="eyebrow">VIP EXECUTION</p><h2>Execution webhook</h2><p>Optional third-party execution destination. This does not bypass SignalRankAI risk, entitlement, evidence, or kill-switch controls.</p></div></div><form id="executionWebhookForm" class="stack-form"><label>HTTPS endpoint<input name="url" type="url" maxlength="2048" placeholder="https://your-endpoint.example/hook" required /></label><div class="row-actions"><button class="primary" type="submit">Save execution webhook</button><button id="disableExecutionWebhook" class="danger" type="button">Disable</button></div></form><div id="executionWebhookStatus" class="detail-list"></div></article>
         <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
       </section>
     </section>
