@@ -205,7 +205,7 @@ async def _append_account_ledger_in_session(
     }
 
     statement = (
-        insert(TradingAccountLedgerEntry)
+        insert(TradingAccountLedgerEntry.__table__)
         .values(**values)
         .on_conflict_do_nothing(
             constraint="uq_trading_account_ledger_provider_event"
