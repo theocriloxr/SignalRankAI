@@ -122,6 +122,7 @@ async function openBrokerPolicy(connection){
   form.elements.prop_firm.value=p.prop_firm||'';
   form.elements.prop_phase.value=p.prop_phase||'';
   form.elements.prop_rules_version.value=p.prop_rules_version||'';
+  form.elements.external_rules_json.value=JSON.stringify(p.external_rules||{},null,2);
   const firstWindow=(p.trading_windows||[])[0]||{};
   form.elements.trading_days.value=Array.isArray(firstWindow.days)?firstWindow.days.join(','):'';
   form.elements.trading_window_start.value=firstWindow.start||'';
@@ -142,6 +143,15 @@ async function openBrokerPolicy(connection){
 
 function brokerPolicyPayload(form){
   const raw=formData(form);
+  let externalRules={};
+  const externalRaw=String(raw.external_rules_json||'').trim();
+  if(externalRaw){
+    try{externalRules=JSON.parse(externalRaw)}
+    catch{throw new Error('Advanced firm hard rules must be valid JSON.')}
+    if(!externalRules||Array.isArray(externalRules)||typeof externalRules!=='object'){
+      throw new Error('Advanced firm hard rules must be a JSON object.');
+    }
+  }
   const days=brokerPolicyDays(raw.trading_days);
   const start=String(raw.trading_window_start||'').trim();
   const end=String(raw.trading_window_end||'').trim();
@@ -177,7 +187,7 @@ function brokerPolicyPayload(form){
     prop_firm:String(raw.prop_firm||'').trim()||null,
     prop_phase:String(raw.prop_phase||'').trim()||null,
     prop_rules_version:String(raw.prop_rules_version||'').trim()||null,
-    external_rules:{}
+    external_rules:externalRules
   };
 }
 
