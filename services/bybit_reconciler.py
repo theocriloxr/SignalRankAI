@@ -51,8 +51,16 @@ async def _credentials(telegram_user_id: int) -> BybitCredentials | None:
     return BybitCredentials(str(key), str(secret), bool(value.get("sandbox", True)))
 
 
-async def _mark(row_id: int, *, status: str, error: str | None = None, meta: dict[str, Any] | None = None,
-                realized_pnl_pct: float | None = None, closed: bool = False) -> None:
+async def _mark(
+    row_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    meta: dict[str, Any] | None = None,
+    realized_pnl_pct: float | None = None,
+    closed: bool = False,
+    account_ledger_events: list[dict[str, Any]] | None = None,
+) -> None:
     async with get_session(label="bybit.reconcile.write", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
@@ -70,6 +78,20 @@ async def _mark(row_id: int, *, status: str, error: str | None = None, meta: dic
             row.realized_pnl_pct = float(realized_pnl_pct)
         if closed:
             row.closed_at = now_utc_naive()
+
+        if row.connection_id and account_ledger_events:
+            from services.trading_account_ledger import (
+                _append_account_ledger_in_session,
+            )
+
+            for event in account_ledger_events:
+                await _append_account_ledger_in_session(
+                    session,
+                    user_id=int(row.user_id),
+                    connection_id=str(row.connection_id),
+                    provider="bybit",
+                    **event,
+                )
         await session.commit()
 
 
@@ -114,6 +136,11 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             positions = await client.get_positions(symbol=str(execution.symbol))
             active = next((item for item in positions if _as_float(item.get("size")) > 0), None)
             if active is not None:
+                position_event_time = str(
+                    active.get("updatedTime")
+                    or active.get("createdTime")
+                    or ""
+                ).strip()
                 await _mark(
                     int(execution.id), status="open",
                     meta={
@@ -123,6 +150,40 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                         "position_idx": active.get("positionIdx"),
                         "last_reconciled_at": now_utc_naive().isoformat(),
                     },
+                    account_ledger_events=(
+                        [
+                            {
+                                "entry_type": "position_snapshot",
+                                "source_event_id": (
+                                    f"position:{execution.provider_order_id or execution.provider_client_order_id}:"
+                                    f"{position_event_time}"
+                                ),
+                                "correlation_id": str(execution.idempotency_key),
+                                "order_ref": execution.provider_order_id,
+                                "position_ref": str(
+                                    active.get("positionIdx")
+                                    or execution.provider_order_id
+                                    or ""
+                                ) or None,
+                                "provider_timestamp": (
+                                    datetime.fromtimestamp(
+                                        int(float(position_event_time)) / 1000.0,
+                                        tz=timezone.utc,
+                                    ).isoformat()
+                                    if position_event_time
+                                    else None
+                                ),
+                                "metadata": {
+                                    "symbol": execution.symbol,
+                                    "position_size": active.get("size"),
+                                    "avg_entry_price": active.get("avgPrice"),
+                                    "unrealised_pnl": active.get("unrealisedPnl"),
+                                },
+                            }
+                        ]
+                        if position_event_time
+                        else None
+                    ),
                 )
                 stats["open"] += 1
                 continue
@@ -155,6 +216,72 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             pnl = _as_float(closed.get("closedPnl"))
             entry_value = abs(_as_float(closed.get("cumEntryValue")))
             pnl_pct = (pnl / entry_value * 100.0) if entry_value > 0 else 0.0
+            close_event_time = str(
+                closed.get("updatedTime")
+                or closed.get("createdTime")
+                or ""
+            ).strip()
+            close_ref = str(
+                closed.get("orderId")
+                or execution.provider_order_id
+                or execution.provider_client_order_id
+                or execution.id
+            )
+            entry_fee = abs(_as_float(closed.get("cumEntryFee")))
+            exit_fee = abs(_as_float(closed.get("cumExitFee")))
+            fee_total = entry_fee + exit_fee
+            ledger_events: list[dict[str, Any]] = [
+                {
+                    "entry_type": "realized_pnl",
+                    "source_event_id": f"realized_pnl:{close_ref}:{close_event_time or 'final'}",
+                    "correlation_id": str(execution.idempotency_key),
+                    "order_ref": execution.provider_order_id,
+                    "position_ref": close_ref,
+                    "amount": pnl,
+                    "realized_pnl": pnl,
+                    "currency": "USDT",
+                    "provider_timestamp": (
+                        datetime.fromtimestamp(
+                            int(float(close_event_time)) / 1000.0,
+                            tz=timezone.utc,
+                        ).isoformat()
+                        if close_event_time
+                        else None
+                    ),
+                    "metadata": {
+                        "symbol": execution.symbol,
+                        "closed_pnl_pct": pnl_pct,
+                        "avg_exit_price": closed.get("avgExitPrice"),
+                        "entry_value": entry_value,
+                    },
+                }
+            ]
+            if fee_total > 0:
+                ledger_events.append(
+                    {
+                        "entry_type": "fee",
+                        "source_event_id": f"fee:{close_ref}:{close_event_time or 'final'}",
+                        "correlation_id": str(execution.idempotency_key),
+                        "order_ref": execution.provider_order_id,
+                        "position_ref": close_ref,
+                        "amount": -fee_total,
+                        "fees": fee_total,
+                        "currency": "USDT",
+                        "provider_timestamp": (
+                            datetime.fromtimestamp(
+                                int(float(close_event_time)) / 1000.0,
+                                tz=timezone.utc,
+                            ).isoformat()
+                            if close_event_time
+                            else None
+                        ),
+                        "metadata": {
+                            "symbol": execution.symbol,
+                            "entry_fee": entry_fee,
+                            "exit_fee": exit_fee,
+                        },
+                    }
+                )
             await _mark(
                 int(execution.id), status="closed", realized_pnl_pct=pnl_pct, closed=True,
                 meta={
@@ -164,6 +291,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                     "close_order_id": closed.get("orderId"),
                     "last_reconciled_at": now_utc_naive().isoformat(),
                 },
+                account_ledger_events=ledger_events,
             )
             stats["closed"] += 1
         except BybitError as exc:
