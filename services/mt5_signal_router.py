@@ -667,6 +667,7 @@ class MT5SignalRouter:
         user_id: int,
         signal: Dict[str, Any],
         account_id: str,
+        connection_id: str | None,
         order_id: str,
         volume: float,
         tier: str,
@@ -712,6 +713,7 @@ class MT5SignalRouter:
                 "execution_mode": str(execution_mode),
                 "user_identity": identity,
                 "request_user_id": int(user_id),
+                "connection_id": str(connection_id or "") or None,
                 "idempotency_key": str(idempotency_key),
                 "hard_stop_attached": bool(
                     broker_result.get("hard_stop_attached", True)
@@ -749,6 +751,7 @@ class MT5SignalRouter:
                     MT5Execution(
                         user_id=int(user.id),
                         signal_id=signal_id,
+                        connection_id=str(connection_id) if connection_id else None,
                         metaapi_account_id=str(account_id),
                         order_id=order,
                         symbol=symbol,
@@ -1353,6 +1356,7 @@ class MT5SignalRouter:
                     idempotency_key=idempotency_key,
                     user_identity=identity,
                     broker_platform=platform,
+                    connection_id=connection_id_value or None,
                 )
                 broker_result_holder["result"] = routed
                 if not routed.success:
@@ -1419,6 +1423,7 @@ class MT5SignalRouter:
         idempotency_key: Optional[str] = None,
         user_identity: str = "telegram",
         broker_platform: str = "mt5",
+        connection_id: str | None = None,
     ) -> ExecutionResult:
         """Execute signal via MetaApi for MT4 or MT5."""
         if not execution_authorized or not str(idempotency_key or "").strip():
@@ -1460,6 +1465,7 @@ class MT5SignalRouter:
                     user_id=int(user_id),
                     signal=signal,
                     account_id=str(account_id),
+                    connection_id=connection_id,
                     order_id=order_id,
                     volume=float(volume),
                     tier=str(tier),
