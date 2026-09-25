@@ -87,13 +87,19 @@ async def _resources_available() -> bool:
         return False
 
 
-async def route_signal_to_bybit(
+async def _route_signal_to_bybit_for_identity(
     signal: Mapping[str, Any],
-    telegram_user_id: int,
+    principal_id: int,
     execution_mode: str = "auto",
     *,
+    user_identity: str,
     connection_id: str | None = None,
 ) -> BybitRouteResult:
+    identity = str(user_identity or "").strip().lower()
+    if identity not in {"telegram", "platform"}:
+        return BybitRouteResult(
+            False, "Unsupported execution identity", error="unsupported_execution_identity"
+        )
     if str(execution_mode or "").strip().lower() in {"auto", "copy", "copy_trade"}:
         from core.live_execution_integrity import evaluate_live_signal_admission
         integrity = evaluate_live_signal_admission(signal)
@@ -113,7 +119,14 @@ async def route_signal_to_bybit(
         return BybitRouteResult(False, "Signal lacks broker-safe entry, stop, TP, or direction", error="invalid_signal")
 
     async with get_session(label="bybit.preflight", timeout_seconds=8.0) as session:
-        user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one_or_none()
+        user_filter = (
+            User.id == int(principal_id)
+            if identity == "platform"
+            else User.telegram_user_id == int(principal_id)
+        )
+        user = (
+            await session.execute(select(User).where(user_filter).limit(1))
+        ).scalar_one_or_none()
         if user is None:
             return BybitRouteResult(False, "User profile not found", error="user_not_found")
         try:
@@ -145,10 +158,17 @@ async def route_signal_to_bybit(
                 get_user_trading_preferences,
                 signal_matches_preferences,
             )
-            profile_prefs = await get_user_trading_preferences(
-                session,
-                int(telegram_user_id),
-            )
+            if identity == "platform":
+                from services.user_intelligence import get_platform_user_trading_preferences
+                profile_prefs = await get_platform_user_trading_preferences(
+                    session,
+                    int(user.id),
+                )
+            else:
+                profile_prefs = await get_user_trading_preferences(
+                    session,
+                    int(principal_id),
+                )
         except Exception:
             profile_prefs = None
         if profile_prefs is None:
@@ -342,9 +362,14 @@ async def route_signal_to_bybit(
         account_policy_allowed = False
         account_policy_reasons = ("account_policy_unavailable",)
 
-    optin_key = "copyexec_user_optin" if execution_mode == "copy_trade" else "autoexec_user_optin"
+    optin_prefix = "copyexec" if execution_mode == "copy_trade" else "autoexec"
+    optin_key = (
+        f"{optin_prefix}_platform_optin:{int(user.id)}"
+        if identity == "platform"
+        else f"{optin_prefix}_user_optin:{int(principal_id)}"
+    )
     async with get_session(label="bybit.consent", timeout_seconds=5.0) as session:
-        optin = await session.get(RuntimeState, f"{optin_key}:{int(telegram_user_id)}")
+        optin = await session.get(RuntimeState, optin_key)
         user_enabled = bool((dict(getattr(optin, "value", {}) or {})).get("enabled")) if optin else False
 
     kill_switch = True
@@ -356,7 +381,7 @@ async def route_signal_to_bybit(
         kill_switch = True
 
     gate_request = ExecutionRequest(
-        user_id=int(telegram_user_id),
+        user_id=int(principal_id),
         signal_id=signal_id,
         signal=dict(signal),
         tier=str(getattr(user, "tier", "free") or "free"),
@@ -378,6 +403,7 @@ async def route_signal_to_bybit(
         resources_available=await _resources_available(),
         reconciliation_ready=reconciliation_ok,
         broker_provider="bybit",
+        user_identity=identity,
         canonical_user_id=int(user.id),
         account_classification=account_classification(connection),
         account_policy_allowed=account_policy_allowed,
@@ -488,11 +514,21 @@ async def route_signal_to_bybit(
                 await session.rollback()
                 return {"success": False, "status": "DUPLICATE", "error": "execution_already_reserved"}
 
-        quota_ok, quota_reason, quota_user_id = await reserve_user_execution_quota(
-            int(telegram_user_id),
-            tier=str(getattr(user, "tier", "vip") or "vip"),
-            execution_mode=execution_mode,
-        )
+        if identity == "platform":
+            from services.execution_quota import reserve_platform_user_execution_quota
+            quota_ok, quota_reason, quota_user_id = (
+                await reserve_platform_user_execution_quota(
+                    int(user.id),
+                    tier=str(getattr(user, "tier", "vip") or "vip"),
+                    execution_mode=execution_mode,
+                )
+            )
+        else:
+            quota_ok, quota_reason, quota_user_id = await reserve_user_execution_quota(
+                int(principal_id),
+                tier=str(getattr(user, "tier", "vip") or "vip"),
+                execution_mode=execution_mode,
+            )
         if not quota_ok:
             async with get_session(label="bybit.quota_block", timeout_seconds=8.0) as session:
                 row = (await session.execute(select(BrokerExecution).where(
@@ -556,4 +592,42 @@ async def route_signal_to_bybit(
     return BybitRouteResult(False, "Bybit execution blocked", status=result.status, error=result.error or ",".join(result.decision.reasons))
 
 
-__all__ = ["BybitRouteResult", "route_signal_to_bybit"]
+async def route_signal_to_bybit(
+    signal: Mapping[str, Any],
+    telegram_user_id: int,
+    execution_mode: str = "auto",
+    *,
+    connection_id: str | None = None,
+) -> BybitRouteResult:
+    """Backward-compatible Telegram entrypoint."""
+    return await _route_signal_to_bybit_for_identity(
+        signal,
+        int(telegram_user_id),
+        execution_mode,
+        user_identity="telegram",
+        connection_id=connection_id,
+    )
+
+
+async def route_platform_signal_to_bybit(
+    signal: Mapping[str, Any],
+    user_id: int,
+    execution_mode: str = "manual_confirmed",
+    *,
+    connection_id: str | None = None,
+) -> BybitRouteResult:
+    """Authenticated web/mobile entrypoint using canonical users.id."""
+    return await _route_signal_to_bybit_for_identity(
+        signal,
+        int(user_id),
+        execution_mode,
+        user_identity="platform",
+        connection_id=connection_id,
+    )
+
+
+__all__ = [
+    "BybitRouteResult",
+    "route_signal_to_bybit",
+    "route_platform_signal_to_bybit",
+]
