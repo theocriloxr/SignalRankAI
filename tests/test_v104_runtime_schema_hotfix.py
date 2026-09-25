@@ -29,7 +29,7 @@ def _render_upgrade_sql() -> str:
 
 def test_unified_platform_is_the_sole_migration_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0040_cross_channel_paper_receipt"]
+    assert script.get_heads() == ["0041_broker_connection_registry"]
 
 
 def test_clean_upgrade_contains_all_signal_runtime_columns_before_head() -> None:
