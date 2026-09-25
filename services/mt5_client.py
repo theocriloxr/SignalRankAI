@@ -24,6 +24,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import quote
 
 import aiohttp
 
@@ -665,6 +666,111 @@ async def close_position(
 
     result["error"] = "MetaApi position close failed"
     return result
+
+
+def _metaapi_path_time(value: datetime) -> str:
+    """Return URL-safe UTC ISO time for MetaApi history path parameters."""
+    if not isinstance(value, datetime):
+        raise ValueError("history_time_must_be_datetime")
+    when = value
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    when = when.astimezone(timezone.utc)
+    raw = when.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return quote(raw, safe="")
+
+
+async def get_history_deals_by_ticket(
+    account_id: str,
+    ticket: str,
+) -> Optional[list[dict[str, Any]]]:
+    """Return broker deal history for an exact MetaApi ticket.
+
+    None means provider/history access was unavailable. An empty list is a
+    valid provider response and must not be interpreted as a closed trade.
+    """
+    account = str(account_id or "").strip()
+    ref = str(ticket or "").strip()
+    if not account or not ref:
+        return None
+    await _deploy_account(account)
+    data = await _http_get(
+        f"{_client_base(account)}/history-deals/ticket/{quote(ref, safe='')}"
+    )
+    if not isinstance(data, list):
+        return None
+    return [dict(item) for item in data if isinstance(item, dict)]
+
+
+async def get_history_deals_by_position(
+    account_id: str,
+    position_id: str,
+) -> Optional[list[dict[str, Any]]]:
+    """Return broker deal history for an exact MetaApi position ID."""
+    account = str(account_id or "").strip()
+    ref = str(position_id or "").strip()
+    if not account or not ref:
+        return None
+    await _deploy_account(account)
+    data = await _http_get(
+        f"{_client_base(account)}/history-deals/position/{quote(ref, safe='')}"
+    )
+    if not isinstance(data, list):
+        return None
+    return [dict(item) for item in data if isinstance(item, dict)]
+
+
+async def get_history_deals_by_time_range(
+    account_id: str,
+    start_time: datetime,
+    end_time: datetime,
+    *,
+    max_deals: int = 5000,
+) -> Optional[list[dict[str, Any]]]:
+    """Return bounded broker deal history for a UTC time range.
+
+    MetaApi paginates this endpoint at up to 1000 rows. The caller receives
+    None on provider failure and a complete bounded list otherwise.
+    """
+    account = str(account_id or "").strip()
+    if not account:
+        return None
+    start = start_time
+    end = end_time
+    if not isinstance(start, datetime) or not isinstance(end, datetime):
+        raise ValueError("history_time_must_be_datetime")
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    start = start.astimezone(timezone.utc)
+    end = end.astimezone(timezone.utc)
+    if end <= start:
+        raise ValueError("history_end_must_follow_start")
+
+    await _deploy_account(account)
+    limit_total = max(1, min(int(max_deals), 10000))
+    batch_size = min(1000, limit_total)
+    offset = 0
+    rows: list[dict[str, Any]] = []
+    url = (
+        f"{_client_base(account)}/history-deals/time/"
+        f"{_metaapi_path_time(start)}/{_metaapi_path_time(end)}"
+    )
+    while offset < limit_total:
+        page_limit = min(batch_size, limit_total - offset)
+        data = await _http_get(
+            url,
+            params={"offset": offset, "limit": page_limit},
+        )
+        if not isinstance(data, list):
+            return None
+        page = [dict(item) for item in data if isinstance(item, dict)]
+        rows.extend(page)
+        if len(data) < page_limit:
+            break
+        offset += page_limit
+    return rows
 
 
 async def get_open_positions_snapshot(
