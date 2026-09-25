@@ -462,6 +462,13 @@
                 <p class="muted">PROP execution remains blocked until this exact policy version is independently certified. Editing any rule clears prior certification.</p>
               </fieldset>
               <div id="brokerPolicyState" class="detail-list"></div>
+              <div class="panel-heading">
+                <div>
+                  <h3>Account ledger</h3>
+                  <p class="muted">Recent broker-authoritative snapshots, orders, positions, realized P/L and provider-reported costs for this account only.</p>
+                </div>
+              </div>
+              <div id="brokerAccountLedger" class="data-list"></div>
               <div class="form-actions">
                 <button class="primary" type="submit">Save account policy</button>
                 <button id="freezeBrokerAccount" class="danger" type="button">Safety freeze</button>
