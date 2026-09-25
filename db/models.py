@@ -14,6 +14,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     JSON,
@@ -564,6 +565,12 @@ class BrokerExecution(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     signal_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
     provider: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    # Canonical multi-account ownership. Historical rows may be NULL until
+    # reconciled/backfilled, but every new provider-neutral execution should
+    # persist the broker connection ID.
+    connection_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("broker_connections.connection_id"), index=True
+    )
     account_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_order_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
@@ -635,6 +642,102 @@ class VIPWaitlist(Base):
     notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     invited_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     invite_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class TradingAccountPolicyRecord(Base):
+    """Versioned, per-connected-account hard execution policy."""
+
+    __tablename__ = "trading_account_policies"
+
+    policy_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    connection_id: Mapped[str] = mapped_column(
+        ForeignKey("broker_connections.connection_id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    policy_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    account_mode: Mapped[str] = mapped_column(String(24), default="DEMO", index=True, nullable=False)
+    execution_permission: Mapped[str] = mapped_column(
+        String(32), default="SIGNALS_ONLY", nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(24), default="configured", index=True, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    reset_timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
+    max_risk_per_trade_pct: Mapped[Any] = mapped_column(
+        Numeric(12, 8), default=0.005, nullable=False
+    )
+    max_daily_loss_pct: Mapped[Any] = mapped_column(
+        Numeric(12, 8), default=0.04, nullable=False
+    )
+    max_total_drawdown_pct: Mapped[Any] = mapped_column(
+        Numeric(12, 8), default=0.08, nullable=False
+    )
+    max_open_positions: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    max_leverage: Mapped[Any] = mapped_column(Numeric(18, 8), default=1, nullable=False)
+    safety_buffer_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0, nullable=False)
+    external_max_daily_loss_pct: Mapped[Optional[Any]] = mapped_column(Numeric(12, 8))
+    external_max_total_drawdown_pct: Mapped[Optional[Any]] = mapped_column(Numeric(12, 8))
+    allowed_instruments: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    allowed_asset_classes: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    news_trading_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    weekend_holding_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    prop_firm: Mapped[Optional[str]] = mapped_column(String(128))
+    prop_phase: Mapped[Optional[str]] = mapped_column(String(64))
+    prop_rules_version: Mapped[Optional[str]] = mapped_column(String(128))
+    external_rules: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    certified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    certification_ref: Mapped[Optional[str]] = mapped_column(String(160))
+    frozen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    frozen_reason: Mapped[Optional[str]] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class BrokerReconciliationState(Base):
+    """Last broker-vs-SignalRank reconciliation state for one account."""
+
+    __tablename__ = "broker_reconciliation_state"
+
+    connection_id: Mapped[str] = mapped_column(
+        ForeignKey("broker_connections.connection_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="UNKNOWN", index=True, nullable=False)
+    discrepancy_code: Mapped[Optional[str]] = mapped_column(String(128))
+    details: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    last_reconciled_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    frozen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class BrokerExecutionDecision(Base):
+    """Append-only explanation/provenance snapshot for one account decision."""
+
+    __tablename__ = "broker_execution_decisions"
+
+    decision_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    connection_id: Mapped[str] = mapped_column(
+        ForeignKey("broker_connections.connection_id"), index=True, nullable=False
+    )
+    signal_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    account_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    policy_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason_codes: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    release_sha: Mapped[Optional[str]] = mapped_column(String(64))
+    execution_engine_version: Mapped[Optional[str]] = mapped_column(String(64))
+    model_versions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    strategy_versions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    market_snapshot: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    risk_snapshot: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    request_snapshot: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    trace_id: Mapped[Optional[str]] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class BrokerConnection(Base):
