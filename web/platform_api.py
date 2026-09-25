@@ -1488,24 +1488,17 @@ async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[st
     return {"account": dict(account or {}), "positions": [dict(row) for row in positions]}
 
 
-def _telegram_identity_or_409(user: dict[str, Any]) -> int:
-    telegram_user_id = user.get("telegram_user_id")
-    if telegram_user_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "TELEGRAM_LINK_REQUIRED",
-                "message": "Link Telegram from Account before enabling automatic paper trading. Paper automation only uses delivery-proven signals sent to your account.",
-            },
-        )
-    return int(telegram_user_id)
-
-
 def _paper_snapshot_dict(snapshot: Any) -> dict[str, Any]:
     if snapshot is None:
         return {}
     return {
-        "telegram_user_id": int(snapshot.telegram_user_id),
+        "telegram_user_id": (
+            int(snapshot.telegram_user_id)
+            if snapshot.telegram_user_id is not None
+            else None
+        ),
+        "user_id": int(snapshot.user_id),
+        "identity": str(snapshot.identity),
         "starting_balance": float(snapshot.starting_balance),
         "cash_balance": float(snapshot.cash_balance),
         "equity": float(snapshot.equity),
@@ -1529,23 +1522,50 @@ def _paper_snapshot_dict(snapshot: Any) -> dict[str, Any]:
 
 @router.get("/paper/detail")
 async def paper_detail(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    telegram_user_id = _telegram_identity_or_409(user)
+    _assert_feature(user, "paper_trading")
+    uid = int(user["id"])
     from core.paper_trading_service import paper_trading_service
 
-    snapshot = await paper_trading_service.snapshot(telegram_user_id)
+    snapshot = await paper_trading_service.snapshot(
+        uid,
+        user_identity="platform",
+    )
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Paper account is unavailable")
-    performance = await paper_trading_service.performance(telegram_user_id) or {}
-    closed = await paper_trading_service.list_positions(telegram_user_id, status="closed", limit=50)
-    skipped = await paper_trading_service.list_positions(telegram_user_id, status="skipped", limit=20)
-    activity = await paper_trading_service.list_attempts(telegram_user_id, limit=30)
+    performance = (
+        await paper_trading_service.performance(
+            uid,
+            user_identity="platform",
+        )
+        or {}
+    )
+    closed = await paper_trading_service.list_positions(
+        uid,
+        status="closed",
+        limit=50,
+        user_identity="platform",
+    )
+    skipped = await paper_trading_service.list_attempts(
+        uid,
+        decision="SKIPPED",
+        limit=20,
+        user_identity="platform",
+    )
+    activity = await paper_trading_service.list_attempts(
+        uid,
+        limit=30,
+        user_identity="platform",
+    )
     return {
         "snapshot": _paper_snapshot_dict(snapshot),
         "performance": performance,
         "closed_positions": closed,
         "skipped_positions": skipped,
         "activity": activity,
-        "disclaimer": "Paper trading uses virtual funds only. It does not submit live broker orders.",
+        "disclaimer": (
+            "Paper trading uses virtual funds only. "
+            "It does not submit live broker orders."
+        ),
     }
 
 
@@ -1554,7 +1574,8 @@ async def paper_settings(
     payload: PaperSettingsUpdateRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    telegram_user_id = _telegram_identity_or_409(user)
+    _assert_feature(user, "paper_trading")
+    uid = int(user["id"])
     from core.paper_trading_service import paper_trading_service
 
     values = payload.model_dump(exclude_unset=True)
@@ -1562,20 +1583,34 @@ async def paper_settings(
         values["target_mode"] = str(values["target_mode"]).upper()
     if "allowed_asset_classes" in values and values["allowed_asset_classes"] is not None:
         aliases = {
-            "forex": "fx", "equity": "stock", "equities": "stock",
-            "stocks": "stock", "indices": "index", "commodities": "commodity",
+            "forex": "fx",
+            "equity": "stock",
+            "equities": "stock",
+            "stocks": "stock",
+            "indices": "index",
+            "commodities": "commodity",
         }
         allowed = {"crypto", "fx", "stock", "index", "commodity"}
         normalized = []
         for raw in values["allowed_asset_classes"]:
-            item = aliases.get(str(raw or "").strip().lower(), str(raw or "").strip().lower())
+            item = aliases.get(
+                str(raw or "").strip().lower(),
+                str(raw or "").strip().lower(),
+            )
             if item not in allowed:
-                raise HTTPException(status_code=422, detail=f"Unsupported asset class: {raw}")
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unsupported asset class: {raw}",
+                )
             if item not in normalized:
                 normalized.append(item)
         values["allowed_asset_classes"] = normalized
     try:
-        snapshot = await paper_trading_service.update_settings(telegram_user_id, **values)
+        snapshot = await paper_trading_service.update_settings(
+            uid,
+            user_identity="platform",
+            **values,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if snapshot is None:
@@ -1588,17 +1623,26 @@ async def paper_close_all(
     payload: PaperCloseAllRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    _assert_feature(user, "paper_trading")
     if not payload.confirm:
         raise HTTPException(status_code=422, detail="Explicit confirmation is required")
-    telegram_user_id = _telegram_identity_or_409(user)
+    uid = int(user["id"])
     from core.paper_trading_service import paper_trading_service
 
     result = await paper_trading_service.close_all_positions(
-        telegram_user_id,
+        uid,
+        user_identity="platform",
         allow_last_mark_fallback=bool(payload.allow_last_mark_fallback),
-        reason="WEB_MANUAL_CLOSE_ALL_FORCE" if payload.allow_last_mark_fallback else "WEB_MANUAL_CLOSE_ALL",
+        reason=(
+            "WEB_MANUAL_CLOSE_ALL_FORCE"
+            if payload.allow_last_mark_fallback
+            else "WEB_MANUAL_CLOSE_ALL"
+        ),
     )
-    snapshot = await paper_trading_service.snapshot(telegram_user_id)
+    snapshot = await paper_trading_service.snapshot(
+        uid,
+        user_identity="platform",
+    )
     return {"result": result, "snapshot": _paper_snapshot_dict(snapshot)}
 
 
@@ -1607,13 +1651,18 @@ async def paper_reset(
     payload: PaperResetRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    _assert_feature(user, "paper_trading")
     if not payload.confirm:
         raise HTTPException(status_code=422, detail="Explicit confirmation is required")
-    telegram_user_id = _telegram_identity_or_409(user)
+    uid = int(user["id"])
     from core.paper_trading_service import paper_trading_service
 
     try:
-        snapshot = await paper_trading_service.reset_account(telegram_user_id, payload.starting_balance)
+        snapshot = await paper_trading_service.reset_account(
+            uid,
+            payload.starting_balance,
+            user_identity="platform",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if snapshot is None:
@@ -1626,12 +1675,14 @@ async def paper_retry(
     payload: PaperRetryRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    telegram_user_id = _telegram_identity_or_409(user)
+    _assert_feature(user, "paper_trading")
+    uid = int(user["id"])
     from core.paper_trading_service import paper_trading_service
 
     accepted, reason = await paper_trading_service.request_retry(
-        telegram_user_id,
+        uid,
         payload.signal_reference,
+        user_identity="platform",
     )
     if not accepted:
         raise HTTPException(status_code=409, detail=reason)
