@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 import json
 import os
 import re
@@ -44,29 +45,38 @@ def audit_versions(root: Path = ROOT) -> dict[str, object]:
 
 
 
-def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
-    """Compare canonical Signal ORM columns with the rendered Alembic chain."""
+@lru_cache(maxsize=4)
+def render_head_sql(root: Path = ROOT) -> tuple[bool, str, str]:
+    """Render the configured Alembic head once and reuse it across contracts."""
     env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
+    env["DATABASE_MIGRATION_URL"] = (
+        "postgresql+psycopg2://audit:audit@localhost/audit"
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
         cwd=root,
         env=env,
         text=True,
         capture_output=True,
-        timeout=90,
+        timeout=120,
         check=False,
     )
-    if proc.returncode != 0:
+    return proc.returncode == 0, proc.stdout, proc.stderr
+
+
+def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
+    """Compare canonical Signal ORM columns with the rendered Alembic chain."""
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
         return {
             "ok": False,
             "missing_columns": [],
-            "error": f"alembic_offline_exit={proc.returncode}",
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
         }
 
     from db.models import Signal
 
-    rendered = proc.stdout
     migrated: set[str] = set()
     create_match = re.search(r"CREATE TABLE signals \((.*?)\n\);", rendered, re.S | re.I)
     if create_match:
@@ -102,16 +112,15 @@ def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
 
 def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
     """Ensure the rendered chain contains every MLRejectedSignal ORM column."""
-    env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
-        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
-    )
-    if proc.returncode != 0:
-        return {"ok": False, "missing_columns": [], "error": f"alembic_offline_exit={proc.returncode}"}
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "missing_columns": [],
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
     from db.models import MLRejectedSignal
-    rendered = proc.stdout
     migrated: set[str] = set()
     create_match = re.search(r"CREATE TABLE(?: IF NOT EXISTS)? ml_rejected_signals \((.*?)\n\s*\);", rendered, re.S | re.I)
     if create_match:
@@ -132,15 +141,13 @@ def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
 
 def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
     """Ensure one mutable Outcome projection is enforced per signal."""
-    env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
-        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
-    )
-    if proc.returncode != 0:
-        return {"ok": False, "error": f"alembic_offline_exit={proc.returncode}"}
-    rendered = proc.stdout
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
     unique_sql = bool(
         re.search(
             r"CREATE UNIQUE INDEX(?: IF NOT EXISTS)? uq_outcomes_signal_id\s+ON outcomes \(signal_id\)",
@@ -160,29 +167,17 @@ def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
 
 def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify the rendered head contains the canonical immutable broker ledger."""
-    env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = (
-        "postgresql+psycopg2://audit:audit@localhost/audit"
-    )
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
-        cwd=root,
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=120,
-        check=False,
-    )
-    if proc.returncode != 0:
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
         return {
             "ok": False,
             "missing_columns": [],
-            "error": f"alembic_offline_exit={proc.returncode}",
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
         }
 
     from db.models import TradingAccountLedgerEntry
 
-    rendered = proc.stdout
     create_match = re.search(
         r"CREATE TABLE trading_account_ledger_entries \((.*?)\n\);",
         rendered,
