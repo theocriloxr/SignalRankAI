@@ -76,17 +76,44 @@ def upgrade() -> None:
             name="ck_trading_account_policy_permission",
         ),
         sa.CheckConstraint("policy_version > 0", name="ck_trading_account_policy_version"),
-        sa.CheckConstraint("max_risk_per_trade_pct >= 0", name="ck_trading_account_policy_risk"),
-        sa.CheckConstraint("max_daily_loss_pct >= 0", name="ck_trading_account_policy_daily_loss"),
-        sa.CheckConstraint("max_weekly_loss_pct >= 0", name="ck_trading_account_policy_weekly_loss"),
-        sa.CheckConstraint("max_total_drawdown_pct >= 0", name="ck_trading_account_policy_drawdown"),
+        sa.CheckConstraint(
+            "max_risk_per_trade_pct >= 0 AND max_risk_per_trade_pct <= 1",
+            name="ck_trading_account_policy_risk",
+        ),
+        sa.CheckConstraint(
+            "max_daily_loss_pct >= 0 AND max_daily_loss_pct <= 1",
+            name="ck_trading_account_policy_daily_loss",
+        ),
+        sa.CheckConstraint(
+            "max_weekly_loss_pct >= 0 AND max_weekly_loss_pct <= 1",
+            name="ck_trading_account_policy_weekly_loss",
+        ),
+        sa.CheckConstraint(
+            "max_total_drawdown_pct >= 0 AND max_total_drawdown_pct <= 1",
+            name="ck_trading_account_policy_drawdown",
+        ),
         sa.CheckConstraint("max_open_positions >= 0", name="ck_trading_account_policy_positions"),
         sa.CheckConstraint("max_leverage >= 0", name="ck_trading_account_policy_leverage"),
         sa.CheckConstraint("max_spread_bps >= 0", name="ck_trading_account_policy_spread"),
         sa.CheckConstraint("max_slippage_bps >= 0", name="ck_trading_account_policy_slippage"),
         sa.CheckConstraint("min_confidence >= 0 AND min_confidence <= 1", name="ck_trading_account_policy_confidence"),
         sa.CheckConstraint("min_expected_rr >= 0", name="ck_trading_account_policy_rr"),
-        sa.CheckConstraint("safety_buffer_pct >= 0", name="ck_trading_account_policy_buffer"),
+        sa.CheckConstraint(
+            "safety_buffer_pct >= 0 AND safety_buffer_pct <= 1",
+            name="ck_trading_account_policy_buffer",
+        ),
+        sa.CheckConstraint(
+            "external_max_daily_loss_pct IS NULL OR (external_max_daily_loss_pct > 0 AND external_max_daily_loss_pct <= 1)",
+            name="ck_trading_account_policy_external_daily",
+        ),
+        sa.CheckConstraint(
+            "external_max_weekly_loss_pct IS NULL OR (external_max_weekly_loss_pct > 0 AND external_max_weekly_loss_pct <= 1)",
+            name="ck_trading_account_policy_external_weekly",
+        ),
+        sa.CheckConstraint(
+            "external_max_total_drawdown_pct IS NULL OR (external_max_total_drawdown_pct > 0 AND external_max_total_drawdown_pct <= 1)",
+            name="ck_trading_account_policy_external_drawdown",
+        ),
     )
     op.create_index(
         "ix_trading_account_policy_user_mode",
