@@ -255,6 +255,7 @@ class ProfileUpdateRequest(BaseModel):
     preferred_currency: str | None = Field(default=None, min_length=3, max_length=8, pattern=r"^[A-Za-z0-9]+$")
     max_risk_percentage: float | None = Field(default=None, ge=0.1, le=10.0)
     max_daily_drawdown_pct: float | None = Field(default=None, ge=0.5, le=50.0)
+    timezone_auto_update: bool | None = None
     marketing_consent: bool | None = None
 
 
@@ -2565,7 +2566,7 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
     params: dict[str, Any] = {"uid": int(user["id"])}
     allowed = {
         "display_name", "timezone", "locale", "max_risk_percentage",
-        "max_daily_drawdown_pct", "marketing_consent",
+        "max_daily_drawdown_pct", "timezone_auto_update", "marketing_consent",
     }
     for key, value in values.items():
         if key not in allowed and key not in {"country", "preferred_currency"}:
