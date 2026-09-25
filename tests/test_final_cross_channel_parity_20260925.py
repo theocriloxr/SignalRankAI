@@ -37,6 +37,20 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     assert "trading_account_policies" in account_policy
     assert "broker_reconciliation_state" in account_policy
     assert "broker_execution_decisions" in account_policy
+    for field in (
+        "max_weekly_loss_pct",
+        "max_spread_bps",
+        "max_slippage_bps",
+        "min_confidence",
+        "min_expected_rr",
+        "external_max_weekly_loss_pct",
+        "allowed_strategies",
+        "trading_windows",
+    ):
+        assert field in account_policy
+    assert '"broker_executions"' in account_policy
+    assert '"mt5_executions"' in account_policy
+    assert '"connection_id"' in account_policy
 
 
 def test_paper_is_free_education_but_live_features_remain_paid() -> None:
