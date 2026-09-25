@@ -149,3 +149,15 @@ def test_execution_quota_and_evidence_have_platform_entrypoints():
         evidence.index("__all__")
     ]
     assert "web_receipt_count=0" in telegram_section
+
+
+
+def test_web_and_telegram_share_tier_visibility_source_of_truth():
+    api = Path("web/platform_api.py").read_text(encoding="utf-8")
+    formatter = Path("signalrank_telegram/tier_gated_formatter.py").read_text(encoding="utf-8")
+    assert "get_entitlements(tier)" in api
+    assert "get_entitlements(tier)" in formatter
+    assert 'policy.has("exact_levels")' in api
+    assert 'evaluate_feature_access(tier, "exact_levels")' in formatter
+    assert "policy.max_tp_levels" in api
+    assert "policy.max_tp_levels" in formatter
