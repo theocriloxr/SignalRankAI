@@ -132,6 +132,16 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
             """)
             report["broker_executions_connection_id"] = bool(cur.fetchone()[0])
 
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
+                    AND table_name='mt5_executions'
+                    AND column_name='connection_id'
+                )
+            """)
+            report["mt5_executions_connection_id"] = bool(cur.fetchone()[0])
+
             queries = {
                 "active_products": "SELECT COUNT(*) FROM subscription_products WHERE active=TRUE",
                 "active_prices": "SELECT COUNT(*) FROM subscription_prices WHERE effective_until IS NULL",
