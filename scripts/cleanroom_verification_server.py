@@ -31,6 +31,7 @@ _TESTS = [
     "tests/test_canonical_broker_entrypoints.py",
     "tests/test_auth_fail_closed_boundaries.py",
     "tests/test_blueprint_certification_safety.py",
+    "tests/test_quiescent_role_certification.py",
     "tests/test_final_cross_channel_parity_20260925.py",
     "tests/test_v105_railway_readiness_hotfix.py",
     "tests/test_v106_delivery_db_hotfix.py",
