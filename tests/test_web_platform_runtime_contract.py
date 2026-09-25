@@ -145,7 +145,9 @@ def test_web_signal_fanout_is_a_distinct_gated_delivery_channel():
     assert "_recent_assets" in fanout
     assert "INSERT INTO signal_deliveries" not in fanout
     assert 'if _env_bool("WEB_SIGNAL_FANOUT_ENABLED", True):' in worker
-    assert 'name="web_signal_fanout"' in worker
+    assert '_register_task(' in worker
+    assert '"web_signal_fanout"' in worker
+    assert "self._web_signal_fanout_loop()" in worker
 
 
 def test_signal_feed_accepts_web_receipts_without_weakening_telegram_proof():
