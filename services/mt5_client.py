@@ -168,7 +168,7 @@ async def _http_put(url: str, payload: Dict) -> bool:
 
 async def _deploy_account(account_id: str) -> None:
     """Ensure the account is deployed (connected to MT5) before trading."""
-    url = f"{_client_base(account_id)}/deploy"
+    url = f"{_provisioning_base()}/{account_id}/deploy"
     try:
         await _http_post(url, {})
     except Exception as exc:
@@ -1247,3 +1247,515 @@ async def get_platform_mt5_link_status(user_id: int) -> Dict[str, Any]:
     except Exception:
         logger.debug("[mt5_client] platform link status failed", exc_info=True)
     return status
+
+
+# ---------------------------------------------------------------------------
+# Provider-neutral MetaTrader connection helpers (MT4 + MT5)
+# ---------------------------------------------------------------------------
+
+async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Create one MetaApi MT4/MT5 account without automatic retries.
+
+    MetaApi can bill repeated invalid broker-auth attempts. A single request is
+    therefore made per explicit user action; pending broker discovery is
+    surfaced to the caller instead of being looped automatically.
+    """
+    if not _check_token():
+        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    from uuid import uuid4
+
+    headers = _headers()
+    headers["transaction-id"] = uuid4().hex
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _provisioning_base(),
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=45),
+            ) as resp:
+                body = await resp.text()
+                if resp.status in (200, 201):
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = {}
+                    return {"success": True, "pending": False, "data": data}
+                if resp.status == 202:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = {}
+                    return {
+                        "success": True,
+                        "pending": True,
+                        "data": data,
+                        "retry_after": resp.headers.get("Retry-After"),
+                    }
+                return {
+                    "success": False,
+                    "error": f"MetaApi provisioning failed ({resp.status})",
+                    "diagnostic": _safe_error_body(body),
+                }
+    except Exception as exc:
+        logger.warning(
+            "[metatrader] provisioning request failed err=%s",
+            type(exc).__name__,
+        )
+        return {"success": False, "error": f"MetaApi unavailable: {type(exc).__name__}"}
+
+
+async def _create_configuration_link(
+    account_id: str,
+    *,
+    ttl_days: int = 3,
+) -> Dict[str, Any]:
+    """Return a provider-hosted credential-entry link for one MetaApi account."""
+    if not _check_token():
+        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    account_id = str(account_id or "").strip()
+    if not account_id:
+        return {"success": False, "error": "MetaApi account id is required"}
+    ttl = max(1, min(14, int(ttl_days)))
+    url = f"{_provisioning_base()}/{account_id}/configuration-link"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                url,
+                headers=_headers(),
+                params={"ttlInDays": ttl},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                body = await resp.text()
+                if resp.status == 200:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = {}
+                    link = str(data.get("configurationLink") or "").strip()
+                    if link:
+                        return {"success": True, "configuration_link": link}
+                return {
+                    "success": False,
+                    "error": f"MetaApi configuration link failed ({resp.status})",
+                    "diagnostic": _safe_error_body(body),
+                }
+    except Exception as exc:
+        return {"success": False, "error": f"MetaApi unavailable: {type(exc).__name__}"}
+
+
+def _environment_from_server(server: str, requested: str | None = None) -> str:
+    requested_n = str(requested or "").strip().lower()
+    if requested_n in {"demo", "live"}:
+        return requested_n
+    value = str(server or "").strip().lower()
+    if "demo" in value or "practice" in value or "paper" in value:
+        return "demo"
+    if "live" in value or "real" in value:
+        return "live"
+    return "unknown"
+
+
+async def link_platform_metatrader_account(
+    user_id: int,
+    *,
+    platform: str,
+    login: str,
+    password: str,
+    server: str,
+    broker_name: str | None = None,
+    account_label: str | None = None,
+    environment: str = "unknown",
+) -> Dict[str, Any]:
+    """Link an MT4 or MT5 account to the canonical platform account."""
+    import json as _json
+
+    from services.broker_connections import upsert_connection
+    from services.security import encrypt_secret, is_encryption_available
+
+    platform_n = str(platform or "").strip().lower()
+    if platform_n not in {"mt4", "mt5"}:
+        return {"success": False, "error": "platform must be mt4 or mt5"}
+    login_n = str(login or "").strip()
+    password_n = str(password or "")
+    server_n = str(server or "").strip()
+    if not login_n or not password_n or not server_n:
+        return {"success": False, "error": "login, password and broker server are required"}
+    if not is_encryption_available():
+        return {"success": False, "error": "Secure credential storage is unavailable"}
+
+    secret_payload = _json.dumps(
+        {
+            "platform": platform_n,
+            "login": login_n,
+            "password": password_n,
+            "server": server_n,
+        },
+        separators=(",", ":"),
+    )
+    encrypted = encrypt_secret(secret_payload)
+    if not encrypted:
+        return {"success": False, "error": "Failed to encrypt broker credentials"}
+
+    provision = await _provision_metatrader_account(
+        {
+            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
+            "type": "cloud-g2",
+            "login": login_n,
+            "password": password_n,
+            "server": server_n,
+            "platform": platform_n,
+            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
+            "keywords": [str(broker_name).strip()] if broker_name else [],
+            "reliability": "high",
+            "metadata": {
+                "signalrank_user_id": int(user_id),
+                "source": "signalrank-platform",
+            },
+        }
+    )
+    if not provision.get("success"):
+        return provision
+
+    data = dict(provision.get("data") or {})
+    account_id = str(data.get("id") or "").strip() or None
+    env = _environment_from_server(server_n, environment)
+    status = "provisioning" if provision.get("pending") else (
+        "linked" if account_id else "credentials_saved"
+    )
+    verified_at = None
+    info = None
+    if account_id and not provision.get("pending"):
+        info = await get_account_info(account_id)
+        if isinstance(info, dict):
+            if info.get("is_demo") is True:
+                env = "demo"
+            elif info.get("is_demo") is False:
+                env = "live"
+            if bool(info.get("connected")):
+                status = "verified"
+                verified_at = datetime.now(timezone.utc)
+
+    connection = await upsert_connection(
+        user_id=int(user_id),
+        platform=platform_n,
+        connector="metaapi",
+        broker_name=broker_name,
+        account_label=account_label or f"{platform_n.upper()} account",
+        account_ref=login_n,
+        external_account_id=account_id,
+        environment=env,
+        auth_mode="encrypted_password",
+        secret_encrypted=encrypted,
+        server=server_n,
+        status=status,
+        permissions={"read": True, "trade": True},
+        capabilities={
+            "market_data": True,
+            "orders": True,
+            "positions": True,
+            "hard_stop": True,
+            "close_positions": True,
+            "modify_stop": True,
+        },
+        execution_enabled=False,
+        meta={
+            "provider": "metaapi",
+            "provisioning_pending": bool(provision.get("pending")),
+            "retry_after": provision.get("retry_after"),
+        },
+    )
+
+    # Keep the mature MT5 compatibility store synchronized while the rest of
+    # the application migrates to the provider-neutral registry.
+    if platform_n == "mt5":
+        from db.session import get_session
+        from sqlalchemy import text
+
+        legacy_pw = encrypt_secret(password_n)
+        if legacy_pw:
+            async with get_session(label="metatrader.mt5.compat", timeout_seconds=8.0) as session:
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO mt5_credentials(
+                            user_id,mt5_login,password_encrypted,server,
+                            metaapi_account_id,created_at,updated_at
+                        )
+                        VALUES(:uid,:login,:pw,:server,:account_id,NOW(),NOW())
+                        ON CONFLICT(user_id) DO UPDATE
+                        SET mt5_login=EXCLUDED.mt5_login,
+                            password_encrypted=EXCLUDED.password_encrypted,
+                            server=EXCLUDED.server,
+                            metaapi_account_id=COALESCE(
+                                EXCLUDED.metaapi_account_id,
+                                mt5_credentials.metaapi_account_id
+                            ),
+                            updated_at=NOW()
+                        """
+                    ),
+                    {
+                        "uid": int(user_id),
+                        "login": login_n,
+                        "pw": legacy_pw,
+                        "server": server_n,
+                        "account_id": account_id,
+                    },
+                )
+                await session.commit()
+
+    return {
+        "success": True,
+        "pending": bool(provision.get("pending")),
+        "connection": connection,
+        "account_info": info,
+    }
+
+
+async def create_platform_metatrader_secure_link(
+    user_id: int,
+    *,
+    platform: str,
+    server: str,
+    broker_name: str | None = None,
+    account_label: str | None = None,
+    environment: str = "unknown",
+    ttl_days: int = 3,
+) -> Dict[str, Any]:
+    """Create an MT4/MT5 connection whose password is entered on MetaApi."""
+    from services.broker_connections import upsert_connection
+
+    platform_n = str(platform or "").strip().lower()
+    server_n = str(server or "").strip()
+    if platform_n not in {"mt4", "mt5"}:
+        return {"success": False, "error": "platform must be mt4 or mt5"}
+    if not server_n:
+        return {"success": False, "error": "broker server is required"}
+
+    provision = await _provision_metatrader_account(
+        {
+            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
+            "type": "cloud-g2",
+            "server": server_n,
+            "platform": platform_n,
+            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
+            "keywords": [str(broker_name).strip()] if broker_name else [],
+            "reliability": "high",
+            "metadata": {
+                "signalrank_user_id": int(user_id),
+                "source": "signalrank-secure-link",
+            },
+        }
+    )
+    if not provision.get("success"):
+        return provision
+    data = dict(provision.get("data") or {})
+    account_id = str(data.get("id") or "").strip()
+    if not account_id:
+        return {
+            "success": False,
+            "error": "MetaApi is still detecting broker settings; retry this explicit connect action later",
+            "pending": bool(provision.get("pending")),
+            "retry_after": provision.get("retry_after"),
+        }
+
+    link_result = await _create_configuration_link(account_id, ttl_days=ttl_days)
+    if not link_result.get("success"):
+        return link_result
+
+    connection = await upsert_connection(
+        user_id=int(user_id),
+        platform=platform_n,
+        connector="metaapi",
+        broker_name=broker_name,
+        account_label=account_label or f"{platform_n.upper()} secure account",
+        account_ref=None,
+        external_account_id=account_id,
+        environment=_environment_from_server(server_n, environment),
+        auth_mode="provider_secure_link",
+        secret_encrypted=None,
+        server=server_n,
+        status="awaiting_credentials",
+        permissions={"read": True, "trade": True},
+        capabilities={
+            "market_data": True,
+            "orders": True,
+            "positions": True,
+            "hard_stop": True,
+            "close_positions": True,
+            "modify_stop": True,
+        },
+        execution_enabled=False,
+        meta={"provider": "metaapi", "credential_storage": "provider_managed"},
+    )
+    return {
+        "success": True,
+        "connection": connection,
+        "configuration_link": link_result["configuration_link"],
+    }
+
+
+async def get_platform_metatrader_connection(
+    user_id: int,
+    *,
+    platform: str | None = None,
+    connection_id: str | None = None,
+    require_execution_enabled: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Return one canonical MT4/MT5 connection, preferring the user's default."""
+    from db.models import BrokerConnection
+    from db.session import get_session
+    from sqlalchemy import select
+
+    async with get_session(label="metatrader.connection.lookup", timeout_seconds=6.0) as session:
+        query = select(BrokerConnection).where(
+            BrokerConnection.user_id == int(user_id),
+            BrokerConnection.connector == "metaapi",
+            BrokerConnection.platform.in_(("mt4", "mt5")),
+        )
+        if connection_id:
+            query = query.where(BrokerConnection.connection_id == str(connection_id))
+        if platform:
+            query = query.where(BrokerConnection.platform == str(platform).strip().lower())
+        if require_execution_enabled:
+            query = query.where(BrokerConnection.execution_enabled.is_(True))
+        row = (
+            await session.execute(
+                query.order_by(
+                    BrokerConnection.is_default.desc(),
+                    BrokerConnection.verified_at.desc().nullslast(),
+                    BrokerConnection.created_at.asc(),
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+    if row is None:
+        return None
+    from services.broker_connections import public_connection
+
+    return public_connection(row)
+
+
+async def verify_platform_metatrader_connection(
+    user_id: int,
+    connection_id: str,
+) -> Dict[str, Any]:
+    """Refresh broker connectivity and demo/live classification."""
+    from db.models import BrokerConnection
+    from db.session import get_session
+    from sqlalchemy import select
+
+    async with get_session(label="metatrader.connection.verify", timeout_seconds=8.0) as session:
+        row = (
+            await session.execute(
+                select(BrokerConnection).where(
+                    BrokerConnection.user_id == int(user_id),
+                    BrokerConnection.connection_id == str(connection_id),
+                    BrokerConnection.connector == "metaapi",
+                    BrokerConnection.platform.in_(("mt4", "mt5")),
+                ).with_for_update().limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return {"success": False, "error": "MetaTrader connection not found"}
+        account_id = str(row.external_account_id or "").strip()
+        if not account_id:
+            return {"success": False, "error": "MetaApi account has not been provisioned yet"}
+
+        info = await get_account_info(account_id)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        row.last_health_at = now
+        if not isinstance(info, dict):
+            row.status = "unhealthy"
+            row.last_error_code = "account_info_unavailable"
+            row.last_error_message = "Could not verify the broker account"
+            row.updated_at = now
+            await session.commit()
+            return {"success": False, "error": row.last_error_message}
+
+        if info.get("is_demo") is True:
+            row.environment = "demo"
+        elif info.get("is_demo") is False:
+            row.environment = "live"
+        connected = bool(info.get("connected"))
+        row.status = "verified" if connected else "linked"
+        row.verified_at = now if connected else row.verified_at
+        row.last_error_code = None if connected else "broker_disconnected"
+        row.last_error_message = None if connected else "Broker terminal is not connected"
+        if info.get("account_number") and not row.account_ref:
+            row.account_ref = str(info["account_number"])[:128]
+        row.updated_at = now
+        await session.commit()
+        await session.refresh(row)
+
+        from services.broker_connections import public_connection
+
+        return {
+            "success": connected,
+            "connection": public_connection(row),
+            "account_info": info,
+            "error": None if connected else "Broker terminal is not connected",
+        }
+
+
+async def ensure_platform_metatrader_account_id(
+    user_id: int,
+    *,
+    platform: str | None = None,
+    connection_id: str | None = None,
+    require_execution_enabled: bool = False,
+) -> Optional[str]:
+    """Resolve or explicitly re-provision a canonical MT4/MT5 connection."""
+    import json as _json
+
+    connection = await get_platform_metatrader_connection(
+        int(user_id),
+        platform=platform,
+        connection_id=connection_id,
+        require_execution_enabled=require_execution_enabled,
+    )
+    if not connection:
+        # Legacy MT5 fallback during migration.
+        if platform in (None, "mt5") and not require_execution_enabled:
+            return await ensure_platform_mt5_account_id(int(user_id))
+        return None
+    account_id = str(connection.get("external_account_id") or "").strip()
+    if account_id:
+        return account_id
+
+    connection_id_value = str(connection.get("connection_id") or "")
+    try:
+        from db.models import BrokerConnection
+        from db.session import get_session
+        from services.security import decrypt_secret
+        from sqlalchemy import select
+
+        async with get_session(label="metatrader.reprovision", timeout_seconds=8.0) as session:
+            row = (
+                await session.execute(
+                    select(BrokerConnection).where(
+                        BrokerConnection.user_id == int(user_id),
+                        BrokerConnection.connection_id == connection_id_value,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            await session.rollback()
+        if row is None or not row.secret_encrypted:
+            return None
+        decoded = decrypt_secret(str(row.secret_encrypted))
+        payload = _json.loads(decoded) if decoded else {}
+        result = await link_platform_metatrader_account(
+            int(user_id),
+            platform=str(payload.get("platform") or row.platform),
+            login=str(payload.get("login") or ""),
+            password=str(payload.get("password") or ""),
+            server=str(payload.get("server") or row.server or ""),
+            broker_name=row.broker_name,
+            account_label=row.account_label,
+            environment=row.environment,
+        )
+        new_connection = dict(result.get("connection") or {})
+        return str(new_connection.get("external_account_id") or "").strip() or None
+    except Exception:
+        logger.warning("[metatrader] reprovision failed user=%s", user_id, exc_info=True)
+        return None
