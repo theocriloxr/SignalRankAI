@@ -344,9 +344,9 @@ async def _prime_guarded_router(monkeypatch, router) -> AsyncMock:
             return_value={
                 "provider": "metaapi",
                 "trusted": True,
-                "bid": 1.09995,
-                "ask": 1.10005,
-                "mid": 1.1,
+                "bid": 99.99,
+                "ask": 100.01,
+                "mid": 100.0,
                 "age_seconds": 0.5,
                 "max_age_seconds": 15.0,
             }
