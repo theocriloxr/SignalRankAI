@@ -58,3 +58,39 @@ def test_tracker_queries_proof_backed_deliveries_only():
     assert "SignalDelivery.sent_ok.is_(True)" in source
     assert "func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES)" in source
     assert '"LIVE_DELIVERED"' in source
+
+
+
+def test_tracker_accepts_gated_web_receipts_without_weakening_telegram_proof():
+    source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
+    assert "def _verified_telegram_delivery_exists(" in source
+    assert "SignalDelivery.sent_ok.is_(True)" in source
+    assert "SignalDelivery.telegram_chat_id.is_not(None)" in source
+    assert "SignalDelivery.telegram_message_id.is_not(None)" in source
+    assert "func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES)" in source
+    assert "def _web_signal_receipt_exists_clause()" in source
+    assert "notification_events ne" in source
+    assert "ne.channel_data->>'channel'='web'" in source
+    assert "ne.channel_data->>'signal_id'=signals.signal_id" in source
+    assert "or_(" in source[source.index("async def _fetch_active_signals"):source.index("async def _fetch_delivered_untracked_signals")]
+
+
+def test_web_lifecycle_notifications_are_idempotent_and_tier_scoped():
+    source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
+    section = source[
+        source.index("async def _notify_web_outcome("):
+        source.index("async def _broadcast_state_change")
+    ]
+    assert "uuid5(" in section
+    assert "signalrank:web-outcome:" in section
+    assert "ON CONFLICT(notification_id) DO NOTHING" in section
+    assert "get_entitlements(tier).max_tp_levels" in section
+    assert "COALESCE(np.web_enabled, TRUE) IS TRUE" in section
+    assert "COALESCE(u.is_blocked, FALSE) IS FALSE" in section
+    assert "COALESCE(u.is_suspended, FALSE) IS FALSE" in section
+    broadcast = source[
+        source.index("async def _broadcast_state_change"):
+        source.index("def _check_interval")
+    ]
+    assert "await _notify_outcome(signal_dict, status, price)" in broadcast
+    assert "await _notify_web_outcome(signal_dict, status, price)" in broadcast
