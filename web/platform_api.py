@@ -361,14 +361,22 @@ class TradingAccountPolicyUpdateRequest(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=8)
     max_risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"), ge=0, le=Decimal("0.20"))
     max_daily_loss_pct: Decimal = Field(default=Decimal("0.04"), ge=0, le=Decimal("0.50"))
+    max_weekly_loss_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
     max_total_drawdown_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
     max_open_positions: int = Field(default=3, ge=0, le=1000)
     max_leverage: Decimal = Field(default=Decimal("1"), ge=0, le=Decimal("200"))
+    max_spread_bps: Decimal = Field(default=Decimal("50"), ge=0, le=Decimal("10000"))
+    max_slippage_bps: Decimal = Field(default=Decimal("25"), ge=0, le=Decimal("10000"))
+    min_confidence: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("1"))
+    min_expected_rr: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
     safety_buffer_pct: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("0.50"))
     external_max_daily_loss_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.50"))
+    external_max_weekly_loss_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.90"))
     external_max_total_drawdown_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.90"))
     allowed_instruments: list[str] = Field(default_factory=list, max_length=500)
     allowed_asset_classes: list[str] = Field(default_factory=list, max_length=30)
+    allowed_strategies: list[str] = Field(default_factory=list, max_length=100)
+    trading_windows: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
     news_trading_allowed: bool = True
     weekend_holding_allowed: bool = True
     prop_firm: str | None = Field(default=None, max_length=128)
@@ -3380,14 +3388,22 @@ async def update_broker_account_policy(
             currency=payload.currency,
             max_risk_per_trade_pct=payload.max_risk_per_trade_pct,
             max_daily_loss_pct=payload.max_daily_loss_pct,
+            max_weekly_loss_pct=payload.max_weekly_loss_pct,
             max_total_drawdown_pct=payload.max_total_drawdown_pct,
             max_open_positions=payload.max_open_positions,
             max_leverage=payload.max_leverage,
+            max_spread_bps=payload.max_spread_bps,
+            max_slippage_bps=payload.max_slippage_bps,
+            min_confidence=payload.min_confidence,
+            min_expected_rr=payload.min_expected_rr,
             safety_buffer_pct=payload.safety_buffer_pct,
             external_max_daily_loss_pct=payload.external_max_daily_loss_pct,
+            external_max_weekly_loss_pct=payload.external_max_weekly_loss_pct,
             external_max_total_drawdown_pct=payload.external_max_total_drawdown_pct,
             allowed_instruments=payload.allowed_instruments,
             allowed_asset_classes=payload.allowed_asset_classes,
+            allowed_strategies=payload.allowed_strategies,
+            trading_windows=payload.trading_windows,
             news_trading_allowed=payload.news_trading_allowed,
             weekend_holding_allowed=payload.weekend_holding_allowed,
             prop_firm=payload.prop_firm,
