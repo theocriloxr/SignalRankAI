@@ -20,7 +20,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
         "0040_cross_channel_paper_receipt"
     ]
     migration = _source(
-        "db/migrations/versions/0040_cross_channel_paper_receipt.py"
+        "db/migrations/versions/0040_cross_channel_paper_receipts.py"
     )
     assert 'down_revision = "0039_web_signup_acquisition"' in migration
     assert len("0040_cross_channel_paper_receipt") <= 32
