@@ -82,7 +82,8 @@ class FakeCursor:
                 "subscription_products", "instruments", "webhook_deliveries",
                 "auth_identities", "user_sessions", "user_acquisition",
                 "broker_connections", "trading_account_policies",
-                "broker_reconciliation_state", "broker_execution_decisions",
+                "broker_reconciliation_state", "trading_account_ledger_entries",
+                "broker_execution_decisions",
                 "broker_executions_connection_id", "mt5_executions_connection_id",
                 "signals_ml_recovery_mode", "users_public_user_id",
             ), True),
@@ -130,6 +131,7 @@ def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, ext
     for key in (
         "trading_account_policies",
         "broker_reconciliation_state",
+        "trading_account_ledger_entries",
         "broker_execution_decisions",
         "broker_executions_connection_id",
         "mt5_executions_connection_id",
