@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from decimal import Decimal
 
 import pytest
@@ -296,3 +297,26 @@ def test_account_trading_window_uses_policy_timezone():
 def test_invalid_confidence_policy_is_rejected():
     with pytest.raises(ValueError, match="min_confidence_must_not_exceed_one"):
         _policy(min_confidence=Decimal("1.01"))
+
+
+def test_prop_certifier_authority_uses_live_owner_list_not_stored_owner_tier(monkeypatch):
+    import config
+    from services.account_policies import _operator_authority
+
+    monkeypatch.setattr(config, "OWNER_IDS", {9001})
+    monkeypatch.setattr(config, "OWNER_TELEGRAM_IDS", set())
+    monkeypatch.setattr(config, "OWNER_TELEGRAM_ID", 0)
+    monkeypatch.setattr(config, "ADMIN_IDS", {9002})
+
+    assert _operator_authority(
+        SimpleNamespace(telegram_user_id=9001, tier="free")
+    ) == "OWNER"
+    assert _operator_authority(
+        SimpleNamespace(telegram_user_id=9002, tier="free")
+    ) == "ADMIN"
+    assert _operator_authority(
+        SimpleNamespace(telegram_user_id=7777, tier="admin")
+    ) == "ADMIN"
+    assert _operator_authority(
+        SimpleNamespace(telegram_user_id=7777, tier="owner")
+    ) is None
