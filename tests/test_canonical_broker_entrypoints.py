@@ -49,6 +49,8 @@ def _manual_request(**overrides) -> ExecutionRequest:
         "resources_available": True,
         "reconciliation_ready": True,
         "kill_switch": False,
+        "account_classification": "DEMO",
+        "execution_permission": "ASSISTED_EXECUTION",
     }
     values.update(overrides)
     return ExecutionRequest(**values)
@@ -129,6 +131,22 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
                 "user_enabled": True,
                 "credentials_encrypted": True,
                 "mode": "manual",
+                "canonical_user_id": 1,
+                "connection_id": "acct",
+                "account_classification": "DEMO",
+                "account_policy": {
+                    "connection_id": "acct",
+                    "user_id": 1,
+                    "policy_version": 1,
+                    "account_mode": "DEMO",
+                    "execution_permission": "ASSISTED_EXECUTION",
+                    "status": "configured",
+                    "max_risk_per_trade_pct": "0.05",
+                    "max_daily_loss_pct": "0.50",
+                    "max_total_drawdown_pct": "0.90",
+                    "max_open_positions": 10,
+                    "max_leverage": "1000",
+                },
             }
         ),
     )
