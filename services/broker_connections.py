@@ -457,6 +457,32 @@ async def set_execution_enabled(
             reason = execution_connection_error(row, int(user_id))
             if reason and reason != "account_execution_disabled":
                 raise PermissionError(reason)
+
+            from db.models import TradingAccountPolicyRecord
+
+            policy = (
+                await session.execute(
+                    select(TradingAccountPolicyRecord).where(
+                        TradingAccountPolicyRecord.connection_id == str(connection_id),
+                        TradingAccountPolicyRecord.user_id == int(user_id),
+                    ).with_for_update().limit(1)
+                )
+            ).scalar_one_or_none()
+            if policy is None:
+                raise PermissionError("account_policy_required")
+            permission = str(policy.execution_permission or "").strip().upper()
+            if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+                raise PermissionError("execution_permission_blocked")
+            if policy.frozen_at is not None:
+                raise PermissionError("account_policy_frozen")
+            account_mode = str(policy.account_mode or "").strip().upper()
+            if account_mode == "PAPER":
+                raise PermissionError("paper_account_broker_execution_forbidden")
+            if account_mode == "PROP":
+                if policy.certified_at is None or not str(policy.certification_ref or "").strip():
+                    raise PermissionError("prop_policy_certification_required")
+                if not str(policy.prop_rules_version or "").strip():
+                    raise PermissionError("prop_rules_version_required")
         row.execution_enabled = bool(enabled)
         row.updated_at = datetime.utcnow()
         await session.commit()
