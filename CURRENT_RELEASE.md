@@ -6,7 +6,7 @@ Patch level: deployment-final-r4
 Fingerprint: v1.5.1-unified-ecosystem-completion-full-suite-20260806
 Alembic head: 0041_broker_connection_registry
 R4 full local test evidence: 1365 passed, 1 optional environment-dependent skip, 0 failed, 0 errors
-Previous staging schema evidence covered 0039; current 0040 cross-channel paper receipt provenance requires fresh runtime proof
+Previous staging schema evidence covered 0039; current 0041 broker-connection registry (including 0040 cross-channel paper receipt provenance) requires fresh runtime proof
 ```
 
 See `STAGING_COMPLETION_R4.md`, `FINAL_COMPLETION_REPORT_V1.5.1.md` and
