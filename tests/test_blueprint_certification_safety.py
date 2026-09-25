@@ -83,7 +83,7 @@ class FakeCursor:
                 "auth_identities", "user_sessions", "user_acquisition",
                 "broker_connections", "trading_account_policies",
                 "broker_reconciliation_state", "broker_execution_decisions",
-                "broker_executions_connection_id",
+                "broker_executions_connection_id", "mt5_executions_connection_id",
                 "signals_ml_recovery_mode", "users_public_user_id",
             ), True),
         }
@@ -132,6 +132,7 @@ def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, ext
         "broker_reconciliation_state",
         "broker_execution_decisions",
         "broker_executions_connection_id",
+        "mt5_executions_connection_id",
     ):
         assert key in required
 
@@ -153,6 +154,7 @@ def test_runtime_proof_uses_current_repository_head_and_rejects_incomplete_evide
         "alembic_current": head, "alembic_revisions": [head], "expected_head": head,
         "users_public_user_id": True,
         "broker_executions_connection_id": True,
+        "mt5_executions_connection_id": True,
         "required_tables": dict.fromkeys(runtime_proof.REQUIRED_TABLES, True),
         "catalogue_counts": {"active_products": 6}, "catalogue_minimums": {"active_products": 6},
         "runtime": {"duplicate_delivery_groups": 0, "duplicate_paper_position_groups": 0},
