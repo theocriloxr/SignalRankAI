@@ -13,7 +13,7 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0042_ml_recovery_provenance"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0043_account_execution_policy"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
@@ -28,6 +28,9 @@ def test_web_signup_migration_is_single_head() -> None:
     )
     assert 'revision = "0042_ml_recovery_provenance"' in recovery_provenance
     assert 'down_revision = "0041_broker_connection_registry"' in recovery_provenance
+    account_policy = _source("db/migrations/versions/0043_account_execution_policy.py")
+    assert 'revision = "0043_account_execution_policy"' in account_policy
+    assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
 
 
 def test_direct_signup_accepts_acquisition_and_referral_context() -> None:
