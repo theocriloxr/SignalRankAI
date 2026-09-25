@@ -25,6 +25,7 @@ from core.financial_activation import force_invalid_financial_flags_off
 from runtime.roles import RunMode, process_ownership
 
 _ALLOWED_ROLES = {
+    RunMode.FRONTDOOR,
     RunMode.WEB,
     RunMode.BOT,
     RunMode.ENGINE,
