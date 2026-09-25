@@ -28,7 +28,19 @@ from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
 
-_TERMINAL_STATUSES = {"closed", "cancelled", "rejected", "failed"}
+_TERMINAL_STATUSES = {
+    "closed",
+    "cancelled",
+    "rejected",
+    "failed",
+    "tp",
+    "tp1",
+    "tp2",
+    "tp3",
+    "sl",
+    "be",
+    "breakeven",
+}
 _CLOSING_ENTRY_TYPES = {
     "DEAL_ENTRY_OUT",
     "DEAL_ENTRY_OUT_BY",
@@ -125,7 +137,7 @@ def _closing_deals(deals: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _deal_time(deal: dict[str, Any]) -> datetime | None:
-    raw = deal.get("time") or deal.get("brokerTime") or deal.get("timestamp")
+    raw = deal.get("time") or deal.get("timestamp")
     if raw in (None, ""):
         return None
     try:
