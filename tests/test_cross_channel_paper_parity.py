@@ -17,10 +17,10 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0040_cross_channel_paper_receipts"
+        "0040_cross_channel_paper_receipt"
     ]
     migration = _source(
-        "db/migrations/versions/0040_cross_channel_paper_receipts.py"
+        "db/migrations/versions/0040_cross_channel_paper_receipt.py"
     )
     assert 'down_revision = "0039_web_signup_acquisition"' in migration
     assert "ALTER COLUMN delivery_id DROP NOT NULL" in migration
