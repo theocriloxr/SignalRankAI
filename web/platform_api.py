@@ -2492,7 +2492,6 @@ async def update_execution_settings(
             _assert_feature(user, "execution_preflight")
     trading_mode = values.get("trading_mode")
     if trading_mode in {"live", "both"}:
-        _assert_feature(user, "execution_preflight")
         from services.mt5_client import get_platform_mt5_link_status
         broker = await get_platform_mt5_link_status(uid)
         if not broker.get("executable") and str(values.get("execution_provider") or "auto") != "bybit":
