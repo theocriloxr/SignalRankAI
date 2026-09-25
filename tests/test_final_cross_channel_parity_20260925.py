@@ -292,10 +292,13 @@ def test_web_multi_account_policy_editor_exposes_hard_risk_controls() -> None:
         'name="allowed_strategies"',
         'name="trading_days"',
         'name="prop_rules_version"',
+        'name="external_rules_json"',
     ):
         assert marker in html
     assert "openBrokerPolicy" in app
     assert "brokerPolicyPayload" in app
+    assert "JSON.stringify(p.external_rules||{},null,2)" in app
+    assert "external_rules:externalRules" in app
     assert "/safety-freeze" in app
     assert '@router.get("/broker/connections/{connection_id}/policy")' in api
     assert '@router.put("/broker/connections/{connection_id}/policy")' in api
