@@ -62,6 +62,14 @@ class ExecutionRequest:
     user_identity: str = "telegram"
     canonical_user_id: int | None = None
     account_classification: str = ""
+    # Versioned per-account policy evidence. Non-PROP callers remain backward
+    # compatible, while canonical broker routers populate these fields.
+    account_policy_allowed: bool = True
+    account_policy_version: int = 0
+    execution_permission: str = ""
+    prop_policy_certified: bool = False
+    prop_policy_version: str = ""
+    account_frozen: bool = False
 
     def key(self) -> str:
         if self.idempotency_key:
@@ -95,7 +103,7 @@ class GateDecision:
     allowed: bool
     code: str
     reasons: tuple[str, ...] = ()
-    policy_version: str = "broker-p0-v2"
+    policy_version: str = "broker-p0-v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,18 +151,42 @@ class ExecutionGate:
         if provider not in {"mt4", "mt5", "bybit"}:
             reasons.append("unsupported_broker_provider")
         classification = str(request.account_classification or "").strip().upper()
-        if classification == "PAPER":
+        if not classification:
+            reasons.append("account_classification_required")
+        elif classification == "PAPER":
             reasons.append("paper_account_broker_execution_forbidden")
-        elif classification == "PROP":
-            # PROP activation requires a separately certified account policy path.
-            reasons.append("prop_policy_certification_required")
-        elif classification and classification not in {"DEMO", "LIVE_PERSONAL"}:
+        elif classification not in {"DEMO", "LIVE_PERSONAL", "PROP"}:
             reasons.append("unknown_account_classification")
-        elif classification and (
+        elif (
             (classification == "DEMO" and request.account_is_demo is not True)
-            or (classification == "LIVE_PERSONAL" and request.account_is_demo is not False)
+            or (classification in {"LIVE_PERSONAL", "PROP"} and request.account_is_demo is not False)
         ):
             reasons.append("account_classification_mismatch")
+
+        if request.account_frozen:
+            reasons.append("account_policy_frozen")
+        if not request.account_policy_allowed:
+            reasons.append("account_policy_blocked")
+
+        permission = str(request.execution_permission or "").strip().upper()
+        mode_for_permission = str(request.mode or "signals_only").strip().lower()
+        if permission:
+            if mode_for_permission == "manual_confirmed":
+                if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+                    reasons.append("execution_permission_blocked")
+            elif mode_for_permission in {"auto", "live", "copy_trade"}:
+                if permission != "AUTO_EXECUTION":
+                    reasons.append("execution_permission_blocked")
+
+        if classification == "PROP":
+            if int(request.account_policy_version or 0) <= 0:
+                reasons.append("prop_policy_version_required")
+            if not request.prop_policy_certified:
+                reasons.append("prop_policy_certification_required")
+            if not str(request.prop_policy_version or "").strip():
+                reasons.append("prop_rules_version_required")
+            if not _env_enabled("PROP_EXECUTION_ENABLED", False):
+                reasons.append("PROP_EXECUTION_DISABLED")
         mode = str(request.mode or "signals_only").strip().lower()
         if mode not in {"manual_confirmed", "auto", "copy_trade", "live"}:
             reasons.append("execution_mode_not_live")
