@@ -46,6 +46,8 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
         "external_max_weekly_loss_pct",
         "allowed_strategies",
         "trading_windows",
+        "certified_by_user_id",
+        "certified_by_authority",
     ):
         assert field in account_policy
     assert '"broker_executions"' in account_policy
@@ -298,3 +300,24 @@ def test_web_multi_account_policy_editor_exposes_hard_risk_controls() -> None:
     assert '@router.get("/broker/connections/{connection_id}/policy")' in api
     assert '@router.put("/broker/connections/{connection_id}/policy")' in api
     assert '@router.post("/broker/connections/{connection_id}/safety-freeze")' in api
+
+
+def test_prop_policy_certification_is_privileged_versioned_and_audited() -> None:
+    api = source("web/platform_api.py")
+    service = source("services/account_policies.py")
+    models = source("db/models.py")
+    assert '@router.post("/admin/broker/connections/{connection_id}/prop-certification")' in api
+    assert "_platform_operator_authority(user)" in api
+    assert "expected_policy_version" in api
+    assert "certified_by_user_id=int(user[\"id\"])" in api
+    assert "prop_certification_operator_required" in service
+    assert "policy_version_changed" in service
+    assert 'event_type="prop_policy_certified"' in service
+    assert "certified_by_user_id" in models
+    assert "certified_by_authority" in models
+    configure = service[
+        service.index("async def configure_account_policy"):
+        service.index("async def certify_prop_policy"),
+    ]
+    assert "row.certified_by_user_id = None" in configure
+    assert "row.certified_by_authority = None" in configure
