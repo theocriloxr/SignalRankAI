@@ -25,6 +25,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import func, select
 
@@ -35,6 +36,45 @@ BE_BUFFER_PCT = float(os.getenv("BE_BUFFER_PCT", "0.001"))
 TICK_INTERVAL = float(os.getenv("TICK_INTERVAL_SECONDS", "30.0"))
 _EXCURSION_CACHE: Dict[str, Dict[str, float]] = {}
 _DELIVERY_PROOF_STATES = ("sent", "delivered", "confirmed", "reconciled")
+
+
+def _web_signal_receipt_exists_clause() -> Any:
+    """Correlated proof that the signal passed the gated web-delivery channel."""
+    from sqlalchemy import text
+
+    return text(
+        """
+        EXISTS (
+            SELECT 1
+            FROM notification_events ne
+            WHERE ne.event_type='signal'
+              AND ne.channel_data->>'channel'='web'
+              AND ne.channel_data->>'signal_id'=signals.signal_id
+        )
+        """
+    )
+
+
+def _verified_telegram_delivery_exists(
+    Signal: Any,
+    SignalDelivery: Any,
+    *,
+    and_: Any,
+    exists: Any,
+    func: Any,
+) -> Any:
+    """Strict Telegram proof remains unchanged and independently auditable."""
+    return exists(
+        select(SignalDelivery.id).where(
+            and_(
+                SignalDelivery.signal_id == Signal.signal_id,
+                SignalDelivery.sent_ok.is_(True),
+                SignalDelivery.telegram_chat_id.is_not(None),
+                SignalDelivery.telegram_message_id.is_not(None),
+                func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
+            )
+        )
+    )
 
 
 def _record_excursion(signal_id: str, direction: str, entry: float, price: float) -> Dict[str, float]:
@@ -488,6 +528,125 @@ async def _write_outcome_to_db(signal: TrackedSignal, new_state: str, transition
         await _persist_outcome(signal.signal_id, status, signal.entry, exit_price)
 
 
+async def _notify_web_outcome(
+    signal: Dict[str, Any],
+    status: str,
+    price: float,
+) -> None:
+    """Write one idempotent lifecycle event for each authorized web recipient."""
+    signal_id = str(signal.get("signal_id") or "").strip()
+    if not signal_id:
+        return
+    status_l = str(status or "").strip().lower()
+    if not status_l or status_l == "unknown":
+        return
+
+    tp_level = 0
+    if status_l in {"tp1", "partial_tp"}:
+        tp_level = 1
+    elif status_l == "tp2":
+        tp_level = 2
+    elif status_l in {"tp3", "tp"}:
+        tp_level = 3
+
+    try:
+        from core.tier_policy import get_entitlements
+        from db.session import get_session
+        from sqlalchemy import text
+
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="outcome_tracker.web_notifications",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
+            recipients = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT DISTINCT
+                            ne.user_id,
+                            COALESCE(ne.channel_data->>'tier','free') AS tier
+                        FROM notification_events ne
+                        JOIN users u ON u.id=ne.user_id
+                        LEFT JOIN notification_preferences np ON np.user_id=ne.user_id
+                        WHERE ne.event_type='signal'
+                          AND ne.channel_data->>'channel'='web'
+                          AND ne.channel_data->>'signal_id'=:sid
+                          AND COALESCE(np.web_enabled, TRUE) IS TRUE
+                          AND COALESCE(u.is_blocked, FALSE) IS FALSE
+                          AND COALESCE(u.is_suspended, FALSE) IS FALSE
+                        """
+                    ),
+                    {"sid": signal_id},
+                )
+            ).mappings().all()
+
+            asset = str(signal.get("asset") or "Signal").upper().strip()
+            direction = str(signal.get("direction") or "").upper().strip()
+            for recipient in recipients:
+                user_id = int(recipient["user_id"])
+                tier = str(recipient.get("tier") or "free").strip().lower()
+                if tp_level > 0 and tp_level > int(get_entitlements(tier).max_tp_levels):
+                    continue
+
+                notification_id = str(
+                    uuid5(
+                        NAMESPACE_URL,
+                        f"signalrank:web-outcome:{user_id}:{signal_id}:{status_l}",
+                    )
+                )
+                label = status_l.upper().replace("_", " ")
+                severity = "warning" if status_l in {"sl", "invalid", "invalidated"} else "info"
+                title = f"{asset} {label}"
+                body = (
+                    f"{asset} {direction} · {label} at {float(price):.8g}. "
+                    "Open the signal for its proof-backed lifecycle and current state."
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO notification_events(
+                            notification_id,user_id,event_type,title,body,severity,
+                            channel_data,created_at
+                        )
+                        VALUES(
+                            :notification_id,:user_id,'signal_outcome',:title,:body,:severity,
+                            CAST(:channel_data AS JSONB),NOW()
+                        )
+                        ON CONFLICT(notification_id) DO NOTHING
+                        """
+                    ),
+                    {
+                        "notification_id": notification_id,
+                        "user_id": user_id,
+                        "title": title[:200],
+                        "body": body,
+                        "severity": severity,
+                        "channel_data": json.dumps(
+                            {
+                                "channel": "web",
+                                "surface": "signal_lifecycle",
+                                "signal_id": signal_id,
+                                "outcome_status": status_l,
+                                "price": float(price),
+                                "tier_at_receipt": tier,
+                            },
+                            separators=(",", ":"),
+                        ),
+                    },
+                )
+            await session.commit()
+    except Exception as exc:
+        # Outcome persistence must never depend on a presentation channel.
+        logger.warning(
+            "[outcome_tracker] web lifecycle notification failed signal=%s status=%s err=%s",
+            signal_id[:16],
+            status_l,
+            type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _broadcast_state_change(signal: TrackedSignal, new_state: str, transition: dict) -> None:
     """Broadcast state changes by delegating to the target tracker's notifier."""
     status = state_to_db_outcome(new_state, signal.highest_tp_hit)
@@ -508,6 +667,7 @@ async def _broadcast_state_change(signal: TrackedSignal, new_state: str, transit
         or signal.entry
     )
     await _notify_outcome(signal_dict, status, price)
+    await _notify_web_outcome(signal_dict, status, price)
 
 
 def _check_interval() -> int:
@@ -546,16 +706,15 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 .where(Signal.archived.is_(False))
                 .where(Signal.created_at >= cutoff)
                 .where(
-                    exists(
-                        select(SignalDelivery.id).where(
-                            and_(
-                                SignalDelivery.signal_id == Signal.signal_id,
-                                SignalDelivery.sent_ok.is_(True),
-                                SignalDelivery.telegram_chat_id.is_not(None),
-                                SignalDelivery.telegram_message_id.is_not(None),
-                                func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
-                            )
-                        )
+                    or_(
+                        _verified_telegram_delivery_exists(
+                            Signal,
+                            SignalDelivery,
+                            and_=and_,
+                            exists=exists,
+                            func=func,
+                        ),
+                        _web_signal_receipt_exists_clause(),
                     )
                 )
                 .where(
@@ -640,7 +799,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
     try:
         from db.session import get_session
         from db.models import Signal, SignalDelivery, Outcome
-        from sqlalchemy import select, or_, and_, func
+        from sqlalchemy import select, or_, and_, func, exists
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "168") or 168)
         limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
@@ -651,13 +810,20 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
         async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
             stmt = (
                 select(Signal)
-                .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                 .where(Outcome.id.is_(None))
-                .where(SignalDelivery.sent_ok.is_(True))
-                .where(SignalDelivery.telegram_chat_id.is_not(None))
-                .where(SignalDelivery.telegram_message_id.is_not(None))
-                .where(func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES))
+                .where(
+                    or_(
+                        _verified_telegram_delivery_exists(
+                            Signal,
+                            SignalDelivery,
+                            and_=and_,
+                            exists=exists,
+                            func=func,
+                        ),
+                        _web_signal_receipt_exists_clause(),
+                    )
+                )
                 .where(Signal.created_at >= cutoff)
                 .order_by(Signal.created_at.asc())
                 .limit(max(1, int(limit)))
@@ -716,7 +882,7 @@ async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str,
     try:
         from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
         from db.session import get_session
-        from sqlalchemy import and_, exists, func, select
+        from sqlalchemy import and_, exists, func, select, or_
 
         async with _session_scope(
             get_session,
@@ -731,16 +897,15 @@ async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str,
                 .where(Signal.signal_id == ref)
                 .where(Signal.archived.is_(False))
                 .where(
-                    exists(
-                        select(SignalDelivery.id).where(
-                            and_(
-                                SignalDelivery.signal_id == Signal.signal_id,
-                                SignalDelivery.sent_ok.is_(True),
-                                SignalDelivery.telegram_chat_id.is_not(None),
-                                SignalDelivery.telegram_message_id.is_not(None),
-                                func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
-                            )
-                        )
+                    or_(
+                        _verified_telegram_delivery_exists(
+                            Signal,
+                            SignalDelivery,
+                            and_=and_,
+                            exists=exists,
+                            func=func,
+                        ),
+                        _web_signal_receipt_exists_clause(),
                     )
                 )
                 .limit(1)
