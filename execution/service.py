@@ -57,14 +57,26 @@ class ExecutionRequest:
     resources_available: bool = False
     reconciliation_ready: bool = False
     broker_provider: str = "mt5"
+    # Identity scope is explicit for cross-channel execution. The default keeps
+    # every existing Telegram caller and positional constructor compatible.
+    user_identity: str = "telegram"
+    canonical_user_id: int | None = None
 
     def key(self) -> str:
         if self.idempotency_key:
             return str(self.idempotency_key)
-        payload = (
-            f"{int(self.user_id)}|{self.account_id}|"
-            f"{self.signal_id}|{str(self.mode).strip().lower()}"
-        )
+        identity = str(self.user_identity or "telegram").strip().lower()
+        if identity == "telegram":
+            # Preserve historical Telegram idempotency keys exactly.
+            payload = (
+                f"{int(self.user_id)}|{self.account_id}|"
+                f"{self.signal_id}|{str(self.mode).strip().lower()}"
+            )
+        else:
+            payload = (
+                f"{identity}:{int(self.user_id)}|{self.account_id}|"
+                f"{self.signal_id}|{str(self.mode).strip().lower()}"
+            )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -137,11 +149,19 @@ class ExecutionGate:
             activation = evaluate_financial_activation()
             if not activation.ok:
                 reasons.append("PRODUCTION_ACTIVATION_CONTRACT_BLOCKED")
-            allowed_users = {
-                item.strip()
-                for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS") or "").split(",")
-                if item.strip()
-            }
+            identity = str(request.user_identity or "telegram").strip().lower()
+            if identity == "platform":
+                allowed_users = {
+                    item.strip()
+                    for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_PLATFORM_USERS") or "").split(",")
+                    if item.strip()
+                }
+            else:
+                allowed_users = {
+                    item.strip()
+                    for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_TELEGRAM_USERS") or "").split(",")
+                    if item.strip()
+                }
             allowed_accounts = {
                 item.strip()
                 for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_BROKER_ACCOUNTS") or "").split(",")
@@ -163,7 +183,11 @@ class ExecutionGate:
                 or ""
             ).strip().upper()
             if str(request.user_id) not in allowed_users:
-                reasons.append("LIVE_USER_NOT_ALLOWLISTED")
+                reasons.append(
+                    "LIVE_PLATFORM_USER_NOT_ALLOWLISTED"
+                    if identity == "platform"
+                    else "LIVE_USER_NOT_ALLOWLISTED"
+                )
             if str(request.account_id or "").strip() not in allowed_accounts:
                 reasons.append("LIVE_ACCOUNT_NOT_ALLOWLISTED")
             if provider not in allowed_providers:
