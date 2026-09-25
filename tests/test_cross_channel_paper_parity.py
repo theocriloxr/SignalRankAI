@@ -17,7 +17,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0041_broker_connection_registry"
+        "0042_ml_recovery_provenance"
     ]
     migration = _source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -31,6 +31,11 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
         "db/migrations/versions/0041_broker_connection_registry.py"
     )
     assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker_migration
+    recovery_migration = _source(
+        "db/migrations/versions/0042_ml_starvation_recovery_provenance.py"
+    )
+    assert 'revision = "0042_ml_recovery_provenance"' in recovery_migration
+    assert 'down_revision = "0041_broker_connection_registry"' in recovery_migration
 
 
 def test_paper_attempt_model_preserves_channel_neutral_provenance() -> None:
