@@ -14,7 +14,7 @@ if [[ -z "${DATABASE_MIGRATION_URL:-}" ]]; then
   exit 65
 fi
 
-expected_head="0040_cross_channel_paper_receipt"
+expected_head="0041_broker_connection_registry"
 actual_head="$(python -m alembic heads | awk '{print $1}' | tail -1)"
 if [[ "$actual_head" != "$expected_head" ]]; then
   echo "Unexpected repository migration head: $actual_head (expected $expected_head)" >&2
@@ -22,7 +22,7 @@ if [[ "$actual_head" != "$expected_head" ]]; then
 fi
 
 python -m alembic upgrade head
-current_head="$(python -m alembic current | awk '/0040_cross_channel_paper_receipt/{print $1}' | tail -1)"
+current_head="$(python -m alembic current | awk '/0041_broker_connection_registry/{print $1}' | tail -1)"
 if [[ "$current_head" != "$expected_head" ]]; then
   echo "Database migration did not reach $expected_head" >&2
   exit 67
