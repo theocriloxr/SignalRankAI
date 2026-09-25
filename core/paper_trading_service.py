@@ -942,13 +942,32 @@ class PaperTradingService:
             decision = "SKIPPED"
             reason = "paper_entry_retry_deadline_expired"
             finalized = True
+        delivery_id = candidate.get("delivery_id")
+        receipt_channel = str(
+            candidate.get("receipt_channel")
+            or ("telegram" if delivery_id is not None else "web")
+        ).strip().lower()
+        receipt_reference = str(
+            candidate.get("receipt_reference")
+            or (delivery_id if delivery_id is not None else candidate.get("signal_id"))
+            or ""
+        ).strip()
         attempt = PaperTradeAttempt(
             attempt_id=str(uuid4()),
             account_id=int(account.id),
             user_id=int(user.id),
             signal_id=str(candidate["signal_id"]),
-            delivery_id=int(candidate["delivery_id"]),
-            idempotency_key=f"paper:{candidate['delivery_id']}:{attempt_number}:{decision.lower()}",
+            delivery_id=(
+                int(delivery_id)
+                if delivery_id is not None
+                else None
+            ),
+            receipt_channel=receipt_channel,
+            receipt_reference=receipt_reference[:64] or None,
+            idempotency_key=(
+                f"paper:{receipt_channel}:{receipt_reference}:"
+                f"{attempt_number}:{decision.lower()}"
+            )[:128],
             decision=str(decision).upper(),
             reason=str(reason)[:128],
             retryable=bool(retryable),
@@ -982,6 +1001,8 @@ class PaperTradingService:
                 "attempt_id": attempt.attempt_id,
                 "signal_id": candidate.get("signal_id"),
                 "delivery_id": candidate.get("delivery_id"),
+                "receipt_channel": receipt_channel,
+                "receipt_reference": receipt_reference,
                 "reason": reason,
                 "retryable": bool(retryable),
             },
@@ -1411,16 +1432,28 @@ class PaperTradingService:
                                     if quantity > 0:
                                         position = PaperPosition(
                                             position_id=str(uuid4()), account_id=int(account.id), user_id=int(user.id),
-                                            signal_id=str(candidate["signal_id"]), delivery_id=int(candidate["delivery_id"]),
+                                            signal_id=str(candidate["signal_id"]),
+                                            delivery_id=(
+                                                int(candidate["delivery_id"])
+                                                if candidate.get("delivery_id") is not None
+                                                else None
+                                            ),
                                             asset=str(candidate["asset"]), asset_class=asset_class,
                                             timeframe=str(candidate.get("timeframe") or ""), direction=direction,
                                             status="open", signal_entry=entry, fill_entry=fill, current_price=live,
                                             stop_loss=stop, take_profits=targets, target_price=target,
                                             quantity=quantity, notional=notional, reserved_cash=notional,
                                             entry_fee=entry_fee, exit_fee=0.0, unrealized_pnl=0.0, realized_pnl=0.0,
-                                            opened_at=now_utc_naive(), source="delivered_signal",
+                                            opened_at=now_utc_naive(),
+                                            source=(
+                                                "web_signal_receipt"
+                                                if str(candidate.get("receipt_channel") or "") == "web"
+                                                else "delivered_signal"
+                                            ),
                                             meta={
                                                 "score": candidate.get("score"), "price_source": "live",
+                                                "receipt_channel": candidate.get("receipt_channel") or "telegram",
+                                                "receipt_reference": candidate.get("receipt_reference"),
                                                 "confirmed_at": str(candidate.get("confirmed_at") or ""),
                                                 "risk_pct": float(effective_risk_pct),
                                                 "requested_risk_pct": float(sizing.requested_risk_pct),
