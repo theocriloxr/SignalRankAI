@@ -1,4 +1,4 @@
-"""Cross-process lock for one execution destination per delivered user signal."""
+"""Cross-process lock for one execution destination per trading account and signal."""
 
 from __future__ import annotations
 
