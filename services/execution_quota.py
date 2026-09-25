@@ -1,8 +1,9 @@
 """Shared, fail-closed per-user broker execution quotas.
 
-MT5 and Bybit draw from the same daily execution counter. The counter is
-reserved before broker I/O and is released only for a definite rejection before
-an order can exist. Ambiguous submissions remain reserved until reconciliation.
+MT5, Bybit, Telegram, web and mobile draw from the same canonical daily
+execution counter.  A slot is reserved before broker I/O and released only for
+a definite pre-order rejection; ambiguous submissions remain reserved until
+reconciliation.
 """
 from __future__ import annotations
 
@@ -22,34 +23,38 @@ def _now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-async def reserve_user_execution_quota(
-    telegram_user_id: int,
+async def _reserve_execution_quota(
     *,
+    canonical_user_id: int | None = None,
+    telegram_user_id: int | None = None,
     tier: str,
     execution_mode: str,
 ) -> tuple[bool, str, int | None]:
-    """Reserve one shared daily execution slot under a row lock."""
+    """Reserve one shared daily execution slot under a canonical user row lock."""
+    if canonical_user_id is None and telegram_user_id is None:
+        return False, "user_profile_missing", None
     try:
         now = _now_naive()
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         async with get_session(label="execution.quota.reserve", timeout_seconds=8.0) as session:
+            query = select(User)
+            if canonical_user_id is not None:
+                query = query.where(User.id == int(canonical_user_id))
+            else:
+                query = query.where(User.telegram_user_id == int(telegram_user_id))
             user = (
-                await session.execute(
-                    select(User)
-                    .where(User.telegram_user_id == int(telegram_user_id))
-                    .with_for_update()
-                    .limit(1)
-                )
+                await session.execute(query.with_for_update().limit(1))
             ).scalar_one_or_none()
             if user is None:
                 await session.rollback()
                 return False, "user_profile_missing", None
 
             try:
-                from services.user_intelligence import get_user_trading_preferences
-                profile_prefs = await get_user_trading_preferences(
+                from services.user_intelligence import get_platform_user_trading_preferences
+
+                profile_prefs = await get_platform_user_trading_preferences(
                     session,
-                    int(telegram_user_id),
+                    int(user.id),
                 )
             except Exception:
                 profile_prefs = None
@@ -77,7 +82,10 @@ async def reserve_user_execution_quota(
             )
             drawdown_cap = float(getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0)
             if profile_prefs is not None:
-                profile_drawdown = float(getattr(profile_prefs, "max_daily_loss_pct", drawdown_cap) or drawdown_cap)
+                profile_drawdown = float(
+                    getattr(profile_prefs, "max_daily_loss_pct", drawdown_cap)
+                    or drawdown_cap
+                )
                 if profile_drawdown > 0:
                     drawdown_cap = min(drawdown_cap, profile_drawdown)
             if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
@@ -89,7 +97,9 @@ async def reserve_user_execution_quota(
             if tier_upper == "PREMIUM":
                 limit = max(0, int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3))
                 if profile_prefs is not None:
-                    profile_limit = int(getattr(profile_prefs, "max_daily_trades", limit) or limit)
+                    profile_limit = int(
+                        getattr(profile_prefs, "max_daily_trades", limit) or limit
+                    )
                     if profile_limit > 0:
                         limit = min(limit, profile_limit) if limit > 0 else profile_limit
                 if limit == 0 or current >= limit:
@@ -97,15 +107,27 @@ async def reserve_user_execution_quota(
                     return False, "premium_daily_execution_limit", int(user.id)
 
             mode = str(execution_mode or "").strip().lower()
-            if mode in {"auto", "live"}:
+            if mode in {"auto", "live", "copy_trade"}:
                 auto_limit = int(getattr(user, "auto_signals_daily_limit", 0) or 0)
                 if profile_prefs is not None:
-                    profile_limit = getattr(profile_prefs, "max_signals_per_day", None)
+                    profile_limit = getattr(
+                        profile_prefs,
+                        "max_signals_per_day",
+                        None,
+                    )
                     if profile_limit in (None, 0):
-                        profile_limit = getattr(profile_prefs, "max_daily_trades", auto_limit)
+                        profile_limit = getattr(
+                            profile_prefs,
+                            "max_daily_trades",
+                            auto_limit,
+                        )
                     profile_limit = int(profile_limit or 0)
                     if profile_limit > 0:
-                        auto_limit = min(auto_limit, profile_limit) if auto_limit > 0 else profile_limit
+                        auto_limit = (
+                            min(auto_limit, profile_limit)
+                            if auto_limit > 0
+                            else profile_limit
+                        )
                 if auto_limit == 0:
                     await session.rollback()
                     return False, "auto_execution_limit_disabled", int(user.id)
@@ -120,6 +142,34 @@ async def reserve_user_execution_quota(
     except Exception:
         logger.warning("shared execution quota unavailable; blocking", exc_info=True)
         return False, "execution_quota_unavailable", None
+
+
+async def reserve_user_execution_quota(
+    telegram_user_id: int,
+    *,
+    tier: str,
+    execution_mode: str,
+) -> tuple[bool, str, int | None]:
+    """Compatibility wrapper for Telegram-originated execution."""
+    return await _reserve_execution_quota(
+        telegram_user_id=int(telegram_user_id),
+        tier=tier,
+        execution_mode=execution_mode,
+    )
+
+
+async def reserve_platform_user_execution_quota(
+    user_id: int,
+    *,
+    tier: str,
+    execution_mode: str,
+) -> tuple[bool, str, int | None]:
+    """Reserve quota for an authenticated canonical platform account."""
+    return await _reserve_execution_quota(
+        canonical_user_id=int(user_id),
+        tier=tier,
+        execution_mode=execution_mode,
+    )
 
 
 async def release_user_execution_quota(user_db_id: int | None) -> None:
@@ -142,4 +192,8 @@ async def release_user_execution_quota(user_db_id: int | None) -> None:
         logger.warning("failed to release execution quota; reconciliation required", exc_info=True)
 
 
-__all__ = ["release_user_execution_quota", "reserve_user_execution_quota"]
+__all__ = [
+    "release_user_execution_quota",
+    "reserve_platform_user_execution_quota",
+    "reserve_user_execution_quota",
+]
