@@ -1154,6 +1154,34 @@ async def get_or_create_signal_impl(
         ml_calibration_validation_rows=calibration_rows,
         ml_calibration_brier=calibration_brier,
         ml_calibration_ece=calibration_ece,
+        ml_recovery_mode=bool(signal.get("ml_recovery_mode", False)),
+        ml_recovery_reason=(
+            str(signal.get("ml_recovery_reason") or "").strip()[:64] or None
+        ),
+        ml_recovery_champion_raw_probability=(
+            float(signal.get("ml_recovery_champion_raw_probability"))
+            if signal.get("ml_recovery_champion_raw_probability") is not None
+            else None
+        ),
+        ml_recovery_certified_threshold=(
+            float(signal.get("ml_recovery_certified_threshold"))
+            if signal.get("ml_recovery_certified_threshold") is not None
+            else None
+        ),
+        ml_recovery_challenger_probability=(
+            float(signal.get("ml_recovery_challenger_probability"))
+            if signal.get("ml_recovery_challenger_probability") is not None
+            else None
+        ),
+        ml_recovery_challenger_threshold=(
+            float(signal.get("ml_recovery_challenger_threshold"))
+            if signal.get("ml_recovery_challenger_threshold") is not None
+            else None
+        ),
+        ml_recovery_challenger_version=(
+            str(signal.get("ml_recovery_challenger_version") or "").strip()[:64]
+            or None
+        ),
         quality_gate_version=quality_gate_version,
         quality_gate_passed=quality_gate_passed,
         strategy_name=strategy_name,
