@@ -730,6 +730,55 @@ class BrokerReconciliationState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class TradingAccountLedgerEntry(Base):
+    """Append-only broker-authoritative financial/trade account ledger."""
+
+    __tablename__ = "trading_account_ledger_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "connection_id",
+            "provider",
+            "source_event_id",
+            name="uq_trading_account_ledger_provider_event",
+        ),
+    )
+
+    entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    connection_id: Mapped[str] = mapped_column(
+        ForeignKey("broker_connections.connection_id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    correlation_id: Mapped[Optional[str]] = mapped_column(String(128))
+    order_ref: Mapped[Optional[str]] = mapped_column(String(160))
+    fill_ref: Mapped[Optional[str]] = mapped_column(String(160))
+    position_ref: Mapped[Optional[str]] = mapped_column(String(160))
+    amount: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    balance: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    equity: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    margin: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    free_margin: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    realized_pnl: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    unrealized_pnl: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    commission: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    funding: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    swap: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    fees: Mapped[Optional[Any]] = mapped_column(Numeric(28, 10))
+    correction_of_entry_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("trading_account_ledger_entries.entry_id", ondelete="RESTRICT")
+    )
+    provider_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    metadata_json: Mapped[Dict[str, Any]] = mapped_column(
+        "metadata", JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class BrokerExecutionDecision(Base):
     """Append-only explanation/provenance snapshot for one account decision."""
 
