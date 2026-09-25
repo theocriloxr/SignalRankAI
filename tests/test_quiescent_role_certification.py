@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+import subprocess
+import sys
+
 import pytest
 
 from scripts.quiescent_role import validate_quiescent_environment
@@ -83,3 +88,37 @@ def test_quiescent_certification_rejects_monolith() -> None:
     env["SERVICE_ROLE"] = "all"
     with pytest.raises(RuntimeError, match="forbids role=all/dev"):
         validate_quiescent_environment(env)
+
+
+def test_quiescent_direct_script_invocation_resolves_repo_imports() -> None:
+    root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env.update(
+        {
+            "RAILWAY_ENVIRONMENT_NAME": "production",
+            "SIGNALRANK_ENV_PROFILE": "staging-certification",
+            "RUN_MODE": "analytics",
+            "GLOBAL_EXECUTION_KILL_SWITCH": "1",
+            "DATABASE_SCHEMA_GATE_ENABLED": "1",
+            "RELEASE_SOURCE_GATE_ENABLED": "1",
+        }
+    )
+    result = subprocess.run(
+        [sys.executable, "scripts/quiescent_role.py"],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "ModuleNotFoundError" not in combined
+    assert "quiescent certification requires staging environment" in combined
+
+
+def test_start_sh_invokes_quiescent_runner_as_module() -> None:
+    root = Path(__file__).resolve().parents[1]
+    start = (root / "start.sh").read_text(encoding="utf-8")
+    assert "exec python -u -m scripts.quiescent_role" in start
