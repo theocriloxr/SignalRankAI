@@ -24,7 +24,8 @@ REQUIRED_TABLES = (
     "instruments", "provider_instruments", "auth_identities", "user_sessions",
     "webhook_deliveries", "payment_receipts", "email_outbox",
     "broker_connections", "trading_account_policies",
-    "broker_reconciliation_state", "broker_execution_decisions",
+    "broker_reconciliation_state", "trading_account_ledger_entries",
+    "broker_execution_decisions",
 )
 
 
@@ -102,6 +103,7 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                   to_regclass('public.broker_connections') IS NOT NULL,
                   to_regclass('public.trading_account_policies') IS NOT NULL,
                   to_regclass('public.broker_reconciliation_state') IS NOT NULL,
+                  to_regclass('public.trading_account_ledger_entries') IS NOT NULL,
                   to_regclass('public.broker_execution_decisions') IS NOT NULL
             """)
             values = cur.fetchone()
@@ -110,7 +112,8 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 "instruments", "provider_instruments", "auth_identities", "user_sessions",
                 "webhook_deliveries", "payment_receipts", "email_outbox",
                 "broker_connections", "trading_account_policies",
-                "broker_reconciliation_state", "broker_execution_decisions",
+                "broker_reconciliation_state", "trading_account_ledger_entries",
+                "broker_execution_decisions",
             )
             report["required_tables"] = dict(zip(names, map(bool, values)))
 
