@@ -62,6 +62,13 @@ def upgrade() -> None:
         sa.Column("external_rules", sa.JSON(), nullable=False, server_default=sa.text("'{}'::json")),
         sa.Column("certified_at", sa.DateTime(), nullable=True),
         sa.Column("certification_ref", sa.String(length=160), nullable=True),
+        sa.Column(
+            "certified_by_user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column("certified_by_authority", sa.String(length=16), nullable=True),
         sa.Column("frozen_at", sa.DateTime(), nullable=True),
         sa.Column("frozen_reason", sa.String(length=256), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
