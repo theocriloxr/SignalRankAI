@@ -136,6 +136,19 @@ class TradingAccountPolicy:
                 raise ValueError(f"{name}_must_not_be_negative")
             object.__setattr__(self, name, value)
 
+        if self.min_confidence > Decimal("1"):
+            raise ValueError("min_confidence_must_not_exceed_one")
+        if self.max_risk_per_trade_pct > Decimal("1"):
+            raise ValueError("max_risk_per_trade_pct_must_not_exceed_one")
+        for name in (
+            "max_daily_loss_pct",
+            "max_weekly_loss_pct",
+            "max_total_drawdown_pct",
+            "safety_buffer_pct",
+        ):
+            if getattr(self, name) > Decimal("1"):
+                raise ValueError(f"{name}_must_not_exceed_one")
+
         for name in (
             "external_max_daily_loss_pct",
             "external_max_weekly_loss_pct",
@@ -146,6 +159,8 @@ class TradingAccountPolicy:
                 parsed = _decimal(value, field_name=name)
                 if parsed <= 0:
                     raise ValueError(f"{name}_must_be_positive")
+                if parsed > Decimal("1"):
+                    raise ValueError(f"{name}_must_not_exceed_one")
                 object.__setattr__(self, name, parsed)
 
         try:
@@ -218,6 +233,8 @@ class AccountRiskSnapshot:
             )
         if int(self.open_positions) < 0:
             raise ValueError("invalid_open_positions")
+        if not isinstance(self.evaluated_at_utc, datetime):
+            raise ValueError("invalid_evaluated_at_utc")
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +244,7 @@ class AccountPolicyDecision:
     reasons: tuple[str, ...]
     policy_version: int
     effective_daily_loss_limit: Decimal | None = None
+    effective_weekly_loss_limit: Decimal | None = None
     effective_drawdown_limit: Decimal | None = None
 
 
@@ -443,20 +461,22 @@ def evaluate_account_policy(
 
     if reasons:
         return AccountPolicyDecision(
-            False,
-            "ACCOUNT_POLICY_BLOCKED",
-            tuple(dict.fromkeys(reasons)),
-            policy.policy_version,
-            daily_limit,
-            drawdown_limit,
+            allowed=False,
+            code="ACCOUNT_POLICY_BLOCKED",
+            reasons=tuple(dict.fromkeys(reasons)),
+            policy_version=policy.policy_version,
+            effective_daily_loss_limit=daily_limit,
+            effective_weekly_loss_limit=weekly_limit,
+            effective_drawdown_limit=drawdown_limit,
         )
     return AccountPolicyDecision(
-        True,
-        "ACCOUNT_POLICY_ALLOWED",
-        (),
-        policy.policy_version,
-        daily_limit,
-        drawdown_limit,
+        allowed=True,
+        code="ACCOUNT_POLICY_ALLOWED",
+        reasons=(),
+        policy_version=policy.policy_version,
+        effective_daily_loss_limit=daily_limit,
+        effective_weekly_loss_limit=weekly_limit,
+        effective_drawdown_limit=drawdown_limit,
     )
 
 
