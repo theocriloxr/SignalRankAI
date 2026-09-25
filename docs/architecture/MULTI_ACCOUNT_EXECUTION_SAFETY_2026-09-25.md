@@ -81,11 +81,18 @@ persistence.
 
 Current provider wiring:
 
-- MT4/MT5: account snapshots and broker-acknowledged order evidence.
+- MT4/MT5: account snapshots, broker-acknowledged orders, exact MetaApi
+  deal/fill history, realized P/L, commission, swap and provider-reported fees.
+  Closure attribution requires exact broker order/position identity and the
+  matching position to be absent from the broker's open-position snapshot;
+  same-symbol or time-only inference is forbidden.
 - Bybit: account snapshots, broker-acknowledged orders, open-position
   snapshots, closed realized P/L and provider-reported entry/exit fees.
-- MT4/MT5 closed-deal/P&L ingestion remains pending an authoritative provider
-  history/deal adapter; no synthetic closure evidence is created.
+
+MetaApi deal-history ingestion is implemented and deterministically unit-tested.
+Live MetaApi provider certification remains a separate runtime gate: code
+coverage does not claim that a particular live account, server or broker
+returned complete history until staging/provider evidence proves it.
 
 ## Reconciliation and freezes
 
