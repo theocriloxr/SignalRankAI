@@ -214,3 +214,143 @@ def test_prediction_starvation_never_relaxes_certified_threshold_in_analytics_ru
     assert '"0.01"' in section
     assert "ML_PROB_THRESHOLD" not in section
     assert "classification_threshold" not in section
+
+
+
+def test_analytics_prediction_health_survives_missing_feature_baseline():
+    from pathlib import Path
+
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    section = source[
+        source.index("async def _ml_drift_loop"):
+        source.index("async def run_async")
+    ]
+    prediction_index = section.index("prediction_result=detect_prediction_starvation")
+    feature_index = section.index("baseline=await load_durable_feature_baseline")
+    assert prediction_index < feature_index
+    assert 'reason": "baseline_or_live_features_unavailable"' in section
+    assert 'raise FileNotFoundError' not in section
+    assert "signalrankai:ml:starvation:mode" in section
+
+
+def test_starvation_recovery_is_bounded_and_preserves_certified_cutoff(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_SCORE", "85")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_CONFLUENCE", "50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_RAW_FLOOR", "0.40")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_CHALLENGER_FLOOR", "0.45")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MAX_SIGNALS_PER_CYCLE", "1")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 80,
+            "pass_rate": 0.0,
+            "raw_max": 0.50,
+            "threshold_min": 0.629,
+        },
+    )
+    signal = {
+        "score": 91.0,
+        "confluence_score": 62.0,
+    }
+    challenger = {
+        "available": True,
+        "probability": 0.52,
+        "threshold": 0.70,
+        "passed": False,
+        "version": "candidate-test",
+    }
+
+    allowed, details = core._ml_starvation_recovery_decision(
+        signal,
+        raw_probability=0.48,
+        certified_threshold=0.629,
+        challenger=challenger,
+        pipeline_stats={},
+    )
+    assert allowed is True
+    assert details["reason"] == "serving_model_starvation"
+    assert details["certified_threshold"] == 0.629
+
+    capped, capped_details = core._ml_starvation_recovery_decision(
+        signal,
+        raw_probability=0.48,
+        certified_threshold=0.629,
+        challenger=challenger,
+        pipeline_stats={"ml_recovery_passed": 1},
+    )
+    assert capped is False
+    assert capped_details["reason"] == "cycle_cap"
+
+
+def test_starvation_recovery_rejects_weak_deterministic_or_model_evidence(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 80,
+        },
+    )
+
+    weak_score, details = core._ml_starvation_recovery_decision(
+        {"score": 70.0, "confluence_score": 70.0},
+        raw_probability=0.50,
+        certified_threshold=0.629,
+        challenger={"available": False},
+        pipeline_stats={},
+    )
+    assert weak_score is False
+    assert details["reason"] == "score_below_recovery_floor"
+
+    challenger_disagrees, details = core._ml_starvation_recovery_decision(
+        {"score": 92.0, "confluence_score": 65.0},
+        raw_probability=0.50,
+        certified_threshold=0.629,
+        challenger={
+            "available": True,
+            "probability": 0.20,
+            "threshold": 0.70,
+            "passed": False,
+        },
+        pipeline_stats={},
+    )
+    assert challenger_disagrees is False
+    assert details["reason"] == "challenger_disagrees"
+
+
+def test_starvation_recovery_never_rewrites_ml_probability_threshold():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    section = source[
+        source.index("def _ml_starvation_recovery_context"):
+        source.index("def load_tradable_assets")
+    ]
+    assert "ML_PROB_THRESHOLD" not in section
+    assert "ML_STARVATION_RECOVERY_RAW_FLOOR" in section
+    assert "ML_STARVATION_RECOVERY_MAX_SIGNALS_PER_CYCLE" in section
+
+
+def test_challenger_scoring_restores_durable_candidate_without_promotion():
+    from pathlib import Path
+
+    source = Path("engine/ml.py").read_text(encoding="utf-8")
+    assert "def score_shadow_signal(" in source
+    assert 'model_name="candidate"' in source
+    scorer = source[
+        source.index("def score_shadow_signal("):
+        source.index("def _persist_shadow_prediction")
+    ]
+    assert "booster.predict" in scorer
+    assert '"passed": probability >= threshold' in scorer
+    assert "persist_active_model_artifact" not in scorer
