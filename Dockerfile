@@ -23,7 +23,7 @@ COPY . .
 # Release-critical regression gate. GitHub-hosted CI can be unavailable before a
 # runner starts; these deterministic tests therefore also execute in the image
 # build and must pass before Railway can deploy the artifact.
-RUN echo "release_gate=20260925_cross_channel_paper_v2" \
+RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
     && python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
     && python -m pytest -q \
       tests/test_provider_backed_asset_discovery.py \
@@ -36,6 +36,7 @@ RUN echo "release_gate=20260925_cross_channel_paper_v2" \
       tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_retries_quickly_after_background_contention \
+      tests/test_runtime_hardening_contract.py::test_web_fanout_retries_background_admission_pressure_without_warning_loop \
       tests/test_runtime_hardening_contract.py::test_outcome_tracker_skips_reprocessing_already_recorded_tp \
       tests/test_outcome_tracking_monotonic_repair.py \
       tests/test_market_data_quality_firewall.py \
