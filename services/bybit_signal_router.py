@@ -188,6 +188,14 @@ async def _route_signal_to_bybit_for_identity(
             return BybitRouteResult(False, "Copy trading is not enabled in the user profile", error="profile_copy_disabled")
         if requested_mode in {"auto", "live"} and configured_mode not in {"auto", "live"}:
             return BybitRouteResult(False, "Automatic execution is not enabled in the user profile", error="profile_auto_disabled")
+        if requested_mode == "manual_confirmed" and configured_mode not in {
+            "manual", "manual_confirmed", "semi_auto"
+        }:
+            return BybitRouteResult(
+                False,
+                "Assisted execution is not enabled in the user profile",
+                error="profile_manual_confirmation_disabled",
+            )
         configured_provider = str(profile_prefs.execution_provider or "auto").strip().lower()
         if configured_provider not in {"auto", "bybit"}:
             return BybitRouteResult(False, "User profile selected a different execution provider", error="profile_provider_mismatch")
@@ -362,15 +370,22 @@ async def _route_signal_to_bybit_for_identity(
         account_policy_allowed = False
         account_policy_reasons = ("account_policy_unavailable",)
 
-    optin_prefix = "copyexec" if execution_mode == "copy_trade" else "autoexec"
-    optin_key = (
-        f"{optin_prefix}_platform_optin:{int(user.id)}"
-        if identity == "platform"
-        else f"{optin_prefix}_user_optin:{int(principal_id)}"
-    )
-    async with get_session(label="bybit.consent", timeout_seconds=5.0) as session:
-        optin = await session.get(RuntimeState, optin_key)
-        user_enabled = bool((dict(getattr(optin, "value", {}) or {})).get("enabled")) if optin else False
+    if str(execution_mode or "").strip().lower() == "manual_confirmed":
+        # One authenticated confirmation uses the user's assisted/manual
+        # profile mode and does not require the separate AUTO opt-in.
+        user_enabled = configured_mode in {"manual", "manual_confirmed", "semi_auto"}
+    else:
+        optin_prefix = "copyexec" if execution_mode == "copy_trade" else "autoexec"
+        optin_key = (
+            f"{optin_prefix}_platform_optin:{int(user.id)}"
+            if identity == "platform"
+            else f"{optin_prefix}_user_optin:{int(principal_id)}"
+        )
+        async with get_session(label="bybit.consent", timeout_seconds=5.0) as session:
+            optin = await session.get(RuntimeState, optin_key)
+            user_enabled = bool(
+                (dict(getattr(optin, "value", {}) or {})).get("enabled")
+            ) if optin else False
 
     kill_switch = True
     try:
