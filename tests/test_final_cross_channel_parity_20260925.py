@@ -399,3 +399,23 @@ def test_canonical_account_ledger_is_append_only_account_scoped_and_provider_aut
     assert '"entry_type": "realized_pnl"' in reconciler
     assert '"entry_type": "fee"' in reconciler
     assert "broker_values_authoritative" in source("web/platform_api.py")
+
+
+def test_broker_performance_is_composed_per_account_not_mixed_headline() -> None:
+    api = source("web/platform_api.py")
+    app = source("web/platform_app/app.js")
+    block = api[
+        api.index('@router.get("/broker")'):
+        api.index('@router.post("/broker/mt5")'),
+    ]
+    assert "mt5_account_stats" in block
+    assert "provider_account_stats" in block
+    assert '"metric_scope": "single_account"' in block
+    assert '"composition_required": True' in block
+    assert '"mixed_account_diagnostics"' in block
+    assert "accountStats=data.stats?.accounts||[]" in app
+    assert "accountStatsById" in app
+    assert "Performance scope','Per account only" in app
+    assert "Demo, personal-live and PROP performance are not combined" in app
+    assert "data.stats?.mt5" not in app
+    assert "data.stats?.providers" not in app
