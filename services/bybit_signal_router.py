@@ -8,6 +8,7 @@ import os
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
@@ -273,12 +274,18 @@ async def _route_signal_to_bybit_for_identity(
     quote_age = 0.0
     wallet_equity = 0.0
     ticker: dict[str, Any] = {}
+    wallet_account: dict[str, Any] = {}
     positions: list[dict[str, Any]] = []
     try:
         wallet = await client.get_wallet_balance(coin="USDT") if account_ready else {}
         accounts = list(wallet.get("list") or [])
         if accounts:
-            wallet_equity = float(accounts[0].get("totalEquity") or accounts[0].get("totalWalletBalance") or 0)
+            wallet_account = dict(accounts[0])
+            wallet_equity = float(
+                wallet_account.get("totalEquity")
+                or wallet_account.get("totalWalletBalance")
+                or 0
+            )
         ticker = await client.get_ticker(symbol) if account_ready else {}
         quote_value = float(ticker.get("lastPrice") or 0)
         provider_time_ms = int(float(ticker.get("_provider_time_ms") or 0))
@@ -342,7 +349,36 @@ async def _route_signal_to_bybit_for_identity(
             details={
                 "provider": "bybit",
                 "positions_count": len(positions) if isinstance(positions, list) else None,
-                "equity": wallet_equity if wallet_equity > 0 else None,
+                "checked_at": (
+                    datetime.fromtimestamp(
+                        int(float(ticker.get("_provider_time_ms") or 0)) / 1000.0,
+                        tz=timezone.utc,
+                    ).isoformat()
+                    if int(float(ticker.get("_provider_time_ms") or 0)) > 0
+                    else ""
+                ),
+                "ledger_source_event_id": (
+                    f"wallet_snapshot:{int(float(ticker.get('_provider_time_ms') or 0))}"
+                    if int(float(ticker.get("_provider_time_ms") or 0)) > 0
+                    else ""
+                ),
+                "provider_timestamp": (
+                    datetime.fromtimestamp(
+                        int(float(ticker.get("_provider_time_ms") or 0)) / 1000.0,
+                        tz=timezone.utc,
+                    ).isoformat()
+                    if int(float(ticker.get("_provider_time_ms") or 0)) > 0
+                    else None
+                ),
+                "currency": "USD",
+                "balance": wallet_account.get("totalWalletBalance"),
+                "equity": wallet_account.get("totalEquity"),
+                "margin": (
+                    wallet_account.get("totalInitialMargin")
+                    or wallet_account.get("totalMarginBalance")
+                ),
+                "free_margin": wallet_account.get("totalAvailableBalance"),
+                "unrealized_pnl": wallet_account.get("totalPerpUPL"),
             },
         )
         if isinstance(account_policy_payload, dict):
@@ -670,6 +706,32 @@ async def _route_signal_to_bybit_for_identity(
             row.confirmed_at = now_utc_naive()
             row.updated_at = now_utc_naive()
             row.meta = {**dict(row.meta or {}), "provider_status": provider_result.get("status")}
+            from services.trading_account_ledger import (
+                _append_account_ledger_in_session,
+            )
+
+            await _append_account_ledger_in_session(
+                session,
+                user_id=int(user.id),
+                connection_id=str(connection.connection_id),
+                provider="bybit",
+                entry_type="order",
+                source_event_id=f"order:{str(provider_result['order_id'])}",
+                correlation_id=idempotency_key,
+                order_ref=str(provider_result["order_id"]),
+                metadata={
+                    "signal_id": signal_id,
+                    "symbol": symbol,
+                    "direction": direction,
+                    "order_size": str(quantity),
+                    "order_size_unit": "BASE_UNITS",
+                    "entry_price": str(entry),
+                    "stop_loss": str(stop),
+                    "take_profit": str(take_profit),
+                    "provider_status": provider_result.get("status"),
+                    "client_order_id": client_order_id,
+                },
+            )
             await session.commit()
         return provider_result
 
