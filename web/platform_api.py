@@ -391,6 +391,12 @@ class AccountFreezeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=256)
 
 
+class PropPolicyCertificationRequest(BaseModel):
+    confirm: bool
+    expected_policy_version: int = Field(ge=1)
+    certification_ref: str = Field(min_length=6, max_length=160)
+
+
 class BrokerLinkRequest(BaseModel):
     mt5_login: str = Field(min_length=1, max_length=64)
     mt5_password: str = Field(min_length=1, max_length=256)
@@ -563,6 +569,30 @@ def _assert_command(user: dict[str, Any], command: str) -> None:
                 "message": decision.reason,
             },
         )
+
+
+def _platform_operator_authority(user: dict[str, Any]) -> str | None:
+    from config import (
+        ADMIN_IDS,
+        OWNER_IDS,
+        OWNER_TELEGRAM_ID,
+        OWNER_TELEGRAM_IDS,
+    )
+
+    telegram_user_id = int(user.get("telegram_user_id") or 0)
+    owner_ids = {int(value) for value in (OWNER_IDS or set())}
+    owner_ids.update(int(value) for value in (OWNER_TELEGRAM_IDS or set()))
+    if int(OWNER_TELEGRAM_ID or 0) > 0:
+        owner_ids.add(int(OWNER_TELEGRAM_ID))
+    if telegram_user_id > 0 and telegram_user_id in owner_ids:
+        return "OWNER"
+
+    admin_ids = {int(value) for value in (ADMIN_IDS or set())}
+    if telegram_user_id > 0 and telegram_user_id in admin_ids:
+        return "ADMIN"
+    if str(user.get("tier") or "").strip().upper() == "ADMIN":
+        return "ADMIN"
+    return None
 
 
 
@@ -3420,6 +3450,64 @@ async def update_broker_account_policy(
         "policy": policy,
         "execution_remains_disabled": True,
         "prop_certification_required": payload.account_mode == "PROP",
+    }
+
+
+@router.post("/admin/broker/connections/{connection_id}/prop-certification")
+async def certify_broker_prop_policy(
+    connection_id: str,
+    payload: PropPolicyCertificationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Owner/admin certification required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    async with get_session(
+        label="platform.prop_policy_certification_target",
+        timeout_seconds=6.0,
+    ) as session:
+        target_user_id = (
+            await session.execute(
+                text(
+                    "SELECT user_id FROM broker_connections "
+                    "WHERE connection_id=:connection_id LIMIT 1"
+                ),
+                {"connection_id": str(connection_id)},
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+    if target_user_id is None:
+        raise HTTPException(status_code=404, detail="Broker connection not found")
+
+    from services.account_policies import certify_prop_policy
+
+    try:
+        policy = await certify_prop_policy(
+            int(target_user_id),
+            connection_id,
+            certification_ref=payload.certification_ref,
+            expected_policy_version=payload.expected_policy_version,
+            certified_by_user_id=int(user["id"]),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "policy": policy,
+        "certified": True,
+        "certified_by_authority": authority,
+        "execution_enabled": False,
+        "message": (
+            "PROP policy version certified. Broker execution still requires "
+            "separate account enablement and every runtime safety gate."
+        ),
     }
 
 
