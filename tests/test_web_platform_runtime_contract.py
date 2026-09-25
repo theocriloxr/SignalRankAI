@@ -129,3 +129,43 @@ def test_signal_feedback_is_delivery_scoped_and_canonical():
     assert "/feedback" in APP_JS
     assert 'id="signalFeedbackForm"' in APP_JS
     assert "wrong_outcome" in APP_JS
+
+
+
+def test_web_signal_fanout_is_a_distinct_gated_delivery_channel():
+    fanout = (ROOT / "services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    worker = (ROOT / "worker/worker.py").read_text(encoding="utf-8")
+    assert "notification_events" in fanout
+    assert '"channel": "web"' in fanout
+    assert "require_delivery_freshness=True" in fanout
+    assert "final_send=True" in fanout
+    assert "signal_matches_preferences" in fanout
+    assert "minimum_signal_score" in fanout
+    assert "_daily_distinct_count" in fanout
+    assert "_recent_assets" in fanout
+    assert "INSERT INTO signal_deliveries" not in fanout
+    assert 'if _env_bool("WEB_SIGNAL_FANOUT_ENABLED", True):' in worker
+    assert 'name="web_signal_fanout"' in worker
+
+
+def test_signal_feed_accepts_web_receipts_without_weakening_telegram_proof():
+    section = API[API.index('@router.get("/signals")'):API.index('@router.get("/live-price")')]
+    assert "notification_events" in section
+    assert "'telegram'::text AS delivery_channel" in section
+    assert "'web'::text AS delivery_channel" in section
+    assert '"web_delivery_proven": web_proven' in section
+    assert '"delivery_proven": telegram_proven' in section
+    assert "telegram_message_id" in section
+    assert "Signal receipt confirmed" in APP_JS
+    assert "Telegram proof:" in APP_JS
+    assert "Web receipt:" in APP_JS
+
+
+def test_feedback_accepts_either_authorized_signal_receipt():
+    section = API[
+        API.index('@router.post("/signals/{signal_id}/feedback"'):
+        API.index('@router.get("/live-price")')
+    ]
+    assert "signal_deliveries" in section
+    assert "notification_events" in section
+    assert "record_user_event" in section
