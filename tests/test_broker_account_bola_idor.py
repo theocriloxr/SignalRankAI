@@ -111,3 +111,20 @@ def test_broker_router_never_infers_account_from_prior_execution():
     assert "explicit_broker_connection_required" in source
     assert "account_scope=account_scope" in source
     assert "connection_id=(" in source
+
+
+def test_account_ledger_route_binds_authenticated_canonical_user():
+    source = Path("web/platform_api.py").read_text(encoding="utf-8")
+    block = source[
+        source.index('@router.get("/broker/connections/{connection_id}/ledger")'):
+        source.index('@router.put("/broker/connections/{connection_id}/policy")'),
+    ]
+    assert "list_account_ledger(" in block
+    assert 'int(user["id"])' in block
+    assert "connection_id" in block
+
+    ledger = Path("services/trading_account_ledger.py").read_text(encoding="utf-8")
+    assert "BrokerConnection.user_id == int(user_id)" in ledger
+    assert "BrokerConnection.connection_id == str(connection_id)" in ledger
+    assert "TradingAccountLedgerEntry.user_id == int(user_id)" in ledger
+    assert "TradingAccountLedgerEntry.connection_id == str(connection_id)" in ledger
