@@ -518,6 +518,35 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     if signal_data.get('ml_calibration_ece') is not None
                     else None
                 ),
+                ml_recovery_mode=bool(signal_data.get("ml_recovery_mode", False)),
+                ml_recovery_reason=(
+                    str(signal_data.get("ml_recovery_reason") or "").strip()[:64]
+                    or None
+                ),
+                ml_recovery_champion_raw_probability=(
+                    float(signal_data.get("ml_recovery_champion_raw_probability"))
+                    if signal_data.get("ml_recovery_champion_raw_probability") is not None
+                    else None
+                ),
+                ml_recovery_certified_threshold=(
+                    float(signal_data.get("ml_recovery_certified_threshold"))
+                    if signal_data.get("ml_recovery_certified_threshold") is not None
+                    else None
+                ),
+                ml_recovery_challenger_probability=(
+                    float(signal_data.get("ml_recovery_challenger_probability"))
+                    if signal_data.get("ml_recovery_challenger_probability") is not None
+                    else None
+                ),
+                ml_recovery_challenger_threshold=(
+                    float(signal_data.get("ml_recovery_challenger_threshold"))
+                    if signal_data.get("ml_recovery_challenger_threshold") is not None
+                    else None
+                ),
+                ml_recovery_challenger_version=(
+                    str(signal_data.get("ml_recovery_challenger_version") or "").strip()[:64]
+                    or None
+                ),
                 fingerprint=thesis_fingerprint,
                 thesis_fingerprint=thesis_fingerprint,
                 asset_discovery_provider=(str(signal_data.get("asset_discovery_provider") or "").strip()[:128] or None),
