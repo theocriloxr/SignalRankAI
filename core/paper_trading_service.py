@@ -692,44 +692,89 @@ class PaperTradingService:
             ),
         }
 
-    async def delivered_r_samples(self, telegram_user_id: int) -> dict[str, Any]:
-        """Return terminal R samples plus transparent evidence backlog counts.
-
-        TP1/TP2 rows are lifecycle milestones, not completed trades. Treating them
-        as final Monte Carlo samples would overstate evidence and bias the model.
-        """
+    async def delivered_r_samples(
+        self,
+        user_id: int,
+        *,
+        user_identity: str = "telegram",
+    ) -> dict[str, Any]:
+        """Return terminal R samples from receipts authorized for this identity."""
+        identity = str(user_identity or "telegram").strip().lower()
         terminal_statuses = (
             "tp", "tp3", "sl", "invalid", "invalidated", "time_stop",
             "partial_win_be", "missed_entry", "expired",
         )
         partial_statuses = ("tp1", "tp2")
-        proof_states = ("CONFIRMED", "RECONCILED", "DELIVERED", "SENT")
-        async with get_session(priority="interactive", label="paper.simulation_samples") as session:
-            user = await self._user_row(session, int(telegram_user_id))
+        async with get_session(
+            priority="interactive",
+            label="paper.simulation_samples",
+        ) as session:
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return {
-                    "r_values": [], "first": None, "last": None,
-                    "delivered_total": 0, "pending_delivered": 0,
+                    "r_values": [],
+                    "first": None,
+                    "last": None,
+                    "delivered_total": 0,
+                    "pending_delivered": 0,
                     "partial_milestones": 0,
                 }
+
+            web_union = ""
+            if identity == "platform":
+                web_union = """
+                    UNION
+                    SELECT
+                        ne.channel_data->>'signal_id' AS signal_id,
+                        ne.created_at AS confirmed_at
+                    FROM notification_events ne
+                    WHERE ne.user_id=:uid
+                      AND ne.event_type='signal'
+                      AND ne.channel_data->>'channel'='web'
+                      AND COALESCE(ne.channel_data->>'signal_id','')<>''
+                """
+            receipts_cte = f"""
+                WITH receipts AS (
+                    SELECT DISTINCT
+                        sd.signal_id::text AS signal_id,
+                        COALESCE(
+                            sd.delivery_confirmed_at,
+                            sd.delivered_at_utc,
+                            sd.delivered_at
+                        ) AS confirmed_at
+                    FROM signal_deliveries sd
+                    WHERE sd.user_id=:uid
+                      AND sd.sent_ok IS TRUE
+                      AND sd.telegram_chat_id IS NOT NULL
+                      AND sd.telegram_message_id IS NOT NULL
+                      AND LOWER(COALESCE(sd.delivery_state,'')) IN
+                          ('sent','delivered','confirmed','reconciled')
+                    {web_union}
+                )
+            """
+            terminal_sql = receipts_cte + """
+                SELECT
+                    o.signal_id,
+                    o.r_multiple,
+                    o.closed_at,
+                    LOWER(COALESCE(o.status,'')) AS status,
+                    r.confirmed_at
+                FROM receipts r
+                JOIN outcomes o ON o.signal_id=r.signal_id
+                WHERE LOWER(COALESCE(o.status,'')) IN
+                    ('tp','tp3','sl','invalid','invalidated','time_stop',
+                     'partial_win_be','missed_entry','expired')
+                  AND o.r_multiple IS NOT NULL
+                ORDER BY o.closed_at ASC NULLS LAST
+            """
             rows = (
                 await session.execute(
-                    select(
-                        Outcome.signal_id,
-                        Outcome.r_multiple,
-                        Outcome.closed_at,
-                        Outcome.status,
-                        SignalDelivery.delivery_confirmed_at,
-                    )
-                    .join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
-                    .where(
-                        SignalDelivery.user_id == int(user.id),
-                        SignalDelivery.sent_ok.is_(True),
-                        func.upper(SignalDelivery.delivery_state).in_(proof_states),
-                        func.lower(Outcome.status).in_(terminal_statuses),
-                        Outcome.r_multiple.is_not(None),
-                    )
-                    .order_by(Outcome.closed_at.asc().nulls_last())
+                    text(terminal_sql),
+                    {"uid": int(user.id)},
                 )
             ).all()
             seen: set[str] = set()
@@ -745,32 +790,41 @@ class PaperTradingService:
                 if when is not None:
                     times.append(when)
 
-            delivered_total = int((await session.execute(
-                select(func.count(func.distinct(SignalDelivery.signal_id))).where(
-                    SignalDelivery.user_id == int(user.id),
-                    SignalDelivery.sent_ok.is_(True),
-                    func.upper(SignalDelivery.delivery_state).in_(proof_states),
-                    SignalDelivery.telegram_chat_id.is_not(None),
-                    SignalDelivery.telegram_message_id.is_not(None),
-                )
-            )).scalar() or 0)
-            partial_milestones = int((await session.execute(
-                select(func.count(func.distinct(Outcome.signal_id)))
-                .join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
-                .where(
-                    SignalDelivery.user_id == int(user.id),
-                    SignalDelivery.sent_ok.is_(True),
-                    func.upper(SignalDelivery.delivery_state).in_(proof_states),
-                    func.lower(Outcome.status).in_(partial_statuses),
-                )
-            )).scalar() or 0)
-            terminal_count = len(seen)
+            delivered_total = int(
+                (
+                    await session.execute(
+                        text(
+                            receipts_cte
+                            + " SELECT COUNT(DISTINCT signal_id) FROM receipts"
+                        ),
+                        {"uid": int(user.id)},
+                    )
+                ).scalar()
+                or 0
+            )
+            partial_milestones = int(
+                (
+                    await session.execute(
+                        text(
+                            receipts_cte
+                            + """
+                            SELECT COUNT(DISTINCT o.signal_id)
+                            FROM receipts r
+                            JOIN outcomes o ON o.signal_id=r.signal_id
+                            WHERE LOWER(COALESCE(o.status,'')) IN ('tp1','tp2')
+                            """
+                        ),
+                        {"uid": int(user.id)},
+                    )
+                ).scalar()
+                or 0
+            )
             return {
                 "r_values": r_values,
                 "first": min(times) if times else None,
                 "last": max(times) if times else None,
                 "delivered_total": delivered_total,
-                "pending_delivered": max(0, delivered_total - terminal_count),
+                "pending_delivered": max(0, delivered_total - len(seen)),
                 "partial_milestones": partial_milestones,
             }
 
@@ -2009,53 +2063,136 @@ class PaperTradingService:
             "recent_counts": counts,
         }
 
-    async def request_retry(self, telegram_user_id: int, signal_reference: str) -> tuple[bool, str]:
+    async def request_retry(
+        self,
+        user_id: int,
+        signal_reference: str,
+        *,
+        user_identity: str = "telegram",
+    ) -> tuple[bool, str]:
         from db.signal_reference import SignalReferenceError, resolve_signal_reference
 
+        identity = str(user_identity or "telegram").strip().lower()
         now = now_utc_naive()
-        # The retry window is timeframe-specific and anchored to generation,
-        # not to the latest user click or delivery timestamp.
-        async with get_session(priority="interactive", label="paper.retry") as session:
+        async with get_session(
+            priority="interactive",
+            label="paper.retry",
+        ) as session:
             try:
-                resolved = await resolve_signal_reference(
-                    session, signal_reference, telegram_user_id=int(telegram_user_id), require_delivery_proof=True,
-                )
+                if identity == "platform":
+                    resolved = await resolve_signal_reference(
+                        session,
+                        signal_reference,
+                        canonical_user_id=int(user_id),
+                        require_delivery_proof=True,
+                    )
+                else:
+                    resolved = await resolve_signal_reference(
+                        session,
+                        signal_reference,
+                        telegram_user_id=int(user_id),
+                        require_delivery_proof=True,
+                    )
             except SignalReferenceError as exc:
                 return False, str(exc)
-            user = await self._user_row(session, int(telegram_user_id))
+
+            user = await self._user_row(
+                session,
+                int(user_id),
+                user_identity=identity,
+            )
             if user is None:
                 return False, "paper account user not found"
-            account = (await session.execute(
-                select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
-            )).scalar_one_or_none()
+            account = (
+                await session.execute(
+                    select(PaperAccount)
+                    .where(PaperAccount.user_id == int(user.id))
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
             if account is None or not bool(account.auto_trade_enabled):
                 return False, "automatic paper trading is off"
+
             signal_id = str(resolved.signal.signal_id)
-            actual = (await session.execute(select(PaperPosition.position_id).where(
-                PaperPosition.user_id == int(user.id), PaperPosition.signal_id == signal_id,
-                func.lower(PaperPosition.status).in_(["open", "closed"]),
-            ).limit(1))).scalar_one_or_none()
+            actual = (
+                await session.execute(
+                    select(PaperPosition.position_id).where(
+                        PaperPosition.user_id == int(user.id),
+                        PaperPosition.signal_id == signal_id,
+                        func.lower(PaperPosition.status).in_(["open", "closed"]),
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
             if actual:
                 return False, "a paper position already exists"
-            delivery = (await session.execute(select(SignalDelivery).where(
-                SignalDelivery.user_id == int(user.id), SignalDelivery.signal_id == signal_id,
-                SignalDelivery.sent_ok.is_(True), SignalDelivery.telegram_chat_id.is_not(None),
-                SignalDelivery.telegram_message_id.is_not(None), SignalDelivery.delivery_confirmed_at.is_not(None),
-                func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
-            ).limit(1))).scalar_one_or_none()
-            if delivery is None:
+
+            delivery = (
+                await session.execute(
+                    select(SignalDelivery).where(
+                        SignalDelivery.user_id == int(user.id),
+                        SignalDelivery.signal_id == signal_id,
+                        SignalDelivery.sent_ok.is_(True),
+                        SignalDelivery.telegram_chat_id.is_not(None),
+                        SignalDelivery.telegram_message_id.is_not(None),
+                        SignalDelivery.delivery_confirmed_at.is_not(None),
+                        func.lower(SignalDelivery.delivery_state).in_(
+                            tuple(CONFIRMED_DELIVERY_STATES)
+                        ),
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+
+            receipt_channel = "telegram"
+            receipt_reference: str | None = None
+            delivery_id: int | None = None
+            confirmed_at = None
+            generated_at = resolved.signal.created_at
+            if delivery is not None:
+                delivery_id = int(delivery.id)
+                receipt_reference = str(delivery.id)
+                confirmed_at = delivery.delivery_confirmed_at
+                generated_at = delivery.generated_at_utc or resolved.signal.created_at
+            elif identity == "platform":
+                web_receipt = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT notification_id,created_at
+                            FROM notification_events
+                            WHERE user_id=:uid
+                              AND event_type='signal'
+                              AND channel_data->>'channel'='web'
+                              AND channel_data->>'signal_id'=:sid
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"uid": int(user.id), "sid": signal_id},
+                    )
+                ).mappings().first()
+                if web_receipt is not None:
+                    receipt_channel = "web"
+                    receipt_reference = str(web_receipt["notification_id"])
+                    confirmed_at = web_receipt["created_at"]
+
+            if not receipt_reference:
                 return False, "confirmed delivery proof is missing"
-            generated_at = delivery.generated_at_utc or resolved.signal.created_at
+
             freshness = evaluate_signal_freshness(
                 timeframe=resolved.signal.timeframe,
                 generated_at=generated_at,
                 now=now,
                 purpose="paper",
             )
-            deadline = generated_at + timedelta(seconds=freshness.max_age_seconds)
+            deadline = generated_at + timedelta(
+                seconds=freshness.max_age_seconds
+            )
             if not freshness.ok or deadline <= now:
                 return False, "paper entry freshness deadline expired"
-            terminal_statuses = tuple(TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"})
+
+            terminal_statuses = tuple(
+                TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"}
+            )
             terminal = await session.scalar(
                 select(Outcome.id).where(
                     Outcome.signal_id == signal_id,
@@ -2064,17 +2201,39 @@ class PaperTradingService:
             )
             if terminal is not None:
                 return False, "signal already has a terminal outcome"
+
             candidate = {
-                "signal_id": signal_id, "delivery_id": int(delivery.id),
-                "retry_deadline": deadline, "asset": resolved.signal.asset,
+                "signal_id": signal_id,
+                "delivery_id": delivery_id,
+                "receipt_channel": receipt_channel,
+                "receipt_reference": receipt_reference,
+                "retry_deadline": deadline,
+                "asset": resolved.signal.asset,
+                "user_id": int(user.id),
+                "telegram_user_id": (
+                    int(user.telegram_user_id)
+                    if user.telegram_user_id is not None
+                    else None
+                ),
+                "confirmed_at": confirmed_at,
             }
             await self._record_attempt(
-                session, account=account, user=user, candidate=candidate,
-                decision="RETRY_PENDING", reason="manual_retry_requested", retryable=True,
-                next_retry_seconds=1, meta={"requested_by": int(telegram_user_id)},
+                session,
+                account=account,
+                user=user,
+                candidate=candidate,
+                decision="RETRY_PENDING",
+                reason="manual_retry_requested",
+                retryable=True,
+                next_retry_seconds=1,
+                meta={
+                    "requested_by": int(user_id),
+                    "user_identity": identity,
+                },
             )
             await session.commit()
             return True, "retry queued"
+
     async def _open_position_snapshots(self, limit: int) -> list[dict[str, Any]]:
         async with get_session(priority=_paper_worker_priority(), label="paper.open_snapshots", timeout_seconds=_paper_db_timeout(8.0)) as session:
             rows = (
