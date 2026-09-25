@@ -383,6 +383,9 @@ def test_canonical_account_ledger_is_append_only_account_scoped_and_provider_aut
     model = source("db/models.py")
     service = source("services/trading_account_ledger.py")
     mt5 = source("services/mt5_signal_router.py")
+    mt5_client = source("services/mt5_client.py")
+    mt5_reconciler = source("services/mt5_reconciler.py")
+    worker = source("worker/worker.py")
     bybit = source("services/bybit_signal_router.py")
     reconciler = source("services/bybit_reconciler.py")
 
@@ -395,6 +398,11 @@ def test_canonical_account_ledger_is_append_only_account_scoped_and_provider_aut
     assert "on_conflict_do_nothing" in service
     assert "_safe_metadata" in service
     assert 'entry_type="order"' in mt5
+    assert "/history-deals/ticket/" in mt5_client
+    assert "/history-deals/position/" in mt5_client
+    assert "DEAL_ENTRY_OUT" in mt5_reconciler
+    assert "_append_account_ledger_in_session" in mt5_reconciler
+    assert "mt5_reconciliation_loop" in worker
     assert 'entry_type="order"' in bybit
     assert '"entry_type": "realized_pnl"' in reconciler
     assert '"entry_type": "fee"' in reconciler
