@@ -177,6 +177,28 @@ def test_instrument_rules_round_down():
 
 
 @pytest.mark.asyncio
+async def test_bybit_ticker_preserves_provider_timestamp():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v5/market/tickers")
+        return httpx.Response(
+            200,
+            json={
+                "retCode": 0,
+                "time": 1770000000123,
+                "result": {"list": [{"symbol": "BTCUSDT", "lastPrice": "100000"}]},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = BybitV5Client(
+            BybitCredentials("api-key-123", "api-secret-123", False),
+            client=http_client,
+        )
+        ticker = await client.get_ticker("BTCUSDT")
+    assert ticker["_provider_time_ms"] == 1770000000123
+
+
+@pytest.mark.asyncio
 async def test_bybit_order_ack_is_confirmed_before_success():
     seen = []
 
