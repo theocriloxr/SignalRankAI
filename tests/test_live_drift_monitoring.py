@@ -333,8 +333,8 @@ def test_starvation_recovery_never_rewrites_ml_probability_threshold():
 
     source = Path("engine/core.py").read_text(encoding="utf-8")
     section = source[
-        source.index("def _ml_starvation_recovery_context"):
-        source.index("def load_tradable_assets")
+        source.index("def _ml_starvation_recovery_decision"):
+        source.index("def _diagnostic_ml_threshold")
     ]
     assert "ML_PROB_THRESHOLD" not in section
     assert "ML_STARVATION_RECOVERY_RAW_FLOOR" in section
