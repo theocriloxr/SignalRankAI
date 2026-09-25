@@ -204,6 +204,9 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
             return_value={
                 "provider": "metaapi",
                 "trusted": True,
+                "bid": 1.09995,
+                "ask": 1.10005,
+                "mid": 1.1,
                 "age_seconds": 0.1,
                 "max_age_seconds": 15.0,
             }
