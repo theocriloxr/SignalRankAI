@@ -865,7 +865,7 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
     row = (
         await session.execute(
             text(
-                "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,email_verified_at,display_name,country,timezone,locale,preferred_currency,account_status,onboarding_status,premium_until,max_risk_percentage,max_daily_drawdown_pct,risk_profile,marketing_consent,terms_version,terms_accepted_at,created_at,last_active_at "
+                "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,email_verified_at,display_name,country,timezone,timezone_auto_update,timezone_updated_at,locale,preferred_currency,account_status,onboarding_status,premium_until,max_risk_percentage,max_daily_drawdown_pct,risk_profile,marketing_consent,terms_version,terms_accepted_at,created_at,last_active_at "
                 "FROM users WHERE id=:uid"
             ),
             {"uid": int(user_id)},
