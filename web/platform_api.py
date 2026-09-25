@@ -288,6 +288,11 @@ class TradingProfileUpdateRequest(BaseModel):
     notify_on_sl: bool | None = None
 
 
+class SignalExecutionRequest(BaseModel):
+    confirm: bool
+    provider: str = Field(default="mt5", pattern=r"^mt5$")
+
+
 class SignalFeedbackRequest(BaseModel):
     rating: int | None = Field(default=None, ge=1, le=5)
     issue: str | None = Field(default=None, max_length=64)
@@ -984,6 +989,117 @@ async def signal_detail(
             "delivery_confirmed_at": row.get("delivery_confirmed_at"),
             "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
         },
+    }
+
+
+@router.post("/signals/{signal_id}/execute")
+async def execute_signal_from_platform(
+    signal_id: str,
+    payload: SignalExecutionRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Manually confirm one already-received signal through the canonical MT5 gate."""
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit trade confirmation is required")
+
+    ref = str(signal_id or "").strip()
+    if not ref or len(ref) > 64:
+        raise HTTPException(status_code=422, detail="Invalid signal reference")
+
+    uid = int(user["id"])
+    async with get_session(label="platform.signal_execute.load", timeout_seconds=10.0) as session:
+        receipt = (
+            await session.execute(
+                text(
+                    """
+                    SELECT 1 FROM (
+                        SELECT sd.signal_id::text AS signal_id
+                        FROM signal_deliveries sd
+                        WHERE sd.user_id=:uid
+                          AND sd.signal_id=:sid
+                          AND sd.sent_ok IS TRUE
+                        UNION ALL
+                        SELECT ne.channel_data->>'signal_id' AS signal_id
+                        FROM notification_events ne
+                        WHERE ne.user_id=:uid
+                          AND ne.event_type='signal'
+                          AND ne.channel_data->>'signal_id'=:sid
+                          AND ne.channel_data->>'channel'='web'
+                    ) authorized_receipt
+                    LIMIT 1
+                    """
+                ),
+                {"uid": uid, "sid": ref},
+            )
+        ).scalar_one_or_none()
+        if receipt is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Signal not found in your authorized delivery history",
+            )
+
+        row = (
+            await session.execute(
+                text("SELECT * FROM signals WHERE signal_id=:sid LIMIT 1"),
+                {"sid": ref},
+            )
+        ).mappings().first()
+        await session.rollback()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Signal no longer exists")
+
+    signal = dict(row)
+    signal["signal_id"] = ref
+    signal["evidence_signal_id"] = ref
+    signal["execution_source"] = "web_manual_confirmed"
+
+    from services.mt5_signal_router import route_platform_signal_to_mt5
+
+    result = await route_platform_signal_to_mt5(
+        signal,
+        uid,
+        execution_mode="manual_confirmed",
+    )
+    if not result.success:
+        error = str(result.error or "execution_blocked")
+        blocked_markers = (
+            "blocked",
+            "disabled",
+            "required",
+            "not_ready",
+            "not_allowlisted",
+            "unavailable",
+            "mismatch",
+            "limit",
+            "duplicate",
+            "market",
+            "quote",
+            "risk",
+            "consent",
+            "evidence",
+            "kill_switch",
+        )
+        status_code = 409 if any(marker in error.lower() for marker in blocked_markers) else 502
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "code": error,
+                "message": result.message,
+                "signal_id": ref,
+                "provider": "mt5",
+            },
+        )
+
+    return {
+        "submitted": True,
+        "signal_id": ref,
+        "provider": "mt5",
+        "order_id": result.order_id,
+        "message": result.message,
+        "executed_at": result.executed_at,
+        "warning": "Broker acknowledgement is not a profit guarantee. Risk controls remain active.",
     }
 
 
