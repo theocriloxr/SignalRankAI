@@ -91,3 +91,12 @@ def test_web_execution_settings_reuse_canonical_cross_channel_preferences():
     assert "set_platform_user_trading_preferences" in section
     assert "autoexec_user_optin:" in section
     assert "copyexec_user_optin:" in section
+
+
+
+def test_telegram_and_web_events_share_the_canonical_event_writer():
+    source = Path("db/pg_features.py").read_text(encoding="utf-8")
+    assert "async def record_user_event(" in source
+    bot = source[source.index("async def record_bot_event("):source.index("def _env_int", source.index("async def record_bot_event("))]
+    assert "record_user_event(" in bot
+    assert "BotEvent(" not in bot
