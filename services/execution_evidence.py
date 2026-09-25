@@ -10,43 +10,64 @@ from core.delivery_state import CONFIRMED_DELIVERY_STATES
 from db.models import BrokerExecution, MT5Execution, PaperPosition, SignalDelivery, User
 
 
-async def _positions_for_user(session, user_id: int, signal_id: str) -> list[dict[str, Any]]:
+async def _positions_for_user(
+    session,
+    user_id: int,
+    signal_id: str,
+    *,
+    connection_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return execution evidence, optionally scoped to one broker account."""
     positions: list[dict[str, Any]] = []
-    paper_rows = list((await session.execute(select(PaperPosition).where(
-        PaperPosition.user_id == int(user_id),
-        PaperPosition.signal_id == str(signal_id),
-        func.lower(PaperPosition.status).in_(("open", "closed")),
-    ))).scalars().all())
-    positions.extend({
-        "destination": "paper",
-        "reference": str(row.position_id),
-        "status": str(row.status),
-        "record_id": str(row.position_id),
-    } for row in paper_rows)
+    if connection_id is None:
+        paper_rows = list((await session.execute(select(PaperPosition).where(
+            PaperPosition.user_id == int(user_id),
+            PaperPosition.signal_id == str(signal_id),
+            func.lower(PaperPosition.status).in_(("open", "closed")),
+        ))).scalars().all())
+        positions.extend({
+            "destination": "paper",
+            "account_scope": f"paper:{int(user_id)}",
+            "reference": str(row.position_id),
+            "status": str(row.status),
+            "record_id": str(row.position_id),
+        } for row in paper_rows)
 
-    mt5_rows = list((await session.execute(select(MT5Execution).where(
+    mt5_filters = [
         MT5Execution.user_id == int(user_id),
         MT5Execution.signal_id == str(signal_id),
         MT5Execution.order_id.is_not(None),
         func.lower(MT5Execution.status).notin_(("failed", "rejected", "cancelled")),
-    ))).scalars().all())
+    ]
+    if connection_id is not None:
+        mt5_filters.append(MT5Execution.connection_id == str(connection_id))
+    mt5_rows = list((await session.execute(
+        select(MT5Execution).where(*mt5_filters)
+    )).scalars().all())
     positions.extend({
         "destination": "broker",
         "provider": "mt5",
+        "connection_id": row.connection_id,
         "reference": str(row.order_id),
         "status": str(row.status),
         "record_id": str(row.id),
     } for row in mt5_rows)
 
-    broker_rows = list((await session.execute(select(BrokerExecution).where(
+    broker_filters = [
         BrokerExecution.user_id == int(user_id),
         BrokerExecution.signal_id == str(signal_id),
         BrokerExecution.provider_order_id.is_not(None),
         func.lower(BrokerExecution.status).notin_(("failed", "rejected", "cancelled", "blocked")),
-    ))).scalars().all())
+    ]
+    if connection_id is not None:
+        broker_filters.append(BrokerExecution.connection_id == str(connection_id))
+    broker_rows = list((await session.execute(
+        select(BrokerExecution).where(*broker_filters)
+    )).scalars().all())
     positions.extend({
         "destination": "broker",
         "provider": str(row.provider),
+        "connection_id": row.connection_id,
         "reference": str(row.provider_order_id),
         "status": str(row.status),
         "record_id": str(row.id),
@@ -116,6 +137,7 @@ async def get_platform_execution_evidence(
     user_id: int,
     signal_id: str,
     expected_reference: str | None = None,
+    connection_id: str | None = None,
 ) -> dict[str, Any]:
     """Evidence for an authenticated canonical account across web/Telegram channels."""
     canonical_id = int(user_id)
@@ -133,7 +155,12 @@ async def get_platform_execution_evidence(
         }
     telegram_count = await _telegram_delivery_count(session, canonical_id, signal_id)
     web_count = await _web_receipt_count(session, canonical_id, signal_id)
-    positions = await _positions_for_user(session, canonical_id, signal_id)
+    positions = await _positions_for_user(
+        session,
+        canonical_id,
+        signal_id,
+        connection_id=connection_id,
+    )
     return _evidence_payload(
         telegram_delivery_count=telegram_count,
         web_receipt_count=web_count,
@@ -163,7 +190,12 @@ async def get_execution_evidence(
             "positions": [],
         }
     telegram_count = await _telegram_delivery_count(session, int(user.id), signal_id)
-    positions = await _positions_for_user(session, int(user.id), signal_id)
+    positions = await _positions_for_user(
+        session,
+        int(user.id),
+        signal_id,
+        connection_id=connection_id,
+    )
     # Telegram-originated execution requires Telegram proof, even if a web
     # receipt also exists. This preserves the existing callback security model.
     return _evidence_payload(
