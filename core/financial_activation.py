@@ -193,6 +193,11 @@ def evaluate_financial_activation(
         ActivationCheck("auto_execution_dependency", (not (auto_trade or copy_trade)) or auto_execution, "AUTO_TRADE/COPY_TRADE require AUTO_EXECUTION_ENABLED"),
         ActivationCheck("real_execution_dependency", (not (auto_execution or auto_trade or copy_trade or mt5_live or bybit_execution)) or real_execution, "all broker automation requires REAL_EXECUTION_ENABLED"),
         ActivationCheck("mt5_token", (not mt5_live) or _configured(metaapi_token), "META_API_TOKEN required for live MT5"),
+        ActivationCheck(
+            "mt5_reconciliation",
+            (not mt5_live) or _bool(environ, "MT5_RECONCILIATION_ENABLED", False),
+            "MT5 reconciliation worker must be explicitly enabled for live MT5",
+        ),
         ActivationCheck("live_broker_available", (not live_execution_requested) or mt5_live or bybit_execution, "enable at least one live broker adapter"),
         ActivationCheck("bybit_mainnet", (not bybit_execution) or not _bool(environ, "BYBIT_TESTNET", True), "BYBIT_TESTNET must be 0 for live Bybit"),
         ActivationCheck("bybit_ip_binding", (not bybit_execution) or _bool(environ, "BYBIT_REQUIRE_IP_BINDING", True), "live Bybit keys must require IP binding"),
