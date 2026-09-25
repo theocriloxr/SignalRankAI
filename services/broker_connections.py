@@ -426,6 +426,49 @@ async def upsert_connection(
             next_meta["account_classification"] = row.meta["account_classification"]
         row.meta = next_meta
         row.updated_at = datetime.utcnow()
+
+        # Every connection owns a conservative versioned policy from birth.
+        # This prevents post-migration accounts from existing outside the
+        # canonical policy boundary. Relinks never auto-upgrade permissions.
+        await session.flush()
+        from db.models import TradingAccountPolicyRecord
+
+        account_policy = (
+            await session.execute(
+                select(TradingAccountPolicyRecord).where(
+                    TradingAccountPolicyRecord.connection_id == str(row.connection_id),
+                    TradingAccountPolicyRecord.user_id == int(user_id),
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if account_policy is None:
+            requested_classification = str(
+                (row.meta or {}).get("account_classification") or ""
+            ).strip().upper()
+            if requested_classification not in {"PAPER", "DEMO", "LIVE_PERSONAL", "PROP"}:
+                requested_classification = (
+                    "LIVE_PERSONAL"
+                    if str(row.environment or "").lower() == "live"
+                    else "DEMO"
+                )
+            account_policy = TradingAccountPolicyRecord(
+                policy_id=str(uuid4()),
+                connection_id=str(row.connection_id),
+                user_id=int(user_id),
+                policy_version=1,
+                account_mode=requested_classification,
+                execution_permission="SIGNALS_ONLY",
+                status="configured",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            session.add(account_policy)
+            next_meta = dict(row.meta or {})
+            next_meta["account_classification"] = requested_classification
+            next_meta["account_policy_version"] = 1
+            row.meta = next_meta
+            row.execution_enabled = False
+
         await session.commit()
         await session.refresh(row)
         return public_connection(row)
