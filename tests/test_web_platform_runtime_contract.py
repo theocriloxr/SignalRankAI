@@ -74,7 +74,7 @@ def test_web_broker_and_quality_parity_is_wired_to_real_routes():
         "/quality",
         "/shadow-report",
         "/broker",
-        "/broker/mt5",
+        "/broker/metatrader",
         "/execution-settings",
         "/execution-terms/accept",
     ):
@@ -102,7 +102,7 @@ def test_live_execution_controls_preserve_non_bypassable_entitlement_gates():
     section = API[API.index('@router.put("/execution-settings")'):API.index('@router.delete("/devices/{session_id}")')]
     assert '_assert_command(user, "execution")' in section
     assert '_assert_feature(user, "execution_preflight")' in section
-    assert "get_platform_mt5_link_status" in section
+    assert "get_platform_metatrader_connection" in section
     assert "accepted_terms" not in section or '@router.post("/execution-terms/accept")' in API
 
 
@@ -184,11 +184,14 @@ def test_web_manual_execution_reuses_canonical_mt5_gate():
     assert "payload.confirm is not True" in section
     assert "signal_deliveries" in section
     assert "notification_events" in section
-    assert "route_platform_signal_to_mt5" in section
+    assert "route_platform_signal_to_metatrader" in section
     assert 'execution_mode="manual_confirmed"' in section
     assert "execute_trade(" not in section
     assert "/execute" in APP_JS
     assert "Confirm and submit to MT5" in APP_JS
+    assert "/broker/connections" in APP_JS
+    assert "/broker/metatrader" in APP_JS
+    assert "/broker/metatrader/secure-link" in APP_JS
     assert "The server will block the trade" in APP_JS
 
 
