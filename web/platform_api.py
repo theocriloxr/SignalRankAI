@@ -2056,21 +2056,52 @@ async def professional_signal_feed(
     user: dict[str, Any] = Depends(professional_api_user),
 ) -> dict[str, Any]:
     _require_api_scope(user, "signals:read")
-    async with get_session() as session:
+    sql = (
+        "WITH receipt_rows AS ("
+        " SELECT sd.signal_id::text AS signal_id,sd.delivered_at,"
+        " 'telegram'::text AS delivery_channel"
+        " FROM signal_deliveries sd"
+        " WHERE sd.user_id=:uid AND sd.sent_ok IS TRUE"
+        " UNION ALL"
+        " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at,"
+        " 'web'::text AS delivery_channel"
+        " FROM notification_events ne"
+        " WHERE ne.user_id=:uid AND ne.event_type='signal'"
+        " AND ne.channel_data->>'channel'='web'"
+        " AND COALESCE(ne.channel_data->>'signal_id','')<>''"
+        "), receipts AS ("
+        " SELECT receipt_rows.*,"
+        " ROW_NUMBER() OVER(PARTITION BY signal_id ORDER BY delivered_at DESC,delivery_channel) AS rn"
+        " FROM receipt_rows"
+        ")"
+        " SELECT s.signal_id,s.display_id,s.asset,s.asset_class,s.direction,s.timeframe,"
+        " s.entry,s.stop_loss,s.take_profit,s.rr_estimate,s.score,s.strategy_name,"
+        " s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
+        " s.ml_probability,s.ml_probability_calibrated,"
+        " d.delivered_at,d.delivery_channel,o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " FROM receipts d"
+        " JOIN signals s ON s.signal_id=d.signal_id"
+        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " WHERE d.rn=1"
+        " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
+    )
+    async with get_session(label="platform.professional_signals", timeout_seconds=10.0) as session:
         rows = (
             await session.execute(
-                text(
-                    "SELECT s.id AS signal_id,s.asset,s.direction,s.timeframe,s.entry,s.stop_loss,s.tp1,s.tp2,s.tp3,"
-                    "s.score,s.strategy_name,s.status,s.created_at,d.sent_at AS delivered_at,o.status AS outcome_status "
-                    "FROM signal_deliveries d JOIN signals s ON s.id=d.signal_id "
-                    "LEFT JOIN outcomes o ON o.signal_id=s.id WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-                    "ORDER BY d.sent_at DESC LIMIT :limit OFFSET :offset"
-                ),
+                text(sql),
                 {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
             )
         ).mappings().all()
         await session.rollback()
-    return {"signals": [dict(row) for row in rows], "api_key_id": user.get("api_key_id")}
+    return {
+        "signals": [
+            _present_signal_for_tier(row, str(user.get("tier") or "professional"))
+            for row in rows
+        ],
+        "api_key_id": user.get("api_key_id"),
+        "limit": int(limit),
+        "offset": int(offset),
+    }
 
 
 @router.get("/webhooks")
