@@ -288,6 +288,23 @@ class TradingProfileUpdateRequest(BaseModel):
     notify_on_sl: bool | None = None
 
 
+class BrokerLinkRequest(BaseModel):
+    mt5_login: str = Field(min_length=1, max_length=64)
+    mt5_password: str = Field(min_length=1, max_length=256)
+    mt5_server: str = Field(min_length=2, max_length=128)
+
+
+class ExecutionSettingsUpdateRequest(BaseModel):
+    execution_mode: str | None = Field(
+        default=None,
+        pattern=r"^(signals_only|none|manual|manual_confirmed|semi_auto|auto|copy|copy_trade)$",
+    )
+    trading_mode: str | None = Field(default=None, pattern=r"^(paper|live|both)$")
+    execution_provider: str | None = Field(default=None, pattern=r"^(auto|mt5|bybit)$")
+    fixed_lot_size: float | None = Field(default=None, ge=0.001, le=1.0)
+    auto_signals_daily_limit: int | None = Field(default=None, ge=-1, le=100)
+
+
 class OrganizationInviteRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     role: str = Field(default="viewer", pattern=r"^(administrator|trader|analyst|risk_manager|viewer|developer|billing|auditor)$")
@@ -2164,6 +2181,350 @@ async def update_trading_profile(
         await set_platform_user_trading_preferences(session, int(user["id"]), updated)
         await session.commit()
     return {"preferences": preferences_to_payload(updated)}
+
+
+@router.get("/quality")
+async def quality_report(
+    hours: int = Query(24, ge=1, le=168),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Expose the same decision-quality view as Telegram /quality."""
+    _assert_command(user, "quality")
+    cutoff = datetime.utcnow() - timedelta(hours=int(hours))
+    async with get_session(label="platform.quality", timeout_seconds=8.0) as session:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT decision, COALESCE(reason, '') AS reason, COUNT(*) AS rows
+                    FROM decision_log
+                    WHERE created_at >= :cutoff
+                    GROUP BY decision, reason
+                    ORDER BY COUNT(*) DESC
+                    """
+                ),
+                {"cutoff": cutoff},
+            )
+        ).mappings().all()
+        await session.rollback()
+
+    issued = 0
+    rejected = 0
+    buckets = {"score": 0, "ml": 0, "news": 0, "stale": 0, "slippage": 0, "other": 0}
+    reason_counts: dict[str, int] = {}
+    for row in rows:
+        decision = str(row.get("decision") or "").lower()
+        reason = str(row.get("reason") or "").lower()
+        count = int(row.get("rows") or 0)
+        if decision == "issued":
+            issued += count
+        if decision in {"rejected", "skipped"}:
+            rejected += count
+            reason_counts[reason or "(empty)"] = reason_counts.get(reason or "(empty)", 0) + count
+            if "slippage" in reason:
+                buckets["slippage"] += count
+            elif "stale" in reason:
+                buckets["stale"] += count
+            elif "news" in reason:
+                buckets["news"] += count
+            elif "ml" in reason:
+                buckets["ml"] += count
+            elif "score" in reason:
+                buckets["score"] += count
+            else:
+                buckets["other"] += count
+    total = issued + rejected
+    top_reasons = sorted(reason_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+    return {
+        "window_hours": int(hours),
+        "issued": issued,
+        "rejected_or_skipped": rejected,
+        "acceptance_rate": (issued / total if total else None),
+        "reject_buckets": buckets,
+        "top_reasons": [{"reason": reason, "rows": count} for reason, count in top_reasons],
+    }
+
+
+@router.get("/shadow-report")
+async def shadow_report(
+    days: int = Query(7, ge=1, le=90),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Counterfactual rejected-signal evidence; never mixed with live performance."""
+    _assert_command(user, "shadow_report")
+    cutoff = datetime.utcnow() - timedelta(days=int(days))
+    async with get_session(label="platform.shadow_report", timeout_seconds=8.0) as session:
+        summary = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS samples,
+                           COUNT(*) FILTER (WHERE outcome_tracked_at IS NOT NULL) AS tracked,
+                           COUNT(*) FILTER (
+                               WHERE LOWER(COALESCE(actual_outcome,'')) IN ('tp','tp1','tp2','tp3','win','partial_win')
+                           ) AS wins,
+                           COUNT(*) FILTER (
+                               WHERE LOWER(COALESCE(actual_outcome,'')) IN ('sl','loss','stop','stop_loss')
+                           ) AS losses,
+                           COALESCE(AVG(ml_probability),0) AS average_probability
+                    FROM ml_rejected_signals
+                    WHERE created_at >= :cutoff
+                    """
+                ),
+                {"cutoff": cutoff},
+            )
+        ).mappings().first()
+        by_reason = (
+            await session.execute(
+                text(
+                    """
+                    SELECT rejection_reason, COUNT(*) AS rows,
+                           COUNT(*) FILTER (WHERE outcome_tracked_at IS NOT NULL) AS tracked
+                    FROM ml_rejected_signals
+                    WHERE created_at >= :cutoff
+                    GROUP BY rejection_reason
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 12
+                    """
+                ),
+                {"cutoff": cutoff},
+            )
+        ).mappings().all()
+        await session.rollback()
+    result = dict(summary or {})
+    tracked = int(result.get("tracked") or 0)
+    wins = int(result.get("wins") or 0)
+    losses = int(result.get("losses") or 0)
+    resolved = wins + losses
+    result["counterfactual_win_rate"] = (wins / resolved if resolved else None)
+    result["resolved"] = resolved
+    result["methodology"] = (
+        "Rejected/skipped candidates are tracked in shadow only. These observations are "
+        "counterfactual learning evidence and are not delivered-trade performance."
+    )
+    result["claim_certified"] = False
+    return {"window_days": int(days), "summary": result, "by_reason": [dict(row) for row in by_reason]}
+
+
+@router.get("/strategy-leaderboard")
+async def strategy_leaderboard(
+    days: int = Query(30, ge=1, le=365),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Mirror the existing admin-only Telegram strategy-count diagnostic."""
+    decision = evaluate_command_access("admin_top_strategies", str(user.get("tier") or "free"))
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
+    cutoff = datetime.utcnow() - timedelta(days=int(days))
+    async with get_session(label="platform.strategy_leaderboard", timeout_seconds=8.0) as session:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COALESCE(strategy_name,'unknown') AS strategy_name, COUNT(*) AS signals
+                    FROM signals
+                    WHERE created_at >= :cutoff
+                    GROUP BY COALESCE(strategy_name,'unknown')
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 20
+                    """
+                ),
+                {"cutoff": cutoff},
+            )
+        ).mappings().all()
+        await session.rollback()
+    return {"window_days": int(days), "strategies": [dict(row) for row in rows]}
+
+
+@router.get("/broker")
+async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    uid = int(user["id"])
+    from services.mt5_client import get_platform_mt5_link_status
+
+    mt5 = await get_platform_mt5_link_status(uid)
+    async with get_session(label="platform.broker.status", timeout_seconds=8.0) as session:
+        account = (
+            await session.execute(
+                text(
+                    """
+                    SELECT telegram_user_id,execution_mode,auto_signals_daily_limit,
+                           fixed_lot_size,accepted_terms
+                    FROM users WHERE id=:uid
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().first()
+        prefs = await get_platform_user_trading_preferences(session, uid)
+        mt5_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE LOWER(status) IN ('tp','tp1','tp2','tp3')) AS wins,
+                           COUNT(*) FILTER (WHERE LOWER(status)='sl') AS losses,
+                           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL),0) AS realized_pnl
+                    FROM mt5_executions WHERE user_id=:uid
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().first()
+        provider_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT provider,COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE LOWER(status) IN ('confirmed','open','closed','filled')) AS confirmed
+                    FROM broker_executions
+                    WHERE user_id=:uid
+                    GROUP BY provider
+                    ORDER BY COUNT(*) DESC
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
+        await session.rollback()
+    account_payload = dict(account or {})
+    return {
+        "mt5": mt5,
+        "execution": {
+            "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
+            "trading_mode": str(prefs.trading_mode or "paper"),
+            "execution_provider": str(prefs.execution_provider or "auto"),
+            "auto_signals_daily_limit": int(account_payload.get("auto_signals_daily_limit") or 0),
+            "fixed_lot_size": float(account_payload.get("fixed_lot_size") or 0.01),
+            "accepted_terms": bool(account_payload.get("accepted_terms")),
+            "telegram_linked": account_payload.get("telegram_user_id") is not None,
+        },
+        "stats": {
+            "mt5": dict(mt5_stats or {}),
+            "providers": [dict(row) for row in provider_stats],
+        },
+        "safety": {
+            "live_execution_requested": bool(
+                str(prefs.trading_mode or "paper").lower() in {"live", "both"}
+            ),
+            "execution_preflight_entitled": evaluate_feature_access(
+                str(user.get("tier") or "free"),
+                "execution_preflight",
+            ).allowed,
+            "global_activation_still_required": True,
+        },
+    }
+
+
+@router.post("/broker/mt5")
+async def link_broker_mt5(
+    payload: BrokerLinkRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if not is_encryption_available():
+        raise HTTPException(status_code=503, detail="Secure broker credential storage is unavailable")
+    if not str(os.getenv("META_API_TOKEN") or "").strip():
+        raise HTTPException(status_code=503, detail="MT5/MetaApi connection is not configured")
+    from services.mt5_client import link_platform_mt5_account, get_platform_mt5_link_status
+
+    result = await link_platform_mt5_account(
+        int(user["id"]),
+        payload.mt5_login,
+        payload.mt5_password,
+        payload.mt5_server,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=502, detail=str(result.get("error") or "MT5 account linking failed"))
+    return {
+        "linked": True,
+        "credentials_saved": bool(result.get("credentials_saved")),
+        "executable": bool(result.get("executable")),
+        "status": await get_platform_mt5_link_status(int(user["id"])),
+    }
+
+
+@router.put("/execution-settings")
+async def update_execution_settings(
+    payload: ExecutionSettingsUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_command(user, "execution")
+    uid = int(user["id"])
+    values = payload.model_dump(exclude_unset=True)
+    mode = values.get("execution_mode")
+    if mode is not None:
+        mode = {"none": "signals_only", "copy": "copy_trade"}.get(str(mode), str(mode))
+        values["execution_mode"] = mode
+        if mode in {"auto", "copy_trade"}:
+            _assert_feature(user, "execution_preflight")
+    trading_mode = values.get("trading_mode")
+    if trading_mode in {"live", "both"}:
+        _assert_feature(user, "execution_preflight")
+        from services.mt5_client import get_platform_mt5_link_status
+        broker = await get_platform_mt5_link_status(uid)
+        if not broker.get("executable") and str(values.get("execution_provider") or "auto") != "bybit":
+            raise HTTPException(status_code=409, detail="Link and verify an executable broker account before enabling live mode")
+
+    async with get_session(label="platform.execution_settings", timeout_seconds=10.0) as session:
+        current = await get_platform_user_trading_preferences(session, uid)
+        merged = preferences_to_payload(current)
+        for key in ("execution_mode", "trading_mode", "execution_provider"):
+            if key in values and values[key] is not None:
+                merged[key] = values[key]
+        updated = preferences_from_payload(merged)
+        await set_platform_user_trading_preferences(session, uid, updated)
+
+        assignments = ["execution_mode=:execution_mode"]
+        params: dict[str, Any] = {"uid": uid, "execution_mode": updated.execution_mode}
+        if values.get("auto_signals_daily_limit") is not None:
+            assignments.append("auto_signals_daily_limit=:auto_signals_daily_limit")
+            params["auto_signals_daily_limit"] = int(values["auto_signals_daily_limit"])
+        if values.get("fixed_lot_size") is not None:
+            assignments.append("fixed_lot_size=:fixed_lot_size")
+            params["fixed_lot_size"] = round(float(values["fixed_lot_size"]), 3)
+        await session.execute(
+            text("UPDATE users SET " + ",".join(assignments) + ",updated_at=NOW() WHERE id=:uid"),
+            params,
+        )
+
+        telegram_id = (
+            await session.execute(
+                text("SELECT telegram_user_id FROM users WHERE id=:uid"),
+                {"uid": uid},
+            )
+        ).scalar_one_or_none()
+        if telegram_id is not None:
+            for key_name in (
+                f"autoexec_user_optin:{int(telegram_id)}",
+                f"copyexec_user_optin:{int(telegram_id)}",
+            ):
+                await session.execute(text("DELETE FROM runtime_state WHERE key=:key"), {"key": key_name})
+            if updated.execution_mode in {"auto", "copy_trade"}:
+                key_name = (
+                    f"copyexec_user_optin:{int(telegram_id)}"
+                    if updated.execution_mode == "copy_trade"
+                    else f"autoexec_user_optin:{int(telegram_id)}"
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO runtime_state(key,value,expires_at,updated_at)
+                        VALUES(:key,CAST(:value AS JSONB),NULL,NOW())
+                        ON CONFLICT(key) DO UPDATE
+                        SET value=EXCLUDED.value,expires_at=NULL,updated_at=NOW()
+                        """
+                    ),
+                    {
+                        "key": key_name,
+                        "value": json.dumps(
+                            {"enabled": True, "provider": updated.execution_provider},
+                            separators=(",", ":"),
+                        ),
+                    },
+                )
+        await session.commit()
+    return await broker_status(user)
 
 
 @router.delete("/devices/{session_id}")
