@@ -11,6 +11,7 @@ per canonical user without sharing mutable account state.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -69,17 +70,25 @@ class TradingAccountPolicy:
     # Internal SignalRank hard ceilings.
     max_risk_per_trade_pct: Decimal = Decimal("0.005")
     max_daily_loss_pct: Decimal = Decimal("0.04")
+    max_weekly_loss_pct: Decimal = Decimal("0.08")
     max_total_drawdown_pct: Decimal = Decimal("0.08")
     max_open_positions: int = 3
     max_leverage: Decimal = Decimal("1")
+    max_spread_bps: Decimal = Decimal("50")
+    max_slippage_bps: Decimal = Decimal("25")
+    min_confidence: Decimal = Decimal("0")
+    min_expected_rr: Decimal = Decimal("0")
 
     # PROP accounts can sit inside the firm's hard boundary by this buffer.
     safety_buffer_pct: Decimal = Decimal("0")
     external_max_daily_loss_pct: Decimal | None = None
+    external_max_weekly_loss_pct: Decimal | None = None
     external_max_total_drawdown_pct: Decimal | None = None
 
     allowed_instruments: tuple[str, ...] = ()
     allowed_asset_classes: tuple[str, ...] = ()
+    allowed_strategies: tuple[str, ...] = ()
+    trading_windows: tuple[Mapping[str, Any], ...] = ()
     news_trading_allowed: bool = True
     weekend_holding_allowed: bool = True
 
@@ -113,8 +122,13 @@ class TradingAccountPolicy:
         for name in (
             "max_risk_per_trade_pct",
             "max_daily_loss_pct",
+            "max_weekly_loss_pct",
             "max_total_drawdown_pct",
             "max_leverage",
+            "max_spread_bps",
+            "max_slippage_bps",
+            "min_confidence",
+            "min_expected_rr",
             "safety_buffer_pct",
         ):
             value = _decimal(getattr(self, name), field_name=name)
@@ -122,7 +136,11 @@ class TradingAccountPolicy:
                 raise ValueError(f"{name}_must_not_be_negative")
             object.__setattr__(self, name, value)
 
-        for name in ("external_max_daily_loss_pct", "external_max_total_drawdown_pct"):
+        for name in (
+            "external_max_daily_loss_pct",
+            "external_max_weekly_loss_pct",
+            "external_max_total_drawdown_pct",
+        ):
             value = getattr(self, name)
             if value is not None:
                 parsed = _decimal(value, field_name=name)
@@ -140,6 +158,12 @@ class TradingAccountPolicy:
         object.__setattr__(self, "status", status)
         object.__setattr__(self, "allowed_instruments", _tuple_upper(self.allowed_instruments))
         object.__setattr__(self, "allowed_asset_classes", _tuple_upper(self.allowed_asset_classes))
+        object.__setattr__(self, "allowed_strategies", _tuple_upper(self.allowed_strategies))
+        object.__setattr__(
+            self,
+            "trading_windows",
+            tuple(dict(window) for window in (self.trading_windows or ()) if isinstance(window, Mapping)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,18 +174,27 @@ class AccountRiskSnapshot:
     day_start_equity: Decimal
     peak_equity: Decimal
     daily_realized_pnl: Decimal = Decimal("0")
+    week_start_equity: Decimal = Decimal("0")
+    weekly_realized_pnl: Decimal = Decimal("0")
     open_positions: int = 0
     proposed_risk_pct: Decimal = Decimal("0")
     proposed_leverage: Decimal = Decimal("0")
+    spread_bps: Decimal = Decimal("0")
+    expected_slippage_bps: Decimal = Decimal("0")
+    confidence: Decimal = Decimal("0")
+    expected_rr: Decimal = Decimal("0")
     symbol: str = ""
     asset_class: str = ""
+    strategy: str = ""
     high_impact_news_window: bool = False
     weekend_hold_expected: bool = False
     account_is_demo: bool | None = None
     reconciliation_ready: bool = True
-    # Real-money decisions require broker/reconciliation-derived daily and
-    # peak-equity baselines; current equity alone cannot prove loss headroom.
+    # Real-money decisions require durable broker/reconciliation baselines;
+    # current equity alone cannot prove daily/weekly loss headroom.
     loss_baselines_verified: bool = False
+    weekly_baseline_verified: bool = False
+    evaluated_at_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
         for name in (
@@ -169,8 +202,14 @@ class AccountRiskSnapshot:
             "day_start_equity",
             "peak_equity",
             "daily_realized_pnl",
+            "week_start_equity",
+            "weekly_realized_pnl",
             "proposed_risk_pct",
             "proposed_leverage",
+            "spread_bps",
+            "expected_slippage_bps",
+            "confidence",
+            "expected_rr",
         ):
             object.__setattr__(
                 self,
@@ -189,6 +228,47 @@ class AccountPolicyDecision:
     policy_version: int
     effective_daily_loss_limit: Decimal | None = None
     effective_drawdown_limit: Decimal | None = None
+
+
+def _parse_clock(value: Any) -> time | None:
+    try:
+        hour_s, minute_s = str(value or "").strip().split(":", 1)
+        hour, minute = int(hour_s), int(minute_s)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return time(hour, minute)
+    except Exception:
+        pass
+    return None
+
+
+def _trading_window_allows(policy: TradingAccountPolicy, when_utc: datetime) -> bool:
+    if not policy.trading_windows:
+        return True
+    dt = when_utc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone(ZoneInfo(policy.reset_timezone))
+    weekday = int(local.weekday())
+    current = local.timetz().replace(tzinfo=None)
+    for window in policy.trading_windows:
+        days = window.get("days", range(7))
+        try:
+            allowed_days = {int(day) for day in days}
+        except Exception:
+            continue
+        if weekday not in allowed_days:
+            continue
+        start = _parse_clock(window.get("start"))
+        end = _parse_clock(window.get("end"))
+        if start is None or end is None:
+            continue
+        if start == end:
+            return True
+        if start < end and start <= current < end:
+            return True
+        if start > end and (current >= start or current < end):
+            return True
+    return False
 
 
 def _permission_allows(permission: str, execution_mode: str, account_mode: str) -> bool:
@@ -252,6 +332,8 @@ def evaluate_account_policy(
             reasons.append("live_account_classification_mismatch")
         if not snapshot.loss_baselines_verified:
             reasons.append("loss_baseline_unavailable")
+        if policy.max_weekly_loss_pct > 0 and not snapshot.weekly_baseline_verified:
+            reasons.append("weekly_loss_baseline_unavailable")
 
     if policy.account_mode == "PROP":
         if not policy.certified or not str(policy.certification_ref or "").strip():
@@ -270,6 +352,11 @@ def evaluate_account_policy(
         policy.external_max_daily_loss_pct if policy.account_mode == "PROP" else None,
         policy.safety_buffer_pct if policy.account_mode == "PROP" else Decimal("0"),
     )
+    weekly_limit = _effective_limit(
+        policy.max_weekly_loss_pct,
+        policy.external_max_weekly_loss_pct if policy.account_mode == "PROP" else None,
+        policy.safety_buffer_pct if policy.account_mode == "PROP" and policy.external_max_weekly_loss_pct is not None else Decimal("0"),
+    )
     drawdown_limit = _effective_limit(
         policy.max_total_drawdown_pct,
         policy.external_max_total_drawdown_pct if policy.account_mode == "PROP" else None,
@@ -277,6 +364,8 @@ def evaluate_account_policy(
     )
     if daily_limit is None:
         reasons.append("invalid_daily_loss_buffer")
+    if weekly_limit is None:
+        reasons.append("invalid_weekly_loss_buffer")
     if drawdown_limit is None:
         reasons.append("invalid_drawdown_buffer")
 
@@ -298,6 +387,22 @@ def evaluate_account_policy(
         )
         if daily_limit is not None and daily_loss >= daily_limit:
             reasons.append("daily_loss_limit")
+        if (
+            policy.max_weekly_loss_pct > 0
+            and snapshot.week_start_equity > 0
+            and snapshot.weekly_baseline_verified
+        ):
+            equity_weekly_loss = max(
+                Decimal("0"),
+                (snapshot.week_start_equity - snapshot.current_equity) / snapshot.week_start_equity,
+            )
+            realized_weekly_loss = max(
+                Decimal("0"),
+                -snapshot.weekly_realized_pnl / snapshot.week_start_equity,
+            )
+            weekly_loss = max(equity_weekly_loss, realized_weekly_loss)
+            if weekly_limit is not None and weekly_loss >= weekly_limit:
+                reasons.append("weekly_loss_limit")
         if drawdown_limit is not None and total_drawdown >= drawdown_limit:
             reasons.append("total_drawdown_limit")
 
@@ -305,6 +410,14 @@ def evaluate_account_policy(
         reasons.append("risk_per_trade_limit")
     if snapshot.proposed_leverage < 0 or snapshot.proposed_leverage > policy.max_leverage:
         reasons.append("leverage_limit")
+    if snapshot.spread_bps < 0 or snapshot.spread_bps > policy.max_spread_bps:
+        reasons.append("spread_limit")
+    if snapshot.expected_slippage_bps < 0 or snapshot.expected_slippage_bps > policy.max_slippage_bps:
+        reasons.append("slippage_limit")
+    if snapshot.confidence < policy.min_confidence:
+        reasons.append("confidence_below_minimum")
+    if snapshot.expected_rr < policy.min_expected_rr:
+        reasons.append("reward_risk_below_minimum")
     if snapshot.open_positions >= policy.max_open_positions:
         reasons.append("max_open_positions")
 
@@ -316,6 +429,13 @@ def evaluate_account_policy(
         not asset_class or asset_class not in policy.allowed_asset_classes
     ):
         reasons.append("asset_class_not_allowed")
+    strategy = str(snapshot.strategy or "").strip().upper()
+    if policy.allowed_strategies and (
+        not strategy or strategy not in policy.allowed_strategies
+    ):
+        reasons.append("strategy_not_allowed")
+    if not _trading_window_allows(policy, snapshot.evaluated_at_utc):
+        reasons.append("outside_trading_window")
     if snapshot.high_impact_news_window and not policy.news_trading_allowed:
         reasons.append("news_trading_blocked")
     if snapshot.weekend_hold_expected and not policy.weekend_holding_allowed:
@@ -361,6 +481,11 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             field_name="max_daily_loss_pct",
             default="0.04",
         ),
+        max_weekly_loss_pct=_decimal(
+            value.get("max_weekly_loss_pct"),
+            field_name="max_weekly_loss_pct",
+            default="0.08",
+        ),
         max_total_drawdown_pct=_decimal(
             value.get("max_total_drawdown_pct"),
             field_name="max_total_drawdown_pct",
@@ -376,6 +501,26 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             field_name="max_leverage",
             default="1",
         ),
+        max_spread_bps=_decimal(
+            value.get("max_spread_bps"),
+            field_name="max_spread_bps",
+            default="50",
+        ),
+        max_slippage_bps=_decimal(
+            value.get("max_slippage_bps"),
+            field_name="max_slippage_bps",
+            default="25",
+        ),
+        min_confidence=_decimal(
+            value.get("min_confidence"),
+            field_name="min_confidence",
+            default="0",
+        ),
+        min_expected_rr=_decimal(
+            value.get("min_expected_rr"),
+            field_name="min_expected_rr",
+            default="0",
+        ),
         safety_buffer_pct=_decimal(
             value.get("safety_buffer_pct"),
             field_name="safety_buffer_pct",
@@ -389,6 +534,14 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             if value.get("external_max_daily_loss_pct") not in (None, "")
             else None
         ),
+        external_max_weekly_loss_pct=(
+            _decimal(
+                value.get("external_max_weekly_loss_pct"),
+                field_name="external_max_weekly_loss_pct",
+            )
+            if value.get("external_max_weekly_loss_pct") not in (None, "")
+            else None
+        ),
         external_max_total_drawdown_pct=(
             _decimal(
                 value.get("external_max_total_drawdown_pct"),
@@ -399,6 +552,8 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
         ),
         allowed_instruments=_tuple_upper(value.get("allowed_instruments")),
         allowed_asset_classes=_tuple_upper(value.get("allowed_asset_classes")),
+        allowed_strategies=_tuple_upper(value.get("allowed_strategies")),
+        trading_windows=tuple(value.get("trading_windows") or ()),
         news_trading_allowed=bool(value.get("news_trading_allowed", True)),
         weekend_holding_allowed=bool(value.get("weekend_holding_allowed", True)),
         prop_firm=(str(value.get("prop_firm")).strip() if value.get("prop_firm") else None),
