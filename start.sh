@@ -82,7 +82,7 @@ fi
 case "${SIGNALRANK_QUIESCENT_CERTIFICATION:-0}" in
     1|true|TRUE|yes|YES|on|ON)
         echo "[boot] quiescent certification selected; business loops remain disabled"
-        exec python -u scripts/quiescent_role.py
+        exec python -u -m scripts.quiescent_role
         ;;
 esac
 
