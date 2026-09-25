@@ -1144,6 +1144,7 @@ class MT5SignalRouter:
 
                     current_equity = Decimal(str(account_info.get("equity") or 0))
                     raw_day_start = account_info.get("day_start_equity")
+                    raw_week_start = account_info.get("week_start_equity")
                     raw_peak = account_info.get("peak_equity")
                     baseline_verified = bool(
                         isinstance(raw_day_start, (int, float))
@@ -1151,14 +1152,24 @@ class MT5SignalRouter:
                         and isinstance(raw_peak, (int, float))
                         and float(raw_peak) > 0
                     )
+                    weekly_baseline_verified = bool(
+                        isinstance(raw_week_start, (int, float))
+                        and float(raw_week_start) > 0
+                    )
                     day_start_equity = Decimal(
                         str(raw_day_start if baseline_verified else current_equity)
+                    )
+                    week_start_equity = Decimal(
+                        str(raw_week_start if weekly_baseline_verified else 0)
                     )
                     peak_equity = Decimal(
                         str(raw_peak if baseline_verified else current_equity)
                     )
                     daily_realized_pnl = Decimal(
                         str(account_info.get("daily_realized_pnl") or 0)
+                    )
+                    weekly_realized_pnl = Decimal(
+                        str(account_info.get("weekly_realized_pnl") or 0)
                     )
                     profile_risk_fraction = Decimal(
                         str(profile_policy.get("risk_per_trade_pct") or 0)
@@ -1173,21 +1184,73 @@ class MT5SignalRouter:
                             Decimal(str(volume)) * contract_size * entry_decimal
                         ) / current_equity
 
+                    bid = Decimal(str(quote.get("bid") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    ask = Decimal(str(quote.get("ask") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    mid = Decimal(str(quote.get("mid") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    spread_bps = Decimal("1000000")
+                    if bid > 0 and ask >= bid and mid > 0:
+                        spread_bps = ((ask - bid) / mid) * Decimal("10000")
+
+                    raw_direction = str(signal.get("direction") or signal.get("side") or "").strip().lower()
+                    executable_quote = ask if raw_direction in {"long", "buy"} else bid
+                    slippage_bps = Decimal("1000000")
+                    if entry_decimal > 0 and executable_quote > 0:
+                        slippage_bps = (
+                            abs(executable_quote - entry_decimal) / entry_decimal
+                        ) * Decimal("10000")
+
+                    confidence = Decimal("0")
+                    raw_confidence = (
+                        signal.get("score_calibrated")
+                        or signal.get("ml_probability_calibrated")
+                        or signal.get("score_final")
+                        or signal.get("score")
+                        or 0
+                    )
+                    try:
+                        confidence = Decimal(str(raw_confidence))
+                        if confidence > 1:
+                            confidence = confidence / Decimal("100")
+                        confidence = max(Decimal("0"), min(Decimal("1"), confidence))
+                    except Exception:
+                        confidence = Decimal("0")
+
+                    expected_rr = Decimal("0")
+                    stop_decimal = Decimal(str(signal.get("stop_loss") or signal.get("stop") or 0))
+                    targets = self._parse_take_profit(
+                        signal.get("take_profit") or signal.get("targets")
+                    )
+                    if entry_decimal > 0 and stop_decimal > 0 and targets:
+                        risk_distance = abs(entry_decimal - stop_decimal)
+                        if risk_distance > 0:
+                            expected_rr = (
+                                abs(Decimal(str(targets[0])) - entry_decimal)
+                                / risk_distance
+                            )
+
                     policy_snapshot = AccountRiskSnapshot(
                         current_equity=current_equity,
                         day_start_equity=day_start_equity,
                         peak_equity=peak_equity,
                         daily_realized_pnl=daily_realized_pnl,
+                        week_start_equity=week_start_equity,
+                        weekly_realized_pnl=weekly_realized_pnl,
                         open_positions=len(reconciliation.get("positions") or []),
                         proposed_risk_pct=profile_risk_fraction,
                         proposed_leverage=proposed_leverage,
+                        spread_bps=spread_bps,
+                        expected_slippage_bps=slippage_bps,
+                        confidence=confidence,
+                        expected_rr=expected_rr,
                         symbol=asset,
                         asset_class=str(signal.get("asset_class") or ""),
+                        strategy=str(signal.get("strategy_name") or signal.get("strategy") or ""),
                         high_impact_news_window=bool(signal.get("high_impact_news_window")),
                         weekend_hold_expected=bool(signal.get("weekend_hold_expected")),
                         account_is_demo=account_is_demo,
                         reconciliation_ready=reconciliation_ready,
                         loss_baselines_verified=baseline_verified,
+                        weekly_baseline_verified=weekly_baseline_verified,
                     )
                     account_policy_decision = evaluate_account_policy(
                         account_policy,
@@ -1272,6 +1335,10 @@ class MT5SignalRouter:
                             "account_policy_allowed": account_policy_allowed,
                             "reconciliation_ready": reconciliation_ready,
                             "volume": str(volume),
+                            "spread_bps": str(spread_bps) if "spread_bps" in locals() else None,
+                            "expected_slippage_bps": str(slippage_bps) if "slippage_bps" in locals() else None,
+                            "confidence": str(confidence) if "confidence" in locals() else None,
+                            "expected_rr": str(expected_rr) if "expected_rr" in locals() else None,
                         },
                         request_snapshot={
                             "signal_id": signal_id,
