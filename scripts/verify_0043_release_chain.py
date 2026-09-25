@@ -54,6 +54,8 @@ def main() -> int:
         "CREATE TABLE broker_execution_decisions",
         "trg_trading_account_ledger_immutable",
         "prevent_trading_account_ledger_mutation",
+        "RETURNS trigger AS $ledger_guard$",
+        "$ledger_guard$ LANGUAGE plpgsql",
         "RETURNS trigger AS $",
         "$ LANGUAGE plpgsql",
         "ix_trading_account_ledger_account_created",
