@@ -159,6 +159,41 @@ def upgrade() -> None:
         ["connection_id", "status"],
     )
 
+    op.add_column(
+        "mt5_executions",
+        sa.Column(
+            "connection_id",
+            sa.String(length=64),
+            sa.ForeignKey("broker_connections.connection_id", ondelete="RESTRICT"),
+            nullable=True,
+        ),
+    )
+    op.create_index(
+        "ix_mt5_executions_connection_status",
+        "mt5_executions",
+        ["connection_id", "status"],
+    )
+
+    # Historical MT5 rows retain their provider account ID. Backfill only when
+    # that provider account maps to exactly one canonical connection for the
+    # same user; ambiguous history remains NULL rather than being misattributed.
+    op.execute(
+        """
+        UPDATE mt5_executions me
+        SET connection_id = matched.connection_id
+        FROM (
+            SELECT bc.user_id, bc.external_account_id, MIN(bc.connection_id) AS connection_id
+            FROM broker_connections bc
+            WHERE bc.external_account_id IS NOT NULL
+            GROUP BY bc.user_id, bc.external_account_id
+            HAVING COUNT(*) = 1
+        ) matched
+        WHERE me.user_id = matched.user_id
+          AND me.metaapi_account_id = matched.external_account_id
+          AND me.connection_id IS NULL
+        """
+    )
+
     # Existing broker connections receive conservative policies. Linked demo
     # accounts become MANUAL-only; live/unknown accounts remain SIGNALS_ONLY.
     op.execute(
@@ -231,6 +266,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_mt5_executions_connection_status", table_name="mt5_executions")
+    op.drop_column("mt5_executions", "connection_id")
     op.drop_index("ix_broker_executions_connection_status", table_name="broker_executions")
     op.drop_column("broker_executions", "connection_id")
     op.drop_index("ix_broker_execution_decision_signal_user", table_name="broker_execution_decisions")
