@@ -297,6 +297,26 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start Bybit reconciliation: %s", e)
 
+        if (
+            _env_bool("MT5_RECONCILIATION_ENABLED", True)
+            and bool(str(os.getenv("META_API_TOKEN") or "").strip())
+        ):
+            try:
+                from services.mt5_reconciler import mt5_reconciliation_loop
+                _register_task(
+                    "mt5_reconciliation",
+                    lambda: mt5_reconciliation_loop(self._stop),
+                    restart_on_failure=True,
+                )
+                logger.info("[worker] MT5ExecutionReconciliation started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start MT5 reconciliation: %s", e)
+        else:
+            logger.info(
+                "[worker] MT5ExecutionReconciliation disabled token_configured=%s",
+                bool(str(os.getenv("META_API_TOKEN") or "").strip()),
+            )
+
         if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
             try:
                 from payments.paystack_events import (
