@@ -478,3 +478,22 @@ def test_platform_idempotency_key_is_namespaced_from_telegram() -> None:
     telegram = ExecutionRequest(**common, user_identity="telegram")
     platform = ExecutionRequest(**common, user_identity="platform", canonical_user_id=77)
     assert telegram.key() != platform.key()
+
+
+
+def test_ml_starvation_recovery_signal_is_never_broker_executable() -> None:
+    gate = ExecutionGate(safety_flags=_enabled_safety_flags())
+    for mode in ("manual_confirmed", "auto", "copy_trade"):
+        request = _allowed_request(
+            mode=mode,
+            signal={
+                "entry": 100.0,
+                "stop_loss": 95.0,
+                "take_profit": 110.0,
+                "direction": "long",
+                "ml_recovery_mode": True,
+            },
+        )
+        decision = gate.preflight(request)
+        assert decision.allowed is False
+        assert "ML_RECOVERY_SIGNAL_PAPER_ONLY" in decision.reasons
