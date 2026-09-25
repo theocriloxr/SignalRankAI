@@ -10,12 +10,18 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends gcc libpq-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker layer caching
-COPY requirements.txt ./
+# Copy the declared direct requirements and the certified full dependency graph
+# first to preserve Docker layer caching. Runtime images install the lock, not
+# a freshly-resolved graph.
+COPY requirements.txt requirements.lock ./
 
-# Ensure pip/tools are up-to-date and install Python deps
+# Install the exact certified graph without allowing pip to re-resolve
+# transitive dependencies. pip check fails the image build if the lock is
+# internally inconsistent or misses a dependency required by installed
+# packages.
 RUN python -m pip install --upgrade pip setuptools wheel \
-	&& pip install -r requirements.txt
+	&& pip install --no-deps -r requirements.lock \
+	&& pip check
 
 # Copy application code
 COPY . .
