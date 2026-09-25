@@ -294,3 +294,19 @@ async def test_execute_via_mt5_records_canonical_ledger_once(monkeypatch) -> Non
     assert result.order_id == "broker-order"
     ledger.assert_awaited_once()
     paper.assert_awaited_once()
+
+
+def test_telegram_multi_account_execution_uses_opaque_server_bound_selection() -> None:
+    bot = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+    selection = Path("services/broker_account_selection.py").read_text(encoding="utf-8")
+
+    assert "create_account_selection_choices" in bot
+    assert "consume_account_selection" in bot
+    assert 'pattern=r"^broker_pick_"' in bot
+    assert 'callback_data=f"broker_pick_{choice[\'token\']}"' in bot
+    assert "policy_version" in selection
+    assert "account_selection_owner_mismatch" in selection
+    assert "account_policy_changed" in selection
+    assert "connection.execution_enabled is not True" in selection
+    assert 'f"{_TOKEN_PREFIX}{opaque}"' in selection
+    assert 'callback_data=f"broker_pick_{choice[\'connection_id\']}"' not in bot
