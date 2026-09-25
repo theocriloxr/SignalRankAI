@@ -115,11 +115,12 @@ def test_web_fanout_reuses_canonical_platform_preferences():
 def test_mt5_router_uses_one_identity_aware_execution_path():
     source = Path("services/mt5_signal_router.py").read_text(encoding="utf-8")
     assert "async def route_platform_signal_to_mt5(" in source
+    assert "async def route_platform_signal_to_metatrader(" in source
     assert 'user_identity="platform"' in source
     assert "get_platform_user_trading_preferences" in source
     assert "get_platform_execution_evidence" in source
     assert "reserve_platform_user_execution_quota" in source
-    assert "ensure_platform_mt5_account_id" in source
+    assert "ensure_platform_metatrader_account_id" in source
     assert "canonical_id = await self._resolve_canonical_user_id(" in source
     assert "user_id=canonical_id" in source
 
