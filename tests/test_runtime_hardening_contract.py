@@ -156,3 +156,19 @@ def test_analytics_owns_dynamic_instrument_catalogue_refresh():
     assert 'asyncio.to_thread(discover, top=top)' in refresh
     assert 'await asyncio.wait_for(' in refresh
     assert 'label="analytics.instrument_discovery.persist"' in refresh
+
+
+
+def test_web_fanout_retries_background_admission_pressure_without_warning_loop():
+    source = text("worker/worker.py")
+    section = source[
+        source.index("async def _web_signal_fanout_loop"):
+        source.index("async def _expiry_loop")
+    ]
+    assert "NoncriticalWriteDropped" in section
+    assert "AnalyticsWorkDeferred" in section
+    assert "DatabaseWorkDeferred" in section
+    assert "WEB_SIGNAL_FANOUT_DB_BUSY_RETRY_SECONDS" in section
+    assert "deferred reason=db_capacity" in section
+    assert "deferred reason=db_wait_timeout" in section
+    assert "sleep_for = min(" in section
