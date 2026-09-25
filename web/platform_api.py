@@ -305,6 +305,10 @@ class ExecutionSettingsUpdateRequest(BaseModel):
     auto_signals_daily_limit: int | None = Field(default=None, ge=-1, le=100)
 
 
+class ExecutionTermsAcceptRequest(BaseModel):
+    confirm: bool
+
+
 class OrganizationInviteRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     role: str = Field(default="viewer", pattern=r"^(administrator|trader|analyst|risk_manager|viewer|developer|billing|auditor)$")
@@ -2442,6 +2446,34 @@ async def link_broker_mt5(
         "executable": bool(result.get("executable")),
         "status": await get_platform_mt5_link_status(int(user["id"])),
     }
+
+
+@router.post("/execution-terms/accept")
+async def accept_execution_terms(
+    payload: ExecutionTermsAcceptRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Record explicit execution-risk consent for the canonical account."""
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    version = str(os.getenv("EXECUTION_TERMS_VERSION") or "2026-09").strip()[:32]
+    async with get_session(label="platform.execution_terms", timeout_seconds=8.0) as session:
+        await session.execute(
+            text(
+                """
+                UPDATE users
+                SET accepted_terms=TRUE,
+                    terms_version=:version,
+                    terms_accepted_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=:uid
+                """
+            ),
+            {"uid": int(user["id"]), "version": version},
+        )
+        await session.commit()
+    return {"accepted": True, "terms_version": version}
 
 
 @router.put("/execution-settings")
