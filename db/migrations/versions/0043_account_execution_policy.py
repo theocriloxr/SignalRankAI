@@ -155,6 +155,87 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "trading_account_ledger_entries",
+        sa.Column("entry_id", sa.String(length=64), primary_key=True),
+        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "connection_id",
+            sa.String(length=64),
+            sa.ForeignKey("broker_connections.connection_id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column("provider", sa.String(length=32), nullable=False),
+        sa.Column("entry_type", sa.String(length=40), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False, server_default="USD"),
+        sa.Column("source_event_id", sa.String(length=160), nullable=False),
+        sa.Column("correlation_id", sa.String(length=128), nullable=True),
+        sa.Column("order_ref", sa.String(length=160), nullable=True),
+        sa.Column("fill_ref", sa.String(length=160), nullable=True),
+        sa.Column("position_ref", sa.String(length=160), nullable=True),
+        sa.Column("amount", sa.Numeric(28, 10), nullable=True),
+        sa.Column("balance", sa.Numeric(28, 10), nullable=True),
+        sa.Column("equity", sa.Numeric(28, 10), nullable=True),
+        sa.Column("margin", sa.Numeric(28, 10), nullable=True),
+        sa.Column("free_margin", sa.Numeric(28, 10), nullable=True),
+        sa.Column("realized_pnl", sa.Numeric(28, 10), nullable=True),
+        sa.Column("unrealized_pnl", sa.Numeric(28, 10), nullable=True),
+        sa.Column("commission", sa.Numeric(28, 10), nullable=True),
+        sa.Column("funding", sa.Numeric(28, 10), nullable=True),
+        sa.Column("swap", sa.Numeric(28, 10), nullable=True),
+        sa.Column("fees", sa.Numeric(28, 10), nullable=True),
+        sa.Column(
+            "correction_of_entry_id",
+            sa.String(length=64),
+            sa.ForeignKey("trading_account_ledger_entries.entry_id", ondelete="RESTRICT"),
+            nullable=True,
+        ),
+        sa.Column("provider_timestamp", sa.DateTime(), nullable=True),
+        sa.Column("metadata", sa.JSON(), nullable=False, server_default=sa.text("'{}'::json")),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
+        sa.UniqueConstraint(
+            "connection_id",
+            "provider",
+            "source_event_id",
+            name="uq_trading_account_ledger_provider_event",
+        ),
+        sa.CheckConstraint(
+            "entry_type IN ("
+            "'deposit','withdrawal','balance_snapshot','equity_snapshot','margin_snapshot',"
+            "'realized_pnl','unrealized_pnl_snapshot','commission','funding','swap','fee',"
+            "'order','fill','position_snapshot','adjustment','reconciliation_correction'"
+            ")",
+            name="ck_trading_account_ledger_entry_type",
+        ),
+    )
+    op.create_index(
+        "ix_trading_account_ledger_account_created",
+        "trading_account_ledger_entries",
+        ["connection_id", "created_at"],
+    )
+    op.create_index(
+        "ix_trading_account_ledger_user_type",
+        "trading_account_ledger_entries",
+        ["user_id", "entry_type", "created_at"],
+    )
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION prevent_trading_account_ledger_mutation()
+        RETURNS trigger AS $
+        BEGIN
+            RAISE EXCEPTION 'trading_account_ledger_entries is append-only';
+        END;
+        $ LANGUAGE plpgsql
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_trading_account_ledger_immutable
+        BEFORE UPDATE OR DELETE ON trading_account_ledger_entries
+        FOR EACH ROW EXECUTE FUNCTION prevent_trading_account_ledger_mutation()
+        """
+    )
+
+    op.create_table(
         "broker_execution_decisions",
         sa.Column("decision_id", sa.String(length=64), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
@@ -321,6 +402,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_trading_account_ledger_immutable "
+        "ON trading_account_ledger_entries"
+    )
+    op.execute("DROP FUNCTION IF EXISTS prevent_trading_account_ledger_mutation()")
+    op.drop_index(
+        "ix_trading_account_ledger_user_type",
+        table_name="trading_account_ledger_entries",
+    )
+    op.drop_index(
+        "ix_trading_account_ledger_account_created",
+        table_name="trading_account_ledger_entries",
+    )
+    op.drop_table("trading_account_ledger_entries")
     op.drop_index("ix_mt5_executions_connection_status", table_name="mt5_executions")
     op.drop_column("mt5_executions", "connection_id")
     op.drop_index("ix_broker_executions_connection_status", table_name="broker_executions")
