@@ -107,13 +107,13 @@ _BASIC_FEATURES = frozenset(
         "watchlist",
         "referrals",
         "support",
+        "paper_trading",
     }
 )
 _PREMIUM_FEATURES = _BASIC_FEATURES | frozenset(
     {
         "exact_levels",
         "lifecycle_updates",
-        "paper_trading",
         "trade_management",
         "custom_alerts",
         "performance_analytics",
@@ -293,9 +293,9 @@ FEATURE_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "watchlist": Tier.FREE,
         "referrals": Tier.FREE,
         "support": Tier.FREE,
+        "paper_trading": Tier.FREE,
         "exact_levels": Tier.PREMIUM,
         "lifecycle_updates": Tier.PREMIUM,
-        "paper_trading": Tier.PREMIUM,
         "trade_management": Tier.PREMIUM,
         "custom_alerts": Tier.PREMIUM,
         "performance_analytics": Tier.PREMIUM,
