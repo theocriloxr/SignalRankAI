@@ -248,3 +248,16 @@ def test_web_signal_fanout_honors_tier_asset_and_delay_policy():
     assert 'signal_age_minutes < float(user["delivery_delay_minutes"])' in source
     assert 'counters["blocked_entitlement"]' in source
     assert 'counters["blocked_delay"]' in source
+
+
+
+def test_web_signal_fanout_waits_for_db_capacity_instead_of_dropping():
+    fanout = (ROOT / "services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    snapshot = fanout[
+        fanout.index("async def _snapshot_candidates"):
+        fanout.index("async def deliver_recent_web_signals")
+    ]
+    assert 'label="platform.web_signal_fanout.snapshot"' in snapshot
+    assert "drop_if_busy=False" in snapshot
+    assert "WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS" in snapshot
+    assert "drop_if_busy=True" not in snapshot
