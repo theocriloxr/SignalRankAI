@@ -68,21 +68,19 @@ async def _disable_paystack_subscription(code: str) -> tuple[bool, int]:
 
 
 async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
-    """Disable future renewal for one canonical account.
-
-    The DB preference is committed even when Paystack is unavailable so the
-    application does not claim the user opted in to renewal.  A provider
-    failure is returned explicitly for support/admin reconciliation.
-    """
+    """Disable future renewal without holding DB locks during provider I/O."""
     canonical_id = int(user_id)
+
+    # Snapshot the account/subscription, then release the DB connection before
+    # making any external Paystack calls.
     async with get_session(
         priority="interactive",
-        label="subscription.cancel_auto_renew",
-        timeout_seconds=12.0,
+        label="subscription.cancel_snapshot",
+        timeout_seconds=8.0,
     ) as session:
         user = (
             await session.execute(
-                select(User).where(User.id == canonical_id).with_for_update().limit(1)
+                select(User).where(User.id == canonical_id).limit(1)
             )
         ).scalar_one_or_none()
         if user is None:
@@ -93,7 +91,6 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
                 "gateway_cancelled": False,
                 "retry_attempts": 0,
             }
-
         subscription = (
             await session.execute(
                 select(Subscription)
@@ -114,27 +111,50 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
                 "gateway_cancelled": False,
                 "retry_attempts": 0,
             }
-
         tier = str(subscription.tier or user.tier or "free").strip().lower()
+        expires_at = subscription.expires_at
         sub_code = str(user.paystack_subscription_code or "").strip()
-        gateway_cancelled, retry_attempts = await _disable_paystack_subscription(
-            sub_code
-        )
+        await session.rollback()
+
+    gateway_cancelled, retry_attempts = await _disable_paystack_subscription(
+        sub_code
+    )
+
+    # Re-lock only for the short local mutation.  Access itself is not
+    # downgraded here; the active subscription still expires naturally.
+    async with get_session(
+        priority="interactive",
+        label="subscription.cancel_commit",
+        timeout_seconds=8.0,
+    ) as session:
+        user = (
+            await session.execute(
+                select(User).where(User.id == canonical_id).with_for_update().limit(1)
+            )
+        ).scalar_one_or_none()
+        if user is None:
+            await session.rollback()
+            return {
+                "success": False,
+                "reason": "account_not_found",
+                "gateway_cancelled": bool(gateway_cancelled),
+                "retry_attempts": int(retry_attempts),
+            }
         user.auto_renew = False
         await session.commit()
-        return {
-            "success": True,
-            "reason": "cancelled",
-            "tier": tier,
-            "auto_renew": False,
-            "expires_at": subscription.expires_at,
-            "gateway_cancelled": bool(gateway_cancelled),
-            "retry_attempts": int(retry_attempts),
-            "provider_follow_up_required": bool(
-                sub_code and not gateway_cancelled
-            ),
-        }
 
+    return {
+        "success": True,
+        "reason": "cancelled",
+        "tier": tier,
+        "auto_renew": False,
+        "expires_at": expires_at,
+        "gateway_cancelled": bool(gateway_cancelled),
+        "retry_attempts": int(retry_attempts),
+        "provider_follow_up_required": bool(
+            sub_code and not gateway_cancelled
+        ),
+    }
 
 async def cancel_auto_renew_for_telegram_user(
     telegram_user_id: int,
