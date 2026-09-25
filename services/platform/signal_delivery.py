@@ -189,8 +189,17 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
     async with get_session(
         priority="background",
         label="platform.web_signal_fanout.snapshot",
-        timeout_seconds=12.0,
-        drop_if_busy=True,
+        timeout_seconds=max(
+            3.0,
+            min(
+                20.0,
+                float(
+                    os.getenv("WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS", "8")
+                    or 8
+                ),
+            ),
+        ),
+        drop_if_busy=False,
     ) as session:
         signal_rows = list(
             (
