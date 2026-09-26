@@ -126,6 +126,30 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
             report["users_public_user_id"] = bool(cur.fetchone()[0])
 
             cur.execute("""
+                SELECT
+                  COUNT(*) FILTER (WHERE column_name='credential_format') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_version') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_key_id') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_revision') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_rotated_at') = 1
+                FROM information_schema.columns
+                WHERE table_schema='public'
+                  AND table_name='broker_connections'
+                  AND column_name IN (
+                    'credential_format','credential_version','credential_key_id',
+                    'credential_revision','credential_rotated_at'
+                  )
+            """)
+            credential_columns = cur.fetchone()
+            report["broker_credential_columns"] = {
+                "credential_format": bool(credential_columns[0]),
+                "credential_version": bool(credential_columns[1]),
+                "credential_key_id": bool(credential_columns[2]),
+                "credential_revision": bool(credential_columns[3]),
+                "credential_rotated_at": bool(credential_columns[4]),
+            }
+
+            cur.execute("""
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.columns
                   WHERE table_schema='public'
@@ -252,6 +276,9 @@ def evaluate(
         blockers.append("missing_column:broker_executions.connection_id")
     if report.get("mt5_executions_connection_id") is not True:
         blockers.append("missing_column:mt5_executions.connection_id")
+    for column, present in (report.get("broker_credential_columns") or {}).items():
+        if present is not True:
+            blockers.append(f"missing_column:broker_connections.{column}")
     counts = report.get("catalogue_counts") or {}
     if not report.get("catalogue_minimums"):
         blockers.append("catalogue_minimums_missing")
