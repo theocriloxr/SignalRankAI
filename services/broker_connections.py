@@ -179,6 +179,11 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "environment": str(get("environment") or "unknown"),
         "account_classification": account_classification(row),
         "auth_mode": str(get("auth_mode") or "existing"),
+        "credential_encrypted": bool(get("secret_encrypted")),
+        "credential_format": str(get("credential_format") or "none"),
+        "credential_version": int(get("credential_version") or 0),
+        "credential_revision": int(get("credential_revision") or 0),
+        "credential_rotated_at": get("credential_rotated_at"),
         "server": get("server"),
         "status": str(get("status") or "pending"),
         "permissions": dict(get("permissions") or {}),
@@ -261,8 +266,7 @@ async def resolve_execution_connection(
 async def register_exchange_connection(
     telegram_user_id: int, *, provider: str, api_key: str, payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Migrate encrypted exchange linkage into the canonical account registry."""
-    from services.security import encrypt_secret
+    """Persist one exchange account through the canonical credential boundary."""
 
     async with get_session(label="broker.exchange.owner", timeout_seconds=6.0) as session:
         owner = (await session.execute(
@@ -271,9 +275,6 @@ async def register_exchange_connection(
         await session.rollback()
     if owner is None:
         raise LookupError("canonical user not found")
-    encrypted = encrypt_secret(json.dumps(payload, sort_keys=True))
-    if not encrypted:
-        raise ValueError("Broker credential encryption failed")
     sandbox = payload.get("sandbox")
     if type(sandbox) is not bool:
         raise ValueError("Broker demo/live classification is required")
@@ -283,7 +284,7 @@ async def register_exchange_connection(
         user_id=int(owner), platform=provider, connector=provider,
         account_ref=account_ref, external_account_id=None,
         environment="demo" if sandbox else "live", auth_mode="api_key",
-        secret_encrypted=encrypted, status="verified",
+        credential_payload=dict(payload), status="verified",
         permissions=dict(payload.get("permissions") or {}),
         meta={"account_classification": "DEMO" if sandbox else "LIVE_PERSONAL"},
     )
@@ -322,6 +323,7 @@ async def upsert_connection(
     account_label: str | None = None,
     environment: str = "unknown",
     auth_mode: str = "existing",
+    credential_payload: dict[str, Any] | None = None,
     secret_encrypted: str | None = None,
     server: str | None = None,
     status: str = "pending",
@@ -397,14 +399,73 @@ async def upsert_connection(
             else row.external_account_id
         )
         next_environment = str(environment or "unknown").strip().lower()[:16]
-        if row.environment != next_environment or (
-            secret_encrypted is not None and row.secret_encrypted != secret_encrypted
-        ):
+        if credential_payload is not None and secret_encrypted is not None:
+            raise ValueError(
+                "Provide credential_payload or a validated credential envelope, not both"
+            )
+
+        previous_secret = str(row.secret_encrypted or "")
+        if credential_payload is not None:
+            from services.broker_credentials import encrypt_broker_credentials
+
+            next_revision = max(1, int(row.credential_revision or 0) + 1)
+            envelope, crypto = encrypt_broker_credentials(
+                dict(credential_payload),
+                user_id=int(user_id),
+                connection_id=str(row.connection_id),
+                provider=platform_n,
+                connector=connector_n,
+                revision=next_revision,
+            )
+            row.secret_encrypted = envelope
+            row.credential_format = crypto.format
+            row.credential_version = crypto.version
+            row.credential_key_id = crypto.key_id
+            row.credential_revision = crypto.revision
+            row.credential_rotated_at = datetime.utcnow()
+        elif secret_encrypted is not None:
+            # Compatibility/import path is intentionally strict: new writes may
+            # import only a versioned envelope that verifies against this exact
+            # account context. Raw legacy Fernet tokens are read-only migration
+            # material and must be rotated explicitly.
+            from services.broker_credentials import (
+                decrypt_broker_credentials,
+                is_broker_credential_envelope,
+            )
+
+            candidate = str(secret_encrypted)
+            if not is_broker_credential_envelope(candidate):
+                raise ValueError(
+                    "Raw legacy broker ciphertext cannot be written to a new connection"
+                )
+            payload_check, crypto = decrypt_broker_credentials(
+                candidate,
+                user_id=int(user_id),
+                connection_id=str(row.connection_id),
+                provider=platform_n,
+                connector=connector_n,
+            )
+            if not isinstance(payload_check, dict):
+                raise ValueError("Broker credential envelope payload is invalid")
+            row.secret_encrypted = candidate
+            row.credential_format = crypto.format
+            row.credential_version = crypto.version
+            row.credential_key_id = crypto.key_id
+            row.credential_revision = crypto.revision
+            row.credential_rotated_at = datetime.utcnow()
+
+        if row.environment != next_environment or str(row.secret_encrypted or "") != previous_secret:
+            # A classification or credential change invalidates the previous
+            # execution authorization. Re-enable only through the explicit
+            # account-policy path.
             row.execution_enabled = False
         row.environment = next_environment
         row.auth_mode = str(auth_mode or "existing").strip().lower()[:32]
-        if secret_encrypted is not None:
-            row.secret_encrypted = str(secret_encrypted)
+        if row.auth_mode in {"provider_secure_link", "oauth"} and not row.secret_encrypted:
+            row.credential_format = "provider_managed"
+            row.credential_version = 0
+            row.credential_key_id = None
+            row.credential_revision = 0
         row.server = str(server).strip()[:128] if server else row.server
         row.status = str(status or "pending").strip().lower()[:32]
         row.permissions = dict(permissions or row.permissions or {})
