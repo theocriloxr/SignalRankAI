@@ -627,6 +627,24 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         raise HTTPException(503, "Broker credential encryption failed")
 
     masked = f"{api_key[:4]}...{api_key[-4:]}"
+    linked_at = now_utc_naive().isoformat()
+
+    # Canonical BrokerConnection credentials are encrypted once as a versioned,
+    # account-bound envelope. This plaintext mapping is never persisted or
+    # logged; it exists only for the duration of the envelope write.
+    canonical_payload = {
+        "provider": provider,
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "passphrase": str(req.passphrase or "") or None,
+        "sandbox": bool(req.sandbox),
+        "permissions": verified_permissions,
+        "masked_key": masked,
+        "linked_at": linked_at,
+    }
+
+    # Compatibility state remains encrypted field-by-field until all legacy
+    # readers are retired. No plaintext credential is written to RuntimeState.
     payload = {
         "provider": provider,
         "api_key_enc": enc_key,
@@ -635,14 +653,17 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         "sandbox": bool(req.sandbox),
         "permissions": verified_permissions,
         "masked_key": masked,
-        "linked_at": now_utc_naive().isoformat(),
+        "linked_at": linked_at,
     }
 
     from services.broker_connections import register_exchange_connection
 
     try:
         connection = await register_exchange_connection(
-            int(user_id), provider=provider, api_key=api_key, payload=payload,
+            int(user_id),
+            provider=provider,
+            api_key=api_key,
+            payload=canonical_payload,
         )
     except LookupError as exc:
         raise HTTPException(404, "Canonical user profile not found") from exc
