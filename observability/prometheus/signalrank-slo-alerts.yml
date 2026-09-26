@@ -1,0 +1,51 @@
+groups:
+  - name: signalrank-slo-error-budgets
+    interval: 30s
+    rules:
+      - alert: SignalRankSLOBudgetWarning
+        expr: (signalrank_slo_samples >= 50) and (signalrank_slo_budget_remaining_pct < 50) and (signalrank_slo_budget_remaining_pct > 0)
+        for: 5m
+        labels:
+          severity: warning
+          owner: '{{ $labels.service }}'
+          component: slo
+        annotations:
+          summary: 'SignalRank SLO error budget below 50%'
+          description: 'SLO {{ $labels.slo }} owned by {{ $labels.service }} has {{ $value }}% budget remaining.'
+          runbook: 'docs/runbooks/SLO_ERROR_BUDGET_INCIDENT_RESPONSE.md'
+
+      - alert: SignalRankSLOBudgetCritical
+        expr: (signalrank_slo_samples >= 100) and ((signalrank_slo_budget_remaining_pct <= 0) or (signalrank_slo_degraded > 0))
+        for: 2m
+        labels:
+          severity: critical
+          owner: '{{ $labels.service }}'
+          component: slo
+        annotations:
+          summary: 'SignalRank SLO exhausted or degraded'
+          description: 'SLO {{ $labels.slo }} owned by {{ $labels.service }} exhausted its budget or entered degraded state.'
+          runbook: 'docs/runbooks/SLO_ERROR_BUDGET_INCIDENT_RESPONSE.md'
+
+      - alert: SignalRankServiceDown
+        expr: signalrank_service_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          owner: platform
+          component: runtime
+        annotations:
+          summary: 'SignalRank service readiness is down'
+          description: 'The runtime readiness gauge is zero for more than one minute.'
+          runbook: 'docs/runbooks/SLO_ERROR_BUDGET_INCIDENT_RESPONSE.md#service-down'
+
+      - alert: SignalRankProviderAPIUnhealthy
+        expr: signalrank_exchange_api_health == 0
+        for: 2m
+        labels:
+          severity: warning
+          owner: market-data
+          component: provider
+        annotations:
+          summary: 'SignalRank provider API unhealthy'
+          description: 'Provider {{ $labels.provider }} has remained unhealthy for more than two minutes.'
+          runbook: 'docs/runbooks/SLO_ERROR_BUDGET_INCIDENT_RESPONSE.md#provider-unhealthy'
