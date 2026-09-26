@@ -1490,19 +1490,6 @@ async def link_platform_metatrader_account(
     if not is_encryption_available():
         return {"success": False, "error": "Secure credential storage is unavailable"}
 
-    secret_payload = _json.dumps(
-        {
-            "platform": platform_n,
-            "login": login_n,
-            "password": password_n,
-            "server": server_n,
-        },
-        separators=(",", ":"),
-    )
-    encrypted = encrypt_secret(secret_payload)
-    if not encrypted:
-        return {"success": False, "error": "Failed to encrypt broker credentials"}
-
     provision = await _provision_metatrader_account(
         {
             "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
@@ -1552,7 +1539,12 @@ async def link_platform_metatrader_account(
         external_account_id=account_id,
         environment=env,
         auth_mode="encrypted_password",
-        secret_encrypted=encrypted,
+        credential_payload={
+            "platform": platform_n,
+            "login": login_n,
+            "password": password_n,
+            "server": server_n,
+        },
         server=server_n,
         status=status,
         permissions={"read": True, "trade": True},
@@ -1679,7 +1671,7 @@ async def create_platform_metatrader_secure_link(
         external_account_id=account_id,
         environment=_environment_from_server(server_n, environment),
         auth_mode="provider_secure_link",
-        secret_encrypted=None,
+        credential_payload=None,
         server=server_n,
         status="awaiting_credentials",
         permissions={"read": True, "trade": True},
@@ -1833,7 +1825,10 @@ async def ensure_platform_metatrader_account_id(
     try:
         from db.models import BrokerConnection
         from db.session import get_session
-        from services.security import decrypt_secret
+        from services.broker_credentials import (
+            BrokerCredentialError,
+            decrypt_connection_credentials,
+        )
         from sqlalchemy import select
 
         async with get_session(label="metatrader.reprovision", timeout_seconds=8.0) as session:
@@ -1845,11 +1840,23 @@ async def ensure_platform_metatrader_account_id(
                     ).limit(1)
                 )
             ).scalar_one_or_none()
+            if row is not None:
+                session.expunge(row)
             await session.rollback()
         if row is None or not row.secret_encrypted:
             return None
-        decoded = decrypt_secret(str(row.secret_encrypted))
-        payload = _json.loads(decoded) if decoded else {}
+        try:
+            payload, _crypto = decrypt_connection_credentials(
+                row,
+                allow_legacy=True,
+            )
+        except BrokerCredentialError:
+            logger.warning(
+                "[metatrader] canonical credentials unavailable user=%s connection=%s",
+                user_id,
+                connection_id_value,
+            )
+            return None
         result = await link_platform_metatrader_account(
             int(user_id),
             platform=str(payload.get("platform") or row.platform),
