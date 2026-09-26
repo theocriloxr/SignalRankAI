@@ -25,6 +25,7 @@ if str(os.getenv("SIGNALRANK_CLEANROOM") or "").strip() != "1":
 
 _TESTS = [
     "tests/test_multi_account_prop_policy.py",
+    "tests/test_decision_intelligence.py",
     "tests/test_trading_account_ledger.py",
     "tests/test_broker_account_bola_idor.py",
     "tests/test_broker_credential_envelope.py",
