@@ -397,6 +397,10 @@ class PropPolicyCertificationRequest(BaseModel):
     certification_ref: str = Field(min_length=6, max_length=160)
 
 
+class BrokerCredentialRotationRequest(BaseModel):
+    confirm: bool
+
+
 class BrokerLinkRequest(BaseModel):
     mt5_login: str = Field(min_length=1, max_length=64)
     mt5_password: str = Field(min_length=1, max_length=256)
@@ -3536,6 +3540,43 @@ async def certify_broker_prop_policy(
         "message": (
             "PROP policy version certified. Broker execution still requires "
             "separate account enablement and every runtime safety gate."
+        ),
+    }
+
+
+@router.post("/broker/connections/{connection_id}/credentials/rotate")
+async def rotate_broker_connection_credential_envelope(
+    connection_id: str,
+    payload: BrokerCredentialRotationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.broker_credentials import (
+        BrokerCredentialError,
+        rotate_connection_credentials,
+    )
+
+    try:
+        result = await rotate_connection_credentials(
+            user_id=int(user["id"]),
+            connection_id=connection_id,
+            actor_user_id=int(user["id"]),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BrokerCredentialError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        **result,
+        "credentials_rotated": True,
+        "execution_enabled": False,
+        "message": (
+            "Broker credentials were re-encrypted with the active key. "
+            "Execution remains disabled until explicitly re-enabled."
         ),
     }
 
