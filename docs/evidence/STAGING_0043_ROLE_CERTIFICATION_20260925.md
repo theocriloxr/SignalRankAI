@@ -63,14 +63,39 @@ through service watch patterns and did not deploy any staging rollout marker.
 
 | Role | Railway service | Deployment | Commit | Runtime proof |
 |---|---|---|---|---|
-| Analytics | `signalrankai-analytics` | `3a1460b5-0f9a-4272-b5c3-b2fdb92253e3` | `eef229c4658003...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=analytics`; analytics tasks active |
-| Delivery / outcome worker | `bountiful-miracle` | `681bb02a-4abc-49a9-98c3-37b341d83832` | `bcc6e235facfe82c...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=delivery`; delivery/outcome/paper/MT5 reconciliation active |
-| Signal engine | `striking-optimism` | `3d0cb3c4-bbbe-4f02-8156-eb7308920509` | `6d12f5ad69eda516...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=engine`; engine loop active |
-| Frontdoor | `SignalRankAI` | `1598e967-7f6f-41ff-8ad9-36143d7aba02` | `61f3941021c574c...` | release/source PASS; Alembic 0043; schema PASS; `mode=frontdoor`; HTTP/Telegram/scheduler owned; engine/worker loops disabled |
+| Analytics | `signalrankai-analytics` | `af352868-be5d-4012-90fc-ca56dc06252f` | `3a1e07238d4966...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=analytics`; locked dependency graph; analytics tasks active |
+| Delivery / outcome worker | `bountiful-miracle` | `0e82f4b8-d4d9-4bf7-bcfe-a87e3a8be044` | `3b5ff87e7e8e...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=delivery`; locked dependency graph; delivery/outcome/paper/MT5 reconciliation active |
+| Signal engine | `striking-optimism` | `de79e783-f33a-4cc2-8871-b6f3bc60c470` | `b6bfdec42bec43...` | release/source PASS; Alembic 0043; schema PASS; `run_mode=engine`; locked dependency graph; bounded adaptive-candle DB-pressure fix active |
+| Frontdoor | `SignalRankAI` | `a3d77cb6-5933-4634-83be-56b6b6426702` | `4e6575df5dea78...` | release/source PASS; Alembic 0043; schema PASS; frontdoor DB admission; Uvicorn/Telegram webhook healthy; `/healthz` 200; locked dependency graph |
 
-The commit differences between these role deployments contain only
-`staging-rollout/**` marker files. Git comparison showed no application-code
-difference between the active analytics, delivery, engine and frontdoor SHAs.
+The role commits intentionally differ because the engine carries one later
+staging-only application fix (`4480625`): adaptive candle persistence now yields
+under foreground DB pressure, bounds snapshots per transaction and PostgreSQL
+waits, and requeues the complete failed batch. The dependency-lock commits are
+shared across all four active roles. Rollout marker commits remain isolated by
+role-specific `staging-rollout/runtime/<role>/**` watch paths.
+
+### Locked dependency and adaptive-candle pressure proof
+
+The active staging roles install the certified `requirements.lock` graph with
+`pip install --no-deps -r requirements.lock` followed by `pip check`.
+The latest engine image passed **277 build-time tests** plus all 12
+production-readiness checks.
+
+Engine deployment `de79e783-f33a-4cc2-8871-b6f3bc60c470` additionally proved:
+
+- DB admission: session limit 2, foreground reserve 1, background limit 1;
+- noncritical candle persistence yields immediately while foreground DB work
+  owns the reserved lane instead of blocking the engine;
+- deferred snapshots are requeued rather than silently discarded;
+- when capacity returned, a bounded batch persisted
+  `2 snapshots / 400 candles`;
+- candle fetch remained responsive (`5/5` assets succeeded at concurrency 2);
+- no warning/error-severity logs were emitted during the observed interval.
+
+Observed `NoncriticalWriteDropped` entries are expected backpressure evidence,
+not data-loss evidence: the complete failed batch is restored to the in-process
+queue and later retried.
 
 ### Engine multi-asset proof
 
