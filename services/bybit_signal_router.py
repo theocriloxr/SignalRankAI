@@ -31,6 +31,7 @@ from services.bybit_client import (
 )
 from services.execution_quota import release_user_execution_quota, reserve_user_execution_quota
 from services.broker_connections import account_classification, resolve_execution_connection
+from core.execution_state_machine import transition_execution_row
 from utils.timeutils import now_utc_naive
 
 
@@ -658,9 +659,12 @@ async def _route_signal_to_bybit_for_identity(
                 row = (await session.execute(select(BrokerExecution).where(
                     BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key,
                 ).with_for_update())).scalar_one()
-                row.status = "blocked"
-                row.error_code = str(quota_reason)[:128]
-                row.updated_at = now_utc_naive()
+                transition_execution_row(
+                    row,
+                    "blocked",
+                    now=now_utc_naive(),
+                    error_code=str(quota_reason),
+                )
                 await session.commit()
             return {"success": False, "status": "BLOCKED", "error": quota_reason}
 
@@ -668,8 +672,11 @@ async def _route_signal_to_bybit_for_identity(
             row = (await session.execute(select(BrokerExecution).where(
                 BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key,
             ).with_for_update())).scalar_one()
-            row.status = "submitting"
-            row.updated_at = now_utc_naive()
+            transition_execution_row(
+                row,
+                "submitting",
+                now=now_utc_naive(),
+            )
             await session.commit()
 
         try:
@@ -684,29 +691,40 @@ async def _route_signal_to_bybit_for_identity(
         except BybitAmbiguousOrderError as exc:
             async with get_session(label="bybit.ambiguous", timeout_seconds=8.0) as session:
                 row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
-                row.status = "ambiguous"
-                row.error_code = str(exc)[:128]
-                row.updated_at = now_utc_naive()
+                transition_execution_row(
+                    row,
+                    "ambiguous",
+                    now=now_utc_naive(),
+                    error_code=str(exc),
+                )
                 await session.commit()
             raise
         except BybitError as exc:
             async with get_session(label="bybit.rejected", timeout_seconds=8.0) as session:
                 row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
-                row.status = "rejected"
-                row.error_code = str(exc)[:128]
-                row.closed_at = now_utc_naive()
-                row.updated_at = now_utc_naive()
+                now = now_utc_naive()
+                transition_execution_row(
+                    row,
+                    "rejected",
+                    now=now,
+                    error_code=str(exc),
+                    closed_at=now,
+                )
                 await session.commit()
             await release_user_execution_quota(quota_user_id)
             return {"success": False, "status": "REJECTED", "error": str(exc)}
 
         async with get_session(label="bybit.confirm", timeout_seconds=8.0) as session:
             row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
-            row.status = "confirmed"
+            now = now_utc_naive()
+            transition_execution_row(
+                row,
+                "confirmed",
+                now=now,
+                meta={"provider_status": provider_result.get("status")},
+            )
             row.provider_order_id = str(provider_result["order_id"])
-            row.confirmed_at = now_utc_naive()
-            row.updated_at = now_utc_naive()
-            row.meta = {**dict(row.meta or {}), "provider_status": provider_result.get("status")}
+            row.confirmed_at = now
             from services.trading_account_ledger import (
                 _append_account_ledger_in_session,
             )
