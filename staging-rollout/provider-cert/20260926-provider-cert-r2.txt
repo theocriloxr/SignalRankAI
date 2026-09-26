@@ -1,0 +1,4 @@
+SignalRank staging provider certification rerun r2.
+Purpose: verify repaired live market-data provider contracts from the certified 0045 release.
+This marker contains no credentials or provider payloads.
+All execution and payment paths remain disabled in the certification service.
