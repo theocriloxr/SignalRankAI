@@ -105,7 +105,6 @@ class SloBudget:
             if len(self._latencies) > self.window:
                 self._latencies = self._latencies[-self.window:]
         self._publish()
-        self._publish()
 
     def record_failure(self, *, latency_ms: float | None = None) -> None:
         self._outcomes.append(False)
@@ -114,6 +113,7 @@ class SloBudget:
             self._latencies.append(max(0.0, float(latency_ms)))
             if len(self._latencies) > self.window:
                 self._latencies = self._latencies[-self.window:]
+        self._publish()
 
     def _trim(self) -> None:
         if len(self._outcomes) > self.window:
