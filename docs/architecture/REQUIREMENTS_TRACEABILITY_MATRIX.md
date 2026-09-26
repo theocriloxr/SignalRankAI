@@ -36,7 +36,7 @@ infrastructure, elapsed runtime, provider entitlements, or a legal/licensing dec
 | SR-PROVIDER-004 | Canonical instrument model (tick/minimums/aliases/status) | UNIT_VERIFIED | `data/canonical_instruments.py` | `test_v20_provider_layer.py` | — |
 | SR-PROVIDER-005 | Quote trust policy (freshness, provenance, no candle-as-quote) | UNIT_VERIFIED | `data/provider_types.py` | provider tests | — |
 | SR-PROVIDER-006 | Circuit breakers + quarantine | UNIT_VERIFIED | `core/circuit_breaker.py` | `test_provider_registry_fail_closed.py` | — |
-| SR-PROVIDER-007 | Venue adapters (Binance/Bybit/OKX/Hyperliquid/OANDA/IBKR/Alpaca/Tradier/…) | BLOCKED_EXTERNAL | declared interfaces only | — | provider flags off |
+| SR-PROVIDER-007 | Declared venue/provider capabilities are independently live/sandbox certified before being claimed production-ready | BLOCKED_EXTERNAL | provider catalogue/adapters, `scripts/certify_providers.py`, `scripts/deployment_diagnostics.py` | `tests/test_provider_catalog_and_certification.py`, `tests/test_provider_certification_entrypoint.py` | External credentials/plans/entitlements and live evidence required; uncertified provider flags remain off |
 
 ## Risk and ledger (§12–§13)
 
@@ -71,7 +71,7 @@ infrastructure, elapsed runtime, provider entitlements, or a legal/licensing dec
 |---|---|---|---|---|---|
 | SR-SCALE-001 | SLO registry + error budgets + degradation | UNIT_VERIFIED | `core/slo_registry.py` | `test_v20_slo_registry.py` | — |
 | SR-SCALE-002 | Bounded queues / backpressure / DLQ | UNIT_VERIFIED | `core/redis_streams.py`, `core/transactional_outbox.py` | queue tests | — |
-| SR-SCALE-003 | 100k-user load certification | BLOCKED_EXTERNAL | load scripts required | — | — |
+| SR-SCALE-003 | 100k-user / 20k-concurrent representative infrastructure certification | BLOCKED_EXTERNAL | `scripts/load_certification.py`, `requirements/scale_profiles.yaml`, SLO/queue/role architecture | `tests/test_load_certification.py` | Harness complete; representative distributed infrastructure run + runtime metrics/soak evidence required before any capacity claim |
 
 ## Notifications (§23) and trading (§14–§15, §18)
 
