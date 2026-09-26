@@ -854,7 +854,7 @@ class MT5Credentials(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
     mt5_login: Mapped[str] = mapped_column(String(64))
-    password_encrypted: Mapped[str] = mapped_column(String(512))
+    password_encrypted: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     server: Mapped[str] = mapped_column(String(128))
     metaapi_account_id: Mapped[Optional[str]] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
