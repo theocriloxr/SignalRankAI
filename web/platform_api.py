@@ -3647,7 +3647,8 @@ async def verify_broker_connection(
     return {
         **result,
         "read_only_verification": True,
-        "execution_enabled": False,
+        "execution_permission_changed": False,
+        "order_placed": False,
     }
 
 
