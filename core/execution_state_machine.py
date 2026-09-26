@@ -237,8 +237,22 @@ def transition_execution_row(
         row.updated_at = now
     if hasattr(row, "error_code"):
         row.error_code = str(error_code or "")[:128] or None
-    if meta is not None and hasattr(row, "meta"):
-        row.meta = {**dict(getattr(row, "meta", {}) or {}), **dict(meta)}
+    if hasattr(row, "meta"):
+        transition_meta = {
+            "execution_state": decision.target.value,
+            "position_state": decision.position_state.value,
+            "last_state_transition": {
+                "from": decision.current.value,
+                "to": decision.target.value,
+                "at": now.isoformat(),
+                "idempotent": bool(decision.idempotent),
+            },
+        }
+        row.meta = {
+            **dict(getattr(row, "meta", {}) or {}),
+            **dict(meta or {}),
+            **transition_meta,
+        }
     if realized_pnl_pct is not None and hasattr(row, "realized_pnl_pct"):
         row.realized_pnl_pct = float(realized_pnl_pct)
     if realized_pnl is not None and hasattr(row, "realized_pnl"):
