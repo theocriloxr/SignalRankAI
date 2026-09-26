@@ -84,6 +84,26 @@ EXCHANGE_RATE_LIMIT_LIMIT = Gauge(
     "Provider rate limit quota",
     labelnames=("provider",),
 )
+SLO_ERROR_RATE = Gauge(
+    "signalrank_slo_error_rate",
+    "Observed fixed-window SLO error rate (0..1)",
+    labelnames=("slo", "service"),
+)
+SLO_BUDGET_REMAINING_PCT = Gauge(
+    "signalrank_slo_budget_remaining_pct",
+    "Remaining SLO error budget percent",
+    labelnames=("slo", "service"),
+)
+SLO_SAMPLES = Gauge(
+    "signalrank_slo_samples",
+    "Number of observations in the current fixed SLO window",
+    labelnames=("slo", "service"),
+)
+SLO_DEGRADED = Gauge(
+    "signalrank_slo_degraded",
+    "Whether the SLO is currently degraded (1 degraded / 0 healthy)",
+    labelnames=("slo", "service"),
+)
 
 SERVICE_UP.set(1)
 
@@ -149,6 +169,31 @@ def set_exchange_api_health(provider: str, healthy: bool = True) -> None:
         EXCHANGE_API_HEALTH.labels(provider=str(provider or "unknown").lower()).set(1 if healthy else 0)
     except Exception:
         logger.debug("[telemetry] failed to set exchange health", exc_info=True)
+
+
+def publish_slo_snapshot(
+    *,
+    name: str,
+    service: str,
+    error_rate: float,
+    budget_remaining_pct: float,
+    samples: int,
+    degraded: bool,
+) -> None:
+    """Publish one bounded SLO snapshot without creating business behavior."""
+    labels = {
+        "slo": str(name or "unknown")[:96],
+        "service": str(service or "unknown")[:64],
+    }
+    try:
+        SLO_ERROR_RATE.labels(**labels).set(max(0.0, min(1.0, float(error_rate))))
+        SLO_BUDGET_REMAINING_PCT.labels(**labels).set(
+            max(0.0, min(100.0, float(budget_remaining_pct)))
+        )
+        SLO_SAMPLES.labels(**labels).set(max(0, int(samples)))
+        SLO_DEGRADED.labels(**labels).set(1 if degraded else 0)
+    except Exception:
+        logger.debug("[telemetry] failed to publish SLO snapshot", exc_info=True)
 
 
 def set_exchange_rate_limit(provider: str, remaining: float | None = None, limit: float | None = None) -> None:
