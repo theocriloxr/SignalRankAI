@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 import math
 from pathlib import Path
@@ -177,7 +177,7 @@ async def execute_shard(
         return {
             "schema_version": 1,
             "kind": "signalrank_load_shard",
-            "plan": plan.__dict__,
+            "plan": asdict(plan),
             "requests": 0,
             "errors": 0,
             "duration_seconds": 0.0,
@@ -414,7 +414,7 @@ def main() -> int:
             duration_seconds=args.duration_seconds,
         )
         if args.command == "plan":
-            print(json.dumps(plan.__dict__, sort_keys=True, indent=2))
+            print(json.dumps(asdict(plan), sort_keys=True, indent=2))
             return 0
         if not args.acknowledge_authorized_target:
             raise SystemExit("load_run_requires_--acknowledge-authorized-target")
