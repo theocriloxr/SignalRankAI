@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from db.models import MT5Execution
 from db.session import get_session
+from core.execution_state_machine import transition_execution_row
 from services.mt5_client import (
     get_account_info,
     get_history_deals_by_position,
@@ -350,8 +351,12 @@ async def _persist_reconciliation(
         }
 
         if active:
-            row.status = "open"
-            row.meta = meta
+            transition_execution_row(
+                row,
+                "open",
+                now=now,
+                meta=meta,
+            )
             await session.commit()
             return "open"
 
@@ -366,18 +371,23 @@ async def _persist_reconciliation(
         closed_times = [
             value for value in (_deal_time(deal) for deal in closing) if value is not None
         ]
-        row.status = "closed"
-        row.realized_pnl = float(summary["net"])
-        row.closed_at = (
+        closed_at = (
             max(closed_times).replace(tzinfo=None)
             if closed_times
             else now
         )
-        row.meta = {
-            **meta,
-            "reconciliation_state": "closed_by_exact_provider_deal",
-            "realized_pnl_net": str(summary["net"]),
-        }
+        transition_execution_row(
+            row,
+            "closed",
+            now=now,
+            realized_pnl=float(summary["net"]),
+            closed_at=closed_at,
+            meta={
+                **meta,
+                "reconciliation_state": "closed_by_exact_provider_deal",
+                "realized_pnl_net": str(summary["net"]),
+            },
+        )
         await session.commit()
         return "closed"
 
