@@ -37,6 +37,8 @@ _TESTS = [
     "tests/test_blueprint_certification_safety.py",
     "tests/test_quiescent_role_certification.py",
     "tests/test_provider_live_contract_repairs.py",
+    "tests/test_provider_catalog_and_certification.py",
+    "tests/test_provider_registry_fail_closed.py",
     "tests/test_observability_operations_contract.py",
     "tests/test_premium_ux_contract.py",
     "tests/test_ml_champion_challenger_governance.py",
