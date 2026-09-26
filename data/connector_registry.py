@@ -57,6 +57,12 @@ def _env_enabled(name: str, default: bool = True) -> bool:
 
 
 
+_PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
+    "fmp_connector": ("FMP_ENABLED", False),
+    "alphavantage_connector": ("ALPHAVANTAGE_ENABLED", False),
+    "oanda_connector": ("OANDA_ENABLED", False),
+}
+
 _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "twelvedata_connector": ("TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY"),
     "polygon_connector": ("MASSIVE_API_KEY", "POLYGON_API_KEY"),  # Massive (formerly Polygon.io) consolidated secret
@@ -74,6 +80,11 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
 
 def _provider_configured(name: str) -> bool:
     canonical = str(name or "").lower()
+    enable_contract = _PROVIDER_ENABLE_FLAGS.get(canonical)
+    if enable_contract is not None:
+        flag_name, default_enabled = enable_contract
+        if not _env_enabled(flag_name, default_enabled):
+            return False
     required = _PROVIDER_KEYS.get(canonical)
     if not required:
         return True
