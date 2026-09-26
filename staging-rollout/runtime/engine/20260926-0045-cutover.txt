@@ -1,0 +1,4 @@
+SignalRank staging true-engine 0045 credential-retirement cutover.
+Purpose: redeploy RUN_MODE=engine after staging DB migration and analytics validation on 0045.
+All live-money execution and payout paths remain hard-disabled.
+No secrets are stored in this marker.
