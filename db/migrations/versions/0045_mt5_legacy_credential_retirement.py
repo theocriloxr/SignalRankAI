@@ -1,6 +1,6 @@
 """Retire duplicate MT5 password persistence after canonical credential envelopes.
 
-Revision ID: 0045_mt5_legacy_credential_retirement
+Revision ID: 0045_mt5_credential_retirement
 Revises: 0044_broker_credential_envelope
 """
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0045_mt5_legacy_credential_retirement"
+revision = "0045_mt5_credential_retirement"
 down_revision = "0044_broker_credential_envelope"
 branch_labels = None
 depends_on = None
