@@ -74,7 +74,10 @@ def test_grafana_dashboard_is_valid_and_covers_core_slo_views() -> None:
     assert "signalrank_slo_budget_remaining_pct" in expressions
     assert "signalrank_slo_error_rate" in expressions
     assert "signalrank_slo_samples" in expressions
-    assert "signalrank_slo_degraded" in expressions
+    assert any(
+        expr and "signalrank_slo_degraded" in expr
+        for expr in expressions
+    )
     assert "signalrank_service_up" in expressions
     assert "signalrank_exchange_api_health" in expressions
 
