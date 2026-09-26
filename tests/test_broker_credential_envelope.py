@@ -255,7 +255,7 @@ def test_canonical_writer_and_0044_schema_contract() -> None:
 
 def test_0045_retires_duplicate_mt5_password_storage() -> None:
     migration = Path(
-        "db/migrations/versions/0045_mt5_credential_retirement.py"
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
     ).read_text(encoding="utf-8")
     model = Path("db/models.py").read_text(encoding="utf-8")
     mt5 = Path("services/mt5_client.py").read_text(encoding="utf-8")
