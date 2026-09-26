@@ -249,7 +249,10 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
     profiles = {str(report.get("profile") or "") for report in reports}
     targets = {str(report.get("target") or "") for report in reports}
     shard_counts = {int(report.get("shards") or 0) for report in reports}
-    indices = [int(report.get("shard_index") or -1) for report in reports]
+    indices = [
+        int(report["shard_index"]) if report.get("shard_index") is not None else -1
+        for report in reports
+    ]
     if len(profiles) != 1 or len(targets) != 1 or len(shard_counts) != 1:
         raise ValueError("incompatible_shard_reports")
     expected = next(iter(shard_counts))
