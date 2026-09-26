@@ -328,7 +328,8 @@ def test_broker_verification_is_canonical_read_only_and_cross_provider() -> None
     assert "verify_platform_metatrader_connection" not in endpoint
     assert 'int(user["id"])' in endpoint
     assert '"read_only_verification": True' in endpoint
-    assert '"execution_enabled": False' in endpoint
+    assert '"execution_permission_changed": False' in endpoint
+    assert '"order_placed": False' in endpoint
 
     assert "verifySupported=['metaapi','bybit']" in app
     assert "await loadBroker()" in app
@@ -359,3 +360,5 @@ def test_broker_verification_is_canonical_read_only_and_cross_provider() -> None
     assert "route_signal_to_" not in verify_command
     assert 'CommandHandler("verifybroker"' in bot
     assert '"canonical_name": "verifybroker"' in registry
+    catalogue = Path("signalrank_telegram/command_catalog.py").read_text(encoding="utf-8")
+    assert 'CommandSpec("verifybroker"' in catalogue
