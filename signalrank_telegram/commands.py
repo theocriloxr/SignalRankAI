@@ -33,6 +33,7 @@ from .ux_copy import (
 	help_page_message,
 	main_menu_message,
 	pricing_message,
+	start_message,
 	rate_limit_message,
 	support_menu_message,
 	terms_accepted_message,
@@ -192,7 +193,7 @@ def _build_dynamic_menu(user_id: int, tier: str):
 		if tier_rank(tier) < tier_rank("PREMIUM"):
 			rows.append([InlineKeyboardButton("✅ Proof Feed", callback_data="nav_proof")])
 			rows.append([InlineKeyboardButton("💳 Upgrade to VIP/Premium", callback_data="nav_upgrade")])
-			rows.append([InlineKeyboardButton("🔒 MT5 Auto‑Trading (VIP)", callback_data="locked_mt5")])
+			rows.append([InlineKeyboardButton("🔒 Broker Execution Eligibility", callback_data="locked_mt5")])
 		else:
 			rows.append([
 				InlineKeyboardButton("🔗 Link MT5", callback_data="mt5_link_guide"),
@@ -453,9 +454,9 @@ async def _compose_performance_menu_message(user_id: int) -> tuple[str, object |
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		msg = (
 			"🏆 Performance Menu\n\n"
-			"Detailed performance analytics are available on Premium and VIP plans.\n"
-			"Upgrade to unlock 30-day stats, tracked outcomes, and win-rate reporting.\n\n"
-			"You can still use /upgrade to unlock analytics instantly."
+			"Detailed performance analytics are available on eligible Premium and VIP accounts.\n"
+			"Upgrade to expand tracked outcomes, 30-day analytics, and reporting access.\n\n"
+			"Use /upgrade to compare plan access and current eligibility."
 		)
 	else:
 		msg = (
@@ -5723,14 +5724,7 @@ async def start_command(update, context):
 	except Exception:
 		pass
 
-	msg = (
-		"SignalRankAI provides algorithmic market analysis for educational purposes only. "
-		"This is not financial advice. Trading involves risk.\n\n"
-		"What you get:\n"
-		"• Risk-managed signals filtered for high-probability setups\n"
-		"• Outcome tracking (no hype, no guarantees)\n\n"
-		"Use /proof for verified outcomes, /pricing to see plans, or /upgrade to subscribe."
-	)
+	msg = start_message()
 	# Referral feedback (minimal, non-spammy)
 	if referral_outcome and update.message is not None:
 		status = str(referral_outcome.get("status"))
