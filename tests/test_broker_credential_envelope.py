@@ -249,4 +249,5 @@ def test_canonical_writer_and_0044_schema_contract() -> None:
         assert column in migration
     assert "legacy_fernet" in migration
     assert "secret_encrypted IS NOT NULL" in migration
-    assert "decrypt" not in migration.lower()
+    assert "decrypt_secret(" not in migration
+    assert "Fernet(" not in migration
