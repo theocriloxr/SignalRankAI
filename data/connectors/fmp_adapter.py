@@ -15,6 +15,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_LAST_CERTIFICATION_HINT: Dict[str, str] | None = None
+
+
+def _set_certification_hint(status: str | None, reason: str = "") -> None:
+    global _LAST_CERTIFICATION_HINT
+    _LAST_CERTIFICATION_HINT = (
+        {"status": str(status), "reason": str(reason)[:500]}
+        if status else None
+    )
+
+
+def _classify_external_block(status_code: int, detail: str) -> tuple[str | None, str]:
+    text = str(detail or "").strip().replace("\n", " ")[:500]
+    lowered = text.lower()
+    if status_code == 429 or "rate limit" in lowered or "too many requests" in lowered:
+        return "BLOCKED_RATE_LIMIT", text or f"HTTP {status_code}"
+    if any(token in lowered for token in ("premium", "subscription", "upgrade your plan", "paid plan")):
+        return "BLOCKED_PAID_PLAN", text or f"HTTP {status_code}"
+    if status_code in {401, 403} or any(
+        token in lowered for token in ("invalid api key", "invalid apikey", "not authorized", "unauthorized")
+    ):
+        return "BLOCKED_ACCOUNT_APPROVAL", text or f"HTTP {status_code}"
+    if any(token in lowered for token in ("region", "country", "not available in your location")):
+        return "BLOCKED_REGION", text or f"HTTP {status_code}"
+    return None, text
+
+
+def certification_hint() -> Dict[str, str] | None:
+    return dict(_LAST_CERTIFICATION_HINT) if _LAST_CERTIFICATION_HINT else None
+
+
 try:
     import httpx
 except Exception:
@@ -31,6 +62,7 @@ async def _async_get_candles(
     timeout: float = 10.0,
 ) -> List[Dict[str, Any]]:
     """Fetch normalized candles from FMP's current stable chart endpoints."""
+    _set_certification_hint(None)
     api_key = (os.getenv("FMP_API_KEY") or "").strip()
     if not api_key or httpx is None:
         return []
@@ -54,11 +86,24 @@ async def _async_get_candles(
         else:
             response = await client.get(url, params=params, timeout=request_timeout)
         if response.status_code != 200:
-            logger.debug("fmp_adapter HTTP %s: %s", response.status_code, getattr(response, "text", "")[:200])
+            detail = getattr(response, "text", "")[:500]
+            status, reason = _classify_external_block(int(response.status_code), detail)
+            _set_certification_hint(status, reason)
+            logger.debug("fmp_adapter HTTP %s: %s", response.status_code, detail[:200])
             return []
         payload = response.json()
         if isinstance(payload, dict):
             rows = payload.get("historical") or payload.get("data") or []
+            if not rows:
+                detail = str(
+                    payload.get("Error Message")
+                    or payload.get("error")
+                    or payload.get("message")
+                    or payload.get("Information")
+                    or ""
+                )
+                status, reason = _classify_external_block(int(response.status_code), detail)
+                _set_certification_hint(status, reason)
         else:
             rows = payload or []
         if not isinstance(rows, list):
