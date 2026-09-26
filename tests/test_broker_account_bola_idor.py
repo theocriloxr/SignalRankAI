@@ -128,3 +128,21 @@ def test_account_ledger_route_binds_authenticated_canonical_user():
     assert "BrokerConnection.connection_id == str(connection_id)" in ledger
     assert "TradingAccountLedgerEntry.user_id == int(user_id)" in ledger
     assert "TradingAccountLedgerEntry.connection_id == str(connection_id)" in ledger
+
+
+def test_broker_verification_route_uses_authenticated_canonical_owner() -> None:
+    api = Path("web/platform_api.py").read_text(encoding="utf-8")
+    service = Path("services/broker_verification.py").read_text(encoding="utf-8")
+
+    block = api[
+        api.index('@router.post("/broker/connections/{connection_id}/verify")'):
+        api.index('@router.post("/broker/connections/{connection_id}/execution")'),
+    ]
+    assert "verify_broker_connection_read_only(" in block
+    assert 'int(user["id"])' in block
+    assert "connection_id" in block
+    assert "list_connections(" not in block
+
+    assert "BrokerConnection.user_id == int(user_id)" in service
+    assert "BrokerConnection.connection_id == str(connection_id)" in service
+    assert "broker_connection_not_found" in service
