@@ -1,0 +1,4 @@
+SignalRank staging provider certification trigger after explicit opt-in hardening.
+Expected policy: FMP, Alpha Vantage, OANDA and FRED remain disabled unless explicitly enabled after entitlement/credential certification.
+All currently enabled providers must retain live/public verification.
+No secrets are stored in this marker.
