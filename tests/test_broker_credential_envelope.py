@@ -273,7 +273,7 @@ def test_0045_retires_duplicate_mt5_password_storage() -> None:
 
     compatibility = mt5[
         mt5.index("async def _sync_mt5_compatibility_metadata"):
-        mt5.index("# ---------------------------------------------------------------------------\n# Credential management"),
+        mt5.index("# ---------------------------------------------------------------------------\n# Credential management")
     ]
     assert "VALUES(:uid,:login,NULL,:server,:account_id,NOW(),NOW())" in compatibility
     assert "password_encrypted=NULL" in compatibility
