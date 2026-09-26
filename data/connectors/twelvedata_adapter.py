@@ -25,9 +25,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         logger.debug("twelvedata_adapter: TWELVEDATA_API_KEY not set")
         return []
     url = "https://api.twelvedata.com/time_series"
-    tf_map = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
+    tf_map = {"1m": "1min", "5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe, "1h")
-    params = {"symbol": symbol, "interval": interval, "outputsize": 200, "apikey": api_key}
+    requested = max(2, min(5000, int(limit or 200)))
+    params = {"symbol": symbol, "interval": interval, "outputsize": requested, "apikey": api_key}
     client = httpx_client.get_client("twelvedata")
     if client is None:
         logger.debug("twelvedata_adapter: httpx client unavailable")
@@ -59,7 +60,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
                 })
             except Exception:
                 continue
-        return candles
+        candles.sort(key=lambda item: int(item.get("timestamp") or 0))
+        return candles[-requested:]
 
     try:
         return await asyncio.wait_for(
