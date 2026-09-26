@@ -1532,6 +1532,21 @@
       "timeout_policy": "bounded_by_audit_handler"
     },
     {
+      "aliases_for_same_handler": [],
+      "audit_event": "telegram.command.verifybroker",
+      "canonical_name": "verifybroker",
+      "fallback_handlers": [],
+      "handler": "verifybroker_command",
+      "minimum_tier": "PREMIUM",
+      "registration": "runtime_static",
+      "role_scope": "PREMIUM",
+      "sources": [
+        "signalrank_telegram/bot.py"
+      ],
+      "status": "IMPLEMENTED",
+      "timeout_policy": "bounded_by_audit_handler"
+    },
+    {
       "aliases_for_same_handler": [
         "connect_broker",
         "mt5",
