@@ -11,6 +11,7 @@ Candle series use ``timeseries/market-candles``.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from data.connectors._common import async_http_get_json, env_bool, env_str
@@ -60,6 +61,41 @@ def _map_interval(timeframe: str) -> str:
     }.get((timeframe or "").lower(), "1d")
 
 
+def _market_candidates(symbol: str, asset: str) -> tuple[str, ...]:
+    raw = str(symbol or "").upper().replace("/", "").replace("_", "").replace("-", "")
+    quote = "usdt" if raw.endswith("USDT") else "usd"
+    base = asset.lower()
+    ordered = [
+        f"binance-{base}-{quote}-spot",
+        f"coinbase-{base}-usd-spot",
+        f"kraken-{base}-usd-spot",
+    ]
+    return tuple(dict.fromkeys(ordered))
+
+
+def _timestamp_ms(value: Any) -> int:
+    if isinstance(value, (int, float)):
+        numeric = int(value)
+        return numeric if numeric > 10_000_000_000 else numeric * 1000
+    text = str(value or "").strip()
+    if text.isdigit():
+        numeric = int(text)
+        return numeric if numeric > 10_000_000_000 else numeric * 1000
+    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+def _lookback_start(interval: str, limit: int) -> str:
+    minutes = {
+        "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+        "1h": 60, "4h": 240, "1d": 1440,
+    }.get(interval, 1440)
+    days = max(7, int((max(2, int(limit)) * minutes) / 1440) + 7)
+    return (datetime.now(timezone.utc) - timedelta(days=min(3650, days))).isoformat()
+
+
 async def _async_get_candles(
     symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0,
 ) -> List[Dict[str, Any]]:
@@ -74,28 +110,32 @@ async def _async_get_candles(
     cache_key = (asset, interval)
     if cache_key in _EMPTY_CACHE and _EMPTY_CACHE[cache_key] > _time.monotonic():
         return []
-    data = await async_http_get_json(
-        f"{base_url()}/timeseries/market-candles",
-        name="coinmetrics",
-        params={
-            "markets": f"{asset}-usd-spot",
-            "page_size": min(10000, max(1, int(limit or 200))),
-            "start_time": "2020-01-01",
-        },
-        headers=_headers(), timeout=timeout,
-    )
-    if not isinstance(data, dict):
-        return []
-    rows = data.get("data") or []
+    rows: list[dict[str, Any]] = []
+    for market in _market_candidates(symbol, asset):
+        data = await async_http_get_json(
+            f"{base_url()}/timeseries/market-candles",
+            name="coinmetrics",
+            params={
+                "markets": market,
+                "frequency": interval,
+                "page_size": min(10000, max(2, int(limit or 200))),
+                "start_time": _lookback_start(interval, int(limit or 200)),
+                "end_time": datetime.now(timezone.utc).isoformat(),
+            },
+            headers=_headers(), timeout=timeout,
+        )
+        if isinstance(data, dict) and isinstance(data.get("data"), list) and data.get("data"):
+            rows = list(data["data"])
+            break
     if not rows:
-        # Permanently empty/unsupported market: do not refetch for the TTL.
+        # Empty/unsupported market: avoid repeatedly hammering the public API.
         _EMPTY_CACHE[cache_key] = _time.monotonic() + _EMPTY_CACHE_TTL_SECONDS
         return []
     out: List[Dict[str, Any]] = []
     for row in rows[-int(limit or 200):]:
         try:
             out.append({
-                "timestamp": int(row["time"]),
+                "timestamp": _timestamp_ms(row["time"]),
                 "open": float(row["price_open"]),
                 "high": float(row["price_high"]),
                 "low": float(row["price_low"]),
@@ -104,6 +144,7 @@ async def _async_get_candles(
             })
         except Exception:
             continue
+    out.sort(key=lambda item: int(item.get("timestamp") or 0))
     return out
 
 
