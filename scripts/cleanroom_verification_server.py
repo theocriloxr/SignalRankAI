@@ -49,6 +49,7 @@ _TESTS = [
     "tests/test_v130_production_cutover_outcome_recovery.py",
     "tests/test_mt5_reconciliation_ledger.py",
     "tests/test_web_first_signup_contract.py",
+    "tests/test_release_provenance.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
@@ -78,6 +79,16 @@ _STEPS: list[tuple[str, list[str]]] = [
     (
         "schema_audit",
         [sys.executable, "scripts/schema_audit.py"],
+    ),
+    (
+        "release_provenance",
+        [
+            sys.executable,
+            "scripts/generate_release_provenance.py",
+            "--output-dir",
+            "/tmp/signalrank-release-provenance",
+            "--verify-self",
+        ],
     ),
     (
         "targeted_pytest",
