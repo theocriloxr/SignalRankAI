@@ -1474,10 +1474,9 @@ async def link_platform_metatrader_account(
     environment: str = "unknown",
 ) -> Dict[str, Any]:
     """Link an MT4 or MT5 account to the canonical platform account."""
-    import json as _json
-
     from services.broker_connections import upsert_connection
-    from services.security import encrypt_secret, is_encryption_available
+    from services.broker_credentials import broker_credential_encryption_available
+    from services.security import encrypt_secret
 
     platform_n = str(platform or "").strip().lower()
     if platform_n not in {"mt4", "mt5"}:
@@ -1487,7 +1486,7 @@ async def link_platform_metatrader_account(
     server_n = str(server or "").strip()
     if not login_n or not password_n or not server_n:
         return {"success": False, "error": "login, password and broker server are required"}
-    if not is_encryption_available():
+    if not broker_credential_encryption_available():
         return {"success": False, "error": "Secure credential storage is unavailable"}
 
     provision = await _provision_metatrader_account(
