@@ -113,7 +113,7 @@ foreach ($service in @($WorkerService,$EngineService,$FrontdoorService)) {
         "logs","-s",$service,"-e",$Environment,"--since","7d","--lines","20",
         "--filter","patch=deployment-final-r4"
     ) -Capture
-    if (-not $schemaMarker.Contains('alembic_current=0044_broker_credential_envelope')) { throw "$service does not prove Alembic 0043 in retained deployment logs." }
+    if (-not $schemaMarker.Contains('alembic_current=0044_broker_credential_envelope')) { throw "$service does not prove Alembic 0044 in retained deployment logs." }
     if (-not $patchMarker.Contains('patch=deployment-final-r4')) { throw "$service does not prove deployment-final-r4 in retained deployment logs." }
     foreach ($pattern in $blockingPatterns) {
         if ($logs -match $pattern) { throw "$service contains blocking log pattern: $pattern" }
