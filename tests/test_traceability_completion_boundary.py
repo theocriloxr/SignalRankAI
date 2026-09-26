@@ -8,7 +8,7 @@ MATRIX = ROOT / "docs" / "architecture" / "REQUIREMENTS_TRACEABILITY_MATRIX.md"
 CURRENT_RELEASE = ROOT / "CURRENT_RELEASE.md"
 
 _ALLOWED_EXTERNAL = {
-    "SR-PROVIDER-007",
+    "SR-PROVIDER-008",
     "SR-SCALE-003",
     "SR-MARKETPLACE-001",
 }
@@ -42,6 +42,16 @@ def test_only_deliberate_external_requirements_remain_blocked() -> None:
         if cells[2] == "BLOCKED_EXTERNAL"
     }
     assert blocked == _ALLOWED_EXTERNAL
+
+
+def test_provider_completion_boundary_separates_enabled_from_optional_external() -> None:
+    matrix = MATRIX.read_text(encoding="utf-8")
+    assert "| SR-PROVIDER-007 |" in matrix
+    assert "| SR-PROVIDER-007 | Every enabled/claimed market-data provider" in matrix
+    provider_007 = next(cells for cells in _rows() if cells[0] == "SR-PROVIDER-007")
+    provider_008 = next(cells for cells in _rows() if cells[0] == "SR-PROVIDER-008")
+    assert provider_007[2] == "INTEGRATION_VERIFIED"
+    assert provider_008[2] == "BLOCKED_EXTERNAL"
 
 
 def test_current_release_points_to_current_0045_boundary() -> None:
