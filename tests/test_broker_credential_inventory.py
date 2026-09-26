@@ -44,3 +44,25 @@ def test_inventory_never_imports_credential_decryption() -> None:
     assert "decrypt_" not in source
     assert "Fernet" not in source
     assert "broker_credentials" not in source
+
+
+def test_inventory_emits_only_safe_aggregate_log_summary_markers() -> None:
+    source = Path("scripts/broker_credential_inventory.py").read_text(encoding="utf-8")
+    for marker in (
+        "BROKER_INVENTORY_STATUS=",
+        "BROKER_CANONICAL_ENVELOPE_V1_ROWS=",
+        "BROKER_CANONICAL_LEGACY_ROWS=",
+        "MT5_LEGACY_SECRET_ROWS=",
+        "MT5_DUPLICATE_SECRET_ROWS=",
+        "MT5_UNMIGRATED_SECRET_ROWS=",
+        "BROKER_LIVE_MONEY_SECRET_READINESS=",
+    ):
+        assert marker in source
+    summary = source[
+        source.index("def _emit_safe_log_summary"):
+        source.index("def main()"),
+    ]
+    assert "secret_encrypted" not in summary
+    assert "password_encrypted" not in summary
+    assert "credential_key_id" not in summary
+    assert "account_ref" not in summary
