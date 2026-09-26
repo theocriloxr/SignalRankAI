@@ -58,8 +58,20 @@ def _symbol_to_id_cache() -> dict[str, str]:
     return _ID_CACHE
 
 
+def _base_symbol(symbol: str) -> str:
+    value = str(symbol or "").upper().strip().replace("/", "").replace("_", "").replace("-", "")
+    for quote in ("USDT", "USDC", "USD", "EUR", "GBP", "BTC", "ETH"):
+        if value.endswith(quote) and len(value) > len(quote):
+            value = value[:-len(quote)]
+            break
+    if value == "XBT":
+        value = "BTC"
+    return value
+
+
 async def _async_resolve_id(symbol: str) -> Optional[str]:
     key = str(symbol or "").upper().strip()
+    base = _base_symbol(key)
     cache = _symbol_to_id_cache()
     if key in cache:
         # "" marks a permanently unsupported symbol (never retried this process).
@@ -77,7 +89,7 @@ async def _async_resolve_id(symbol: str) -> Optional[str]:
     for item in data:
         cg_symbol = str(item.get("symbol") or "").upper().strip()
         cg_id = str(item.get("id") or "").strip()
-        if cg_symbol == key or cg_symbol == normalized or key.lower() == cg_id:
+        if cg_symbol in {key, normalized, base} or key.lower() == cg_id or base.lower() == cg_id:
             cache[key] = cg_id
             return cg_id
     # Permanently unsupported symbol: cache the negative result to prevent
