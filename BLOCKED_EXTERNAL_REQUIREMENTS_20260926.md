@@ -70,8 +70,18 @@ Required evidence:
 - restart/failover recovery and duplicate-event checks;
 - cost estimate for the certified topology.
 
-No 100k capacity claim is permitted until that test is run against
-representative infrastructure.
+Repository harness:
+
+- `scripts/load_certification.py plan` builds deterministic per-shard plans
+  from `requirements/scale_profiles.yaml`;
+- `run` requires `--acknowledge-authorized-target` and emits one shard's
+  machine-readable HTTP evidence;
+- `merge` rejects missing or duplicate shard sets;
+- `certify` refuses a PASS unless every declared profile SLO is supplied and
+  passes, including duplicate-delivery/order and projection-coverage metrics.
+
+No 100k capacity claim is permitted until the distributed test is run against
+representative infrastructure and the merged runtime metrics pass certification.
 
 ## 4. Soak, failover, backup and restore
 
