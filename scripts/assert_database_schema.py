@@ -105,6 +105,13 @@ def check_schema() -> dict[str, Any]:
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
+              AND table_name = 'mt5_credentials'
+              AND column_name = 'password_encrypted'
+              AND is_nullable = 'YES'
+          ) AS mt5_credentials_password_nullable,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
               AND table_name = 'broker_executions'
               AND column_name = 'connection_id'
           ) AS broker_executions_connection_id,
@@ -160,6 +167,7 @@ def check_schema() -> dict[str, Any]:
             "broker_connections_credential_key_id",
             "broker_connections_credential_revision",
             "broker_connections_credential_rotated_at",
+            "mt5_credentials_password_nullable",
             "broker_executions_connection_id",
             "mt5_executions_connection_id",
             "signals_ml_recovery_mode",
