@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any, Mapping
 
+from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from core.redis_state import state
 from db.models import MarketCandle
@@ -49,6 +50,57 @@ def _local_drain_batch_size() -> int:
     )
 
 
+def _transaction_snapshot_limit() -> int:
+    """Bound one DB transaction even when the producer queue contains a backfill."""
+    try:
+        configured = int(os.getenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", "2") or 2)
+    except (TypeError, ValueError):
+        configured = 2
+    return max(1, min(8, configured))
+
+
+def _capture_db_timeout_seconds() -> float:
+    """Compatibility timeout for foreground/critical certification modes."""
+    try:
+        configured = float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "4") or 4)
+    except (TypeError, ValueError):
+        configured = 4.0
+    return max(0.1, min(30.0, configured))
+
+
+def _capture_admission_timeout_seconds() -> float:
+    """Short admission budget for noncritical candle persistence."""
+    try:
+        configured = float(
+            os.getenv("ADAPTIVE_CANDLE_DB_ADMISSION_TIMEOUT_SECONDS", "0.25") or 0.25
+        )
+    except (TypeError, ValueError):
+        configured = 0.25
+    return max(0.0, min(2.0, configured))
+
+
+def _capture_lock_timeout_ms() -> int:
+    try:
+        configured = int(os.getenv("ADAPTIVE_CANDLE_DB_LOCK_TIMEOUT_MS", "500") or 500)
+    except (TypeError, ValueError):
+        configured = 500
+    return max(100, min(5000, configured))
+
+
+def _capture_statement_timeout_ms() -> int:
+    try:
+        configured = int(
+            os.getenv("ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS", "3000") or 3000
+        )
+    except (TypeError, ValueError):
+        configured = 3000
+    return max(500, min(10000, configured))
+
+
+def _error_text(exc: BaseException) -> str:
+    return str(exc).strip() or "<empty>"
+
+
 async def _drain_local_queue() -> None:
     """Drain the process-local queue in the process that produced it.
 
@@ -79,8 +131,9 @@ async def _drain_local_queue() -> None:
         except Exception as exc:
             # Keep the evidence queued and retry in the same producer process.
             logger.info(
-                "[adaptive_candles] local_drain deferred error=%s queue_depth=%s",
-                exc,
+                "[adaptive_candles] local_drain deferred error_type=%s error=%s queue_depth=%s",
+                type(exc).__name__,
+                _error_text(exc),
                 queue_depth(),
             )
             await asyncio.sleep(retry_delay)
@@ -220,7 +273,12 @@ def _take_batch(max_items: int) -> list[dict[str, Any]]:
 
 
 async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
-    batch = _take_batch(max(1, max_items))
+    # One snapshot can contain a first-observation backfill of up to hundreds of
+    # candles. Bound snapshots per transaction so noncritical learning writes can
+    # never monopolise the tiny Railway staging pool.
+    batch = _take_batch(
+        max(1, min(int(max_items), _transaction_snapshot_limit()))
+    )
     if not batch:
         return {"snapshots": 0, "candles": 0}
     records: list[dict[str, Any]] = []
@@ -244,14 +302,36 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
             })
     if not records:
         return {"snapshots": len(batch), "candles": 0}
+
+    capture_priority = _capture_db_priority()
+    noncritical = capture_priority in {"background", "analytics"}
+    admission_timeout = (
+        _capture_admission_timeout_seconds()
+        if noncritical
+        else _capture_db_timeout_seconds()
+    )
     inserted = 0
     try:
         async with get_session(
-            priority=_capture_db_priority(),
+            priority=capture_priority,
             label="adaptive.candle_capture",
-            timeout_seconds=float(os.getenv("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS", "20") or 20),
-            drop_if_busy=False,
+            timeout_seconds=admission_timeout,
+            # Candle snapshots are idempotent learning evidence. Under DB pressure
+            # they must yield immediately to decision, delivery and command writes;
+            # the full batch is requeued below for a later retry.
+            drop_if_busy=noncritical,
         ) as session:
+            # Bound PostgreSQL lock/statement waits inside the admitted session as
+            # well. Admission can be fast while a contended upsert still blocks.
+            lock_timeout_ms = _capture_lock_timeout_ms()
+            statement_timeout_ms = _capture_statement_timeout_ms()
+            await session.execute(
+                sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
+            )
+            await session.execute(
+                sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
+            )
+
             # The schema already has uq_market_candles_symbol_tf_open. A true
             # PostgreSQL bulk upsert both removes asyncpg bind ambiguity and
             # updates the still-open candle instead of preserving its first tick.
@@ -282,12 +362,23 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
                 inserted += len(chunk)
             await session.commit()
     except Exception:
-        # Requeue a bounded suffix so transient DB pressure does not discard all evidence.
-        for item in batch[-max(1, len(batch)//2):]:
+        # The operation is idempotent and the session is rolled back/closed by
+        # get_session. Restore the complete batch so transient capacity/lock
+        # pressure never silently discards learning evidence.
+        requeued = 0
+        for item in batch:
             try:
                 _QUEUE.put_nowait(item)
+                requeued += 1
             except queue.Full:
                 break
+        if requeued != len(batch):
+            logger.warning(
+                "[adaptive_candles] requeue incomplete restored=%s expected=%s queue_depth=%s",
+                requeued,
+                len(batch),
+                queue_depth(),
+            )
         raise
     try:
         state.set_sync("adaptive:candle_capture:last_inserted", str(inserted), ex=3600)
@@ -306,7 +397,12 @@ async def candle_capture_loop(stop_event: asyncio.Event) -> None:
             if result["snapshots"]:
                 logger.info("[adaptive_candles] persisted result=%s queue_depth=%s", result, queue_depth())
         except Exception as exc:
-            logger.info("[adaptive_candles] persistence deferred error=%s", exc)
+            logger.info(
+                "[adaptive_candles] persistence deferred error_type=%s error=%s queue_depth=%s",
+                type(exc).__name__,
+                _error_text(exc),
+                queue_depth(),
+            )
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:
