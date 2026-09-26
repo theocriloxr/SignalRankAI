@@ -60,7 +60,7 @@ def test_inventory_emits_only_safe_aggregate_log_summary_markers() -> None:
         assert marker in source
     summary = source[
         source.index("def _emit_safe_log_summary"):
-        source.index("def main()"),
+        source.index("def main()")
     ]
     assert "secret_encrypted" not in summary
     assert "password_encrypted" not in summary
