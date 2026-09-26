@@ -16,7 +16,7 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0044_broker_credential_envelope"
+        "0045_mt5_legacy_credential_retirement"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -453,3 +453,26 @@ def test_0044_broker_credential_envelope_schema_and_runtime_contract() -> None:
     assert "BROKER_CREDENTIAL_KEYRING_JSON" in credentials
     assert "BROKER_CREDENTIAL_ACTIVE_KEY_ID" in credentials
     assert "broker credential envelope account binding mismatch" in credentials
+
+
+def test_0045_mt5_legacy_credential_retirement_schema_and_runtime_contract() -> None:
+    migration = source(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    )
+    models = source("db/models.py")
+    schema_gate = source("scripts/assert_database_schema.py")
+    staging_proof = source("scripts/staging_runtime_proof.py")
+    readiness = source("railway_main.py")
+    mt5 = source("services/mt5_client.py")
+
+    assert 'revision = "0045_mt5_legacy_credential_retirement"' in migration
+    assert 'down_revision = "0044_broker_credential_envelope"' in migration
+    assert "password_encrypted" in migration
+    assert "nullable=True" in migration
+    assert "canonical.credential_format = 'envelope_v1'" in migration
+    assert "password_encrypted = NULL" in migration
+    assert "mt5_credentials_password_nullable" in schema_gate
+    assert "mt5_credentials_password_nullable" in staging_proof
+    assert "mt5_credentials_password_nullable" in readiness
+    assert "password_encrypted: Mapped[Optional[str]]" in models
+    assert "_sync_mt5_compatibility_metadata" in mt5
