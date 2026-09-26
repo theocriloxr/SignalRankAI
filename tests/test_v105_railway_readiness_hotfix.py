@@ -86,6 +86,11 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "broker_reconciliation_state_table": True,
                 "trading_account_ledger_entries_table": True,
                 "broker_execution_decisions_table": True,
+                "broker_connections_credential_format": True,
+                "broker_connections_credential_version": True,
+                "broker_connections_credential_key_id": True,
+                "broker_connections_credential_revision": True,
+                "broker_connections_credential_rotated_at": True,
                 "broker_executions_connection_id": True,
                 "mt5_executions_connection_id": True,
                 "trading_account_ledger_immutable": True,
@@ -127,4 +132,6 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     assert "trading_account_policies" in captured["statement"]
     assert "trading_account_ledger_entries" in captured["statement"]
     assert "broker_execution_decisions" in captured["statement"]
+    assert "credential_format" in captured["statement"]
+    assert "credential_revision" in captured["statement"]
     assert "trg_trading_account_ledger_immutable" in captured["statement"]
