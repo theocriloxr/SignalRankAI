@@ -185,7 +185,9 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         ("equity", "index", "forex", "commodity_spot", "macro"),
         ("cash", "index", "fx", "analysis"), ("1m", "5m", "15m", "1h", "4h", "1d"),
         ("keyed_primary",), "https://site.financialmodelingprep.com/developer/docs",
-        required_env=("FMP_API_KEY",), sample_symbol="AAPL", sample_timeframe="1h",
+        required_env=("FMP_API_KEY",), enabled_env="FMP_ENABLED", default_enabled=False,
+        sample_symbol="AAPL", sample_timeframe="1h",
+        notes="Explicit opt-in only; enable after the configured plan passes live candle certification.",
     ),
     ProviderSpec(
         "alphavantage", "Alpha Vantage", "data.connectors.alphavantage_adapter", "get_candles",
@@ -193,7 +195,9 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         ("cash", "fx", "spot", "analysis"), ("1m", "5m", "15m", "1h", "1d"),
         ("keyed_fallback",), "https://www.alphavantage.co/documentation/",
         required_env=("ALPHAVANTAGE_API_KEY", "ALPHA_VANTAGE_API_KEY"),
+        enabled_env="ALPHAVANTAGE_ENABLED", default_enabled=False,
         sample_symbol="AAPL", sample_timeframe="1h",
+        notes="Explicit opt-in only; keep off when the subscribed plan cannot serve the certified timeframe.",
     ),
     ProviderSpec(
         "oanda", "OANDA v20", "data.connectors.oanda_adapter", "get_candles",
@@ -201,7 +205,9 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         ("1m", "5m", "15m", "1h", "4h", "1d"), ("practice_broker", "broker_validation"),
         "https://developer.oanda.com/rest-live-v20/instrument-ep/",
         required_env=("OANDA_API_KEY", "OANDA_TOKEN"), sandbox=True,
+        enabled_env="OANDA_ENABLED", default_enabled=False,
         sample_symbol="EURUSD", sample_timeframe="1h",
+        notes="Explicit opt-in practice/broker-validation source; dormant without operator enablement.",
     ),
     ProviderSpec(
         "ecb", "European Central Bank", "data.connectors.ecb_adapter", "get_candles",
@@ -292,9 +298,10 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         "fred", "FRED", "data.connectors.fred_adapter", None,
         ("interest_rate", "macro"), ("yield_series", "rate_series", "analysis"), ("1d",),
         ("macro", "point_in_time"), "https://fred.stlouisfed.org/docs/api/fred/",
-        required_env=("FRED_API_KEY",), realtime_capable=False, default_enabled=True,
+        required_env=("FRED_API_KEY",), realtime_capable=False,
+        enabled_env="FRED_ENABLED", default_enabled=False,
         sample_symbol="DGS10", sample_timeframe="1d",
-        notes="Vintage-aware macro context; dormant without FRED_API_KEY.",
+        notes="Vintage-aware macro context; explicit opt-in and dormant without FRED_API_KEY.",
     ),
     ProviderSpec(
         "trading_economics", "Trading Economics", "data.connectors.trading_economics_adapter", None,
