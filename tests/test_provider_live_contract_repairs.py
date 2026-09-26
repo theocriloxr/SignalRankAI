@@ -196,6 +196,7 @@ def test_alphavantage_external_block_classification_is_non_secret():
 def test_provider_certifier_honors_adapter_blocker_hint(monkeypatch):
     import data.connectors.fmp_adapter as fmp
 
+    monkeypatch.setenv("FMP_ENABLED", "1")
     monkeypatch.setenv("FMP_API_KEY", "configured-key")
     monkeypatch.setattr(fmp, "get_candles", lambda *args, **kwargs: [])
     monkeypatch.setattr(
