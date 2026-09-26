@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -147,3 +148,33 @@ def test_transition_execution_row_applies_metadata_and_terminal_timestamp() -> N
 def test_unknown_state_fails_closed() -> None:
     with pytest.raises(InvalidExecutionTransition, match="unknown_execution_state"):
         normalize_execution_state("provider_magic_status")
+
+
+def test_live_broker_reconcilers_use_canonical_transition_writer() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bybit_reconciler = (root / "services" / "bybit_reconciler.py").read_text(
+        encoding="utf-8"
+    )
+    mt5_reconciler = (root / "services" / "mt5_reconciler.py").read_text(
+        encoding="utf-8"
+    )
+    bybit_router = (root / "services" / "bybit_signal_router.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "transition_execution_row(" in bybit_reconciler
+    assert "transition_execution_row(" in mt5_reconciler
+    assert "transition_execution_row(" in bybit_router
+
+    mark_block = bybit_reconciler[
+        bybit_reconciler.index("async def _mark("):
+        bybit_reconciler.index("async def reconcile_bybit_executions_once"),
+    ]
+    assert "row.status = str(status)" not in mark_block
+
+    mt5_block = mt5_reconciler[
+        mt5_reconciler.index("async def _persist_reconciliation("):
+        mt5_reconciler.index("async def reconcile_mt5_executions_once"),
+    ]
+    assert 'row.status = "open"' not in mt5_block
+    assert 'row.status = "closed"' not in mt5_block
