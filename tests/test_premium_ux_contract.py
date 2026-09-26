@@ -170,7 +170,7 @@ def test_runtime_handlers_use_canonical_copy_and_remove_stale_plan_claims() -> N
 
     tiers = commands[
         commands.index("async def tiers_command"):
-        commands.index("# /mystats"),
+        commands.index("# /mystats")
     ]
     assert "_compose_pricing_message" in tiers
     assert "automated MT5 executions/day" not in tiers
