@@ -16,7 +16,7 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0043_account_execution_policy"
+        "0044_broker_credential_envelope"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -427,3 +427,29 @@ def test_broker_performance_is_composed_per_account_not_mixed_headline() -> None
     assert "Demo, personal-live and PROP performance are not combined" in app
     assert "data.stats?.mt5" not in app
     assert "data.stats?.providers" not in app
+
+
+def test_0044_broker_credential_envelope_schema_and_runtime_contract() -> None:
+    migration = source("db/migrations/versions/0044_broker_credential_envelope.py")
+    models = source("db/models.py")
+    schema_gate = source("scripts/assert_database_schema.py")
+    readiness = source("railway_main.py")
+    credentials = source("services/broker_credentials.py")
+
+    assert 'revision = "0044_broker_credential_envelope"' in migration
+    assert 'down_revision = "0043_account_execution_policy"' in migration
+    for marker in (
+        "credential_format",
+        "credential_version",
+        "credential_key_id",
+        "credential_revision",
+        "credential_rotated_at",
+    ):
+        assert marker in migration
+        assert marker in models
+        assert marker in schema_gate
+        assert marker in readiness
+    assert "legacy_fernet" in migration
+    assert "BROKER_CREDENTIAL_KEYRING_JSON" in credentials
+    assert "BROKER_CREDENTIAL_ACTIVE_KEY_ID" in credentials
+    assert "broker credential envelope account binding mismatch" in credentials
