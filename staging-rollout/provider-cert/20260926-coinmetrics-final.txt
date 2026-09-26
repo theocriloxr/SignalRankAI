@@ -1,0 +1,4 @@
+SignalRank staging Coin Metrics Community certification final rerun.
+Purpose: verify the certified market-candle to pair-candle fallback against the live Community API.
+Only Coin Metrics is called by this certification deployment.
+No credentials, execution permissions, or payment authority are stored in this marker.
