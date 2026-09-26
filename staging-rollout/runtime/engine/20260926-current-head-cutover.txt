@@ -1,0 +1,5 @@
+SignalRank staging engine current-head rollout trigger.
+Base lineage includes analytics cutover commit 771aff1a1940c1b810e44d395f12a725b061ddc8.
+Purpose: bring the true signal-generation engine onto decision lifecycle, outcome ownership, and SLO hardening with schema unchanged at 0045.
+All live-money execution and payout flags remain disabled.
+No secrets are stored in this marker.
