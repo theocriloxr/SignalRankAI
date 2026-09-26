@@ -17,7 +17,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0044_broker_credential_envelope"
+        "0045_mt5_credential_retirement"
     ]
     migration = _source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -36,6 +36,21 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     )
     assert 'revision = "0042_ml_recovery_provenance"' in recovery_migration
     assert 'down_revision = "0041_broker_connection_registry"' in recovery_migration
+    account_policy = _source(
+        "db/migrations/versions/0043_account_execution_policy.py"
+    )
+    assert 'revision = "0043_account_execution_policy"' in account_policy
+    assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
+    credential_envelope = _source(
+        "db/migrations/versions/0044_broker_credential_envelope.py"
+    )
+    assert 'revision = "0044_broker_credential_envelope"' in credential_envelope
+    assert 'down_revision = "0043_account_execution_policy"' in credential_envelope
+    credential_retirement = _source(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    )
+    assert 'revision = "0045_mt5_credential_retirement"' in credential_retirement
+    assert 'down_revision = "0044_broker_credential_envelope"' in credential_retirement
 
 
 def test_paper_attempt_model_preserves_channel_neutral_provenance() -> None:
