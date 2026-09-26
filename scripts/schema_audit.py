@@ -216,6 +216,66 @@ def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object
     }
 
 
+def audit_broker_credential_envelope_contract(
+    root: Path = ROOT,
+) -> dict[str, object]:
+    """Verify 0044 credential metadata and ORM remain in lockstep."""
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "missing": [],
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
+
+    migration = (
+        root / "db/migrations/versions/0044_broker_credential_envelope.py"
+    ).read_text(encoding="utf-8", errors="replace")
+    required_columns = {
+        "credential_format",
+        "credential_version",
+        "credential_key_id",
+        "credential_revision",
+        "credential_rotated_at",
+    }
+    rendered_missing = sorted(
+        column for column in required_columns
+        if column not in rendered
+    )
+    source_missing = sorted(
+        column for column in required_columns
+        if column not in migration
+    )
+
+    from db.models import BrokerConnection
+
+    model_columns = {
+        column.name
+        for column in BrokerConnection.__table__.columns
+    }
+    model_missing = sorted(required_columns - model_columns)
+    markers = {
+        "legacy_backfill": "legacy_fernet" in rendered,
+        "format_check": "ck_broker_connections_credential_format" in rendered,
+        "key_index": "ix_broker_connections_credential_key_id" in rendered,
+        "down_revision": 'down_revision = "0043_account_execution_policy"' in migration,
+    }
+    ok = (
+        not rendered_missing
+        and not source_missing
+        and not model_missing
+        and all(markers.values())
+    )
+    return {
+        "ok": ok,
+        "rendered_missing": rendered_missing,
+        "source_missing": source_missing,
+        "model_missing": model_missing,
+        **markers,
+    }
+
+
 def audit_live_financial_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify execution/payout tables and idempotency constraints exist in head."""
     migration = (root / "db/migrations/versions/0029_live_financial_ledger.py").read_text(encoding="utf-8", errors="replace")
@@ -246,11 +306,13 @@ def main() -> int:
     outcome_contract = audit_outcome_projection_contract()
     financial_contract = audit_live_financial_contract()
     account_ledger_contract = audit_trading_account_ledger_contract()
+    broker_credential_contract = audit_broker_credential_envelope_contract()
     result["signal_runtime_contract"] = signal_contract
     result["ml_rejected_runtime_contract"] = rejected_contract
     result["outcome_projection_contract"] = outcome_contract
     result["live_financial_contract"] = financial_contract
     result["trading_account_ledger_contract"] = account_ledger_contract
+    result["broker_credential_envelope_contract"] = broker_credential_contract
     result["ok"] = bool(
         result["ok"]
         and signal_contract["ok"]
@@ -258,6 +320,7 @@ def main() -> int:
         and outcome_contract["ok"]
         and financial_contract["ok"]
         and account_ledger_contract["ok"]
+        and broker_credential_contract["ok"]
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1
