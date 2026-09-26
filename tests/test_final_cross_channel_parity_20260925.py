@@ -457,7 +457,7 @@ def test_0044_broker_credential_envelope_schema_and_runtime_contract() -> None:
 
 def test_0045_mt5_credential_retirement_schema_and_runtime_contract() -> None:
     migration = source(
-        "db/migrations/versions/0045_mt5_credential_retirement.py"
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
     )
     models = source("db/models.py")
     schema_gate = source("scripts/assert_database_schema.py")
