@@ -322,7 +322,7 @@ def test_broker_verification_is_canonical_read_only_and_cross_provider() -> None
 
     endpoint = api[
         api.index('@router.post("/broker/connections/{connection_id}/verify")'):
-        api.index('@router.post("/broker/connections/{connection_id}/execution")'),
+        api.index('@router.post("/broker/connections/{connection_id}/execution")')
     ]
     assert "verify_broker_connection_read_only" in endpoint
     assert "verify_platform_metatrader_connection" not in endpoint
