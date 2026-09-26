@@ -60,6 +60,7 @@ def test_current_release_points_to_current_0045_boundary() -> None:
     assert "FINAL_COMPLETION_REPORT_20260926.md" in text
     assert "BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md" in text
     assert "docs/security/THREAT_MODEL.md" in text
+    assert "docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md" in text
     assert "Older R4/v1.5.1 reports remain historical evidence" in text
     assert "See `STAGING_COMPLETION_R4.md`" not in text
 
