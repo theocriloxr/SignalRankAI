@@ -28,16 +28,19 @@ The long-lived staging topology is decomposed and role-owned:
 All four roles enforce release-source and database-schema admission before
 business work.
 
-Current post-0045 staging role deployments:
+Current post-0045 staging role deployments are aligned on the same certified
+provider-opt-in hardening commit `b2249fe64b8ae05b178ccec5e0879590c56f7130`:
 
-- analytics: commit `73867e8277013394058cf31ba29f6c010b427dec`;
-- engine: commit `8fef701b81bb24d04f23f9c42ac3d65cf47f6b5a`;
-- delivery: commit `ec1565d136509df5c6b4178ae31515685844012d`;
-- frontdoor: commit `c13fa64add98391214641d8d2a683a0b53cd8a94`.
+- analytics: deployment `c1d51cca-be56-43ed-b87c-446e651793bc`;
+- engine: deployment `f550a99e-0669-4bf8-a794-a41e90330b30`;
+- delivery: deployment `52ab68b7-a301-49e3-ada8-b74f2af49f2c`;
+- frontdoor: deployment `7b06848a-11dd-4fb0-bcc7-bd0ae3595f39`.
 
-Later role-marker commits contain the same preceding substantive hardening plus
-role-specific rollout markers. Role-specific Railway watch paths prevent
-unrelated staging roles from restarting for another role's marker.
+All four passed release-source and `0045_mt5_credential_retirement` schema
+admission. Frontdoor explicitly skips engine/worker ownership, while the other
+three roles start only their declared dedicated runtime lanes. Role-specific
+Railway watch paths plus the controlled common staging-rollout path prevent
+unrelated production promotion.
 
 ## Multi-user / multi-account execution
 
@@ -67,6 +70,30 @@ one canonical position-state projection.
 MT5 and Bybit routers/reconcilers use this canonical transition writer.
 
 Real-money execution remains disabled in staging.
+
+## Provider certification
+
+The enabled staging market-data provider set is now independently certified in
+the exact staging environment.
+
+Evidence:
+
+- provider-cert commit: `12e2427e1faa4a7b72d3484953a7d3736d19eb81`;
+- provider-cert deployment: `65c8d1a6-0358-49ee-91b2-aa8b60718fda`;
+- matching clean-room deployment:
+  `115f4d92-b78f-4063-99e1-3908fdd3137f`;
+- certification exit: `0`;
+- clean-room result: Alembic 0045/schema/provenance PASS and 396 targeted tests
+  PASS.
+
+Every enabled market-data provider reported explicit live/public endpoint
+evidence. FMP, Alpha Vantage, OANDA and FRED are implemented but deliberately
+disabled behind explicit operator gates until their missing plan/credential
+requirements are independently certified. See
+`docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`.
+
+This completes `SR-PROVIDER-007` for the enabled provider set while preserving
+the optional-provider external boundary under `SR-PROVIDER-008`.
 
 ## Broker credential security
 
