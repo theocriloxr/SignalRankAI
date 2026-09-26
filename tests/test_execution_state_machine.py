@@ -142,7 +142,16 @@ def test_transition_execution_row_applies_metadata_and_terminal_timestamp() -> N
     assert row.updated_at == now
     assert row.realized_pnl_pct == 1.25
     assert row.realized_pnl == 12.50
-    assert row.meta == {"existing": True, "provider_proof": "deal-1"}
+    assert row.meta["existing"] is True
+    assert row.meta["provider_proof"] == "deal-1"
+    assert row.meta["execution_state"] == "closed"
+    assert row.meta["position_state"] == "closed"
+    assert row.meta["last_state_transition"] == {
+        "from": "open",
+        "to": "closed",
+        "at": now.isoformat(),
+        "idempotent": False,
+    }
 
 
 def test_unknown_state_fails_closed() -> None:
