@@ -1,0 +1,5 @@
+SignalRank staging analytics rollout trigger for the post-0045 hardening set.
+Purpose: deploy deterministic ML lineage, stable promotion checks, and current release-contract coverage.
+No schema migration is required beyond 0045_mt5_credential_retirement.
+All live-money execution and payout flags remain disabled in staging.
+No secrets are stored in this marker.
