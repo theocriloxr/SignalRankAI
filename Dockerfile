@@ -34,6 +34,8 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
     && python -m pytest -q \
       tests/test_provider_backed_asset_discovery.py \
       tests/test_provider_live_contract_repairs.py \
+      tests/test_provider_catalog_and_certification.py \
+      tests/test_provider_registry_fail_closed.py \
       tests/test_cpu_only_xgboost_dependency.py \
       tests/test_ml_learning_runtime_v135.py::test_analytics_owned_workers_share_analytics_priority_lane \
       tests/test_ml_learning_runtime_v135.py::test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait \
