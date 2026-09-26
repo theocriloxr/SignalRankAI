@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout trigger for post-0045 hardening.
+Purpose: align HTTP, web platform, Telegram ingress, and account-policy surfaces with the current canonical execution lifecycle and ML-lineage release.
+Alembic remains 0045_mt5_credential_retirement.
+Frontdoor owns HTTP/Telegram/scheduler interaction only; engine and delivery loops remain disabled here.
+All staging live-money execution and payout paths remain disabled.
