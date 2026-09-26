@@ -94,15 +94,11 @@ ALERT_POLICIES: dict[str, AlertPolicy] = {
         "performance_projection_coverage",
         "ledger",
         "pause_reconciliation_rebuilds",
-        warning_min_samples=100,
-        critical_min_samples=250,
     ),
     "outcome_projection_coverage": _policy(
         "outcome_projection_coverage",
         "outcomes",
         "queue_outcome_outbox_repair",
-        warning_min_samples=100,
-        critical_min_samples=250,
     ),
 }
 
