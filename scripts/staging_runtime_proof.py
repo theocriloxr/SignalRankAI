@@ -153,6 +153,17 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 SELECT EXISTS (
                   SELECT 1 FROM information_schema.columns
                   WHERE table_schema='public'
+                    AND table_name='mt5_credentials'
+                    AND column_name='password_encrypted'
+                    AND is_nullable='YES'
+                )
+            """)
+            report["mt5_credentials_password_nullable"] = bool(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
                     AND table_name='broker_executions'
                     AND column_name='connection_id'
                 )
@@ -279,6 +290,8 @@ def evaluate(
     for column, present in (report.get("broker_credential_columns") or {}).items():
         if present is not True:
             blockers.append(f"missing_column:broker_connections.{column}")
+    if report.get("mt5_credentials_password_nullable") is not True:
+        blockers.append("legacy_mt5_password_column_not_nullable")
     counts = report.get("catalogue_counts") or {}
     if not report.get("catalogue_minimums"):
         blockers.append("catalogue_minimums_missing")
