@@ -14,6 +14,10 @@ from db.session import get_session
 from services.bybit_client import BybitCredentials, BybitError, BybitV5Client
 from services.security import decrypt_secret
 from services.execution_quota import release_user_execution_quota
+from core.execution_state_machine import (
+    InvalidExecutionTransition,
+    transition_execution_row,
+)
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -117,15 +121,26 @@ async def _mark(
         ).scalar_one_or_none()
         if row is None:
             return
-        row.status = str(status)
-        row.error_code = str(error or "")[:128] or None
-        row.updated_at = now_utc_naive()
-        if meta:
-            row.meta = {**dict(row.meta or {}), **meta}
-        if realized_pnl_pct is not None:
-            row.realized_pnl_pct = float(realized_pnl_pct)
-        if closed:
-            row.closed_at = now_utc_naive()
+        now = now_utc_naive()
+        try:
+            transition_execution_row(
+                row,
+                status,
+                now=now,
+                error_code=error,
+                meta=meta,
+                realized_pnl_pct=realized_pnl_pct,
+                closed_at=now if closed else None,
+            )
+        except InvalidExecutionTransition as exc:
+            logger.error(
+                "[bybit_reconcile_transition_blocked] execution_id=%s current=%s target=%s error=%s",
+                row.id,
+                row.status,
+                status,
+                exc,
+            )
+            raise
 
         if row.connection_id and account_ledger_events:
             from services.trading_account_ledger import (
