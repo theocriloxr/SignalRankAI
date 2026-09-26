@@ -4,9 +4,9 @@
 Version: 1.5.1
 Patch level: deployment-final-r4
 Fingerprint: v1.5.1-unified-ecosystem-completion-full-suite-20260806
-Alembic head: 0044_broker_credential_envelope
+Repository Alembic head: 0045_mt5_credential_retirement
 R4 full local test evidence: 1365 passed, 1 optional environment-dependent skip, 0 failed, 0 errors
-Previous staging schema evidence covered 0039; current 0041 broker-connection registry (including 0040 cross-channel paper receipt provenance) requires fresh runtime proof
+Staging is currently certified at 0044_broker_credential_envelope. The 0045 MT5 legacy credential-retirement migration is clean-room certified but must complete controlled staging migration/runtime proof before staging is described as 0045-certified.
 ```
 
 See `STAGING_COMPLETION_R4.md`, `FINAL_COMPLETION_REPORT_V1.5.1.md` and
