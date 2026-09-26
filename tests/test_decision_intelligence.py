@@ -106,6 +106,6 @@ def test_active_engine_passes_exact_gate_reason_into_structured_decision_record(
     source = Path("engine/core.py").read_text(encoding="utf-8")
     block = source[
         source.index("decision_record = build_decision_record("):
-        source.index('_meta["decision_intelligence"] = decision_record'),
+        source.index('_meta["decision_intelligence"] = decision_record')
     ]
     assert "decision_reason=reason" in block
