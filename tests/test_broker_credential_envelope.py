@@ -251,3 +251,56 @@ def test_canonical_writer_and_0044_schema_contract() -> None:
     assert "secret_encrypted IS NOT NULL" in migration
     assert "decrypt_secret(" not in migration
     assert "Fernet(" not in migration
+
+
+def test_0045_retires_duplicate_mt5_password_storage() -> None:
+    migration = Path(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    ).read_text(encoding="utf-8")
+    model = Path("db/models.py").read_text(encoding="utf-8")
+    mt5 = Path("services/mt5_client.py").read_text(encoding="utf-8")
+
+    assert 'revision = "0045_mt5_legacy_credential_retirement"' in migration
+    assert 'down_revision = "0044_broker_credential_envelope"' in migration
+    assert '"password_encrypted",' in migration
+    assert "nullable=True" in migration
+    assert "UPDATE mt5_credentials AS legacy" in migration
+    assert "canonical.credential_format = 'envelope_v1'" in migration
+    assert "password_encrypted = NULL" in migration
+    assert "decrypt_secret(" not in migration
+
+    assert "password_encrypted: Mapped[Optional[str]]" in model
+
+    compatibility = mt5[
+        mt5.index("async def _sync_mt5_compatibility_metadata"):
+        mt5.index("# ---------------------------------------------------------------------------\n# Credential management"),
+    ]
+    assert "VALUES(:uid,:login,NULL,:server,:account_id,NOW(),NOW())" in compatibility
+    assert "password_encrypted=NULL" in compatibility
+    assert ":pw" not in compatibility
+    assert "encrypt_secret" not in compatibility
+
+    telegram_link = mt5[
+        mt5.index("async def link_mt5_account("):
+        mt5.index("async def get_user_mt5_account_id"),
+    ]
+    platform_link = mt5[
+        mt5.index("async def link_platform_mt5_account("):
+        mt5.index("async def get_platform_mt5_account_id"),
+    ]
+    canonical_link = mt5[
+        mt5.index("async def link_platform_metatrader_account("):
+        mt5.index("async def create_platform_metatrader_secure_link"),
+    ]
+
+    assert "link_platform_mt5_account(" in telegram_link
+    assert "INSERT INTO mt5_credentials" not in telegram_link
+    assert "encrypt_secret" not in telegram_link
+
+    assert "link_platform_metatrader_account(" in platform_link
+    assert "INSERT INTO mt5_credentials" not in platform_link
+    assert "encrypt_secret" not in platform_link
+
+    assert "_sync_mt5_compatibility_metadata(" in canonical_link
+    assert "legacy_pw =" not in canonical_link
+    assert "password_encrypted=EXCLUDED.password_encrypted" not in canonical_link
