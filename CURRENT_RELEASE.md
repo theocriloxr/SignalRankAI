@@ -26,7 +26,9 @@ Current deterministic release controls include:
   safety/regression verification;
 - deterministic CycloneDX SBOM and release-provenance generation/self-check;
 - role-specific staging rollout isolation;
-- global/live-money execution and payout gates independent of ordinary health.
+- global/live-money execution and payout gates independent of ordinary health;
+- live/public certification for every enabled staging market-data provider,
+  with optional uncertified providers explicitly disabled behind operator gates.
 
 The shared staging database and all four long-lived staging roles have passed
 the `0045_mt5_credential_retirement` admission contract with real-money
@@ -41,6 +43,7 @@ Current completion boundary:
 - `docs/security/THREAT_MODEL.md`
 - `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md`
 - `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`
+- `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`
 
 Older R4/v1.5.1 reports remain historical evidence and must not be used as the
 current deployment/schema authority.
