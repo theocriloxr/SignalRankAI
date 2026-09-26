@@ -11,6 +11,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from signalrank_telegram.ux_copy import safe_error_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -168,4 +170,4 @@ def safe_command_error(action: str, exc: BaseException) -> str:
         type(exc).__name__,
         " | ".join(line.strip() for line in traceback.format_tb(exc.__traceback__))[:2000] or "unavailable",
     )
-    return f"❌ {str(action).strip()}\n{guidance}\nReference: {reference}"
+    return safe_error_message(action=str(action), guidance=guidance, reference=reference)
