@@ -50,6 +50,52 @@ def _signal_id(signal: Mapping[str, Any]) -> str | None:
     return str(signal.get("signal_id") or signal.get("id") or "") or None
 
 
+_DELAY_REASON_TOKENS = (
+    "unavailable",
+    "timeout",
+    "retry",
+    "stale",
+    "freshness",
+    "market_closed",
+    "session_closed",
+    "temporar",
+    "deferred",
+    "waiting",
+)
+_SUPPRESS_REASON_TOKENS = (
+    "duplicate",
+    "cooldown",
+    "exposure_limit",
+    "blacklist",
+    "blocked_by_policy",
+    "already_active",
+)
+
+
+def derive_lifecycle_disposition(
+    decision: Any,
+    reason: Any = None,
+) -> str:
+    """Normalize audit semantics without changing the engine's raw decision.
+
+    Production engine branches intentionally retain their historical decision
+    vocabulary. This derived field lets analytics distinguish transient delay
+    from intentional suppression while preserving the exact source decision.
+    """
+    raw = str(decision or "issued").strip().lower()
+    if raw in {"issued", "rejected", "delayed", "suppressed", "observed", "error"}:
+        return raw
+    if raw != "skipped":
+        return "skipped"
+
+    reason_text = str(reason or "").strip().lower()
+    if any(token in reason_text for token in _SUPPRESS_REASON_TOKENS):
+        return "suppressed"
+    if any(token in reason_text for token in _DELAY_REASON_TOKENS):
+        return "delayed"
+    return "skipped"
+
+
 def build_decision_record(
     signal: Mapping[str, Any],
     *,
@@ -65,7 +111,8 @@ def build_decision_record(
     confidence_calibration: Mapping[str, Any] | None = None,
     shadow_prediction: Mapping[str, Any] | None = None,
     outcome_learning: Mapping[str, Any] | None = None,
-    version: str = "decision-intelligence-v1",
+    decision_reason: Any = None,
+    version: str = "decision-intelligence-v2",
 ) -> Dict[str, Any]:
     """Build a complete, serializable decision audit record."""
     asset = str(signal.get("asset") or "").upper()
@@ -124,6 +171,13 @@ def build_decision_record(
         "timeframe": timeframe,
         "direction": direction,
         "decision": signal.get("decision") or "issued",
+        "decision_reason": (
+            str(decision_reason)[:1000] if decision_reason not in (None, "") else None
+        ),
+        "lifecycle_disposition": derive_lifecycle_disposition(
+            signal.get("decision") or "issued",
+            decision_reason,
+        ),
         "why_selected": "; ".join(part for part in why if part),
         "strategy_votes": votes,
         "votes_against": _dict_list(votes_against),
@@ -156,6 +210,10 @@ def validate_decision_record(record: Mapping[str, Any]) -> Dict[str, Any]:
         errors.append("timeframe_missing")
     if record.get("decision") not in {"issued", "rejected", "skipped", "observed", "delayed", "suppressed", "error"}:
         errors.append("unknown_decision")
+    if record.get("lifecycle_disposition") not in {
+        "issued", "rejected", "skipped", "observed", "delayed", "suppressed", "error"
+    }:
+        errors.append("unknown_lifecycle_disposition")
     if missing:
         errors.append("missing_sections")
     return {"ok": not errors, "errors": errors, "missing_sections": missing}
@@ -181,6 +239,7 @@ async def persist_decision_record(record: Mapping[str, Any]) -> int:
 __all__ = [
     "REQUIRED_SECTIONS",
     "build_decision_record",
+    "derive_lifecycle_disposition",
     "persist_decision_record",
     "validate_decision_record",
 ]
