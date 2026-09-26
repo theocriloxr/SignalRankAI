@@ -63,7 +63,7 @@ infrastructure, elapsed runtime, provider entitlements, or a legal/licensing dec
 | SR-SEC-002 | Signed webhook verification from raw body | UNIT_VERIFIED | `payments/paystack_events.py` | webhook tests | — |
 | SR-SEC-003 | Threat model documented against the deployed 0045 architecture and residual-risk boundary | INTEGRATION_VERIFIED | `docs/security/THREAT_MODEL.md` | release/security contract review + staging 0045 evidence | — |
 | SR-SEC-004 | Versioned, account-bound envelope encryption and key rotation for broker credentials | INTEGRATION_VERIFIED | `services/broker_credentials.py`, canonical broker connection writer, `0044_broker_credential_envelope` | `test_broker_credential_envelope.py` | `BROKER_CREDENTIAL_KEYRING_JSON`, `BROKER_CREDENTIAL_ACTIVE_KEY_ID` |
-| SR-SEC-005 | Deterministic dependency SBOM and release provenance bind the locked graph, Dockerfile, current release contract, exact commit/branch and Alembic head | UNIT_VERIFIED | `scripts/generate_release_provenance.py`, `requirements.lock` | `tests/test_release_provenance.py`; clean-room provenance self-check | external signing key remains separate |
+| SR-SEC-005 | Deterministic CycloneDX 1.5 dependency SBOM and release provenance bind the locked graph, Dockerfile, current release contract, exact commit/branch and Alembic head | UNIT_VERIFIED | `scripts/generate_release_provenance.py`, `requirements.lock` | `tests/test_release_provenance.py`; clean-room provenance self-check | external signing key remains separate |
 
 ## Scale (§27) and observability (§25)
 
