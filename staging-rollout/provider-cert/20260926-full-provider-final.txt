@@ -1,0 +1,5 @@
+SignalRank final consolidated staging provider certification trigger.
+Runs the full configured provider catalogue after connector repairs and Coin Metrics fallback.
+Only enabled providers with true FAILED status should fail certification.
+External plan/quota/credential blockers remain explicitly reported rather than hidden.
+No secrets are stored in this marker.
