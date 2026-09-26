@@ -4,7 +4,7 @@
 Version: 1.5.1
 Patch level: deployment-final-r4
 Fingerprint: v1.5.1-unified-ecosystem-completion-full-suite-20260806
-Alembic head: 0043_account_execution_policy
+Alembic head: 0044_broker_credential_envelope
 R4 full local test evidence: 1365 passed, 1 optional environment-dependent skip, 0 failed, 0 errors
 Previous staging schema evidence covered 0039; current 0041 broker-connection registry (including 0040 cross-channel paper receipt provenance) requires fresh runtime proof
 ```
