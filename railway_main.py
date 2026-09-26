@@ -2411,6 +2411,13 @@ async def _database_readiness_check() -> dict[str, object]:
                             EXISTS (
                                 SELECT 1 FROM information_schema.columns
                                 WHERE table_schema = current_schema()
+                                  AND table_name = 'mt5_credentials'
+                                  AND column_name = 'password_encrypted'
+                                  AND is_nullable = 'YES'
+                            ) AS mt5_credentials_password_nullable,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
                                   AND table_name = 'broker_executions'
                                   AND column_name = 'connection_id'
                             ) AS broker_executions_connection_id,
@@ -2490,6 +2497,7 @@ async def _database_readiness_check() -> dict[str, object]:
             "broker_connections.credential_key_id": bool(row.get("broker_connections_credential_key_id")),
             "broker_connections.credential_revision": bool(row.get("broker_connections_credential_revision")),
             "broker_connections.credential_rotated_at": bool(row.get("broker_connections_credential_rotated_at")),
+            "mt5_credentials.password_encrypted_nullable": bool(row.get("mt5_credentials_password_nullable")),
             "broker_executions.connection_id": bool(row.get("broker_executions_connection_id")),
             "mt5_executions.connection_id": bool(row.get("mt5_executions_connection_id")),
         }
