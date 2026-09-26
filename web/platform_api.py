@@ -3623,32 +3623,32 @@ async def verify_broker_connection(
     connection_id: str,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    """Read-only verification for one connection owned by the current user."""
     _assert_feature(user, "broker_connection")
-    from services.broker_connections import list_connections
-    from services.mt5_client import verify_platform_metatrader_connection
+    from services.broker_verification import verify_broker_connection_read_only
 
-    connections = await list_connections(int(user["id"]))
-    selected = next(
-        (row for row in connections if row.get("connection_id") == connection_id),
-        None,
-    )
-    if selected is None:
-        raise HTTPException(status_code=404, detail="Broker connection not found")
-    if str(selected.get("connector") or "") != "metaapi":
-        raise HTTPException(
-            status_code=409,
-            detail="This connector does not yet expose a verification adapter",
+    try:
+        result = await verify_broker_connection_read_only(
+            int(user["id"]),
+            connection_id,
         )
-    result = await verify_platform_metatrader_connection(
-        int(user["id"]),
-        connection_id,
-    )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if not result.get("success"):
         raise HTTPException(
             status_code=409,
             detail=str(result.get("error") or "Broker verification failed"),
         )
-    return result
+    return {
+        **result,
+        "read_only_verification": True,
+        "execution_enabled": False,
+    }
 
 
 @router.post("/broker/connections/{connection_id}/execution")
