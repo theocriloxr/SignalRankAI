@@ -28,6 +28,7 @@ _TESTS = [
     "tests/test_trading_account_ledger.py",
     "tests/test_broker_account_bola_idor.py",
     "tests/test_broker_credential_envelope.py",
+    "tests/test_broker_credential_inventory.py",
     "tests/test_broker_execution_p0.py",
     "tests/test_canonical_broker_entrypoints.py",
     "tests/test_auth_fail_closed_boundaries.py",
