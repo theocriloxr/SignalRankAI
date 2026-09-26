@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -190,3 +193,21 @@ def test_production_migration_lock_wait_is_bounded_and_nonblocking():
     assert "PRODUCTION_MIGRATION_LOCK_WAIT_SECONDS" in migrate
     assert "migration advisory lock busy after" in migrate
     assert "time.monotonic()" in migrate
+
+
+def test_current_release_and_railway_profiles_follow_repository_alembic_head():
+    cfg = Config(str(ROOT / "alembic.ini"))
+    heads = list(ScriptDirectory.from_config(cfg).get_heads())
+    assert len(heads) == 1
+    expected = heads[0]
+
+    current_release = (ROOT / "CURRENT_RELEASE.md").read_text(encoding="utf-8")
+    assert f"Repository Alembic head: {expected}" in current_release
+
+    for filename in (
+        "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
+        "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
+        "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
+    ):
+        profile = (ROOT / filename).read_text(encoding="utf-8")
+        assert f"EXPECTED_ALEMBIC_HEAD={expected}" in profile
