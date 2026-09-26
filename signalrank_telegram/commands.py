@@ -7557,6 +7557,193 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# /verifybroker — PREMIUM: read-only verification of an owned broker account
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def verifybroker_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Verify one owned MT4/MT5/Bybit connection without placing any order."""
+	if update.effective_user is None or update.message is None:
+		return
+
+	telegram_user_id = int(update.effective_user.id)
+	tier = _effective_tier(telegram_user_id)
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 Broker verification requires <b>PREMIUM</b> or above.\nUse /upgrade.",
+			parse_mode="HTML",
+		)
+		return
+
+	args = [str(value).strip().lower() for value in (context.args or []) if str(value).strip()]
+	if len(args) > 1 or (args and args[0] not in {"mt4", "mt5", "metaapi", "bybit"}):
+		await update.message.reply_text(
+			"Usage: <code>/verifybroker</code> or "
+			"<code>/verifybroker mt5</code> / <code>/verifybroker bybit</code>.",
+			parse_mode="HTML",
+		)
+		return
+	requested = args[0] if args else ""
+
+	try:
+		from db.models import User
+		from services.broker_connections import list_connections
+		from services.broker_verification import verify_broker_connection_read_only
+		from sqlalchemy import select
+
+		async with get_session(
+			priority="interactive",
+			label="telegram.verifybroker.identity",
+			timeout_seconds=6.0,
+		) as session:
+			canonical_user = (
+				await session.execute(
+					select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
+				)
+			).scalar_one_or_none()
+			await session.rollback()
+
+		if canonical_user is None:
+			await update.message.reply_text(
+				"No account profile found. Send /start then try again."
+			)
+			return
+
+		connections = await list_connections(int(canonical_user.id))
+
+		def _supported(row: dict) -> bool:
+			connector = str(row.get("connector") or "").strip().lower()
+			platform = str(row.get("platform") or "").strip().lower()
+			return (
+				(connector == "metaapi" and platform in {"mt4", "mt5"})
+				or connector == "bybit"
+				or platform == "bybit"
+			)
+
+		def _matches(row: dict) -> bool:
+			if not requested:
+				return True
+			connector = str(row.get("connector") or "").strip().lower()
+			platform = str(row.get("platform") or "").strip().lower()
+			if requested == "metaapi":
+				return connector == "metaapi" and platform in {"mt4", "mt5"}
+			return platform == requested or connector == requested
+
+		candidates = [row for row in connections if _supported(row) and _matches(row)]
+		if not candidates:
+			await update.message.reply_text(
+				"No matching MT4/MT5/Bybit account is connected. "
+				"Use /connect_broker for MT5 or the web Broker Hub for other providers."
+			)
+			return
+
+		defaults = [row for row in candidates if bool(row.get("is_default"))]
+		if len(candidates) == 1:
+			selected = candidates[0]
+		elif len(defaults) == 1:
+			selected = defaults[0]
+		else:
+			lines = [
+				"⚠️ More than one matching broker account is connected.",
+				"Set the account you want as Default in the web Broker Hub, then run /verifybroker again.",
+				"",
+			]
+			for row in candidates[:8]:
+				label = str(
+					row.get("account_label")
+					or row.get("platform")
+					or row.get("connector")
+					or "Trading account"
+				)
+				platform = str(row.get("platform") or row.get("connector") or "broker").upper()
+				masked = str(row.get("account_ref_masked") or "Account hidden")
+				lines.append(f"• {platform} — {label} — {masked}")
+			await update.message.reply_text("\n".join(lines))
+			return
+
+		label = str(
+			selected.get("account_label")
+			or selected.get("platform")
+			or selected.get("connector")
+			or "Trading account"
+		)
+		processing = await update.message.reply_text(
+			f"🔎 Verifying {label} in read-only mode…"
+		)
+
+		result = await asyncio.wait_for(
+			verify_broker_connection_read_only(
+				int(canonical_user.id),
+				str(selected["connection_id"]),
+			),
+			timeout=35.0,
+		)
+
+		if not bool(result.get("success")):
+			error = str(result.get("error") or "broker_verification_failed")
+			await processing.edit_text(
+				"❌ Broker verification failed.\n"
+				f"Reason: <code>{error[:180]}</code>\n\n"
+				"No order was placed and execution permissions were not changed.",
+				parse_mode="HTML",
+			)
+			return
+
+		provider = str(result.get("provider") or selected.get("connector") or "broker").upper()
+		platform = str(result.get("platform") or selected.get("platform") or provider).upper()
+		classification = str(
+			result.get("account_classification")
+			or selected.get("account_classification")
+			or "UNKNOWN"
+		).upper()
+		environment = str(
+			result.get("environment")
+			or selected.get("environment")
+			or ""
+		).upper()
+		info = dict(result.get("account_info") or {})
+		permission = dict(result.get("permissions") or {})
+
+		lines = [
+			"✅ <b>Broker verification passed</b>",
+			"",
+			f"Provider: <b>{provider}</b>",
+			f"Platform: <b>{platform}</b>",
+			f"Account mode: <b>{classification}</b>",
+		]
+		if environment:
+			lines.append(f"Environment: <b>{environment}</b>")
+		if info.get("account_number_masked"):
+			lines.append(f"Account: <code>{info['account_number_masked']}</code>")
+		if info.get("currency"):
+			lines.append(f"Currency: <b>{info['currency']}</b>")
+		if result.get("wallet_access") is not None:
+			lines.append(
+				"Wallet read access: <b>"
+				+ ("YES" if bool(result.get("wallet_access")) else "NO")
+				+ "</b>"
+			)
+		if permission.get("ip_bound") is not None:
+			lines.append(
+				"API IP binding: <b>"
+				+ ("YES" if bool(permission.get("ip_bound")) else "NO")
+				+ "</b>"
+			)
+		lines.extend([
+			"",
+			"Read-only check only. No order was placed and account execution remains separately gated.",
+		])
+		await processing.edit_text("\n".join(lines), parse_mode="HTML")
+	except asyncio.TimeoutError:
+		await update.message.reply_text(
+			"⚠️ Broker verification timed out. No order was placed. Try again in a moment."
+		)
+	except Exception as exc:
+		await update.message.reply_text(
+			safe_command_error("Could not verify the broker account.", exc)
+		)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # /setlot  — PREMIUM: set fixed lot size
 # ─────────────────────────────────────────────────────────────────────────────
 
