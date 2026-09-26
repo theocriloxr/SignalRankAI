@@ -168,13 +168,13 @@ def test_live_broker_reconcilers_use_canonical_transition_writer() -> None:
 
     mark_block = bybit_reconciler[
         bybit_reconciler.index("async def _mark("):
-        bybit_reconciler.index("async def reconcile_bybit_executions_once"),
+        bybit_reconciler.index("async def reconcile_bybit_executions_once")
     ]
     assert "row.status = str(status)" not in mark_block
 
     mt5_block = mt5_reconciler[
         mt5_reconciler.index("async def _persist_reconciliation("):
-        mt5_reconciler.index("async def reconcile_mt5_executions_once"),
+        mt5_reconciler.index("async def reconcile_mt5_executions_once")
     ]
     assert 'row.status = "open"' not in mt5_block
     assert 'row.status = "closed"' not in mt5_block
