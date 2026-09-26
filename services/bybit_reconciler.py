@@ -103,6 +103,41 @@ async def _credentials(
     return BybitCredentials(str(key), str(secret), bool(value.get("sandbox", True)))
 
 
+async def load_bybit_connection_credentials(
+    user_id: int,
+    connection_id: str,
+) -> BybitCredentials | None:
+    """Load one owned canonical Bybit credential without exposing secret fields."""
+    async with get_session(
+        label="bybit.credentials.owner",
+        timeout_seconds=6.0,
+    ) as session:
+        telegram_user_id = (
+            await session.execute(
+                select(User.telegram_user_id)
+                .join(
+                    BrokerConnection,
+                    BrokerConnection.user_id == User.id,
+                )
+                .where(
+                    User.id == int(user_id),
+                    BrokerConnection.user_id == int(user_id),
+                    BrokerConnection.connection_id == str(connection_id),
+                    BrokerConnection.platform == "bybit",
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+    if telegram_user_id is None:
+        return None
+    return await _credentials(
+        int(user_id),
+        int(telegram_user_id),
+        str(connection_id),
+    )
+
+
 async def _mark(
     row_id: int,
     *,
