@@ -1,0 +1,5 @@
+SignalRank staging all-role rollout: canonical read-only broker verification.
+Includes shared web + Telegram verification for owned MT4/MT5/Bybit connections.
+No order-placement path is added by verification; live-money execution remains separately gated.
+Alembic head remains 0045_mt5_credential_retirement.
+No secrets are stored in this marker.
