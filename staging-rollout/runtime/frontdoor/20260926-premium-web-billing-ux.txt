@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout for premium web and billing copy.
+Includes capability-aware plan/execution language and canonical payment lifecycle messages.
+No execution, risk, broker-routing, provider, or financial activation logic is changed.
+All staging live-money switches remain disabled.
+No secrets are stored in this marker.
