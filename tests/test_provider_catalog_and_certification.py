@@ -50,9 +50,41 @@ def test_static_certification_is_not_reported_as_live():
 
 
 def test_missing_key_blocks_live_keyed_provider(monkeypatch):
+    monkeypatch.setenv("FMP_ENABLED", "1")
     monkeypatch.delenv("FMP_API_KEY", raising=False)
     result = asyncio.run(certify_one(get_provider_spec("fmp"), live=True, timeout=1, limit=2))
     assert result.certification_status == CertificationStatus.BLOCKED_MISSING_CREDENTIAL.value
+
+
+def test_external_plan_providers_are_opt_in_even_when_keys_exist(monkeypatch):
+    monkeypatch.setenv("FMP_API_KEY", "present")
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "present")
+    monkeypatch.delenv("FMP_ENABLED", raising=False)
+    monkeypatch.delenv("ALPHAVANTAGE_ENABLED", raising=False)
+
+    fmp = get_provider_spec("fmp")
+    alpha = get_provider_spec("alphavantage")
+    assert fmp.configured() is True
+    assert alpha.configured() is True
+    assert fmp.enabled() is False
+    assert alpha.enabled() is False
+
+
+def test_oanda_and_fred_require_explicit_operator_enablement(monkeypatch):
+    monkeypatch.setenv("OANDA_API_KEY", "present")
+    monkeypatch.setenv("FRED_API_KEY", "present")
+    monkeypatch.delenv("OANDA_ENABLED", raising=False)
+    monkeypatch.delenv("FRED_ENABLED", raising=False)
+
+    assert get_provider_spec("oanda").configured() is True
+    assert get_provider_spec("oanda").enabled() is False
+    assert get_provider_spec("fred").configured() is True
+    assert get_provider_spec("fred").enabled() is False
+
+    monkeypatch.setenv("OANDA_ENABLED", "1")
+    monkeypatch.setenv("FRED_ENABLED", "1")
+    assert get_provider_spec("oanda").enabled() is True
+    assert get_provider_spec("fred").enabled() is True
 
 
 def test_disabled_provider_is_not_misreported_as_live():
