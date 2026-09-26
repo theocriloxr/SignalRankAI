@@ -73,6 +73,19 @@ def _market_candidates(symbol: str, asset: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(ordered))
 
 
+def _pair_candidate(symbol: str, asset: str) -> str:
+    raw = str(symbol or "").upper().replace("/", "").replace("_", "").replace("-", "")
+    # Community pair candles have broader historical coverage for BTC/USD than
+    # venue-specific USDT markets. This provider is historical/context-only, so
+    # USD aggregation is an honest fallback for USDT/USDC-labelled inputs.
+    quote = "usd"
+    if raw.endswith("EUR"):
+        quote = "eur"
+    elif raw.endswith("GBP"):
+        quote = "gbp"
+    return f"{asset.lower()}-{quote}"
+
+
 def _timestamp_ms(value: Any) -> int:
     if isinstance(value, (int, float)):
         numeric = int(value)
@@ -121,12 +134,33 @@ async def _async_get_candles(
                 "page_size": min(10000, max(2, int(limit or 200))),
                 "start_time": _lookback_start(interval, int(limit or 200)),
                 "end_time": datetime.now(timezone.utc).isoformat(),
+                "paging_from": "end",
             },
             headers=_headers(), timeout=timeout,
         )
         if isinstance(data, dict) and isinstance(data.get("data"), list) and data.get("data"):
             rows = list(data["data"])
             break
+
+    # The Community API may not expose a recent venue-specific market even when
+    # its aggregated pair history is available. Pair candles are an honest
+    # historical/context fallback and are never used as an execution quote.
+    if not rows:
+        pair = _pair_candidate(symbol, asset)
+        data = await async_http_get_json(
+            f"{base_url()}/timeseries/pair-candles",
+            name="coinmetrics",
+            params={
+                "pairs": pair,
+                "frequency": interval,
+                "page_size": min(10000, max(2, int(limit or 200))),
+                "paging_from": "end",
+            },
+            headers=_headers(), timeout=timeout,
+        )
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            rows = list(data.get("data") or [])
+
     if not rows:
         # Empty/unsupported market: avoid repeatedly hammering the public API.
         _EMPTY_CACHE[cache_key] = _time.monotonic() + _EMPTY_CACHE_TTL_SECONDS
