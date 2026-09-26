@@ -43,7 +43,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
 
     async def _do():
         resp = await client.get(
-            "https://api.bybit.com/v5/market/klines",
+            "https://api.bybit.com/v5/market/kline",
             params=params,
             timeout=request_timeout,
         )
