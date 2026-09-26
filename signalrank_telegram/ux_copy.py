@@ -182,6 +182,31 @@ def upgrade_message(
     )
 
 
+def subscription_renewed_message(tier: str) -> str:
+    plan = str(tier or "paid").strip().upper() or "PAID"
+    return (
+        f"✅ {plan} plan renewed.\n\n"
+        "Your provider-verified payment updated your plan entitlements and paid "
+        "access period. Billing never grants broker execution by itself. Any "
+        "connected-account execution still requires provider support, account "
+        "permission, reconciliation, hard risk controls, current market/quote "
+        "checks, and the global release safety gates.\n\n"
+        "Educational market intelligence only. Trading involves loss risk."
+    )
+
+
+def subscription_payment_failed_message() -> str:
+    return (
+        "⚠️ We could not confirm the recurring payment, so paid plan access was "
+        "removed and auto-renew was turned off.\n\n"
+        "No broker trade, account risk policy, or execution permission was changed "
+        "by this billing event. Open Plans and billing to review the account or "
+        "contact /support if the provider charge needs investigation.\n\n"
+        "Never send card details, passwords, OTPs, API keys, or broker credentials "
+        "in chat."
+    )
+
+
 def terms_accepted_message() -> str:
     return (
         "✅ <b>You're set up.</b>\n\n"
@@ -258,6 +283,8 @@ __all__ = [
     "start_message",
     "support_menu_message",
     "support_message",
+    "subscription_payment_failed_message",
+    "subscription_renewed_message",
     "terms_accepted_message",
     "upgrade_message",
     "waitlist_joined_message",

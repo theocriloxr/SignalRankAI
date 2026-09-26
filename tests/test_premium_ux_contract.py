@@ -12,6 +12,8 @@ from signalrank_telegram.ux_copy import (
     safe_error_message,
     start_message,
     support_message,
+    subscription_payment_failed_message,
+    subscription_renewed_message,
     terms_accepted_message,
     upgrade_message,
     waitlist_joined_message,
@@ -185,3 +187,51 @@ def test_runtime_handlers_use_canonical_copy_and_remove_stale_plan_claims() -> N
         "unlock analytics instantly",
     ):
         assert stale not in combined
+
+
+def test_web_and_payment_copy_share_capability_aware_execution_contract() -> None:
+    html = (ROOT / "web" / "platform_app" / "index.html").read_text(encoding="utf-8")
+    app_js = (ROOT / "web" / "platform_app" / "app.js").read_text(encoding="utf-8")
+    web_app = (ROOT / "web" / "app.py").read_text(encoding="utf-8")
+
+    for stale in (
+        "future execution connections",
+        "Auto execution (VIP)",
+        "Copy execution (VIP)",
+        "VIP EXECUTION",
+        "No VIP execution webhook configured.",
+        "Disable the VIP execution webhook?",
+        "This workspace is available on a higher SignalRankAI plan.",
+    ):
+        assert stale not in html + "\n" + app_js
+
+    for required in (
+        "supported connected-account workflows",
+        "it never grants execution by itself",
+        "Plans change access and limits; they do not enable broker execution or guarantee returns.",
+        "Tier eligibility is not execution permission",
+    ):
+        assert required in html
+
+    assert "Plan access never enables broker execution by itself." in app_js
+    assert "subscription_renewed_message(tier)" in web_app
+    assert "subscription_payment_failed_message()" in web_app
+    assert 'f"Your {tier.upper()} subscription has been renewed."' not in web_app
+    assert '"Payment failed. Your plan has been downgraded to FREE."' not in web_app
+
+
+def test_subscription_lifecycle_copy_never_implies_execution_or_guaranteed_returns() -> None:
+    renewed = subscription_renewed_message("vip").lower()
+    failed = subscription_payment_failed_message().lower()
+
+    assert "provider-verified payment" in renewed
+    assert "never grants broker execution by itself" in renewed
+    assert "hard risk controls" in renewed
+    assert "trading involves loss risk" in renewed
+
+    assert "paid plan access was removed" in failed
+    assert "no broker trade" in failed
+    assert "execution permission was changed" in failed
+    assert "/support" in failed
+    for secret_word in ("card details", "passwords", "otps", "api keys", "broker credentials"):
+        assert secret_word in failed

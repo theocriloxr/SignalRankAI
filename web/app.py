@@ -1033,7 +1033,8 @@ async def _handle_charge_success_recurring(payload: Dict[str, Any], persisted: O
             )
             await session.commit()
 
-        await _send_telegram_dm(telegram_user_id, f"Your {tier.upper()} subscription has been renewed.")
+        from signalrank_telegram.ux_copy import subscription_renewed_message
+        await _send_telegram_dm(telegram_user_id, subscription_renewed_message(tier))
         
     except Exception as e:
         logger.error(f"Error handling charge.success: {e}")
@@ -1102,7 +1103,8 @@ async def _handle_payment_failed(payload: Dict[str, Any]) -> None:
             user.auto_renew = False
             await session.commit()
 
-        await _send_telegram_dm(user.telegram_user_id, "Payment failed. Your plan has been downgraded to FREE.")
+        from signalrank_telegram.ux_copy import subscription_payment_failed_message
+        await _send_telegram_dm(user.telegram_user_id, subscription_payment_failed_message())
         
     except Exception as e:
         logger.error(f"Error handling payment failed: {e}")
