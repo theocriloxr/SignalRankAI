@@ -310,3 +310,52 @@ def test_telegram_multi_account_execution_uses_opaque_server_bound_selection() -
     assert "connection.execution_enabled is not True" in selection
     assert 'f"{_TOKEN_PREFIX}{opaque}"' in selection
     assert 'callback_data=f"broker_pick_{choice[\'connection_id\']}"' not in bot
+
+
+def test_broker_verification_is_canonical_read_only_and_cross_provider() -> None:
+    api = Path("web/platform_api.py").read_text(encoding="utf-8")
+    app = Path("web/platform_app/app.js").read_text(encoding="utf-8")
+    service = Path("services/broker_verification.py").read_text(encoding="utf-8")
+    commands = Path("signalrank_telegram/commands.py").read_text(encoding="utf-8")
+    bot = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+    registry = Path("requirements/command_registry.yaml").read_text(encoding="utf-8")
+
+    endpoint = api[
+        api.index('@router.post("/broker/connections/{connection_id}/verify")'):
+        api.index('@router.post("/broker/connections/{connection_id}/execution")'),
+    ]
+    assert "verify_broker_connection_read_only" in endpoint
+    assert "verify_platform_metatrader_connection" not in endpoint
+    assert 'int(user["id"])' in endpoint
+    assert '"read_only_verification": True' in endpoint
+    assert '"execution_enabled": False' in endpoint
+
+    assert "verifySupported=['metaapi','bybit']" in app
+    assert "await loadBroker()" in app
+
+    assert "BrokerConnection.user_id == int(user_id)" in service
+    assert "BrokerConnection.connection_id == str(connection_id)" in service
+    assert "verify_platform_metatrader_connection" in service
+    assert "_verify_bybit" in service
+    for forbidden in (
+        "execute_trade(",
+        "place_order(",
+        "create_order(",
+        "route_signal_to_broker(",
+        "route_signal_to_bybit(",
+        "route_signal_to_metatrader(",
+    ):
+        assert forbidden not in service
+
+    assert "async def verifybroker_command" in commands
+    verify_command = commands[
+        commands.index("async def verifybroker_command"):
+        commands.index("# /setlot"),
+    ]
+    assert "verify_broker_connection_read_only" in verify_command
+    assert "User.telegram_user_id == telegram_user_id" in verify_command
+    assert 'str(selected["connection_id"])' in verify_command
+    assert "No order was placed" in verify_command
+    assert "route_signal_to_" not in verify_command
+    assert 'CommandHandler("verifybroker"' in bot
+    assert '"canonical_name": "verifybroker"' in registry
