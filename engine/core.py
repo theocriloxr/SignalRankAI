@@ -665,6 +665,7 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                     "prediction": _meta.get("shadow_prediction"),
                     "agreement": _meta.get("shadow_agreement"),
                 },
+                decision_reason=reason,
             )
             _meta["decision_intelligence"] = decision_record
             _meta["decision_intelligence_validation"] = validate_decision_record(decision_record)
