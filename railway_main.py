@@ -2381,6 +2381,36 @@ async def _database_readiness_check() -> dict[str, object]:
                             EXISTS (
                                 SELECT 1 FROM information_schema.columns
                                 WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_format'
+                            ) AS broker_connections_credential_format,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_version'
+                            ) AS broker_connections_credential_version,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_key_id'
+                            ) AS broker_connections_credential_key_id,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_revision'
+                            ) AS broker_connections_credential_revision,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_rotated_at'
+                            ) AS broker_connections_credential_rotated_at,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
                                   AND table_name = 'broker_executions'
                                   AND column_name = 'connection_id'
                             ) AS broker_executions_connection_id,
@@ -2455,6 +2485,11 @@ async def _database_readiness_check() -> dict[str, object]:
             "signals.mfe_pct": bool(row.get("signals_mfe_pct")),
             "signals.mae_pct": bool(row.get("signals_mae_pct")),
             "signals.performance_version": bool(row.get("signals_performance_version")),
+            "broker_connections.credential_format": bool(row.get("broker_connections_credential_format")),
+            "broker_connections.credential_version": bool(row.get("broker_connections_credential_version")),
+            "broker_connections.credential_key_id": bool(row.get("broker_connections_credential_key_id")),
+            "broker_connections.credential_revision": bool(row.get("broker_connections_credential_revision")),
+            "broker_connections.credential_rotated_at": bool(row.get("broker_connections_credential_rotated_at")),
             "broker_executions.connection_id": bool(row.get("broker_executions_connection_id")),
             "mt5_executions.connection_id": bool(row.get("mt5_executions_connection_id")),
         }
