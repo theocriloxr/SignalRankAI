@@ -13,7 +13,7 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0044_broker_credential_envelope"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0045_mt5_credential_retirement"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
@@ -31,6 +31,16 @@ def test_web_signup_migration_is_single_head() -> None:
     account_policy = _source("db/migrations/versions/0043_account_execution_policy.py")
     assert 'revision = "0043_account_execution_policy"' in account_policy
     assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
+    credential_envelope = _source(
+        "db/migrations/versions/0044_broker_credential_envelope.py"
+    )
+    assert 'revision = "0044_broker_credential_envelope"' in credential_envelope
+    assert 'down_revision = "0043_account_execution_policy"' in credential_envelope
+    credential_retirement = _source(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    )
+    assert 'revision = "0045_mt5_credential_retirement"' in credential_retirement
+    assert 'down_revision = "0044_broker_credential_envelope"' in credential_retirement
 
 
 def test_direct_signup_accepts_acquisition_and_referral_context() -> None:
