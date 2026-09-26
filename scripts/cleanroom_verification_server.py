@@ -36,6 +36,7 @@ _TESTS = [
     "tests/test_auth_fail_closed_boundaries.py",
     "tests/test_blueprint_certification_safety.py",
     "tests/test_quiescent_role_certification.py",
+    "tests/test_observability_operations_contract.py",
     "tests/test_ml_champion_challenger_governance.py",
     "tests/test_ml_registry.py",
     "tests/test_adaptive_dataset_and_wfo.py",
