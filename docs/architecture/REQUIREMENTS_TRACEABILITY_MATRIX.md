@@ -72,6 +72,7 @@ infrastructure, elapsed runtime, provider entitlements, or a legal/licensing dec
 | SR-SCALE-001 | SLO registry + error budgets + degradation | UNIT_VERIFIED | `core/slo_registry.py` | `test_v20_slo_registry.py` | — |
 | SR-SCALE-002 | Bounded queues / backpressure / DLQ | UNIT_VERIFIED | `core/redis_streams.py`, `core/transactional_outbox.py` | queue tests | — |
 | SR-SCALE-003 | 100k-user / 20k-concurrent representative infrastructure certification | BLOCKED_EXTERNAL | `scripts/load_certification.py`, `requirements/scale_profiles.yaml`, SLO/queue/role architecture | `tests/test_load_certification.py` | Harness complete; representative distributed infrastructure run + runtime metrics/soak evidence required before any capacity claim |
+| SR-OBS-010 | Canonical SLO metrics have operational dashboards, alert thresholds, explicit owners, automatic degradation actions and incident runbook coverage | INTEGRATION_VERIFIED | `core/slo_registry.py`, `core/telemetry.py`, `observability/slo_operations.py`, Prometheus/Grafana artifacts | `tests/test_observability_operations_contract.py` + clean-room gate | Clean-room `d37b8c8a...`: 0045/schema/provenance PASS; 368 targeted tests PASS |
 
 ## Notifications (§23) and trading (§14–§15, §18)
 
