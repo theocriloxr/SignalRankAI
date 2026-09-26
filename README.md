@@ -52,7 +52,7 @@ python -m scripts.wfo_run --input-dir ./raw_orderbooks --assets BTCUSDT --timefr
 - Web/PWA: `/app`
 - Unified API: `/api/v1/platform`
 - Mobile source: `mobile/`
-- Current migration head: `0043_account_execution_policy`
+- Current migration head: `0044_broker_credential_envelope`
 - Telegram bridge: `/app`, `/login_code`, `/link`, `/devices`, `/security`
 - Account flows: email verification, magic login, password reset and TOTP MFA
 - Product APIs: portfolio, performance, server-priced canonical billing, alerts, support and organizations
@@ -67,7 +67,7 @@ Configure migrations on exactly one service.
 ## August 2026 staging database remediation
 
 For a staging deployment that reports `0034_production_integrity` while this
-release expects `0043_account_execution_policy`, use the guarded terminal
+release expects `0044_broker_credential_envelope`, use the guarded terminal
 workflow documented in `docs/STAGING_TERMINAL_COMPLETION.md`:
 
 ```powershell
