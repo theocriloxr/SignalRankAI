@@ -28,6 +28,17 @@ from .utils import tier_rank, _effective_tier, _public_guard
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
 from .command_resilience import safe_command_error
+from .ux_copy import (
+	SUPPORT_URL,
+	help_page_message,
+	main_menu_message,
+	pricing_message,
+	rate_limit_message,
+	support_menu_message,
+	terms_accepted_message,
+	upgrade_message,
+	waitlist_joined_message,
+)
 
 TIER_RANKS: dict[str, int] = {
 	tier: canonical_tier_rank(tier)
@@ -73,7 +84,7 @@ def require_tier(min_tier):
 			except Exception:
 				limited = False
 			if limited:
-				await update.message.reply_text("Rate limit exceeded. Please wait.")
+				await update.message.reply_text(rate_limit_message())
 				return
 			tier: str = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
@@ -329,20 +340,17 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 	free_limit = get_entitlements("FREE").daily_signal_limit
 	premium_limit = get_entitlements("PREMIUM").daily_signal_limit
 	vip_limit = get_entitlements("VIP").daily_signal_limit
-	msg = (
-		"🚀 SignalRankAI — Plans Built Around Trader Value\n\n"
-		"🆓 Free — proof feed + limited educational signals\n"
-		f"• Up to {free_limit}/day, delayed/limited detail, upgrade prompts\n\n"
-		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
-		f"• Up to {premium_limit}/day, real-time Entry/SL/TP, /signals, /outcome, performance stats, multi-asset coverage\n\n"
-		f"{vip_line}\n"
-		f"• Up to {vip_limit}/day, stricter high-conviction stream, priority delivery, TP3 runner, webhook/API, MT5-ready controls, advanced profile filters\n\n"
-		"Why upgrade? Paid tiers get cleaner timing, deeper signal context, more markets, tracked outcomes, and priority delivery.\n\n"
-		"⚠️ Educational only. Trading involves risk. No guaranteed returns."
+	msg = pricing_message(
+		free_limit=int(free_limit),
+		premium_limit=int(premium_limit),
+		vip_limit=int(vip_limit),
+		premium_month_price=prem_month_price,
+		premium_quarter_price=prem_qtr_price,
+		premium_year_price=prem_year_price,
+		vip_line=vip_line,
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=False)
 	return msg, keyboard
-
 
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
@@ -350,26 +358,14 @@ async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
-	msg = (
-		"🚀 <b>Upgrade SignalRankAI</b>\n\n"
-		"The free tier proves the system. Paid tiers are for traders who want cleaner timing, more context, and better workflow.\n\n"
-		f"⭐ <b>Premium</b> — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
-		"• More daily real-time signals\n"
-		"• Full Entry / Stop Loss / TP levels\n"
-		"• /signals, /outcome, /performance, portfolio-style recap\n"
-		"• Multi-asset feed: crypto, FX, stocks, commodities\n\n"
-		f"{vip_line}\n"
-		"• Priority delivery when the engine finds a setup\n"
-		"• Stricter quality stream and TP3 runner\n"
-		"• Webhook/API and MT5-ready controls\n"
-		"• Advanced profile filters: scalp, day, swing, position\n\n"
-		"Best practice: start Premium, upgrade to VIP when you need faster workflow and automation-grade alerts.\n\n"
-		"⚠️ <i>No guaranteed profits. Educational only. Trade responsibly.</i>\n\n"
-		"Tap a plan below to subscribe via Paystack."
+	msg = upgrade_message(
+		premium_month_price=prem_month_price,
+		premium_quarter_price=prem_qtr_price,
+		premium_year_price=prem_year_price,
+		vip_line=vip_line,
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
 	return msg, keyboard
-
 
 def _build_main_menu_keyboard(user_id: int):
 	try:
@@ -398,11 +394,7 @@ def _build_main_menu_keyboard(user_id: int):
 
 
 async def _compose_main_menu_message(user_id: int) -> tuple[str, object | None]:
-	msg = (
-		"👋 Welcome to SignalRankAI.\n"
-		"Pick a category below to continue."
-	)
-	return msg, _build_main_menu_keyboard(int(user_id))
+	return main_menu_message(), _build_main_menu_keyboard(int(user_id))
 
 
 def _build_section_back_keyboard(*, include_upgrade: bool = True):
@@ -495,20 +487,12 @@ async def _compose_performance_menu_message(user_id: int) -> tuple[str, object |
 
 async def _compose_support_menu_message(user_id: int) -> tuple[str, object | None]:
 	_ = user_id
-	msg = (
-		"🎧 Support Menu\n\n"
-		"Need help with billing, subscriptions, bot access, or trade delivery?\n\n"
-		"Support contact: @theocrilox\n"
-		"Helpful commands:\n"
-		"• /faq\n"
-		"• /policy\n"
-		"• /refunds"
-	)
+	msg = support_menu_message()
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("💬 Contact Support", url="https://t.me/theocrilox"),
+				InlineKeyboardButton("💬 Contact Support", url=SUPPORT_URL),
 			],
 			[
 				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
@@ -3174,7 +3158,7 @@ async def _public_guard(update: Update) -> bool:
 			limit=int(PUBLIC_COMMAND_RATE_LIMIT["limit"]),
 			window_seconds=int(PUBLIC_COMMAND_RATE_LIMIT["window_seconds"]),
 		):
-			await update.message.reply_text("Rate limit exceeded. Please wait.")
+			await update.message.reply_text(rate_limit_message())
 			return True
 	except Exception:
 		pass
@@ -3265,21 +3249,22 @@ async def _compose_help_page(user_id: int, page: int) -> tuple[str, object | Non
 	page_info = page_defs[int(page)]
 	locked = _help_page_is_locked(int(user_id), int(page))
 	commands = page_info.get("commands") or []
-	lines = [
-		f"{page_info['title']} — Page {page}/{authorized_pages[-1]}",
-		"",
-	]
-	for cmd_name, desc in commands:
-		prefix = "🔒 " if locked and int(page) in {2, 3} else "• "
-		lines.append(f"{prefix}{cmd_name} — {desc}")
+	required_tier = str(page_info.get("required_tier") or "FREE")
 	footer = str(page_info.get("footer") or "")
 	if locked and int(page) == 3 and tier_rank(_effective_tier(int(user_id))) >= tier_rank("PREMIUM"):
-		footer = "💎 Upgrade to VIP to unlock these features."
-	if footer:
-		lines.extend(["", footer])
+		footer = "VIP adds higher limits, priority workflow and advanced controls. Safety gates still apply."
+	text = help_page_message(
+		title=str(page_info.get("title") or "SignalRankAI Help"),
+		page=int(page),
+		last_page=int(authorized_pages[-1]),
+		tier=str(_effective_tier(int(user_id))),
+		required_tier=required_tier,
+		commands=commands,
+		locked=bool(locked),
+		footer=footer,
+	)
 	keyboard = _build_help_pagination_keyboard(int(user_id), int(page))
-	return "\n".join(lines), keyboard
-
+	return text, keyboard
 
 async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	query = update.callback_query
@@ -4878,11 +4863,7 @@ async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAU
 						from datetime import datetime as _dt
 						session.add(VIPWaitlist(user_id=u.id, joined_at=now_utc_naive()))
 						await session.commit()
-						await query.edit_message_text(
-							"✅ You've been added to the VIP waitlist!\n\n"
-							"We'll DM you within 24 hours when a seat opens. "
-							"You'll get a personal payment link to complete your upgrade.",
-						)
+						await query.edit_message_text(waitlist_joined_message())
 						return
 					else:
 						await query.answer("You're already on the waitlist. We'll notify you when a seat opens! 🕐", show_alert=True)
@@ -4918,15 +4899,7 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 		await paper_trading_service.ensure_account(int(user_id))
 	except Exception as exc:
 		logger.warning("[terms] paper account initialization deferred user=%s err=%s", user_id, exc)
-	welcome = (
-		"✅ <b>Welcome to SignalRankAI!</b>\n\n"
-		"You're all set. Here's what you get:\n"
-		"• Risk-managed signals filtered for high-probability setups\n"
-		"• Outcome tracking - no hype, no guarantees\n"
-		"• Real-time market coverage: Crypto, Forex, Stocks, Commodities\n\n"
-		"Use /pricing to see plans, or /upgrade to subscribe.\n"
-		"Use /signals to see the latest setups."
-	)
+	welcome = terms_accepted_message()
 	try:
 		await query.edit_message_text(welcome, parse_mode="HTML")
 	except Exception:
@@ -5543,7 +5516,7 @@ async def start_command(update, context):
 			limit=int(START_COMMAND_RATE_LIMIT["limit"]),
 			window_seconds=int(START_COMMAND_RATE_LIMIT["window_seconds"]),
 		):
-			await update.message.reply_text("Rate limit exceeded. Please wait.")
+			await update.message.reply_text(rate_limit_message())
 			return
 	except Exception:
 		pass
@@ -7986,40 +7959,11 @@ async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Display a tier comparison table and upgrade links."""
+	"""Display the same canonical plan comparison used by /pricing."""
 	if update.effective_user is None or update.message is None:
 		return
-
-	premium_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
-	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
-	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "0") or 0)
-	vip_capacity_label = "open enrollment" if vip_limit <= 0 else f"only {vip_limit} seats"
-
-	msg = (
-		"<b>📊 SignalRankAI Subscription Tiers</b>\n\n"
-		"<b>🆓 FREE</b>\n"
-		"  • Delayed signals (top 3/day)\n"
-		"  • Basic win-rate stats\n"
-		"  • Community access\n"
-		"  • No MT5 execution\n\n"
-		f"<b>💎 PREMIUM — ₦{premium_price:,}/month</b>\n"
-		"  • All signals in real time\n"
-		"  • Up to <b>3 automated MT5 executions/day</b>\n"
-		"  • Fixed lot size (set with /setlot)\n"
-		"  • TP2 targeting only\n"
-		"  • Personal win-rate dashboard\n\n"
-		f"<b>👑 VIP — ₦{vip_price:,}/month</b> ({vip_capacity_label})\n"
-		"  • Everything in PREMIUM, plus:\n"
-		"  • <b>Unlimited</b> automated executions\n"
-		"  • Risk-based lot sizing (/setrisk)\n"
-		"  • Multi-stage TPs: TP1 → SL to entry → TP2 → TP3\n"
-		"  • FOMO broadcast priority\n"
-		"  • Friday leaderboard inclusion\n"
-		"  • Direct support line\n\n"
-		"👉 Use /upgrade to subscribe"
-	)
-	await update.message.reply_text(msg, parse_mode="HTML")
-
+	msg, keyboard = await _compose_pricing_message(int(update.effective_user.id))
+	await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # /mystats  — Personal performance stats
