@@ -284,7 +284,8 @@ async function loadBroker(){
         const exec=x.execution_enabled?'Execution allowed':'Execution off';
         const defaultTag=x.is_default?'Default · ':'';
         const account=x.account_ref_masked||'Account hidden';
-        const verifyButton=x.connector==='metaapi'?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
+        const verifySupported=['metaapi','bybit'].includes(String(x.connector||'').toLowerCase())||String(x.platform||'').toLowerCase()==='bybit';
+        const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
         const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
         const perfParts=[
           accountPerf.executions!==undefined?`${accountPerf.executions} executions`:'',
@@ -331,8 +332,12 @@ async function loadBroker(){
       const action=button.dataset.action;
       try{
         if(action==='verify'){
-          await request('/broker/connections/'+encodeURIComponent(connectionId)+'/verify',{method:'POST',body:'{}'});
-          toast('Broker connection verified');
+          const verified=await request('/broker/connections/'+encodeURIComponent(connectionId)+'/verify',{method:'POST',body:'{}'});
+          const provider=String(verified.provider||connection.platform||connection.connector||'broker').toUpperCase();
+          const environment=String(verified.environment||connection.environment||'').toUpperCase();
+          toast(provider+' connection verified'+(environment?' · '+environment:''));
+          await loadBroker();
+          return;
         }else if(action==='default'){
           await request('/broker/connections/'+encodeURIComponent(connectionId)+'/default',{method:'POST',body:JSON.stringify({confirm:true})});
           toast('Default broker route updated');
