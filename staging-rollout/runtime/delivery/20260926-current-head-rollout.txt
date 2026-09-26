@@ -1,0 +1,5 @@
+SignalRank staging delivery rollout to current certified blueprint head.
+Purpose: align this decomposed runtime role with the current Alembic 0045 hardening, observability, and premium UX contract.
+All staging live-money execution and payout switches remain hard-disabled.
+Production is not part of this rollout.
+No secrets are stored in this marker.
