@@ -27,6 +27,7 @@ _TESTS = [
     "tests/test_multi_account_prop_policy.py",
     "tests/test_trading_account_ledger.py",
     "tests/test_broker_account_bola_idor.py",
+    "tests/test_broker_credential_envelope.py",
     "tests/test_broker_execution_p0.py",
     "tests/test_canonical_broker_entrypoints.py",
     "tests/test_auth_fail_closed_boundaries.py",
@@ -64,7 +65,7 @@ _STEPS: list[tuple[str, list[str]]] = [
     ),
     (
         "alembic_release_chain",
-        [sys.executable, "scripts/verify_0043_release_chain.py"],
+        [sys.executable, "scripts/verify_0044_release_chain.py"],
     ),
     (
         "schema_audit",
