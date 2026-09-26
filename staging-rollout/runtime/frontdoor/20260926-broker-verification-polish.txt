@@ -1,0 +1,6 @@
+SignalRank staging frontdoor-only rollout: broker verification polish.
+Publishes /verifybroker in Telegram's canonical command catalogue.
+Web verification now reports no execution-permission change and no order placement.
+No engine, delivery, analytics, schema, or live-money activation change.
+Alembic head remains 0045_mt5_credential_retirement.
+No secrets are stored in this marker.
