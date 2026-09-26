@@ -827,6 +827,13 @@ class BrokerConnection(Base):
     environment: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     auth_mode: Mapped[str] = mapped_column(String(32), default="existing", nullable=False)
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text)
+    credential_format: Mapped[str] = mapped_column(
+        String(32), default="none", nullable=False
+    )
+    credential_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    credential_key_id: Mapped[Optional[str]] = mapped_column(String(64))
+    credential_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    credential_rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     server: Mapped[Optional[str]] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True, nullable=False)
     permissions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
