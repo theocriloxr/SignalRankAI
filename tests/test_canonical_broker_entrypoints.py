@@ -350,7 +350,7 @@ def test_broker_verification_is_canonical_read_only_and_cross_provider() -> None
     assert "async def verifybroker_command" in commands
     verify_command = commands[
         commands.index("async def verifybroker_command"):
-        commands.index("# /setlot"),
+        commands.index("# /setlot")
     ]
     assert "verify_broker_connection_read_only" in verify_command
     assert "User.telegram_user_id == telegram_user_id" in verify_command
