@@ -17,7 +17,6 @@ from sqlalchemy.exc import IntegrityError
 from db.models import (
     BrokerExecution,
     MT5Execution,
-    RuntimeState,
     SignalDelivery,
     TradingAccountPolicyRecord,
     User,
@@ -30,7 +29,6 @@ from services.bybit_client import (
     BybitError,
     BybitV5Client,
 )
-from services.security import decrypt_secret
 from services.execution_quota import release_user_execution_quota, reserve_user_execution_quota
 from services.broker_connections import account_classification, resolve_execution_connection
 from utils.timeutils import now_utc_naive
@@ -43,10 +41,6 @@ class BybitRouteResult:
     order_id: str | None = None
     status: str = "blocked"
     error: str | None = None
-
-
-def _state_key(telegram_user_id: int) -> str:
-    return f"broker_exchange:{int(telegram_user_id)}:bybit"
 
 
 def _tp1(signal: Mapping[str, Any]) -> float:
@@ -228,12 +222,21 @@ async def _route_signal_to_bybit_for_identity(
         if bybit_open_count + mt5_open_count >= max_positions:
             return BybitRouteResult(False, "User profile maximum concurrent positions reached", error="profile_max_concurrent_positions")
         try:
-            decoded = decrypt_secret(str(connection.secret_encrypted or ""))
-            value = json.loads(decoded) if decoded else {}
-            if not isinstance(value, dict):
-                raise ValueError("invalid credential envelope")
-        except (ValueError, TypeError):
-            return BybitRouteResult(False, "Broker credentials unavailable", error="broker_credentials_invalid")
+            from services.broker_credentials import (
+                BrokerCredentialError,
+                decrypt_connection_credentials,
+            )
+
+            value, _credential_crypto = decrypt_connection_credentials(
+                connection,
+                allow_legacy=True,
+            )
+        except BrokerCredentialError:
+            return BybitRouteResult(
+                False,
+                "Broker credentials unavailable",
+                error="broker_credentials_invalid",
+            )
         delivery = (await session.execute(
             select(SignalDelivery).where(
                 SignalDelivery.user_id == int(user.id),
@@ -242,10 +245,8 @@ async def _route_signal_to_bybit_for_identity(
             )
         )).scalar_one_or_none()
 
-    key_enc = str(value.get("api_key_enc") or "")
-    secret_enc = str(value.get("api_secret_enc") or "")
-    api_key = decrypt_secret(key_enc) if key_enc else None
-    api_secret = decrypt_secret(secret_enc) if secret_enc else None
+    api_key = str(value.get("api_key") or "").strip()
+    api_secret = str(value.get("api_secret") or "").strip()
     sandbox = value.get("sandbox")
     if type(sandbox) is not bool or (
         (account_classification(connection) == "DEMO") != sandbox
