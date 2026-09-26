@@ -38,6 +38,8 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_ml_learning_runtime_v135.py::test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait \
       tests/test_ml_learning_runtime_v135.py::test_ml_candle_hydration_is_bounded_to_training_window \
       tests/test_ml_learning_runtime_v135.py::test_ml_training_is_nonblocking_and_multisource \
+      tests/test_ml_learning_runtime_v135.py::test_adaptive_and_shadow_writes_are_durable_background_work \
+      tests/test_ml_learning_runtime_v135.py::test_adaptive_candle_pressure_requeues_full_batch \
       tests/test_railway_runtime_incident_fixes.py::test_signal_insert_reuses_the_exact_active_unique_index_bucket \
       tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
