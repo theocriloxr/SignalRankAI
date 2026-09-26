@@ -6400,7 +6400,7 @@ def run_bot() -> None:
 
     # MT5 commands (Premium+)
     from .commands import (
-        mt5_link_command, mt5_status_command,
+        mt5_link_command, mt5_status_command, verifybroker_command,
         setlot_command, setrisk_command, setwebhook_command, drawdown_command, tiers_command,
         mystats_command, referral_command, execution_command, build_connect_broker_conversation,
         cancel_command,
@@ -6411,6 +6411,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mt5link", _audit_handler("mt5link", mt5_link_command)))
     application.add_handler(CommandHandler("mt5", _audit_handler("mt5", mt5_link_command)))
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
+    application.add_handler(CommandHandler("verifybroker", _audit_handler("verifybroker", verifybroker_command)))
     application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
     application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
     application.add_handler(CommandHandler("setwebhook", _audit_handler("setwebhook", setwebhook_command)))
