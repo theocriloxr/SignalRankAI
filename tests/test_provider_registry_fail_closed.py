@@ -60,3 +60,26 @@ def test_registry_uses_asset_capability_not_generic_order(monkeypatch):
     asyncio.run(registry.initialize())
     # yfinance is the only configured stock source in the catalogue here.
     assert asyncio.run(registry.get_provider("AAPL", "equity")) == "yfinance"
+
+
+def test_optional_keyed_fallbacks_require_explicit_enable_flags(monkeypatch):
+    from data import connector_registry
+
+    monkeypatch.setenv("FMP_API_KEY", "present")
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "present")
+    monkeypatch.setenv("OANDA_API_KEY", "present")
+    monkeypatch.delenv("FMP_ENABLED", raising=False)
+    monkeypatch.delenv("ALPHAVANTAGE_ENABLED", raising=False)
+    monkeypatch.delenv("OANDA_ENABLED", raising=False)
+
+    assert connector_registry._provider_configured("fmp_connector") is False
+    assert connector_registry._provider_configured("alphavantage_connector") is False
+    assert connector_registry._provider_configured("oanda_connector") is False
+
+    monkeypatch.setenv("FMP_ENABLED", "1")
+    monkeypatch.setenv("ALPHAVANTAGE_ENABLED", "1")
+    monkeypatch.setenv("OANDA_ENABLED", "1")
+
+    assert connector_registry._provider_configured("fmp_connector") is True
+    assert connector_registry._provider_configured("alphavantage_connector") is True
+    assert connector_registry._provider_configured("oanda_connector") is True
