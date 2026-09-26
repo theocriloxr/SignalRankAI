@@ -93,6 +93,7 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_release_source_and_domain_bridge.py \
       tests/test_production_operations_package.py \
       tests/test_release_provenance.py \
+      tests/test_traceability_completion_boundary.py \
     && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
     && python scripts/production_readiness_check.py
 
