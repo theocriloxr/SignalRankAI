@@ -897,8 +897,45 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
 # ALPHA VANTAGE - Traditional assets (stocks, FX)
 # ============================================================================
 
+_ALPHAVANTAGE_CERTIFICATION_HINT: Dict[str, str] | None = None
+
+
+def _set_alphavantage_certification_hint(status: str | None, reason: str = "") -> None:
+    global _ALPHAVANTAGE_CERTIFICATION_HINT
+    _ALPHAVANTAGE_CERTIFICATION_HINT = (
+        {"status": str(status), "reason": str(reason).replace("\n", " ")[:500]}
+        if status else None
+    )
+
+
+def get_alphavantage_certification_hint() -> Dict[str, str] | None:
+    return (
+        dict(_ALPHAVANTAGE_CERTIFICATION_HINT)
+        if _ALPHAVANTAGE_CERTIFICATION_HINT
+        else None
+    )
+
+
+def _classify_alphavantage_block(status_code: int, detail: str) -> tuple[str | None, str]:
+    text = str(detail or "").strip().replace("\n", " ")[:500]
+    lowered = text.lower()
+    if status_code == 429 or "rate limit" in lowered or "call frequency" in lowered:
+        return "BLOCKED_RATE_LIMIT", text or f"HTTP {status_code}"
+    if any(token in lowered for token in ("premium", "subscribe", "subscription", "higher api call volume")):
+        return "BLOCKED_PAID_PLAN", text or f"HTTP {status_code}"
+    if status_code in {401, 403} or any(
+        token in lowered
+        for token in ("invalid api key", "invalid apikey", "not authorized", "unauthorized")
+    ):
+        return "BLOCKED_ACCOUNT_APPROVAL", text or f"HTTP {status_code}"
+    if any(token in lowered for token in ("region", "country", "not available in your location")):
+        return "BLOCKED_REGION", text or f"HTTP {status_code}"
+    return None, text
+
+
 def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
     """Fetch OHLCV from AlphaVantage."""
+    _set_alphavantage_certification_hint(None)
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
     if not api_key or _is_cooldown_active("alphavantage"):
         return []
@@ -926,11 +963,24 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
 
         resp = requests.get("https://www.alphavantage.co/query", params=params, timeout=20)
         if not resp.ok:
+            status, reason = _classify_alphavantage_block(
+                int(resp.status_code), getattr(resp, "text", "")[:500]
+            )
+            _set_alphavantage_certification_hint(status, reason)
             return []
         data = resp.json()
         # Find the time series key
         ts_key = next((k for k in data if "Time Series" in k), None)
         if not ts_key:
+            detail = str(
+                data.get("Information")
+                or data.get("Note")
+                or data.get("Error Message")
+                or data.get("message")
+                or ""
+            )
+            status, reason = _classify_alphavantage_block(int(resp.status_code), detail)
+            _set_alphavantage_certification_hint(status, reason)
             if "Note" in data or "Information" in data:
                 _set_cooldown("alphavantage", 60.0)
             return []
