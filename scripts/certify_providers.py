@@ -72,6 +72,24 @@ def _looks_like_network_failure(exc: BaseException | str) -> bool:
     )
 
 
+def _provider_certification_hint(module: Any) -> dict[str, str] | None:
+    hint_fn = getattr(module, "certification_hint", None)
+    if not callable(hint_fn):
+        return None
+    try:
+        hint = hint_fn() or {}
+    except Exception:
+        return None
+    if not isinstance(hint, dict):
+        return None
+    status = str(hint.get("status") or "").strip()
+    reason = str(hint.get("reason") or "").strip()
+    allowed = {item.value for item in CertificationStatus}
+    if status not in allowed:
+        return None
+    return {"status": status, "reason": reason[:500]}
+
+
 async def _call_connector(spec: ProviderSpec, *, timeout: float, limit: int) -> tuple[list[dict[str, Any]], float]:
     connector = spec.resolve_connector()
     if connector is None:
@@ -208,6 +226,15 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
         result.candle_count = len(candles)
         result.validation = validate_candles(candles, minimum=min(2, limit))
         if not result.validation["valid"]:
+            hint = _provider_certification_hint(module)
+            if hint:
+                result.certification_status = hint["status"]
+                result.error = hint["reason"] or "; ".join(result.validation["errors"][:8])
+                result.validation = {
+                    **dict(result.validation or {}),
+                    "provider_hint": hint,
+                }
+                return result
             result.certification_status = CertificationStatus.FAILED.value
             result.error = "; ".join(result.validation["errors"][:8])
             return result
