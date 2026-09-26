@@ -103,5 +103,125 @@ class TestModelRegistry(unittest.TestCase):
         self.assertIn("version", metadata)
 
 
+
+def test_training_dataset_version_is_deterministic_and_tamper_evident():
+    import pandas as pd
+
+    from ml.model_registry import compute_training_dataset_version
+
+    features = pd.DataFrame(
+        {
+            "score": [0.5, 0.7, 0.9],
+            "rr": [1.5, 2.0, 2.5],
+        }
+    )
+    labels = pd.Series([0, 1, 1])
+    timestamps = pd.to_datetime(
+        ["2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z", "2026-09-01T02:00:00Z"]
+    )
+
+    first = compute_training_dataset_version(features, labels, timestamps)
+    second = compute_training_dataset_version(
+        features.copy(), labels.copy(), timestamps.copy()
+    )
+    assert first == second
+    assert first.startswith("sha256:")
+    assert len(first) == 71
+
+    changed_label = labels.copy()
+    changed_label.iloc[0] = 1
+    assert (
+        compute_training_dataset_version(features, changed_label, timestamps)
+        != first
+    )
+
+    reordered = features.iloc[::-1].reset_index(drop=True)
+    assert (
+        compute_training_dataset_version(
+            reordered,
+            labels.iloc[::-1].reset_index(drop=True),
+            timestamps[::-1],
+        )
+        != first
+    )
+
+
+def _write_lineage_champion(path, raw: bytes = b"champion-model") -> str:
+    import base64
+    import hashlib
+
+    payload = {
+        "feature_cols": ["score", "rr"],
+        "model_bytes_b64": base64.b64encode(raw).decode("ascii"),
+        "artifact_hash_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return payload["artifact_hash_sha256"]
+
+
+def test_promotion_lineage_allows_first_champion_with_dataset_and_run(tmp_path):
+    from ml.model_registry import evaluate_promotion_lineage
+
+    decision = evaluate_promotion_lineage(
+        dataset_version="sha256:" + "a" * 64,
+        training_run_id="ml-run-1",
+        parent_model_hash_sha256="",
+        current_champion_path=tmp_path / "missing.json",
+    )
+    assert decision.eligible is True
+    assert decision.reasons == ()
+
+
+def test_promotion_lineage_requires_exact_current_champion_parent(tmp_path):
+    from ml.model_registry import evaluate_promotion_lineage
+
+    champion = tmp_path / "model.json"
+    champion_hash = _write_lineage_champion(champion)
+
+    good = evaluate_promotion_lineage(
+        dataset_version="sha256:" + "b" * 64,
+        training_run_id="ml-run-2",
+        parent_model_hash_sha256=champion_hash,
+        current_champion_path=champion,
+    )
+    assert good.eligible is True
+    assert good.current_champion_hash_sha256 == champion_hash
+
+    stale = evaluate_promotion_lineage(
+        dataset_version="sha256:" + "b" * 64,
+        training_run_id="ml-run-2",
+        parent_model_hash_sha256="0" * 64,
+        current_champion_path=champion,
+    )
+    assert stale.eligible is False
+    assert "parent_model_hash_changed" in stale.reasons
+
+
+def test_promotion_lineage_rejects_missing_run_or_dataset(tmp_path):
+    from ml.model_registry import evaluate_promotion_lineage
+
+    decision = evaluate_promotion_lineage(
+        dataset_version="",
+        training_run_id="",
+        parent_model_hash_sha256="",
+        current_champion_path=tmp_path / "missing.json",
+    )
+    assert decision.eligible is False
+    assert "dataset_version_missing_or_invalid" in decision.reasons
+    assert "training_run_id_missing" in decision.reasons
+
+
+def test_serving_trainer_applies_lineage_gate_before_primary_selection():
+    source = Path("ml/train_model.py").read_text(encoding="utf-8")
+    fingerprint = source.index("compute_training_dataset_version")
+    gate = source.index("evaluate_promotion_lineage")
+    primary_selection = source.index(
+        "target_path = primary_path if promotion_eligible else candidate_path"
+    )
+    assert fingerprint < gate < primary_selection
+    assert '"dataset_version": dataset_version' in source
+    assert '"parent_model_hash_sha256": parent_model_hash_sha256' in source
+
+
 if __name__ == "__main__":
     unittest.main()
