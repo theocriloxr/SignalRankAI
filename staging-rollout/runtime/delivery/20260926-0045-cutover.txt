@@ -1,0 +1,4 @@
+SignalRank staging delivery/outcome worker 0045 credential-retirement cutover.
+Purpose: redeploy RUN_MODE=delivery after staging DB migration plus analytics/engine validation on 0045.
+All live-money execution and payout paths remain hard-disabled.
+No secrets are stored in this marker.
