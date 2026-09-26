@@ -65,7 +65,7 @@ _STEPS: list[tuple[str, list[str]]] = [
     ),
     (
         "alembic_release_chain",
-        [sys.executable, "scripts/verify_0044_release_chain.py"],
+        [sys.executable, "scripts/verify_0045_release_chain.py"],
     ),
     (
         "schema_audit",
