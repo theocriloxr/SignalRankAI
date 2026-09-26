@@ -71,7 +71,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     class _Mappings:
         def one(self):
             return {
-                "deployed_revision": "0044_broker_credential_envelope",
+                "deployed_revision": "0045_mt5_credential_retirement",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -91,6 +91,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "broker_connections_credential_key_id": True,
                 "broker_connections_credential_revision": True,
                 "broker_connections_credential_rotated_at": True,
+                "mt5_credentials_password_nullable": True,
                 "broker_executions_connection_id": True,
                 "mt5_executions_connection_id": True,
                 "trading_account_ledger_immutable": True,
@@ -123,7 +124,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     result = await railway_main._database_readiness_check()
 
     assert result["ok"] is True
-    assert result["revision"] == "0044_broker_credential_envelope"
+    assert result["revision"] == "0045_mt5_credential_retirement"
     assert result["probe_timeout_seconds"] == 8.0
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"
@@ -134,4 +135,6 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     assert "broker_execution_decisions" in captured["statement"]
     assert "credential_format" in captured["statement"]
     assert "credential_revision" in captured["statement"]
+    assert "mt5_credentials" in captured["statement"]
+    assert "is_nullable" in captured["statement"]
     assert "trg_trading_account_ledger_immutable" in captured["statement"]
