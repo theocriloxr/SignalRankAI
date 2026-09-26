@@ -77,6 +77,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("connect_broker", "Start secure MT5/MetaApi connection setup", "PREMIUM", "Broker"),
     CommandSpec("mt5_link", "Link or replace your MT5/MetaApi account", "PREMIUM", "Broker"),
     CommandSpec("mt5_status", "Check broker readiness and execution preflight", "PREMIUM", "Broker"),
+    CommandSpec("verifybroker", "Read-only verification of your linked broker account", "PREMIUM", "Broker"),
     CommandSpec("setlot", "Set the fixed lot used by eligible execution", "PREMIUM", "Broker"),
     CommandSpec("mystats", "View broker execution statistics", "PREMIUM", "Broker"),
     CommandSpec("referral", "View your referral code and statistics", "PREMIUM", "Referrals"),
