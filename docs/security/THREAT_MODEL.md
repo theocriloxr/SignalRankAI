@@ -7,7 +7,7 @@ connections, execution admission, account ledgers, analytics/ML, Redis/Postgres,
 Railway runtime roles, and operator/admin tooling.
 
 This document models the system that actually exists at Alembic head
-`0044_broker_credential_envelope`. It does **not** treat disabled roadmap
+`0045_mt5_credential_retirement`. It does **not** treat disabled roadmap
 features or unverified provider sandboxes as deployed security controls.
 
 ## 1. Security objectives
@@ -83,9 +83,14 @@ key material fails closed.
 
 Migration `0044_broker_credential_envelope` adds credential format/version,
 key ID, revision and rotation metadata without decrypting legacy ciphertext.
-Legacy Fernet values are compatibility/read-only migration material; new
-connection writes reject raw legacy ciphertext until it is explicitly rotated.
-Public connection responses never return ciphertext or credential key IDs.
+Migration `0045_mt5_credential_retirement` retires duplicate MT5 password
+ciphertext once an equivalent canonical envelope exists and makes the
+compatibility password column nullable. Legacy Fernet values remain
+compatibility/read-only migration material; new connection writes reject raw
+legacy ciphertext until it is explicitly rotated. Public connection responses
+never return ciphertext or credential key IDs. The certified staging inventory
+after 0045 reports zero canonical legacy rows and zero MT5 legacy, duplicate or
+unmigrated secret rows.
 
 ### TB-05 — Frontdoor/payment provider → financial entitlement
 
@@ -158,7 +163,7 @@ The following are release-blocking invariants:
 | TM-05 | BOLA/IDOR across broker accounts | M | H | canonical user + connection ID queries; dedicated BOLA tests; opaque Telegram selection token | Mitigated |
 | TM-06 | Broker credential ciphertext replay onto another account | M | H | context-bound envelope includes user/connection/provider/connector/revision; binding mismatch rejected | Mitigated |
 | TM-07 | Broker credential key rotation breaks access or silently downgrades security | M | H | active key ID + keyring; old-key read/new-key write; missing keys fail closed; legacy writes rejected | Mitigated with operational rotation discipline |
-| TM-08 | Legacy ciphertext remains indefinitely | M | M | `legacy_fernet` explicitly labelled by 0044; new writes require envelope; rotation metadata exists | Residual: rotate remaining legacy rows before live-money certification |
+| TM-08 | Legacy ciphertext remains indefinitely | M | M | `legacy_fernet` explicitly labelled by 0044; new writes require envelope; 0045 retires duplicate MT5 password storage; counts-only staging inventory proves zero legacy/unmigrated rows | Mitigated in certified staging; repeat inventory before each live-money promotion |
 | TM-09 | Forged Paystack webhook | M | H | raw-body signature verification; durable/idempotent receipt processing | Mitigated |
 | TM-10 | Duplicate/replayed financial event | M | H | idempotency keys, durable inbox/receipt semantics, unique constraints | Mitigated |
 | TM-11 | Ledger tampering / history rewrite | L | H | account-scoped append-only ledger + DB mutation trigger + compensating correction reference | Mitigated |
@@ -246,14 +251,16 @@ current Alembic schema before business work begins.
 
 For the 2026-09-26 staging certification:
 
-- database head is `0044_broker_credential_envelope`;
+- database head is `0045_mt5_credential_retirement`;
 - migration/schema/runtime proof passed before role rollout;
+- counts-only broker credential inventory reports zero legacy, duplicate and
+  unmigrated broker secret rows;
 - each role passed the locked Docker build gate;
 - role-specific rollout paths prevented unrelated role restarts;
 - real execution and payout switches remained off;
 - production services/database were not migrated or activated.
 
-See `docs/evidence/STAGING_0044_ROLE_CERTIFICATION_20260926.md`.
+See `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`.
 
 ## 10. Residual risks and blocked certification
 
@@ -261,8 +268,8 @@ The following remain deliberately open rather than being described as
 complete:
 
 - provider-specific live/sandbox certification for every declared venue;
-- rotation of any remaining `legacy_fernet` broker rows before live-money
-  certification;
+- re-running the counts-only credential inventory immediately before any
+  live-money promotion and rotating any legacy row if one ever reappears;
 - 100k-user infrastructure load certification;
 - signed/SBOM artifact provenance beyond the current lockfile/build controls;
 - external prop-firm rule validation for each funded-account product;
@@ -289,6 +296,9 @@ Key deterministic evidence includes:
 - `services/account_policies.py`
 - `scripts/assert_database_schema.py`
 - `scripts/verify_0044_release_chain.py`
+- `scripts/verify_0045_release_chain.py`
+- `scripts/broker_credential_inventory.py`
+- `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`
 - `scripts/schema_audit.py`
 
 A threat marked “mitigated” means the documented control exists and has the
