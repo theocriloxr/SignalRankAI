@@ -1,0 +1,5 @@
+SignalRank staging engine rollout for the fully live-certified provider connector repairs.
+Provider certification commit: fa65b9a89049ed0dc3abc6a6db6bc22613b8cbd0.
+All staging live-money execution and payout switches remain hard-disabled.
+Production is not part of this rollout.
+No secrets are stored in this marker.
