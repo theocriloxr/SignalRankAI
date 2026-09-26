@@ -1,0 +1,5 @@
+SignalRank staging analytics rollout retry after release-profile contract repair.
+Base includes post-0045 ML lineage and execution-provenance hardening.
+The web release-profile test is aligned with 0045_mt5_credential_retirement and is now part of clean-room verification.
+No schema migration beyond 0045 is required.
+All staging live-money and payout paths remain disabled.
