@@ -2,6 +2,7 @@ import pytest
 
 from services.decision_intelligence import (
     build_decision_record,
+    derive_lifecycle_disposition,
     persist_decision_record,
     validate_decision_record,
 )
@@ -61,3 +62,50 @@ async def test_persist_decision_record_delegates_to_repository(monkeypatch):
     assert captured["signal_id"] == "sig-2"
     assert captured["decision"] == "rejected"
     assert captured["meta"]["validation"]["ok"] is True
+
+
+@pytest.mark.parametrize(
+    ("decision", "reason", "expected"),
+    [
+        ("issued", "stored_for_delivery", "issued"),
+        ("rejected", "ml_filter", "rejected"),
+        ("skipped", "duplicate_active_trade", "suppressed"),
+        ("skipped", "portfolio_exposure_limit", "suppressed"),
+        ("skipped", "market_data_unavailable", "delayed"),
+        ("skipped", "quote_freshness_unavailable", "delayed"),
+        ("skipped", "quality_gate", "skipped"),
+        ("delayed", "provider_retry", "delayed"),
+        ("suppressed", "policy", "suppressed"),
+    ],
+)
+def test_lifecycle_disposition_preserves_raw_decision_and_normalizes_reason(
+    decision, reason, expected
+):
+    assert derive_lifecycle_disposition(decision, reason) == expected
+
+    record = build_decision_record(
+        {
+            "signal_id": "sig-lifecycle",
+            "asset": "EURUSD",
+            "timeframe": "1h",
+            "direction": "long",
+            "decision": decision,
+        },
+        decision_reason=reason,
+    )
+
+    assert record["decision"] == decision
+    assert record["decision_reason"] == reason
+    assert record["lifecycle_disposition"] == expected
+    assert validate_decision_record(record)["ok"] is True
+
+
+def test_active_engine_passes_exact_gate_reason_into_structured_decision_record():
+    from pathlib import Path
+
+    source = Path("engine/core.py").read_text(encoding="utf-8")
+    block = source[
+        source.index("decision_record = build_decision_record("):
+        source.index('_meta["decision_intelligence"] = decision_record'),
+    ]
+    assert "decision_reason=reason" in block
