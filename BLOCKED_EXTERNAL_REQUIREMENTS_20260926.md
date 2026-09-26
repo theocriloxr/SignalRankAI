@@ -8,12 +8,32 @@ changes alone. Source-code, deterministic tests, staging schema migration,
 credential-retirement proof, and decomposed role admission are already covered
 by the current release evidence.
 
-## 1. Provider and venue certification
+## 1. Optional provider and venue certification
 
-Declared providers/venues are not considered live-certified merely because an
-adapter or capability manifest exists.
+The **enabled staging market-data provider set is now integration-verified**.
+See `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`: the exact
+staging run exited successfully and every enabled provider reported explicit
+live/public endpoint evidence.
 
-Required external evidence, as applicable:
+The remaining external boundary applies only to optional or trading-specific
+providers that remain disabled until their own evidence exists. In particular:
+
+- Financial Modeling Prep remains disabled behind `FMP_ENABLED=0` until the
+  configured plan includes the required candle endpoints and recertification
+  passes;
+- Alpha Vantage remains disabled behind `ALPHAVANTAGE_ENABLED=0` until the
+  intended endpoint/timeframe plan is entitled and recertified;
+- OANDA remains disabled behind `OANDA_ENABLED=0` until the intended
+  practice/live credentials, account identity and broker behavior are
+  certified;
+- FRED remains disabled behind `FRED_ENABLED=0` until a valid credential and
+  exact-environment macro-provider certification pass;
+- other dormant venues/providers remain disabled by catalogue policy until
+  their credentials, licence/redistribution terms, regional availability and
+  capability-specific evidence are supplied.
+
+For a disabled provider/venue to be enabled, required external evidence may
+include:
 
 - provider/sandbox/testnet credentials supplied through staging secrets;
 - required paid plan, exchange entitlement, redistribution permission and
@@ -33,7 +53,8 @@ Repository tooling:
 - `docs/providers/PROVIDER_CAPABILITY_MATRIX.md`
 - `docs/PROVIDER_ENVIRONMENT_CONTRACT.md`
 
-Provider flags remain disabled or uncertified until their own evidence passes.
+This boundary is tracked as `SR-PROVIDER-008`. It does not downgrade the
+integration-verified enabled provider set under `SR-PROVIDER-007`.
 
 ## 2. Broker demo/canary/live-money certification
 
