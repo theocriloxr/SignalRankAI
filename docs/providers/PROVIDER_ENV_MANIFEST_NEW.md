@@ -28,9 +28,9 @@ Legend:
 | `FINNHUB_MARKET_DATA_ENABLED` | Finnhub | all | no | opt | 0 | no | — | Enables fundamentals/news/WS | all |
 | `COINGECKO_ENABLED` | CoinGecko | all | no | opt | 1 | no | `COINGECKO_API_KEY` | Keyless public discovery path | all |
 | `COIN_METRICS_ENABLED` | Coin Metrics | all | no | opt | 1 | no | — | Community endpoints (keyless) | all |
-| `FRED_ENABLED` | FRED | engine/worker | no | opt | 1 | no | — | Macro series (vintage-aware) | all |
+| `FRED_ENABLED` | FRED | engine/worker | no | opt | 0 | no | — | Macro series (vintage-aware) | all |
 | `DEFILLAMA_ENABLED` | DefiLlama | engine | no | opt | 1 | no | — | TVL/on-chain context | all |
-| `ALPHA_VANTAGE_ENABLED` | Alpha Vantage | all | no | opt | 0 | yes | `ALPHAVANTAGE_ENABLED` | Reuse existing gate; keep off for live delivery | all |
+| `ALPHAVANTAGE_ENABLED` | Alpha Vantage | all | no | opt | 0 | yes | `ALPHA_VANTAGE_ENABLED` | Reuse existing gate; keep off for live delivery | all |
 | `TRADING_ECONOMICS_ENABLED` | Trading Economics | engine | no | opt | 0 | no | — | Calendar/consensus data | all |
 | `COINGLASS_ENABLED` | CoinGlass | engine | no | opt | 0 | no | — | Funding/OI/liquidations | all |
 | `DUNE_ENABLED` / `GLASSNODE_ENABLED` / `CRYPTOQUANT_ENABLED` / `KAIKO_ENABLED` | on-chain | engine | no | opt | 0 | no | — | Declared dormant adapters | all |
@@ -101,3 +101,11 @@ Legend:
 | `CRYPTOQUANT_ENABLED` / `CRYPTOQUANT_API_KEY` | CryptoQuant | worker | **yes** | opt | 0 / — | no | — | Dormant without key; on-chain metrics | worker |
 | `EXECUTION_AUTO_ENABLE_FROM_CREDENTIALS` | global | all | no | opt | 0 | no | — | Must stay 0; credentials never enable execution | all |
 | `EXECUTION_REQUIRE_EXPLICIT_ENABLE` / `EXECUTION_REQUIRE_PROVIDER_CERTIFICATION` / `EXECUTION_REQUIRE_USER_OPT_IN` | global | all | no | opt | 1 | no | — | Guarded execution gates | all |
+
+
+### Explicit entitlement gates
+
+- `FMP_ENABLED=0` by default; set to `1` only after the configured plan passes exact-environment candle certification.
+- `ALPHAVANTAGE_ENABLED=0` by default; a key alone does not activate it.
+- `OANDA_ENABLED=0` by default; enable only with the intended practice/live credential set and certification.
+- `FRED_ENABLED=0` by default; enable only when a valid FRED key is configured.
