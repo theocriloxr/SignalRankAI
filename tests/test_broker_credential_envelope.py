@@ -282,15 +282,15 @@ def test_0045_retires_duplicate_mt5_password_storage() -> None:
 
     telegram_link = mt5[
         mt5.index("async def link_mt5_account("):
-        mt5.index("async def get_user_mt5_account_id"),
+        mt5.index("async def get_user_mt5_account_id")
     ]
     platform_link = mt5[
         mt5.index("async def link_platform_mt5_account("):
-        mt5.index("async def get_platform_mt5_account_id"),
+        mt5.index("async def get_platform_mt5_account_id")
     ]
     canonical_link = mt5[
         mt5.index("async def link_platform_metatrader_account("):
-        mt5.index("async def create_platform_metatrader_secure_link"),
+        mt5.index("async def create_platform_metatrader_secure_link")
     ]
 
     assert "link_platform_mt5_account(" in telegram_link
