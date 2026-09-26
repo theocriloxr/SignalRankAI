@@ -132,10 +132,9 @@ def validate(path: Path) -> list[str]:
     if public_testing and asset_concurrency > 4:
         errors.append(f"unsafe public-testing OHLC asset concurrency: {asset_concurrency}")
 
-    if is_true(values, "WORKER_OUTCOME_TRACKER_ENABLED", True) and is_true(
-        values, "ENGINE_OUTCOME_TRACKER_ENABLED", False
-    ):
-        errors.append("duplicate realtime outcome owners enabled")
+    from core.outcome_ownership import validate_outcome_ownership
+
+    errors.extend(validate_outcome_ownership(values))
 
     if values.get("OUTCOME_TRACK_DELIVERED_ONLY", "1").strip().lower() not in TRUE:
         errors.append("OUTCOME_TRACK_DELIVERED_ONLY must be enabled")
