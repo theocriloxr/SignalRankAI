@@ -176,7 +176,7 @@ The following are release-blocking invariants:
 | TM-18 | Redis/database outage causes unsafe fallback | M | H | fail-closed execution/account gates, bounded DB admission, durable Postgres evidence, idempotency | Mitigated; availability impact remains |
 | TM-19 | Queue poisoning or retry storm | M | M | per-item isolation, bounded queues, DLQ/requeue/backoff, role ownership | Mitigated |
 | TM-20 | Resource exhaustion / connection-pool starvation | M | H | decomposed roles, foreground reserve, bounded analytics/background lanes, locked runtime pool limits | Mitigated at certified staging scale; 100k-user certification still external |
-| TM-21 | Compromised dependency/supply chain | L | H | `requirements.lock`, container installs locked dependencies with `--no-deps`, `pip check`, build/readiness tests | Partial; signed artifacts/SBOM/provenance attestation can be strengthened |
+| TM-21 | Compromised dependency/supply chain | L | H | `requirements.lock`, locked `--no-deps` install + `pip check`, deterministic CycloneDX SBOM, release-provenance hashes bound to exact commit/branch/Alembic head, build + clean-room verification | Mitigated for deterministic provenance; external artifact signing/key custody remains separate |
 | TM-22 | Operator/admin abuse | L/M | H | live owner/admin allowlists, privileged certification boundary, audit events, execution/payout master switches | Partial; human/key compromise remains |
 | TM-23 | Cross-role duplicate work after deployment | M | M/H | explicit decomposed runtime ownership + role-specific rollout paths; live staging role evidence | Mitigated |
 | TM-24 | Cross-environment contamination | M | H | isolated staging/production environments and schema gates; production untouched during 0044 staging certification | Mitigated; never share operational DB state between environments |
@@ -271,7 +271,7 @@ complete:
 - re-running the counts-only credential inventory immediately before any
   live-money promotion and rotating any legacy row if one ever reappears;
 - 100k-user infrastructure load certification;
-- signed/SBOM artifact provenance beyond the current lockfile/build controls;
+- external cryptographic signing/attestation of the deterministic SBOM/provenance digest using organization-controlled signing keys;
 - external prop-firm rule validation for each funded-account product;
 - end-to-end Telegram/provider/broker tests that require external sandbox
   credentials;
@@ -300,6 +300,8 @@ Key deterministic evidence includes:
 - `scripts/broker_credential_inventory.py`
 - `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`
 - `scripts/schema_audit.py`
+- `scripts/generate_release_provenance.py`
+- `tests/test_release_provenance.py`
 
 A threat marked “mitigated” means the documented control exists and has the
 listed deterministic evidence. It does not mean the threat is impossible or
