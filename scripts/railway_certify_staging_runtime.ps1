@@ -107,13 +107,13 @@ foreach ($service in @($WorkerService,$EngineService,$FrontdoorService)) {
     Set-Content -Path (Join-Path $evidence (($service -replace '[^A-Za-z0-9_.-]','_') + '.log')) -Value $logs -Encoding UTF8
     $schemaMarker = Invoke-Railway -Arguments @(
         "logs","-s",$service,"-e",$Environment,"--since","7d","--lines","20",
-        "--filter","alembic_current=0044_broker_credential_envelope"
+        "--filter","alembic_current=0045_mt5_credential_retirement"
     ) -Capture
     $patchMarker = Invoke-Railway -Arguments @(
         "logs","-s",$service,"-e",$Environment,"--since","7d","--lines","20",
         "--filter","patch=deployment-final-r4"
     ) -Capture
-    if (-not $schemaMarker.Contains('alembic_current=0044_broker_credential_envelope')) { throw "$service does not prove Alembic 0044 in retained deployment logs." }
+    if (-not $schemaMarker.Contains('alembic_current=0045_mt5_credential_retirement')) { throw "$service does not prove Alembic 0045 in retained deployment logs." }
     if (-not $patchMarker.Contains('patch=deployment-final-r4')) { throw "$service does not prove deployment-final-r4 in retained deployment logs." }
     foreach ($pattern in $blockingPatterns) {
         if ($logs -match $pattern) { throw "$service contains blocking log pattern: $pattern" }
