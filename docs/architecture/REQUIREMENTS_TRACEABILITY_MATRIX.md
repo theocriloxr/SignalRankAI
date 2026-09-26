@@ -80,7 +80,8 @@ infrastructure, elapsed runtime, provider entitlements, or a legal/licensing dec
 | SR-NOTIF-001 | Notification outbox repair bounded | UNIT_VERIFIED | outcome reconciliation | v1.3.6.9 tests | — |
 | SR-NOTIF-002 | Dedicated fan-out reservation/idempotency boundary | UNIT_VERIFIED | `db/pg_features.py`, `delivery/service.py`, outbox/receipt layers | `tests/test_phase4_pass3_delivery_reliability.py`, `tests/test_delivery_fanout_planner.py` | — |
 | SR-ORDER-001 | Canonical monotonic order/execution state machine with one position-state projection | UNIT_VERIFIED | `core/execution_state_machine.py`, MT5/Bybit routers and reconcilers | `tests/test_execution_state_machine.py`, `tests/test_canonical_broker_entrypoints.py` | `REAL_EXECUTION_ENABLED=0` |
-| SR-ORDER-002 | Copy trading / marketplace / bots / smart terminal | BLOCKED_EXTERNAL | declared in roadmap | — | flags off |
+| SR-ORDER-002 | Copy-trade execution safety foundation requires explicit copy consent, leader provenance, follower/account risk, account policy, kill switch and duplicate protection before canonical broker routing | UNIT_VERIFIED | `services/ecosystem_policy.py`, `execution/service.py`, MT5/Bybit routers, release/financial guards | `tests/test_copy_trade_safety_foundation.py`, broker execution tests | `COPY_TRADE_ENABLED=0` by default |
+| SR-MARKETPLACE-001 | Public copy marketplace / publisher trust / suitability / commercial strategy-bot activation | BLOCKED_EXTERNAL | copy-execution safety primitives and canonical broker/risk layers are present; public publisher marketplace remains intentionally disabled | external legal/trust/runtime certification | Requires publisher identity, follower consent/revocation, suitability, transparent performance, abuse controls and jurisdiction approval |
 
 
 ## Multi-user / multi-account execution addendum (2026-09-25)
