@@ -39,6 +39,7 @@ _TESTS = [
     "tests/test_adaptive_dataset_and_wfo.py",
     "tests/test_delivery_fanout_planner.py",
     "tests/test_phase4_pass3_delivery_reliability.py",
+    "tests/test_execution_state_machine.py",
     "tests/test_final_cross_channel_parity_20260925.py",
     "tests/test_v105_railway_readiness_hotfix.py",
     "tests/test_v106_delivery_db_hotfix.py",
