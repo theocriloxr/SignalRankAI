@@ -147,5 +147,10 @@ schema admission, account-ledger validation/redaction, web parity and
 per-account performance composition.
 
 An isolated zero-secret Railway clean-room service is used for compile/targeted
-test verification. Staging database migration/runtime evidence and live broker
-provider certification are separate gates and are not claimed by this document.
+test verification. The shared staging database is migrated and runtime-certified
+at Alembic 0043, and the long-lived frontdoor, engine, delivery and analytics
+roles have passed release/source plus schema admission on that database with
+live-money execution disabled. Live broker/provider account certification,
+demo trading evidence, PROP certification for a specific funded account, and
+owner-controlled real-money activation remain separate gates and are not
+implied by staging runtime certification.
