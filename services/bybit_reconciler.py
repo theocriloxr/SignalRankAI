@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from db.models import BrokerExecution, RuntimeState, User
+from db.models import BrokerConnection, BrokerExecution, RuntimeState, User
 from db.session import get_session
 from services.bybit_client import BybitCredentials, BybitError, BybitV5Client
 from services.security import decrypt_secret
@@ -40,9 +40,57 @@ def _created_ms(row: BrokerExecution) -> int:
     return max(0, int(created.timestamp() * 1000) - 60_000)
 
 
-async def _credentials(telegram_user_id: int) -> BybitCredentials | None:
+async def _credentials(
+    user_id: int,
+    telegram_user_id: int,
+    connection_id: str | None,
+) -> BybitCredentials | None:
+    canonical: BrokerConnection | None = None
     async with get_session(label="bybit.reconcile.credentials", timeout_seconds=6.0) as session:
-        state = await session.get(RuntimeState, _state_key(int(telegram_user_id)))
+        if connection_id:
+            canonical = (
+                await session.execute(
+                    select(BrokerConnection).where(
+                        BrokerConnection.user_id == int(user_id),
+                        BrokerConnection.connection_id == str(connection_id),
+                        BrokerConnection.platform == "bybit",
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if canonical is not None:
+                session.expunge(canonical)
+
+        # Compatibility state is loaded only for pre-canonical records that
+        # genuinely have no canonical application-managed credential.
+        state = None
+        if canonical is None or not canonical.secret_encrypted:
+            state = await session.get(
+                RuntimeState,
+                _state_key(int(telegram_user_id)),
+            )
+        await session.rollback()
+
+    if canonical is not None and canonical.secret_encrypted:
+        from services.broker_credentials import (
+            BrokerCredentialError,
+            decrypt_connection_credentials,
+        )
+
+        try:
+            value, _crypto = decrypt_connection_credentials(
+                canonical,
+                allow_legacy=True,
+            )
+        except BrokerCredentialError:
+            # Do not fall back after a canonical ciphertext/binding failure.
+            return None
+        key = str(value.get("api_key") or "").strip()
+        secret = str(value.get("api_secret") or "").strip()
+        sandbox = value.get("sandbox")
+        if not key or not secret or type(sandbox) is not bool:
+            return None
+        return BybitCredentials(key, secret, sandbox)
+
     value = dict(getattr(state, "value", {}) or {}) if state is not None else {}
     key = decrypt_secret(str(value.get("api_key_enc") or ""))
     secret = decrypt_secret(str(value.get("api_secret_enc") or ""))
@@ -115,7 +163,11 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
 
     for execution, telegram_user_id in rows:
         try:
-            creds = await _credentials(int(telegram_user_id))
+            creds = await _credentials(
+                int(execution.user_id),
+                int(telegram_user_id),
+                str(execution.connection_id or "") or None,
+            )
             if creds is None:
                 await _mark(int(execution.id), status=str(execution.status), error="credentials_unavailable")
                 stats["errors"] += 1
