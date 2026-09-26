@@ -212,3 +212,48 @@ def test_provider_certifier_honors_adapter_blocker_hint(monkeypatch):
     )
     assert result.certification_status == CertificationStatus.BLOCKED_PAID_PLAN.value
     assert "plan entitlement" in (result.error or "")
+
+
+def test_coinmetrics_falls_back_to_pair_candles_when_markets_are_empty(monkeypatch):
+    import data.connectors.coinmetrics_adapter as cm
+
+    calls = []
+
+    async def fake_get(url, *, name, params=None, headers=None, timeout=8.0, retries=2):
+        del name, headers, timeout, retries
+        calls.append((url, dict(params or {})))
+        if url.endswith("/timeseries/market-candles"):
+            return {"data": []}
+        assert url.endswith("/timeseries/pair-candles")
+        return {
+            "data": [
+                {
+                    "pair": "btc-usd",
+                    "time": "2026-09-25T00:00:00.000000000Z",
+                    "price_open": "100",
+                    "price_high": "102",
+                    "price_low": "99",
+                    "price_close": "101",
+                },
+                {
+                    "pair": "btc-usd",
+                    "time": "2026-09-26T00:00:00.000000000Z",
+                    "price_open": "101",
+                    "price_high": "103",
+                    "price_low": "100",
+                    "price_close": "102",
+                },
+            ]
+        }
+
+    monkeypatch.setattr(cm, "async_http_get_json", fake_get)
+    monkeypatch.setattr(cm, "_EMPTY_CACHE", {})
+    rows = asyncio.run(cm._async_get_candles("BTCUSDT", "1d", limit=2, timeout=2))
+
+    assert any(url.endswith("/timeseries/pair-candles") for url, _ in calls)
+    pair_call = next(params for url, params in calls if url.endswith("/timeseries/pair-candles"))
+    assert pair_call["pairs"] == "btc-usd"
+    assert pair_call["paging_from"] == "end"
+    assert len(rows) == 2
+    assert rows[0]["timestamp"] < rows[1]["timestamp"]
+    assert rows[-1]["close"] == 102.0
