@@ -75,6 +75,36 @@ def check_schema() -> dict[str, Any]:
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_format'
+          ) AS broker_connections_credential_format,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_version'
+          ) AS broker_connections_credential_version,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_key_id'
+          ) AS broker_connections_credential_key_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_revision'
+          ) AS broker_connections_credential_revision,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_rotated_at'
+          ) AS broker_connections_credential_rotated_at,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
               AND table_name = 'broker_executions'
               AND column_name = 'connection_id'
           ) AS broker_executions_connection_id,
@@ -125,6 +155,11 @@ def check_schema() -> dict[str, Any]:
             "broker_reconciliation_state",
             "trading_account_ledger_entries",
             "broker_execution_decisions",
+            "broker_connections_credential_format",
+            "broker_connections_credential_version",
+            "broker_connections_credential_key_id",
+            "broker_connections_credential_revision",
+            "broker_connections_credential_rotated_at",
             "broker_executions_connection_id",
             "mt5_executions_connection_id",
             "signals_ml_recovery_mode",
