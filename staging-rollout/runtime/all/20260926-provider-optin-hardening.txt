@@ -1,0 +1,5 @@
+SignalRank staging all-role rollout marker.
+Purpose: deploy explicit opt-in provider hardening after clean-room certification.
+FMP, Alpha Vantage, OANDA and FRED remain disabled until exact-environment entitlement/credential certification passes.
+All live-money execution and payout flags remain fail-closed in staging.
+No secrets are stored in this marker.
