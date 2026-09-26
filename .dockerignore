@@ -43,6 +43,7 @@ Thumbs.db
 # Runtime deployment diagnostics require these proof inputs.  Re-include them
 # after the broad development-artifact exclusions above.
 !.env.example
+!CURRENT_RELEASE.md
 !docs/
 !docs/**
 # Release-critical pytest gate runs inside the Railway image build.
