@@ -91,13 +91,13 @@ def test_broker_routers_require_user_copy_mode_and_account_specific_risk() -> No
     assert 'configured_mode != "copy_trade"' in bybit
     assert "profile_copy_disabled" in bybit
     assert "AccountRiskSnapshot(" in bybit
-    assert "evaluate_persisted_account_policy(" in bybit
+    assert "evaluate_account_policy(" in bybit
     assert "connection_id=str(connection.connection_id)" in bybit
 
     assert "ExecutionMode.COPY_TRADE" in mt5
     assert "profile_copy_disabled" in mt5
     assert "AccountRiskSnapshot(" in mt5
-    assert "evaluate_persisted_account_policy(" in mt5
+    assert "evaluate_account_policy(" in mt5
     assert "connection_id=str(connection_id)" in mt5
 
 
