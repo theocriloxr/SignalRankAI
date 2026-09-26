@@ -1,0 +1,3 @@
+SignalRank staging 0045 preflight inventory trigger.
+Read-only purpose: certify source, confirm current staging schema is 0044, and count broker credential migration state.
+No credential values, secrets, account references, or key material are stored in this file.
