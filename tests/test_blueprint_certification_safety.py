@@ -89,6 +89,7 @@ class FakeCursor:
                 "broker_connections_credential_key_id",
                 "broker_connections_credential_revision",
                 "broker_connections_credential_rotated_at",
+                "mt5_credentials_password_nullable",
                 "broker_executions_connection_id", "mt5_executions_connection_id",
                 "signals_ml_recovery_mode", "users_public_user_id",
             ), True),
@@ -116,6 +117,7 @@ class FakeCursor:
     (True, (), False),
     (False, ("signals_ml_recovery_mode",), False),
     (False, ("broker_connections",), False),
+    (False, ("mt5_credentials_password_nullable",), False),
 ])
 def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, extra_revision, missing, allowed):
     head = schema_gate._expected_head()
@@ -143,6 +145,7 @@ def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, ext
         "broker_connections_credential_key_id",
         "broker_connections_credential_revision",
         "broker_connections_credential_rotated_at",
+        "mt5_credentials_password_nullable",
         "broker_executions_connection_id",
         "mt5_executions_connection_id",
     ):
@@ -167,6 +170,7 @@ def test_runtime_proof_uses_current_repository_head_and_rejects_incomplete_evide
         "users_public_user_id": True,
         "broker_executions_connection_id": True,
         "mt5_executions_connection_id": True,
+        "mt5_credentials_password_nullable": True,
         "required_tables": dict.fromkeys(runtime_proof.REQUIRED_TABLES, True),
         "catalogue_counts": {"active_products": 6}, "catalogue_minimums": {"active_products": 6},
         "runtime": {"duplicate_delivery_groups": 0, "duplicate_paper_position_groups": 0},
