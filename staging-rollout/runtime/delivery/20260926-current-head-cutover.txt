@@ -1,0 +1,5 @@
+SignalRank staging delivery current-head rollout trigger.
+Base lineage includes analytics 771aff1a and engine 5c03335f current-head cutovers.
+Purpose: bring delivery/outcome/reconciliation onto decision-lifecycle, canonical outcome ownership, and SLO hardening with schema unchanged at 0045.
+All live-money execution and payout flags remain disabled.
+No secrets are stored in this marker.
