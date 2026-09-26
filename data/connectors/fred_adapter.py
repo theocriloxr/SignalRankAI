@@ -21,7 +21,7 @@ API_URL = "https://api.stlouisfed.org/fred"
 
 
 def _enabled() -> bool:
-    return env_bool("FRED_ENABLED", True)
+    return env_bool("FRED_ENABLED", False)
 
 
 def _api_key() -> str:
