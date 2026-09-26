@@ -12,11 +12,11 @@ def source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_final_schema_head_is_exact_cross_channel_receipts_revision() -> None:
+def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0041_broker_connection_registry"
+        "0045_mt5_credential_retirement"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -28,6 +28,35 @@ def test_final_schema_head_is_exact_cross_channel_receipts_revision() -> None:
     broker = source("db/migrations/versions/0041_broker_connection_registry.py")
     assert 'revision = "0041_broker_connection_registry"' in broker
     assert 'down_revision = "0040_cross_channel_paper_receipt"' in broker
+    recovery = source("db/migrations/versions/0042_ml_starvation_recovery_provenance.py")
+    assert 'revision = "0042_ml_recovery_provenance"' in recovery
+    assert 'down_revision = "0041_broker_connection_registry"' in recovery
+    account_policy = source("db/migrations/versions/0043_account_execution_policy.py")
+    assert 'revision = "0043_account_execution_policy"' in account_policy
+    assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
+    assert "trading_account_policies" in account_policy
+    assert "broker_reconciliation_state" in account_policy
+    assert "trading_account_ledger_entries" in account_policy
+    assert "trg_trading_account_ledger_immutable" in account_policy
+    assert "prevent_trading_account_ledger_mutation" in account_policy
+    assert "uq_trading_account_ledger_provider_event" in account_policy
+    assert "broker_execution_decisions" in account_policy
+    for field in (
+        "max_weekly_loss_pct",
+        "max_spread_bps",
+        "max_slippage_bps",
+        "min_confidence",
+        "min_expected_rr",
+        "external_max_weekly_loss_pct",
+        "allowed_strategies",
+        "trading_windows",
+        "certified_by_user_id",
+        "certified_by_authority",
+    ):
+        assert field in account_policy
+    assert '"broker_executions"' in account_policy
+    assert '"mt5_executions"' in account_policy
+    assert '"connection_id"' in account_policy
 
 
 def test_paper_is_free_education_but_live_features_remain_paid() -> None:
@@ -113,7 +142,7 @@ def test_subscription_cancel_is_shared_and_never_immediate_downgrade() -> None:
     assert "cancel_auto_renew_for_telegram_user" in telegram
     endpoint = api[
         api.index('@router.post("/billing/cancel-auto-renew")'):
-        api.index('@router.post("/billing/refund-request")')
+        api.index('@router.post("/billing/refund-request", status_code=201)')
     ]
     assert "payload.confirm is not True" in endpoint
     assert "cancel_auto_renew_for_user" in endpoint
@@ -246,3 +275,204 @@ def test_web_ui_exposes_final_parity_controls_without_tier_breakage() -> None:
 def test_pwa_shell_cache_rotated_for_final_parity_release() -> None:
     worker = source("web/platform_app/service-worker.js")
     assert "signalrank-shell-v" in worker
+
+
+def test_web_multi_account_policy_editor_exposes_hard_risk_controls() -> None:
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    api = source("web/platform_api.py")
+    for marker in (
+        'id="brokerPolicyEditor"',
+        'name="account_mode"',
+        'name="execution_permission"',
+        'name="max_risk_per_trade_pct"',
+        'name="max_daily_loss_pct"',
+        'name="max_weekly_loss_pct"',
+        'name="max_total_drawdown_pct"',
+        'name="max_spread_bps"',
+        'name="max_slippage_bps"',
+        'name="min_confidence"',
+        'name="min_expected_rr"',
+        'name="allowed_strategies"',
+        'name="trading_days"',
+        'name="prop_rules_version"',
+        'name="external_rules_json"',
+    ):
+        assert marker in html
+    assert "openBrokerPolicy" in app
+    assert "brokerPolicyPayload" in app
+    assert "JSON.stringify(p.external_rules||{},null,2)" in app
+    assert "external_rules:externalRules" in app
+    assert "/safety-freeze" in app
+    assert "/ledger?limit=50" in app
+    assert 'id="brokerAccountLedger"' in html
+    assert '@router.get("/broker/connections/{connection_id}/policy")' in api
+    assert '@router.get("/broker/connections/{connection_id}/ledger")' in api
+    assert '@router.put("/broker/connections/{connection_id}/policy")' in api
+    assert '@router.post("/broker/connections/{connection_id}/safety-freeze")' in api
+
+
+def test_prop_policy_certification_is_privileged_versioned_and_audited() -> None:
+    api = source("web/platform_api.py")
+    service = source("services/account_policies.py")
+    models = source("db/models.py")
+    assert '@router.post("/admin/broker/connections/{connection_id}/prop-certification")' in api
+    assert "_platform_operator_authority(user)" in api
+    assert "expected_policy_version" in api
+    assert "certified_by_user_id=int(user[\"id\"])" in api
+    assert "prop_certification_operator_required" in service
+    assert "policy_version_changed" in service
+    assert 'event_type="prop_policy_certified"' in service
+    assert "certified_by_user_id" in models
+    assert "certified_by_authority" in models
+    configure = service[
+        service.index("async def configure_account_policy"):
+        service.index("async def certify_prop_policy")
+    ]
+    assert "row.certified_by_user_id = None" in configure
+    assert "row.certified_by_authority = None" in configure
+
+
+def test_account_policy_changes_and_safety_blocks_are_durably_audited() -> None:
+    service = source("services/account_policies.py")
+    configure = service[
+        service.index("async def configure_account_policy"):
+        service.index("async def certify_prop_policy")
+    ]
+    freeze = service[
+        service.index("async def set_account_frozen"):
+        service.index("async def reconciliation_snapshot")
+    ]
+    reconcile = service[
+        service.index("async def record_reconciliation"):
+        service.index("async def evaluate_persisted_account_policy")
+    ]
+
+    assert 'event_type="account_policy_configured"' in configure
+    assert '"policy_version": int(row.policy_version)' in configure
+    assert '"hard_rule_count": len(' in configure
+    assert '"execution_disabled": True' in configure
+    assert "connection.execution_enabled = False" in configure
+
+    assert '"account_policy_safety_frozen"' in freeze
+    assert '"account_policy_safety_unfrozen"' in freeze
+    assert '"execution_disabled": True' in freeze
+
+    assert 'event_type="account_reconciliation_safety_block"' in reconcile
+    assert 'normalized in {"DEGRADED", "FROZEN", "AUTH_EXPIRED", "DISCONNECTED"}' in reconcile
+    assert "connection.execution_enabled = False" in reconcile
+    assert '"discrepancy_code": (' in reconcile
+
+
+def test_prop_hard_rule_engine_is_generic_versioned_and_exactly_explainable() -> None:
+    policy = source("core/account_policy.py")
+    mt5 = source("services/mt5_signal_router.py")
+    bybit = source("services/bybit_signal_router.py")
+
+    assert "PROP_HARD_RULE_TYPES" in policy
+    assert "def validate_prop_rule_config" in policy
+    assert "def _evaluate_prop_hard_rules" in policy
+    assert 'prefix = f"prop_rule:{rule_id}"' in policy
+    assert "unsupported_prop_hard_rule" in policy
+    assert 'order_size_unit="LOT"' in mt5
+    assert 'order_size_unit="BASE_UNITS"' in bybit
+
+
+def test_canonical_account_ledger_is_append_only_account_scoped_and_provider_authoritative() -> None:
+    migration = source("db/migrations/versions/0043_account_execution_policy.py")
+    model = source("db/models.py")
+    service = source("services/trading_account_ledger.py")
+    mt5 = source("services/mt5_signal_router.py")
+    mt5_client = source("services/mt5_client.py")
+    mt5_reconciler = source("services/mt5_reconciler.py")
+    worker = source("worker/worker.py")
+    bybit = source("services/bybit_signal_router.py")
+    reconciler = source("services/bybit_reconciler.py")
+
+    assert "trading_account_ledger_entries" in migration
+    assert "BEFORE UPDATE OR DELETE" in migration
+    assert "uq_trading_account_ledger_provider_event" in migration
+    assert "class TradingAccountLedgerEntry" in model
+    assert "BrokerConnection.user_id == int(user_id)" in service
+    assert "BrokerConnection.connection_id == str(connection_id)" in service
+    assert "on_conflict_do_nothing" in service
+    assert "_safe_metadata" in service
+    assert 'entry_type="order"' in mt5
+    assert "/history-deals/ticket/" in mt5_client
+    assert "/history-deals/position/" in mt5_client
+    assert "DEAL_ENTRY_OUT" in mt5_reconciler
+    assert "_append_account_ledger_in_session" in mt5_reconciler
+    assert "mt5_reconciliation_loop" in worker
+    assert 'entry_type="order"' in bybit
+    assert '"entry_type": "realized_pnl"' in reconciler
+    assert '"entry_type": "fee"' in reconciler
+    assert "broker_values_authoritative" in source("web/platform_api.py")
+
+
+def test_broker_performance_is_composed_per_account_not_mixed_headline() -> None:
+    api = source("web/platform_api.py")
+    app = source("web/platform_app/app.js")
+    block = api[
+        api.index('@router.get("/broker")'):
+        api.index('@router.post("/broker/mt5")')
+    ]
+    assert "mt5_account_stats" in block
+    assert "provider_account_stats" in block
+    assert '"metric_scope": "single_account"' in block
+    assert '"composition_required": True' in block
+    assert '"mixed_account_diagnostics"' in block
+    assert "accountStats=data.stats?.accounts||[]" in app
+    assert "accountStatsById" in app
+    assert "Performance scope','Per account only" in app
+    assert "Demo, personal-live and PROP performance are not combined" in app
+    assert "data.stats?.mt5" not in app
+    assert "data.stats?.providers" not in app
+
+
+def test_0044_broker_credential_envelope_schema_and_runtime_contract() -> None:
+    migration = source("db/migrations/versions/0044_broker_credential_envelope.py")
+    models = source("db/models.py")
+    schema_gate = source("scripts/assert_database_schema.py")
+    readiness = source("railway_main.py")
+    credentials = source("services/broker_credentials.py")
+
+    assert 'revision = "0044_broker_credential_envelope"' in migration
+    assert 'down_revision = "0043_account_execution_policy"' in migration
+    for marker in (
+        "credential_format",
+        "credential_version",
+        "credential_key_id",
+        "credential_revision",
+        "credential_rotated_at",
+    ):
+        assert marker in migration
+        assert marker in models
+        assert marker in schema_gate
+        assert marker in readiness
+    assert "legacy_fernet" in migration
+    assert "BROKER_CREDENTIAL_KEYRING_JSON" in credentials
+    assert "BROKER_CREDENTIAL_ACTIVE_KEY_ID" in credentials
+    assert "broker credential envelope account binding mismatch" in credentials
+
+
+def test_0045_mt5_credential_retirement_schema_and_runtime_contract() -> None:
+    migration = source(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    )
+    models = source("db/models.py")
+    schema_gate = source("scripts/assert_database_schema.py")
+    staging_proof = source("scripts/staging_runtime_proof.py")
+    readiness = source("railway_main.py")
+    mt5 = source("services/mt5_client.py")
+
+    assert 'revision = "0045_mt5_credential_retirement"' in migration
+    assert 'down_revision = "0044_broker_credential_envelope"' in migration
+    assert "password_encrypted" in migration
+    assert "nullable=True" in migration
+    assert "canonical.credential_format = 'envelope_v1'" in migration
+    assert "password_encrypted = NULL" in migration
+    assert "mt5_credentials_password_nullable" in schema_gate
+    assert "mt5_credentials_password_nullable" in staging_proof
+    assert "mt5_credentials_password_nullable" in readiness
+    assert "password_encrypted: Mapped[Optional[str]]" in models
+    assert "_sync_mt5_compatibility_metadata" in mt5

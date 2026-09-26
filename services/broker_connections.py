@@ -8,6 +8,8 @@ contract.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -175,7 +177,13 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "account_ref_masked": _mask_account_ref(get("account_ref")),
         "external_account_id": get("external_account_id"),
         "environment": str(get("environment") or "unknown"),
+        "account_classification": account_classification(row),
         "auth_mode": str(get("auth_mode") or "existing"),
+        "credential_encrypted": bool(get("secret_encrypted")),
+        "credential_format": str(get("credential_format") or "none"),
+        "credential_version": int(get("credential_version") or 0),
+        "credential_revision": int(get("credential_revision") or 0),
+        "credential_rotated_at": get("credential_rotated_at"),
         "server": get("server"),
         "status": str(get("status") or "pending"),
         "permissions": dict(get("permissions") or {}),
@@ -190,6 +198,96 @@ def public_connection(row: BrokerConnection | dict[str, Any]) -> dict[str, Any]:
         "created_at": get("created_at"),
         "updated_at": get("updated_at"),
     }
+
+
+def account_classification(row: BrokerConnection | dict[str, Any]) -> str:
+    """Normalize persisted account mode without downgrading explicit prop policy."""
+    meta = row.get("meta", {}) if isinstance(row, dict) else row.meta
+    environment = row.get("environment") if isinstance(row, dict) else row.environment
+    explicit = (meta or {}).get("account_classification")
+    if explicit is not None:
+        return str(explicit).strip().upper()
+    return {"paper": "PAPER", "demo": "DEMO", "live": "LIVE_PERSONAL", "prop": "PROP"}.get(
+        str(environment or "").strip().lower(), "UNKNOWN"
+    )
+
+
+def execution_connection_error(row: BrokerConnection, user_id: int) -> str | None:
+    """Evaluate persisted owner, permissions and account health before broker I/O."""
+    if row.user_id != user_id or not str(row.connection_id or "").strip():
+        return "broker_connection_not_found"
+    mode = account_classification(row)
+    if mode == "PAPER":
+        return "paper_account_broker_execution_forbidden"
+    # PROP accounts are allowed to reach the canonical execution gate; they
+    # remain fail-closed there until the versioned prop policy is certified.
+    if mode not in {"DEMO", "LIVE_PERSONAL", "PROP"}:
+        return "account_classification_required"
+    if str(row.status or "").strip().lower() not in {"linked", "ready", "verified"}:
+        return "broker_account_not_ready"
+    permissions = dict(row.permissions or {})
+    if permissions.get("trade") is not True:
+        return "broker_trade_permission_required"
+    if permissions.get("withdraw", False) is not False or permissions.get("internal_transfer", False) is not False:
+        return "broker_trade_only_permissions_required"
+    if row.execution_enabled is not True:
+        return "account_execution_disabled"
+    return None
+
+
+async def resolve_execution_connection(
+    user_id: int, *, platform: str, connection_id: str | None = None,
+) -> BrokerConnection:
+    """Resolve one owned account; a preferred account cannot resolve ambiguity."""
+    async with get_session(label="broker.execution.resolve", timeout_seconds=6.0) as session:
+        query = select(BrokerConnection).where(
+            BrokerConnection.user_id == int(user_id),
+            BrokerConnection.platform == str(platform).strip().lower(),
+        )
+        if connection_id is not None:
+            if not str(connection_id).strip():
+                raise LookupError("broker_connection_not_found")
+            query = query.where(BrokerConnection.connection_id == str(connection_id).strip())
+        rows = (await session.execute(query.limit(2))).scalars().all()
+        if not rows:
+            raise LookupError("broker_connection_not_found")
+        if len(rows) != 1:
+            raise PermissionError("explicit_broker_connection_required")
+        row = rows[0]
+        error = execution_connection_error(row, int(user_id))
+        if error:
+            raise PermissionError(error)
+        # The returned ORM row is a detached snapshot, not an implicit account cursor.
+        session.expunge(row)
+        await session.rollback()
+        return row
+
+
+async def register_exchange_connection(
+    telegram_user_id: int, *, provider: str, api_key: str, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist one exchange account through the canonical credential boundary."""
+
+    async with get_session(label="broker.exchange.owner", timeout_seconds=6.0) as session:
+        owner = (await session.execute(
+            select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+        )).scalar_one_or_none()
+        await session.rollback()
+    if owner is None:
+        raise LookupError("canonical user not found")
+    sandbox = payload.get("sandbox")
+    if type(sandbox) is not bool:
+        raise ValueError("Broker demo/live classification is required")
+    # API fingerprints are internal identifiers; masked keys are display-only.
+    account_ref = hashlib.sha256(f"{provider}:{sandbox}:{api_key}".encode()).hexdigest()
+    return await upsert_connection(
+        user_id=int(owner), platform=provider, connector=provider,
+        account_ref=account_ref, external_account_id=None,
+        environment="demo" if sandbox else "live", auth_mode="api_key",
+        credential_payload=dict(payload), status="verified",
+        permissions=dict(payload.get("permissions") or {}),
+        meta={"account_classification": "DEMO" if sandbox else "LIVE_PERSONAL"},
+    )
 
 
 async def assert_connection_capacity(user_id: int, tier: str) -> None:
@@ -225,6 +323,7 @@ async def upsert_connection(
     account_label: str | None = None,
     environment: str = "unknown",
     auth_mode: str = "existing",
+    credential_payload: dict[str, Any] | None = None,
     secret_encrypted: str | None = None,
     server: str | None = None,
     status: str = "pending",
@@ -299,10 +398,74 @@ async def upsert_connection(
             if external_account_id
             else row.external_account_id
         )
-        row.environment = str(environment or "unknown").strip().lower()[:16]
+        next_environment = str(environment or "unknown").strip().lower()[:16]
+        if credential_payload is not None and secret_encrypted is not None:
+            raise ValueError(
+                "Provide credential_payload or a validated credential envelope, not both"
+            )
+
+        previous_secret = str(row.secret_encrypted or "")
+        if credential_payload is not None:
+            from services.broker_credentials import encrypt_broker_credentials
+
+            next_revision = max(1, int(row.credential_revision or 0) + 1)
+            envelope, crypto = encrypt_broker_credentials(
+                dict(credential_payload),
+                user_id=int(user_id),
+                connection_id=str(row.connection_id),
+                provider=platform_n,
+                connector=connector_n,
+                revision=next_revision,
+            )
+            row.secret_encrypted = envelope
+            row.credential_format = crypto.format
+            row.credential_version = crypto.version
+            row.credential_key_id = crypto.key_id
+            row.credential_revision = crypto.revision
+            row.credential_rotated_at = datetime.utcnow()
+        elif secret_encrypted is not None:
+            # Compatibility/import path is intentionally strict: new writes may
+            # import only a versioned envelope that verifies against this exact
+            # account context. Raw legacy Fernet tokens are read-only migration
+            # material and must be rotated explicitly.
+            from services.broker_credentials import (
+                decrypt_broker_credentials,
+                is_broker_credential_envelope,
+            )
+
+            candidate = str(secret_encrypted)
+            if not is_broker_credential_envelope(candidate):
+                raise ValueError(
+                    "Raw legacy broker ciphertext cannot be written to a new connection"
+                )
+            payload_check, crypto = decrypt_broker_credentials(
+                candidate,
+                user_id=int(user_id),
+                connection_id=str(row.connection_id),
+                provider=platform_n,
+                connector=connector_n,
+            )
+            if not isinstance(payload_check, dict):
+                raise ValueError("Broker credential envelope payload is invalid")
+            row.secret_encrypted = candidate
+            row.credential_format = crypto.format
+            row.credential_version = crypto.version
+            row.credential_key_id = crypto.key_id
+            row.credential_revision = crypto.revision
+            row.credential_rotated_at = datetime.utcnow()
+
+        if row.environment != next_environment or str(row.secret_encrypted or "") != previous_secret:
+            # A classification or credential change invalidates the previous
+            # execution authorization. Re-enable only through the explicit
+            # account-policy path.
+            row.execution_enabled = False
+        row.environment = next_environment
         row.auth_mode = str(auth_mode or "existing").strip().lower()[:32]
-        if secret_encrypted is not None:
-            row.secret_encrypted = str(secret_encrypted)
+        if row.auth_mode in {"provider_secure_link", "oauth"} and not row.secret_encrypted:
+            row.credential_format = "provider_managed"
+            row.credential_version = 0
+            row.credential_key_id = None
+            row.credential_revision = 0
         row.server = str(server).strip()[:128] if server else row.server
         row.status = str(status or "pending").strip().lower()[:32]
         row.permissions = dict(permissions or row.permissions or {})
@@ -318,8 +481,55 @@ async def upsert_connection(
         row.last_error_message = (
             str(last_error_message).strip()[:512] if last_error_message else None
         )
-        row.meta = dict(meta or row.meta or {})
+        next_meta = dict(meta or row.meta or {})
+        if (row.meta or {}).get("account_classification") is not None:
+            # Relinking credentials must never downgrade a PROP account policy.
+            next_meta["account_classification"] = row.meta["account_classification"]
+        row.meta = next_meta
         row.updated_at = datetime.utcnow()
+
+        # Every connection owns a conservative versioned policy from birth.
+        # This prevents post-migration accounts from existing outside the
+        # canonical policy boundary. Relinks never auto-upgrade permissions.
+        await session.flush()
+        from db.models import TradingAccountPolicyRecord
+
+        account_policy = (
+            await session.execute(
+                select(TradingAccountPolicyRecord).where(
+                    TradingAccountPolicyRecord.connection_id == str(row.connection_id),
+                    TradingAccountPolicyRecord.user_id == int(user_id),
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if account_policy is None:
+            requested_classification = str(
+                (row.meta or {}).get("account_classification") or ""
+            ).strip().upper()
+            if requested_classification not in {"PAPER", "DEMO", "LIVE_PERSONAL", "PROP"}:
+                requested_classification = (
+                    "LIVE_PERSONAL"
+                    if str(row.environment or "").lower() == "live"
+                    else "DEMO"
+                )
+            account_policy = TradingAccountPolicyRecord(
+                policy_id=str(uuid4()),
+                connection_id=str(row.connection_id),
+                user_id=int(user_id),
+                policy_version=1,
+                account_mode=requested_classification,
+                execution_permission="SIGNALS_ONLY",
+                status="configured",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            session.add(account_policy)
+            next_meta = dict(row.meta or {})
+            next_meta["account_classification"] = requested_classification
+            next_meta["account_policy_version"] = 1
+            row.meta = next_meta
+            row.execution_enabled = False
+
         await session.commit()
         await session.refresh(row)
         return public_connection(row)
@@ -348,8 +558,35 @@ async def set_execution_enabled(
                 raise PermissionError("Execution-risk terms must be accepted first")
             if str(row.status or "").lower() not in {"linked", "ready", "verified"}:
                 raise PermissionError("Verify the broker connection before enabling execution")
-            if not bool((row.permissions or {}).get("trade", False)):
-                raise PermissionError("This broker connection is read-only")
+            reason = execution_connection_error(row, int(user_id))
+            if reason and reason != "account_execution_disabled":
+                raise PermissionError(reason)
+
+            from db.models import TradingAccountPolicyRecord
+
+            policy = (
+                await session.execute(
+                    select(TradingAccountPolicyRecord).where(
+                        TradingAccountPolicyRecord.connection_id == str(connection_id),
+                        TradingAccountPolicyRecord.user_id == int(user_id),
+                    ).with_for_update().limit(1)
+                )
+            ).scalar_one_or_none()
+            if policy is None:
+                raise PermissionError("account_policy_required")
+            permission = str(policy.execution_permission or "").strip().upper()
+            if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+                raise PermissionError("execution_permission_blocked")
+            if policy.frozen_at is not None:
+                raise PermissionError("account_policy_frozen")
+            account_mode = str(policy.account_mode or "").strip().upper()
+            if account_mode == "PAPER":
+                raise PermissionError("paper_account_broker_execution_forbidden")
+            if account_mode == "PROP":
+                if policy.certified_at is None or not str(policy.certification_ref or "").strip():
+                    raise PermissionError("prop_policy_certification_required")
+                if not str(policy.prop_rules_version or "").strip():
+                    raise PermissionError("prop_rules_version_required")
         row.execution_enabled = bool(enabled)
         row.updated_at = datetime.utcnow()
         await session.commit()

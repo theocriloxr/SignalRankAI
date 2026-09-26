@@ -60,13 +60,72 @@ def check_schema() -> dict[str, Any]:
 
     query = """
         SELECT
-          (SELECT version_num FROM alembic_version LIMIT 1) AS deployed_revision,
+          (SELECT array_agg(version_num ORDER BY version_num) FROM alembic_version) AS deployed_revisions,
           to_regclass('public.subscription_products') IS NOT NULL AS subscription_products,
           to_regclass('public.instruments') IS NOT NULL AS instruments,
           to_regclass('public.webhook_deliveries') IS NOT NULL AS webhook_deliveries,
           to_regclass('public.auth_identities') IS NOT NULL AS auth_identities,
           to_regclass('public.user_sessions') IS NOT NULL AS user_sessions,
           to_regclass('public.user_acquisition') IS NOT NULL AS user_acquisition,
+          to_regclass('public.broker_connections') IS NOT NULL AS broker_connections,
+          to_regclass('public.trading_account_policies') IS NOT NULL AS trading_account_policies,
+          to_regclass('public.broker_reconciliation_state') IS NOT NULL AS broker_reconciliation_state,
+          to_regclass('public.trading_account_ledger_entries') IS NOT NULL AS trading_account_ledger_entries,
+          to_regclass('public.broker_execution_decisions') IS NOT NULL AS broker_execution_decisions,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_format'
+          ) AS broker_connections_credential_format,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_version'
+          ) AS broker_connections_credential_version,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_key_id'
+          ) AS broker_connections_credential_key_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_revision'
+          ) AS broker_connections_credential_revision,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_connections'
+              AND column_name = 'credential_rotated_at'
+          ) AS broker_connections_credential_rotated_at,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'mt5_credentials'
+              AND column_name = 'password_encrypted'
+              AND is_nullable = 'YES'
+          ) AS mt5_credentials_password_nullable,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'broker_executions'
+              AND column_name = 'connection_id'
+          ) AS broker_executions_connection_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'mt5_executions'
+              AND column_name = 'connection_id'
+          ) AS mt5_executions_connection_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'signals'
+              AND column_name = 'ml_recovery_mode'
+          ) AS signals_ml_recovery_mode,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -79,14 +138,16 @@ def check_schema() -> dict[str, Any]:
           inet_server_port() AS server_port
     """
     with closing(psycopg2.connect(url, connect_timeout=10)) as connection:
-        connection.autocommit = True
+        connection.set_session(readonly=True, autocommit=True)
         with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '10000ms'")
             cursor.execute(query)
             row = cursor.fetchone()
             columns = [getattr(item, "name", item[0]) for item in cursor.description]
 
     record = dict(zip(columns, row, strict=True))
-    deployed = str(record.pop("deployed_revision") or "")
+    revisions = list(record.pop("deployed_revisions") or [])
+    deployed = str(revisions[0]) if len(revisions) == 1 else ""
     required = {
         key: bool(record.pop(key))
         for key in (
@@ -96,6 +157,20 @@ def check_schema() -> dict[str, Any]:
             "auth_identities",
             "user_sessions",
             "user_acquisition",
+            "broker_connections",
+            "trading_account_policies",
+            "broker_reconciliation_state",
+            "trading_account_ledger_entries",
+            "broker_execution_decisions",
+            "broker_connections_credential_format",
+            "broker_connections_credential_version",
+            "broker_connections_credential_key_id",
+            "broker_connections_credential_revision",
+            "broker_connections_credential_rotated_at",
+            "mt5_credentials_password_nullable",
+            "broker_executions_connection_id",
+            "mt5_executions_connection_id",
+            "signals_ml_recovery_mode",
             "users_public_user_id",
         )
     }
@@ -105,6 +180,7 @@ def check_schema() -> dict[str, Any]:
         "status": "PASS" if ok else "BLOCKED",
         "ok": ok,
         "alembic_current": deployed or None,
+        "alembic_revisions": revisions,
         "alembic_expected_head": expected,
         "required_schema": required,
         "missing": missing,
@@ -123,13 +199,13 @@ def main() -> int:
     try:
         payload = check_schema()
     except RuntimeError as exc:
-        payload = {"status": "BLOCKED", "ok": False, "error": str(exc)}
+        payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
         code = EXIT_CONFIGURATION
     except Exception as exc:  # pragma: no cover - environment/network dependent
         payload = {
             "status": "BLOCKED",
             "ok": False,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
         code = EXIT_UNREACHABLE
     else:

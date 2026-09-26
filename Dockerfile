@@ -10,12 +10,18 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends gcc libpq-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker layer caching
-COPY requirements.txt ./
+# Copy the declared direct requirements and the certified full dependency graph
+# first to preserve Docker layer caching. Runtime images install the lock, not
+# a freshly-resolved graph.
+COPY requirements.txt requirements.lock ./
 
-# Ensure pip/tools are up-to-date and install Python deps
+# Install the exact certified graph without allowing pip to re-resolve
+# transitive dependencies. pip check fails the image build if the lock is
+# internally inconsistent or misses a dependency required by installed
+# packages.
 RUN python -m pip install --upgrade pip setuptools wheel \
-	&& pip install -r requirements.txt
+	&& pip install --no-deps -r requirements.lock \
+	&& pip check
 
 # Copy application code
 COPY . .
@@ -32,6 +38,8 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_ml_learning_runtime_v135.py::test_dedicated_analytics_ml_uses_analytics_priority_and_bounded_wait \
       tests/test_ml_learning_runtime_v135.py::test_ml_candle_hydration_is_bounded_to_training_window \
       tests/test_ml_learning_runtime_v135.py::test_ml_training_is_nonblocking_and_multisource \
+      tests/test_ml_learning_runtime_v135.py::test_adaptive_and_shadow_writes_are_durable_background_work \
+      tests/test_ml_learning_runtime_v135.py::test_adaptive_candle_pressure_requeues_full_batch \
       tests/test_railway_runtime_incident_fixes.py::test_signal_insert_reuses_the_exact_active_unique_index_bucket \
       tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
@@ -84,6 +92,11 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_cross_channel_profile_parity.py \
       tests/test_release_source_and_domain_bridge.py \
       tests/test_production_operations_package.py \
+      tests/test_release_provenance.py \
+      tests/test_traceability_completion_boundary.py \
+      tests/test_load_certification.py \
+      tests/test_copy_trade_safety_foundation.py \
+    && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
     && python scripts/production_readiness_check.py
 
 # Ensure start script is executable and use it as entrypoint so migrations/run-time

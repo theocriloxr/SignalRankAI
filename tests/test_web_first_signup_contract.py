@@ -13,7 +13,7 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0042_ml_recovery_provenance"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0045_mt5_credential_retirement"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
@@ -28,6 +28,19 @@ def test_web_signup_migration_is_single_head() -> None:
     )
     assert 'revision = "0042_ml_recovery_provenance"' in recovery_provenance
     assert 'down_revision = "0041_broker_connection_registry"' in recovery_provenance
+    account_policy = _source("db/migrations/versions/0043_account_execution_policy.py")
+    assert 'revision = "0043_account_execution_policy"' in account_policy
+    assert 'down_revision = "0042_ml_recovery_provenance"' in account_policy
+    credential_envelope = _source(
+        "db/migrations/versions/0044_broker_credential_envelope.py"
+    )
+    assert 'revision = "0044_broker_credential_envelope"' in credential_envelope
+    assert 'down_revision = "0043_account_execution_policy"' in credential_envelope
+    credential_retirement = _source(
+        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+    )
+    assert 'revision = "0045_mt5_credential_retirement"' in credential_retirement
+    assert 'down_revision = "0044_broker_credential_envelope"' in credential_retirement
 
 
 def test_direct_signup_accepts_acquisition_and_referral_context() -> None:
@@ -61,7 +74,7 @@ def test_custom_domain_is_canonical_production_origin() -> None:
         assert "APP_BASE_URL=https://signalrank.criloxsolutions.com" in profile
         assert "APP_ALLOWED_ORIGINS=https://signalrank.criloxsolutions.com" in profile
         assert "APP_COOKIE_SECURE=1" in profile
-        assert "EXPECTED_ALEMBIC_HEAD=0042_ml_recovery_provenance" in profile
+        assert "EXPECTED_ALEMBIC_HEAD=0045_mt5_credential_retirement" in profile
 
 
 def test_email_links_prefer_configured_app_base_url_over_railway_domain() -> None:

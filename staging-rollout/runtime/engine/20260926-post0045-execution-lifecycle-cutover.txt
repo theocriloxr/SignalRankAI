@@ -1,0 +1,5 @@
+SignalRank staging true-engine rollout trigger for post-0045 hardening.
+Purpose: deploy canonical broker order/position lifecycle transitions, persisted position projections, transition provenance, and current release contract.
+Alembic remains 0045_mt5_credential_retirement.
+All staging live-money execution and payout paths remain disabled.
+No secrets are stored in this marker.

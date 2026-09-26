@@ -104,6 +104,7 @@ class SloBudget:
             self._latencies.append(max(0.0, float(latency_ms)))
             if len(self._latencies) > self.window:
                 self._latencies = self._latencies[-self.window:]
+        self._publish()
 
     def record_failure(self, *, latency_ms: float | None = None) -> None:
         self._outcomes.append(False)
@@ -112,10 +113,27 @@ class SloBudget:
             self._latencies.append(max(0.0, float(latency_ms)))
             if len(self._latencies) > self.window:
                 self._latencies = self._latencies[-self.window:]
+        self._publish()
 
     def _trim(self) -> None:
         if len(self._outcomes) > self.window:
             self._outcomes = self._outcomes[-self.window:]
+
+    def _publish(self) -> None:
+        try:
+            from core.telemetry import publish_slo_snapshot
+
+            publish_slo_snapshot(
+                name=self.slo.name,
+                service=self.slo.owning_service,
+                error_rate=self.error_rate(),
+                budget_remaining_pct=self.budget_remaining_pct(),
+                samples=len(self._outcomes),
+                degraded=self.degraded(),
+            )
+        except Exception:
+            # SLO accounting must never make a trading or delivery path fail.
+            pass
 
     def error_rate(self) -> float:
         if not self._outcomes:
@@ -195,11 +213,25 @@ class SloRegistry:
         return {name: self.budget(name).snapshot() for name in self._budgets}
 
 
+GLOBAL_SLO_REGISTRY = SloRegistry()
+
+
+def record_slo_success(name: str, *, latency_ms: float | None = None) -> None:
+    GLOBAL_SLO_REGISTRY.budget(name).record_success(latency_ms=latency_ms)
+
+
+def record_slo_failure(name: str, *, latency_ms: float | None = None) -> None:
+    GLOBAL_SLO_REGISTRY.budget(name).record_failure(latency_ms=latency_ms)
+
+
 __all__ = [
     "DegradationDecision",
+    "GLOBAL_SLO_REGISTRY",
     "SLO_REGISTRY",
     "SloBudget",
     "SloDefinition",
     "SloRegistry",
+    "record_slo_failure",
+    "record_slo_success",
     "slo_by_name",
 ]

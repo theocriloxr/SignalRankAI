@@ -2061,9 +2061,39 @@ async def main(lookback_days: int | None = None):
     X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(
         engineer_features, df
     )
+
+    from ml.model_registry import (
+        active_artifact_hash,
+        compute_training_dataset_version,
+        evaluate_promotion_lineage,
+    )
+
+    primary_path = _primary_model_path()
+    dataset_version = await asyncio.to_thread(
+        compute_training_dataset_version,
+        X_train,
+        y_train,
+        timestamps,
+    )
+    lineage_capture_error = ""
+    try:
+        parent_model_hash_sha256 = await asyncio.to_thread(
+            active_artifact_hash,
+            primary_path,
+        )
+    except RuntimeError as exc:
+        parent_model_hash_sha256 = ""
+        lineage_capture_error = str(exc)
+
     logger.info(
-        "[ml_training_run] id=%s status=fitting rows=%s effective_rows=%.2f features=%s sources=%s",
-        run_id, len(df), effective_rows, len(feature_cols), source_counts,
+        "[ml_training_run] id=%s status=fitting rows=%s effective_rows=%.2f features=%s sources=%s dataset=%s parent=%s",
+        run_id,
+        len(df),
+        effective_rows,
+        len(feature_cols),
+        source_counts,
+        dataset_version,
+        parent_model_hash_sha256[:12] if parent_model_hash_sha256 else "none",
     )
     model, feature_cols, calibration_x, calibration_y, metrics = await asyncio.to_thread(
         train_model,
@@ -2113,7 +2143,24 @@ async def main(lookback_days: int | None = None):
             calibration_metrics.get("maximum_ece"),
         )
 
-    primary_path = _primary_model_path()
+    lineage_decision = await asyncio.to_thread(
+        evaluate_promotion_lineage,
+        dataset_version=dataset_version,
+        training_run_id=run_id,
+        parent_model_hash_sha256=parent_model_hash_sha256,
+        current_champion_path=primary_path,
+    )
+    lineage_reasons = list(lineage_decision.reasons)
+    if lineage_capture_error and lineage_capture_error not in lineage_reasons:
+        lineage_reasons.append(lineage_capture_error)
+    if promotion_eligible and lineage_reasons:
+        promotion_eligible = False
+        logger.warning(
+            "[ml_training_run] id=%s status=candidate_only reason=lineage_gate_failed reasons=%s primary_model_preserved=true",
+            run_id,
+            lineage_reasons,
+        )
+
     champion_comparison = {"enabled": False, "reason": "not_evaluated"}
     if promotion_eligible:
         durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
@@ -2139,6 +2186,13 @@ async def main(lookback_days: int | None = None):
     )
     training_meta = {
         "run_id": run_id,
+        "dataset_version": dataset_version,
+        "parent_model_hash_sha256": parent_model_hash_sha256,
+        "lineage": {
+            "eligible": bool(lineage_decision.eligible and not lineage_reasons),
+            "reasons": lineage_reasons,
+            "current_champion_hash_sha256": lineage_decision.current_champion_hash_sha256,
+        },
         "offline_bootstrap_used": bool(used_bootstrap),
         "feature_baseline": feature_baseline,
         "source_rows": int(source_rows),

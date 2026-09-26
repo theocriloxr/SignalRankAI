@@ -1,0 +1,5 @@
+SignalRank staging delivery/outcome rollout trigger for post-0045 hardening.
+Purpose: align delivery, outcome tracking, broker reconciliation, and execution-evidence handling with the current canonical lifecycle release.
+Alembic remains 0045_mt5_credential_retirement.
+All staging live-money execution and payout paths remain disabled.
+No secrets are stored in this marker.

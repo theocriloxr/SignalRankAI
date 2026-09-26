@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 import json
 import os
 import re
@@ -44,29 +45,38 @@ def audit_versions(root: Path = ROOT) -> dict[str, object]:
 
 
 
-def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
-    """Compare canonical Signal ORM columns with the rendered Alembic chain."""
+@lru_cache(maxsize=4)
+def render_head_sql(root: Path = ROOT) -> tuple[bool, str, str]:
+    """Render the configured Alembic head once and reuse it across contracts."""
     env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
+    env["DATABASE_MIGRATION_URL"] = (
+        "postgresql+psycopg2://audit:audit@localhost/audit"
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
         cwd=root,
         env=env,
         text=True,
         capture_output=True,
-        timeout=90,
+        timeout=120,
         check=False,
     )
-    if proc.returncode != 0:
+    return proc.returncode == 0, proc.stdout, proc.stderr
+
+
+def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
+    """Compare canonical Signal ORM columns with the rendered Alembic chain."""
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
         return {
             "ok": False,
             "missing_columns": [],
-            "error": f"alembic_offline_exit={proc.returncode}",
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
         }
 
     from db.models import Signal
 
-    rendered = proc.stdout
     migrated: set[str] = set()
     create_match = re.search(r"CREATE TABLE signals \((.*?)\n\);", rendered, re.S | re.I)
     if create_match:
@@ -102,16 +112,15 @@ def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
 
 def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
     """Ensure the rendered chain contains every MLRejectedSignal ORM column."""
-    env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
-        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
-    )
-    if proc.returncode != 0:
-        return {"ok": False, "missing_columns": [], "error": f"alembic_offline_exit={proc.returncode}"}
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "missing_columns": [],
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
     from db.models import MLRejectedSignal
-    rendered = proc.stdout
     migrated: set[str] = set()
     create_match = re.search(r"CREATE TABLE(?: IF NOT EXISTS)? ml_rejected_signals \((.*?)\n\s*\);", rendered, re.S | re.I)
     if create_match:
@@ -132,15 +141,13 @@ def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
 
 def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
     """Ensure one mutable Outcome projection is enforced per signal."""
-    env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
-    proc = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
-        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
-    )
-    if proc.returncode != 0:
-        return {"ok": False, "error": f"alembic_offline_exit={proc.returncode}"}
-    rendered = proc.stdout
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
     unique_sql = bool(
         re.search(
             r"CREATE UNIQUE INDEX(?: IF NOT EXISTS)? uq_outcomes_signal_id\s+ON outcomes \(signal_id\)",
@@ -157,6 +164,117 @@ def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
         "unique_guard_sql": unique_sql,
         "model_unique_constraint": model_unique,
     }
+
+def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object]:
+    """Verify the rendered head contains the canonical immutable broker ledger."""
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "missing_columns": [],
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
+
+    from db.models import TradingAccountLedgerEntry
+
+    create_match = re.search(
+        r"CREATE TABLE trading_account_ledger_entries \((.*?)\n\);",
+        rendered,
+        re.S | re.I,
+    )
+    migrated: set[str] = set()
+    if create_match:
+        for raw_line in create_match.group(1).splitlines():
+            line = raw_line.strip().rstrip(",")
+            if not line or line.upper().startswith(
+                ("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")
+            ):
+                continue
+            migrated.add(line.split()[0].strip('"').lower())
+
+    expected = {
+        column.name.lower()
+        for column in TradingAccountLedgerEntry.__table__.columns
+    }
+    missing = sorted(expected - migrated)
+    immutable_trigger = bool(
+        re.search(
+            r"CREATE TRIGGER trg_trading_account_ledger_immutable",
+            rendered,
+            re.I,
+        )
+    )
+    idempotency_constraint = (
+        "uq_trading_account_ledger_provider_event" in rendered
+    )
+    return {
+        "ok": not missing and immutable_trigger and idempotency_constraint,
+        "missing_columns": missing,
+        "immutable_trigger": immutable_trigger,
+        "idempotency_constraint": idempotency_constraint,
+    }
+
+
+def audit_broker_credential_envelope_contract(
+    root: Path = ROOT,
+) -> dict[str, object]:
+    """Verify 0044 credential metadata and ORM remain in lockstep."""
+    render_ok, rendered, render_error = render_head_sql(root)
+    if not render_ok:
+        return {
+            "ok": False,
+            "missing": [],
+            "error": "alembic_offline_render_failed",
+            "detail": render_error[-1000:],
+        }
+
+    migration = (
+        root / "db/migrations/versions/0044_broker_credential_envelope.py"
+    ).read_text(encoding="utf-8", errors="replace")
+    required_columns = {
+        "credential_format",
+        "credential_version",
+        "credential_key_id",
+        "credential_revision",
+        "credential_rotated_at",
+    }
+    rendered_missing = sorted(
+        column for column in required_columns
+        if column not in rendered
+    )
+    source_missing = sorted(
+        column for column in required_columns
+        if column not in migration
+    )
+
+    from db.models import BrokerConnection
+
+    model_columns = {
+        column.name
+        for column in BrokerConnection.__table__.columns
+    }
+    model_missing = sorted(required_columns - model_columns)
+    markers = {
+        "legacy_backfill": "legacy_fernet" in rendered,
+        "format_check": "ck_broker_connections_credential_format" in rendered,
+        "key_index": "ix_broker_connections_credential_key_id" in rendered,
+        "down_revision": 'down_revision = "0043_account_execution_policy"' in migration,
+    }
+    ok = (
+        not rendered_missing
+        and not source_missing
+        and not model_missing
+        and all(markers.values())
+    )
+    return {
+        "ok": ok,
+        "rendered_missing": rendered_missing,
+        "source_missing": source_missing,
+        "model_missing": model_missing,
+        **markers,
+    }
+
 
 def audit_live_financial_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify execution/payout tables and idempotency constraints exist in head."""
@@ -187,16 +305,22 @@ def main() -> int:
     rejected_contract = audit_ml_rejected_runtime_contract()
     outcome_contract = audit_outcome_projection_contract()
     financial_contract = audit_live_financial_contract()
+    account_ledger_contract = audit_trading_account_ledger_contract()
+    broker_credential_contract = audit_broker_credential_envelope_contract()
     result["signal_runtime_contract"] = signal_contract
     result["ml_rejected_runtime_contract"] = rejected_contract
     result["outcome_projection_contract"] = outcome_contract
     result["live_financial_contract"] = financial_contract
+    result["trading_account_ledger_contract"] = account_ledger_contract
+    result["broker_credential_envelope_contract"] = broker_credential_contract
     result["ok"] = bool(
         result["ok"]
         and signal_contract["ok"]
         and rejected_contract["ok"]
         and outcome_contract["ok"]
         and financial_contract["ok"]
+        and account_ledger_contract["ok"]
+        and broker_credential_contract["ok"]
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1

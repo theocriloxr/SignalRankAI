@@ -1,0 +1,5 @@
+SignalRank staging public frontdoor 0045 credential-retirement cutover.
+Purpose: redeploy RUN_MODE=frontdoor after staging DB migration plus analytics/engine/delivery validation on 0045.
+Frontdoor owns HTTP/Telegram/scheduler only; engine and delivery worker loops remain excluded.
+All live-money execution and payout paths remain hard-disabled.
+No secrets are stored in this marker.

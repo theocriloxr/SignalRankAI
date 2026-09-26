@@ -1,4 +1,4 @@
-"""Cross-process lock for one execution destination per delivered user signal."""
+"""Cross-process lock for one execution destination per trading account and signal."""
 
 from __future__ import annotations
 
@@ -13,8 +13,22 @@ _LOCAL_LOCKS: dict[str, asyncio.Lock] = {}
 _LOCAL_LOCKS_GUARD = asyncio.Lock()
 
 
-def execution_claim_key(user_id: int, signal_id: str) -> str:
-    digest = hashlib.sha256(f"{int(user_id)}|{str(signal_id)}".encode()).hexdigest()[:32]
+def execution_claim_key(
+    user_id: int,
+    signal_id: str,
+    *,
+    account_scope: str | None = None,
+) -> str:
+    """Return a lock key scoped to one execution account.
+
+    account_scope=None preserves the historical user+signal key for legacy
+    callers. New paper/broker paths pass an explicit immutable account scope so
+    separate trading accounts never contend on the same signal.
+    """
+    scope = str(account_scope or "").strip() or "legacy"
+    digest = hashlib.sha256(
+        f"{int(user_id)}|{str(signal_id)}|{scope}".encode()
+    ).hexdigest()[:32]
     return f"signalrank:execution-destination:{digest}"
 
 
@@ -36,11 +50,16 @@ async def execution_destination_lock(
     user_id: int,
     signal_id: str,
     *,
+    account_scope: str | None = None,
     timeout_seconds: float = 5.0,
     lease_seconds: int = 180,
 ) -> AsyncIterator[bool]:
-    """Acquire a distributed claim; fail closed in production without Redis."""
-    key = execution_claim_key(user_id, signal_id)
+    """Acquire a distributed account-scoped claim; fail closed without Redis."""
+    key = execution_claim_key(
+        user_id,
+        signal_id,
+        account_scope=account_scope,
+    )
     token = uuid.uuid4().hex
     redis_client = None
     try:

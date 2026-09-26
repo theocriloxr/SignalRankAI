@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+import pytest
 
 
 def test_large_pool_allows_background_without_consuming_foreground_reserve() -> None:
@@ -143,9 +146,76 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     candle = (root / "engine" / "adaptive" / "candle_store.py").read_text(encoding="utf-8")
     shadow = (root / "engine" / "shadow_outcome_worker.py").read_text(encoding="utf-8")
 
-    assert "drop_if_busy=False" in candle
-    assert candle.count("ADAPTIVE_CANDLE_DB_TIMEOUT_SECONDS") >= 1
+    # Adaptive candle snapshots are idempotent evidence and must shed pressure
+    # instead of holding the engine's tiny DB pool for tens of seconds.
+    assert "drop_if_busy=noncritical" in candle
+    assert "ADAPTIVE_CANDLE_DB_ADMISSION_TIMEOUT_SECONDS" in candle
+    assert "ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION" in candle
+    assert "ADAPTIVE_CANDLE_DB_LOCK_TIMEOUT_MS" in candle
+    assert "ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS" in candle
+    assert "SET LOCAL lock_timeout" in candle
+    assert "SET LOCAL statement_timeout" in candle
+    assert "for item in batch:" in candle
+    # Shadow outcome writes remain durable background work because their rows are
+    # lifecycle evidence rather than an idempotent candle cache.
     assert shadow.count("drop_if_busy=False") >= 2
+
+
+@pytest.mark.asyncio
+async def test_adaptive_candle_pressure_requeues_full_batch(monkeypatch) -> None:
+    from engine.adaptive import candle_store
+
+    while True:
+        try:
+            candle_store._QUEUE.get_nowait()
+        except candle_store.queue.Empty:
+            break
+
+    def snapshot(asset: str, open_time_ms: int) -> dict:
+        return {
+            "asset": asset,
+            "timeframe": "1h",
+            "provider": "test",
+            "candles": [
+                {
+                    "open_time_ms": open_time_ms,
+                    "close_time_ms": open_time_ms + 3_600_000,
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.5,
+                    "volume": 10.0,
+                    "is_final": True,
+                }
+            ],
+        }
+
+    original = [snapshot("BTCUSDT", 1_000), snapshot("ETHUSDT", 2_000)]
+    for item in original:
+        candle_store._QUEUE.put_nowait(item)
+
+    captured: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def busy_session(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("simulated DB pressure")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(candle_store, "get_session", busy_session)
+    monkeypatch.setenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", "2")
+    monkeypatch.setenv("ADAPTIVE_CANDLE_DB_PRIORITY", "background")
+
+    with pytest.raises(RuntimeError, match="simulated DB pressure"):
+        await candle_store.persist_queued_snapshots(12)
+
+    assert captured["priority"] == "background"
+    assert captured["drop_if_busy"] is True
+    assert float(captured["timeout_seconds"]) <= 0.25
+    assert candle_store.queue_depth() == len(original)
+
+    restored = [candle_store._QUEUE.get_nowait() for _ in original]
+    assert [item["asset"] for item in restored] == ["BTCUSDT", "ETHUSDT"]
 
 
 def test_secondary_evidence_trains_candidate_without_live_promotion() -> None:

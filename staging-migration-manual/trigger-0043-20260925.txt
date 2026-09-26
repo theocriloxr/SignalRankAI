@@ -1,0 +1,5 @@
+SignalRankAI staging-only migration trigger
+Target Alembic head: 0043_account_execution_policy
+Base clean-room certified commit: 1839e7c79458bf3629e51f341517b1c974349950
+Production mutation: forbidden
+Live execution/payment flags: required off

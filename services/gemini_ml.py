@@ -24,6 +24,7 @@ import os
 import logging
 import json
 import time
+import threading
 from typing import Dict, List, Any, Optional, Tuple, Mapping, Sequence
 import asyncio
 
@@ -71,6 +72,163 @@ except Exception:
 
 STRONG_SENTIMENT_THRESHOLD = float(os.getenv("GEMINI_SENTIMENT_THRESHOLD", "2.0") or 2.0)
 
+_GEMINI_PROVIDER_LOCK = threading.Lock()
+_GEMINI_CIRCUIT_UNTIL_MONO = 0.0
+_GEMINI_CIRCUIT_REASON = ""
+_GEMINI_WINDOW_STARTED_MONO = 0.0
+_GEMINI_WINDOW_CALLS = 0
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_int(
+    name: str,
+    default: int,
+    *,
+    minimum: int = 0,
+    maximum: int = 86400,
+) -> int:
+    try:
+        value = int(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        value = int(default)
+    return max(minimum, min(maximum, value))
+
+
+def _provider_http_status(exc: BaseException) -> int | None:
+    """Extract an HTTP-like status from google-genai or compatible exceptions."""
+    candidates = [
+        getattr(exc, "status_code", None),
+        getattr(exc, "code", None),
+        getattr(getattr(exc, "response", None), "status_code", None),
+    ]
+    for raw in candidates:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if 100 <= value <= 599:
+            return value
+    message = str(exc or "")
+    for status in (429, 404, 403, 401, 400, 500, 502, 503, 504):
+        if str(status) in message:
+            return status
+    return None
+
+
+def _gemini_provider_admit() -> tuple[bool, str]:
+    """Bound calls and reject locally while a provider cooldown is open."""
+    global _GEMINI_WINDOW_STARTED_MONO, _GEMINI_WINDOW_CALLS
+    if not _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+        return True, ""
+    now = time.monotonic()
+    with _GEMINI_PROVIDER_LOCK:
+        if _GEMINI_CIRCUIT_UNTIL_MONO and now < _GEMINI_CIRCUIT_UNTIL_MONO:
+            base = _GEMINI_CIRCUIT_REASON or "provider"
+            return False, f"{base}_circuit_open"
+        window_seconds = _env_int(
+            "GEMINI_REVIEW_WINDOW_SECONDS",
+            60,
+            minimum=10,
+            maximum=3600,
+        )
+        max_calls = _env_int(
+            "GEMINI_REVIEW_MAX_CALLS_PER_WINDOW",
+            12,
+            minimum=0,
+            maximum=10000,
+        )
+        if (
+            not _GEMINI_WINDOW_STARTED_MONO
+            or now - _GEMINI_WINDOW_STARTED_MONO > window_seconds
+        ):
+            _GEMINI_WINDOW_STARTED_MONO = now
+            _GEMINI_WINDOW_CALLS = 0
+        if max_calls == 0 or _GEMINI_WINDOW_CALLS >= max_calls:
+            return False, "budget_circuit_open"
+        _GEMINI_WINDOW_CALLS += 1
+    return True, ""
+
+
+def _open_gemini_provider_circuit(reason: str, seconds: int) -> None:
+    global _GEMINI_CIRCUIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON
+    if not _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+        return
+    with _GEMINI_PROVIDER_LOCK:
+        _GEMINI_CIRCUIT_UNTIL_MONO = (
+            time.monotonic() + max(1, int(seconds))
+        )
+        _GEMINI_CIRCUIT_REASON = str(reason or "provider")[:80]
+
+
+def _gemini_failure(exc: BaseException) -> tuple[str, bool]:
+    """Classify provider errors and open an appropriate local cooldown."""
+    status = _provider_http_status(exc)
+    if status == 429:
+        _open_gemini_provider_circuit(
+            "rate_limited",
+            _env_int(
+                "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS",
+                900,
+                minimum=1,
+                maximum=86400,
+            ),
+        )
+        return "rate_limited_degraded", True
+    if status in {400, 404}:
+        reason = f"provider_http_{status}"
+        _open_gemini_provider_circuit(
+            reason,
+            _env_int(
+                "GEMINI_CONFIG_ERROR_COOLDOWN_SECONDS",
+                3600,
+                minimum=1,
+                maximum=86400,
+            ),
+        )
+        return f"{reason}_degraded", True
+    if status in {401, 403}:
+        reason = f"provider_http_{status}"
+        _open_gemini_provider_circuit(
+            reason,
+            _env_int(
+                "GEMINI_AUTH_ERROR_COOLDOWN_SECONDS",
+                3600,
+                minimum=1,
+                maximum=86400,
+            ),
+        )
+        return f"{reason}_degraded", True
+    if status is not None and status >= 500:
+        reason = f"provider_http_{status}"
+        _open_gemini_provider_circuit(
+            reason,
+            _env_int(
+                "GEMINI_PROVIDER_ERROR_COOLDOWN_SECONDS",
+                60,
+                minimum=1,
+                maximum=3600,
+            ),
+        )
+        return f"{reason}_degraded", True
+    return f"provider_exception_{type(exc).__name__}", False
+
+
+def _reset_gemini_provider_circuit_for_tests() -> None:
+    """Deterministic test seam; not used by runtime request handling."""
+    global _GEMINI_CIRCUIT_UNTIL_MONO, _GEMINI_CIRCUIT_REASON
+    global _GEMINI_WINDOW_STARTED_MONO, _GEMINI_WINDOW_CALLS
+    with _GEMINI_PROVIDER_LOCK:
+        _GEMINI_CIRCUIT_UNTIL_MONO = 0.0
+        _GEMINI_CIRCUIT_REASON = ""
+        _GEMINI_WINDOW_STARTED_MONO = 0.0
+        _GEMINI_WINDOW_CALLS = 0
+
 
 def _get_client():
     """Return the configured Gemini client, if available."""
@@ -95,17 +253,39 @@ def _openai_preferred_available() -> bool:
         return False
 
 
-async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
-    """Call Gemini and return response text; None means unavailable/failed."""
+async def _call_gemini_result(
+    prompt: str,
+    max_tokens: int = 512,
+) -> dict[str, Any]:
+    """Call Gemini with bounded process-level provider protection."""
     active_client = _get_client()
     if active_client is None:
-        return None
+        return {
+            "ok": False,
+            "provider": "gemini",
+            "model": MODEL_ID,
+            "error": "not_available",
+        }
+
+    admitted, blocked_reason = _gemini_provider_admit()
+    if not admitted:
+        return {
+            "ok": False,
+            "provider": "gemini",
+            "model": MODEL_ID,
+            "error": blocked_reason,
+            "circuit_open": True,
+        }
+
+    started = time.perf_counter()
     try:
         config = None
         try:
             from google.genai import types as genai_types
 
-            config = genai_types.GenerateContentConfig(max_output_tokens=max(1, int(max_tokens)))
+            config = genai_types.GenerateContentConfig(
+                max_output_tokens=max(1, int(max_tokens))
+            )
         except Exception:
             config = None
         kwargs = {
@@ -119,10 +299,54 @@ async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
             **kwargs,
         )
         text = str(getattr(response, "text", "") or "").strip()
-        return text or None
+        if not text:
+            return {
+                "ok": False,
+                "provider": "gemini",
+                "model": MODEL_ID,
+                "error": "empty_response",
+                "latency_ms": round(
+                    (time.perf_counter() - started) * 1000.0,
+                    2,
+                ),
+            }
+        return {
+            "ok": True,
+            "provider": "gemini",
+            "model": MODEL_ID,
+            "text": text,
+            "latency_ms": round(
+                (time.perf_counter() - started) * 1000.0,
+                2,
+            ),
+        }
     except Exception as exc:
-        logger.debug("[GeminiValidator] _call_gemini failed: %s", exc)
+        error, opened = _gemini_failure(exc)
+        logger.warning(
+            "[GeminiValidator] provider degraded error=%s status=%s circuit_opened=%s",
+            error,
+            _provider_http_status(exc),
+            opened,
+        )
+        return {
+            "ok": False,
+            "provider": "gemini",
+            "model": MODEL_ID,
+            "error": error,
+            "circuit_open": opened,
+            "latency_ms": round(
+                (time.perf_counter() - started) * 1000.0,
+                2,
+            ),
+        }
+
+
+async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
+    """Backward-compatible text helper backed by the protected provider call."""
+    result = await _call_gemini_result(prompt, max_tokens=max_tokens)
+    if not bool(result.get("ok")):
         return None
+    return str(result.get("text") or "").strip() or None
 
 
 async def review_signal_structured(
@@ -179,10 +403,17 @@ async def review_signal_structured(
             separators=(",", ":"),
         )[:24000]
     )
-    started = time.perf_counter()
-    raw = await _call_gemini(prompt, max_tokens=420)
-    if not raw:
-        return {"ok": False, "provider": "gemini", "model": MODEL_ID, "error": "empty_response"}
+    call = await _call_gemini_result(prompt, max_tokens=420)
+    if not bool(call.get("ok")):
+        return {
+            "ok": False,
+            "provider": "gemini",
+            "model": MODEL_ID,
+            "error": str(call.get("error") or "provider_unavailable"),
+            "circuit_open": bool(call.get("circuit_open")),
+            "latency_ms": float(call.get("latency_ms") or 0.0),
+        }
+    raw = str(call.get("text") or "")
 
     candidate: Any = {}
     try:
@@ -225,7 +456,7 @@ async def review_signal_structured(
         "provider": "gemini",
         "model": MODEL_ID,
         "data": candidate,
-        "latency_ms": round((time.perf_counter() - started) * 1000.0, 2),
+        "latency_ms": float(call.get("latency_ms") or 0.0),
         "usage": {},
     }
 

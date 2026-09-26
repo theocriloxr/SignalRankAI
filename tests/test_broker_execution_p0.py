@@ -51,6 +51,8 @@ def _allowed_request(**overrides) -> ExecutionRequest:
         "resources_available": True,
         "reconciliation_ready": True,
         "kill_switch": False,
+        "account_classification": "DEMO",
+        "execution_permission": "AUTO_EXECUTION",
     }
     values.update(overrides)
     return ExecutionRequest(**values)
@@ -263,6 +265,22 @@ async def _prime_guarded_router(monkeypatch, router) -> AsyncMock:
                 "user_enabled": True,
                 "credentials_encrypted": True,
                 "mode": "auto",
+                "canonical_user_id": 77,
+                "connection_id": "account-7",
+                "account_classification": "DEMO",
+                "account_policy": {
+                    "connection_id": "account-7",
+                    "user_id": 77,
+                    "policy_version": 1,
+                    "account_mode": "DEMO",
+                    "execution_permission": "AUTO_EXECUTION",
+                    "status": "configured",
+                    "max_risk_per_trade_pct": "0.05",
+                    "max_daily_loss_pct": "0.50",
+                    "max_total_drawdown_pct": "0.90",
+                    "max_open_positions": 10,
+                    "max_leverage": "1000",
+                },
             }
         ),
     )
@@ -326,6 +344,9 @@ async def _prime_guarded_router(monkeypatch, router) -> AsyncMock:
             return_value={
                 "provider": "metaapi",
                 "trusted": True,
+                "bid": 99.99,
+                "ask": 100.01,
+                "mid": 100.0,
                 "age_seconds": 0.5,
                 "max_age_seconds": 15.0,
             }

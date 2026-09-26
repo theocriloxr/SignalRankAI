@@ -49,6 +49,8 @@ def _manual_request(**overrides) -> ExecutionRequest:
         "resources_available": True,
         "reconciliation_ready": True,
         "kill_switch": False,
+        "account_classification": "DEMO",
+        "execution_permission": "ASSISTED_EXECUTION",
     }
     values.update(overrides)
     return ExecutionRequest(**values)
@@ -129,6 +131,22 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
                 "user_enabled": True,
                 "credentials_encrypted": True,
                 "mode": "manual",
+                "canonical_user_id": 1,
+                "connection_id": "acct",
+                "account_classification": "DEMO",
+                "account_policy": {
+                    "connection_id": "acct",
+                    "user_id": 1,
+                    "policy_version": 1,
+                    "account_mode": "DEMO",
+                    "execution_permission": "ASSISTED_EXECUTION",
+                    "status": "configured",
+                    "max_risk_per_trade_pct": "0.05",
+                    "max_daily_loss_pct": "0.50",
+                    "max_total_drawdown_pct": "0.90",
+                    "max_open_positions": 10,
+                    "max_leverage": "1000",
+                },
             }
         ),
     )
@@ -186,6 +204,9 @@ async def test_manual_confirmed_routes_through_gate_without_auto_optin(monkeypat
             return_value={
                 "provider": "metaapi",
                 "trusted": True,
+                "bid": 1.09995,
+                "ask": 1.10005,
+                "mid": 1.1,
                 "age_seconds": 0.1,
                 "max_age_seconds": 15.0,
             }
@@ -273,3 +294,19 @@ async def test_execute_via_mt5_records_canonical_ledger_once(monkeypatch) -> Non
     assert result.order_id == "broker-order"
     ledger.assert_awaited_once()
     paper.assert_awaited_once()
+
+
+def test_telegram_multi_account_execution_uses_opaque_server_bound_selection() -> None:
+    bot = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+    selection = Path("services/broker_account_selection.py").read_text(encoding="utf-8")
+
+    assert "create_account_selection_choices" in bot
+    assert "consume_account_selection" in bot
+    assert 'pattern=r"^broker_pick_"' in bot
+    assert 'callback_data=f"broker_pick_{choice[\'token\']}"' in bot
+    assert "policy_version" in selection
+    assert "account_selection_owner_mismatch" in selection
+    assert "account_policy_changed" in selection
+    assert "connection.execution_enabled is not True" in selection
+    assert 'f"{_TOKEN_PREFIX}{opaque}"' in selection
+    assert 'callback_data=f"broker_pick_{choice[\'connection_id\']}"' not in bot

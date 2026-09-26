@@ -1,0 +1,1 @@
+"""SignalRank operational observability contracts."""

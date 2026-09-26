@@ -1,0 +1,5 @@
+SignalRank staging analytics 0045 credential-retirement retry r2.
+Purpose: redeploy analytics after repairing stale migration-head and MT5 parity build tests.
+Staging database is already certified at 0045_mt5_credential_retirement.
+All live-money execution and payout paths remain hard-disabled.
+No secrets are stored in this marker.

@@ -1,0 +1,6 @@
+SignalRank staging frontdoor runtime cutover trigger r2.
+Base includes enforced requirements.lock installation with pip check and exact-pin release contracts.
+Purpose: rebuild the public HTTP + Telegram frontdoor on the reproducible dependency graph.
+Frontdoor ownership remains HTTP + Telegram + scheduler only; engine and delivery worker loops are forbidden.
+All real-money execution and payout paths remain disabled in staging.
+No secrets are stored in this marker.

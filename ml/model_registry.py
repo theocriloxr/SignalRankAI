@@ -23,6 +23,16 @@ class ModelRegistry:
     strict_schema: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ModelLineageDecision:
+    eligible: bool
+    reasons: tuple[str, ...]
+    dataset_version: str
+    training_run_id: str
+    parent_model_hash_sha256: str
+    current_champion_hash_sha256: str
+
+
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -80,6 +90,116 @@ from typing import Any, Dict, List, Tuple
 def compute_model_hash_from_b64(model_bytes_b64: str) -> str:
     raw = base64.b64decode(model_bytes_b64)
     return hashlib.sha256(raw).hexdigest()
+
+
+def compute_training_dataset_version(
+    features: Any,
+    labels: Any,
+    timestamps: Any | None = None,
+) -> str:
+    """Hash the exact ordered feature/label/time evidence presented to training."""
+    import pandas as pd
+
+    frame = features.copy() if hasattr(features, "copy") else pd.DataFrame(features)
+    if not isinstance(frame, pd.DataFrame):
+        frame = pd.DataFrame(frame)
+    frame = frame.reset_index(drop=True)
+    label_series = pd.Series(labels).reset_index(drop=True)
+    if len(frame) != len(label_series):
+        raise ValueError("training_lineage_row_count_mismatch")
+
+    h = hashlib.sha256()
+    h.update(
+        json.dumps(
+            [str(column) for column in frame.columns],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    feature_hashes = pd.util.hash_pandas_object(
+        frame,
+        index=False,
+        categorize=True,
+    ).to_numpy(dtype="uint64", copy=False)
+    label_hashes = pd.util.hash_pandas_object(
+        label_series,
+        index=False,
+        categorize=True,
+    ).to_numpy(dtype="uint64", copy=False)
+    h.update(feature_hashes.tobytes())
+    h.update(label_hashes.tobytes())
+
+    if timestamps is not None:
+        timestamp_series = pd.Series(
+            pd.to_datetime(timestamps, errors="coerce", utc=True)
+        ).reset_index(drop=True)
+        if len(timestamp_series) != len(frame):
+            raise ValueError("training_lineage_timestamp_count_mismatch")
+        timestamp_hashes = pd.util.hash_pandas_object(
+            timestamp_series,
+            index=False,
+            categorize=True,
+        ).to_numpy(dtype="uint64", copy=False)
+        h.update(timestamp_hashes.tobytes())
+
+    return f"sha256:{h.hexdigest()}"
+
+
+def active_artifact_hash(path: str | Path) -> str:
+    """Return a verified active artifact hash, or empty string when no champion exists."""
+    model_path = Path(path)
+    if not model_path.exists():
+        return ""
+    payload = load_payload(model_path)
+    ok, err = validate_payload(payload)
+    if not ok:
+        raise RuntimeError(f"champion_artifact_invalid:{err}")
+    integrity_ok, integrity_err = verify_artifact_integrity(payload)
+    if not integrity_ok:
+        raise RuntimeError(f"champion_artifact_invalid:{integrity_err}")
+    return compute_model_hash_from_b64(str(payload["model_bytes_b64"]))
+
+
+def evaluate_promotion_lineage(
+    *,
+    dataset_version: str,
+    training_run_id: str,
+    parent_model_hash_sha256: str,
+    current_champion_path: str | Path,
+) -> ModelLineageDecision:
+    """Fail closed when a promotable model cannot prove dataset/run/parent lineage."""
+    dataset = str(dataset_version or "").strip()
+    run_id = str(training_run_id or "").strip()
+    parent = str(parent_model_hash_sha256 or "").strip().lower()
+    reasons: list[str] = []
+
+    if not dataset or not dataset.startswith("sha256:") or len(dataset) != 71:
+        reasons.append("dataset_version_missing_or_invalid")
+    if not run_id:
+        reasons.append("training_run_id_missing")
+
+    try:
+        champion_hash = active_artifact_hash(current_champion_path).lower()
+    except RuntimeError as exc:
+        champion_hash = ""
+        reasons.append(str(exc))
+
+    if champion_hash:
+        if not parent:
+            reasons.append("parent_model_hash_missing")
+        elif parent != champion_hash:
+            reasons.append("parent_model_hash_changed")
+    elif parent:
+        reasons.append("parent_model_hash_without_champion")
+
+    return ModelLineageDecision(
+        eligible=not reasons,
+        reasons=tuple(reasons),
+        dataset_version=dataset,
+        training_run_id=run_id,
+        parent_model_hash_sha256=parent,
+        current_champion_hash_sha256=champion_hash,
+    )
 
 
 def compute_feature_schema_hash(feature_cols: List[str]) -> str:

@@ -1,0 +1,3 @@
+SignalRank staging 0045 credential inventory trigger r4.
+Purpose: run the clean-room-certified counts-only inventory summary against staging 0044 before migration.
+No migration. No secret values.

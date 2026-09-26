@@ -1,0 +1,2985 @@
+You are continuing work on SignalRank after receiving:
+
+1. the SignalRank 54-page Master Blueprint;
+2. the Master Implementation Directive;
+3. the Multi-User and Multi-Account Architecture Addendum.
+
+This directive is the FINAL HARDENING ADDENDUM.
+
+Treat every requirement below as mandatory unless technically impossible or dependent on an external provider. Any exception must be documented with evidence.
+
+The purpose of this phase is NOT to endlessly add features.
+
+The purpose is to tighten the entire SignalRank platform until:
+
+- behavior is deterministic where required;
+- multi-user isolation is correct;
+- trading-account isolation is correct;
+- financial calculations are reliable;
+- risk controls fail closed;
+- production changes are traceable;
+- external-provider failures are survivable;
+- users cannot accidentally or maliciously cross security boundaries;
+- live and prop execution cannot occur outside certified paths;
+- system recovery is deterministic;
+- every important claim has evidence;
+- and the system can scale safely beyond the owner account.
+
+Do not weaken existing safeguards.
+
+Do not remove functionality solely to simplify implementation.
+
+Do not mark a feature complete because code exists.
+
+Do not mark SignalRank production-ready until certification evidence exists.
+
+======================================================================
+1. SYSTEM-WIDE HARDENING PASS
+======================================================================
+
+Before adding new functionality, perform a complete system-wide tightening pass.
+
+Audit:
+
+- backend;
+- website;
+- Telegram;
+- workers;
+- queues;
+- schedulers;
+- market data;
+- strategy engine;
+- ML;
+- OpenAI/Gemini;
+- databases;
+- Redis;
+- brokers;
+- paper trading;
+- demo execution;
+- live execution;
+- prop execution;
+- billing;
+- authentication;
+- authorization;
+- admin tooling;
+- notifications;
+- observability;
+- CI/CD;
+- infrastructure;
+- migrations;
+- configuration;
+- secrets;
+- tests;
+- documentation.
+
+For every subsystem identify:
+
+- duplicated logic;
+- conflicting logic;
+- unsafe defaults;
+- implicit assumptions;
+- mutable global state;
+- missing ownership checks;
+- stale configuration;
+- incomplete error handling;
+- race conditions;
+- retry hazards;
+- missing idempotency;
+- uncontrolled concurrency;
+- missing timeouts;
+- weak validation;
+- silent failures;
+- missing audit logging;
+- incorrect financial arithmetic;
+- production/staging cross-contamination;
+- dead code;
+- obsolete feature flags;
+- unreachable code;
+- unfinished TODOs;
+- misleading UI.
+
+Fix discovered issues.
+
+Do not merely document bugs when they can reasonably be corrected.
+
+======================================================================
+2. FAIL-CLOSED PRINCIPLE
+======================================================================
+
+SignalRank must default to safety.
+
+When SignalRank cannot establish that an action is safe, valid and authorized, it must not trade.
+
+Examples:
+
+unknown account state
+→ block execution;
+
+stale market data
+→ block execution;
+
+broker reconciliation mismatch
+→ block execution;
+
+prop-rule uncertainty
+→ block execution;
+
+unknown instrument metadata
+→ block execution;
+
+invalid financial precision
+→ block execution;
+
+risk service unavailable
+→ block execution;
+
+database consistency problem
+→ block execution;
+
+execution state unknown
+→ reconcile before further trading;
+
+LLM unavailable
+→ continue deterministic core behavior without AI;
+
+notification failure
+→ do not incorrectly alter trade state.
+
+Create reusable fail-closed primitives instead of implementing ad-hoc checks in many places.
+
+======================================================================
+3. LEGAL, CONSENT AND PRODUCT-GOVERNANCE LAYER
+======================================================================
+
+Implement the technical infrastructure needed to support legal and product governance.
+
+This does not mean Codex should invent legal advice.
+
+Create versioned support for:
+
+- Terms of Service;
+- Privacy Policy;
+- risk disclosures;
+- automated-trading disclosures;
+- broker/API credential disclosures;
+- prop-account disclosures;
+- jurisdiction-specific notices where later configured.
+
+Store:
+
+policy type,
+policy version,
+published timestamp,
+accepted timestamp,
+user ID,
+relevant account ID where applicable,
+IP/session metadata where legally appropriate,
+and revocation/reacceptance requirements.
+
+Users must explicitly accept the current required agreements before enabling:
+
+LIVE_PERSONAL execution;
+
+or
+
+PROP execution.
+
+A major policy update may require reacceptance.
+
+Never infer consent from ordinary site usage.
+
+Automated execution requires explicit consent.
+
+======================================================================
+4. TRADING-PERMISSION AND CONSENT MODEL
+======================================================================
+
+Every trading account must have a clearly defined permission scope.
+
+Examples:
+
+READ_ONLY
+SIGNALS_ONLY
+PAPER_ONLY
+MANUAL
+ASSISTED_EXECUTION
+AUTO_EXECUTION
+
+Permissions must not silently increase.
+
+For example:
+
+READ_ONLY
+must never become
+AUTO_EXECUTION
+
+because a feature flag changed.
+
+Upgrading execution permission requires:
+
+authenticated user action,
+explicit acknowledgement,
+risk-policy validation,
+broker capability validation,
+and audit logging.
+
+Record:
+
+who changed permission,
+previous state,
+new state,
+timestamp,
+account,
+session/device,
+reason where applicable.
+
+======================================================================
+5. PRIVACY AND DATA-LIFECYCLE MANAGEMENT
+======================================================================
+
+Implement a formal data lifecycle.
+
+Classify data into categories such as:
+
+identity data;
+authentication/security data;
+broker credentials;
+market data;
+user configuration;
+orders;
+positions;
+signal records;
+model/research data;
+analytics;
+support records;
+billing;
+audit logs.
+
+For each class establish:
+
+retention policy;
+deletion behavior;
+anonymization behavior;
+backup behavior;
+export behavior.
+
+Implement user-facing/account-administration support for:
+
+data export;
+account closure;
+deletion requests;
+revocation of broker access;
+Telegram unlinking;
+session revocation.
+
+Do not delete immutable financial/audit evidence when retention is required for system integrity.
+
+Instead distinguish:
+
+deletable personal data
+
+from
+
+legitimate immutable operational/audit records.
+
+Where historical data is retained for model research after account deletion, anonymize it unless there is an explicitly documented lawful requirement otherwise.
+
+======================================================================
+6. SEPARATE PII FROM TRADING INTELLIGENCE
+======================================================================
+
+Where practical, avoid unnecessary coupling between:
+
+personally identifiable information
+
+and
+
+market/trading research datasets.
+
+Research datasets should prefer stable pseudonymous identifiers.
+
+Model training should not require:
+
+email;
+full name;
+Telegram username;
+telephone number;
+or unrelated personal data.
+
+Create clear boundaries so that research exports do not unnecessarily expose PII.
+
+======================================================================
+7. FEATURE FLAGS AND RELEASE COHORTS
+======================================================================
+
+Implement a production-grade feature-flag system.
+
+Support scopes including:
+
+global;
+environment;
+user;
+subscription tier;
+account;
+broker;
+asset class;
+strategy;
+internal staff;
+beta cohort.
+
+New high-risk functionality should follow staged exposure:
+
+INTERNAL
+→ CANARY
+→ BETA
+→ LIMITED
+→ GENERAL_AVAILABILITY
+
+Execution features require stricter rollout than visual/UI features.
+
+Every feature flag must include:
+
+name;
+purpose;
+owner;
+created timestamp;
+default;
+environment;
+expiry/review date where appropriate.
+
+Avoid permanent forgotten flags.
+
+Provide tooling to identify stale flags.
+
+======================================================================
+8. RATE LIMITS AND ABUSE PROTECTION
+======================================================================
+
+Add rate limiting to:
+
+authentication;
+password/reset flows;
+Telegram linking;
+API endpoints;
+AI queries;
+broker actions;
+signal requests;
+webhooks;
+admin endpoints;
+expensive analytics.
+
+Implement:
+
+per-IP controls where appropriate;
+per-user limits;
+per-account limits;
+per-API-key limits;
+global provider limits.
+
+Protect against:
+
+credential stuffing;
+brute-force login;
+OTP abuse;
+Telegram callback spam;
+AI-cost abuse;
+API scraping;
+notification flooding;
+webhook replay;
+broker-order spam.
+
+Do not let a malicious or misconfigured user degrade service for others.
+
+======================================================================
+9. RESOURCE QUOTAS AND FAIRNESS
+======================================================================
+
+SignalRank is multi-tenant.
+
+One user must not be able to monopolize:
+
+worker capacity;
+AI tokens;
+market-data calls;
+notification queues;
+broker calls;
+database connections;
+memory;
+CPU;
+expensive analytics.
+
+Introduce quota/accounting where necessary.
+
+Implement bounded workloads.
+
+Examples:
+
+maximum active watchlists;
+maximum connected accounts by entitlement;
+maximum concurrent AI requests;
+API request quota;
+maximum concurrent strategy simulations.
+
+System-level trading-critical work should take priority over optional expensive features.
+
+======================================================================
+10. SUPPORT AND ADMIN OPERATIONS
+======================================================================
+
+Create a professional support/admin console.
+
+Authorized staff should be able to inspect:
+
+user identity status;
+Telegram link status;
+subscription;
+entitlements;
+connected brokers;
+account health;
+latest reconciliation;
+notification history;
+failed jobs;
+execution blocks;
+risk blocks;
+prop-rule violations;
+service incidents affecting the user.
+
+Do NOT implement unsafe "login as user" impersonation for execution-capable contexts.
+
+If a support-view capability exists, it must be:
+
+read-only by default;
+visibly marked;
+audited;
+permission controlled.
+
+Sensitive values must remain redacted.
+
+Support staff must never see full broker secrets.
+
+======================================================================
+11. BILLING AND ENTITLEMENT FAILURE LIFECYCLE
+======================================================================
+
+Implement proper billing states.
+
+Examples:
+
+ACTIVE
+TRIAL
+PAST_DUE
+GRACE_PERIOD
+SUSPENDED
+CANCELLED
+EXPIRED
+REFUNDED
+CHARGEBACK
+
+Define exactly what happens to:
+
+signal access;
+historical analytics;
+API access;
+connected brokers;
+assisted execution;
+auto-execution;
+AI features
+
+when billing changes.
+
+Do not abruptly close live trading positions because a subscription payment failed.
+
+Subscription entitlement loss should normally prevent:
+
+new premium actions,
+
+without corrupting or abandoning existing position-management responsibilities.
+
+If SignalRank is already managing an open position, safe exit/management capability should remain available according to policy.
+
+======================================================================
+12. USER ONBOARDING CERTIFICATION
+======================================================================
+
+Create a structured onboarding flow.
+
+Potential progression:
+
+ACCOUNT_CREATED
+→ IDENTITY_VERIFIED
+→ RISK_PROFILE_COMPLETE
+→ TELEGRAM_OPTIONALLY_LINKED
+→ PAPER_READY
+→ BROKER_CONNECTED
+→ BROKER_PERMISSIONS_VERIFIED
+→ DEMO_READY
+→ EXECUTION_DISCLOSURE_ACCEPTED
+→ LIVE_PERSONAL_ELIGIBLE
+→ PROP_ELIGIBLE
+
+Do not expose advanced execution prematurely.
+
+Show users why a capability remains locked.
+
+======================================================================
+13. LIVE EXECUTION ACTIVATION CHECKLIST
+======================================================================
+
+Before a user can enable LIVE_PERSONAL auto-execution verify:
+
+account reconciled;
+broker authenticated;
+API permissions acceptable;
+withdrawal privileges absent where supported/preferred;
+instrument metadata current;
+risk profile configured;
+hard limits configured;
+disclosures accepted;
+execution engine certified;
+no account freeze;
+no unresolved broker discrepancy.
+
+Require explicit activation.
+
+Do not silently activate live trading after demo mode.
+
+======================================================================
+14. PROP ACTIVATION CHECKLIST
+======================================================================
+
+PROP mode requires all live requirements plus:
+
+prop firm selected/configured;
+account/evaluation phase specified;
+policy version assigned;
+daily reset timezone verified;
+drawdown methodology verified;
+news restrictions configured;
+weekend restrictions configured;
+allowed instruments verified;
+lot limits verified;
+automation/EA policy confirmed;
+profit target configured if applicable;
+consistency rules configured if applicable.
+
+SignalRank must display which rule set is active.
+
+======================================================================
+15. EMERGENCY CONTROL PLANE
+======================================================================
+
+Create platform-level emergency modes.
+
+At minimum:
+
+NORMAL
+SIGNALS_ONLY
+PAPER_ONLY
+NO_NEW_ORDERS
+EXECUTION_FROZEN
+BROKER_PROVIDER_DISABLED
+MARKET_DATA_PROVIDER_DISABLED
+FULL_TRADING_HALT
+
+Support scoped shutdowns.
+
+Examples:
+
+disable Bybit only;
+disable one asset;
+disable one strategy;
+disable one account;
+disable PROP execution only;
+disable automated execution while preserving signals.
+
+Emergency controls must:
+
+take effect rapidly;
+be highly visible;
+produce immutable audit events;
+include actor and reason.
+
+======================================================================
+16. SAFE OPEN-POSITION MANAGEMENT DURING HALTS
+======================================================================
+
+A global halt must distinguish between:
+
+opening new risk
+
+and
+
+managing existing risk.
+
+For example:
+
+NO_NEW_ORDERS
+
+may still permit protective:
+
+close order;
+stop update;
+risk-reducing action;
+
+when safe and explicitly defined.
+
+Design emergency states carefully so a safety switch does not accidentally prevent users from exiting risk.
+
+======================================================================
+17. DATA LICENSING AND PROVENANCE REGISTRY
+======================================================================
+
+Create a provider/data registry.
+
+For every external data source record:
+
+provider;
+dataset/feed;
+asset classes;
+license/reference;
+storage rights;
+redistribution rights;
+display rights;
+research/model-training rights;
+rate limits;
+fallback source;
+retention requirements;
+status.
+
+SignalRank must know whether data may legally/contractually be:
+
+stored;
+shown to users;
+redistributed;
+used for model training.
+
+Prevent accidental use outside configured rights where possible.
+
+======================================================================
+18. TIME AND CLOCK INTEGRITY
+======================================================================
+
+Time correctness is critical.
+
+Normalize canonical server timestamps to UTC.
+
+Store market/exchange timezone context separately.
+
+Handle:
+
+DST;
+market sessions;
+holidays;
+early closes;
+prop daily-reset timezone;
+broker timestamps;
+provider timestamps.
+
+Monitor clock drift.
+
+Detect unreasonable timestamp differences.
+
+Do not compare naïve timestamps across systems.
+
+Every financial event should carry an authoritative timestamp source when relevant.
+
+======================================================================
+19. CONFIGURATION VERSIONING
+======================================================================
+
+Version all material trading configuration.
+
+Examples:
+
+risk policies;
+prop policies;
+strategy weights;
+confidence thresholds;
+feature definitions;
+provider mappings;
+asset registry;
+instrument precision;
+news restrictions;
+execution rules;
+model configuration.
+
+Every executed trade should be traceable to the exact configuration version active at decision time.
+
+Configuration changes must produce audit events.
+
+Dangerous configuration changes should support rollback.
+
+======================================================================
+20. CHANGE MANAGEMENT FOR HIGH-RISK SETTINGS
+======================================================================
+
+Classify settings by risk.
+
+LOW RISK:
+
+display preference;
+notification theme.
+
+MEDIUM RISK:
+
+watchlist;
+signal notification threshold.
+
+HIGH RISK:
+
+maximum leverage;
+daily loss;
+execution policy;
+broker credentials;
+prop rule;
+model promotion;
+strategy live activation.
+
+High-risk changes require stronger validation.
+
+Owner/admin privileges must not automatically bypass this classification.
+
+For especially dangerous production operations consider requiring:
+
+explicit confirmation;
+recent authentication;
+MFA;
+change reason;
+second review where appropriate.
+
+======================================================================
+21. CAPACITY AND LOAD PLANNING
+======================================================================
+
+Prove SignalRank can scale.
+
+Create benchmark profiles for:
+
+current expected load;
+10x user load;
+100x user load where practical.
+
+Measure:
+
+market-data fanout;
+signal personalization;
+Telegram delivery;
+web/API traffic;
+database load;
+Redis load;
+worker utilization;
+AI requests;
+broker reconciliation;
+queue delay.
+
+Define saturation indicators.
+
+System degradation should be controlled.
+
+Optional analytics may degrade before trading safety systems.
+
+======================================================================
+22. NOTIFICATION DELIVERY RELIABILITY
+======================================================================
+
+Create explicit notification entities.
+
+Track:
+
+notification ID;
+user;
+channel;
+signal/event;
+creation time;
+delivery attempt;
+provider response;
+retry state;
+final delivery state.
+
+Prevent duplicate user notifications.
+
+Use idempotency.
+
+Respect preferences and quiet hours.
+
+High-priority operational/risk messages must be distinguished from marketing/general notifications.
+
+Where providers support delivery acknowledgement, record it.
+
+Do not treat notification success as proof a user saw the message.
+
+======================================================================
+23. MULTI-CHANNEL NOTIFICATION ARCHITECTURE
+======================================================================
+
+Design notification abstraction for:
+
+Telegram;
+web;
+push notifications;
+email;
+future mobile apps.
+
+One trading event should be represented once, then routed to eligible channels.
+
+Avoid duplicating business logic independently for Telegram and web.
+
+======================================================================
+24. AUTHENTICATION HARDENING
+======================================================================
+
+Implement strong authentication controls.
+
+Support where appropriate:
+
+MFA;
+session management;
+device/session visibility;
+session revocation;
+suspicious-login detection;
+password reset security;
+short-lived sensitive-action tokens;
+secure cookies;
+CSRF protections;
+secure JWT/session handling.
+
+Sensitive execution changes should require recent authentication where appropriate.
+
+======================================================================
+25. ACCOUNT RECOVERY
+======================================================================
+
+Design recovery procedures for:
+
+lost password;
+lost Telegram access;
+compromised session;
+compromised API key;
+broker key rotation;
+account unlinking.
+
+Account recovery must never allow an attacker to obtain broker secrets.
+
+Revoking/replacing a broker credential must invalidate the old credential immediately from SignalRank's perspective.
+
+======================================================================
+26. BUSINESS FINANCE VS TRADING FINANCE
+======================================================================
+
+Maintain a strict accounting boundary between:
+
+SignalRank business revenue
+
+and
+
+user trading finances.
+
+Business-side accounting includes:
+
+subscriptions;
+refunds;
+payment fees;
+commissions if applicable;
+revenue.
+
+Trading-account finance includes:
+
+broker equity;
+balance;
+margin;
+funding;
+PnL;
+fees;
+positions.
+
+Never mix them in one balance concept.
+
+======================================================================
+27. MODEL, DATA AND CONFIGURATION ROLLBACK
+======================================================================
+
+Rollback capability must extend beyond application code.
+
+Support safe rollback of:
+
+model;
+calibration model;
+feature schema;
+strategy configuration;
+asset mapping;
+provider mapping;
+risk configuration;
+prop-policy version.
+
+Every promotion should remember previous version.
+
+If quality degrades, rollback should be explicit and traceable.
+
+======================================================================
+28. ARCHITECTURE DECISION RECORDS
+======================================================================
+
+Create:
+
+docs/adr/
+
+Record important architecture decisions.
+
+Each ADR should include:
+
+decision;
+context;
+alternatives;
+reasoning;
+consequences;
+status;
+date.
+
+Examples:
+
+ADR-001 canonical user identity;
+ADR-002 account-mode architecture;
+ADR-003 market-data provider abstraction;
+ADR-004 model promotion strategy;
+ADR-005 database isolation;
+ADR-006 execution idempotency.
+
+Codex must consult existing ADRs before reversing foundational architecture.
+
+======================================================================
+29. DEPRECATION POLICY
+======================================================================
+
+Avoid accumulating obsolete systems indefinitely.
+
+Create a deprecation process for:
+
+API endpoints;
+Telegram commands;
+strategies;
+models;
+database fields;
+configuration;
+providers.
+
+Statuses may include:
+
+ACTIVE
+DEPRECATED
+DISABLED
+REMOVED
+
+Document migration/replacement.
+
+Do not instantly delete historical evidence needed for auditing.
+
+======================================================================
+30. USER-LEVEL DISASTER RECOVERY
+======================================================================
+
+After an outage, never simply restart automated trading globally.
+
+For each connected live/prop account:
+
+reconnect;
+authenticate;
+fetch broker state;
+reconcile open orders;
+reconcile fills;
+reconcile positions;
+reconcile balances;
+verify protective orders;
+verify configuration;
+clear or resolve discrepancies;
+
+then mark:
+
+RECOVERED
+
+before allowing new automated exposure.
+
+Recovery must be per-account.
+
+======================================================================
+31. NO-TRADE CORRECTNESS
+======================================================================
+
+Explicitly test SignalRank's ability to correctly do nothing.
+
+Create tests where:
+
+no strategy has adequate edge;
+spread is too high;
+risk limits exceeded;
+market data stale;
+major event risk unacceptable;
+portfolio overexposed;
+prop rules prohibit trading;
+model confidence poorly calibrated.
+
+Expected result:
+
+NO TRADE.
+
+Signal volume must never be used as proof of system health.
+
+A period with zero valid trades may be correct.
+
+======================================================================
+32. HUMAN OVERRIDE BOUNDARIES
+======================================================================
+
+Users may always perform risk-reducing actions where technically possible:
+
+disable automation;
+close a position;
+reduce size;
+disconnect broker.
+
+Do not permit ordinary user interactions to bypass hard:
+
+risk;
+prop;
+security;
+provider-integrity;
+reconciliation
+
+constraints for increasing risk.
+
+Human override should normally be able to make the system more conservative, not less safe.
+
+======================================================================
+33. GLOBAL VS USER VS ACCOUNT CONFIGURATION
+======================================================================
+
+Formalize configuration hierarchy.
+
+Possible precedence:
+
+SYSTEM HARD SAFETY
+↓
+ENVIRONMENT
+↓
+BROKER/PROVIDER
+↓
+ACCOUNT HARD RISK
+↓
+PROP POLICY
+↓
+USER RISK/PREFERENCES
+↓
+STRATEGY
+↓
+SIGNAL
+
+More-specific settings must not bypass higher-level hard safeguards.
+
+Document precedence.
+
+Automated tests must verify it.
+
+======================================================================
+34. USER-DELETION SAFETY
+======================================================================
+
+A user must not be able to delete/deactivate their SignalRank identity while active managed positions are silently abandoned.
+
+Account closure flow must detect:
+
+open positions;
+open orders;
+automation;
+broker connections.
+
+Require safe resolution according to policy.
+
+======================================================================
+35. BROKER DISCONNECTION SAFETY
+======================================================================
+
+Before disconnecting a broker:
+
+detect open positions/orders.
+
+Clearly explain what SignalRank will stop managing.
+
+Do not imply positions disappear because SignalRank disconnected.
+
+Store a final reconciliation snapshot.
+
+======================================================================
+36. BROKER CREDENTIAL ROTATION
+======================================================================
+
+Implement safe credential rotation.
+
+Flow:
+
+new credential submitted;
+validate;
+verify account identity;
+verify permissions;
+stage replacement;
+atomically activate;
+invalidate/remove old credential;
+reconcile account;
+audit event.
+
+Avoid periods where two credentials cause duplicate execution.
+
+======================================================================
+37. EXECUTION VERSION PINNING
+======================================================================
+
+Every submitted order should record:
+
+SignalRank release SHA;
+execution-engine version;
+broker adapter version;
+risk-policy version;
+account-policy version.
+
+This is required for incident reconstruction.
+
+======================================================================
+38. STRATEGY BLAST-RADIUS CONTROLS
+======================================================================
+
+A malfunctioning strategy must not expose the entire platform.
+
+Support:
+
+per-strategy maximum orders;
+per-strategy portfolio risk;
+asset restrictions;
+automatic quarantine;
+rolling failure metrics.
+
+Abnormal behavior should disable the strategy without requiring a platform-wide shutdown.
+
+======================================================================
+39. PROVIDER BLAST-RADIUS CONTROLS
+======================================================================
+
+A failing provider must not silently corrupt every asset class.
+
+Track quality independently by:
+
+provider;
+asset class;
+symbol;
+timeframe.
+
+Quarantine affected regions of the provider graph where possible.
+
+======================================================================
+40. AI BLAST-RADIUS CONTROLS
+======================================================================
+
+AI-related failures must remain contained.
+
+Implement:
+
+timeout;
+schema validation;
+fallback;
+circuit breaker;
+rate budget;
+cost budget.
+
+If AI repeatedly fails:
+
+disable AI enrichment;
+
+do not stop deterministic core processing unless explicitly required.
+
+======================================================================
+41. PER-USER AI PRIVACY BOUNDARIES
+======================================================================
+
+Never leak one user's:
+
+portfolio;
+broker positions;
+performance;
+preferences;
+AI chat context
+
+into another user's AI request.
+
+Ensure all AI context builders enforce canonical user/account ownership.
+
+Add cross-tenant isolation tests.
+
+======================================================================
+42. AUDIT EVENT STANDARD
+======================================================================
+
+Create a canonical audit-event format.
+
+Include:
+
+event ID;
+timestamp;
+actor type;
+actor ID;
+user ID where applicable;
+account ID where applicable;
+action;
+resource;
+previous state/hash;
+new state/hash;
+reason;
+source service;
+trace ID;
+release SHA.
+
+Audit events should be immutable.
+
+======================================================================
+43. SECURE ADMIN MODEL
+======================================================================
+
+Separate permissions such as:
+
+SUPPORT_READ
+SUPPORT_WRITE
+BILLING_ADMIN
+RISK_ADMIN
+OPERATIONS
+MODEL_ADMIN
+SECURITY_ADMIN
+OWNER
+
+Do not make every staff/admin account a super-admin.
+
+Dangerous actions require the correct permission.
+
+======================================================================
+44. PRODUCTION SECRET GOVERNANCE
+======================================================================
+
+Review all secrets.
+
+Ensure:
+
+no secrets in repository;
+no secrets in client bundles;
+no secrets in logs;
+no production secret used in staging;
+minimal privileges;
+rotation documentation;
+secure storage.
+
+Generate a secret inventory without exposing secret values.
+
+======================================================================
+45. BACKUP AND RESTORE CERTIFICATION
+======================================================================
+
+Do not merely configure backups.
+
+Actually test restoring:
+
+database;
+critical configuration;
+model registry;
+audit state where relevant.
+
+Document:
+
+RPO;
+RTO;
+restore procedure.
+
+A backup that has never been restoration-tested is not certified.
+
+======================================================================
+46. INFRASTRUCTURE DEPENDENCY INVENTORY
+======================================================================
+
+Document all external dependencies.
+
+Examples:
+
+Railway;
+Vercel;
+PostgreSQL;
+Redis;
+Telegram;
+OpenAI;
+Gemini;
+Bybit;
+other broker APIs;
+market-data providers;
+Paystack;
+email providers.
+
+For each document:
+
+purpose;
+failure behavior;
+credentials;
+health check;
+fallback;
+criticality.
+
+======================================================================
+47. EXTERNAL-DEPENDENCY FAILURE MATRIX
+======================================================================
+
+Create a matrix such as:
+
+DEPENDENCY:
+PostgreSQL
+
+FAILURE:
+unavailable
+
+SIGNAL GENERATION:
+halt or safely degrade according to design
+
+NEW EXECUTION:
+BLOCK
+
+OPEN POSITION MANAGEMENT:
+define emergency behavior
+
+USER UI:
+degraded banner
+
+RECOVERY:
+reconcile before resume
+
+Repeat for every critical provider.
+
+======================================================================
+48. CHAOS AND FAULT INJECTION
+======================================================================
+
+Build automated fault scenarios where feasible.
+
+Examples:
+
+database latency;
+Redis unavailable;
+provider returns malformed candle;
+provider returns stale candle;
+broker timeout;
+duplicate webhook;
+network drop after order acceptance;
+AI malformed output;
+Telegram rate limiting;
+worker killed mid-transaction.
+
+Verify invariants remain intact.
+
+======================================================================
+49. DATABASE CONSISTENCY AND CONCURRENCY
+======================================================================
+
+Review transactions for race conditions.
+
+Critical operations should use appropriate:
+
+transactions;
+row locking;
+optimistic concurrency;
+unique constraints;
+idempotency keys.
+
+Examples:
+
+order creation;
+position state;
+subscription state;
+signal delivery;
+broker reconciliation;
+account linking;
+model promotion.
+
+Do not rely only on application-level `if` checks for invariants.
+
+======================================================================
+50. DATABASE CONSTRAINT HARDENING
+======================================================================
+
+Move important invariants into database constraints when practical.
+
+Examples:
+
+unique external order IDs per broker account;
+unique Telegram identity link;
+valid account ownership;
+non-null canonical identifiers;
+valid enum states;
+appropriate foreign keys.
+
+======================================================================
+51. MIGRATION SAFETY
+======================================================================
+
+Every migration must be:
+
+reviewable;
+tested on representative data;
+compatible with deployment ordering;
+rollback-aware or accompanied by forward-recovery guidance.
+
+Avoid long blocking migrations in production.
+
+Test upgrade from current production schema through latest head.
+
+======================================================================
+52. RELEASE ARTIFACT INTEGRITY
+======================================================================
+
+Fix and permanently harden release-source gates.
+
+Every running service must expose:
+
+release SHA;
+branch/build identifier;
+schema revision;
+environment;
+service version.
+
+A production deployment containing incompatible/mixed source revisions should be detected immediately.
+
+======================================================================
+53. DEPLOYMENT DRIFT DETECTION
+======================================================================
+
+Continuously detect drift between expected and running:
+
+code version;
+schema;
+configuration;
+model;
+strategy configuration.
+
+Alert when services disagree.
+
+======================================================================
+54. INDEPENDENT CLEAN-ROOM CERTIFICATION
+======================================================================
+
+After Codex believes implementation is complete:
+
+perform a final certification from a clean environment.
+
+Do not rely on:
+
+developer machine state;
+existing local database;
+leftover Redis keys;
+manual fixes;
+cached artifacts.
+
+Use:
+
+fresh checkout;
+fresh environment;
+fresh staging database;
+fresh Redis namespace;
+documented secrets/configuration;
+full migrations.
+
+Then execute the certification suite.
+
+This clean-room run is mandatory.
+
+======================================================================
+55. FULL USER JOURNEY CERTIFICATION
+======================================================================
+
+Test complete journeys for multiple independent users.
+
+USER A:
+web-first;
+Telegram linked;
+paper;
+demo;
+personal live.
+
+USER B:
+Telegram-first;
+website linked;
+paper only.
+
+USER C:
+website;
+multiple broker accounts;
+personal + prop.
+
+USER D:
+subscription downgrade.
+
+USER E:
+broker credential expires.
+
+Verify strict isolation.
+
+======================================================================
+56. CROSS-TENANT SECURITY TESTS
+======================================================================
+
+Attempt intentionally to access:
+
+other user's positions;
+orders;
+watchlists;
+broker accounts;
+Telegram history;
+performance;
+AI context;
+billing;
+execution actions.
+
+Expected result:
+
+DENIED.
+
+Automate these tests.
+
+======================================================================
+57. OWNERSHIP INVARIANTS
+======================================================================
+
+Every user-owned object must ultimately resolve to one canonical SignalRank user.
+
+Validate ownership throughout nested relationships.
+
+Never trust foreign IDs provided by frontend without server-side ownership verification.
+
+======================================================================
+58. SIGNAL FANOUT ARCHITECTURE
+======================================================================
+
+Optimize global-to-user distribution.
+
+One global market opportunity should not require re-running expensive market calculations for every user.
+
+Use:
+
+global candidate;
+global score;
+user suitability;
+account suitability;
+delivery decision.
+
+Keep per-user/account state independent.
+
+======================================================================
+59. NOTIFICATION FANOUT LOAD TESTING
+======================================================================
+
+Simulate mass signal release.
+
+Verify:
+
+queue stays bounded;
+Telegram/API limits respected;
+notification order reasonable;
+duplicates prevented;
+critical alerts prioritized.
+
+======================================================================
+60. BROKER RECONCILIATION SCALE TESTING
+======================================================================
+
+Simulate many connected accounts.
+
+Ensure reconciliation does not cause:
+
+API bans;
+rate-limit storms;
+database saturation;
+worker starvation.
+
+Schedule intelligently.
+
+======================================================================
+61. OBSERVABILITY SLOs
+======================================================================
+
+Define measurable SLOs.
+
+Examples:
+
+market-data freshness;
+scan completion;
+API availability;
+notification dispatch latency;
+broker reconciliation freshness;
+queue delay.
+
+Do not invent unrealistic guarantees.
+
+Document actual targets.
+
+======================================================================
+62. ERROR BUDGET AND SERVICE DEGRADATION
+======================================================================
+
+For critical services define when repeated failures should:
+
+trigger warning;
+degrade optional features;
+disable execution;
+invoke emergency mode.
+
+Avoid continuing indefinitely through repeated silent failure.
+
+======================================================================
+63. USER-FACING HEALTH STATES
+======================================================================
+
+Represent account/system health clearly.
+
+Example account states:
+
+HEALTHY
+DEGRADED
+RECONCILING
+FROZEN
+DISCONNECTED
+AUTH_EXPIRED
+
+Users should understand why automation is unavailable.
+
+======================================================================
+64. ZERO-TRUST INTERNAL ACTIONS
+======================================================================
+
+Do not assume requests are safe merely because they originate from an internal service.
+
+Validate:
+
+service identity;
+payload structure;
+ownership;
+state;
+idempotency.
+
+Especially for execution and financial operations.
+
+======================================================================
+65. API VERSIONING
+======================================================================
+
+If external/public APIs exist or are planned, establish explicit versioning.
+
+Do not make breaking changes silently.
+
+======================================================================
+66. WEBHOOK VERSIONING
+======================================================================
+
+Version outgoing webhook schemas.
+
+Include:
+
+event version;
+event ID;
+timestamp;
+signature.
+
+Support retries and idempotency.
+
+======================================================================
+67. BACKWARD COMPATIBILITY
+======================================================================
+
+Where rolling deployments can involve old/new versions simultaneously, ensure events and DB schemas remain compatible during the rollout window.
+
+======================================================================
+68. PERFORMANCE REGRESSION TESTS
+======================================================================
+
+Record baseline performance.
+
+Fail or warn on unacceptable regressions in:
+
+scan duration;
+API latency;
+database query time;
+signal fanout;
+frontend performance.
+
+======================================================================
+69. FRONTEND HARDENING
+======================================================================
+
+Perform a complete responsive and accessibility pass.
+
+Verify:
+
+mobile portrait;
+mobile landscape;
+tablet;
+desktop;
+wide desktop.
+
+Fix:
+
+overflow;
+clipping;
+unreadable text;
+bad contrast;
+buttons outside viewport;
+tables unusable on mobile;
+broken loading states;
+empty states;
+error states;
+skeleton states.
+
+Do not hide important risk information to make layouts fit.
+
+======================================================================
+70. ACCESSIBILITY
+======================================================================
+
+Add reasonable accessibility support:
+
+keyboard navigation;
+focus states;
+semantic controls;
+labels;
+ARIA where appropriate;
+screen-reader-friendly status messaging;
+reduced motion.
+
+======================================================================
+71. UI SAFETY
+======================================================================
+
+Trading actions must make account/mode obvious.
+
+Visually distinguish:
+
+PAPER;
+DEMO;
+LIVE PERSONAL;
+PROP.
+
+Avoid ambiguous buttons such as generic:
+
+TRADE
+
+when account context is unclear.
+
+For real execution make it clear:
+
+which account;
+risk;
+size;
+mode.
+
+======================================================================
+72. DESTRUCTIVE ACTION CONFIRMATION
+======================================================================
+
+Sensitive actions require deliberate confirmation.
+
+Examples:
+
+enable live automation;
+enable prop automation;
+disconnect broker with open positions;
+increase hard risk limit;
+remove protective stop;
+global kill switch changes.
+
+======================================================================
+73. EXPLANATION QUALITY
+======================================================================
+
+Signal explanations must distinguish:
+
+facts;
+model estimates;
+AI interpretation;
+risk warnings.
+
+Never present AI-generated interpretation as guaranteed market truth.
+
+======================================================================
+74. CALIBRATION LANGUAGE
+======================================================================
+
+If SignalRank shows:
+
+80% confidence
+
+ensure UI explains what confidence means.
+
+Do not imply:
+
+80% guaranteed probability of profit
+
+unless the metric truly represents a well-calibrated probability for the applicable population.
+
+======================================================================
+75. PERFORMANCE CLAIM DISCIPLINE
+======================================================================
+
+Never combine:
+
+backtest;
+shadow;
+paper;
+demo;
+live;
+prop
+
+results into one unlabeled win-rate statistic.
+
+Every metric must identify source population.
+
+======================================================================
+76. SAMPLE-SIZE VISIBILITY
+======================================================================
+
+Performance displays should include sample sizes.
+
+Example:
+
+82% win rate
+n = 11
+
+must not appear equivalent to:
+
+67% win rate
+n = 2,000.
+
+Include uncertainty where practical.
+
+======================================================================
+77. MODEL CONFIDENCE MONITORING
+======================================================================
+
+Detect pathological distributions such as:
+
+all signals suddenly 95% confidence.
+
+Alert on confidence-distribution drift.
+
+======================================================================
+78. STRATEGY CORRELATION
+======================================================================
+
+Measure correlation between strategies.
+
+Avoid counting strongly correlated signals as independent confirmation.
+
+======================================================================
+79. PORTFOLIO HEAT
+======================================================================
+
+Compute account-level portfolio heat.
+
+Aggregate risk should consider:
+
+open positions;
+correlation;
+stop-distance risk;
+asset-class concentration;
+currency exposure.
+
+======================================================================
+80. PROP LOSS BUFFER
+======================================================================
+
+For prop accounts, allow configurable safety buffer.
+
+Example:
+
+firm daily loss limit: 5%
+
+SignalRank operational maximum:
+4% or another configured conservative value.
+
+Do not automatically trade exactly up to external failure boundaries.
+
+======================================================================
+81. PROP RESET-TIME ROBUSTNESS
+======================================================================
+
+Daily-loss rules may reset according to specific firm timezone.
+
+Implement deterministic reset logic and tests around:
+
+midnight;
+DST;
+weekends;
+broker timestamps.
+
+======================================================================
+82. EXECUTION REHEARSAL
+======================================================================
+
+Before first real-money order on an account, run a dry execution rehearsal validating:
+
+instrument lookup;
+quantity calculation;
+risk calculation;
+permissions;
+broker connectivity;
+order validation.
+
+Do not submit actual order during rehearsal.
+
+======================================================================
+83. FIRST-LIVE-TRADE SAFETY
+======================================================================
+
+Support an especially restrictive first-live phase.
+
+Potential controls:
+
+very low maximum risk;
+one position;
+limited instruments;
+manual confirmation;
+enhanced logging.
+
+Do not require this permanently, but support it as an activation stage.
+
+======================================================================
+84. PROP CANARY
+======================================================================
+
+A PROP account should not be the first destination for unproven execution-engine changes.
+
+Execution releases must pass:
+
+paper
+→ demo
+→ optional personal/canary
+→ prop.
+
+======================================================================
+85. NO BLIND COPY TRADING
+======================================================================
+
+If future copy trading exists, each destination account must independently pass its own:
+
+risk;
+prop rules;
+instrument;
+margin;
+execution eligibility.
+
+Do not copy raw order sizes blindly.
+
+======================================================================
+86. CURRENCY NORMALIZATION
+======================================================================
+
+Multi-currency accounts require reliable normalization.
+
+Distinguish:
+
+instrument quote currency;
+account base currency;
+reporting currency.
+
+Use appropriate FX conversion snapshots for analytics.
+
+======================================================================
+87. ACCOUNT BALANCE AUTHORITY
+======================================================================
+
+For live accounts, broker-reported financial state is authoritative unless known invalid.
+
+Local calculated values are estimates/supporting state.
+
+Do not overwrite broker truth with stale application state.
+
+======================================================================
+88. MARKET DATA AUTHORITY
+======================================================================
+
+Clearly distinguish:
+
+execution broker market data
+
+from
+
+analytics provider market data.
+
+Where order validation requires broker-specific prices/instrument rules, prefer relevant authoritative broker state.
+
+======================================================================
+89. DATA DISAGREEMENT HANDLING
+======================================================================
+
+If providers materially disagree on price:
+
+detect;
+quarantine or degrade;
+do not silently choose one for execution.
+
+======================================================================
+90. SAFE RETRIES
+======================================================================
+
+Classify operations into:
+
+safe to retry;
+retry only with idempotency;
+never blindly retry.
+
+Document this in code.
+
+======================================================================
+91. DEAD-LETTER OPERATIONS
+======================================================================
+
+Provide tools to inspect and safely replay dead-letter jobs.
+
+Replaying an execution job must not duplicate an already submitted order.
+
+======================================================================
+92. JOB PROVENANCE
+======================================================================
+
+Every background job should include:
+
+job ID;
+origin;
+attempt;
+trace;
+user/account where relevant;
+idempotency key;
+created timestamp.
+
+======================================================================
+93. RETRY STORMS
+======================================================================
+
+Prevent provider failure from causing thousands of synchronized retries.
+
+Use:
+
+backoff;
+jitter;
+circuit breakers.
+
+======================================================================
+94. BOUNDED QUEUES
+======================================================================
+
+Queues must have defined limits/strategies.
+
+Do not allow infinite backlog.
+
+Prioritize critical financial/risk events over optional analytics.
+
+======================================================================
+95. LOG SANITIZATION
+======================================================================
+
+Audit logs for accidental leakage of:
+
+password;
+API secret;
+access token;
+refresh token;
+broker credential;
+private Telegram data;
+payment secrets.
+
+Implement automatic redaction.
+
+======================================================================
+96. ERROR MESSAGE SANITIZATION
+======================================================================
+
+User-facing errors must not reveal:
+
+stack traces;
+database internals;
+secret values;
+internal infrastructure topology.
+
+Still provide meaningful reference IDs.
+
+======================================================================
+97. SECURITY HEADERS
+======================================================================
+
+Review website/API headers and browser protections.
+
+Apply appropriate:
+
+CSP;
+HSTS;
+X-Content-Type-Options;
+Referrer-Policy;
+frame protections;
+secure cookies.
+
+======================================================================
+98. DEPENDENCY SECURITY
+======================================================================
+
+Pin dependencies appropriately.
+
+Review major upgrades before auto-applying breaking changes.
+
+Generate vulnerability reports.
+
+Do not use `--force` dependency fixes blindly.
+
+======================================================================
+99. CI SECURITY
+======================================================================
+
+GitHub Actions and CI should use minimum required permissions.
+
+Pin third-party actions to trusted versions/commits where appropriate.
+
+Do not expose secrets to untrusted pull-request code.
+
+======================================================================
+100. SOFTWARE BILL OF MATERIALS
+======================================================================
+
+Generate an SBOM if practical for production releases.
+
+Store with release artifacts.
+
+======================================================================
+101. ENVIRONMENT PARITY
+======================================================================
+
+Staging should be structurally representative of production while remaining isolated.
+
+Differences must be explicitly documented.
+
+======================================================================
+102. CONFIGURATION SCHEMA VALIDATION
+======================================================================
+
+Validate environment variables/configuration at startup.
+
+Fail early on missing/invalid critical settings.
+
+Avoid silently defaulting production financial settings.
+
+======================================================================
+103. SAFE DEFAULTS
+======================================================================
+
+Defaults must favor:
+
+paper;
+manual;
+low risk;
+no leverage;
+no auto-execution
+
+rather than aggressive behavior.
+
+======================================================================
+104. CONFIGURATION DRIFT TESTS
+======================================================================
+
+Compare staging/production configuration structure without exposing secrets.
+
+Alert on unexpected missing required keys or incompatible settings.
+
+======================================================================
+105. CLEAN DATA PIPELINE
+======================================================================
+
+Before research/training:
+
+validate data;
+deduplicate;
+mark missing periods;
+adjust corporate actions appropriately;
+record provider/source.
+
+Do not silently fill market data in ways that introduce artificial predictive information.
+
+======================================================================
+106. DATASET LINEAGE
+======================================================================
+
+Every training dataset must record:
+
+source datasets;
+date ranges;
+symbols;
+transformations;
+filters;
+feature schema;
+hash;
+code SHA.
+
+======================================================================
+107. REPRODUCIBLE RESEARCH
+======================================================================
+
+Important promoted experiments must be reproducible from recorded:
+
+dataset;
+config;
+code;
+random seed where applicable;
+environment.
+
+======================================================================
+108. EXPERIMENT REGISTRY
+======================================================================
+
+Store:
+
+hypothesis;
+experiment ID;
+strategy/model candidate;
+metrics;
+dataset;
+result;
+decision.
+
+Prevent undocumented production model changes.
+
+======================================================================
+109. NEGATIVE EXPERIMENTS
+======================================================================
+
+Record failed experiments.
+
+Do not repeatedly rediscover and retest known-bad configurations without reason.
+
+======================================================================
+110. OVERFITTING CONTROLS
+======================================================================
+
+Use:
+
+out-of-sample;
+walk-forward;
+regime splits;
+minimum sample sizes;
+stability analysis.
+
+Avoid selecting models purely by maximum backtest return.
+
+======================================================================
+111. STRESS TESTING
+======================================================================
+
+Run strategy/portfolio tests using severe historical or synthetic scenarios.
+
+Examples:
+
+gap events;
+flash crashes;
+extreme volatility;
+illiquidity;
+spread explosion.
+
+======================================================================
+112. MODEL KILL SWITCH
+======================================================================
+
+Allow immediate model disable/rollback.
+
+A bad model must not require redeploying the application.
+
+======================================================================
+113. STRATEGY KILL SWITCH
+======================================================================
+
+Same requirement for strategy.
+
+======================================================================
+114. ACCOUNT KILL SWITCH
+======================================================================
+
+Each account must support instant auto-execution disable.
+
+======================================================================
+115. USER KILL SWITCH
+======================================================================
+
+User can disable automated trading across all accounts.
+
+======================================================================
+116. PLATFORM KILL SWITCH
+======================================================================
+
+Owner/operations can stop new automated execution platform-wide.
+
+======================================================================
+117. KILL SWITCH TESTING
+======================================================================
+
+Test each kill switch.
+
+Do not assume configuration presence means it works.
+
+======================================================================
+118. RUNBOOKS
+======================================================================
+
+Write operational runbooks for at least:
+
+broker outage;
+market-data outage;
+DB outage;
+Redis outage;
+AI outage;
+Telegram outage;
+signal spike;
+duplicate order;
+position mismatch;
+credential compromise;
+prop-rule incident;
+bad model release;
+failed migration.
+
+======================================================================
+119. INCIDENT RESPONSE
+======================================================================
+
+Create incident severity levels.
+
+Define:
+
+detection;
+containment;
+recovery;
+postmortem.
+
+======================================================================
+120. POSTMORTEMS
+======================================================================
+
+Serious incidents require:
+
+timeline;
+impact;
+root cause;
+contributing factors;
+remediation;
+tests added;
+owner;
+completion status.
+
+======================================================================
+121. PRODUCTION CHANGE LOG
+======================================================================
+
+Maintain user/operator-visible release notes for meaningful releases.
+
+Internally record:
+
+release SHA;
+migrations;
+models;
+config changes;
+feature flags;
+known issues.
+
+======================================================================
+122. API CONTRACT TESTING
+======================================================================
+
+Contract-test all important external providers.
+
+Detect upstream schema changes before they silently corrupt behavior.
+
+======================================================================
+123. SYMBOL-MAPPING CERTIFICATION
+======================================================================
+
+Test canonical symbol mappings across providers.
+
+Example:
+
+BTCUSDT
+BTC/USD
+BTC-USD
+
+must not accidentally represent inconsistent instruments.
+
+======================================================================
+124. CORPORATE ACTION HANDLING
+======================================================================
+
+For equities handle:
+
+splits;
+reverse splits;
+symbol changes;
+dividends where relevant;
+delistings.
+
+Research must avoid false signals caused by unadjusted history.
+
+======================================================================
+125. FUTURES CONTRACT HANDLING
+======================================================================
+
+Where futures are supported, define:
+
+contract expiration;
+roll;
+continuous-series research behavior;
+execution contract selection.
+
+======================================================================
+126. ACCOUNT CURRENCY RISK
+======================================================================
+
+Where account and instrument currencies differ, include conversion risk/cost.
+
+======================================================================
+127. BROKER-SPECIFIC PRECISION TESTS
+======================================================================
+
+Build instrument metadata tests per broker.
+
+Never assume one provider's precision applies to another.
+
+======================================================================
+128. PARTIAL-FILL TESTING
+======================================================================
+
+Explicitly test:
+
+partial entry;
+partial exit;
+partial stop;
+cancel remainder;
+average fill price.
+
+======================================================================
+129. STOP/TP RECONCILIATION
+======================================================================
+
+Verify protective orders exist at broker.
+
+Local intent is insufficient.
+
+If expected stop is missing:
+
+raise critical alert;
+attempt safe remediation according to policy;
+freeze new risk if unresolved.
+
+======================================================================
+130. OCO/ORDER RELATIONSHIP TRACKING
+======================================================================
+
+Where brokers support linked orders/OCO, model relationships explicitly.
+
+Avoid accidental orphan orders.
+
+======================================================================
+131. POSITION OWNERSHIP
+======================================================================
+
+Do not accidentally manage a broker position opened manually unless account policy says SignalRank may manage external/manual positions.
+
+Identify origin where possible.
+
+======================================================================
+132. MANUAL BROKER ACTIONS
+======================================================================
+
+Users may manually alter positions directly at broker.
+
+SignalRank must detect this through reconciliation.
+
+Do not assume every state change originated from SignalRank.
+
+======================================================================
+133. SIGNAL EXPIRY
+======================================================================
+
+Make expiry deterministic per strategy/timeframe.
+
+Never expose stale entry CTA.
+
+======================================================================
+134. ENTRY CHASING
+======================================================================
+
+If price has materially moved beyond intended entry, recalculate eligibility.
+
+Do not blindly execute because an old signal remains stored.
+
+======================================================================
+135. NEWS EVENT CLOCK
+======================================================================
+
+Ensure macro-event timestamps are timezone-safe.
+
+High-impact event risk must use absolute timestamps.
+
+======================================================================
+136. MARKET SESSION SAFETY
+======================================================================
+
+Respect:
+
+open;
+pre-market;
+post-market;
+closed;
+holiday;
+halted
+
+state where applicable.
+
+======================================================================
+137. TRADING HALT DETECTION
+======================================================================
+
+Do not submit ordinary orders into suspended/halted instruments without explicit support.
+
+======================================================================
+138. LIQUIDITY SAFETY
+======================================================================
+
+Include minimum liquidity checks where data permits.
+
+Avoid generating executable recommendations where expected slippage is unacceptably uncertain.
+
+======================================================================
+139. EXPECTED VALUE
+======================================================================
+
+Where possible rank opportunities by:
+
+calibrated expected value after cost and risk
+
+rather than confidence alone.
+
+======================================================================
+140. DECISION EXPLAINABILITY
+======================================================================
+
+Every signal/account decision should expose structured reason codes.
+
+Example:
+
+GLOBAL_SIGNAL_VALID
+USER_ALLOWED
+ACCOUNT_ALLOWED
+RISK_ALLOWED
+PROP_ALLOWED
+EXECUTION_ALLOWED
+
+or explain which failed.
+
+======================================================================
+141. SUPPORTABLE DEBUGGING
+======================================================================
+
+Owner tools must allow tracing one signal from:
+
+market input
+→ candidate
+→ filters
+→ user delivery
+→ account decision
+→ order
+→ broker
+→ outcome.
+
+======================================================================
+142. SYSTEM INVARIANTS
+======================================================================
+
+Document and test critical invariants.
+
+Examples:
+
+no order without account ownership;
+
+no live order from PAPER account;
+
+no PROP order bypassing prop policy;
+
+no duplicate broker order for one idempotency key;
+
+no user access to another user's resource;
+
+no auto-execution while account frozen;
+
+no trade from stale market data;
+
+no open-position state marked reconciled unless broker agrees;
+
+no model promotion without evaluation record.
+
+Treat invariant violations as severe defects.
+
+======================================================================
+143. SYSTEMATIC COMPLETION PROCESS
+======================================================================
+
+Continue implementation until every requirement from:
+
+the 54-page blueprint;
+the original master directive;
+the multi-user addendum;
+this final hardening directive
+
+has been entered into the traceability matrix.
+
+Do not skip requirements because they are inconvenient.
+
+Do not fabricate verification.
+
+======================================================================
+144. COMPLETION STATUS STANDARD
+======================================================================
+
+Use:
+
+NOT_STARTED
+IN_PROGRESS
+IMPLEMENTED
+VERIFIED
+BLOCKED_EXTERNAL
+DEFERRED_WITH_REASON
+NOT_APPLICABLE
+
+Only VERIFIED counts as completed functionality.
+
+BLOCKED_EXTERNAL must include exact blocker.
+
+======================================================================
+145. FINAL CERTIFICATION ARTIFACTS
+======================================================================
+
+Produce all of the following:
+
+docs/MASTER_BLUEPRINT_IMPLEMENTATION_STATUS.md
+
+docs/PRODUCTION_CERTIFICATION_REPORT.md
+
+docs/MULTI_USER_ISOLATION_REPORT.md
+
+docs/MULTI_ASSET_COVERAGE_REPORT.md
+
+docs/EXECUTION_CERTIFICATION_REPORT.md
+
+docs/PROP_MODE_CERTIFICATION_REPORT.md
+
+docs/SECURITY_REVIEW.md
+
+docs/DISASTER_RECOVERY_REPORT.md
+
+docs/LOAD_AND_CAPACITY_REPORT.md
+
+docs/DATA_AND_MODEL_GOVERNANCE_REPORT.md
+
+docs/DEPENDENCY_AND_LICENSE_REGISTRY.md
+
+docs/KNOWN_EXTERNAL_BLOCKERS.md
+
+docs/FINAL_RELEASE_CHECKLIST.md
+
+======================================================================
+146. FINAL CLEAN-ROOM TEST
+======================================================================
+
+After everything passes:
+
+1. create clean environment;
+2. fresh checkout of final candidate SHA;
+3. fresh staging DB;
+4. fresh Redis namespace;
+5. run migrations;
+6. run full automated suite;
+7. start every required service;
+8. verify market data;
+9. verify Telegram;
+10. verify web;
+11. create multiple test users;
+12. link website/Telegram identities;
+13. create paper accounts;
+14. connect broker demo;
+15. create multiple trading accounts;
+16. test account isolation;
+17. test strategy/signals;
+18. test risk rejection;
+19. test execution;
+20. test partial fill/timeout/reconciliation;
+21. simulate failure;
+22. recover;
+23. verify audit evidence.
+
+Do not rely on previously running state.
+
+======================================================================
+147. DEMO TRADING GATE
+======================================================================
+
+Only mark DEMO_READY after:
+
+multi-asset signal pipeline verified;
+
+market data fresh;
+
+signals tracked correctly;
+
+portfolio risk enforced;
+
+duplicate orders impossible under tested conditions;
+
+order timeouts reconciled;
+
+partial fills supported;
+
+restart recovery works;
+
+broker state reconciles;
+
+website and Telegram show consistent state;
+
+outcomes tracked accurately;
+
+fault tests pass.
+
+======================================================================
+148. LIVE PERSONAL GATE
+======================================================================
+
+LIVE_PERSONAL_READY requires:
+
+DEMO_READY;
+
+plus explicit live-account certification.
+
+Do not infer live readiness from paper profitability alone.
+
+======================================================================
+149. PROP GATE
+======================================================================
+
+PROP_READY requires:
+
+LIVE_PERSONAL execution engine certified;
+
+and prop-specific tests.
+
+Validate the exact target prop firm's current rules before connecting a real prop account.
+
+Do not hard-code assumptions based on outdated firm rules.
+
+======================================================================
+150. OWNER NORMAL ACCOUNT + PROP ACCOUNT
+======================================================================
+
+Explicitly support the owner using:
+
+a normal personal live account
+
+and
+
+a prop account
+
+simultaneously.
+
+They must have independent:
+
+positions;
+risk;
+rules;
+performance;
+balances;
+execution settings;
+kill states;
+reconciliation.
+
+Admin privileges must not weaken trading safety.
+
+======================================================================
+151. MANY USERS
+======================================================================
+
+Assume SignalRank will onboard many users through:
+
+website;
+Telegram;
+future apps/API.
+
+The final architecture must not depend on:
+
+one Telegram account;
+one broker;
+one user;
+one personal configuration;
+one database row;
+one globally mutable "current user";
+one globally selected brokerage account.
+
+Remove such assumptions wherever they exist.
+
+======================================================================
+152. TIGHTEN, DO NOT JUST EXPAND
+======================================================================
+
+Whenever a requirement already exists, do not create a second implementation.
+
+Improve the canonical implementation.
+
+Consolidate duplicated logic.
+
+Reduce architectural ambiguity.
+
+Prefer:
+
+one user identity service;
+one account service;
+one entitlement service;
+one canonical signal lifecycle;
+one risk engine;
+one execution state machine;
+one provider abstraction;
+one audit model.
+
+Avoid parallel competing systems.
+
+======================================================================
+153. NO FAKE COMPLETENESS
+======================================================================
+
+Do not write:
+
+"implemented"
+
+when only an interface exists.
+
+Do not write:
+
+"tested"
+
+when only a unit test exists for an integration requirement.
+
+Do not write:
+
+"production ready"
+
+if external runtime behavior has not been tested.
+
+State facts accurately.
+
+======================================================================
+154. STOP CONDITION FOR NEW FEATURES
+======================================================================
+
+After the requirements in the master blueprint and addenda are fulfilled:
+
+DO NOT KEEP ADDING RANDOM FEATURES.
+
+At that stage focus exclusively on:
+
+correctness;
+testing;
+demo evidence;
+performance;
+security;
+reliability;
+observability;
+UX polish;
+documentation;
+certification.
+
+The product should stabilize before more scope expansion.
+
+======================================================================
+155. FINAL DEFINITION OF DONE
+======================================================================
+
+SignalRank is considered implementation-complete only when:
+
+all requirements are accounted for;
+
+all applicable requirements are VERIFIED;
+
+multi-user isolation passes;
+
+multiple accounts per user work;
+
+paper/demo/live/prop modes are isolated;
+
+website and Telegram are coherent;
+
+multi-asset coverage is demonstrated;
+
+signals have full lifecycle integrity;
+
+risk controls fail closed;
+
+prop policies are deterministic;
+
+AI cannot bypass deterministic controls;
+
+financial arithmetic is validated;
+
+orders are idempotent;
+
+reconciliation is proven;
+
+restart/disaster recovery is proven;
+
+security tests pass;
+
+load testing is documented;
+
+model/data governance exists;
+
+production/staging remain isolated;
+
+deployment/source/schema drift is detected;
+
+clean-room certification passes;
+
+and external blockers are explicitly documented.
+
+The final release candidate must include exact evidence supporting each major claim.
+
+If any requirement remains unverified, state it explicitly.
+
+Do not hide uncertainty.
+
+Do not optimize for looking complete.
+
+Optimize for actually being correct, safe, reliable, maintainable and auditable.
+
+======================================================================
+FINAL IMPLEMENTATION PRIORITY
+======================================================================
+
+If trade-offs are required, prioritize in this order:
+
+1. prevention of financial loss caused by software defects;
+2. user/account isolation;
+3. broker/execution correctness;
+4. risk and prop-rule enforcement;
+5. financial/data correctness;
+6. security;
+7. recovery and reconciliation;
+8. market-data integrity;
+9. signal/ML correctness;
+10. observability;
+11. reliability/scaling;
+12. product functionality;
+13. UX polish;
+14. optional convenience features.
+
+Never sacrifice items 1–10 merely to ship a cosmetic or commercial feature faster.
+
+This directive forms part of the final SignalRank specification and definition of done.

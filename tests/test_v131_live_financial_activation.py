@@ -66,6 +66,7 @@ def _full_env() -> dict[str, str]:
         "AUTO_TRADE_ENABLED": "1",
         "COPY_TRADE_ENABLED": "1",
         "MT5_ALLOW_LIVE_ACCOUNTS": "1",
+        "MT5_RECONCILIATION_ENABLED": "1",
         "BYBIT_EXECUTION_ENABLED": "1",
         "BYBIT_TESTNET": "0",
         "BYBIT_REQUIRE_IP_BINDING": "1",
@@ -91,7 +92,7 @@ def _full_env() -> dict[str, str]:
 def test_version_and_migration_head():
     assert APP_VERSION == "1.5.1"
     assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
-    assert audit_versions(ROOT)["heads"] == ["0041_broker_connection_registry"]
+    assert audit_versions(ROOT)["heads"] == ["0045_mt5_credential_retirement"]
 
 
 def test_financial_flags_off_are_safe():
@@ -114,6 +115,15 @@ def test_full_live_activation_contract_passes():
     assert report.requested is True
     assert report.ok is True
     assert all(check.ok for check in report.checks if check.blocking)
+
+
+def test_live_mt5_activation_requires_explicit_reconciliation_worker():
+    env = _full_env()
+    env["MT5_RECONCILIATION_ENABLED"] = "0"
+    report = evaluate_financial_activation(env)
+    assert report.ok is False
+    failed = {check.name for check in report.checks if check.blocking and not check.ok}
+    assert "mt5_reconciliation" in failed
 
 
 def test_execution_gate_requires_auto_execution_master():
@@ -177,6 +187,28 @@ def test_instrument_rules_round_down():
 
 
 @pytest.mark.asyncio
+async def test_bybit_ticker_preserves_provider_timestamp():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v5/market/tickers")
+        return httpx.Response(
+            200,
+            json={
+                "retCode": 0,
+                "time": 1770000000123,
+                "result": {"list": [{"symbol": "BTCUSDT", "lastPrice": "100000"}]},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = BybitV5Client(
+            BybitCredentials("api-key-123", "api-secret-123", False),
+            client=http_client,
+        )
+        ticker = await client.get_ticker("BTCUSDT")
+    assert ticker["_provider_time_ms"] == 1770000000123
+
+
+@pytest.mark.asyncio
 async def test_bybit_order_ack_is_confirmed_before_success():
     seen = []
 
@@ -231,6 +263,7 @@ def test_live_and_public_env_profiles_document_all_flags():
         "AUTO_TRADE_ENABLED=1",
         "COPY_TRADE_ENABLED=1",
         "MT5_ALLOW_LIVE_ACCOUNTS=1",
+        "MT5_RECONCILIATION_ENABLED=1",
         "BYBIT_EXECUTION_ENABLED=1",
         "BYBIT_TESTNET=0",
         f"BYBIT_DEDICATED_ACCOUNT_ACK={BYBIT_DEDICATED_ACCOUNT_ACK_VALUE}",
@@ -273,6 +306,21 @@ def test_vip_enrollment_can_be_unlimited():
     assert 'Open enrollment' in source
 
 
+def test_mt5_reconciliation_is_exact_provider_history_and_account_ledger_wired():
+    worker = (ROOT / "worker" / "worker.py").read_text(encoding="utf-8")
+    client = (ROOT / "services" / "mt5_client.py").read_text(encoding="utf-8")
+    reconciler = (ROOT / "services" / "mt5_reconciler.py").read_text(encoding="utf-8")
+    activation = (ROOT / "core" / "financial_activation.py").read_text(encoding="utf-8")
+    assert "MT5_RECONCILIATION_ENABLED" in worker
+    assert "mt5_reconciliation_loop" in worker
+    assert "/history-deals/ticket/" in client
+    assert "/history-deals/position/" in client
+    assert "DEAL_ENTRY_OUT" in reconciler
+    assert "_append_account_ledger_in_session" in reconciler
+    assert 'source_event_id": f"deal:{deal_id}:profit"' in reconciler
+    assert '"mt5_reconciliation"' in activation
+
+
 def test_bybit_reconciliation_and_shared_quota_are_wired():
     worker = (ROOT / "worker" / "worker.py").read_text(encoding="utf-8")
     router = (ROOT / "services" / "bybit_signal_router.py").read_text(encoding="utf-8")
@@ -290,7 +338,10 @@ def test_mt5_and_bybit_use_the_same_execution_quota_ledger():
     mt5 = (ROOT / "services" / "mt5_signal_router.py").read_text(encoding="utf-8")
     bybit = (ROOT / "services" / "bybit_signal_router.py").read_text(encoding="utf-8")
     shared = (ROOT / "services" / "execution_quota.py").read_text(encoding="utf-8")
-    assert "from services.execution_quota import reserve_user_execution_quota" in mt5
+    assert "from services.execution_quota import (" in mt5
+    assert "reserve_user_execution_quota," in mt5
+    assert "reserve_platform_user_execution_quota," in mt5
+    assert "release_user_execution_quota" in mt5
     assert "reserve_user_execution_quota" in bybit
     assert "MT5Execution.realized_pnl_pct" in shared
     assert "BrokerExecution.realized_pnl_pct" in shared

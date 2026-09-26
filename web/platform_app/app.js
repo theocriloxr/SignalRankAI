@@ -84,6 +84,173 @@ $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();c
 
 async function loadBillingProducts(){const data=await request('/billing/products');const products=data.products||[];$('#billingProducts').innerHTML=products.length?products.map(p=>`<article class="metric-card"><small>${esc(String(p.tier).toUpperCase())}</small><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}">Choose plan</button></article>`).join(''):'<p>No public checkout products are available.</p>';$$('.billing-checkout').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;toast(err.message,true)}})}
 async function loadAccount(){const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
+function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
+function brokerPolicyFraction(value){const n=Number(value);return Number.isFinite(n)?n/100:0}
+function brokerPolicyCsv(value){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean)}
+function brokerPolicyNullablePct(value){if(value===undefined||value===null||String(value).trim()==='')return null;return brokerPolicyFraction(value)}
+function brokerPolicyDays(value){return String(value||'').split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>=0&&x<=6)}
+
+async function openBrokerPolicy(connection){
+  const editor=$('#brokerPolicyEditor');
+  const form=$('#brokerPolicyForm');
+  if(!editor||!form||!connection)return;
+  let data,ledgerData;
+  try{
+    [data,ledgerData]=await Promise.all([
+      request('/broker/connections/'+encodeURIComponent(connection.connection_id)+'/policy'),
+      request('/broker/connections/'+encodeURIComponent(connection.connection_id)+'/ledger?limit=50')
+    ])
+  }
+  catch(err){toast('Account policy could not be loaded: '+err.message,true);return}
+  const p=data.policy||{};
+  const reconciliation=data.reconciliation||{};
+  const ledgerEntries=ledgerData.entries||[];
+  form.elements.connection_id.value=connection.connection_id;
+  form.elements.account_mode.value=p.account_mode||'DEMO';
+  form.elements.execution_permission.value=p.execution_permission||'SIGNALS_ONLY';
+  form.elements.reset_timezone.value=p.reset_timezone||'UTC';
+  form.elements.currency.value=p.currency||'USD';
+  for(const name of ['max_risk_per_trade_pct','max_daily_loss_pct','max_weekly_loss_pct','max_total_drawdown_pct','safety_buffer_pct']){
+    if(form.elements[name])form.elements[name].value=brokerPolicyPct(p[name]);
+  }
+  for(const name of ['max_open_positions','max_leverage','max_spread_bps','max_slippage_bps','min_expected_rr']){
+    if(form.elements[name])form.elements[name].value=p[name]??'';
+  }
+  form.elements.min_confidence.value=brokerPolicyPct(p.min_confidence);
+  for(const name of ['external_max_daily_loss_pct','external_max_weekly_loss_pct','external_max_total_drawdown_pct']){
+    form.elements[name].value=p[name]===null||p[name]===undefined?'':brokerPolicyPct(p[name]);
+  }
+  form.elements.allowed_instruments.value=(p.allowed_instruments||[]).join(', ');
+  form.elements.allowed_asset_classes.value=(p.allowed_asset_classes||[]).join(', ');
+  form.elements.allowed_strategies.value=(p.allowed_strategies||[]).join(', ');
+  form.elements.news_trading_allowed.checked=p.news_trading_allowed!==false;
+  form.elements.weekend_holding_allowed.checked=p.weekend_holding_allowed!==false;
+  form.elements.prop_firm.value=p.prop_firm||'';
+  form.elements.prop_phase.value=p.prop_phase||'';
+  form.elements.prop_rules_version.value=p.prop_rules_version||'';
+  form.elements.external_rules_json.value=JSON.stringify(p.external_rules||{},null,2);
+  const firstWindow=(p.trading_windows||[])[0]||{};
+  form.elements.trading_days.value=Array.isArray(firstWindow.days)?firstWindow.days.join(','):'';
+  form.elements.trading_window_start.value=firstWindow.start||'';
+  form.elements.trading_window_end.value=firstWindow.end||'';
+  $('#brokerPolicyTitle').textContent=(connection.account_label||String(connection.platform||'').toUpperCase()||'Trading account')+' policy';
+  $('#brokerPolicyState').innerHTML=[
+    ['Policy version',p.policy_version||1],
+    ['Policy status',String(p.status||'configured').toUpperCase()],
+    ['PROP certification',p.account_mode==='PROP'?(p.certified?'Certified':'Required'):'Not applicable'],
+    ['Safety freeze',p.frozen?(p.frozen_reason||'Active'):'Clear'],
+    ['Broker reconciliation',String(reconciliation.status||'UNKNOWN').toUpperCase()]
+  ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  const ledger=$('#brokerAccountLedger');
+  if(ledger){
+    ledger.innerHTML=ledgerEntries.length?ledgerEntries.map(entry=>{
+      const financial=[
+        entry.amount!==null&&entry.amount!==undefined?`amount ${entry.currency||''} ${entry.amount}`:'',
+        entry.equity!==null&&entry.equity!==undefined?`equity ${entry.equity}`:'',
+        entry.balance!==null&&entry.balance!==undefined?`balance ${entry.balance}`:'',
+        entry.realized_pnl!==null&&entry.realized_pnl!==undefined?`realized P/L ${entry.realized_pnl}`:'',
+        entry.unrealized_pnl!==null&&entry.unrealized_pnl!==undefined?`unrealized P/L ${entry.unrealized_pnl}`:'',
+        entry.fees!==null&&entry.fees!==undefined?`fees ${entry.fees}`:''
+      ].filter(Boolean).join(' · ');
+      const refs=[entry.order_ref?`order ${entry.order_ref}`:'',entry.position_ref?`position ${entry.position_ref}`:''].filter(Boolean).join(' · ');
+      return `<div class="list-row"><div><strong>${esc(String(entry.entry_type||'ledger').replaceAll('_',' ').toUpperCase())}</strong><small>${esc(String(entry.provider||'broker').toUpperCase())} · ${esc(time(entry.provider_timestamp||entry.created_at))}</small><small>${esc(financial||refs||'Provider evidence recorded')}</small></div><span>${esc(entry.currency||'')}</span></div>`;
+    }).join(''):'<p class="muted">No broker-authoritative ledger events have been recorded for this account yet.</p>';
+  }
+  $('#freezeBrokerAccount').disabled=Boolean(p.frozen);
+  $('#unfreezeBrokerAccount').disabled=!p.frozen;
+  editor.hidden=false;
+  editor.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function brokerPolicyPayload(form){
+  const raw=formData(form);
+  let externalRules={};
+  const externalRaw=String(raw.external_rules_json||'').trim();
+  if(externalRaw){
+    try{externalRules=JSON.parse(externalRaw)}
+    catch{throw new Error('Advanced firm hard rules must be valid JSON.')}
+    if(!externalRules||Array.isArray(externalRules)||typeof externalRules!=='object'){
+      throw new Error('Advanced firm hard rules must be a JSON object.');
+    }
+  }
+  const days=brokerPolicyDays(raw.trading_days);
+  const start=String(raw.trading_window_start||'').trim();
+  const end=String(raw.trading_window_end||'').trim();
+  if((days.length||start||end)&&!(days.length&&start&&end)){
+    throw new Error('Trading window requires days, start time and end time together.');
+  }
+  return {
+    confirm:true,
+    account_mode:raw.account_mode,
+    execution_permission:raw.execution_permission,
+    reset_timezone:String(raw.reset_timezone||'UTC').trim()||'UTC',
+    currency:String(raw.currency||'USD').trim().toUpperCase()||'USD',
+    max_risk_per_trade_pct:brokerPolicyFraction(raw.max_risk_per_trade_pct),
+    max_daily_loss_pct:brokerPolicyFraction(raw.max_daily_loss_pct),
+    max_weekly_loss_pct:brokerPolicyFraction(raw.max_weekly_loss_pct),
+    max_total_drawdown_pct:brokerPolicyFraction(raw.max_total_drawdown_pct),
+    max_open_positions:Number(raw.max_open_positions||0),
+    max_leverage:Number(raw.max_leverage||0),
+    max_spread_bps:Number(raw.max_spread_bps||0),
+    max_slippage_bps:Number(raw.max_slippage_bps||0),
+    min_confidence:brokerPolicyFraction(raw.min_confidence),
+    min_expected_rr:Number(raw.min_expected_rr||0),
+    safety_buffer_pct:brokerPolicyFraction(raw.safety_buffer_pct),
+    external_max_daily_loss_pct:brokerPolicyNullablePct(raw.external_max_daily_loss_pct),
+    external_max_weekly_loss_pct:brokerPolicyNullablePct(raw.external_max_weekly_loss_pct),
+    external_max_total_drawdown_pct:brokerPolicyNullablePct(raw.external_max_total_drawdown_pct),
+    allowed_instruments:brokerPolicyCsv(raw.allowed_instruments),
+    allowed_asset_classes:brokerPolicyCsv(raw.allowed_asset_classes),
+    allowed_strategies:brokerPolicyCsv(raw.allowed_strategies),
+    trading_windows:days.length?[{days,start,end}]:[],
+    news_trading_allowed:Boolean(form.elements.news_trading_allowed.checked),
+    weekend_holding_allowed:Boolean(form.elements.weekend_holding_allowed.checked),
+    prop_firm:String(raw.prop_firm||'').trim()||null,
+    prop_phase:String(raw.prop_phase||'').trim()||null,
+    prop_rules_version:String(raw.prop_rules_version||'').trim()||null,
+    external_rules:externalRules
+  };
+}
+
+async function saveBrokerPolicy(event){
+  event.preventDefault();
+  const form=event.target;
+  const connectionId=form.elements.connection_id.value;
+  if(!connectionId)return;
+  try{
+    const payload=brokerPolicyPayload(form);
+    if(!confirm('Save this account policy? Execution will be disabled until you explicitly re-enable this account.'))return;
+    await request('/broker/connections/'+encodeURIComponent(connectionId)+'/policy',{method:'PUT',body:JSON.stringify(payload)});
+    toast('Account policy saved. Execution remains disabled until explicitly re-enabled.');
+    await loadBroker();
+    const connection=(state.broker?.connections||[]).find(x=>x.connection_id===connectionId);
+    if(connection)await openBrokerPolicy(connection);
+  }catch(err){toast(err.message,true)}
+}
+
+async function setBrokerSafetyFreeze(frozen){
+  const form=$('#brokerPolicyForm');
+  const connectionId=form?.elements.connection_id?.value;
+  if(!connectionId)return;
+  let reason='user_unfreeze';
+  if(frozen){
+    reason=prompt('Reason for immediately freezing new execution on this account:','manual safety freeze')||'';
+    if(!reason.trim())return;
+  }else if(!confirm('Clear your manual safety freeze? System/reconciliation freezes cannot be cleared here. Execution will still remain disabled until separately re-enabled.'))return;
+  try{
+    await request('/broker/connections/'+encodeURIComponent(connectionId)+'/safety-freeze',{method:'POST',body:JSON.stringify({frozen,confirm:true,reason})});
+    toast(frozen?'Account safety freeze enabled':'Manual safety freeze cleared');
+    await loadBroker();
+    const connection=(state.broker?.connections||[]).find(x=>x.connection_id===connectionId);
+    if(connection)await openBrokerPolicy(connection);
+  }catch(err){toast(err.message,true)}
+}
+
+$('#brokerPolicyForm')?.addEventListener('submit',saveBrokerPolicy);
+$('#closeBrokerPolicy')?.addEventListener('click',()=>{$('#brokerPolicyEditor').hidden=true});
+$('#freezeBrokerAccount')?.addEventListener('click',()=>setBrokerSafetyFreeze(true));
+$('#unfreezeBrokerAccount')?.addEventListener('click',()=>setBrokerSafetyFreeze(false));
+
 async function loadBroker(){
   const panel=$('#brokerPanel');
   if(!panel)return;
@@ -95,6 +262,8 @@ async function loadBroker(){
     const ex=data.execution||{};
     const connections=data.connections||[];
     const platforms=data.platforms||[];
+    const accountStats=data.stats?.accounts||[];
+    const accountStatsById=new Map(accountStats.map(row=>[String(row.connection_id||''),row]));
     const readyConnections=connections.filter(x=>['verified','ready','linked'].includes(String(x.status||'').toLowerCase()));
     const executableConnections=connections.filter(x=>x.execution_enabled===true);
     $('#brokerReadinessBadge').textContent=executableConnections.length?'EXECUTION READY':readyConnections.length?'CONNECTED':'NOT CONNECTED';
@@ -116,21 +285,25 @@ async function loadBroker(){
         const defaultTag=x.is_default?'Default · ':'';
         const account=x.account_ref_masked||'Account hidden';
         const verifyButton=x.connector==='metaapi'?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
-        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
+        const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
+        const perfParts=[
+          accountPerf.executions!==undefined?`${accountPerf.executions} executions`:'',
+          accountPerf.wins!==undefined?`${accountPerf.wins} wins`:'',
+          accountPerf.losses!==undefined?`${accountPerf.losses} losses`:'',
+          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`realized P/L ${fmt(accountPerf.realized_pnl||0)}`:''
+        ].filter(Boolean).join(' · ');
+        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
+        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
       }).join(''):'<p class="muted">No trading accounts connected yet.</p>';
     }
 
-    const providers=data.stats?.providers||[];
-    const mtStats=data.stats?.mt5||{};
     $('#brokerStats').innerHTML=[
       ['Connected accounts',connections.length],
       ['Execution-enabled',executableConnections.length],
-      ['MetaTrader executions',mtStats.executions||0],
-      ['Recorded wins',mtStats.wins||0],
-      ['Recorded losses',mtStats.losses||0],
-      ['Realized P/L',`$${fmt(mtStats.realized_pnl||0)}`],
-      ['Other provider executions',providers.reduce((n,p)=>n+Number(p.executions||0),0)]
-    ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+      ['Accounts with execution evidence',accountStats.filter(x=>Number(x.executions||0)>0).length],
+      ['Performance scope','Per account only']
+    ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')+
+      '<p class="muted">Demo, personal-live and PROP performance are not combined into one headline. Open each account policy/ledger for its own evidence.</p>';
 
     $('#brokerStatus').innerHTML=[
       ['Connection does not grant trading','Yes'],
@@ -163,6 +336,9 @@ async function loadBroker(){
         }else if(action==='default'){
           await request('/broker/connections/'+encodeURIComponent(connectionId)+'/default',{method:'POST',body:JSON.stringify({confirm:true})});
           toast('Default broker route updated');
+        }else if(action==='policy'){
+          await openBrokerPolicy(connection);
+          return;
         }else if(action==='execution'){
           const enable=!connection.execution_enabled;
           const warning=enable

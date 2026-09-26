@@ -10,12 +10,14 @@ import json
 import logging
 import os
 import secrets
+from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -309,7 +311,8 @@ class TradingProfileUpdateRequest(BaseModel):
 
 class SignalExecutionRequest(BaseModel):
     confirm: bool
-    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5)$")
+    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5|bybit)$")
+    connection_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SignalFeedbackRequest(BaseModel):
@@ -343,6 +346,58 @@ class BrokerExecutionToggleRequest(BaseModel):
 
 
 class BrokerDefaultRequest(BaseModel):
+    confirm: bool
+
+
+class TradingAccountPolicyUpdateRequest(BaseModel):
+    """Per-account hard-risk policy. Percentage values are decimal fractions."""
+
+    confirm: bool
+    account_mode: str = Field(pattern=r"^(PAPER|DEMO|LIVE_PERSONAL|PROP)$")
+    execution_permission: str = Field(
+        pattern=r"^(READ_ONLY|SIGNALS_ONLY|PAPER_ONLY|MANUAL|ASSISTED_EXECUTION|AUTO_EXECUTION)$"
+    )
+    reset_timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    currency: str = Field(default="USD", min_length=3, max_length=8)
+    max_risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"), ge=0, le=Decimal("0.20"))
+    max_daily_loss_pct: Decimal = Field(default=Decimal("0.04"), ge=0, le=Decimal("0.50"))
+    max_weekly_loss_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
+    max_total_drawdown_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
+    max_open_positions: int = Field(default=3, ge=0, le=1000)
+    max_leverage: Decimal = Field(default=Decimal("1"), ge=0, le=Decimal("200"))
+    max_spread_bps: Decimal = Field(default=Decimal("50"), ge=0, le=Decimal("10000"))
+    max_slippage_bps: Decimal = Field(default=Decimal("25"), ge=0, le=Decimal("10000"))
+    min_confidence: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("1"))
+    min_expected_rr: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
+    safety_buffer_pct: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("0.50"))
+    external_max_daily_loss_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.50"))
+    external_max_weekly_loss_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.90"))
+    external_max_total_drawdown_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.90"))
+    allowed_instruments: list[str] = Field(default_factory=list, max_length=500)
+    allowed_asset_classes: list[str] = Field(default_factory=list, max_length=30)
+    allowed_strategies: list[str] = Field(default_factory=list, max_length=100)
+    trading_windows: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    news_trading_allowed: bool = True
+    weekend_holding_allowed: bool = True
+    prop_firm: str | None = Field(default=None, max_length=128)
+    prop_phase: str | None = Field(default=None, max_length=64)
+    prop_rules_version: str | None = Field(default=None, max_length=128)
+    external_rules: dict[str, Any] = Field(default_factory=dict)
+
+
+class AccountFreezeRequest(BaseModel):
+    frozen: bool
+    confirm: bool
+    reason: str | None = Field(default=None, max_length=256)
+
+
+class PropPolicyCertificationRequest(BaseModel):
+    confirm: bool
+    expected_policy_version: int = Field(ge=1)
+    certification_ref: str = Field(min_length=6, max_length=160)
+
+
+class BrokerCredentialRotationRequest(BaseModel):
     confirm: bool
 
 
@@ -520,6 +575,30 @@ def _assert_command(user: dict[str, Any], command: str) -> None:
         )
 
 
+def _platform_operator_authority(user: dict[str, Any]) -> str | None:
+    from config import (
+        ADMIN_IDS,
+        OWNER_IDS,
+        OWNER_TELEGRAM_ID,
+        OWNER_TELEGRAM_IDS,
+    )
+
+    telegram_user_id = int(user.get("telegram_user_id") or 0)
+    owner_ids = {int(value) for value in (OWNER_IDS or set())}
+    owner_ids.update(int(value) for value in (OWNER_TELEGRAM_IDS or set()))
+    if int(OWNER_TELEGRAM_ID or 0) > 0:
+        owner_ids.add(int(OWNER_TELEGRAM_ID))
+    if telegram_user_id > 0 and telegram_user_id in owner_ids:
+        return "OWNER"
+
+    admin_ids = {int(value) for value in (ADMIN_IDS or set())}
+    if telegram_user_id > 0 and telegram_user_id in admin_ids:
+        return "ADMIN"
+    if str(user.get("tier") or "").strip().upper() == "ADMIN":
+        return "ADMIN"
+    return None
+
+
 
 def _normalized_scopes(values: list[str]) -> list[str]:
     allowed = {
@@ -558,7 +637,7 @@ async def professional_api_user(
         if not row:
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
         user = await user_snapshot(session, int(row["user_id"]))
-        if not user:
+        if not user or user.get("account_status") != "active":
             raise HTTPException(status_code=401, detail="Account unavailable")
         _assert_feature(user, "rest_api")
         await session.execute(
@@ -653,6 +732,10 @@ def _token_response(tokens, client_type: str) -> dict[str, Any]:
 
 
 def _auth_token(request: Request, bearer: HTTPAuthorizationCredentials | None) -> str:
+    # An explicit but malformed Authorization header must never fall back to
+    # ambient browser cookies.
+    if request.headers.get("authorization") and not bearer:
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
     return str((bearer.credentials if bearer else None) or request.cookies.get(ACCESS_COOKIE) or "").strip()
 
 
@@ -686,7 +769,7 @@ async def current_user(
             raise HTTPException(status_code=401, detail="Session is no longer active")
         user = await user_snapshot(session, int(claims["user_id"]))
         await session.rollback()
-    if not user or str(user.get("account_status") or "active") != "active":
+    if not user or user.get("account_status") != "active":
         raise HTTPException(status_code=401, detail="Account unavailable")
     user["session_id"] = claims.get("sid")
     return user
@@ -699,8 +782,24 @@ async def _create_login_response(
     user_id: int,
     client_type: str,
     device_id: str | None,
+    mfa_verified: bool = False,
 ) -> dict[str, Any]:
     async with get_session() as session:
+        user = await user_snapshot(session, int(user_id))
+        if not user or user.get("account_status") != "active":
+            raise HTTPException(status_code=401, detail="Account unavailable")
+        # Every first-factor path (including Telegram and activation) passes
+        # through the same MFA gate before any session or cookie is issued.
+        status = await mfa_status(session, user_id=int(user_id))
+        if status["enabled"] and not mfa_verified:
+            challenge = await create_mfa_login_challenge(session, user_id=int(user_id))
+            await session.commit()
+            return {
+                "authenticated": False,
+                "mfa_required": True,
+                "mfa_token": challenge.token,
+                "expires_at": challenge.expires_at.isoformat(),
+            }
         tokens = await create_session_tokens(
             session,
             user_id=int(user_id),
@@ -708,7 +807,6 @@ async def _create_login_response(
             ip_address=_client_ip(request),
             device_id=device_id,
         )
-        user = await user_snapshot(session, int(user_id))
         await session.commit()
     csrf = _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
     payload = {**_token_response(tokens, client_type), "user": user}
@@ -803,16 +901,6 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     try:
         async with get_session() as session:
             user_id = await authenticate_email_password(session, email=payload.email, password=payload.password)
-            status = await mfa_status(session, user_id=user_id)
-            if status["enabled"]:
-                challenge = await create_mfa_login_challenge(session, user_id=user_id)
-                await session.commit()
-                return {
-                    "authenticated": False,
-                    "mfa_required": True,
-                    "mfa_token": challenge.token,
-                    "expires_at": challenge.expires_at.isoformat(),
-                }
             await session.commit()
     except (AuthenticationError, ValueError) as exc:
         raise HTTPException(status_code=401, detail="Invalid credentials") from exc
@@ -832,17 +920,26 @@ async def refresh(payload: RefreshRequest, request: Request, response: Response)
         raise HTTPException(status_code=401, detail="Refresh token required")
     try:
         async with get_session() as session:
-            tokens = await rotate_refresh_token(
-                session,
-                refresh_token=raw,
-                user_agent=request.headers.get("user-agent"),
-                ip_address=_client_ip(request),
-            )
+            try:
+                tokens = await rotate_refresh_token(
+                    session,
+                    refresh_token=raw,
+                    user_agent=request.headers.get("user-agent"),
+                    ip_address=_client_ip(request),
+                )
+            except AuthenticationError:
+                # Replay detection/expiry can revoke sessions before rejecting
+                # the credential. Preserve those security writes on rejection.
+                await session.commit()
+                raise
             user = await user_snapshot(session, decode_access_token(tokens.access_token)["user_id"])
+            if not user or user.get("account_status") != "active":
+                raise HTTPException(status_code=401, detail="Account unavailable")
             await session.commit()
     except AuthenticationError as exc:
-        _clear_session_cookies(response)
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        rejected = JSONResponse(status_code=401, content={"detail": str(exc)})
+        _clear_session_cookies(rejected)
+        return rejected
     _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
     return {**_token_response(tokens, payload.client_type), "user": user}
 
@@ -1227,14 +1324,25 @@ async def execute_signal_from_platform(
     signal["evidence_signal_id"] = ref
     signal["execution_source"] = "web_manual_confirmed"
 
-    from services.mt5_signal_router import route_platform_signal_to_metatrader
+    if payload.provider == "bybit":
+        from services.bybit_signal_router import route_platform_signal_to_bybit
 
-    result = await route_platform_signal_to_metatrader(
-        signal,
-        uid,
-        platform=payload.provider,
-        execution_mode="manual_confirmed",
-    )
+        result = await route_platform_signal_to_bybit(
+            signal,
+            uid,
+            execution_mode="manual_confirmed",
+            connection_id=payload.connection_id,
+        )
+    else:
+        from services.mt5_signal_router import route_platform_signal_to_metatrader
+
+        result = await route_platform_signal_to_metatrader(
+            signal,
+            uid,
+            platform=payload.provider,
+            execution_mode="manual_confirmed",
+            connection_id=payload.connection_id,
+        )
     if not result.success:
         error = str(result.error or "execution_blocked")
         blocked_markers = (
@@ -2556,12 +2664,17 @@ async def mfa_login_complete(
 ) -> dict[str, Any]:
     try:
         async with get_session() as session:
-            user_id = await complete_mfa_login(
-                session,
-                token=payload.token,
-                code=payload.code,
-                ip_address=_client_ip(request),
-            )
+            try:
+                user_id = await complete_mfa_login(
+                    session,
+                    token=payload.token,
+                    code=payload.code,
+                    ip_address=_client_ip(request),
+                )
+            except AuthenticationError:
+                # Failed codes increment the bounded challenge attempt counter.
+                await session.commit()
+                raise
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -2571,6 +2684,7 @@ async def mfa_login_complete(
         user_id=user_id,
         client_type=payload.client_type,
         device_id=payload.device_id,
+        mfa_verified=True,
     )
 
 
@@ -2595,16 +2709,6 @@ async def magic_link_complete(
     try:
         async with get_session() as session:
             user_id = await consume_magic_login(session, token=payload.token, ip_address=_client_ip(request))
-            status = await mfa_status(session, user_id=user_id)
-            if status["enabled"]:
-                challenge = await create_mfa_login_challenge(session, user_id=user_id)
-                await session.commit()
-                return {
-                    "authenticated": False,
-                    "mfa_required": True,
-                    "mfa_token": challenge.token,
-                    "expires_at": challenge.expires_at.isoformat(),
-                }
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -2681,13 +2785,16 @@ async def get_mfa_status(user: dict[str, Any] = Depends(current_user)) -> dict[s
 
 @router.post("/security/mfa/setup")
 async def setup_mfa(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    async with get_session() as session:
-        setup = await begin_totp_setup(
-            session,
-            user_id=int(user["id"]),
-            account_label=str(user.get("primary_email") or user.get("public_user_id") or user["id"]),
-        )
-        await session.commit()
+    try:
+        async with get_session() as session:
+            setup = await begin_totp_setup(
+                session,
+                user_id=int(user["id"]),
+                account_label=str(user.get("primary_email") or user.get("public_user_id") or user["id"]),
+            )
+            await session.commit()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"secret": setup.secret, "provisioning_uri": setup.provisioning_uri, "expires_at": setup.expires_at.isoformat()}
 
 
@@ -3262,6 +3369,255 @@ async def create_broker_metatrader_secure_link(
     return result
 
 
+@router.get("/broker/connections/{connection_id}/policy")
+async def broker_account_policy(
+    connection_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.account_policies import get_account_policy, reconciliation_snapshot
+
+    try:
+        policy = await get_account_policy(int(user["id"]), connection_id)
+        reconciliation = await reconciliation_snapshot(int(user["id"]), connection_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"policy": policy, "reconciliation": reconciliation}
+
+
+@router.get("/broker/connections/{connection_id}/ledger")
+async def broker_account_ledger(
+    connection_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    from services.trading_account_ledger import list_account_ledger
+
+    try:
+        entries = await list_account_ledger(
+            int(user["id"]),
+            connection_id,
+            limit=limit,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "connection_id": str(connection_id),
+        "entries": entries,
+        "count": len(entries),
+        "broker_values_authoritative": True,
+        "note": (
+            "Only values proven by the broker/provider are recorded. Missing "
+            "deposit, withdrawal, fee, funding or swap data is never inferred."
+        ),
+    }
+
+
+@router.put("/broker/connections/{connection_id}/policy")
+async def update_broker_account_policy(
+    connection_id: str,
+    payload: TradingAccountPolicyUpdateRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    if payload.account_mode == "PROP":
+        if not payload.prop_firm or not payload.prop_rules_version:
+            raise HTTPException(
+                status_code=422,
+                detail="PROP accounts require prop_firm and prop_rules_version",
+            )
+        if (
+            payload.external_max_daily_loss_pct is None
+            or payload.external_max_total_drawdown_pct is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="PROP accounts require the firm's daily-loss and drawdown limits",
+            )
+
+    from services.account_policies import configure_account_policy
+
+    try:
+        policy = await configure_account_policy(
+            int(user["id"]),
+            connection_id,
+            account_mode=payload.account_mode,
+            execution_permission=payload.execution_permission,
+            reset_timezone=payload.reset_timezone,
+            currency=payload.currency,
+            max_risk_per_trade_pct=payload.max_risk_per_trade_pct,
+            max_daily_loss_pct=payload.max_daily_loss_pct,
+            max_weekly_loss_pct=payload.max_weekly_loss_pct,
+            max_total_drawdown_pct=payload.max_total_drawdown_pct,
+            max_open_positions=payload.max_open_positions,
+            max_leverage=payload.max_leverage,
+            max_spread_bps=payload.max_spread_bps,
+            max_slippage_bps=payload.max_slippage_bps,
+            min_confidence=payload.min_confidence,
+            min_expected_rr=payload.min_expected_rr,
+            safety_buffer_pct=payload.safety_buffer_pct,
+            external_max_daily_loss_pct=payload.external_max_daily_loss_pct,
+            external_max_weekly_loss_pct=payload.external_max_weekly_loss_pct,
+            external_max_total_drawdown_pct=payload.external_max_total_drawdown_pct,
+            allowed_instruments=payload.allowed_instruments,
+            allowed_asset_classes=payload.allowed_asset_classes,
+            allowed_strategies=payload.allowed_strategies,
+            trading_windows=payload.trading_windows,
+            news_trading_allowed=payload.news_trading_allowed,
+            weekend_holding_allowed=payload.weekend_holding_allowed,
+            prop_firm=payload.prop_firm,
+            prop_phase=payload.prop_phase,
+            prop_rules_version=payload.prop_rules_version,
+            external_rules=payload.external_rules,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "policy": policy,
+        "execution_remains_disabled": True,
+        "prop_certification_required": payload.account_mode == "PROP",
+    }
+
+
+@router.post("/admin/broker/connections/{connection_id}/prop-certification")
+async def certify_broker_prop_policy(
+    connection_id: str,
+    payload: PropPolicyCertificationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Owner/admin certification required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    async with get_session(
+        label="platform.prop_policy_certification_target",
+        timeout_seconds=6.0,
+    ) as session:
+        target_user_id = (
+            await session.execute(
+                text(
+                    "SELECT user_id FROM broker_connections "
+                    "WHERE connection_id=:connection_id LIMIT 1"
+                ),
+                {"connection_id": str(connection_id)},
+            )
+        ).scalar_one_or_none()
+        await session.rollback()
+    if target_user_id is None:
+        raise HTTPException(status_code=404, detail="Broker connection not found")
+
+    from services.account_policies import certify_prop_policy
+
+    try:
+        policy = await certify_prop_policy(
+            int(target_user_id),
+            connection_id,
+            certification_ref=payload.certification_ref,
+            expected_policy_version=payload.expected_policy_version,
+            certified_by_user_id=int(user["id"]),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "policy": policy,
+        "certified": True,
+        "certified_by_authority": authority,
+        "execution_enabled": False,
+        "message": (
+            "PROP policy version certified. Broker execution still requires "
+            "separate account enablement and every runtime safety gate."
+        ),
+    }
+
+
+@router.post("/broker/connections/{connection_id}/credentials/rotate")
+async def rotate_broker_connection_credential_envelope(
+    connection_id: str,
+    payload: BrokerCredentialRotationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.broker_credentials import (
+        BrokerCredentialError,
+        rotate_connection_credentials,
+    )
+
+    try:
+        result = await rotate_connection_credentials(
+            user_id=int(user["id"]),
+            connection_id=connection_id,
+            actor_user_id=int(user["id"]),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BrokerCredentialError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        **result,
+        "credentials_rotated": True,
+        "execution_enabled": False,
+        "message": (
+            "Broker credentials were re-encrypted with the active key. "
+            "Execution remains disabled until explicitly re-enabled."
+        ),
+    }
+
+
+@router.post("/broker/connections/{connection_id}/safety-freeze")
+async def broker_account_safety_freeze(
+    connection_id: str,
+    payload: AccountFreezeRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if payload.frozen and not str(payload.reason or "").strip():
+        raise HTTPException(status_code=422, detail="A freeze reason is required")
+    from services.account_policies import set_account_frozen
+
+    try:
+        policy = await set_account_frozen(
+            int(user["id"]),
+            connection_id,
+            frozen=payload.frozen,
+            reason=str(payload.reason or "user_unfreeze"),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "policy": policy,
+        "execution_enabled": False,
+        "message": (
+            "Account frozen; new broker execution is disabled."
+            if payload.frozen
+            else "Safety freeze cleared. Execution remains disabled until explicitly re-enabled."
+        ),
+    }
+
+
 @router.post("/broker/connections/{connection_id}/verify")
 async def verify_broker_connection(
     connection_id: str,
@@ -3425,8 +3781,80 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                 {"uid": uid},
             )
         ).mappings().all()
+        mt5_account_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT connection_id,
+                           COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE realized_pnl > 0) AS wins,
+                           COUNT(*) FILTER (WHERE realized_pnl < 0) AS losses,
+                           COUNT(*) FILTER (WHERE realized_pnl = 0) AS breakeven,
+                           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL),0) AS realized_pnl
+                    FROM mt5_executions
+                    WHERE user_id=:uid AND connection_id IS NOT NULL
+                    GROUP BY connection_id
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
+        provider_account_stats = (
+            await session.execute(
+                text(
+                    """
+                    SELECT connection_id,provider,
+                           COUNT(*) AS executions,
+                           COUNT(*) FILTER (WHERE LOWER(status)='closed') AS closed,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct > 0) AS wins,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct < 0) AS losses,
+                           COUNT(*) FILTER (WHERE realized_pnl_pct = 0) AS breakeven
+                    FROM broker_executions
+                    WHERE user_id=:uid AND connection_id IS NOT NULL
+                    GROUP BY connection_id,provider
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
         await session.rollback()
     account_payload = dict(account or {})
+    connection_by_id = {
+        str(item.get("connection_id")): item
+        for item in connections
+        if item.get("connection_id")
+    }
+    account_stats: list[dict[str, Any]] = []
+    for row in mt5_account_stats:
+        item = dict(row)
+        connection = connection_by_id.get(str(item.get("connection_id"))) or {}
+        account_stats.append(
+            {
+                **item,
+                "provider": str(connection.get("platform") or "mt5"),
+                "account_mode": str(
+                    connection.get("account_classification") or "UNKNOWN"
+                ),
+                "environment": str(connection.get("environment") or "unknown"),
+                "metric_scope": "single_account",
+                "realized_pnl_pct": None,
+            }
+        )
+    for row in provider_account_stats:
+        item = dict(row)
+        connection = connection_by_id.get(str(item.get("connection_id"))) or {}
+        account_stats.append(
+            {
+                **item,
+                "account_mode": str(
+                    connection.get("account_classification") or "UNKNOWN"
+                ),
+                "environment": str(connection.get("environment") or "unknown"),
+                "metric_scope": "single_account",
+                "realized_pnl": None,
+            }
+        )
+
     return {
         "mt5": mt5,
         "connections": connections,
@@ -3441,8 +3869,17 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             "telegram_linked": account_payload.get("telegram_user_id") is not None,
         },
         "stats": {
-            "mt5": dict(mt5_stats or {}),
-            "providers": [dict(row) for row in provider_stats],
+            "accounts": account_stats,
+            "composition_required": True,
+            "aggregate_disclaimer": (
+                "Provider/user aggregates can combine DEMO, LIVE_PERSONAL and PROP "
+                "accounts. User-facing performance must use the single-account "
+                "composition rows instead."
+            ),
+            "mixed_account_diagnostics": {
+                "mt5": dict(mt5_stats or {}),
+                "providers": [dict(row) for row in provider_stats],
+            },
         },
         "safety": {
             "live_execution_requested": bool(

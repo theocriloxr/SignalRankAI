@@ -1,0 +1,511 @@
+You are the lead principal engineer, quantitative systems engineer, ML engineer, SRE, security engineer and product engineer responsible for bringing SignalRank to production-grade completion.
+
+WORKING BRANCH
+
+Work only on:
+
+codex/signalrank-master-blueprint-20260925
+
+This branch was created from the current advanced SignalRank hardening branch.
+
+Do not make implementation commits directly to main.
+
+PRIMARY SPECIFICATION
+
+Read in full before making architectural decisions:
+
+docs/SignalRank_Master_Blueprint_2026.md
+
+Also inspect:
+
+docs/SignalRank_Master_Blueprint_2026.docx
+
+Treat the blueprint as the product and engineering specification, but do not blindly implement something if the repository already contains a superior implementation. Preserve working functionality and improve it instead of unnecessarily rewriting it.
+
+OBJECTIVE
+
+Implement, integrate, test, verify and document every applicable requirement in the SignalRank Master Blueprint.
+
+The goal is not to create placeholders, stubs, TODOs, mock implementations or superficial UI representations.
+
+The goal is a fully functioning, production-quality SignalRank platform capable of:
+
+multi-asset market intelligence,
+signal generation,
+strategy ensembles,
+market-regime awareness,
+risk management,
+portfolio-aware decisions,
+continuous outcome tracking,
+safe ML improvement,
+OpenAI/Gemini intelligence,
+web and Telegram parity,
+paper trading,
+broker demo trading,
+safe assisted execution,
+future live execution,
+and a strict prop-trading mode.
+
+SignalRank must support its intended asset classes properly rather than behaving as a crypto-only system.
+
+PRE-IMPLEMENTATION AUDIT
+
+Before implementing new functionality:
+
+1. Inventory the entire repository.
+
+2. Determine all active services, workers, schedulers, APIs, web applications, Telegram components, strategy engines, AI modules, model pipelines, database migrations, Redis usage, market-data providers and execution adapters.
+
+3. Compare the current branch with these divergent historical branches and determine whether they contain useful functionality not already represented in the current architecture:
+
+feat/ai-operator-controls-20260923
+fix/remaining-staging-blockers
+fix/openai-provider-controls-20260923
+fix/ohlc-class-aware-fallback-20260923
+
+Do not blindly merge them.
+
+Diff them, understand their intent, determine whether equivalent functionality already exists, and selectively port only valuable missing functionality.
+
+4. Identify dead code, duplicated implementations, contradictory configuration, obsolete migrations, unfinished features, unused strategies and inconsistent environment assumptions.
+
+5. Establish the actual runtime architecture before changing it.
+
+TRACEABILITY
+
+Create:
+
+docs/MASTER_BLUEPRINT_IMPLEMENTATION_STATUS.md
+
+Every material requirement from the blueprint must receive a stable ID.
+
+For example:
+
+SR-ARCH-001
+SR-DATA-001
+SR-STRAT-001
+SR-ML-001
+SR-RISK-001
+SR-EXEC-001
+SR-WEB-001
+SR-TG-001
+SR-SEC-001
+SR-SRE-001
+
+For every requirement track:
+
+status,
+implementation files,
+migration if applicable,
+tests,
+commit,
+verification evidence,
+remaining blockers.
+
+Allowed final statuses:
+
+IMPLEMENTED_AND_VERIFIED
+BLOCKED_EXTERNAL
+NOT_APPLICABLE_WITH_REASON
+
+Do not mark something complete merely because code exists.
+
+A feature is complete only after its behavior is tested.
+
+CORE ENGINEERING RULES
+
+Do not sacrifice existing production functionality.
+
+Do not delete working functionality merely to simplify implementation.
+
+Keep staging and production operational data isolated.
+
+Keep demo, paper, prop and live execution modes explicitly isolated.
+
+Use one canonical internal user identity.
+
+Use one canonical asset registry.
+
+Use explicit state machines for signals, orders and positions.
+
+Use idempotency for all externally observable side effects.
+
+Use deterministic hard risk controls.
+
+LLMs must never bypass deterministic execution or risk controls.
+
+Never assume a timed-out broker request failed.
+
+Reconcile every broker order and position.
+
+Never execute from stale market data.
+
+Never silently substitute stale or lower-quality data when execution safety is affected.
+
+Preserve full auditability.
+
+Avoid look-ahead leakage and survivorship bias.
+
+Keep model promotion separate from model training.
+
+Do not use headline win rate as the primary optimization objective.
+
+Evaluate expectancy, drawdown, profit factor, calibration, fees, slippage and risk-adjusted performance.
+
+MULTI-ASSET REQUIREMENT
+
+Audit and complete support for:
+
+crypto,
+FX,
+equities,
+stocks,
+ETFs where supported,
+indices,
+commodities,
+metals,
+energy,
+futures where infrastructure permits.
+
+Each asset class must have appropriate:
+
+symbol mapping,
+sessions,
+market calendars,
+precision,
+tick size,
+contract/lot rules,
+fees,
+spread expectations,
+data routing,
+fallback behavior,
+strategy compatibility,
+risk rules,
+and execution capabilities.
+
+Create automated coverage tests proving that every advertised asset class reaches the appropriate stages of the SignalRank pipeline.
+
+SIGNAL PIPELINE
+
+Establish one canonical observable pipeline:
+
+market data
+→ normalization
+→ data quality
+→ features
+→ regime detection
+→ strategy candidates
+→ ensemble/meta scoring
+→ calibration
+→ signal-quality filters
+→ portfolio/risk filters
+→ personalization
+→ duplicate/cooldown handling
+→ eligibility
+→ delivery
+→ execution
+→ position management
+→ outcomes
+→ analytics
+→ research/training
+
+Each rejection stage must produce structured reason codes.
+
+Implement owner-facing signal funnel diagnostics.
+
+LEARNING SYSTEM
+
+SignalRank must learn from:
+
+delivered signals,
+rejected signals,
+suppressed duplicates,
+cooldown-suppressed signals,
+expired signals,
+AI-rejected signals,
+risk-rejected signals,
+and shadow signals.
+
+However:
+
+never automatically retrain and deploy directly from recent outcomes.
+
+Use:
+
+dataset versioning,
+walk-forward evaluation,
+candidate models,
+champion/challenger,
+shadow evaluation,
+calibration analysis,
+drift detection,
+promotion gates,
+rollback.
+
+Preserve model and feature provenance for every historical signal.
+
+EXECUTION SAFETY
+
+Implement and verify:
+
+idempotent order submission,
+client order identifiers,
+order state machine,
+partial fills,
+timeouts,
+unknown order state,
+reconciliation,
+restart recovery,
+duplicate-message handling,
+WebSocket disconnect handling,
+stale-market-data rejection,
+slippage limits,
+spread limits,
+position limits,
+portfolio limits,
+daily-loss controls,
+drawdown controls,
+kill switches,
+provider-health circuit breakers.
+
+Create execution fault-injection tests.
+
+PAPER, DEMO, PROP AND LIVE
+
+Treat these as distinct account modes:
+
+PAPER
+DEMO
+PROP
+LIVE
+
+Implement a dedicated prop-rule engine capable of enforcing account-specific restrictions such as:
+
+daily loss,
+maximum total/trailing drawdown,
+leverage,
+instrument restrictions,
+news trading,
+weekend holding,
+position sizing,
+consistency requirements,
+EA/automation rules,
+reset timezone,
+and other configurable constraints.
+
+No order may be sent when it would violate a hard prop rule.
+
+WEB AND TELEGRAM
+
+Achieve functional parity where appropriate.
+
+Anything a normal SignalRank user needs to inspect or configure through Telegram should be available through the web application.
+
+Anything that materially affects account risk or broker execution must have a clear web interface.
+
+Fix all incomplete routes, broken buttons, inconsistent states, responsiveness problems, inaccessible components, text overflow, poor mobile layouts and misleading UI states.
+
+Do not expose execution actions for signals that are paper-only, recovery-only, stale, invalidated or otherwise execution-ineligible.
+
+OPENAI AND GEMINI
+
+Maintain provider abstraction.
+
+Do not make SignalRank dependent on one LLM provider.
+
+Use structured outputs.
+
+Validate every AI result.
+
+AI may perform:
+
+context analysis,
+news classification,
+signal explanation,
+conflict review,
+post-trade analysis,
+anomaly analysis,
+and owner/user assistance.
+
+AI may not fabricate market facts.
+
+AI may not bypass deterministic risk rules.
+
+AI unavailability must not crash core signal generation or safe position management.
+
+OBSERVABILITY
+
+Instrument:
+
+provider latency,
+market-data freshness,
+scan duration,
+strategy latency,
+queue delay,
+database latency,
+Redis latency,
+AI latency,
+Telegram delivery,
+web/API latency,
+broker submission latency,
+broker acknowledgement latency,
+reconciliation differences,
+signal-funnel counts.
+
+Use structured logs and correlation/trace IDs.
+
+Every signal and execution must be traceable across services.
+
+SECURITY
+
+Perform a full security review of:
+
+authentication,
+authorization,
+RBAC,
+BOLA/IDOR,
+admin endpoints,
+broker credentials,
+API keys,
+webhooks,
+cookies/JWT,
+CSRF,
+XSS,
+SQL injection,
+SSRF,
+command injection,
+dependency vulnerabilities,
+secrets exposure,
+CI/CD permissions.
+
+Broker credentials must never be logged.
+
+Prefer broker/API permissions without withdrawals.
+
+TESTING
+
+Create or improve:
+
+unit tests,
+property tests,
+integration tests,
+contract tests,
+end-to-end tests,
+frontend interaction tests,
+Telegram tests,
+migration tests,
+provider tests,
+execution simulation,
+fault injection,
+load tests,
+quant regression tests,
+golden-data tests,
+security tests.
+
+Every serious historical SignalRank bug should become a permanent regression test where possible.
+
+FINANCIAL CORRECTNESS
+
+Review all price, quantity, P/L, commission, margin and fee calculations.
+
+Use safe decimal/fixed-point representations where financial precision requires them.
+
+Verify rounding rules against provider/broker instrument specifications.
+
+PROVENANCE
+
+Persist enough immutable information to reconstruct why every signal and trade existed.
+
+Every decision must be associated with:
+
+timestamp,
+market-data source,
+data timestamp,
+feature version,
+strategy versions,
+model version,
+calibration version,
+market regime,
+configuration version,
+portfolio state,
+risk state,
+AI review where used,
+and execution-policy version.
+
+CERTIFICATION
+
+Do not claim the project is complete merely because tests compile or the application starts.
+
+Create:
+
+docs/PRODUCTION_CERTIFICATION_REPORT.md
+
+The report must show evidence for:
+
+database migration health,
+market-data coverage,
+every advertised asset class,
+strategy execution,
+signal lifecycle,
+delivery,
+Telegram,
+website,
+paper trading,
+demo execution,
+reconciliation,
+risk controls,
+model evaluation,
+provider failover,
+AI failover,
+fault recovery,
+security,
+deployment health,
+observability.
+
+Do not enable unrestricted live or prop execution merely because implementation is complete.
+
+Leave hard execution gates in place until the corresponding certification criteria have passed.
+
+WORKING STYLE
+
+Continue through the specification systematically rather than stopping after the first set of fixes.
+
+When you discover additional correctness, safety, reliability, quantitative, security, UX, performance or maintainability improvements that are consistent with the product vision, implement them as well.
+
+Do not hide blockers.
+
+Do not call placeholders complete.
+
+Do not weaken tests to make them pass.
+
+Do not reduce safety or validation thresholds simply to generate more signals.
+
+Do not optimize for signal quantity.
+
+Do not manipulate backtests to improve headline performance.
+
+Do not claim a specific win rate unless supported by the relevant evidence and sample.
+
+Use small coherent commits with descriptive messages.
+
+Keep the implementation status document current throughout the work.
+
+FINAL DEFINITION OF DONE
+
+The project is complete only when every requirement is accounted for, implementation and migrations are coherent, automated tests pass, web and Telegram workflows are verified, multi-asset coverage is demonstrated, the learning and risk systems function correctly, demo execution is safe and reconcilable, deployment configuration is documented, and remaining external dependencies are explicitly identified.
+
+At the end, provide:
+
+1. Full implementation summary.
+2. Requirements traceability report.
+3. Test results.
+4. Database migration status.
+5. Security findings and resolutions.
+6. Multi-asset coverage report.
+7. Model/strategy evaluation report.
+8. Paper/demo execution report.
+9. Known external blockers.
+10. Production certification report.
+11. Exact remaining steps, if any, before a prop account can safely be connected.
+
+Do not report “100% complete” without evidence supporting every applicable requirement.

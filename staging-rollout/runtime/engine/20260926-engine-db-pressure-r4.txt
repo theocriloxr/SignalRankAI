@@ -1,0 +1,6 @@
+SignalRank staging engine runtime cutover r4.
+Purpose: deploy the certified adaptive-candle DB-pressure fix on the true RUN_MODE=engine service.
+Adaptive candle persistence now yields to foreground DB work, bounds transaction size and PostgreSQL waits, and requeues the full failed batch.
+Dependency installation remains enforced by requirements.lock plus pip check.
+All live-money execution and payout paths remain disabled in staging.
+No secrets are stored in this marker.

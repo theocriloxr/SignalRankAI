@@ -1,0 +1,840 @@
+ADDITIONAL MANDATORY REQUIREMENTS
+
+The following requirements are part of the master specification and must be implemented in addition to every requirement already stated.
+
+MULTI-USER PLATFORM
+
+SignalRank is not a single-user trading bot.
+
+It must be architected as a secure multi-user platform supporting many concurrent users who may onboard through:
+
+1. the SignalRank website;
+2. the Telegram bot;
+3. a linked website + Telegram identity;
+4. future mobile applications and API clients.
+
+Every user must have one canonical SignalRank identity regardless of which interface they initially use.
+
+Do not create separate independent user identities simply because someone first registered through Telegram instead of the website.
+
+Implement secure account linking between website and Telegram.
+
+For example:
+
+website user
+→ requests Telegram linking
+→ short-lived signed linking token
+→ Telegram confirms ownership
+→ Telegram identity attaches to canonical SignalRank user
+
+And the reverse:
+
+Telegram user
+→ requests web account
+→ verified email/account creation
+→ canonical user record preserved
+→ Telegram identity remains attached
+
+Linking tokens must:
+
+be short-lived,
+be single-use,
+be cryptographically secure,
+be invalid after use,
+never expose credentials,
+and produce audit events.
+
+Prevent:
+
+duplicate user records,
+account hijacking,
+cross-user access,
+Telegram ID spoofing,
+email linking mistakes,
+and accidental merging of two different people.
+
+TENANT AND USER ISOLATION
+
+Every user-owned resource must be associated with the canonical internal user ID.
+
+This includes:
+
+broker accounts,
+paper portfolios,
+positions,
+orders,
+watchlists,
+strategies/preferences,
+risk profiles,
+notifications,
+Telegram identity,
+subscriptions,
+performance,
+API keys,
+referrals,
+AI conversations where retained,
+and execution history.
+
+Never rely on Telegram chat ID, username, email or broker account ID as the primary application identity.
+
+The canonical SignalRank user ID must be the ownership boundary.
+
+Enforce object-level authorization throughout the API.
+
+A user must never be able to inspect, modify, execute against or obtain information belonging to another user by changing an identifier in a request.
+
+Add automated BOLA/IDOR tests for all user-owned endpoints.
+
+MULTIPLE BROKER ACCOUNTS PER USER
+
+One SignalRank user may connect multiple trading accounts simultaneously.
+
+Model this explicitly.
+
+A user may have, for example:
+
+Personal Bybit account
+Prop MT5 account
+Demo account
+Paper portfolio
+Future brokerage accounts
+
+Do not assume one user = one trading account.
+
+Use a structure conceptually similar to:
+
+User
+ └── TradingAccounts[]
+       ├── PAPER
+       ├── DEMO
+       ├── LIVE_PERSONAL
+       └── PROP
+
+Each trading account must have an immutable internal account ID independent of the external broker account number.
+
+Each account stores its own:
+
+broker/provider,
+account classification,
+currency,
+balance/equity,
+permissions,
+execution configuration,
+risk configuration,
+prop rules if applicable,
+allowed instruments,
+positions,
+orders,
+trade history,
+performance,
+risk metrics,
+and health/reconciliation status.
+
+NORMAL LIVE ACCOUNT + PROP ACCOUNT
+
+The owner may use a normal personal trading account alongside one or more prop accounts.
+
+These accounts must remain completely isolated operationally.
+
+For example:
+
+Temi
+ ├── Personal Live Account
+ └── Prop Firm Account
+
+A trade or risk event in one account must not accidentally mutate the positions, balances or hard limits of another account.
+
+The user may deliberately configure portfolio-level aggregate reporting across accounts, but execution and risk enforcement remain account-specific unless an explicitly configured higher-level portfolio rule exists.
+
+ACCOUNT MODES
+
+Use explicit account classifications:
+
+PAPER
+DEMO
+LIVE_PERSONAL
+PROP
+
+Do not treat PAPER or DEMO as ordinary live brokerage accounts merely with a flag hidden elsewhere.
+
+Execution policy must be account-aware.
+
+PAPER
+
+Pure SignalRank simulation.
+
+No real broker order is permitted.
+
+DEMO
+
+Connected broker sandbox/demo account.
+
+Real broker API behavior may occur but no real capital is used.
+
+LIVE_PERSONAL
+
+Personal real-money brokerage account.
+
+Hard live-risk controls apply.
+
+PROP
+
+Real-money or evaluation account subject to prop-firm-specific constraints.
+
+Prop rules are additional hard constraints and must never be bypassable by AI, signal strategies, normal user preferences or ordinary execution settings.
+
+MULTIPLE PROP ACCOUNTS
+
+The architecture must also support a user having more than one prop account, including accounts at different firms.
+
+Prop rules belong to the individual trading account, not globally to the user.
+
+Example:
+
+User
+ ├── Personal Bybit
+ ├── FTMO Account A
+ ├── The5ers Account B
+ └── Demo MT5
+
+Each prop account may have different:
+
+daily loss rule,
+maximum drawdown,
+trailing drawdown,
+minimum trading days,
+consistency constraints,
+leverage,
+restricted instruments,
+news restrictions,
+weekend restrictions,
+EA/automation restrictions,
+lot limits,
+profit targets,
+reset timezone,
+and evaluation phase.
+
+PROP RULE ENGINE
+
+Implement a generic configuration-driven prop-rule engine.
+
+Do not hard-code one specific prop firm's current rules into core execution logic.
+
+Rules must be stored as versioned account policy.
+
+Every proposed order must run through:
+
+signal eligibility
+→ account eligibility
+→ risk engine
+→ prop policy engine where applicable
+→ execution policy
+→ broker submission
+
+A PROP account order must be rejected before broker submission if it would violate a hard rule.
+
+Record the exact rule responsible for rejection.
+
+OWNER ACCOUNT IS NOT SPECIAL INSIDE EXECUTION
+
+The platform owner should receive administrative capabilities through RBAC.
+
+Do not create unsafe execution shortcuts simply because the account belongs to the owner.
+
+Owner trading accounts must pass the same deterministic trading safety rules as ordinary users.
+
+Administrative privileges and trading-risk privileges are separate concerns.
+
+PER-ACCOUNT EXECUTION SETTINGS
+
+Each connected trading account must independently configure:
+
+manual only,
+assisted execution,
+automatic execution,
+maximum risk per trade,
+maximum daily loss,
+maximum weekly loss,
+maximum concurrent trades,
+maximum leverage,
+allowed asset classes,
+allowed instruments,
+allowed strategies,
+minimum confidence,
+minimum expected reward/risk,
+maximum spread,
+maximum slippage,
+news restrictions,
+trading hours,
+and emergency stop state.
+
+Changing settings on Account A must not affect Account B unless explicitly selected.
+
+ACCOUNT SELECTION
+
+Website and Telegram workflows must clearly show which account an action applies to.
+
+Never submit an order based on an ambiguous "current account" state.
+
+For execution-capable actions, include explicit account identity internally.
+
+Example:
+
+Signal
+→ user selects Personal Live
+→ SignalRank evaluates Personal Live risk profile
+
+or:
+
+Signal
+→ user selects Prop Account 01
+→ SignalRank evaluates that prop account's rules
+
+Telegram callbacks must use opaque identifiers or signed state and must not trust user-supplied account IDs.
+
+MULTI-USER SIGNAL DELIVERY
+
+Signal generation may be globally shared where appropriate, but delivery eligibility must be evaluated per user and, where execution is involved, per account.
+
+Conceptually:
+
+Global candidate signal
+↓
+Global quality validation
+↓
+For each eligible user
+    ↓
+User preference filtering
+    ↓
+Subscription/entitlement filtering
+    ↓
+Account-specific suitability
+    ↓
+Portfolio/risk suitability
+    ↓
+Notification
+    ↓
+Optional execution
+
+Do not generate entirely duplicated market calculations separately for thousands of users where one shared computation can safely be reused.
+
+Separate:
+
+global market intelligence
+
+from
+
+user-specific suitability
+
+from
+
+account-specific execution eligibility.
+
+SCALE
+
+Design background processing to support many concurrent users.
+
+Avoid N× expensive repeated operations when one common result can be calculated once.
+
+Examples:
+
+Fetch one BTC/USD candle stream.
+
+Do not fetch the same candle independently for 500 users.
+
+Calculate reusable market features once where possible.
+
+Then evaluate personalization/risk independently.
+
+Use bounded concurrency, queues, batching and caching.
+
+Load-test:
+
+large user populations,
+Telegram fan-out,
+website/API requests,
+signal personalization,
+notification fan-out,
+broker-account reconciliation,
+and database queries.
+
+SUBSCRIPTIONS AND ENTITLEMENTS
+
+User subscription plans and trading accounts are separate concepts.
+
+A subscription determines which SignalRank capabilities the user may access.
+
+A broker account determines where eligible trades may execute.
+
+Do not encode subscription level inside broker configuration.
+
+Use the centralized entitlement system.
+
+A user's SignalRank plan may control:
+
+number of connected accounts,
+available asset classes,
+signal access,
+AI analytics,
+advanced analytics,
+API access,
+paper portfolios,
+assisted execution,
+automatic execution,
+and other product capabilities.
+
+SIGNAL HISTORY
+
+Clearly distinguish:
+
+GLOBAL SIGNAL
+
+the market opportunity generated by SignalRank,
+
+USER SIGNAL
+
+the personalized delivery/decision for one SignalRank user,
+
+ACCOUNT DECISION
+
+whether one specific trading account could safely execute it,
+
+ORDER
+
+the actual request submitted to the broker,
+
+POSITION
+
+the resulting broker/paper position.
+
+Do not overload one database record to represent all of these concepts.
+
+This separation is mandatory for multi-user correctness.
+
+PERFORMANCE ANALYTICS
+
+Provide performance at multiple levels:
+
+global SignalRank research performance,
+strategy performance,
+signal-model performance,
+individual user performance,
+individual trading-account performance,
+aggregate user portfolio performance.
+
+Never mix paper, demo, personal live and prop results into one headline performance metric without clearly identifying the composition.
+
+PER-ACCOUNT TRADE LEDGER
+
+Every trading account must have its own canonical ledger.
+
+Track:
+
+deposits where available,
+withdrawals where available,
+realized P/L,
+unrealized P/L,
+commissions,
+funding,
+swap,
+fees,
+equity,
+balance,
+margin,
+orders,
+fills,
+positions,
+adjustments,
+reconciliation corrections.
+
+Broker-reported values remain authoritative for external live accounts where appropriate.
+
+REQUIREMENTS TRACEABILITY MATRIX
+
+Every blueprint requirement and every requirement in this addendum must receive a stable requirement ID such as:
+
+SR-USER-001
+SR-ID-001
+SR-ACCOUNT-001
+SR-DATA-001
+SR-RISK-014
+SR-EXEC-022
+SR-PROP-001
+
+Each requirement must link to:
+
+implementation files,
+tests,
+migrations,
+documentation,
+verification evidence,
+related commits,
+and final status.
+
+COMPLETION EVIDENCE LEDGER
+
+Use these lifecycle statuses during implementation:
+
+NOT_STARTED
+IN_PROGRESS
+IMPLEMENTED
+VERIFIED
+BLOCKED_EXTERNAL
+DEFERRED_WITH_REASON
+NOT_APPLICABLE
+
+The final certification may only consider a requirement complete when it reaches:
+
+VERIFIED
+
+or:
+
+NOT_APPLICABLE with a documented valid reason.
+
+IMPLEMENTED does not mean VERIFIED.
+
+Do not collapse these two states.
+
+A requirement that has code but has not been behaviorally demonstrated remains IMPLEMENTED, not VERIFIED.
+
+DEFERRED_WITH_REASON must explain:
+
+why it is deferred,
+what dependency remains,
+what impact the deferral has,
+and what would be necessary to complete it.
+
+DIVERGENT BRANCH RECONCILIATION
+
+Before new implementation, inspect:
+
+feat/ai-operator-controls-20260923
+fix/remaining-staging-blockers
+fix/openai-provider-controls-20260923
+fix/ohlc-class-aware-fallback-20260923
+
+Port genuinely missing functionality only.
+
+Do not blindly merge obsolete implementations.
+
+ENVIRONMENT ISOLATION
+
+Production and staging must not share the same operational trading database.
+
+Keep at minimum:
+
+production database,
+production Redis,
+production secrets,
+
+and:
+
+staging database,
+staging Redis,
+staging secrets
+
+separate.
+
+Training/research systems may consume sanitized or intentionally exported production evidence where explicitly designed, but staging must never mutate production trading state.
+
+LLM ISOLATION FROM EXECUTION
+
+OpenAI, Gemini or any future LLM provider may assist with analysis.
+
+An LLM may never:
+
+directly place an order,
+modify hard risk limits,
+override a prop restriction,
+invent order prices,
+invent broker balances,
+invent positions,
+invent market prices,
+or mark an execution as reconciled.
+
+All broker execution must pass deterministic validated code paths.
+
+FINANCIAL ARITHMETIC
+
+Review all money-sensitive calculations.
+
+Use Decimal, integer minor units or another appropriate fixed-point representation where financial correctness requires it.
+
+Explicitly test:
+
+price precision,
+quantity precision,
+tick size,
+lot size,
+commission,
+funding,
+P/L,
+margin,
+currency conversions,
+and rounding.
+
+Never allow floating-point artifacts to create invalid orders or inaccurate financial records.
+
+COMPLETE DECISION SNAPSHOT
+
+For every user/account execution decision, persist enough information to reconstruct what SignalRank knew at that moment.
+
+Include:
+
+market-data timestamps,
+relevant market snapshot,
+features,
+strategy results,
+market regime,
+model versions,
+calibration version,
+AI reviews,
+global signal state,
+user preferences,
+account state,
+portfolio state,
+risk state,
+prop policy version,
+execution-policy version,
+configuration version,
+software release SHA.
+
+DECISION SNAPSHOTS MUST BE IMMUTABLE.
+
+DETERMINISTIC TRADE REPLAY
+
+Implement deterministic replay tooling.
+
+Given a historical decision snapshot, SignalRank should be able to reconstruct:
+
+what information was available,
+what strategies fired,
+what scores were produced,
+what filters accepted/rejected it,
+what risk checks ran,
+what account rules applied,
+why the final action occurred.
+
+Replay must clearly distinguish original historical output from recalculation using current code.
+
+Where exact deterministic reproduction is impossible due to external stochastic systems, preserve the original outputs and inputs and explain the limitation.
+
+CANARY EXECUTION ACCOUNT
+
+After demo certification, do not immediately expose a new execution-engine release to every live account.
+
+Support canary execution.
+
+A release may be enabled first for:
+
+a dedicated low-risk account,
+an explicitly selected owner account,
+or an explicitly selected small account cohort.
+
+Canary controls must support:
+
+maximum order size,
+maximum risk,
+maximum concurrent positions,
+allowed instruments,
+maximum daily loss,
+automatic rollback/disable conditions.
+
+EXECUTION DISCREPANCY INVARIANT
+
+Continuously reconcile SignalRank state against broker state.
+
+Detect:
+
+missing order,
+unexpected order,
+quantity mismatch,
+position mismatch,
+side mismatch,
+average-price mismatch,
+unexpected fill,
+unexpected closed position,
+balance/equity anomaly.
+
+An unexplained material discrepancy must automatically:
+
+mark the account DEGRADED or FROZEN,
+disable new automated execution,
+raise an operational alert,
+and require successful reconciliation or authorized resolution.
+
+Do not continue blindly trading while broker and SignalRank disagree.
+
+IMMUTABLE HARD RISK CEILINGS
+
+Strategies, AI, personalization and ordinary preference settings may make trading more restrictive.
+
+They must not make account hard risk ceilings less restrictive.
+
+Hard limits may only be modified through an explicitly authorized owner/user risk-configuration path with audit logging and validation.
+
+STRATEGY/MODEL PROMOTION GOVERNANCE
+
+No candidate strategy or model may automatically become real-money active because of a recent winning streak.
+
+Require documented evaluation including:
+
+minimum evidence,
+out-of-sample testing,
+walk-forward testing,
+cost-aware performance,
+calibration where applicable,
+drawdown,
+stability across regimes,
+shadow performance,
+and explicit promotion policy.
+
+Support rollback.
+
+SURVIVORSHIP AND LEAKAGE TEST SUITE
+
+Implement tests specifically designed to catch:
+
+look-ahead leakage,
+label leakage,
+feature leakage,
+overlapping-window leakage,
+survivorship bias,
+delisted-asset omission,
+corporate-action errors,
+revised-data contamination,
+incorrect timezone/session assumptions,
+future fundamental/news availability.
+
+COST-AWARE EDGE
+
+All trading research must evaluate results after realistic estimated costs.
+
+Include where applicable:
+
+spread,
+commission,
+funding,
+swap,
+slippage,
+borrow cost,
+market impact assumptions,
+exchange fees,
+currency conversion.
+
+Do not rank strategies only by gross P/L.
+
+DISASTER-STATE TESTING
+
+Test deliberate failures involving:
+
+PostgreSQL,
+Redis,
+market-data provider,
+broker REST API,
+broker WebSocket,
+Telegram,
+website API,
+OpenAI,
+Gemini,
+job queues,
+network interruptions,
+process termination,
+container restart.
+
+Test these failures during dangerous states including:
+
+during order submission,
+after broker acceptance but before local acknowledgement,
+during partial fill,
+while managing an open position,
+while updating stop loss,
+while processing signal lifecycle changes.
+
+Verify SignalRank fails safe rather than merely recovering eventually.
+
+SUPPLY-CHAIN SECURITY
+
+Add explicit controls for:
+
+dependency pinning,
+lock-file integrity,
+dependency vulnerability scanning,
+secret scanning,
+malicious package awareness,
+GitHub Actions permission minimization,
+third-party action pinning,
+container-image scanning where applicable,
+dependency-change review,
+software-bill-of-materials generation where useful.
+
+EVIDENCE-BASED CERTIFICATION
+
+The final production certification report must contain actual evidence.
+
+For every major subsystem include:
+
+what was tested,
+environment,
+release SHA,
+test case,
+expected outcome,
+actual outcome,
+pass/fail,
+known limitation,
+evidence location.
+
+Do not write generic statements such as:
+
+"Execution is tested."
+
+Instead provide evidence such as:
+
+TEST EXEC-042
+Broker demo timeout after order submission
+Expected: reconcile by client order ID without duplicate submission
+Actual: order found, no duplicate order created
+Result: PASS
+
+DEMO-TO-LIVE GATES
+
+Implement explicit promotion gates:
+
+SHADOW_READY
+PAPER_READY
+DEMO_READY
+LIVE_PERSONAL_READY
+PROP_READY
+
+Do not let one gate imply another.
+
+For example:
+
+DEMO_READY does not automatically mean PROP_READY.
+
+PROP_READY requires additional certification of:
+
+prop policy enforcement,
+loss calculations,
+timezone reset behavior,
+drawdown calculations,
+news/weekend restrictions where applicable,
+reconciliation,
+and account freeze behavior.
+
+FINAL ACCOUNT SAFETY PRINCIPLE
+
+SignalRank must always know:
+
+WHO is acting,
+WHICH SignalRank user owns the action,
+WHICH trading account is affected,
+WHAT account mode it is,
+WHAT risk rules apply,
+WHAT broker/provider is authoritative,
+WHY the action is allowed,
+and HOW to reconcile the result.
+
+An execution request missing any of these elements must fail closed.
+
+These requirements are mandatory and form part of the SignalRank Master Blueprint definition of done.

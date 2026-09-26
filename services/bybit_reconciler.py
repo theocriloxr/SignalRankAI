@@ -9,11 +9,15 @@ from typing import Any
 
 from sqlalchemy import select
 
-from db.models import BrokerExecution, RuntimeState, User
+from db.models import BrokerConnection, BrokerExecution, RuntimeState, User
 from db.session import get_session
 from services.bybit_client import BybitCredentials, BybitError, BybitV5Client
 from services.security import decrypt_secret
 from services.execution_quota import release_user_execution_quota
+from core.execution_state_machine import (
+    InvalidExecutionTransition,
+    transition_execution_row,
+)
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -40,9 +44,57 @@ def _created_ms(row: BrokerExecution) -> int:
     return max(0, int(created.timestamp() * 1000) - 60_000)
 
 
-async def _credentials(telegram_user_id: int) -> BybitCredentials | None:
+async def _credentials(
+    user_id: int,
+    telegram_user_id: int,
+    connection_id: str | None,
+) -> BybitCredentials | None:
+    canonical: BrokerConnection | None = None
     async with get_session(label="bybit.reconcile.credentials", timeout_seconds=6.0) as session:
-        state = await session.get(RuntimeState, _state_key(int(telegram_user_id)))
+        if connection_id:
+            canonical = (
+                await session.execute(
+                    select(BrokerConnection).where(
+                        BrokerConnection.user_id == int(user_id),
+                        BrokerConnection.connection_id == str(connection_id),
+                        BrokerConnection.platform == "bybit",
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if canonical is not None:
+                session.expunge(canonical)
+
+        # Compatibility state is loaded only for pre-canonical records that
+        # genuinely have no canonical application-managed credential.
+        state = None
+        if canonical is None or not canonical.secret_encrypted:
+            state = await session.get(
+                RuntimeState,
+                _state_key(int(telegram_user_id)),
+            )
+        await session.rollback()
+
+    if canonical is not None and canonical.secret_encrypted:
+        from services.broker_credentials import (
+            BrokerCredentialError,
+            decrypt_connection_credentials,
+        )
+
+        try:
+            value, _crypto = decrypt_connection_credentials(
+                canonical,
+                allow_legacy=True,
+            )
+        except BrokerCredentialError:
+            # Do not fall back after a canonical ciphertext/binding failure.
+            return None
+        key = str(value.get("api_key") or "").strip()
+        secret = str(value.get("api_secret") or "").strip()
+        sandbox = value.get("sandbox")
+        if not key or not secret or type(sandbox) is not bool:
+            return None
+        return BybitCredentials(key, secret, sandbox)
+
     value = dict(getattr(state, "value", {}) or {}) if state is not None else {}
     key = decrypt_secret(str(value.get("api_key_enc") or ""))
     secret = decrypt_secret(str(value.get("api_secret_enc") or ""))
@@ -51,8 +103,16 @@ async def _credentials(telegram_user_id: int) -> BybitCredentials | None:
     return BybitCredentials(str(key), str(secret), bool(value.get("sandbox", True)))
 
 
-async def _mark(row_id: int, *, status: str, error: str | None = None, meta: dict[str, Any] | None = None,
-                realized_pnl_pct: float | None = None, closed: bool = False) -> None:
+async def _mark(
+    row_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    meta: dict[str, Any] | None = None,
+    realized_pnl_pct: float | None = None,
+    closed: bool = False,
+    account_ledger_events: list[dict[str, Any]] | None = None,
+) -> None:
     async with get_session(label="bybit.reconcile.write", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
@@ -61,15 +121,40 @@ async def _mark(row_id: int, *, status: str, error: str | None = None, meta: dic
         ).scalar_one_or_none()
         if row is None:
             return
-        row.status = str(status)
-        row.error_code = str(error or "")[:128] or None
-        row.updated_at = now_utc_naive()
-        if meta:
-            row.meta = {**dict(row.meta or {}), **meta}
-        if realized_pnl_pct is not None:
-            row.realized_pnl_pct = float(realized_pnl_pct)
-        if closed:
-            row.closed_at = now_utc_naive()
+        now = now_utc_naive()
+        try:
+            transition_execution_row(
+                row,
+                status,
+                now=now,
+                error_code=error,
+                meta=meta,
+                realized_pnl_pct=realized_pnl_pct,
+                closed_at=now if closed else None,
+            )
+        except InvalidExecutionTransition as exc:
+            logger.error(
+                "[bybit_reconcile_transition_blocked] execution_id=%s current=%s target=%s error=%s",
+                row.id,
+                row.status,
+                status,
+                exc,
+            )
+            raise
+
+        if row.connection_id and account_ledger_events:
+            from services.trading_account_ledger import (
+                _append_account_ledger_in_session,
+            )
+
+            for event in account_ledger_events:
+                await _append_account_ledger_in_session(
+                    session,
+                    user_id=int(row.user_id),
+                    connection_id=str(row.connection_id),
+                    provider="bybit",
+                    **event,
+                )
         await session.commit()
 
 
@@ -93,7 +178,11 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
 
     for execution, telegram_user_id in rows:
         try:
-            creds = await _credentials(int(telegram_user_id))
+            creds = await _credentials(
+                int(execution.user_id),
+                int(telegram_user_id),
+                str(execution.connection_id or "") or None,
+            )
             if creds is None:
                 await _mark(int(execution.id), status=str(execution.status), error="credentials_unavailable")
                 stats["errors"] += 1
@@ -114,6 +203,11 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             positions = await client.get_positions(symbol=str(execution.symbol))
             active = next((item for item in positions if _as_float(item.get("size")) > 0), None)
             if active is not None:
+                position_event_time = str(
+                    active.get("updatedTime")
+                    or active.get("createdTime")
+                    or ""
+                ).strip()
                 await _mark(
                     int(execution.id), status="open",
                     meta={
@@ -123,6 +217,40 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                         "position_idx": active.get("positionIdx"),
                         "last_reconciled_at": now_utc_naive().isoformat(),
                     },
+                    account_ledger_events=(
+                        [
+                            {
+                                "entry_type": "position_snapshot",
+                                "source_event_id": (
+                                    f"position:{execution.provider_order_id or execution.provider_client_order_id}:"
+                                    f"{position_event_time}"
+                                ),
+                                "correlation_id": str(execution.idempotency_key),
+                                "order_ref": execution.provider_order_id,
+                                "position_ref": str(
+                                    active.get("positionIdx")
+                                    or execution.provider_order_id
+                                    or ""
+                                ) or None,
+                                "provider_timestamp": (
+                                    datetime.fromtimestamp(
+                                        int(float(position_event_time)) / 1000.0,
+                                        tz=timezone.utc,
+                                    ).isoformat()
+                                    if position_event_time
+                                    else None
+                                ),
+                                "metadata": {
+                                    "symbol": execution.symbol,
+                                    "position_size": active.get("size"),
+                                    "avg_entry_price": active.get("avgPrice"),
+                                    "unrealised_pnl": active.get("unrealisedPnl"),
+                                },
+                            }
+                        ]
+                        if position_event_time
+                        else None
+                    ),
                 )
                 stats["open"] += 1
                 continue
@@ -155,6 +283,72 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             pnl = _as_float(closed.get("closedPnl"))
             entry_value = abs(_as_float(closed.get("cumEntryValue")))
             pnl_pct = (pnl / entry_value * 100.0) if entry_value > 0 else 0.0
+            close_event_time = str(
+                closed.get("updatedTime")
+                or closed.get("createdTime")
+                or ""
+            ).strip()
+            close_ref = str(
+                closed.get("orderId")
+                or execution.provider_order_id
+                or execution.provider_client_order_id
+                or execution.id
+            )
+            entry_fee = abs(_as_float(closed.get("cumEntryFee")))
+            exit_fee = abs(_as_float(closed.get("cumExitFee")))
+            fee_total = entry_fee + exit_fee
+            ledger_events: list[dict[str, Any]] = [
+                {
+                    "entry_type": "realized_pnl",
+                    "source_event_id": f"realized_pnl:{close_ref}:{close_event_time or 'final'}",
+                    "correlation_id": str(execution.idempotency_key),
+                    "order_ref": execution.provider_order_id,
+                    "position_ref": close_ref,
+                    "amount": pnl,
+                    "realized_pnl": pnl,
+                    "currency": "USDT",
+                    "provider_timestamp": (
+                        datetime.fromtimestamp(
+                            int(float(close_event_time)) / 1000.0,
+                            tz=timezone.utc,
+                        ).isoformat()
+                        if close_event_time
+                        else None
+                    ),
+                    "metadata": {
+                        "symbol": execution.symbol,
+                        "closed_pnl_pct": pnl_pct,
+                        "avg_exit_price": closed.get("avgExitPrice"),
+                        "entry_value": entry_value,
+                    },
+                }
+            ]
+            if fee_total > 0:
+                ledger_events.append(
+                    {
+                        "entry_type": "fee",
+                        "source_event_id": f"fee:{close_ref}:{close_event_time or 'final'}",
+                        "correlation_id": str(execution.idempotency_key),
+                        "order_ref": execution.provider_order_id,
+                        "position_ref": close_ref,
+                        "amount": -fee_total,
+                        "fees": fee_total,
+                        "currency": "USDT",
+                        "provider_timestamp": (
+                            datetime.fromtimestamp(
+                                int(float(close_event_time)) / 1000.0,
+                                tz=timezone.utc,
+                            ).isoformat()
+                            if close_event_time
+                            else None
+                        ),
+                        "metadata": {
+                            "symbol": execution.symbol,
+                            "entry_fee": entry_fee,
+                            "exit_fee": exit_fee,
+                        },
+                    }
+                )
             await _mark(
                 int(execution.id), status="closed", realized_pnl_pct=pnl_pct, closed=True,
                 meta={
@@ -164,6 +358,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                     "close_order_id": closed.get("orderId"),
                     "last_reconciled_at": now_utc_naive().isoformat(),
                 },
+                account_ledger_events=ledger_events,
             )
             stats["closed"] += 1
         except BybitError as exc:

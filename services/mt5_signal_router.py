@@ -409,6 +409,7 @@ class MT5SignalRouter:
         requested_execution_mode: str,
         user_identity: str = "telegram",
         broker_platform: str = "mt5",
+        connection_id: str | None = None,
     ) -> Dict[str, Any]:
         """Load terms, mode, explicit opt-in and secured broker credentials."""
         policy: Dict[str, Any] = {
@@ -426,8 +427,10 @@ class MT5SignalRouter:
         try:
             from db.models import (
                 BrokerConnection,
+                BrokerReconciliationState,
                 MT5Credentials,
                 RuntimeState,
+                TradingAccountPolicyRecord,
                 User,
             )
             from db.session import get_session
@@ -457,20 +460,51 @@ class MT5SignalRouter:
                 accepted_terms = bool(user.accepted_terms)
                 stored_mode = str(user.execution_mode or "").strip().lower()
 
-                connection = (
-                    await session.execute(
-                        select(BrokerConnection).where(
+                query = select(BrokerConnection).where(
                             BrokerConnection.user_id == canonical_id,
                             BrokerConnection.connector == "metaapi",
                             BrokerConnection.platform == platform,
                             BrokerConnection.external_account_id == str(account_id),
-                        ).limit(1)
-                    )
-                ).scalar_one_or_none()
+                        )
+                if connection_id is not None:
+                    query = query.where(BrokerConnection.connection_id == connection_id)
+                connections = (await session.execute(query.limit(2))).scalars().all()
+                connection = connections[0] if len(connections) == 1 else None
 
                 credentials_valid = False
                 connection_execution_enabled = False
                 if connection is not None:
+                    from services.broker_connections import account_classification, execution_connection_error
+                    from services.account_policies import public_account_policy
+
+                    policy["canonical_user_id"] = canonical_id
+                    policy["connection_id"] = str(connection.connection_id)
+                    policy["account_classification"] = account_classification(connection)
+
+                    account_policy_row = (
+                        await session.execute(
+                            select(TradingAccountPolicyRecord).where(
+                                TradingAccountPolicyRecord.user_id == canonical_id,
+                                TradingAccountPolicyRecord.connection_id == str(connection.connection_id),
+                            ).limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    reconciliation_row = await session.get(
+                        BrokerReconciliationState,
+                        str(connection.connection_id),
+                    )
+                    policy["account_policy"] = (
+                        public_account_policy(account_policy_row)
+                        if account_policy_row is not None
+                        else None
+                    )
+                    policy["policy_persisted"] = account_policy_row is not None
+                    policy["reconciliation_status"] = (
+                        str(reconciliation_row.status).upper()
+                        if reconciliation_row is not None
+                        else "UNKNOWN"
+                    )
+
                     auth_mode = str(connection.auth_mode or "").strip().lower()
                     provider_managed = auth_mode == "provider_secure_link"
                     locally_encrypted = bool(
@@ -483,11 +517,7 @@ class MT5SignalRouter:
                         == str(account_id).strip()
                         and (provider_managed or locally_encrypted)
                     )
-                    connection_execution_enabled = bool(
-                        connection.execution_enabled
-                        and str(connection.status or "").lower()
-                        in {"linked", "ready", "verified"}
-                    )
+                    connection_execution_enabled = execution_connection_error(connection, canonical_id) is None
 
                 # Backward-compatible MT5 credential proof while legacy rows are
                 # being migrated into broker_connections.
@@ -637,6 +667,7 @@ class MT5SignalRouter:
         user_id: int,
         signal: Dict[str, Any],
         account_id: str,
+        connection_id: str | None,
         order_id: str,
         volume: float,
         tier: str,
@@ -682,6 +713,7 @@ class MT5SignalRouter:
                 "execution_mode": str(execution_mode),
                 "user_identity": identity,
                 "request_user_id": int(user_id),
+                "connection_id": str(connection_id or "") or None,
                 "idempotency_key": str(idempotency_key),
                 "hard_stop_attached": bool(
                     broker_result.get("hard_stop_attached", True)
@@ -719,6 +751,7 @@ class MT5SignalRouter:
                     MT5Execution(
                         user_id=int(user.id),
                         signal_id=signal_id,
+                        connection_id=str(connection_id) if connection_id else None,
                         metaapi_account_id=str(account_id),
                         order_id=order,
                         symbol=symbol,
@@ -733,6 +766,34 @@ class MT5SignalRouter:
                         meta=meta,
                     )
                 )
+                if connection_id:
+                    from services.trading_account_ledger import (
+                        _append_account_ledger_in_session,
+                    )
+
+                    await _append_account_ledger_in_session(
+                        session,
+                        user_id=int(user.id),
+                        connection_id=str(connection_id),
+                        provider=str(broker_platform or "mt5"),
+                        entry_type="order",
+                        source_event_id=f"order:{order}",
+                        correlation_id=str(idempotency_key),
+                        order_ref=order,
+                        metadata={
+                            "signal_id": signal_id,
+                            "symbol": symbol,
+                            "direction": direction,
+                            "order_size": str(volume),
+                            "order_size_unit": "LOT",
+                            "entry_price": str(entry),
+                            "stop_loss": str(stop),
+                            "take_profit": [str(value) for value in take_profit],
+                            "provider_status": str(
+                                broker_result.get("status") or "submitted"
+                            ),
+                        },
+                    )
                 await session.commit()
                 return True
         except Exception:
@@ -837,6 +898,7 @@ class MT5SignalRouter:
         *,
         user_identity: str = "telegram",
         broker_platform: str = "mt5",
+        connection_id: str | None = None,
     ) -> ExecutionResult:
         """
         Route signal to appropriate execution handler.
@@ -927,6 +989,7 @@ class MT5SignalRouter:
                 user_id,
                 user_identity=identity,
                 broker_platform=platform,
+                connection_id=connection_id,
             )
             if not mt5_account_id:
                 return ExecutionResult(
@@ -956,6 +1019,7 @@ class MT5SignalRouter:
                     execution_mode,
                     user_identity=identity,
                     broker_platform=platform,
+                    connection_id=connection_id,
                 ),
                 self._get_user_profile_policy(
                     user_id,
@@ -1048,14 +1112,214 @@ class MT5SignalRouter:
             )
             risk_allowed = bool(volume > 0 and symbol_ready and account_ready)
 
+            # Evaluate the immutable per-account policy separately from the
+            # global execution gate. Market intelligence is shared, but every
+            # user's account owns its own risk/prop policy and reconciliation.
+            account_policy_payload = policy.get("account_policy")
+            account_policy_allowed = False
+            account_policy_version = 0
+            execution_permission = ""
+            prop_policy_certified = False
+            prop_policy_version = ""
+            account_frozen = False
+            account_policy_reasons: tuple[str, ...] = ("account_policy_missing",)
+            canonical_user_id = policy.get("canonical_user_id")
+            connection_id_value = str(policy.get("connection_id") or "")
+            reconciliation_ready = bool(reconciliation.get("ready"))
+
+            if canonical_user_id and connection_id_value and policy.get("policy_persisted"):
+                try:
+                    from services.account_policies import record_reconciliation
+
+                    await record_reconciliation(
+                        int(canonical_user_id),
+                        connection_id_value,
+                        status="HEALTHY" if reconciliation_ready else "RECONCILING",
+                        discrepancy_code=None if reconciliation_ready else "provider_reconciliation_pending",
+                        details={
+                            "provider": str(reconciliation.get("provider") or platform),
+                            "positions_count": len(reconciliation.get("positions") or []),
+                            "checked_at": str(reconciliation.get("checked_at") or ""),
+                            "ledger_source_event_id": (
+                                f"reconciliation:{str(reconciliation.get('checked_at'))}"
+                                if reconciliation.get("checked_at")
+                                else ""
+                            ),
+                            "provider_timestamp": str(
+                                reconciliation.get("checked_at") or ""
+                            ) or None,
+                            "currency": str(
+                                account_info.get("currency") or "USD"
+                            ).upper(),
+                            "balance": account_info.get("balance"),
+                            "equity": account_info.get("equity"),
+                            "margin": account_info.get("margin"),
+                            "free_margin": account_info.get("free_margin"),
+                            "realized_pnl": account_info.get("realized_pnl"),
+                            "unrealized_pnl": (
+                                account_info.get("unrealized_pnl")
+                                if account_info.get("unrealized_pnl") is not None
+                                else account_info.get("profit")
+                            ),
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] account reconciliation evidence unavailable; blocking",
+                        exc_info=True,
+                    )
+                    reconciliation_ready = False
+
+            if isinstance(account_policy_payload, dict):
+                try:
+                    from core.account_policy import (
+                        AccountRiskSnapshot,
+                        evaluate_account_policy,
+                        policy_from_mapping,
+                    )
+
+                    account_policy = policy_from_mapping(account_policy_payload)
+                    account_policy_version = int(account_policy.policy_version)
+                    execution_permission = account_policy.execution_permission
+                    prop_policy_certified = bool(account_policy.certified)
+                    prop_policy_version = str(account_policy.prop_rules_version or "")
+                    account_frozen = bool(account_policy.frozen)
+
+                    current_equity = Decimal(str(account_info.get("equity") or 0))
+                    raw_day_start = account_info.get("day_start_equity")
+                    raw_week_start = account_info.get("week_start_equity")
+                    raw_peak = account_info.get("peak_equity")
+                    baseline_verified = bool(
+                        isinstance(raw_day_start, (int, float))
+                        and float(raw_day_start) > 0
+                        and isinstance(raw_peak, (int, float))
+                        and float(raw_peak) > 0
+                    )
+                    weekly_baseline_verified = bool(
+                        isinstance(raw_week_start, (int, float))
+                        and float(raw_week_start) > 0
+                    )
+                    day_start_equity = Decimal(
+                        str(raw_day_start if baseline_verified else current_equity)
+                    )
+                    week_start_equity = Decimal(
+                        str(raw_week_start if weekly_baseline_verified else 0)
+                    )
+                    peak_equity = Decimal(
+                        str(raw_peak if baseline_verified else current_equity)
+                    )
+                    daily_realized_pnl = Decimal(
+                        str(account_info.get("daily_realized_pnl") or 0)
+                    )
+                    weekly_realized_pnl = Decimal(
+                        str(account_info.get("weekly_realized_pnl") or 0)
+                    )
+                    profile_risk_fraction = Decimal(
+                        str(profile_policy.get("risk_per_trade_pct") or 0)
+                    ) / Decimal("100")
+                    contract_size = Decimal(
+                        str(symbol_spec.get("contract_size") or 0)
+                    )
+                    entry_decimal = Decimal(str(signal.get("entry") or 0))
+                    proposed_leverage = Decimal("0")
+                    if current_equity > 0 and contract_size > 0 and entry_decimal > 0:
+                        proposed_leverage = (
+                            Decimal(str(volume)) * contract_size * entry_decimal
+                        ) / current_equity
+
+                    bid = Decimal(str(quote.get("bid") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    ask = Decimal(str(quote.get("ask") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    mid = Decimal(str(quote.get("mid") or 0)) if isinstance(quote, dict) else Decimal("0")
+                    spread_bps = Decimal("1000000")
+                    if bid > 0 and ask >= bid and mid > 0:
+                        spread_bps = ((ask - bid) / mid) * Decimal("10000")
+
+                    raw_direction = str(signal.get("direction") or signal.get("side") or "").strip().lower()
+                    executable_quote = ask if raw_direction in {"long", "buy"} else bid
+                    slippage_bps = Decimal("1000000")
+                    if entry_decimal > 0 and executable_quote > 0:
+                        slippage_bps = (
+                            abs(executable_quote - entry_decimal) / entry_decimal
+                        ) * Decimal("10000")
+
+                    confidence = Decimal("0")
+                    raw_confidence = (
+                        signal.get("score_calibrated")
+                        or signal.get("ml_probability_calibrated")
+                        or signal.get("score_final")
+                        or signal.get("score")
+                        or 0
+                    )
+                    try:
+                        confidence = Decimal(str(raw_confidence))
+                        if confidence > 1:
+                            confidence = confidence / Decimal("100")
+                        confidence = max(Decimal("0"), min(Decimal("1"), confidence))
+                    except Exception:
+                        confidence = Decimal("0")
+
+                    expected_rr = Decimal("0")
+                    stop_decimal = Decimal(str(signal.get("stop_loss") or signal.get("stop") or 0))
+                    targets = self._parse_take_profit(
+                        signal.get("take_profit") or signal.get("targets")
+                    )
+                    if entry_decimal > 0 and stop_decimal > 0 and targets:
+                        risk_distance = abs(entry_decimal - stop_decimal)
+                        if risk_distance > 0:
+                            expected_rr = (
+                                abs(Decimal(str(targets[0])) - entry_decimal)
+                                / risk_distance
+                            )
+
+                    policy_snapshot = AccountRiskSnapshot(
+                        current_equity=current_equity,
+                        day_start_equity=day_start_equity,
+                        peak_equity=peak_equity,
+                        daily_realized_pnl=daily_realized_pnl,
+                        week_start_equity=week_start_equity,
+                        weekly_realized_pnl=weekly_realized_pnl,
+                        open_positions=len(reconciliation.get("positions") or []),
+                        proposed_risk_pct=profile_risk_fraction,
+                        proposed_leverage=proposed_leverage,
+                        spread_bps=spread_bps,
+                        expected_slippage_bps=slippage_bps,
+                        confidence=confidence,
+                        expected_rr=expected_rr,
+                        proposed_order_size=Decimal(str(volume)),
+                        order_size_unit="LOT",
+                        symbol=asset,
+                        asset_class=str(signal.get("asset_class") or ""),
+                        strategy=str(signal.get("strategy_name") or signal.get("strategy") or ""),
+                        high_impact_news_window=bool(signal.get("high_impact_news_window")),
+                        weekend_hold_expected=bool(signal.get("weekend_hold_expected")),
+                        account_is_demo=account_is_demo,
+                        reconciliation_ready=reconciliation_ready,
+                        loss_baselines_verified=baseline_verified,
+                        weekly_baseline_verified=weekly_baseline_verified,
+                    )
+                    account_policy_decision = evaluate_account_policy(
+                        account_policy,
+                        policy_snapshot,
+                        execution_mode=execution_mode,
+                    )
+                    account_policy_allowed = account_policy_decision.allowed
+                    account_policy_reasons = account_policy_decision.reasons
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] account policy evaluation unavailable; blocking",
+                        exc_info=True,
+                    )
+                    account_policy_allowed = False
+                    account_policy_reasons = ("account_policy_unavailable",)
+
             gate_request = GateRequest(
                 user_id=int(user_id),
                 signal_id=signal_id,
                 signal=signal,
-                account_id=mt5_account_id,
+                account_id=str(policy.get("connection_id") or ""),
                 tier=tier,
                 mode=execution_mode,
-                user_enabled=bool(policy.get("found") and user_enabled and profile_policy.get("allowed")),
+                user_enabled=bool(policy.get("found") and policy.get("user_enabled") and user_enabled and profile_policy.get("allowed")),
                 consent=bool(policy.get("consent")),
                 account_ready=account_ready,
                 account_is_demo=account_is_demo,
@@ -1068,11 +1332,18 @@ class MT5SignalRouter:
                 evidence_allowed=bool(evidence),
                 broker_healthy=bool(account_ready and quote_trusted and symbol_ready),
                 resources_available=self._resource_pressure_clear(),
-                reconciliation_ready=bool(reconciliation.get("ready")),
+                reconciliation_ready=reconciliation_ready,
                 kill_switch=kill_switch,
                 broker_provider=platform,
                 user_identity=identity,
-                canonical_user_id=int(user_id) if identity == "platform" else None,
+                canonical_user_id=policy.get("canonical_user_id"),
+                account_classification=str(policy.get("account_classification") or "UNKNOWN"),
+                account_policy_allowed=account_policy_allowed,
+                account_policy_version=account_policy_version,
+                execution_permission=execution_permission,
+                prop_policy_certified=prop_policy_certified,
+                prop_policy_version=prop_policy_version,
+                account_frozen=account_frozen,
             )
             idempotency_key = gate_request.key()
 
@@ -1081,6 +1352,57 @@ class MT5SignalRouter:
             # integrity contract. This preserves precise operator diagnostics and
             # keeps demo certification usable without weakening real accounts.
             preflight = self._execution_gate.preflight(gate_request)
+
+            # Append-only decision evidence is best-effort for demo/advisory
+            # diagnostics, but inability to persist it blocks any real-money
+            # account because auditability is part of the live safety contract.
+            decision_evidence_ok = False
+            if canonical_user_id and connection_id_value and policy.get("policy_persisted"):
+                try:
+                    from services.account_policies import record_execution_decision
+
+                    await record_execution_decision(
+                        user_id=int(canonical_user_id),
+                        connection_id=connection_id_value,
+                        signal_id=signal_id,
+                        execution_mode=execution_mode,
+                        account_mode=str(policy.get("account_classification") or "UNKNOWN"),
+                        policy_version=account_policy_version,
+                        allowed=preflight.allowed,
+                        reasons=tuple(preflight.reasons) + tuple(account_policy_reasons),
+                        market_snapshot={
+                            "asset": asset,
+                            "asset_class": str(signal.get("asset_class") or ""),
+                            "quote_age_seconds": quote_age,
+                            "market_open": bool(market.market_open and market.trading_allowed),
+                        },
+                        risk_snapshot={
+                            "account_policy_allowed": account_policy_allowed,
+                            "reconciliation_ready": reconciliation_ready,
+                            "volume": str(volume),
+                            "spread_bps": str(spread_bps) if "spread_bps" in locals() else None,
+                            "expected_slippage_bps": str(slippage_bps) if "slippage_bps" in locals() else None,
+                            "confidence": str(confidence) if "confidence" in locals() else None,
+                            "expected_rr": str(expected_rr) if "expected_rr" in locals() else None,
+                        },
+                        request_snapshot={
+                            "signal_id": signal_id,
+                            "execution_mode": execution_mode,
+                            "connection_id": connection_id_value,
+                        },
+                    )
+                    decision_evidence_ok = True
+                except Exception:
+                    logger.warning(
+                        "[SignalRouter] execution decision evidence unavailable",
+                        exc_info=True,
+                    )
+            if account_is_demo is False and not decision_evidence_ok:
+                return ExecutionResult(
+                    success=False,
+                    message="Execution blocked: decision_provenance_unavailable",
+                    error="decision_provenance_unavailable",
+                )
             if not preflight.allowed:
                 reasons = ", ".join(preflight.reasons)
                 return ExecutionResult(
@@ -1146,6 +1468,7 @@ class MT5SignalRouter:
                     idempotency_key=idempotency_key,
                     user_identity=identity,
                     broker_platform=platform,
+                    connection_id=connection_id_value or None,
                 )
                 broker_result_holder["result"] = routed
                 if not routed.success:
@@ -1212,6 +1535,7 @@ class MT5SignalRouter:
         idempotency_key: Optional[str] = None,
         user_identity: str = "telegram",
         broker_platform: str = "mt5",
+        connection_id: str | None = None,
     ) -> ExecutionResult:
         """Execute signal via MetaApi for MT4 or MT5."""
         if not execution_authorized or not str(idempotency_key or "").strip():
@@ -1253,6 +1577,7 @@ class MT5SignalRouter:
                     user_id=int(user_id),
                     signal=signal,
                     account_id=str(account_id),
+                    connection_id=connection_id,
                     order_id=order_id,
                     volume=float(volume),
                     tier=str(tier),
@@ -1497,35 +1822,31 @@ class MT5SignalRouter:
         user_id: int,
         user_identity: str = "telegram",
         broker_platform: str = "mt5",
+        connection_id: str | None = None,
     ) -> Optional[str]:
-        """Resolve or safely reprovision an MT4/MT5 MetaApi account ID."""
+        """Resolve an owned account without choosing a default among multiple accounts."""
         try:
-            from services.mt5_client import (
-                ensure_platform_metatrader_account_id,
-                ensure_user_mt5_account_id,
-            )
+            from services.broker_connections import resolve_execution_connection
+            from services.mt5_client import ensure_platform_metatrader_account_id
 
             identity = str(user_identity or "telegram").strip().lower()
             platform = str(broker_platform or "mt5").strip().lower()
-            if identity == "platform":
-                return await ensure_platform_metatrader_account_id(
-                    int(user_id),
-                    platform=platform,
-                )
-            if platform == "mt5":
-                # Preserve old Telegram MT5 installations.
-                legacy = await ensure_user_mt5_account_id(int(user_id))
-                if legacy:
-                    return legacy
+            if identity not in {"platform", "telegram"}:
+                return None
             canonical_id = await self._resolve_canonical_user_id(
                 int(user_id),
-                user_identity="telegram",
+                user_identity=identity,
             )
             if canonical_id is None:
                 return None
+            connection = await resolve_execution_connection(
+                canonical_id, platform=platform, connection_id=connection_id,
+            )
             return await ensure_platform_metatrader_account_id(
                 canonical_id,
                 platform=platform,
+                connection_id=connection.connection_id,
+                require_execution_enabled=True,
             )
         except Exception:
             return None
@@ -1724,9 +2045,11 @@ async def route_signal_to_mt5(
     signal: Dict[str, Any],
     user_id: int,
     execution_mode: str = "manual",
+    *,
+    connection_id: str | None = None,
 ) -> ExecutionResult:
     """Route a Telegram-originated signal to MT5 for execution."""
-    return await router.route_signal(signal, user_id, execution_mode)
+    return await router.route_signal(signal, user_id, execution_mode, connection_id=connection_id)
 
 
 async def route_platform_signal_to_metatrader(
@@ -1735,6 +2058,7 @@ async def route_platform_signal_to_metatrader(
     *,
     platform: str = "mt5",
     execution_mode: str = "manual_confirmed",
+    connection_id: str | None = None,
 ) -> ExecutionResult:
     """Route an authenticated MT4/MT5 signal through the same safety gate."""
     return await router.route_signal(
@@ -1743,6 +2067,7 @@ async def route_platform_signal_to_metatrader(
         execution_mode,
         user_identity="platform",
         broker_platform=str(platform or "mt5").lower(),
+        connection_id=connection_id,
     )
 
 

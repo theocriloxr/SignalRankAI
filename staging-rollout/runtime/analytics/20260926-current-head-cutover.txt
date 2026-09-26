@@ -1,0 +1,5 @@
+SignalRank staging analytics current-head rollout trigger.
+Base substantive release: 7b04c8280fa8dbf18d842857d68d1aeef0edc2b2.
+Purpose: bring analytics onto decision-lifecycle/outcome-ownership/SLO hardening with no schema change beyond 0045.
+All live-money execution and payout flags remain disabled.
+No secrets are stored in this marker.

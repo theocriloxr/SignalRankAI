@@ -19,7 +19,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-EXPECTED_HEAD = "0038_account_security_product"
+REQUIRED_TABLES = (
+    "subscription_products", "subscription_prices", "subscription_entitlements",
+    "instruments", "provider_instruments", "auth_identities", "user_sessions",
+    "webhook_deliveries", "payment_receipts", "email_outbox",
+    "broker_connections", "trading_account_policies",
+    "broker_reconciliation_state", "trading_account_ledger_entries",
+    "broker_execution_decisions",
+)
+
+
+def _expected_head() -> str:
+    from scripts.assert_database_schema import _expected_head as repository_head
+
+    return repository_head()
 
 
 def _raw(name: str) -> str:
@@ -56,11 +69,12 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
         "evidence_type": "staging_database_runtime_proof",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window_hours": max(1, int(window_hours)),
-        "expected_head": EXPECTED_HEAD,
+        "expected_head": _expected_head(),
     }
     with psycopg2.connect(_dsn(), connect_timeout=15) as conn:
         conn.set_session(readonly=True, autocommit=True)
         with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = '15000ms'")
             cur.execute("SELECT current_database(), current_user, COALESCE(inet_server_addr()::text,'local'), inet_server_port()")
             db_name, db_user, db_host, db_port = cur.fetchone()
             report["database"] = {
@@ -69,9 +83,10 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 "server_address": str(db_host),
                 "server_port": int(db_port or 0),
             }
-            cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cur.fetchone()
-            report["alembic_current"] = str(row[0]) if row else None
+            cur.execute("SELECT version_num FROM alembic_version ORDER BY version_num")
+            revisions = [str(row[0]) for row in cur.fetchall()]
+            report["alembic_revisions"] = revisions
+            report["alembic_current"] = revisions[0] if len(revisions) == 1 else None
 
             cur.execute("""
                 SELECT
@@ -84,13 +99,21 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                   to_regclass('public.user_sessions') IS NOT NULL,
                   to_regclass('public.webhook_deliveries') IS NOT NULL,
                   to_regclass('public.payment_receipts') IS NOT NULL,
-                  to_regclass('public.email_outbox') IS NOT NULL
+                  to_regclass('public.email_outbox') IS NOT NULL,
+                  to_regclass('public.broker_connections') IS NOT NULL,
+                  to_regclass('public.trading_account_policies') IS NOT NULL,
+                  to_regclass('public.broker_reconciliation_state') IS NOT NULL,
+                  to_regclass('public.trading_account_ledger_entries') IS NOT NULL,
+                  to_regclass('public.broker_execution_decisions') IS NOT NULL
             """)
             values = cur.fetchone()
             names = (
                 "subscription_products", "subscription_prices", "subscription_entitlements",
                 "instruments", "provider_instruments", "auth_identities", "user_sessions",
                 "webhook_deliveries", "payment_receipts", "email_outbox",
+                "broker_connections", "trading_account_policies",
+                "broker_reconciliation_state", "trading_account_ledger_entries",
+                "broker_execution_decisions",
             )
             report["required_tables"] = dict(zip(names, map(bool, values)))
 
@@ -101,6 +124,61 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
                 )
             """)
             report["users_public_user_id"] = bool(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT
+                  COUNT(*) FILTER (WHERE column_name='credential_format') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_version') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_key_id') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_revision') = 1,
+                  COUNT(*) FILTER (WHERE column_name='credential_rotated_at') = 1
+                FROM information_schema.columns
+                WHERE table_schema='public'
+                  AND table_name='broker_connections'
+                  AND column_name IN (
+                    'credential_format','credential_version','credential_key_id',
+                    'credential_revision','credential_rotated_at'
+                  )
+            """)
+            credential_columns = cur.fetchone()
+            report["broker_credential_columns"] = {
+                "credential_format": bool(credential_columns[0]),
+                "credential_version": bool(credential_columns[1]),
+                "credential_key_id": bool(credential_columns[2]),
+                "credential_revision": bool(credential_columns[3]),
+                "credential_rotated_at": bool(credential_columns[4]),
+            }
+
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
+                    AND table_name='mt5_credentials'
+                    AND column_name='password_encrypted'
+                    AND is_nullable='YES'
+                )
+            """)
+            report["mt5_credentials_password_nullable"] = bool(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
+                    AND table_name='broker_executions'
+                    AND column_name='connection_id'
+                )
+            """)
+            report["broker_executions_connection_id"] = bool(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public'
+                    AND table_name='mt5_executions'
+                    AND column_name='connection_id'
+                )
+            """)
+            report["mt5_executions_connection_id"] = bool(cur.fetchone()[0])
 
             queries = {
                 "active_products": "SELECT COUNT(*) FROM subscription_products WHERE active=TRUE",
@@ -195,18 +273,35 @@ def evaluate(
     require_email: bool = False,
 ) -> list[str]:
     blockers: list[str] = []
-    if report.get("alembic_current") != EXPECTED_HEAD:
-        blockers.append(f"alembic:{report.get('alembic_current')}!={EXPECTED_HEAD}")
-    for name, present in (report.get("required_tables") or {}).items():
-        if not present:
+    expected = _expected_head()
+    if report.get("alembic_current") != expected or report.get("alembic_revisions") != [expected]:
+        blockers.append(f"alembic:{report.get('alembic_current')}!={expected}")
+    if report.get("expected_head") != expected:
+        blockers.append("repository_head_mismatch")
+    for name in REQUIRED_TABLES:
+        if (report.get("required_tables") or {}).get(name) is not True:
             blockers.append(f"missing_table:{name}")
     if not report.get("users_public_user_id"):
         blockers.append("missing_column:users.public_user_id")
+    if report.get("broker_executions_connection_id") is not True:
+        blockers.append("missing_column:broker_executions.connection_id")
+    if report.get("mt5_executions_connection_id") is not True:
+        blockers.append("missing_column:mt5_executions.connection_id")
+    for column, present in (report.get("broker_credential_columns") or {}).items():
+        if present is not True:
+            blockers.append(f"missing_column:broker_connections.{column}")
+    if report.get("mt5_credentials_password_nullable") is not True:
+        blockers.append("legacy_mt5_password_column_not_nullable")
     counts = report.get("catalogue_counts") or {}
+    if not report.get("catalogue_minimums"):
+        blockers.append("catalogue_minimums_missing")
     for key, minimum in (report.get("catalogue_minimums") or {}).items():
         if int(counts.get(key) or 0) < int(minimum):
             blockers.append(f"{key}:{int(counts.get(key) or 0)}<{int(minimum)}")
     runtime = report.get("runtime") or {}
+    for key in ("duplicate_delivery_groups", "duplicate_paper_position_groups"):
+        if key not in runtime:
+            blockers.append(f"runtime:missing_{key}")
     if int(runtime.get("duplicate_delivery_groups") or 0) != 0:
         blockers.append("duplicate_delivery_groups")
     if int(runtime.get("duplicate_paper_position_groups") or 0) != 0:

@@ -2363,6 +2363,81 @@ async def _database_readiness_check() -> dict[str, object]:
                                 WHERE table_schema = current_schema() AND table_name = 'webhook_deliveries'
                             ) AS webhook_deliveries_table,
                             EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'trading_account_policies'
+                            ) AS trading_account_policies_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'broker_reconciliation_state'
+                            ) AS broker_reconciliation_state_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'trading_account_ledger_entries'
+                            ) AS trading_account_ledger_entries_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.tables
+                                WHERE table_schema = current_schema() AND table_name = 'broker_execution_decisions'
+                            ) AS broker_execution_decisions_table,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_format'
+                            ) AS broker_connections_credential_format,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_version'
+                            ) AS broker_connections_credential_version,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_key_id'
+                            ) AS broker_connections_credential_key_id,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_revision'
+                            ) AS broker_connections_credential_revision,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_connections'
+                                  AND column_name = 'credential_rotated_at'
+                            ) AS broker_connections_credential_rotated_at,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'mt5_credentials'
+                                  AND column_name = 'password_encrypted'
+                                  AND is_nullable = 'YES'
+                            ) AS mt5_credentials_password_nullable,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'broker_executions'
+                                  AND column_name = 'connection_id'
+                            ) AS broker_executions_connection_id,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'mt5_executions'
+                                  AND column_name = 'connection_id'
+                            ) AS mt5_executions_connection_id,
+                            EXISTS (
+                                SELECT 1
+                                FROM pg_trigger t
+                                JOIN pg_class c ON c.oid = t.tgrelid
+                                JOIN pg_namespace n ON n.oid = c.relnamespace
+                                WHERE n.nspname = current_schema()
+                                  AND c.relname = 'trading_account_ledger_entries'
+                                  AND t.tgname = 'trg_trading_account_ledger_immutable'
+                                  AND NOT t.tgisinternal
+                            ) AS trading_account_ledger_immutable,
+                            EXISTS (
                                 SELECT 1
                                 FROM pg_index AS i
                                 JOIN pg_class AS idx ON idx.oid = i.indexrelid
@@ -2417,6 +2492,14 @@ async def _database_readiness_check() -> dict[str, object]:
             "signals.mfe_pct": bool(row.get("signals_mfe_pct")),
             "signals.mae_pct": bool(row.get("signals_mae_pct")),
             "signals.performance_version": bool(row.get("signals_performance_version")),
+            "broker_connections.credential_format": bool(row.get("broker_connections_credential_format")),
+            "broker_connections.credential_version": bool(row.get("broker_connections_credential_version")),
+            "broker_connections.credential_key_id": bool(row.get("broker_connections_credential_key_id")),
+            "broker_connections.credential_revision": bool(row.get("broker_connections_credential_revision")),
+            "broker_connections.credential_rotated_at": bool(row.get("broker_connections_credential_rotated_at")),
+            "mt5_credentials.password_encrypted_nullable": bool(row.get("mt5_credentials_password_nullable")),
+            "broker_executions.connection_id": bool(row.get("broker_executions_connection_id")),
+            "mt5_executions.connection_id": bool(row.get("mt5_executions_connection_id")),
         }
         missing_columns = sorted(name for name, present in column_flags.items() if not present)
         if missing_columns:
@@ -2434,6 +2517,10 @@ async def _database_readiness_check() -> dict[str, object]:
             "journal_entries": bool(row.get("journal_entries_table")),
             "api_keys": bool(row.get("api_keys_table")),
             "webhook_deliveries": bool(row.get("webhook_deliveries_table")),
+            "trading_account_policies": bool(row.get("trading_account_policies_table")),
+            "broker_reconciliation_state": bool(row.get("broker_reconciliation_state_table")),
+            "trading_account_ledger_entries": bool(row.get("trading_account_ledger_entries_table")),
+            "broker_execution_decisions": bool(row.get("broker_execution_decisions_table")),
         }
         missing_tables = sorted(name for name, present in table_flags.items() if not present)
         if missing_tables:
@@ -2449,6 +2536,14 @@ async def _database_readiness_check() -> dict[str, object]:
                 "ok": False,
                 "detail": "active_signal_guard_missing",
                 "index": "ix_signals_active_thesis",
+                "revision": deployed,
+            }
+
+        if not bool(row.get("trading_account_ledger_immutable")):
+            return {
+                "ok": False,
+                "detail": "account_ledger_immutability_guard_missing",
+                "trigger": "trg_trading_account_ledger_immutable",
                 "revision": deployed,
             }
 

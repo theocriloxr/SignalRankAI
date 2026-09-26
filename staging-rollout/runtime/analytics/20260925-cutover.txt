@@ -1,0 +1,3 @@
+SignalRank staging analytics runtime cutover trigger.
+Target: existing signalrankai-analytics service.
+Production remains untouched; live-money switches remain off.

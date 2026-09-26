@@ -1,0 +1,5 @@
+SignalRank staging analytics runtime cutover trigger r2.
+Base includes enforced requirements.lock installation with pip check and exact-pin release contracts.
+Purpose: rebuild the dedicated analytics/learning role on the reproducible dependency graph.
+No live-money execution or payout path is enabled by this marker.
+No secrets are stored in this marker.

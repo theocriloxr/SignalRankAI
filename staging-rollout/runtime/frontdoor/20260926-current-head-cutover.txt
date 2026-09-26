@@ -1,0 +1,6 @@
+SignalRank staging frontdoor current-head rollout trigger.
+Base lineage includes analytics 771aff1a, engine 5c03335f, and delivery d141c9f1 current-head cutovers.
+Purpose: bring HTTP + Telegram frontdoor onto decision lifecycle, canonical outcome ownership, and SLO/error-budget observability with schema unchanged at 0045.
+Frontdoor must not own engine or delivery worker loops.
+All live-money execution and payout flags remain disabled.
+No secrets are stored in this marker.

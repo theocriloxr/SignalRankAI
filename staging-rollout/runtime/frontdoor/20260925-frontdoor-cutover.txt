@@ -1,0 +1,5 @@
+SignalRank staging frontdoor runtime cutover trigger.
+Purpose: rebuild the HTTP + Telegram frontdoor from the certified Alembic 0043 blueprint.
+The frontdoor must not own the signal engine or delivery worker loops.
+All live-money execution and payout flags remain hard-disabled for staging.
+No secrets are stored in this marker.

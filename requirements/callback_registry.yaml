@@ -31,6 +31,16 @@
       "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
     },
     {
+      "name": "broker_account_trade_callback",
+      "pattern": "^broker_pick_",
+      "handler": "_broker_account_trade_callback",
+      "source": "signalrank_telegram/bot.py:7034",
+      "route_class": "specific_before_catchall",
+      "ack_policy": "handler_or_fast_ack_guard",
+      "payload_trust": "untrusted",
+      "status": "IMPLEMENTED"
+    },
+    {
       "ack_policy": "immediate",
       "handler": "_handle_cancel_confirm",
       "name": "cancel_confirm",
@@ -57,7 +67,7 @@
       "pattern": "^check_outcome_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7188",
+      "source": "signalrank_telegram/bot.py:7371",
       "status": "IMPLEMENTED"
     },
     {
@@ -107,7 +117,7 @@
       "pattern": "^monitor_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6831",
+      "source": "signalrank_telegram/bot.py:6842",
       "status": "IMPLEMENTED"
     },
     {
@@ -157,7 +167,7 @@
       "pattern": "^mt5_trade_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6965",
+      "source": "signalrank_telegram/bot.py:7034",
       "status": "IMPLEMENTED"
     },
     {
@@ -187,7 +197,7 @@
       "pattern": "^open_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7019",
+      "source": "signalrank_telegram/bot.py:7202",
       "status": "IMPLEMENTED"
     },
     {
@@ -207,7 +217,7 @@
       "pattern": "^sigmon_(?:continue|stop)_[12]_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6830",
+      "source": "signalrank_telegram/bot.py:6841",
       "status": "IMPLEMENTED"
     },
     {
@@ -227,7 +237,7 @@
       "pattern": "^signal_reaction_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6569",
+      "source": "signalrank_telegram/bot.py:6580",
       "status": "IMPLEMENTED"
     },
     {
@@ -271,7 +281,7 @@
       "status": "IMPLEMENTED_OR_EXPLICIT_DEGRADED"
     }
   ],
-  "count": 27,
+  "count": 28,
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "invariants": [

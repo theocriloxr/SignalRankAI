@@ -78,10 +78,27 @@ def test_canonical_mt5_helpers_do_not_require_telegram_identity():
     source = Path("services/mt5_client.py").read_text(encoding="utf-8")
     assert "async def link_platform_mt5_account(" in source
     assert "async def get_platform_mt5_link_status(" in source
-    section = source[source.index("async def link_platform_mt5_account("):]
-    assert "WHERE id=:uid" in section
-    assert "WHERE user_id=:uid" in section
-    assert "telegram_user_id" not in section[:section.index("async def get_platform_mt5_account_id")]
+
+    link = source[
+        source.index("async def link_platform_mt5_account("):
+        source.index("async def get_platform_mt5_account_id(")
+    ]
+    assert "link_platform_metatrader_account(" in link
+    assert "int(user_id)" in link
+    assert "telegram_user_id" not in link
+
+    account_id = source[
+        source.index("async def get_platform_mt5_account_id("):
+        source.index("async def ensure_platform_mt5_account_id(")
+    ]
+    status = source[
+        source.index("async def get_platform_mt5_link_status("):
+        source.index("# ---------------------------------------------------------------------------", source.index("async def get_platform_mt5_link_status("))
+    ]
+    assert "WHERE user_id=:uid" in account_id
+    assert "WHERE user_id=:uid" in status
+    assert "telegram_user_id" not in account_id
+    assert "telegram_user_id" not in status
 
 
 def test_web_execution_settings_reuse_canonical_cross_channel_preferences():

@@ -82,3 +82,10 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 .switch-row input{width:auto}
 .warning-panel{border-color:rgba(255,193,7,.38);background:color-mix(in srgb,var(--panel) 92%,#ffbf00 8%)}
 @media(max-width:760px){.paper-class-grid,.compact-card-grid{grid-template-columns:1fr 1fr}.compact-fields{grid-template-columns:1fr}}
+
+.subpanel{margin-top:18px;padding:18px;border:1px solid var(--line);background:var(--panel2);scroll-margin-top:24px}
+.subpanel fieldset{border:1px solid var(--line);padding:14px;margin:8px 0 0}
+.subpanel legend{padding:0 8px;color:var(--cyan);font:700 12px Consolas,monospace;text-transform:uppercase;letter-spacing:.08em}
+.subpanel .stack-form{padding:6px 0 0}
+.subpanel .stack-form label:has(input[type="checkbox"]){display:flex;grid-template-columns:none;align-items:center;gap:9px}
+.subpanel .stack-form input[type="checkbox"]{width:auto}

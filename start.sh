@@ -75,6 +75,17 @@ if { [ -n "${DATABASE_URL:-}" ] || [ -n "${DATABASE_PRIVATE_URL:-}" ] || [ -n "$
     fi
 fi
 
+# Blue/green certification may prove release/schema/role identity without
+# starting any business loop. This mode is staging-only and its Python entrypoint
+# additionally requires the global execution kill switch and all live-money
+# switches to remain off.
+case "${SIGNALRANK_QUIESCENT_CERTIFICATION:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+        echo "[boot] quiescent certification selected; business loops remain disabled"
+        exec python -u -m scripts.quiescent_role
+        ;;
+esac
+
 _require_web_auth_secret() {
     _runtime_env="${ENVIRONMENT:-${RAILWAY_ENVIRONMENT_NAME:-${RAILWAY_ENVIRONMENT:-local}}}"
     _runtime_env="${_runtime_env,,}"

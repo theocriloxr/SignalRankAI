@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,7 +67,7 @@ def test_railway_completion_script_enforces_common_db_and_safe_flags():
         assert safe_flag in source
     assert "staging_migrate_and_bootstrap.py" in source
     assert "database_identity.py" in source
-    assert "0038_account_security_product" in source
+    assert "0045_mt5_credential_retirement" in source
     assert "UndefinedTableError" in source
     assert "UndefinedColumnError" in source
 
@@ -146,7 +149,7 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "metrics" in source and "--since" in source
     assert "$proofArguments" in source
     assert "& python @args" not in source
-    assert '"--filter","alembic_current=0038_account_security_product"' in source
+    assert '"--filter","alembic_current=0045_mt5_credential_retirement"' in source
     assert '"--filter","patch=deployment-final-r4"' in source
     assert '@("service","list","--json")' in source
     assert '"service","status"' not in source
@@ -157,10 +160,10 @@ def test_r4_soak_certification_contract():
     assert '"--since", $hoursToken' in text
     assert '"metrics", "--all"' in text
     assert "patch=deployment-final-r4" in text
-    assert "alembic_current=0038_account_security_product" in text
+    assert "alembic_current=0045_mt5_credential_retirement" in text
     assert "AmbiguousParameterError" in text
     assert "staging_soak_summary.json" in text
-    assert '"--filter", "alembic_current=0038_account_security_product"' in text
+    assert '"--filter", "alembic_current=0045_mt5_credential_retirement"' in text
     assert '"--filter", "patch=deployment-final-r4"' in text
     assert '@("service", "list", "--json")' in text
     assert '"service", "status"' not in text
@@ -190,3 +193,21 @@ def test_production_migration_lock_wait_is_bounded_and_nonblocking():
     assert "PRODUCTION_MIGRATION_LOCK_WAIT_SECONDS" in migrate
     assert "migration advisory lock busy after" in migrate
     assert "time.monotonic()" in migrate
+
+
+def test_current_release_and_railway_profiles_follow_repository_alembic_head():
+    cfg = Config(str(ROOT / "alembic.ini"))
+    heads = list(ScriptDirectory.from_config(cfg).get_heads())
+    assert len(heads) == 1
+    expected = heads[0]
+
+    current_release = (ROOT / "CURRENT_RELEASE.md").read_text(encoding="utf-8")
+    assert f"Repository Alembic head: {expected}" in current_release
+
+    for filename in (
+        "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
+        "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
+        "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
+    ):
+        profile = (ROOT / filename).read_text(encoding="utf-8")
+        assert f"EXPECTED_ALEMBIC_HEAD={expected}" in profile

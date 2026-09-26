@@ -14,7 +14,7 @@ if [[ -z "${DATABASE_MIGRATION_URL:-}" ]]; then
   exit 65
 fi
 
-expected_head="0041_broker_connection_registry"
+expected_head="0045_mt5_credential_retirement"
 actual_head="$(python -m alembic heads | awk '{print $1}' | tail -1)"
 if [[ "$actual_head" != "$expected_head" ]]; then
   echo "Unexpected repository migration head: $actual_head (expected $expected_head)" >&2

@@ -333,15 +333,17 @@ async def rate_limit(request: Request, user_id: int = 0) -> None:
 async def platform_csrf_middleware(request: Request, call_next):
     """Double-submit CSRF protection for cookie-authenticated mutations.
 
-    Mobile/API bearer clients are not cookie-authenticated and therefore do not
-    need a CSRF token. Public unauthenticated registration/login requests have no
+    Mobile/API bearer clients without cookies do not need a CSRF token.
+    Public unauthenticated registration/login requests have no
     existing authority to forge and are also exempt.
     """
     unsafe = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
     platform_path = request.url.path.startswith("/api/v1/platform/")
-    bearer = str(request.headers.get("authorization") or "").lower().startswith("bearer ")
     has_auth_cookie = bool(request.cookies.get("sr_access") or request.cookies.get("sr_refresh"))
-    if unsafe and platform_path and has_auth_cookie and not bearer:
+    # Refresh and some account endpoints can still consume cookies when an
+    # Authorization header is present. Header presence is not proof that the
+    # request is independent of ambient cookie authority.
+    if unsafe and platform_path and has_auth_cookie:
         supplied = str(request.headers.get("x-csrf-token") or "")
         expected = str(request.cookies.get("sr_csrf") or "")
         if not supplied or not expected or not hmac.compare_digest(supplied, expected):
@@ -625,6 +627,24 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         raise HTTPException(503, "Broker credential encryption failed")
 
     masked = f"{api_key[:4]}...{api_key[-4:]}"
+    linked_at = now_utc_naive().isoformat()
+
+    # Canonical BrokerConnection credentials are encrypted once as a versioned,
+    # account-bound envelope. This plaintext mapping is never persisted or
+    # logged; it exists only for the duration of the envelope write.
+    canonical_payload = {
+        "provider": provider,
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "passphrase": str(req.passphrase or "") or None,
+        "sandbox": bool(req.sandbox),
+        "permissions": verified_permissions,
+        "masked_key": masked,
+        "linked_at": linked_at,
+    }
+
+    # Compatibility state remains encrypted field-by-field until all legacy
+    # readers are retired. No plaintext credential is written to RuntimeState.
     payload = {
         "provider": provider,
         "api_key_enc": enc_key,
@@ -633,8 +653,23 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         "sandbox": bool(req.sandbox),
         "permissions": verified_permissions,
         "masked_key": masked,
-        "linked_at": now_utc_naive().isoformat(),
+        "linked_at": linked_at,
     }
+
+    from services.broker_connections import register_exchange_connection
+
+    try:
+        connection = await register_exchange_connection(
+            int(user_id),
+            provider=provider,
+            api_key=api_key,
+            payload=canonical_payload,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, "Canonical user profile not found") from exc
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    payload["connection_id"] = connection["connection_id"]
 
     async with get_session() as session:
         key = _exchange_state_key(int(user_id), provider)
@@ -654,6 +689,8 @@ async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = De
         "policy": "trade_only_required",
         "permissions_verified": provider == "bybit",
         "ip_bound": bool(verified_permissions.get("ip_bound", False)),
+        "connection_id": connection["connection_id"],
+        "execution_enabled": False,
     }
 
 

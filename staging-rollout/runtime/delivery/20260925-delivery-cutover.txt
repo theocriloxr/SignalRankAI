@@ -1,0 +1,5 @@
+SignalRank staging delivery/outcome runtime cutover trigger.
+Purpose: rebuild the dedicated delivery/outcome worker from the certified Alembic 0043 blueprint.
+This service owns delivery receipts, outcome tracking/reconciliation, paper workers, and execution reconciliation while staging live-money paths remain disabled.
+It does not own the signal-generation engine or public frontdoor.
+No secrets are stored in this marker.

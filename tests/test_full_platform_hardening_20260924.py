@@ -247,7 +247,7 @@ def test_market_data_asset_type_keeps_index_aliases_canonical():
 
 def test_requirements_install_sqlalchemy_asyncio_extra():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-    assert "SQLAlchemy[asyncio]>=2.0,<3" in requirements
+    assert "SQLAlchemy[asyncio]==2.1.1" in requirements
 
 
 def test_runtime_audit_classifies_delivery_failures_without_exposing_raw_errors():

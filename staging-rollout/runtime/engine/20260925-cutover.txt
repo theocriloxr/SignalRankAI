@@ -1,0 +1,3 @@
+SignalRank staging engine runtime cutover trigger.
+Target: existing bountiful-miracle engine service.
+Production remains untouched; live-money switches remain off.

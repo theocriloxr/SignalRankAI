@@ -169,7 +169,7 @@ function Get-DatabaseIdentityLocal {
         "ENVIRONMENT" = $Environment
     }
     $raw = Invoke-WithTemporaryEnvironment -Values $envValues -Action {
-        $identityOutput = & python scripts/database_identity.py --expect-head 0041_broker_connection_registry 2>&1 | Out-String
+        $identityOutput = & python scripts/database_identity.py --expect-head 0045_mt5_credential_retirement 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             throw "Database identity verification failed ($LASTEXITCODE).`n$identityOutput"
         }
@@ -210,8 +210,8 @@ function Test-ServiceLogs {
             throw "$Service still contains a blocking post-deploy log pattern: $needle"
         }
     }
-    if (-not $logs.Contains('alembic_current=0041_broker_connection_registry')) {
-        throw "$Service did not prove alembic_current=0041_broker_connection_registry in its latest logs"
+    if (-not $logs.Contains('alembic_current=0045_mt5_credential_retirement')) {
+        throw "$Service did not prove alembic_current=0045_mt5_credential_retirement in its latest logs"
     }
     if (-not $logs.Contains('patch=deployment-final-r4')) {
         throw "$Service did not prove the deployment-final-r4 source patch in its latest logs"
@@ -258,7 +258,7 @@ $services = @($WorkerService, $EngineService, $FrontdoorService)
 $commonVariables = @(
     "DATABASE_URL=$dbReference",
     "APP_VERSION=1.5.1",
-    "EXPECTED_ALEMBIC_HEAD=0041_broker_connection_registry",
+    "EXPECTED_ALEMBIC_HEAD=0045_mt5_credential_retirement",
     "DATABASE_SCHEMA_GATE_ENABLED=1",
     "SIGNALRANK_ENV_PROFILE=staging-certification",
     "ALLOW_STATIC_ASSET_FALLBACK=0",
@@ -310,7 +310,7 @@ $migrationEnv = @{
     "APP_ENV" = $Environment
     "ENVIRONMENT" = $Environment
     "STAGING_MIGRATION_ACKNOWLEDGED" = "1"
-    "EXPECTED_ALEMBIC_HEAD" = "0041_broker_connection_registry"
+    "EXPECTED_ALEMBIC_HEAD" = "0045_mt5_credential_retirement"
     "APP_VERSION" = "1.5.1"
     "DYNAMIC_UNIVERSE_ENABLED" = "1"
     "DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED" = "1"
@@ -333,7 +333,7 @@ if (-not $databaseIdentity.ok) {
 $databaseIdentity | ConvertTo-Json -Depth 8 | Set-Content `
     -Path (Join-Path $evidenceDirectory "database_identity.json") -Encoding UTF8
 $fingerprints = @([string]$databaseIdentity.fingerprint)
-Write-Host "Migration database is at 0041_broker_connection_registry fingerprint=$($databaseIdentity.fingerprint)." -ForegroundColor Green
+Write-Host "Migration database is at 0045_mt5_credential_retirement fingerprint=$($databaseIdentity.fingerprint)." -ForegroundColor Green
 
 if (-not $SkipCodeUpload) {
     foreach ($service in @($WorkerService, $EngineService, $FrontdoorService)) {
@@ -373,7 +373,7 @@ $summary = [ordered]@{
     environment = $Environment
     database_service = $DatabaseService
     database_fingerprint = $fingerprints[0]
-    alembic_head = "0041_broker_connection_registry"
+    alembic_head = "0045_mt5_credential_retirement"
     certification_exit_code = $certificationExitCode
     certification_status = "PENDING_RUNTIME_EVIDENCE"
     structural_proof_status = [string]$structuralProof.status
