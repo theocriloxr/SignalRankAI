@@ -1,9 +1,10 @@
 # REQUIREMENTS_TRACEABILITY_MATRIX — SignalRankAI V2.0
 
 Traceability IDs assigned per programme area. Statuses restricted to the
-programme vocabulary. `UNIT_VERIFIED` means deterministic unit coverage in the
-current checkout; `BLOCKED_EXTERNAL` means the capability needs credentials,
-infrastructure or a legal/licensing decision.
+programme vocabulary. `UNIT_VERIFIED` means deterministic repository coverage;
+`INTEGRATION_VERIFIED` means the contract also has real staging/runtime evidence;
+`BLOCKED_EXTERNAL` means the remaining proof requires credentials, representative
+infrastructure, elapsed runtime, provider entitlements, or a legal/licensing decision.
 
 ## Baseline integrity
 
@@ -23,7 +24,7 @@ infrastructure or a legal/licensing decision.
 | SR-EVENT-003 | Transactional outbox contract | UNIT_VERIFIED | `core/transactional_outbox.py` | `test_v20_event_platform.py` | — |
 | SR-EVENT-004 | Idempotent consumer inbox (exactly-once logical) | UNIT_VERIFIED | `core/transactional_outbox.py` | `test_v20_event_platform.py` | — |
 | SR-EVENT-005 | Bounded relay, backoff, dead-letter | UNIT_VERIFIED | `core/transactional_outbox.py` | `test_v20_event_platform.py` | — |
-| SR-EVENT-006 | Partitioned transport + consumer groups + reclaim | INTEGRATION_VERIFIED (code) | `core/durable_event_stream.py`, `core/redis_streams.py` | connector-level tests | `DURABLE_EVENT_STREAM_ENABLED` |
+| SR-EVENT-006 | Partitioned transport + consumer groups + reclaim | UNIT_VERIFIED | `core/durable_event_stream.py`, `core/redis_streams.py` | connector-level event/stream tests | `DURABLE_EVENT_STREAM_ENABLED` |
 
 ## Providers (§8–§10)
 
@@ -51,8 +52,8 @@ infrastructure or a legal/licensing decision.
 | ID | Requirement | Status | Source | Tests | Flag |
 |---|---|---|---|---|---|
 | SR-ML-001 | Calibration rules (no uncalibrated score as probability) | UNIT_VERIFIED | `engine/ml_weighting.py` + telemetry | ML tests | — |
-| SR-ML-002 | Champion/challenger + shadow promotion + rollback | IMPLEMENTED_UNTESTED | adaptive runtime | — | `ADAPTIVE_LEARNING_ENABLED` |
-| SR-ML-003 | Full model registry / lineage / leakage gates | NOT_STARTED | — | — | — |
+| SR-ML-002 | Champion/challenger + shadow promotion + rollback | UNIT_VERIFIED | `ml/train_model.py`, `engine/ml.py`, durable model artifact store | `tests/test_ml_champion_challenger_governance.py`, `tests/test_ml_registry.py`, `tests/test_ml_durable_artifact_sync.py` | `ADAPTIVE_LEARNING_ENABLED` |
+| SR-ML-003 | Full model registry / dataset-run-parent lineage / leakage gates | UNIT_VERIFIED | `ml/model_registry.py`, `ml/train_model.py`, adaptive dataset/WFO contracts | `tests/test_ml_registry.py`, `tests/test_adaptive_dataset_and_wfo.py`, ML schema/leakage tests | — |
 
 ## Security (§21)
 
@@ -60,8 +61,9 @@ infrastructure or a legal/licensing decision.
 |---|---|---|---|---|---|
 | SR-SEC-001 | Secret redaction in logs | UNIT_VERIFIED | prior repair pass; `core/security.py` | secret-leak tests | — |
 | SR-SEC-002 | Signed webhook verification from raw body | UNIT_VERIFIED | `payments/paystack_events.py` | webhook tests | — |
-| SR-SEC-003 | Threat model documented | IN_PROGRESS | `docs/security/THREAT_MODEL.md` | — | — |
+| SR-SEC-003 | Threat model documented against the deployed 0045 architecture and residual-risk boundary | INTEGRATION_VERIFIED | `docs/security/THREAT_MODEL.md` | release/security contract review + staging 0045 evidence | — |
 | SR-SEC-004 | Versioned, account-bound envelope encryption and key rotation for broker credentials | INTEGRATION_VERIFIED | `services/broker_credentials.py`, canonical broker connection writer, `0044_broker_credential_envelope` | `test_broker_credential_envelope.py` | `BROKER_CREDENTIAL_KEYRING_JSON`, `BROKER_CREDENTIAL_ACTIVE_KEY_ID` |
+| SR-SEC-005 | Deterministic dependency SBOM and release provenance bind the locked graph, Dockerfile, current release contract, exact commit/branch and Alembic head | UNIT_VERIFIED | `scripts/generate_release_provenance.py`, `requirements.lock` | `tests/test_release_provenance.py`; clean-room provenance self-check | external signing key remains separate |
 
 ## Scale (§27) and observability (§25)
 
@@ -76,8 +78,8 @@ infrastructure or a legal/licensing decision.
 | ID | Requirement | Status | Source | Tests | Flag |
 |---|---|---|---|---|---|
 | SR-NOTIF-001 | Notification outbox repair bounded | UNIT_VERIFIED | outcome reconciliation | v1.3.6.9 tests | — |
-| SR-NOTIF-002 | Dedicated fan-out reservation service | IMPLEMENTED_UNTESTED | outbox + stream layers | — | — |
-| SR-ORDER-001 | Canonical order/position state machines | IMPLEMENTED_UNTESTED | execution claims + trade tracker | — | `REAL_EXECUTION_ENABLED=0` |
+| SR-NOTIF-002 | Dedicated fan-out reservation/idempotency boundary | UNIT_VERIFIED | `db/pg_features.py`, `delivery/service.py`, outbox/receipt layers | `tests/test_phase4_pass3_delivery_reliability.py`, `tests/test_delivery_fanout_planner.py` | — |
+| SR-ORDER-001 | Canonical monotonic order/execution state machine with one position-state projection | UNIT_VERIFIED | `core/execution_state_machine.py`, MT5/Bybit routers and reconcilers | `tests/test_execution_state_machine.py`, `tests/test_canonical_broker_entrypoints.py` | `REAL_EXECUTION_ENABLED=0` |
 | SR-ORDER-002 | Copy trading / marketplace / bots / smart terminal | BLOCKED_EXTERNAL | declared in roadmap | — | flags off |
 
 
