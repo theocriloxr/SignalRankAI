@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = "0045_mt5_legacy_credential_retirement"
+EXPECTED_HEAD = "0045_mt5_credential_retirement"
 
 
 def main() -> int:
@@ -43,7 +43,7 @@ def main() -> int:
 
     rendered = proc.stdout
     required = (
-        "0045_mt5_legacy_credential_retirement",
+        "0045_mt5_credential_retirement",
         "credential_format",
         "credential_version",
         "credential_key_id",
