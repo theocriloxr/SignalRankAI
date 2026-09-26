@@ -5,7 +5,10 @@ SignalRankAI's connector registry and key-aware provider ordering.
 """
 from __future__ import annotations
 from typing import Any, Dict, List
-from data.providers import fetch_alphavantage_candles
+from data.providers import (
+    fetch_alphavantage_candles,
+    get_alphavantage_certification_hint,
+)
 
 
 def get_candles(
@@ -17,3 +20,7 @@ def get_candles(
     del timeout
     rows = fetch_alphavantage_candles(symbol, timeframe) or []
     return list(rows)[-max(1, int(limit or 200)):]
+
+
+def certification_hint() -> Dict[str, str] | None:
+    return get_alphavantage_certification_hint()
