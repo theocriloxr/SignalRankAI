@@ -136,7 +136,7 @@ def test_broker_verification_route_uses_authenticated_canonical_owner() -> None:
 
     block = api[
         api.index('@router.post("/broker/connections/{connection_id}/verify")'):
-        api.index('@router.post("/broker/connections/{connection_id}/execution")'),
+        api.index('@router.post("/broker/connections/{connection_id}/execution")')
     ]
     assert "verify_broker_connection_read_only(" in block
     assert 'int(user["id"])' in block
