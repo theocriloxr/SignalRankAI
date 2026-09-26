@@ -16,7 +16,7 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0045_mt5_legacy_credential_retirement"
+        "0045_mt5_credential_retirement"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"
@@ -455,9 +455,9 @@ def test_0044_broker_credential_envelope_schema_and_runtime_contract() -> None:
     assert "broker credential envelope account binding mismatch" in credentials
 
 
-def test_0045_mt5_legacy_credential_retirement_schema_and_runtime_contract() -> None:
+def test_0045_mt5_credential_retirement_schema_and_runtime_contract() -> None:
     migration = source(
-        "db/migrations/versions/0045_mt5_legacy_credential_retirement.py"
+        "db/migrations/versions/0045_mt5_credential_retirement.py"
     )
     models = source("db/models.py")
     schema_gate = source("scripts/assert_database_schema.py")
@@ -465,7 +465,7 @@ def test_0045_mt5_legacy_credential_retirement_schema_and_runtime_contract() -> 
     readiness = source("railway_main.py")
     mt5 = source("services/mt5_client.py")
 
-    assert 'revision = "0045_mt5_legacy_credential_retirement"' in migration
+    assert 'revision = "0045_mt5_credential_retirement"' in migration
     assert 'down_revision = "0044_broker_credential_envelope"' in migration
     assert "password_encrypted" in migration
     assert "nullable=True" in migration
