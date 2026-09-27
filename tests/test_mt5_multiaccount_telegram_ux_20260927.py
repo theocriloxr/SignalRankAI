@@ -151,7 +151,7 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v19" in sw
+    assert "signalrank-shell-v20" in sw
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
@@ -163,3 +163,22 @@ def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
     assert "server_not_found" in api
     assert "broker_settings_detection_failed" in api
     assert "provider_rate_limited" in api
+
+
+def test_known_server_preflight_is_credential_free_and_wired_to_ui() -> None:
+    mt5 = source("services/mt5_client.py")
+    api = source("web/platform_api.py")
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    assert "async def search_known_metatrader_servers(" in mt5
+    assert "/known-mt-servers/{version}/search" in mt5
+    assert 'params={"query": query_n}' in mt5
+    assert "login" not in mt5[
+        mt5.index("async def search_known_metatrader_servers("):
+        mt5.index("def _slippage_tolerance")
+    ]
+    assert '@router.get("/broker/metatrader/servers")' in api
+    assert 'id="brokerServerLookupButton"' in html
+    assert 'id="brokerServerLookupResult"' in html
+    assert "known-server-choice" in app
+    assert "No trading password is sent when searching." in html
