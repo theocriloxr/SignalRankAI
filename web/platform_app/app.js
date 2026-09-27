@@ -314,6 +314,32 @@ async function loadBroker(){
     const ex=data.execution||{};
     const connections=data.connections||[];
     const platforms=data.platforms||[];
+    const metaapiHealth=data.provider_health?.metaapi||{};
+    const metaapiReady=metaapiHealth.ok===true;
+    const metaapiCode=String(metaapiHealth.code||'unknown');
+    const metaapiBanner=$('#brokerProviderHealth');
+    if(metaapiBanner){
+      if(metaapiReady){
+        metaapiBanner.hidden=false;
+        metaapiBanner.className='provider-health-banner provider-health-ok';
+        metaapiBanner.innerHTML='<strong>MetaTrader provider online</strong><span>SignalRankAI is authorized with MetaApi. Account-specific broker checks still run when you connect or verify an account.</span>';
+      }else{
+        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(metaapiCode);
+        const message=operatorFault
+          ?'SignalRankAI\'s MetaApi authorization needs administrator attention. Your MT4/MT5 login, password and server are not the cause.'
+          :metaapiCode==='provider_not_configured'
+            ?'MetaTrader connectivity is not configured for this environment.'
+            :'MetaTrader connectivity is temporarily unavailable. Do not repeatedly resubmit broker credentials.';
+        metaapiBanner.hidden=false;
+        metaapiBanner.className='provider-health-banner provider-health-error';
+        metaapiBanner.innerHTML=`<strong>MetaTrader connection temporarily unavailable</strong><span>${esc(message)}</span><small>Provider status: ${esc(metaapiCode.replaceAll('_',' '))}${metaapiHealth.provider_status?' · HTTP '+esc(metaapiHealth.provider_status):''}</small>`;
+      }
+    }
+    const mtForm=$('#brokerLinkForm');
+    const mtSubmit=mtForm?.querySelector('button[type="submit"]');
+    const mtLookup=$('#brokerServerLookupButton');
+    const mtSecure=$('#brokerSecureLinkButton');
+    for(const control of [mtSubmit,mtLookup,mtSecure])if(control)control.disabled=!metaapiReady;
     const accountStats=data.stats?.accounts||[];
     const accountStatsById=new Map(accountStats.map(row=>[String(row.connection_id||''),row]));
     const readyConnections=connections.filter(x=>['verified','ready','linked'].includes(String(x.status||'').toLowerCase()));
@@ -326,8 +352,11 @@ async function loadBroker(){
     const catalog=$('#brokerPlatformCatalog');
     if(catalog){
       catalog.innerHTML=platforms.map(p=>{
-        const stateLabel=p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connection ready · execution adapter pending':p.execution_adapter==='connection_only'?'Connection only':'Custom integration';
-        return `<div class="metric-card"><small>${esc(p.name)}</small><strong>${esc(stateLabel)}</strong><span class="${p.configured?'positive':'muted'}">${p.configured?'Configured':'Setup required'}</span><small>${esc((p.asset_classes||[]).join(' · '))}</small></div>`;
+        const isMetaTrader=['mt4','mt5'].includes(String(p.platform||'').toLowerCase());
+        const providerUnavailable=isMetaTrader&&!metaapiReady;
+        const stateLabel=providerUnavailable?'Provider authorization unavailable':p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connection ready · execution adapter pending':p.execution_adapter==='connection_only'?'Connection only':'Custom integration';
+        const configured=p.configured&&!providerUnavailable;
+        return `<div class="metric-card"><small>${esc(p.name)}</small><strong>${esc(stateLabel)}</strong><span class="${configured?'positive':providerUnavailable?'negative':'muted'}">${configured?'Configured':providerUnavailable?'Provider unavailable':'Setup required'}</span><small>${esc((p.asset_classes||[]).join(' · '))}</small></div>`;
       }).join('');
     }
 
@@ -445,7 +474,7 @@ async function loadBroker(){
     $('#brokerStatus').innerHTML=`<p class="negative">${esc(err.message)}</p>`;
   }
 
-  if($('#brokerServerLookupButton'))$('#brokerServerLookupButton').onclick=async()=>{
+  if($('#brokerServerLookupButton'))$('#brokerServerLookupButton').onclick=async()=>{if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. No broker credential retry is needed.',true);return}
     const form=$('#brokerLinkForm');
     if(!form)return;
     const platform=String(form.elements.platform?.value||'mt5');
@@ -475,6 +504,7 @@ async function loadBroker(){
 
   if($('#brokerLinkForm'))$('#brokerLinkForm').onsubmit=async e=>{
     e.preventDefault();
+    if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. Your broker credentials are not the cause.',true);return}
     const form=e.target;
     const raw=formData(form);
     raw.server=String(raw.server||'').trim();
@@ -542,6 +572,7 @@ async function loadBroker(){
   };
 
   if($('#brokerSecureLinkButton'))$('#brokerSecureLinkButton').onclick=async()=>{
+    if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. Secure-link creation is paused until the integration token is restored.',true);return}
     const form=$('#brokerLinkForm');
     if(!form)return;
     const raw=formData(form);
