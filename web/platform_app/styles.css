@@ -235,6 +235,7 @@ body.session-booting main{min-height:calc(100vh - 82px);display:grid;align-items
 .bootstrap-shell{width:min(720px,100%);margin:7vh auto;display:grid;grid-template-columns:auto 1fr;gap:20px 22px;align-items:center;padding:clamp(24px,5vw,42px);border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 94%,transparent);box-shadow:var(--shadow);border-radius:18px}
 .bootstrap-shell h1{margin:.15rem 0 .4rem;font-size:clamp(28px,5vw,48px);letter-spacing:-.045em}
 .bootstrap-shell p:not(.eyebrow){margin:0;color:var(--muted);line-height:1.6}
+.bootstrap-retry{margin-top:16px;padding-inline:16px}
 .bootstrap-mark{display:grid;place-items:center;width:76px;height:76px;border:1px solid color-mix(in srgb,var(--cyan) 35%,var(--line));border-radius:20px;background:var(--panel-soft);box-shadow:0 12px 35px color-mix(in srgb,var(--cyan) 12%,transparent)}
 .bootstrap-progress{grid-column:1/-1;height:3px;overflow:hidden;background:var(--meter-rest);border-radius:999px}
 .bootstrap-progress span{display:block;width:42%;height:100%;background:var(--cyan);animation:bootstrap-scan 1.15s ease-in-out infinite alternate;border-radius:999px}
