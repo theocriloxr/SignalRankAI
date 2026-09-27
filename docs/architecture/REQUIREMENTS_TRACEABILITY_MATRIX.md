@@ -129,6 +129,12 @@ Architecture companion:
 | SR-SEC-013 | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | INTEGRATION_VERIFIED | `scripts/broker_credential_inventory.py` | `tests/test_broker_credential_inventory.py` | evidence doc above | Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
 
 
+## Demo / live execution certification
+
+| ID | Requirement | Status | Source | Tests | Evidence |
+|---|---|---|---|---|---|
+| SR-DEMO-010 | A real canonical DEMO broker account must be linked, read-only verified, assigned a DEMO account policy, reconciled HEALTHY, configured with explicit execution permission, and complete a bounded order/modify/close/reconcile lifecycle before demo certification can be claimed | BLOCKED_EXTERNAL | canonical broker onboarding + `services/broker_verification.py` + account policy/reconciliation/ledger/execution layers + `scripts/demo_account_preflight.py` | `tests/test_demo_account_preflight.py`, canonical broker/execution/reconciliation tests | Staging preflight deployment `ad501371-bd3a-431c-8683-701e09c05b4f`: Alembic 0045 PASS; total canonical broker connections=0; blockers=`demo_account_not_connected`, `demo_account_not_read_only_verified`, `demo_account_credentials_not_ready`, `demo_reconciliation_not_healthy`, `demo_execution_permission_not_configured`; activation=false, orders=0, secrets_returned=false; `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
+
 ## Disaster recovery
 
 | ID | Requirement | Status | Source | Tests | Evidence |
