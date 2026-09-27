@@ -96,9 +96,10 @@ def test_metatrader_demo_onboarding_persists_provider_verification_and_reconcili
         registry.index("async def set_execution_enabled(")
     ]
     assert "verified_at: datetime | None = None" in upsert
+    assert "if verified_at is not None:" in upsert
     assert "row.verified_at = verified_at" in upsert
     assert "row.last_health_at = verified_at" in upsert
-    assert "A textual \"verified\" status alone never manufactures verification" in upsert
+    assert 'textual "verified" status alone never manufactures verification' in upsert
 
     link = mt5[
         mt5.index("async def link_platform_metatrader_account("):
@@ -147,7 +148,7 @@ def test_demo_onboarding_does_not_silently_grant_execution_permission() -> None:
 
     upsert = registry[
         registry.index("async def upsert_connection("):
-        registry.index("async def set_execution_enabled("),
+        registry.index("async def set_execution_enabled(")
     ]
     link = mt5[
         mt5.index("async def link_platform_metatrader_account("):
