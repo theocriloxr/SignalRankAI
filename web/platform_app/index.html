@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="/app-assets/styles.css" />
   <title>SignalRankAI</title>
 </head>
-<body>
+<body class="session-booting">
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="SignalRankAI home">
@@ -47,7 +47,18 @@
   </header>
 
   <main>
-    <section id="authShell" class="auth-shell">
+    <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
+      <div class="bootstrap-mark"><img src="/app-assets/icon.svg" alt="" width="54" height="54" /></div>
+      <div>
+        <p class="eyebrow">SIGNALRANKAI</p>
+        <h1 id="bootstrapTitle">Restoring your secure session…</h1>
+        <p id="bootstrapCopy">Loading your account, plan entitlements and connected trading workspace.</p>
+        <button id="bootstrapRetry" class="ghost bootstrap-retry" type="button" hidden>Retry connection</button>
+      </div>
+      <div class="bootstrap-progress" aria-hidden="true"><span></span></div>
+    </section>
+
+    <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
