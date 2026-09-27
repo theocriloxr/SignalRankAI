@@ -1,0 +1,3 @@
+SignalRankAI staging web rollout
+Purpose: session restore, tier-aware UI, secure MetaApi handoff reconciliation, Paystack completion/confirmation, and account/billing design hardening.
+Safety: no live broker execution enablement; no payment amount/tier is trusted from the browser.
