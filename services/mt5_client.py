@@ -199,6 +199,87 @@ def _headers() -> Dict[str, str]:
     }
 
 
+async def search_known_metatrader_servers(
+    platform: str,
+    query: str,
+) -> Dict[str, Any]:
+    """Search MetaApi's known MT server registry without broker credentials."""
+    if not _check_token():
+        return {
+            "success": False,
+            "code": "provider_not_configured",
+            "error": "MetaTrader connection service is not configured",
+            "brokers": [],
+        }
+    platform_n = str(platform or "").strip().lower()
+    if platform_n not in {"mt4", "mt5"}:
+        return {"success": False, "code": "invalid_platform", "error": "platform must be mt4 or mt5", "brokers": []}
+    query_n = " ".join(str(query or "").strip().split())[:128]
+    if len(query_n) < 2:
+        return {"success": False, "code": "query_too_short", "error": "Enter at least 2 characters of the broker or server name", "brokers": []}
+
+    version = "5" if platform_n == "mt5" else "4"
+    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
+    url = f"https://mt-provisioning-api-v1.{domain}/known-mt-servers/{version}/search"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=_headers(),
+                params={"query": query_n},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.text()
+                if resp.status == 200:
+                    try:
+                        parsed = await resp.json()
+                    except Exception:
+                        parsed = {}
+                    groups = parsed if isinstance(parsed, dict) else {}
+                    brokers: list[Dict[str, Any]] = []
+                    for broker, values in list(groups.items())[:10]:
+                        servers = values if isinstance(values, list) else []
+                        cleaned = list(dict.fromkeys(
+                            str(value).strip() for value in servers if str(value).strip()
+                        ))[:10]
+                        if cleaned:
+                            brokers.append({
+                                "broker": str(broker).strip()[:160],
+                                "servers": cleaned,
+                            })
+                    return {
+                        "success": True,
+                        "platform": platform_n,
+                        "query": query_n,
+                        "brokers": brokers,
+                        "count": sum(len(row["servers"]) for row in brokers),
+                    }
+                logger.warning(
+                    "[metatrader] known_server_search_failed status=%s",
+                    resp.status,
+                )
+                return {
+                    "success": False,
+                    "code": "server_search_failed",
+                    "error": f"MetaApi server search failed ({resp.status})",
+                    "provider_status": int(resp.status),
+                    "diagnostic": _safe_error_body(body),
+                    "brokers": [],
+                }
+    except Exception as exc:
+        logger.warning(
+            "[metatrader] known_server_search_unavailable err=%s",
+            type(exc).__name__,
+        )
+        return {
+            "success": False,
+            "code": "provider_unavailable",
+            "error": "MetaApi server search is temporarily unavailable",
+            "provider_status": None,
+            "brokers": [],
+        }
+
+
 def _slippage_tolerance() -> float:
     try:
         return float(os.getenv("SLIPPAGE_TOLERANCE", "10"))
