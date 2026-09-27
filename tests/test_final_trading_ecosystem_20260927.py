@@ -70,6 +70,10 @@ def test_new_account_defaults_match_conservative_policy():
         assert 'Decimal("0.02")' in source
         assert 'Decimal("0.04")' in source
         assert 'Decimal("0.06")' in source
+    canonical=(ROOT/"core"/"account_policy.py").read_text(encoding="utf-8")
+    assert 'field_name="max_daily_loss_pct",\n            default="0.02",' in canonical
+    assert 'field_name="max_weekly_loss_pct",\n            default="0.04",' in canonical
+    assert 'field_name="max_total_drawdown_pct",\n            default="0.06",' in canonical
 
 
 def test_adaptive_candle_store_uses_short_transaction_default():
