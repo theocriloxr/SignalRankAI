@@ -158,16 +158,30 @@ _PLATFORM_CATALOG: tuple[dict[str, Any], ...] = (
 
 
 def _connection_limit(tier: str) -> int:
+    """Return the total connected-account allowance for a plan.
+
+    SignalRankAI is multi-account by design. Defaults intentionally allow more
+    than one MetaTrader account on paid plans and remain environment-overridable
+    so product packaging can change without a code release.
+    """
     value = normalize_tier(tier).value
-    return {
+    defaults = {
         "FREE": 0,
-        "PREMIUM": 1,
-        "VIP": 3,
-        "PROFESSIONAL": 10,
-        "INSTITUTIONAL": 50,
-        "ADMIN": 50,
-        "OWNER": 100,
-    }.get(value, 0)
+        "PREMIUM": 3,
+        "VIP": 10,
+        "PROFESSIONAL": 25,
+        "INSTITUTIONAL": 100,
+        "ADMIN": 100,
+        "OWNER": 250,
+    }
+    default = int(defaults.get(value, 0))
+    raw = str(os.getenv(f"BROKER_CONNECTION_LIMIT_{value}") or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0, min(int(raw), 500))
+    except ValueError:
+        return default
 
 
 def platform_catalog(tier: str) -> list[dict[str, Any]]:
