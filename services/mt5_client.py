@@ -69,8 +69,10 @@ def _metaapi_provisioning_error(
 
     details = parsed.get("details")
     detail_map = details if isinstance(details, dict) else {}
+    detail_code = details if isinstance(details, str) else None
     provider_code = str(
         detail_map.get("code")
+        or detail_code
         or parsed.get("code")
         or parsed.get("error")
         or ""
@@ -124,7 +126,7 @@ def _metaapi_provisioning_error(
     ):
         stable_code = "broker_settings_detection_failed"
         message = "MetaApi could not automatically detect this broker's terminal settings. Use the secure connection flow or an administrator-provided provisioning profile."
-    elif code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED"} or "disabled" in message_lower:
+    elif code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED", "E_TRADING_ACCOUNT_DISABLED"} or "disabled" in message_lower:
         stable_code = "account_disabled"
         message = "The broker account is disabled or unavailable. Confirm the account is active in MetaTrader before reconnecting."
         can_use_secure_link = False
@@ -161,6 +163,7 @@ def _metaapi_provisioning_error(
         "provider_code": provider_code or None,
         "provider_status": int(status),
         "suggested_servers": suggestions,
+        "recommended_resource_slots": detail_map.get("recommendedResourceSlots"),
         "retry_after": retry_after,
         "can_use_secure_link": bool(can_use_secure_link),
         "diagnostic": _safe_error_body(body),
