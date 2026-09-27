@@ -17,6 +17,9 @@ def test_browser_session_restores_before_auth_shell_is_shown() -> None:
     assert "refreshBrowserSession" in app
     assert "response.status===401" in app
     assert "return request(path,options,false)" in app
+    assert "showBootstrapError" in app
+    assert "if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError" in app
+    assert 'id="bootstrapRetry"' in html
 
 
 def test_tier_navigation_is_visibility_gated_and_server_policy_remains_authoritative() -> None:
