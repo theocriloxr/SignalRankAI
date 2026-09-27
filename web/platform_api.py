@@ -3423,6 +3423,31 @@ async def link_broker_exchange(
     }
 
 
+@router.get("/broker/metatrader/servers")
+async def search_broker_metatrader_servers(
+    platform: str = Query(default="mt5", pattern=r"^(mt4|mt5)$"),
+    q: str = Query(min_length=2, max_length=128),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Search MetaApi's known-server registry before credentials are submitted."""
+    _assert_feature(user, "broker_connection")
+    if not str(os.getenv("META_API_TOKEN") or "").strip():
+        raise HTTPException(status_code=503, detail="MetaTrader connection service is not configured")
+    from services.mt5_client import search_known_metatrader_servers
+
+    result = await search_known_metatrader_servers(platform, q)
+    if not result.get("success"):
+        code = str(result.get("code") or "server_search_failed")
+        raise HTTPException(
+            status_code=503 if code in {"provider_unavailable", "provider_not_configured"} else 502,
+            detail={
+                "code": code,
+                "message": str(result.get("error") or "MetaTrader server search failed"),
+            },
+        )
+    return result
+
+
 @router.post("/broker/metatrader")
 async def link_broker_metatrader(
     payload: MetaTraderBrokerLinkRequest,
