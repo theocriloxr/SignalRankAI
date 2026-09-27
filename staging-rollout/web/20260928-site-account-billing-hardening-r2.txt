@@ -1,0 +1,4 @@
+SignalRankAI staging web rollout retry r2
+Source includes PR #77 site/account/billing hardening and PR #78 build-gate fixes.
+Expected release source head: current codex/signalrank-master-blueprint-20260925 after merge.
+Safety: staging only; live execution remains unchanged/disabled by existing gates.
