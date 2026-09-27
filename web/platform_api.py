@@ -3891,6 +3891,33 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                 {"uid": uid},
             )
         ).mappings().first()
+        readiness_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT c.connection_id,
+                           p.policy_id,
+                           p.policy_version,
+                           p.account_mode,
+                           p.execution_permission,
+                           p.status AS policy_status,
+                           p.certified_at,
+                           p.prop_rules_version,
+                           p.frozen_at AS policy_frozen_at,
+                           r.status AS reconciliation_status,
+                           r.discrepancy_code,
+                           r.frozen_at AS reconciliation_frozen_at
+                    FROM broker_connections c
+                    LEFT JOIN trading_account_policies p
+                      ON p.connection_id=c.connection_id AND p.user_id=c.user_id
+                    LEFT JOIN broker_reconciliation_state r
+                      ON r.connection_id=c.connection_id AND r.user_id=c.user_id
+                    WHERE c.user_id=:uid
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
         provider_stats = (
             await session.execute(
                 text(
@@ -3980,9 +4007,107 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             }
         )
 
+    readiness_by_id = {
+        str(row.get("connection_id")): dict(row)
+        for row in readiness_rows
+        if row.get("connection_id")
+    }
+    platform_by_name = {
+        str(row.get("platform") or "").strip().lower(): row
+        for row in platforms
+    }
+    accepted_terms = bool(account_payload.get("accepted_terms"))
+    preflight_entitled = evaluate_feature_access(
+        str(user.get("tier") or "free"),
+        "execution_preflight",
+    ).allowed
+    enriched_connections: list[dict[str, Any]] = []
+    for raw_connection in connections:
+        connection = dict(raw_connection)
+        snapshot = readiness_by_id.get(str(connection.get("connection_id") or "")) or {}
+        blockers: list[dict[str, str]] = []
+
+        def block(code: str, message: str) -> None:
+            blockers.append({"code": code, "message": message})
+
+        platform_name = str(connection.get("platform") or "").strip().lower()
+        adapter = str(
+            (platform_by_name.get(platform_name) or {}).get("execution_adapter")
+            or "custom"
+        )
+        if adapter != "ready":
+            block(
+                "provider_execution_adapter_not_certified",
+                "This provider can be connected, but its order-placement adapter is not certified yet.",
+            )
+        if str(connection.get("status") or "").strip().lower() not in {"linked", "ready", "verified"}:
+            block("broker_verification_required", "Verify the broker connection before execution.")
+        permissions = dict(connection.get("permissions") or {})
+        if permissions.get("trade") is not True:
+            block("trade_permission_required", "The broker key/account must allow trading.")
+        if permissions.get("withdraw", False) is not False or permissions.get("internal_transfer", False) is not False:
+            block(
+                "unsafe_broker_permissions",
+                "Withdrawal and internal-transfer permissions must be disabled.",
+            )
+        if not snapshot.get("policy_id"):
+            block("account_policy_required", "Configure this account's risk/execution policy.")
+        else:
+            if snapshot.get("policy_frozen_at") is not None:
+                block("account_policy_frozen", "The account has an active safety freeze.")
+            permission = str(snapshot.get("execution_permission") or "").strip().upper()
+            if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+                block(
+                    "execution_permission_blocked",
+                    "Choose a broker execution permission in the account policy.",
+                )
+            account_mode = str(snapshot.get("account_mode") or "").strip().upper()
+            if account_mode == "PROP" and (
+                snapshot.get("certified_at") is None
+                or not str(snapshot.get("prop_rules_version") or "").strip()
+            ):
+                block(
+                    "prop_policy_certification_required",
+                    "This exact prop-firm ruleset must be owner/admin certified before execution.",
+                )
+        reconciliation_status = str(
+            snapshot.get("reconciliation_status") or "UNKNOWN"
+        ).strip().upper()
+        if reconciliation_status != "HEALTHY" or snapshot.get("reconciliation_frozen_at") is not None:
+            block(
+                "reconciliation_required",
+                "Broker reconciliation must be healthy before a trade can execute.",
+            )
+        if not accepted_terms:
+            block("execution_terms_required", "Accept the broker execution-risk terms.")
+        if not bool(connection.get("execution_enabled")):
+            block(
+                "explicit_execution_enable_required",
+                "Execution is still disabled for this account; enable it explicitly after verification.",
+            )
+
+        connection["readiness"] = {
+            "execution_ready": len(blockers) == 0,
+            "auto_execution_tier_entitled": bool(preflight_entitled),
+            "provider_execution_adapter": adapter,
+            "policy_version": snapshot.get("policy_version"),
+            "reconciliation_status": reconciliation_status,
+            "blockers": blockers,
+            "per_trade_gates": [
+                "delivered_signal_evidence",
+                "fresh_broker_quote",
+                "market_open",
+                "signal_and_account_risk",
+                "position_and_daily_limits",
+                "kill_switch",
+                "idempotency_and_reconciliation",
+            ],
+        }
+        enriched_connections.append(connection)
+
     return {
         "mt5": mt5,
-        "connections": connections,
+        "connections": enriched_connections,
         "platforms": platforms,
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
@@ -4010,10 +4135,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             "live_execution_requested": bool(
                 str(prefs.trading_mode or "paper").lower() in {"live", "both"}
             ),
-            "execution_preflight_entitled": evaluate_feature_access(
-                str(user.get("tier") or "free"),
-                "execution_preflight",
-            ).allowed,
+            "execution_preflight_entitled": bool(preflight_entitled),
             "global_activation_still_required": True,
         },
     }
