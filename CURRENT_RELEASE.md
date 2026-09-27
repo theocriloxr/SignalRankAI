@@ -8,6 +8,8 @@ Repository Alembic head: 0045_mt5_credential_retirement
 Staging schema: certified at 0045_mt5_credential_retirement
 Staging topology: decomposed frontdoor + engine + delivery + analytics
 Staging live-money posture: disabled / fail-closed
+Current verified frontdoor release: 34963afc8b5df5d9787e3e6e9e83335419f631ca
+Current read-only demo preflight: e8582346-1bcf-4476-aec9-4de033ee0a28 (BLOCKED_EXTERNAL; 0 canonical broker connections)
 Production promotion: separate controlled gate; not implied by staging health
 ```
 
@@ -38,8 +40,10 @@ authorization gates.
 
 Staging disaster recovery is independently verified through a full isolated
 PostgreSQL restore drill. Canonical demo broker connections currently present
-in staging: **0**. A read-only demo preflight therefore blocks demo execution
-certification until an explicitly owned demo account is linked through the
+in staging: **0**. Fresh read-only preflight deployment
+`e8582346-1bcf-4476-aec9-4de033ee0a28` confirmed activation=false,
+orders=0 and secrets_returned=false. Demo execution certification therefore
+remains blocked until an explicitly owned demo account is linked through the
 canonical account flow. Environment-level broker credential variables are not
 treated as account ownership or execution authorization.
 
