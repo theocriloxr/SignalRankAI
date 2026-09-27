@@ -30,6 +30,30 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return default if raw is None else raw.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _runtime_role() -> str:
+    return str(
+        os.getenv("DB_ROLE")
+        or os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or ""
+    ).strip().lower()
+
+
+def _is_decomposed_engine() -> bool:
+    role=_runtime_role()
+    return role == "engine" or role.startswith("engine-")
+
+
+def _capture_history_limit() -> int:
+    """Keep scanner persistence bounded; offline/analytics capture can stay deeper."""
+    default="60" if _is_decomposed_engine() else "200"
+    try:
+        configured=int(os.getenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", default) or default)
+    except (TypeError, ValueError):
+        configured=int(default)
+    return max(10, min(500, configured))
+
+
 def _capture_db_priority() -> str:
     if str(os.getenv("FULL_SYSTEM_STAGING_TEST_ACTIVE") or "").strip() == "1":
         return "interactive"
@@ -38,24 +62,23 @@ def _capture_db_priority() -> str:
 
 
 def _local_drain_batch_size() -> int:
-    return max(
-        1,
-        int(
-            os.getenv(
-                "ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE",
-                os.getenv("ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE", "24") or "24",
-            )
-            or 24
-        ),
+    default = "1" if _is_decomposed_engine() else (
+        os.getenv("ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE", "24") or "24"
     )
+    try:
+        configured=int(os.getenv("ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE", default) or default)
+    except (TypeError, ValueError):
+        configured=int(default)
+    return max(1, min(24, configured))
 
 
 def _transaction_snapshot_limit() -> int:
     """Bound one DB transaction even when the producer queue contains a backfill."""
     try:
-        configured = int(os.getenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", "2") or 2)
+        default = "1" if _is_decomposed_engine() else "2"
+        configured = int(os.getenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", default) or default)
     except (TypeError, ValueError):
-        configured = 2
+        configured = 1 if _is_decomposed_engine() else 2
     return max(1, min(8, configured))
 
 
@@ -196,7 +219,7 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
     if not _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
         return 0
     queued = 0
-    max_per_tf = max(10, min(500, int(os.getenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", "200") or 200)))
+    max_per_tf = _capture_history_limit()
     now = time.monotonic()
     for timeframe, tf_data in market_data.items():
         if not isinstance(tf_data, Mapping) or timeframe.startswith("_"):
@@ -321,7 +344,13 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
             10,
             min(
                 100,
-                int(os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "50") or 50),
+                int(
+                    os.getenv(
+                        "ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE",
+                        "10" if _is_decomposed_engine() else "50",
+                    )
+                    or ("10" if _is_decomposed_engine() else "50")
+                ),
             ),
         )
         lock_timeout_ms = _capture_lock_timeout_ms()
