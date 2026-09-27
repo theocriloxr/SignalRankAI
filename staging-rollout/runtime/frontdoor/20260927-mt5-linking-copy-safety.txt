@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout: MT5 linking copy safety.
+Purpose: align Telegram MT5 linking/status wording with canonical fail-closed account execution semantics.
+Linking/provisioning does not grant execution permission.
+DEMO execution remains separately prepared, verified, reconciled and explicitly enabled.
+No secrets are stored in this marker.
