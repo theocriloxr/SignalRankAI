@@ -58,6 +58,7 @@ _TESTS = [
     "tests/test_v131_live_financial_activation.py",
     "tests/test_v130_production_cutover_outcome_recovery.py",
     "tests/test_mt5_reconciliation_ledger.py",
+    "tests/test_mt5_linking_copy_safety.py",
     "tests/test_web_first_signup_contract.py",
     "tests/test_release_provenance.py",
     "tests/test_traceability_completion_boundary.py",
