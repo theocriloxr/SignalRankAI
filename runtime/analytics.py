@@ -14,6 +14,75 @@ def _enabled(name: str, default: bool=True) -> bool:
     raw=os.getenv(name); return default if raw is None else raw.strip().lower() in {"1","true","yes","on"}
 
 
+_ML_TRAIN_LOCK=asyncio.Lock()
+
+
+async def _run_ml_training_serialized(*, reason: str, lookback_days: int | None=None) -> bool:
+    """Serialize analytics-owned training so drift and scheduled jobs cannot collide."""
+    from core.redis_state import state
+    if _ML_TRAIN_LOCK.locked():
+        logger.info("[analytics_ml_train] reason=%s status=waiting_for_existing_training", reason)
+    async with _ML_TRAIN_LOCK:
+        lease_seconds=max(900, int(os.getenv("ML_TRAIN_LEASE_SECONDS", "1800") or 1800))
+        state.set_sync("signalrankai:ml:drift:retrain_running", "1", ex=lease_seconds)
+        try:
+            from ml import train_model as ml_train
+            ok=await ml_train.main(lookback_days=lookback_days)
+            logger.info(
+                "[analytics_ml_train] reason=%s status=%s lookback_days=%s",
+                reason,
+                "success" if ok else "skipped_or_failed",
+                lookback_days if lookback_days is not None else "default",
+            )
+            return bool(ok)
+        except Exception as exc:
+            logger.exception(
+                "[analytics_ml_train] reason=%s status=failed error=%s",
+                reason,
+                type(exc).__name__,
+            )
+            return False
+        finally:
+            # Do not use a pre-existing Redis value as an ownership primitive:
+            # an interrupted/replaced container can leave a stale value behind.
+            # One analytics replica plus this process mutex is the current
+            # certified ownership model.
+            state.set_sync("signalrankai:ml:drift:retrain_running", "0", ex=300)
+
+
+async def _openai_startup_probe() -> None:
+    """Secret-safe, opt-in proof that the configured OpenAI Responses API works."""
+    if not _enabled("OPENAI_STARTUP_PROBE_ENABLED", False):
+        return
+    try:
+        from services.openai_ai import provider_status, test_connection
+        status=provider_status()
+        if not status.get("configured") or not status.get("available"):
+            logger.error(
+                "[openai_startup_probe] status=FAIL reason=not_available configured=%s enabled=%s",
+                bool(status.get("configured")),
+                bool(status.get("enabled")),
+            )
+            return
+        result=await test_connection()
+        if bool(result.get("connected")):
+            logger.info(
+                "[openai_startup_probe] status=PASS provider=openai model=%s latency_ms=%s",
+                result.get("model") or status.get("signal_model") or "unknown",
+                result.get("latency_ms") if result.get("latency_ms") is not None else "unknown",
+            )
+        else:
+            logger.error(
+                "[openai_startup_probe] status=FAIL provider=openai reason=%s",
+                str(result.get("error") or "connectivity_probe_failed")[:120],
+            )
+    except Exception as exc:
+        logger.error(
+            "[openai_startup_probe] status=FAIL provider=openai error_type=%s",
+            type(exc).__name__,
+        )
+
+
 async def _ml_drift_loop(stop: asyncio.Event) -> None:
     """Observe independent feature drift and model-output starvation health."""
     from core.redis_state import state
@@ -189,37 +258,19 @@ async def _ml_drift_loop(stop: asyncio.Event) -> None:
                     1,
                     int(os.getenv("ML_DRIFT_REQUIRED_CONSECUTIVE_CHECKS", "2") or 2),
                 )
-                if (
-                    consecutive >= required
-                    and str(
-                        state.get_sync("signalrankai:ml:drift:retrain_running") or ""
-                    ) != "1"
-                ):
-                    state.set_sync(
-                        "signalrankai:ml:drift:retrain_running",
-                        "1",
-                        ex=ttl,
+                if consecutive >= required:
+                    ok=await _run_ml_training_serialized(
+                        reason=active_reason,
+                        lookback_days=max(
+                            1,
+                            int(os.getenv("ML_DRIFT_RETRAIN_LOOKBACK_DAYS", "90") or 90),
+                        ),
                     )
-                    try:
-                        from ml import train_model as ml_train
-
-                        ok=await ml_train.main(
-                            lookback_days=max(
-                                1,
-                                int(os.getenv("ML_DRIFT_RETRAIN_LOOKBACK_DAYS", "7") or 7),
-                            )
-                        )
-                        logger.info(
-                            "[analytics_ml_drift_retrain] reason=%s status=%s",
-                            active_reason,
-                            "success" if ok else "skipped_or_failed",
-                        )
-                    finally:
-                        state.set_sync(
-                            "signalrankai:ml:drift:retrain_running",
-                            "0",
-                            ex=300,
-                        )
+                    logger.info(
+                        "[analytics_ml_drift_retrain] reason=%s status=%s",
+                        active_reason,
+                        "success" if ok else "skipped_or_failed",
+                    )
             else:
                 if not feature_drift:
                     state.set_sync(
@@ -248,6 +299,8 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
     stop=stop_event or asyncio.Event()
     tasks=[]
     shadow=None
+    if _enabled("OPENAI_STARTUP_PROBE_ENABLED", False):
+        tasks.append(asyncio.create_task(_openai_startup_probe(), name="openai-startup-probe"))
     if _enabled("SHADOW_TRACKING_ENABLED", True):
         from engine.shadow_outcome_worker import shadow_outcome_worker
         shadow=shadow_outcome_worker
@@ -275,12 +328,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             except asyncio.TimeoutError:
                 pass
             while not stop.is_set():
-                try:
-                    from ml import train_model as ml_train
-                    ok=await ml_train.main()
-                    logger.info("[analytics] ml_train status=%s", "success" if ok else "skipped_or_failed")
-                except Exception as exc:
-                    logger.error("[analytics] ml_train failed err=%s", exc)
+                ok=await _run_ml_training_serialized(
+                    reason="scheduled",
+                    lookback_days=max(
+                        1,
+                        int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90),
+                    ),
+                )
+                logger.info("[analytics] ml_train status=%s", "success" if ok else "skipped_or_failed")
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=interval)
                 except asyncio.TimeoutError:
