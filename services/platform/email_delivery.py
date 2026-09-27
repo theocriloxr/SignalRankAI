@@ -32,7 +32,11 @@ class QueuedEmail:
 
 
 def _sender() -> str:
-    return str(os.getenv("EMAIL_FROM") or "SignalRankAI <no-reply@signalrank.ai>").strip()
+    return str(os.getenv("EMAIL_FROM") or "SignalRankAI <hello@criloxsolutions.com>").strip()
+
+
+def _reply_to() -> str:
+    return str(os.getenv("EMAIL_REPLY_TO") or "hello@criloxsolutions.com").strip()
 
 
 def _smtp_configured() -> bool:
@@ -128,6 +132,9 @@ def _send_smtp(row: Mapping[str, Any]) -> None:
 
     message = EmailMessage()
     message["From"] = _sender()
+    reply_to = _reply_to()
+    if reply_to:
+        message["Reply-To"] = reply_to
     message["To"] = str(row["recipient"])
     message["Subject"] = str(row["subject"])
     message.set_content(str(row["plain_body"]))
