@@ -214,3 +214,18 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 .provider-health-ok{border-left:3px solid var(--green)}
 .provider-health-error{border-left:3px solid var(--coral)}
 .provider-health-error strong{color:var(--coral)}
+
+.demo-certification-card{margin-top:1rem;padding:1rem;border:1px solid var(--line);background:var(--panel-soft)}
+.demo-certification-card .panel-heading{margin-bottom:.8rem}
+.demo-certification-accounts{display:grid;gap:.8rem;margin-top:.9rem}
+.demo-cert-account{padding:1rem;border:1px solid var(--line);background:var(--panel)}
+.demo-cert-checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem .7rem;margin:.85rem 0}
+.demo-cert-check{display:flex;gap:.55rem;align-items:flex-start;padding:.55rem .65rem;border:1px solid var(--line);min-width:0}
+.demo-cert-check>span{font:700 .85rem Consolas,monospace;line-height:1.2}
+.demo-cert-check strong,.demo-cert-check small{display:block;overflow-wrap:anywhere}
+.demo-cert-check strong{font-size:.78rem}
+.demo-cert-check small{margin-top:.16rem;color:var(--muted);font-size:.68rem}
+.demo-cert-check.is-pass{border-color:color-mix(in srgb,var(--green) 35%,var(--line))}
+.demo-cert-check.is-pass>span{color:var(--green)}
+.demo-cert-check.is-blocked>span{color:var(--coral)}
+@media(max-width:720px){.demo-cert-checklist{grid-template-columns:1fr}}
