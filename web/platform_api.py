@@ -405,6 +405,10 @@ class AccountFreezeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=256)
 
 
+class DemoCertificationPrepareRequest(BaseModel):
+    confirm: bool
+
+
 class PropPolicyCertificationRequest(BaseModel):
     confirm: bool
     expected_policy_version: int = Field(ge=1)
@@ -3551,6 +3555,40 @@ async def create_broker_metatrader_secure_link(
         status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
         raise HTTPException(status_code=status_code, detail=detail)
     return result
+
+
+@router.post("/broker/connections/{connection_id}/demo-certification/prepare")
+async def prepare_broker_demo_certification(
+    connection_id: str,
+    payload: DemoCertificationPrepareRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Prepare one provider-proven DEMO account without enabling execution."""
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.demo_certification import prepare_demo_certification
+
+    try:
+        result = await prepare_demo_certification(
+            int(user["id"]),
+            connection_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        **result,
+        "explicit_enable_still_required": True,
+        "live_activation_changed": False,
+    }
 
 
 @router.get("/broker/connections/{connection_id}/policy")
