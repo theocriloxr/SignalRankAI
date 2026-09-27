@@ -9,7 +9,7 @@ Staging schema: certified at 0045_mt5_credential_retirement
 Staging topology: decomposed frontdoor + engine + delivery + analytics
 Staging live-money posture: disabled / fail-closed
 Current verified frontdoor release: d09535105bf44ca9c53008007394d9f804104a81
-Current read-only demo preflight: e80fa087-d487-40fc-859e-76df71a3b7b7 (BLOCKED_EXTERNAL; 0 canonical broker connections)
+Current read-only demo preflight: 2d1fa0ed-453e-4ccd-af92-2c2535d79d9b (BLOCKED_EXTERNAL; 0 canonical broker connections)
 Production promotion: separate controlled gate; not implied by staging health
 ```
 
@@ -51,7 +51,7 @@ provider-backed read-only verification/reconciliation → bounded
 tests**, including MT5 linking-copy safety; the frontdoor image passed **356
 build tests** plus readiness checks. Runtime ownership is frontdoor-only
 (http+Telegram on; engine+worker off), webhook pending=0, and /healthz=200.
-Fresh read-only preflight `e80fa087-d487-40fc-859e-76df71a3b7b7` still found
+Fresh read-only preflight `2d1fa0ed-453e-4ccd-af92-2c2535d79d9b` still found
 zero canonical accounts and confirmed activation=false, orders=0 and
 secrets_returned=false. Demo execution certification therefore remains blocked
 only until an explicitly owned demo account is linked and the external broker
