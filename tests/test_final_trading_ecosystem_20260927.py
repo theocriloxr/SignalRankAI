@@ -116,3 +116,20 @@ def test_pwa_cache_and_execution_contract_copy_are_current():
     html=(ROOT/"web"/"platform_app"/"index.html").read_text(encoding="utf-8")
     assert "signalrank-shell-v18" in sw
     assert "Only signals delivered to your account can execute" in html
+
+
+def test_broker_hub_exposes_account_readiness_without_bypassing_trade_gates():
+    api=(ROOT/"web"/"platform_api.py").read_text(encoding="utf-8")
+    js=(ROOT/"web"/"platform_app"/"app.js").read_text(encoding="utf-8")
+    assert "provider_execution_adapter_not_certified" in api
+    assert "broker_verification_required" in api
+    assert "account_policy_required" in api
+    assert "prop_policy_certification_required" in api
+    assert "reconciliation_required" in api
+    assert "execution_terms_required" in api
+    assert "explicit_execution_enable_required" in api
+    assert "delivered_signal_evidence" in api
+    assert "fresh_broker_quote" in api
+    assert "kill_switch" in api
+    assert "Account-level execution prerequisites ready" in js
+    assert "every trade still passes live safety gates" in js
