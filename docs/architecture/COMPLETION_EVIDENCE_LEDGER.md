@@ -18,9 +18,9 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
-- Current verified release head: `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
+- Current verified release head: `e7196d4310180b2e901ab020e7041de7c5e18a91`.
 - Baseline engine/delivery/analytics runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
-- Current component heads: frontdoor `34963afc8b5df5d9787e3e6e9e83335419f631ca`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness-only.
+- Current component heads: frontdoor `e7196d4310180b2e901ab020e7041de7c5e18a91`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness/preparation-only.
 - Tracked requirements: **72**.
 - `VERIFIED`: **68**.
 - `IMPLEMENTED`: **0**.
@@ -32,17 +32,18 @@ The four externally blocked items are intentionally fail-closed: optional provid
 
 ### Superseding staging evidence — 2026-09-27
 
-The current release head is `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
-Frontdoor is deployed at that exact head; engine, delivery and analytics remain
-on the compatible certified baseline `93039e2e77800c4aa6b9ba1b1a8ce45797814210`
-because the later changes are frontdoor/demo-readiness-only.
+The current verified frontdoor release head is
+`e7196d4310180b2e901ab020e7041de7c5e18a91`. Frontdoor is deployed at that
+exact head; engine, delivery and analytics remain on the compatible certified
+baseline `93039e2e77800c4aa6b9ba1b1a8ce45797814210` because the later changes
+are frontdoor/demo-readiness/preparation-only.
 
-- clean-room deployment: `b94a2e77-d012-486d-90dc-93d25b303ceb`;
+- clean-room deployment: `22c0e55f-67b5-427f-b34b-aafc2cdc1074`;
 - Alembic release-chain: `0045_mt5_credential_retirement` PASS;
 - schema audit: PASS, including broker credential-envelope and immutable account-ledger contracts;
-- release provenance/SBOM self-check: PASS at `34963afc...`;
-- targeted clean-room suite: **457 passed**;
-- staging frontdoor: `f15466a0-eb9e-4f32-9205-3130332c0361` at `34963afc...`;
+- release provenance/SBOM self-check: PASS at `e7196d43...`;
+- targeted clean-room suite: **462 passed**;
+- staging frontdoor: `713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d43...`;
 - staging engine: `ab915899-6177-4608-b8a3-7b539537e25b` at `93039e2e...`;
 - staging delivery/outcome: `0683abb8-0128-4266-869c-14f34d821658` at `93039e2e...`;
 - staging analytics: `28c378a5-52e8-4f15-a877-e26a82b82ea6` at `93039e2e...`.
@@ -51,6 +52,38 @@ All four long-lived roles passed release-source and `0045` schema admission.
 The live frontdoor reports `mode=frontdoor`, `http=true`, `telegram=true`,
 `engine=false`, `worker=false`, Telegram webhook active, and `/healthz=200`.
 The other roles boot only their declared dedicated runtime modes.
+
+### Safe DEMO certification preparation — 2026-09-27
+
+SignalRank-side DEMO onboarding/preparation is now complete up to the external
+broker-account boundary. An owned provider-proven DEMO connection gets an
+explicit **Prepare DEMO certification** action that performs canonical read-only
+provider verification and reconciliation, refuses live/ambiguous accounts,
+requires canonical credential readiness + HEALTHY reconciliation, applies a
+bounded `DEMO/MANUAL` policy, and leaves execution disabled. A separate terms
+acceptance + explicit per-account execution-enable action is still required
+before the bounded DEMO execution lifecycle.
+
+- canonical service: `services/demo_certification.py`;
+- API: `POST /broker/connections/{connection_id}/demo-certification/prepare`;
+- web broker-card action: `Prepare DEMO certification`;
+- implementation commits: `daa835c5...`, `17cb26e1...`, `af0f39a2...`;
+- focused behavior coverage: `tests/test_demo_account_preflight.py`;
+- PWA shell: v24;
+- clean-room rollout marker `e7196d43...`: Alembic 0045/schema/provenance PASS,
+  **462 targeted tests passed**;
+- staging frontdoor `713ee164-5002-4499-a7cf-66f67dba0802`: **356 image-gate tests**
+  + readiness PASS, release-source/schema PASS, `mode=frontdoor`,
+  `engine=false`, `worker=false`, MetaApi startup probe PASS and
+  `/healthz=200`;
+- refreshed read-only preflight `e80fa087-d487-40fc-859e-76df71a3b7b7`
+  on marker `a77694b5...`: **BLOCKED_EXTERNAL**, broker connections=0,
+  activation=false, orders=0, secrets_returned=false.
+
+The remaining DEMO blocker is therefore not hidden application work: an
+explicitly owned external DEMO broker account must be linked and its bounded
+provider order/modify/close/restart/reconciliation evidence must be captured.
+Environment-level broker secrets are never converted into user ownership.
 
 ### Frontdoor delivery-terminal maintenance — 2026-09-27
 
@@ -153,7 +186,7 @@ re-enter resend recovery after queue expiry.
 | SR-SEC-013 | VERIFIED | STAGING / INTEGRATION | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | `scripts/broker_credential_inventory.py` · `tests/test_broker_credential_inventory.py` · evidence doc above \| Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
 
 | SR-DR-010 | VERIFIED | STAGING / INTEGRATION | Full staging PostgreSQL backup/restore drill proves bounded dump, isolated restore, 0045 schema/data recovery, immutable-ledger trigger recovery and cleanup without source/production mutation | `scripts/staging_backup_restore_drill.py`, `Dockerfile.restore-drill` · `tests/test_staging_backup_restore_drill.py` · deployment `59a52067-b83f-46bb-83f6-67080b818c7d`: dump 199,493,675 bytes, restore 297.755s, restored head 0045, 48,132 signals + 6 users, cleanup PASS, source/production mutation false |
-| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | A real canonical DEMO broker account must be linked, read-only verified, policy-configured, HEALTHY-reconciled and exercised through bounded canonical order/modify/close/reconcile certification before any demo/live promotion claim | `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · staging preflight `e8582346-1bcf-4476-aec9-4de033ee0a28` on marker `41b8049e...`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
+| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | SignalRank-side DEMO onboarding/preparation is complete and fail-closed; the remaining acceptance proof requires an explicitly owned external DEMO account plus bounded provider order/modify/close/restart/reconciliation evidence before any demo/live promotion claim | `services/demo_certification.py`, `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · safe-prepare frontdoor `713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d43...`; refreshed preflight `e80fa087-d487-40fc-859e-76df71a3b7b7` on marker `a77694b5...`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
 
 
 ## Release rule
