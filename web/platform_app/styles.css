@@ -197,3 +197,13 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 }
 
 .pending-feedback{border-left:3px solid var(--amber)}
+
+.server-search-actions{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;margin-top:.7rem}
+.server-search-actions small{color:var(--muted)}
+.server-lookup-result{margin-top:.75rem;padding:.8rem;border-top:1px solid var(--line)}
+.server-result-group{display:grid;gap:.5rem;padding:.55rem 0}
+.server-result-group+ .server-result-group{border-top:1px solid var(--line)}
+.server-result-group>strong{font-size:.78rem}
+.server-result-buttons{display:flex;gap:.45rem;flex-wrap:wrap}
+.server-result-buttons button{font-family:Consolas,ui-monospace,monospace;font-size:.75rem;overflow-wrap:anywhere}
+@media(max-width:700px){.server-search-actions{align-items:stretch;flex-direction:column}.server-search-actions button{width:100%}.server-result-buttons button{flex:1 1 100%}}
