@@ -4166,12 +4166,186 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
         }
         enriched_connections.append(connection)
 
+    demo_accounts: list[dict[str, Any]] = []
+    for connection in enriched_connections:
+        connection_id = str(connection.get("connection_id") or "")
+        snapshot = readiness_by_id.get(connection_id) or {}
+        account_mode = str(
+            snapshot.get("account_mode")
+            or connection.get("account_classification")
+            or ""
+        ).strip().upper()
+        if account_mode != "DEMO":
+            continue
+
+        status = str(connection.get("status") or "").strip().lower()
+        permission = str(snapshot.get("execution_permission") or "").strip().upper()
+        reconciliation_status = str(
+            snapshot.get("reconciliation_status") or "UNKNOWN"
+        ).strip().upper()
+        credential_format = str(connection.get("credential_format") or "").strip().lower()
+        provider_adapter = str(
+            (connection.get("readiness") or {}).get("provider_execution_adapter")
+            or "custom"
+        ).strip().lower()
+
+        checklist = {
+            "connected_as_demo": True,
+            "read_only_verified": (
+                status in {"verified", "ready", "linked"}
+                and connection.get("verified_at") is not None
+            ),
+            "canonical_credentials_ready": credential_format in {
+                "envelope_v1",
+                "provider_managed",
+            },
+            "demo_policy_configured": bool(snapshot.get("policy_id")),
+            "explicit_execution_permission": permission in {
+                "MANUAL",
+                "ASSISTED_EXECUTION",
+                "AUTO_EXECUTION",
+            },
+            "reconciliation_healthy": (
+                reconciliation_status == "HEALTHY"
+                and snapshot.get("reconciliation_frozen_at") is None
+            ),
+            "policy_unfrozen": snapshot.get("policy_frozen_at") is None,
+            "execution_disabled_for_preflight": not bool(
+                connection.get("execution_enabled")
+            ),
+            "execution_terms_accepted": accepted_terms,
+            "provider_execution_adapter_ready": provider_adapter == "ready",
+        }
+
+        preflight_blockers: list[dict[str, str]] = []
+
+        def demo_block(code: str, message: str) -> None:
+            preflight_blockers.append({"code": code, "message": message})
+
+        if not checklist["read_only_verified"]:
+            demo_block(
+                "demo_account_not_read_only_verified",
+                "Verify this demo account with the broker before certification.",
+            )
+        if not checklist["canonical_credentials_ready"]:
+            demo_block(
+                "demo_account_credentials_not_ready",
+                "Store broker credentials through the canonical secure connection flow.",
+            )
+        if not checklist["demo_policy_configured"]:
+            demo_block(
+                "demo_policy_not_configured",
+                "Configure this account's policy and keep account mode set to DEMO.",
+            )
+        if not checklist["explicit_execution_permission"]:
+            demo_block(
+                "demo_execution_permission_not_configured",
+                "Choose MANUAL, ASSISTED_EXECUTION or AUTO_EXECUTION in the account policy.",
+            )
+        if not checklist["reconciliation_healthy"]:
+            demo_block(
+                "demo_reconciliation_not_healthy",
+                "Broker reconciliation must be HEALTHY before the bounded demo test.",
+            )
+        if not checklist["policy_unfrozen"]:
+            demo_block(
+                "demo_policy_frozen",
+                "Clear the account safety freeze before certification.",
+            )
+        if not checklist["execution_disabled_for_preflight"]:
+            demo_block(
+                "demo_execution_already_enabled_review_required",
+                "Disable execution until the bounded demo-certification window is opened.",
+            )
+
+        lifecycle_blockers = list(preflight_blockers)
+        if not checklist["execution_terms_accepted"]:
+            lifecycle_blockers.append(
+                {
+                    "code": "execution_terms_required",
+                    "message": "Accept the broker execution-risk terms before the bounded demo lifecycle.",
+                }
+            )
+        if not checklist["provider_execution_adapter_ready"]:
+            lifecycle_blockers.append(
+                {
+                    "code": "provider_execution_adapter_not_certified",
+                    "message": "This provider's order adapter must be certified before the bounded demo lifecycle.",
+                }
+            )
+
+        preflight_ready = not preflight_blockers
+        lifecycle_ready = not lifecycle_blockers
+        demo_accounts.append(
+            {
+                "connection_id": connection_id,
+                "account_label": connection.get("account_label"),
+                "provider": str(connection.get("platform") or connection.get("connector") or "broker"),
+                "status": str(connection.get("status") or "unknown"),
+                "policy_version": snapshot.get("policy_version"),
+                "reconciliation_status": reconciliation_status,
+                "checklist": checklist,
+                "preflight_ready": preflight_ready,
+                "bounded_lifecycle_ready": lifecycle_ready,
+                "blockers": lifecycle_blockers,
+                "next_action": (
+                    "Ready for operator-controlled bounded demo certification. Keep execution disabled until the certification window starts."
+                    if preflight_ready
+                    else str(preflight_blockers[0]["message"])
+                ),
+            }
+        )
+
+    demo_summary_blockers = (
+        []
+        if demo_accounts
+        else [
+            {
+                "code": "demo_account_not_connected",
+                "message": "Connect an explicitly owned broker demo account to begin certification.",
+            }
+        ]
+    )
+    if demo_accounts and not any(row["preflight_ready"] for row in demo_accounts):
+        demo_summary_blockers = [
+            {
+                "code": str(row["blockers"][0]["code"]),
+                "message": str(row["blockers"][0]["message"]),
+            }
+            for row in demo_accounts
+            if row["blockers"]
+        ][:1]
+
     return {
         "mt5": mt5,
         "connections": enriched_connections,
         "platforms": platforms,
         "provider_health": {
             "metaapi": metaapi_health,
+        },
+        "demo_certification": {
+            "status": (
+                "PREFLIGHT_READY"
+                if any(row["preflight_ready"] for row in demo_accounts)
+                else "ACTION_REQUIRED"
+            ),
+            "connected_demo_accounts": len(demo_accounts),
+            "preflight_ready_accounts": sum(
+                1 for row in demo_accounts if row["preflight_ready"]
+            ),
+            "bounded_lifecycle_ready_accounts": sum(
+                1 for row in demo_accounts if row["bounded_lifecycle_ready"]
+            ),
+            "accounts": demo_accounts,
+            "blockers": demo_summary_blockers,
+            "activation_performed": False,
+            "orders_placed_by_readiness_check": 0,
+            "bounded_demo_lifecycle_required": True,
+            "certification_report_required_for_live_activation": True,
+            "note": (
+                "This readiness summary is read-only. It never enables execution "
+                "or places an order."
+            ),
         },
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
