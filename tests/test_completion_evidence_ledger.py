@@ -77,5 +77,24 @@ def test_blocked_external_rows_are_explicitly_fail_closed() -> None:
 
 def test_current_release_boundary_names_active_0045_head() -> None:
     text = LEDGER.read_text(encoding="utf-8")
+    rows = _rows(LEDGER)
+    counts = {
+        status: sum(1 for row in rows if row[1] == status)
+        for status in _ALLOWED
+    }
+
     assert "0045_mt5_credential_retirement" in text
-    assert re.search(r"Current verified head at ledger creation: `?[0-9a-f]{40}`?", text)
+    assert re.search(r"Current verified release head: `?[0-9a-f]{40}`?", text)
+
+    # The human-readable release summary must be mechanically consistent with
+    # the actual ledger rows.  This prevents stale 70/67/3-style bookkeeping
+    # after new requirements or external gates are added.
+    assert f"Tracked requirements: **{len(rows)}**." in text
+    for status in (
+        "VERIFIED",
+        "IMPLEMENTED",
+        "BLOCKED_EXTERNAL",
+        "DEFERRED_WITH_REASON",
+        "NOT_APPLICABLE",
+    ):
+        assert f"`{status}`: **{counts[status]}**." in text
