@@ -595,15 +595,17 @@ async def _probe_metaapi_startup_authorization() -> None:
         result = await probe_metaapi_authorization()
         if result.get("ok"):
             logger.info(
-                "[metaapi_startup_probe] status=PASS provider_status=%s",
+                "[metaapi_startup_probe] status=PASS provider_status=%s token_source=%s",
                 result.get("provider_status"),
+                result.get("token_source"),
             )
             return
         logger.error(
-            "[metaapi_startup_probe] status=FAIL code=%s provider_status=%s provider_code=%s",
+            "[metaapi_startup_probe] status=FAIL code=%s provider_status=%s provider_code=%s candidate_names=%s",
             result.get("code"),
             result.get("provider_status"),
             result.get("provider_code"),
+            result.get("candidate_names"),
         )
     except Exception as exc:
         logger.error(
