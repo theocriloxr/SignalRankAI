@@ -342,6 +342,7 @@ class MetaTraderBrokerLinkRequest(BaseModel):
     broker_name: str | None = Field(default=None, max_length=128)
     account_label: str | None = Field(default=None, max_length=128)
     environment: str = Field(default="unknown", pattern=r"^(unknown|demo|live)$")
+    provisioning_transaction_id: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 class MetaTraderSecureLinkRequest(BaseModel):
@@ -3432,6 +3433,8 @@ async def link_broker_metatrader(
         await assert_connection_capacity(
             int(user["id"]),
             str(user.get("tier") or "free"),
+            platform=payload.platform,
+            account_ref=payload.login,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -3445,12 +3448,21 @@ async def link_broker_metatrader(
         broker_name=payload.broker_name,
         account_label=payload.account_label,
         environment=payload.environment,
+        provisioning_transaction_id=payload.provisioning_transaction_id,
     )
     if not result.get("success"):
-        raise HTTPException(
-            status_code=502,
-            detail=str(result.get("error") or "MetaTrader account linking failed"),
-        )
+        detail = {
+            "code": str(result.get("code") or "metatrader_provisioning_failed"),
+            "message": str(result.get("error") or "MetaTrader account linking failed"),
+            "provider_code": result.get("provider_code"),
+            "provider_status": result.get("provider_status"),
+            "suggested_servers": list(result.get("suggested_servers") or []),
+            "retry_after": result.get("retry_after"),
+            "can_use_secure_link": bool(result.get("can_use_secure_link")),
+            "transaction_id": result.get("transaction_id"),
+        }
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        raise HTTPException(status_code=status_code, detail=detail)
     return result
 
 
@@ -3486,10 +3498,18 @@ async def create_broker_metatrader_secure_link(
         ttl_days=payload.ttl_days,
     )
     if not result.get("success"):
-        raise HTTPException(
-            status_code=502,
-            detail=str(result.get("error") or "Secure MetaTrader linking failed"),
-        )
+        detail = {
+            "code": str(result.get("code") or "metatrader_secure_link_failed"),
+            "message": str(result.get("error") or "Secure MetaTrader linking failed"),
+            "provider_code": result.get("provider_code"),
+            "provider_status": result.get("provider_status"),
+            "suggested_servers": list(result.get("suggested_servers") or []),
+            "retry_after": result.get("retry_after"),
+            "can_use_secure_link": bool(result.get("can_use_secure_link")),
+            "transaction_id": result.get("transaction_id"),
+        }
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        raise HTTPException(status_code=status_code, detail=detail)
     return result
 
 
