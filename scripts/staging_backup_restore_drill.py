@@ -129,6 +129,20 @@ def _cleanup_database(admin_url: str, target_db: str) -> None:
     _psql(admin_url, f'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE)')
 
 
+def _stale_restore_databases(admin_url: str) -> list[str]:
+    raw = _psql(
+        admin_url,
+        "SELECT datname FROM pg_database "
+        "WHERE datname LIKE 'signalrank\\_restore\\_drill\\_%' ESCAPE '\\' "
+        "ORDER BY datname",
+    )
+    names = [line.strip() for line in raw.splitlines() if line.strip()]
+    unsafe = [name for name in names if not SAFE_DB_RE.fullmatch(name)]
+    if unsafe:
+        raise RuntimeError("unsafe_stale_restore_database_name")
+    return names
+
+
 def main() -> int:
     _safe_environment()
     source = _normalize_url(
@@ -148,6 +162,18 @@ def main() -> int:
         raise RuntimeError("unsafe_restore_database_name")
 
     admin_url = _replace_database(source, "postgres")
+
+    stale = _stale_restore_databases(admin_url)
+    if stale:
+        _stage("stale_targets_detected", count=len(stale))
+        if str(os.getenv("STAGING_RESTORE_AUTO_CLEAN_STALE") or "").strip() != "1":
+            raise RuntimeError(
+                "stale_restore_databases_present:auto_cleanup_ack_required"
+            )
+        for stale_db in stale:
+            _stage("stale_cleanup_start", target_database=stale_db)
+            _cleanup_database(admin_url, stale_db)
+            _stage("stale_cleanup_complete", target_database=stale_db)
 
     cleanup_target = str(os.getenv("STAGING_RESTORE_CLEANUP_TARGET") or "").strip()
     if cleanup_target:
@@ -189,6 +215,7 @@ def main() -> int:
                     "pg_dump",
                     "--format=custom",
                     "--compress=6",
+                    "--lock-wait-timeout=30s",
                     "--no-owner",
                     "--no-privileges",
                     "--file",
