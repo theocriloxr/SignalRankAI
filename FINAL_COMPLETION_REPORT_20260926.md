@@ -246,11 +246,22 @@ The current release path has:
 
 ## Deliberately incomplete external claims
 
+Staging backup/restore recovery has since been verified by deployment
+`59a52067-b83f-46bb-83f6-67080b818c7d`: a 199,493,675-byte staging dump
+was restored into an isolated database, Alembic 0045 and nine critical tables
+were verified, the immutable-ledger trigger was present, and cleanup passed
+without source or production mutation.
+
+The read-only demo-account preflight deployment
+`ad501371-bd3a-431c-8683-701e09c05b4f` found zero canonical broker
+connections in staging. Demo execution certification therefore remains
+external and blocked until an explicitly owned demo account is connected.
+
 The following are not claimed complete by this report:
 
 - every declared venue live/sandbox certified;
 - 100,000-user infrastructure load certification;
-- 24-hour+ final production-candidate soak and disaster-recovery exercise;
+- 24-hour+ final production-candidate soak and production-environment recovery exercise; staging PostgreSQL backup/restore recovery is independently verified;
 - real payment settlement/email/OAuth/mobile-store external-provider proof;
 - external artifact signature/attestation;
 - copy-trading/marketplace legal/trust certification;
