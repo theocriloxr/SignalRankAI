@@ -138,3 +138,28 @@ def test_manual_execution_can_target_an_explicit_connected_account() -> None:
     assert "executionConnectionSelect" in app
     assert "connection_id:connection.connection_id" in app
     assert "connection_id: str | None" in api
+
+
+def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    css = source("web/platform_app/styles.css")
+    sw = source("web/platform_app/service-worker.js")
+    assert 'id="compactNav"' in html
+    assert 'id="viewSwitcher"' in html
+    assert "Account & brokers" in html
+    assert "$('#viewSwitcher')?.addEventListener('change'" in app
+    assert "body.session-active #sessionNav{display:none!important}" in css
+    assert "body.session-active .compact-nav{display:block!important" in css
+    assert "signalrank-shell-v19" in sw
+
+
+def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
+    api = source("web/platform_api.py")
+    mt5 = source("services/mt5_client.py")
+    assert '"recommended_resource_slots"' in mt5
+    assert "META_API_PROVISIONING_PROFILE_MAP_JSON" in mt5
+    assert "[metatrader] provisioning_failed" in mt5
+    assert "server_not_found" in api
+    assert "broker_settings_detection_failed" in api
+    assert "provider_rate_limited" in api
