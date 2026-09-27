@@ -403,7 +403,7 @@ async function loadBroker(){
 
     $('#scrollToConnectAccount')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
 
-    $('.broker-action').forEach(button=>button.onclick=async()=>{
+    $$('.broker-action').forEach(button=>button.onclick=async()=>{
       const row=button.closest('[data-connection-id]');
       const connectionId=row?.dataset.connectionId;
       const connection=connections.find(x=>x.connection_id===connectionId);
@@ -473,7 +473,7 @@ async function loadBroker(){
         const retryHint=detail.retry_after?`<p class="muted">Provider retry guidance: ${esc(detail.retry_after)}</p>`:'';
         feedback.className='connection-feedback negative-feedback';
         feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${secureHint}<small>No password is shown or returned. Correct the indicated field before submitting again.</small>`;
-        $('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
+        $$('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
       }
       toast(err.message,true);
     }finally{if(submit)submit.disabled=false}
