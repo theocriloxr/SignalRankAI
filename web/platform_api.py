@@ -3439,7 +3439,7 @@ async def search_broker_metatrader_servers(
     if not result.get("success"):
         code = str(result.get("code") or "server_search_failed")
         raise HTTPException(
-            status_code=503 if code in {"provider_unavailable", "provider_not_configured"} else 502,
+            status_code=503 if code in {"provider_unavailable", "provider_not_configured", "provider_authorization_failed", "provider_permissions_missing"} else 502,
             detail={
                 "code": code,
                 "message": str(result.get("error") or "MetaTrader server search failed"),
@@ -3500,7 +3500,7 @@ async def link_broker_metatrader(
             "can_use_secure_link": bool(result.get("can_use_secure_link")),
             "transaction_id": result.get("transaction_id"),
         }
-        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
         raise HTTPException(status_code=status_code, detail=detail)
     return result
 
@@ -3548,7 +3548,7 @@ async def create_broker_metatrader_secure_link(
             "can_use_secure_link": bool(result.get("can_use_secure_link")),
             "transaction_id": result.get("transaction_id"),
         }
-        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
         raise HTTPException(status_code=status_code, detail=detail)
     return result
 
