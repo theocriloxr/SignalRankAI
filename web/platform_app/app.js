@@ -502,8 +502,12 @@ async function loadBroker(){
         const secureHint=detail.can_use_secure_link?'<p class="muted">You can also try the provider-hosted secure-link flow after confirming the exact server.</p>':'';
         const retryHint=detail.retry_after?`<p class="muted">Provider retry guidance: ${esc(detail.retry_after)}</p>`:'';
         const slotsHint=detail.recommended_resource_slots?`<p class="muted">MetaApi recommends ${esc(detail.recommended_resource_slots)} resource slot(s) for this broker account. An administrator must configure that provider requirement before retrying.</p>`:'';
+        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));
+        const finalHint=operatorFault
+          ?'<small>This is a SignalRankAI → MetaApi integration problem, not an error in your broker login/server. Do not keep resubmitting the same MT5 credentials until the integration token is refreshed.</small>'
+          :'<small>No password is shown or returned. Correct the indicated field before submitting again.</small>';
         feedback.className='connection-feedback negative-feedback';
-        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${slotsHint}${secureHint}<small>No password is shown or returned. Correct the indicated field before submitting again.</small>`;
+        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${slotsHint}${secureHint}${finalHint}`;
         $$('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
       }
       toast(err.message,true);
@@ -556,7 +560,17 @@ async function loadBroker(){
       target.innerHTML=`<p class="positive">Secure credential link created.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a></p><p class="muted">After entering the account credentials there, return here and press Verify on the connection.</p>`;
       window.open(result.configuration_link,'_blank','noopener,noreferrer');
       await loadBroker();
-    }catch(err){toast(err.message,true)}
+    }catch(err){
+      const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
+      const feedback=$('#brokerProvisioningResult');
+      if(feedback){
+        feedback.hidden=false;
+        feedback.className='connection-feedback negative-feedback';
+        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));
+        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Secure link failed')}</strong><p>${esc(err.message)}</p><small>${operatorFault?'This is a SignalRankAI → MetaApi integration authorization problem. Your broker details are not the cause.':'The secure-link request could not be created.'}</small>`;
+      }
+      toast(err.message,true)
+    }
   };
 
   if($('#executionSettingsForm'))$('#executionSettingsForm').onsubmit=async e=>{
