@@ -453,6 +453,24 @@
               </form>
               <div id="executionTermsPanel" class="detail-list"></div>
               <div id="brokerStats" class="detail-list"></div>
+              <section id="demoCertificationPanel" class="demo-certification-card">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">DEMO CERTIFICATION</p>
+                    <h3>Demo → live/prop readiness</h3>
+                    <p class="muted">A demo account must pass the canonical preflight and a bounded broker lifecycle before any later live-money certification can use it as evidence.</p>
+                  </div>
+                  <span id="demoCertificationBadge" class="account-state pending-text">ACTION REQUIRED</span>
+                </div>
+                <div id="demoCertificationSummary" class="detail-list"></div>
+                <div id="demoCertificationAccounts" class="demo-certification-accounts"></div>
+                <div id="demoCertificationEmpty" class="empty-state" hidden>
+                  <strong>No demo account connected yet</strong>
+                  <p>Connect an explicitly owned demo/test account first. Connecting it does not enable trading.</p>
+                  <button id="demoCertificationConnect" class="primary" type="button">Connect demo account</button>
+                </div>
+                <p id="demoCertificationNote" class="muted"></p>
+              </section>
             </div>
           </div>
           <div class="panel-heading connected-heading"><div><p class="eyebrow">ACCOUNT SWITCHER</p><h3>Connected accounts</h3><p>Choose a default route like a trading-terminal account switcher. Switching the default never turns execution on automatically.</p></div><button id="scrollToConnectAccount" class="primary" type="button">+ Add account</button></div>
