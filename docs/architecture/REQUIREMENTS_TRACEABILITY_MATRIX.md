@@ -127,3 +127,10 @@ Architecture companion:
 | SR-SEC-012 | Duplicate MT5 password persistence is retired after canonical credential-envelope migration | INTEGRATION_VERIFIED | `0045_mt5_credential_retirement`, `services/mt5_client.py` | `tests/test_broker_credential_envelope.py`, inventory tests | `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md` | Inventory: legacy=0, duplicate=0, unmigrated=0, readiness=1 |
 | SR-SCHEMA-012 | Staging database and all long-lived runtime roles admit against Alembic 0045 credential-retirement schema | INTEGRATION_VERIFIED | schema/release admission + role runtimes | clean-room locked build + live Railway admission | `0044_broker_credential_envelope`, `0045_mt5_credential_retirement` | Current runtime commit `93039e2e...`; analytics `28c378a5...`; engine `ab915899...`; delivery `0683abb8...`; frontdoor `33ccd5cf...`; all release/schema admission PASS |
 | SR-SEC-013 | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | INTEGRATION_VERIFIED | `scripts/broker_credential_inventory.py` | `tests/test_broker_credential_inventory.py` | evidence doc above | Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
+
+
+## Disaster recovery
+
+| ID | Requirement | Status | Source | Tests | Evidence |
+|---|---|---|---|---|---|
+| SR-DR-010 | Full staging PostgreSQL backup/restore drill proves bounded dump, isolated restore, Alembic/schema recovery, critical data recovery, immutable-ledger trigger recovery and cleanup without source/production mutation | INTEGRATION_VERIFIED | `scripts/staging_backup_restore_drill.py`, `Dockerfile.restore-drill`, staging-only restore-drill service | `tests/test_staging_backup_restore_drill.py`, clean-room DR contract | Deployment `59a52067-b83f-46bb-83f6-67080b818c7d` on `25ac2b06...`: 199,493,675-byte dump; restored head `0045_mt5_credential_retirement`; nine critical tables verified; 48,132 signals + 6 users restored; ledger immutability trigger present; cleanup PASS; source/production mutation false; `docs/evidence/STAGING_BACKUP_RESTORE_DRILL_20260927.md` |
