@@ -461,7 +461,7 @@ async function loadBroker(){
       const groups=Array.isArray(data.brokers)?data.brokers:[];
       if(!resultEl)return;
       resultEl.innerHTML=groups.length?groups.map(group=>`<section class="server-result-group"><strong>${esc(group.broker||'Broker')}</strong><div class="server-result-buttons">${(group.servers||[]).map(item=>`<button class="ghost known-server-choice" type="button" data-broker="${esc(group.broker||'')}" data-server="${esc(item)}">${esc(item)}</button>`).join('')}</div></section>`).join(''):'<p class="muted">No known server match was returned. You can still use an exact server copied from MetaTrader.</p>';
-      $('.known-server-choice').forEach(choice=>choice.onclick=()=>{
+      $$('.known-server-choice').forEach(choice=>choice.onclick=()=>{
         form.elements.server.value=choice.dataset.server||'';
         if(!String(form.elements.broker_name.value||'').trim())form.elements.broker_name.value=choice.dataset.broker||'';
         resultEl.innerHTML=`<p class="positive"><strong>Selected:</strong> ${esc(choice.dataset.server||'')}</p><small class="muted">Confirm this is the same server shown inside your MetaTrader account before connecting.</small>`;
