@@ -18,9 +18,9 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
-- Current verified release head: `3854a153d27e96305efcab9187f3d5b94358c51c`.
+- Current verified release head: `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
 - Baseline engine/delivery/analytics runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
-- Current component heads: frontdoor `3854a153d27e96305efcab9187f3d5b94358c51c`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness-only.
+- Current component heads: frontdoor `34963afc8b5df5d9787e3e6e9e83335419f631ca`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness-only.
 - Tracked requirements: **72**.
 - `VERIFIED`: **68**.
 - `IMPLEMENTED`: **0**.
@@ -32,17 +32,17 @@ The four externally blocked items are intentionally fail-closed: optional provid
 
 ### Superseding staging evidence — 2026-09-27
 
-The current release head is `3854a153d27e96305efcab9187f3d5b94358c51c`.
+The current release head is `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
 Frontdoor is deployed at that exact head; engine, delivery and analytics remain
 on the compatible certified baseline `93039e2e77800c4aa6b9ba1b1a8ce45797814210`
 because the later changes are frontdoor/demo-readiness-only.
 
-- clean-room deployment: `b82b44e2-68bf-4b9b-8fd5-5a02a2f3653e`;
+- clean-room deployment: `b94a2e77-d012-486d-90dc-93d25b303ceb`;
 - Alembic release-chain: `0045_mt5_credential_retirement` PASS;
 - schema audit: PASS, including broker credential-envelope and immutable account-ledger contracts;
-- release provenance/SBOM self-check: PASS at `3854a153...`;
-- targeted clean-room suite: **455 passed**;
-- staging frontdoor: `f0497ffd-837e-4f44-9209-4683624cd20d` at `3854a153...`;
+- release provenance/SBOM self-check: PASS at `34963afc...`;
+- targeted clean-room suite: **457 passed**;
+- staging frontdoor: `f15466a0-eb9e-4f32-9205-3130332c0361` at `34963afc...`;
 - staging engine: `ab915899-6177-4608-b8a3-7b539537e25b` at `93039e2e...`;
 - staging delivery/outcome: `0683abb8-0128-4266-869c-14f34d821658` at `93039e2e...`;
 - staging analytics: `28c378a5-52e8-4f15-a877-e26a82b82ea6` at `93039e2e...`.
@@ -153,7 +153,7 @@ re-enter resend recovery after queue expiry.
 | SR-SEC-013 | VERIFIED | STAGING / INTEGRATION | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | `scripts/broker_credential_inventory.py` · `tests/test_broker_credential_inventory.py` · evidence doc above \| Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
 
 | SR-DR-010 | VERIFIED | STAGING / INTEGRATION | Full staging PostgreSQL backup/restore drill proves bounded dump, isolated restore, 0045 schema/data recovery, immutable-ledger trigger recovery and cleanup without source/production mutation | `scripts/staging_backup_restore_drill.py`, `Dockerfile.restore-drill` · `tests/test_staging_backup_restore_drill.py` · deployment `59a52067-b83f-46bb-83f6-67080b818c7d`: dump 199,493,675 bytes, restore 297.755s, restored head 0045, 48,132 signals + 6 users, cleanup PASS, source/production mutation false |
-| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | A real canonical DEMO broker account must be linked, read-only verified, policy-configured, HEALTHY-reconciled and exercised through bounded canonical order/modify/close/reconcile certification before any demo/live promotion claim | `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · staging preflight `ad501371-bd3a-431c-8683-701e09c05b4f`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
+| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | A real canonical DEMO broker account must be linked, read-only verified, policy-configured, HEALTHY-reconciled and exercised through bounded canonical order/modify/close/reconcile certification before any demo/live promotion claim | `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · staging preflight `e8582346-1bcf-4476-aec9-4de033ee0a28` on marker `41b8049e...`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
 
 
 ## Release rule
