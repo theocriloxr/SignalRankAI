@@ -87,6 +87,7 @@ if os.path.isdir(_PLATFORM_DIR):
 
     @app.get("/app", include_in_schema=False)
     @app.get("/activate", include_in_schema=False)
+    @app.get("/billing/complete", include_in_schema=False)
     async def platform_application() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "index.html"))
 
