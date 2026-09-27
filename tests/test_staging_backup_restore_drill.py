@@ -24,3 +24,8 @@ def test_restore_drill_uses_consistent_dump_isolated_database_and_cleanup() -> N
     assert "dump_sha256" in text
     assert "dump_seconds" in text
     assert "restore_seconds" in text
+
+
+def test_restore_drill_image_uses_postgresql_18_client() -> None:
+    dockerfile = Path("Dockerfile.restore-drill").read_text(encoding="utf-8")
+    assert "FROM postgres:18-alpine" in dockerfile
