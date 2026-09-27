@@ -4,3 +4,5 @@ Purpose: MT5 provisioning diagnostics, multi-account UX, Telegram identity-state
 Base certified staging: 878747fcd084e572b8afcf18272e38ecf5db7bed
 Feature head before marker: 5c11717986abe5ef73054f60c3db3a4a25eacf7b
 Scope: staging only. Does not authorize live/real-money execution.
+
+Retry 2: release-gate compatibility fixed; dedicated MT5 multi-account/Telegram UX regression suite added to Docker build.
