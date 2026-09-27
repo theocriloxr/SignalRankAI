@@ -1,0 +1,4 @@
+SignalRank staging DEMO account read-only preflight refresh.
+Purpose: re-evaluate canonical demo-account blockers after provider-backed verification/reconciliation onboarding fixes.
+This trigger does not enable execution or payments and does not place broker orders.
+No secrets are stored in this marker.
