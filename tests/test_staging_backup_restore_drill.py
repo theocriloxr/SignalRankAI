@@ -34,9 +34,12 @@ def test_restore_drill_image_uses_postgresql_18_client() -> None:
 def test_restore_drill_cleanup_is_separate_and_final_pass_requires_cleanup() -> None:
     text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
     helper = text[text.index("def _cleanup_database"):text.index("def main")]
-    assert "pg_terminate_backend" in helper
-    assert 'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE)' in helper
-    assert "pg_terminate_backend" not in helper.split("DROP DATABASE")[0].split("_psql(")[-1]
+    assert helper.count("_psql(") == 2
+    first_call, second_call = helper.split("_psql(", 2)[1:]
+    assert "pg_terminate_backend" in first_call
+    assert "DROP DATABASE" not in first_call
+    assert 'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE)' in second_call
+    assert "pg_terminate_backend" not in second_call
     assert "STAGING_BACKUP_RESTORE_VERIFIED_PENDING_CLEANUP" in text
     assert "STAGING_BACKUP_RESTORE_DRILL_PASS" in text
     finally_block = text[text.index("finally:"):]
