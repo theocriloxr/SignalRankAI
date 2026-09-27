@@ -18,6 +18,7 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
+- Current verified head at ledger creation: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
 - Baseline four-role staging runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
 - Current component maintenance head: frontdoor `3379cae487d59f1f28edcedb1a1b362a33cef419`; engine/delivery/analytics remain on the baseline because the patch is frontdoor-only.
 - Tracked requirements: **70**.
