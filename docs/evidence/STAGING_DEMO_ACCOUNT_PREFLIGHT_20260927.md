@@ -2,8 +2,8 @@
 
 Status: **BLOCKED_EXTERNAL**
 
-Railway deployment: `20be1193-0339-461f-8560-a68ca75bd79b`  
-Rollout commit: `cf70d1c817b77868c948c1229224f07633d1ec1b`
+Railway deployment: `9757cac0-7f68-466a-a9a0-8e458f1390cd`  
+Rollout commit: `3656eabaf56a7468a49667e078289d4bf00028af`
 
 ## Purpose
 
@@ -18,13 +18,19 @@ non-zero by design because a BLOCKED certification preflight is fail-closed;
 Railway therefore labels the short-lived job `CRASHED`, which is expected for
 this blocked result and is not a frontdoor/runtime crash.
 
-This latest refresh ran after the MT5 linking-copy safety rollout on frontdoor deployment `33c9b981-29c0-4fef-890f-b314e817a566` / `d09535105bf44...`. The frontdoor retains the explicit safe DEMO-certification preparation workflow and the fail-closed MT5 linking/status copy.
-Frontdoor deployment: `713ee164-5002-4499-a7cf-66f67dba0802`.
-That release passed Alembic `0045` schema admission, decomposed
-`mode=frontdoor` ownership, MetaApi startup probing and `/healthz=200`.
-The preparation action performs provider-backed read-only verification and
-reconciliation, applies a bounded `DEMO/MANUAL` policy, and deliberately leaves
-execution disabled. It cannot place an order or activate live money.
+This refresh ran after the secure Broker Hub handoff rollout on frontdoor
+deployment `68219e01-9b4a-48a8-8abb-9e4372f634f9` /
+`c4d1e6d6ec5e...`. Telegram no longer accepts broker passwords in chat; the
+linking path sends the authenticated user to Broker Hub so canonical account
+ownership and credential-envelope storage remain server-bound.
+
+That frontdoor passed Alembic `0045` schema admission, decomposed
+`mode=frontdoor` ownership, **356 build tests**, all 12 readiness checks,
+209-handler Telegram readiness, webhook pending=0 and `/healthz=200`.
+Clean-room `c4d1e6d6...` passed **469 targeted tests**. The existing
+preparation action still performs provider-backed read-only verification and
+reconciliation, applies a bounded `DEMO/MANUAL` policy, and deliberately
+leaves execution disabled. It cannot place an order or activate live money.
 
 ## Environment / schema evidence
 
