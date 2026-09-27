@@ -12,7 +12,7 @@ def _mt5_not_configured_message() -> str:
     )
 
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Open the secure first-party Broker Hub; never collect broker passwords in Telegram."""
+    """Open the secure first-party Broker Hub. Linking does not enable trading; never collect broker passwords in Telegram."""
     if update.effective_user is None or update.message is None:
         return
 
