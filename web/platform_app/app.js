@@ -294,7 +294,15 @@ async function loadBroker(){
           accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`realized P/L ${fmt(accountPerf.realized_pnl||0)}`:''
         ].filter(Boolean).join(' · ');
         const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
-        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
+        const readiness=x.readiness||{};
+        const blockers=Array.isArray(readiness.blockers)?readiness.blockers:[];
+        const readinessText=readiness.execution_ready
+          ?'Account-level execution prerequisites ready · every trade still passes live safety gates'
+          :blockers.length
+            ?'Execution blocked · '+blockers.map(item=>item.message||item.code).join(' · ')
+            :'Execution readiness not yet evaluated';
+        const readinessClass=readiness.execution_ready?'positive':'muted';
+        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small class="${readinessClass}">${esc(readinessText)}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
       }).join(''):'<p class="muted">No trading accounts connected yet.</p>';
     }
 
