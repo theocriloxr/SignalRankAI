@@ -2100,6 +2100,19 @@ async def create_telegram_link(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     """Create a one-time Telegram deep-link for an authenticated app user."""
+    if user.get("telegram_user_id") is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "telegram_already_linked", "message": "Telegram is already linked to this SignalRank account."},
+        )
+    if str(user.get("telegram_link_status") or "").strip().lower() == "merge_review":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "telegram_verified_merge_pending",
+                "message": "Telegram ownership is already verified. Account history reconciliation is pending; do not reconnect.",
+            },
+        )
     async with get_session() as session:
         request = await create_telegram_link_request(session, user_id=int(user["id"]))
         await session.commit()
