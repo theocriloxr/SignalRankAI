@@ -53,6 +53,58 @@ _PLATFORM_CATALOG: tuple[dict[str, Any], ...] = (
         "live_supported": True,
     },
     {
+        "platform": "binance",
+        "name": "Binance",
+        "connector": "binance",
+        "asset_classes": ["crypto"],
+        "connection_modes": ["api_key"],
+        "execution_adapter": "integration",
+        "demo_supported": True,
+        "live_supported": True,
+        "note": "Connection supported; execution stays disabled until provider-side permissions and the Binance execution adapter are certified.",
+    },
+    {
+        "platform": "binanceus",
+        "name": "Binance.US",
+        "connector": "binanceus",
+        "asset_classes": ["crypto"],
+        "connection_modes": ["api_key"],
+        "execution_adapter": "integration",
+        "demo_supported": False,
+        "live_supported": True,
+        "note": "Connection supported; execution stays disabled until provider-side permissions and the Binance.US execution adapter are certified.",
+    },
+    {
+        "platform": "okx",
+        "name": "OKX",
+        "connector": "okx",
+        "asset_classes": ["crypto"],
+        "connection_modes": ["api_key"],
+        "execution_adapter": "connection_only",
+        "demo_supported": True,
+        "live_supported": True,
+    },
+    {
+        "platform": "coinbase",
+        "name": "Coinbase Advanced",
+        "connector": "coinbase_advanced",
+        "asset_classes": ["crypto"],
+        "connection_modes": ["api_key", "oauth"],
+        "execution_adapter": "connection_only",
+        "demo_supported": False,
+        "live_supported": True,
+    },
+    {
+        "platform": "kraken",
+        "name": "Kraken",
+        "connector": "kraken",
+        "asset_classes": ["crypto"],
+        "connection_modes": ["api_key"],
+        "execution_adapter": "connection_only",
+        "demo_supported": False,
+        "live_supported": True,
+    },
+    {
         "platform": "ctrader",
         "name": "cTrader",
         "connector": "ctrader_openapi",
@@ -261,6 +313,52 @@ async def resolve_execution_connection(
         session.expunge(row)
         await session.rollback()
         return row
+
+
+async def register_platform_exchange_connection(
+    user_id: int,
+    *,
+    provider: str,
+    api_key: str,
+    payload: dict[str, Any],
+    permissions_verified: bool,
+) -> dict[str, Any]:
+    """Persist a first-party web/mobile exchange account under canonical users.id.
+
+    A credential can be stored before an execution adapter is certified, but
+    unverified provider permissions keep the account non-ready and execution
+    remains disabled.
+    """
+    provider_n=str(provider or "").strip().lower()
+    if provider_n not in {"bybit", "binance", "binanceus"}:
+        raise ValueError("unsupported_exchange_provider")
+    sandbox=payload.get("sandbox")
+    if type(sandbox) is not bool:
+        raise ValueError("Broker demo/live classification is required")
+    permissions=dict(payload.get("permissions") or {})
+    account_ref=hashlib.sha256(
+        f"{provider_n}:{sandbox}:{api_key}".encode()
+    ).hexdigest()
+    return await upsert_connection(
+        user_id=int(user_id),
+        platform=provider_n,
+        connector=provider_n,
+        account_ref=account_ref,
+        external_account_id=None,
+        environment="demo" if sandbox else "live",
+        auth_mode="api_key",
+        credential_payload=dict(payload),
+        status="verified" if permissions_verified else "pending_verification",
+        permissions=permissions,
+        capabilities={
+            "credentials_stored": True,
+            "provider_permissions_verified": bool(permissions_verified),
+        },
+        meta={
+            "account_classification": "DEMO" if sandbox else "LIVE_PERSONAL",
+            "provider_permissions_verified": bool(permissions_verified),
+        },
+    )
 
 
 async def register_exchange_connection(
@@ -640,6 +738,8 @@ __all__ = [
     "delete_connection",
     "list_connections",
     "platform_catalog",
+    "register_exchange_connection",
+    "register_platform_exchange_connection",
     "public_connection",
     "set_default_connection",
     "set_execution_enabled",
