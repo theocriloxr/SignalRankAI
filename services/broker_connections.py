@@ -404,16 +404,56 @@ async def register_exchange_connection(
     )
 
 
-async def assert_connection_capacity(user_id: int, tier: str) -> None:
+async def assert_connection_capacity(
+    user_id: int,
+    tier: str,
+    *,
+    platform: str | None = None,
+    account_ref: str | None = None,
+    external_account_id: str | None = None,
+) -> None:
+    """Reject only genuinely new accounts once the plan limit is reached.
+
+    Re-linking an account already owned by the same canonical user must not be
+    blocked by capacity; upsert_connection will rotate/update that record.
+    """
     limit = _connection_limit(tier)
     if limit <= 0:
         raise PermissionError("This plan does not include broker connections")
     async with get_session(label="broker.connections.capacity", timeout_seconds=6.0) as session:
+        params: dict[str, Any] = {"uid": int(user_id)}
+        existing = None
+        platform_n = str(platform or "").strip().lower()
+        account_ref_n = str(account_ref or "").strip()
+        external_n = str(external_account_id or "").strip()
+        if platform_n and account_ref_n:
+            existing = (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM broker_connections "
+                        "WHERE user_id=:uid AND platform=:platform AND account_ref=:account_ref LIMIT 1"
+                    ),
+                    {"uid": int(user_id), "platform": platform_n, "account_ref": account_ref_n},
+                )
+            ).first()
+        elif external_n:
+            existing = (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM broker_connections "
+                        "WHERE user_id=:uid AND external_account_id=:external_account_id LIMIT 1"
+                    ),
+                    {"uid": int(user_id), "external_account_id": external_n},
+                )
+            ).first()
+        if existing:
+            await session.rollback()
+            return
         count = int(
             (
                 await session.execute(
                     text("SELECT COUNT(*) FROM broker_connections WHERE user_id=:uid"),
-                    {"uid": int(user_id)},
+                    params,
                 )
             ).scalar_one()
             or 0
@@ -422,7 +462,7 @@ async def assert_connection_capacity(user_id: int, tier: str) -> None:
     if count >= limit:
         raise PermissionError(
             f"Your plan supports {limit} connected trading account(s). "
-            "Upgrade or remove an existing connection before adding another."
+            "Remove an account or use a plan with a higher account allowance before adding another."
         )
 
 
