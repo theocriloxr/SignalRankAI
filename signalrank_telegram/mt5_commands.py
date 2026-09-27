@@ -32,8 +32,8 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     missing_vars = []
     if not (os.getenv("ENCRYPTION_KEY") or "").strip():
         missing_vars.append("ENCRYPTION_KEY")
-    if not (os.getenv("META_API_TOKEN") or "").strip():
-        missing_vars.append("META_API_TOKEN")
+    if not (os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
+        missing_vars.append("META_API_TOKEN|METAAPI_TOKEN")
     if missing_vars:
         await update.message.reply_text(_mt5_not_configured_message())
         return
