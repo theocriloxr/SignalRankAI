@@ -178,3 +178,5 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
   .card-grid,.compact-card-grid{grid-template-columns:1fr}
   .broker-card-actions button{flex:1 1 100%}
 }
+
+.execution-account-select{display:grid;gap:.45rem;margin:1rem 0;color:var(--muted);font-size:.8rem}.execution-account-select select{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);padding:12px;outline:none}.execution-account-select select:focus{border-color:var(--cyan)}
