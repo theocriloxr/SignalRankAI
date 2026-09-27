@@ -151,7 +151,7 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v21" in sw
+    assert "signalrank-shell-v22" in sw
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
@@ -242,4 +242,23 @@ def test_runtime_actively_probes_metaapi_token_instead_of_presence_only() -> Non
     assert "[metaapi_startup_probe] status=FAIL" in runtime
     assert "provider_permissions_missing" in api
     assert "integration problem, not an error in your broker login/server" in app
-    assert "signalrank-shell-v21" in sw
+    assert "signalrank-shell-v22" in sw
+
+
+def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
+    mt5 = source("services/mt5_client.py")
+    api = source("web/platform_api.py")
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    css = source("web/platform_app/styles.css")
+    sw = source("web/platform_app/service-worker.js")
+    assert "_METAAPI_AUTH_CACHE" in mt5
+    assert "META_API_AUTH_PROBE_CACHE_SECONDS" in mt5
+    assert '"provider_health": {' in api
+    assert '"metaapi": metaapi_health' in api
+    assert 'id="brokerProviderHealth"' in html
+    assert "MetaTrader connection temporarily unavailable" in app
+    assert "Your MT4/MT5 login, password and server are not the cause" in app
+    assert "control.disabled=!metaapiReady" in app
+    assert "provider-health-error" in css
+    assert "signalrank-shell-v22" in sw
