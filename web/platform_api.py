@@ -3918,8 +3918,9 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
     _assert_feature(user, "broker_connection")
     uid = int(user["id"])
     from services.broker_connections import list_connections, platform_catalog
-    from services.mt5_client import get_platform_mt5_link_status
+    from services.mt5_client import get_platform_mt5_link_status, probe_metaapi_authorization
 
+    metaapi_health = await probe_metaapi_authorization()
     mt5 = await get_platform_mt5_link_status(uid)
     connections = await list_connections(uid)
     platforms = platform_catalog(str(user.get("tier") or "free"))
@@ -4169,6 +4170,9 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
         "mt5": mt5,
         "connections": enriched_connections,
         "platforms": platforms,
+        "provider_health": {
+            "metaapi": metaapi_health,
+        },
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
             "trading_mode": str(prefs.trading_mode or "paper"),
