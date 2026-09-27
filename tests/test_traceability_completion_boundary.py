@@ -11,6 +11,7 @@ _ALLOWED_EXTERNAL = {
     "SR-PROVIDER-008",
     "SR-SCALE-003",
     "SR-MARKETPLACE-001",
+    "SR-DEMO-010",
 }
 
 
