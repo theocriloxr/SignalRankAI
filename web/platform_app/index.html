@@ -408,7 +408,11 @@
                   <label>Account type<select name="environment"><option value="demo">Demo</option><option value="unknown">Detect automatically</option><option value="live">Live</option></select></label>
                 </div>
                 <label>Broker / company<input name="broker_name" maxlength="128" placeholder="e.g. Assexmarkets Global Limited" /><small>The company shown in your MetaTrader account details.</small></label>
-                <label class="server-field">Exact MetaTrader server<input name="server" maxlength="128" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. AssexmarketsGlobal-Trade" required /><small>Copy this exactly from MetaTrader → account details → Server. Spaces, hyphens and suffixes matter.</small></label>
+                <div class="server-field">
+                  <label>Exact MetaTrader server<input name="server" maxlength="128" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. AssexmarketsGlobal-Trade" required /><small>Copy this exactly from MetaTrader → account details → Server. Spaces, hyphens and suffixes matter.</small></label>
+                  <div class="server-search-actions"><button id="brokerServerLookupButton" class="ghost" type="button">Find broker server</button><small>No trading password is sent when searching.</small></div>
+                  <div id="brokerServerLookupResult" class="server-lookup-result" hidden></div>
+                </div>
                 <div class="two-field-grid">
                   <label>Trading login<input name="login" maxlength="64" inputmode="numeric" autocomplete="username" placeholder="MT account number" required /></label>
                   <label>Account label<input name="account_label" maxlength="128" placeholder="e.g. Assex demo 1" /><small>Only for your own organization inside SignalRank.</small></label>
