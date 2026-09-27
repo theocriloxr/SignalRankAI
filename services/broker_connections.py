@@ -481,6 +481,7 @@ async def upsert_connection(
     secret_encrypted: str | None = None,
     server: str | None = None,
     status: str = "pending",
+    verified_at: datetime | None = None,
     permissions: dict[str, Any] | None = None,
     capabilities: dict[str, Any] | None = None,
     execution_enabled: bool = False,
@@ -622,6 +623,11 @@ async def upsert_connection(
             row.credential_revision = 0
         row.server = str(server).strip()[:128] if server else row.server
         row.status = str(status or "pending").strip().lower()[:32]
+        if verified_at is not None:
+            # Only a provider-backed caller may supply this timestamp.  A
+            # textual "verified" status alone never manufactures verification.
+            row.verified_at = verified_at
+            row.last_health_at = verified_at
         row.permissions = dict(permissions or row.permissions or {})
         row.capabilities = dict(capabilities or row.capabilities or {})
         # Never let a relink implicitly turn execution on.
