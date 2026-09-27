@@ -35,7 +35,7 @@ def test_secure_metaapi_handoff_is_persisted_and_reconciled_on_return() -> None:
     app = source("web/platform_app/app.js")
     mt5 = source("services/mt5_client.py")
     assert "SECURE_LINK_PENDING_KEY" in app
-    assert "sessionStorage.setItem(SECURE_LINK_PENDING_KEY" in app
+    assert "localStorage.setItem(SECURE_LINK_PENDING_KEY" in app
     assert "reconcilePendingSecureLink" in app
     assert "visibilitychange" in app
     assert "/verify" in app
@@ -53,6 +53,8 @@ def test_paystack_return_has_spa_route_and_provider_verified_confirmation() -> N
     assert 'paid_user_id != int(user["id"])' in api
     assert 'process_event({"event": "charge.success", "data": transaction})' in api
     assert "location.pathname==='/billing/complete'" in app
+    assert "confirmPendingBillingReturn" in app
+    assert "state.pendingBillingReference" in app
 
 
 def test_transactional_email_defaults_to_crilox_hello_identity() -> None:
