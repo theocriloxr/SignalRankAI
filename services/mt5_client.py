@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 _METAAPI_AUTH_CACHE: tuple[float, Dict[str, Any]] | None = None
+_METAAPI_ACTIVE_TOKEN_ENV: str | None = None
 
 
 def _safe_error_body(body: str) -> str:
@@ -201,8 +202,34 @@ def _provisioning_base() -> str:
     return f"https://mt-provisioning-api-v1.{domain}/users/current/accounts"
 
 
-def _headers() -> Dict[str, str]:
-    token = (os.getenv("META_API_TOKEN") or "").strip()
+def _metaapi_token_candidates() -> list[tuple[str, str]]:
+    """Return configured MetaApi token aliases without exposing secret values."""
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for env_name in ("META_API_TOKEN", "METAAPI_TOKEN"):
+        value = str(os.getenv(env_name) or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        candidates.append((env_name, value))
+    return candidates
+
+
+def _selected_metaapi_token() -> tuple[str | None, str]:
+    global _METAAPI_ACTIVE_TOKEN_ENV
+    if _METAAPI_ACTIVE_TOKEN_ENV:
+        value = str(os.getenv(_METAAPI_ACTIVE_TOKEN_ENV) or "").strip()
+        if value:
+            return _METAAPI_ACTIVE_TOKEN_ENV, value
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+    candidates = _metaapi_token_candidates()
+    return candidates[0] if candidates else (None, "")
+
+
+def _headers(token_override: str | None = None) -> Dict[str, str]:
+    token = str(token_override or "").strip()
+    if not token:
+        _, token = _selected_metaapi_token()
     return {
         "auth-token": token,
         "Content-Type": "application/json",
@@ -211,13 +238,8 @@ def _headers() -> Dict[str, str]:
 
 
 async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
-    """Validate the configured MetaApi auth token without broker credentials.
-
-    Results are cached briefly so loading the Broker workspace does not create
-    an external provider request on every render. A Railway variable change
-    causes a process restart, which clears this cache.
-    """
-    global _METAAPI_AUTH_CACHE
+    """Validate configured MetaApi token aliases without broker credentials."""
+    global _METAAPI_AUTH_CACHE, _METAAPI_ACTIVE_TOKEN_ENV
 
     ttl = max(
         5.0,
@@ -232,43 +254,71 @@ async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
         if now - cached_at <= ttl:
             return dict(cached)
 
-    if not _check_token():
+    candidates = _metaapi_token_candidates()
+    if not candidates:
         result = {
             "ok": False,
             "configured": False,
             "code": "provider_not_configured",
             "provider_status": None,
+            "token_source": None,
+            "candidate_names": [],
+        }
+        _METAAPI_AUTH_CACHE = (now, result)
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+        return dict(result)
+
+    failures: list[Dict[str, Any]] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            for env_name, token in candidates:
+                async with session.get(
+                    _provisioning_base(),
+                    headers=_headers(token),
+                    params={"limit": "1"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status == 200:
+                        _METAAPI_ACTIVE_TOKEN_ENV = env_name
+                        result = {
+                            "ok": True,
+                            "configured": True,
+                            "code": "authorized",
+                            "provider_status": 200,
+                            "token_source": env_name,
+                            "candidate_names": [name for name, _ in candidates],
+                        }
+                        _METAAPI_AUTH_CACHE = (now, result)
+                        return dict(result)
+                    mapped = _metaapi_provisioning_error(resp.status, body)
+                    failures.append(
+                        {
+                            "token_source": env_name,
+                            "code": str(mapped.get("code") or "provider_probe_failed"),
+                            "provider_status": int(resp.status),
+                            "provider_code": mapped.get("provider_code"),
+                        }
+                    )
+
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+        primary = failures[0] if failures else {
+            "code": "provider_probe_failed",
+            "provider_status": None,
+            "provider_code": None,
+        }
+        result = {
+            "ok": False,
+            "configured": True,
+            "code": primary.get("code"),
+            "provider_status": primary.get("provider_status"),
+            "provider_code": primary.get("provider_code"),
+            "token_source": None,
+            "candidate_names": [name for name, _ in candidates],
+            "failed_candidate_names": [str(item.get("token_source")) for item in failures],
         }
         _METAAPI_AUTH_CACHE = (now, result)
         return dict(result)
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                _provisioning_base(),
-                headers=_headers(),
-                params={"limit": "1"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                body = await resp.text()
-                if resp.status == 200:
-                    result = {
-                        "ok": True,
-                        "configured": True,
-                        "code": "authorized",
-                        "provider_status": 200,
-                    }
-                else:
-                    mapped = _metaapi_provisioning_error(resp.status, body)
-                    result = {
-                        "ok": False,
-                        "configured": True,
-                        "code": str(mapped.get("code") or "provider_probe_failed"),
-                        "provider_status": int(resp.status),
-                        "provider_code": mapped.get("provider_code"),
-                    }
-                _METAAPI_AUTH_CACHE = (now, result)
-                return dict(result)
     except Exception as exc:
         logger.warning("[metaapi_auth_probe] unavailable error_type=%s", type(exc).__name__)
         result = {
@@ -276,6 +326,8 @@ async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
             "configured": True,
             "code": "provider_unavailable",
             "provider_status": None,
+            "token_source": None,
+            "candidate_names": [name for name, _ in candidates],
         }
         _METAAPI_AUTH_CACHE = (now, result)
         return dict(result)
@@ -381,8 +433,8 @@ def _quote_max_age_seconds() -> float:
 
 
 def _check_token() -> bool:
-    if not (os.getenv("META_API_TOKEN") or "").strip():
-        logger.error("[mt5_client] META_API_TOKEN is not set")
+    if not _metaapi_token_candidates():
+        logger.error("[mt5_client] MetaApi token is not set (META_API_TOKEN/METAAPI_TOKEN)")
         return False
     return True
 
