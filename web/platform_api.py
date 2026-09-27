@@ -321,6 +321,19 @@ class SignalFeedbackRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=4000)
 
 
+class ExchangeBrokerLinkRequest(BaseModel):
+    provider: str = Field(pattern=r"^(bybit|binance|binanceus)$")
+    api_key: str = Field(min_length=8, max_length=512)
+    api_secret: str = Field(min_length=8, max_length=512)
+    passphrase: str | None = Field(default=None, max_length=512)
+    sandbox: bool
+    read: bool = True
+    trade: bool = True
+    withdraw: bool = False
+    internal_transfer: bool = False
+    account_label: str | None = Field(default=None, max_length=128)
+
+
 class MetaTraderBrokerLinkRequest(BaseModel):
     platform: str = Field(pattern=r"^(mt4|mt5)$")
     login: str = Field(min_length=1, max_length=64)
@@ -3307,6 +3320,93 @@ async def broker_connections(user: dict[str, Any] = Depends(current_user)) -> di
     from services.broker_connections import list_connections
 
     return {"connections": await list_connections(int(user["id"]))}
+
+
+@router.post("/broker/exchange")
+async def link_broker_exchange(
+    payload: ExchangeBrokerLinkRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Connect an exchange account through the canonical encrypted account model."""
+    _assert_feature(user, "broker_connection")
+    if not is_encryption_available():
+        raise HTTPException(status_code=503, detail="Secure broker credential storage is unavailable")
+    if not payload.read or not payload.trade or payload.withdraw or payload.internal_transfer:
+        raise HTTPException(
+            status_code=422,
+            detail="Exchange API credentials must allow read+trade and must disable withdrawal/internal-transfer permissions",
+        )
+
+    from services.broker_connections import (
+        assert_connection_capacity,
+        register_platform_exchange_connection,
+    )
+    try:
+        await assert_connection_capacity(int(user["id"]), str(user.get("tier") or "free"))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    provider=payload.provider.strip().lower()
+    permissions={
+        "read": True,
+        "trade": True,
+        "withdraw": False,
+        "internal_transfer": False,
+    }
+    permissions_verified=False
+    verification_note="Provider-side permission verification is required before execution can be enabled."
+
+    if provider == "bybit":
+        from services.bybit_client import (
+            BybitCredentials,
+            BybitError,
+            BybitPermissionError,
+            BybitV5Client,
+        )
+        try:
+            verifier=BybitV5Client(
+                BybitCredentials(payload.api_key, payload.api_secret, bool(payload.sandbox))
+            )
+            verified=await verifier.verify_trade_only_key(
+                require_ip_binding=str(os.getenv("BYBIT_REQUIRE_IP_BINDING") or "1").lower()
+                in {"1","true","yes","on"}
+            )
+            permissions.update(dict(verified or {}))
+            permissions_verified=True
+            verification_note="Provider-side read/trade permissions verified; execution remains separately disabled."
+        except (BybitPermissionError, BybitError) as exc:
+            raise HTTPException(status_code=422, detail=f"Bybit credential verification failed: {exc}") from exc
+
+    credential_payload={
+        "provider": provider,
+        "api_key": payload.api_key,
+        "api_secret": payload.api_secret,
+        "passphrase": payload.passphrase,
+        "sandbox": bool(payload.sandbox),
+        "permissions": permissions,
+        "account_label": payload.account_label,
+    }
+    try:
+        connection=await register_platform_exchange_connection(
+            int(user["id"]),
+            provider=provider,
+            api_key=payload.api_key,
+            payload=credential_payload,
+            permissions_verified=permissions_verified,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "connection": connection,
+        "permissions_verified": permissions_verified,
+        "execution_enabled": False,
+        "verification_note": verification_note,
+        "message": (
+            "Account connected securely. Trading is not enabled by connecting credentials; "
+            "configure account risk policy, verify the broker, and explicitly enable execution."
+        ),
+    }
 
 
 @router.post("/broker/metatrader")
