@@ -18,36 +18,39 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
-- Current verified head at ledger creation: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
-- Baseline four-role staging runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
-- Current component maintenance head: frontdoor `3379cae487d59f1f28edcedb1a1b362a33cef419`; engine/delivery/analytics remain on the baseline because the patch is frontdoor-only.
-- Tracked requirements: **70**.
-- `VERIFIED`: **67**.
+- Current verified release head: `3854a153d27e96305efcab9187f3d5b94358c51c`.
+- Baseline engine/delivery/analytics runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
+- Current component heads: frontdoor `3854a153d27e96305efcab9187f3d5b94358c51c`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness-only.
+- Tracked requirements: **72**.
+- `VERIFIED`: **68**.
 - `IMPLEMENTED`: **0**.
-- `BLOCKED_EXTERNAL`: **3**.
+- `BLOCKED_EXTERNAL`: **4**.
 - `DEFERRED_WITH_REASON`: **0**.
 - `NOT_APPLICABLE`: **0**.
 
-The three externally blocked items are intentionally fail-closed: optional provider activation, representative 100k/20k scale certification, and public copy-marketplace activation. Their blocked status does **not** activate the associated capability.
+The four externally blocked items are intentionally fail-closed: optional provider activation, representative 100k/20k scale certification, public copy-marketplace activation, and canonical broker DEMO-account certification. Their blocked status does **not** activate the associated capability.
 
 ### Superseding staging evidence — 2026-09-27
 
-The current staging runtime and clean-room verifier are aligned on commit
-`93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
+The current release head is `3854a153d27e96305efcab9187f3d5b94358c51c`.
+Frontdoor is deployed at that exact head; engine, delivery and analytics remain
+on the compatible certified baseline `93039e2e77800c4aa6b9ba1b1a8ce45797814210`
+because the later changes are frontdoor/demo-readiness-only.
 
-- clean-room deployment: `e2ef6763-34a8-4f2c-9e85-00e978e82256`;
+- clean-room deployment: `b82b44e2-68bf-4b9b-8fd5-5a02a2f3653e`;
 - Alembic release-chain: `0045_mt5_credential_retirement` PASS;
 - schema audit: PASS, including broker credential-envelope and immutable account-ledger contracts;
-- release provenance/SBOM self-check: PASS;
-- targeted clean-room suite: **411 passed**;
-- staging frontdoor: `33ccd5cf-9e60-495e-b872-cafecb41f241`;
-- staging engine: `ab915899-6177-4608-b8a3-7b539537e25b`;
-- staging delivery/outcome: `0683abb8-0128-4266-869c-14f34d821658`;
-- staging analytics: `28c378a5-52e8-4f15-a877-e26a82b82ea6`.
+- release provenance/SBOM self-check: PASS at `3854a153...`;
+- targeted clean-room suite: **455 passed**;
+- staging frontdoor: `f0497ffd-837e-4f44-9209-4683624cd20d` at `3854a153...`;
+- staging engine: `ab915899-6177-4608-b8a3-7b539537e25b` at `93039e2e...`;
+- staging delivery/outcome: `0683abb8-0128-4266-869c-14f34d821658` at `93039e2e...`;
+- staging analytics: `28c378a5-52e8-4f15-a877-e26a82b82ea6` at `93039e2e...`.
 
 All four long-lived roles passed release-source and `0045` schema admission.
-Frontdoor reports `engine=false` and `worker=false`; the other roles boot only
-their declared dedicated runtime modes.
+The live frontdoor reports `mode=frontdoor`, `http=true`, `telegram=true`,
+`engine=false`, `worker=false`, Telegram webhook active, and `/healthz=200`.
+The other roles boot only their declared dedicated runtime modes.
 
 ### Frontdoor delivery-terminal maintenance — 2026-09-27
 
