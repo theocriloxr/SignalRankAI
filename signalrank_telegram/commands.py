@@ -7394,7 +7394,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # --------- MT5 LINK COMMAND ---------
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Link a MetaTrader 5 account for one-click trade execution.
+	"""Link a MetaTrader 5 account without granting execution permission.
 
 	Usage: /mt5_link <login> <password> <server>
 	Example: /mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo
@@ -7411,7 +7411,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
 			"🔒 MT5 account linking requires a Premium or VIP subscription.\n"
-			"Use /upgrade to unlock one-click MT5 execution."
+			"Use /upgrade to unlock broker connection and verification features."
 		)
 		return
 
@@ -7430,8 +7430,8 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			"⚙️ <b>Link your MT5 Account</b>\n\n"
 			"Usage: <code>/mt5_link &lt;login&gt; &lt;password&gt; &lt;server&gt;</code>\n\n"
 			"Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
-			"🔒 Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
-			"Neither SignalRankAI staff nor Railway can read it in plaintext.",
+			"🔒 Your password is encrypted by the configured credential vault before storage.\n"
+			"Linking the account never enables trading by itself.",
 			parse_mode="HTML"
 		)
 		return
@@ -7468,22 +7468,22 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			if meta_id:
 				reply += f"☁️ MetaApi Account ID: {meta_id}\n"
 			reply += (
-				"\nYou can now use the Trade on MT5 button "
-				"on any signal to execute instantly.\n\n"
-				"⚙️ Configure execution routing with /execution\n"
-				"• /execution manual (default)\n"
-				"• /execution none\n"
-				"• /execution auto 5 (VIP)"
+				"\n🔒 Linking does not enable trading.\n"
+				"Next, run /verifybroker for read-only provider verification.\n"
+				"For a DEMO account, use Prepare DEMO certification in the web Broker Hub. "
+				"That applies a bounded DEMO/MANUAL policy while keeping execution OFF.\n"
+				"Execution can only be enabled separately after verification, healthy reconciliation, "
+				"policy checks and explicit confirmation."
 			)
 			if not result.get("executable"):
 				reply = (
-					"MT5 credentials saved, but live execution is not ready yet.\n\n"
+					"MT5 credentials saved, but the provider bridge is not provisioned yet.\n\n"
 					f"Server: {mt5_server}\n"
 					f"Login: {mt5_login} (credentials encrypted)\n\n"
 					"MetaApi did not return an executable account ID. "
-					"Signals and paper trading can continue, but Trade on MT5 "
-					"will stay disabled until the execution bridge is provisioned.\n\n"
-					"Run /mt5_status to check readiness."
+					"Signals and paper trading can continue. Broker execution remains disabled.\n\n"
+					"Run /mt5_status to check provider provisioning; after provisioning, use /verifybroker. "
+					"Provisioning still does not grant execution permission."
 				)
 		else:
 			err = result.get("error", "Unknown error")
@@ -7544,12 +7544,12 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
 		status = await get_user_mt5_link_status(int(user_id))
 		if status.get("executable"):
-			reply += "\nExecution bridge: READY\nUse ⚡ buttons on signals to trade instantly."
+			reply += (\n\t\t\t"\\nProvider bridge: PROVISIONED\\n"\n\t\t\t"Execution permission: NOT IMPLIED BY LINKING\\n"\n\t\t\t"Run /verifybroker for read-only verification. For DEMO, then use Prepare DEMO certification in the web Broker Hub."\n\t\t)
 		else:
 			reply += (
-				"\nExecution bridge: NOT READY\n"
+				"\nProvider bridge: NOT PROVISIONED\n"
 				"Your credentials are saved, but MetaApi has not returned an executable account ID.\n"
-				"Run /mt5_link again to retry provisioning, then check /mt5_status."
+				"Run /mt5_link again to retry provisioning, then check /mt5_status. Linking still does not enable trading."
 			)
 		await update.message.reply_text(reply)
 	except Exception as exc:
