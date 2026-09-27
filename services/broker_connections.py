@@ -191,7 +191,7 @@ def platform_catalog(tier: str) -> list[dict[str, Any]]:
         item = dict(row)
         platform = str(item["platform"])
         if platform in {"mt4", "mt5"}:
-            item["configured"] = bool(str(os.getenv("META_API_TOKEN") or "").strip())
+            item["configured"] = bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip())
         elif platform == "ctrader":
             item["configured"] = bool(
                 str(os.getenv("CTRADER_CLIENT_ID") or "").strip()
