@@ -1,0 +1,5 @@
+SignalRank staging full PostgreSQL backup/restore disaster-recovery drill.
+Purpose: prove pg_dump + isolated pg_restore + Alembic/schema integrity + forced cleanup on the current 0045 staging schema.
+Production mutation: forbidden.
+Live execution and payout paths remain disabled.
+No secrets are stored in this marker.
