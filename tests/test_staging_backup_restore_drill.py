@@ -29,3 +29,23 @@ def test_restore_drill_uses_consistent_dump_isolated_database_and_cleanup() -> N
 def test_restore_drill_image_uses_postgresql_18_client() -> None:
     dockerfile = Path("Dockerfile.restore-drill").read_text(encoding="utf-8")
     assert "FROM postgres:18-alpine" in dockerfile
+
+
+def test_restore_drill_cleanup_is_separate_and_final_pass_requires_cleanup() -> None:
+    text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
+    helper = text[text.index("def _cleanup_database"):text.index("def main")]
+    assert "pg_terminate_backend" in helper
+    assert 'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE)' in helper
+    assert "pg_terminate_backend" not in helper.split("DROP DATABASE")[0].split("_psql(")[-1]
+    assert "STAGING_BACKUP_RESTORE_VERIFIED_PENDING_CLEANUP" in text
+    assert "STAGING_BACKUP_RESTORE_DRILL_PASS" in text
+    finally_block = text[text.index("finally:"):]
+    assert 'report["cleanup"] = "PASS"' in finally_block
+    assert "STAGING_BACKUP_RESTORE_DRILL_PASS" in finally_block
+
+
+def test_restore_drill_cleanup_only_mode_is_name_guarded() -> None:
+    text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
+    assert "STAGING_RESTORE_CLEANUP_TARGET" in text
+    assert "SAFE_DB_RE.fullmatch(cleanup_target)" in text
+    assert "STAGING_RESTORE_CLEANUP_PASS" in text
