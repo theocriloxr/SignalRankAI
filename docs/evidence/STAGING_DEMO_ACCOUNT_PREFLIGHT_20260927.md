@@ -2,8 +2,8 @@
 
 Status: **BLOCKED_EXTERNAL**
 
-Railway deployment: `2d1fa0ed-453e-4ccd-af92-2c2535d79d9b`  
-Rollout commit: `2397b5afb8c18226e9545b6391886b03c5d0e3e0`
+Railway deployment: `20be1193-0339-461f-8560-a68ca75bd79b`  
+Rollout commit: `cf70d1c817b77868c948c1229224f07633d1ec1b`
 
 ## Purpose
 
@@ -18,9 +18,7 @@ non-zero by design because a BLOCKED certification preflight is fail-closed;
 Railway therefore labels the short-lived job `CRASHED`, which is expected for
 this blocked result and is not a frontdoor/runtime crash.
 
-This latest refresh ran after the MT5 linking-copy safety rollout on frontdoor deployment `33c9b981-29c0-4fef-890f-b314e817a566` / `d09535105bf44...`, which itself followed the explicit safe DEMO-certification preparation workflow
-was clean-room certified and deployed to staging frontdoor commit
-`e7196d4310180b2e901ab020e7041de7c5e18a91`.
+This latest refresh ran after the MT5 linking-copy safety rollout on frontdoor deployment `33c9b981-29c0-4fef-890f-b314e817a566` / `d09535105bf44...`. The frontdoor retains the explicit safe DEMO-certification preparation workflow and the fail-closed MT5 linking/status copy.
 Frontdoor deployment: `713ee164-5002-4499-a7cf-66f67dba0802`.
 That release passed Alembic `0045` schema admission, decomposed
 `mode=frontdoor` ownership, MetaApi startup probing and `/healthz=200`.
