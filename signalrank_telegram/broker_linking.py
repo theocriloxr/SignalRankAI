@@ -66,8 +66,8 @@ async def send_secure_broker_hub_link(update: Update) -> bool:
         "Open the first-party app, then go to *Broker Hub → MetaTrader* and use the "
         "secure provider link or encrypted credential form.\n\n"
         "Linking an account never enables execution. After linking, run `/verifybroker` "
-        "for read-only provider verification. For a DEMO account, use *Prepare DEMO "
-        "certification* in Broker Hub; execution remains OFF until separately enabled "
+        "for read-only provider verification. For a DEMO account, use *Prepare DEMO certification* "
+        "in Broker Hub; execution remains OFF until separately enabled "
         "after policy and reconciliation checks.\n\n"
         f"One-time code: `{activation.code}`\n"
         f"Expires: {activation.expires_at.strftime('%H:%M UTC')}",
