@@ -80,8 +80,9 @@ integration-verified enabled provider set under `SR-PROVIDER-007`.
 
 ## 2. Broker demo/canary/live-money certification
 
-2026-09-27 read-only staging preflight evidence: deployment
-`2d1fa0ed-453e-4ccd-af92-2c2535d79d9b` ran against Alembic
+2026-09-27 current read-only staging preflight evidence: deployment
+`20be1193-0339-461f-8560-a68ca75bd79b` on marker
+`cf70d1c817b77868c948c1229224f07633d1ec1b` ran against Alembic
 `0045_mt5_credential_retirement` after current frontdoor deployment
 `33c9b981-29c0-4fef-890f-b314e817a566` at `d09535105bf44...`. The frontdoor
 now includes a provider-proven **Prepare DEMO certification** action that
