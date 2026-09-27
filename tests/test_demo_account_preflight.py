@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
+
+import pytest
+
+from services import demo_certification
 
 
 def test_demo_preflight_is_counts_only_staging_read_only() -> None:
@@ -160,3 +165,188 @@ def test_demo_onboarding_does_not_silently_grant_execution_permission() -> None:
     assert "execution_enabled=False" in link
     assert "ASSISTED_EXECUTION" not in link
     assert "AUTO_EXECUTION" not in link
+
+
+def test_demo_prepare_policy_only_tightens_and_is_manual() -> None:
+    kwargs = demo_certification._bounded_demo_policy_kwargs(
+        {
+            "reset_timezone": "Africa/Lagos",
+            "currency": "USD",
+            "max_risk_per_trade_pct": "0.02",
+            "max_daily_loss_pct": "0.10",
+            "max_weekly_loss_pct": "0.20",
+            "max_total_drawdown_pct": "0.30",
+            "max_open_positions": 8,
+            "max_leverage": "50",
+            "max_spread_bps": "200",
+            "max_slippage_bps": "100",
+            "min_confidence": "0.60",
+            "min_expected_rr": "1.5",
+            "allowed_instruments": ["EURUSD"],
+            "allowed_asset_classes": ["FX"],
+            "allowed_strategies": ["TREND"],
+            "trading_windows": [{"days": [0, 1, 2, 3, 4], "start": "08:00", "end": "17:00"}],
+        }
+    )
+
+    assert kwargs["account_mode"] == "DEMO"
+    assert kwargs["execution_permission"] == "MANUAL"
+    assert kwargs["max_risk_per_trade_pct"] == Decimal("0.005")
+    assert kwargs["max_daily_loss_pct"] == Decimal("0.02")
+    assert kwargs["max_weekly_loss_pct"] == Decimal("0.04")
+    assert kwargs["max_total_drawdown_pct"] == Decimal("0.06")
+    assert kwargs["max_open_positions"] == 1
+    assert kwargs["max_leverage"] == Decimal("3")
+    assert kwargs["max_spread_bps"] == Decimal("50")
+    assert kwargs["max_slippage_bps"] == Decimal("25")
+    assert kwargs["news_trading_allowed"] is False
+    assert kwargs["weekend_holding_allowed"] is False
+    assert kwargs["prop_firm"] is None
+    assert kwargs["prop_rules_version"] is None
+    assert kwargs["external_rules"] == {}
+
+
+def test_demo_prepare_requires_provider_proven_demo_identity() -> None:
+    with pytest.raises(PermissionError, match="provider_proven_demo_account_required"):
+        demo_certification._assert_provider_demo_identity(
+            {"environment": "live", "account_classification": "DEMO"}
+        )
+    with pytest.raises(PermissionError, match="provider_proven_demo_account_required"):
+        demo_certification._assert_provider_demo_identity(
+            {"environment": "demo", "account_classification": "LIVE_PERSONAL"}
+        )
+
+    demo_certification._assert_provider_demo_identity(
+        {"environment": "demo", "account_classification": "DEMO"}
+    )
+
+
+def test_demo_prepare_requires_canonical_credential_state() -> None:
+    assert demo_certification._credential_ready(
+        {
+            "credential_format": "envelope_v1",
+            "credential_encrypted": True,
+        }
+    )
+    assert demo_certification._credential_ready(
+        {
+            "credential_format": "provider_managed",
+            "external_account_id": "provider-account",
+        }
+    )
+    assert not demo_certification._credential_ready(
+        {
+            "credential_format": "envelope_v1",
+            "credential_encrypted": False,
+        }
+    )
+    assert not demo_certification._credential_ready(
+        {
+            "credential_format": "none",
+            "credential_encrypted": False,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_demo_prepare_runs_read_only_proof_before_policy_and_never_enables_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    connection = {
+        "connection_id": "demo-1",
+        "environment": "demo",
+        "account_classification": "DEMO",
+        "credential_format": "envelope_v1",
+        "credential_encrypted": True,
+        "verified_at": "2026-09-27T12:00:00",
+        "execution_enabled": False,
+    }
+
+    async def fake_connections(user_id: int):
+        calls.append("connections")
+        return [dict(connection)]
+
+    async def fake_verify(user_id: int, connection_id: str):
+        calls.append("verify")
+        return {
+            "success": True,
+            "reconciliation": {
+                "status": "HEALTHY",
+                "ready": True,
+            },
+        }
+
+    async def fake_policy(user_id: int, connection_id: str):
+        calls.append("policy")
+        return {
+            "account_mode": "DEMO",
+            "execution_permission": "SIGNALS_ONLY",
+            "currency": "USD",
+            "reset_timezone": "UTC",
+            "max_risk_per_trade_pct": "0.005",
+            "max_daily_loss_pct": "0.02",
+            "max_weekly_loss_pct": "0.04",
+            "max_total_drawdown_pct": "0.06",
+            "max_open_positions": 3,
+            "max_leverage": "1",
+            "max_spread_bps": "50",
+            "max_slippage_bps": "25",
+            "min_confidence": "0",
+            "min_expected_rr": "0",
+        }
+
+    async def fake_configure(user_id: int, connection_id: str, **kwargs):
+        calls.append("configure")
+        assert kwargs["account_mode"] == "DEMO"
+        assert kwargs["execution_permission"] == "MANUAL"
+        return {"policy_version": 2, **kwargs}
+
+    monkeypatch.setattr(demo_certification, "_connections", fake_connections)
+    monkeypatch.setattr(demo_certification, "_verify", fake_verify)
+    monkeypatch.setattr(demo_certification, "_policy", fake_policy)
+    monkeypatch.setattr(demo_certification, "_configure", fake_configure)
+
+    result = await demo_certification.prepare_demo_certification(7, "demo-1")
+
+    assert calls.index("verify") < calls.index("configure")
+    assert result["demo_certification_prepared"] is True
+    assert result["execution_permission"] == "MANUAL"
+    assert result["execution_enabled"] is False
+    assert result["order_placed"] is False
+    assert result["connection"]["execution_enabled"] is False
+
+
+def test_demo_prepare_web_action_is_explicit_and_never_claims_execution() -> None:
+    service = Path("services/demo_certification.py").read_text(encoding="utf-8")
+    api = Path("web/platform_api.py").read_text(encoding="utf-8")
+    app = Path("web/platform_app/app.js").read_text(encoding="utf-8")
+
+    assert "@router.post(\"/broker/connections/{connection_id}/demo-certification/prepare\")" in api
+    assert "DemoCertificationPrepareRequest" in api
+    assert "Explicit confirmation is required" in api
+    assert '\"explicit_enable_still_required\": True' in api
+    assert '\"live_activation_changed\": False' in api
+
+    assert 'data-action="demo_prepare"' in app
+    assert "Prepare DEMO certification" in app
+    assert "keep execution OFF" in app
+    assert "/demo-certification/prepare" in app
+
+    assert "_assert_provider_demo_identity(connection)" in service
+    assert "_credential_ready(refreshed)" in service
+    assert 'str(reconciliation.get("status") or "").strip().upper() != "HEALTHY"' in service
+    assert '"execution_permission": "MANUAL"' in service
+    assert '"execution_enabled": False' in service
+    assert '"order_placed": False' in service
+    assert "set_execution_enabled" not in service
+
+    for forbidden in (
+        "execute_trade(",
+        "create_market_order(",
+        "place_order(",
+        "close_position(",
+        "close_all_positions(",
+        "update_stop_loss(",
+    ):
+        assert forbidden not in service
