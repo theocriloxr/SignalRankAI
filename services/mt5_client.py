@@ -45,6 +45,130 @@ def _safe_error_body(body: str) -> str:
         # and URL are sufficient diagnostics; never log arbitrary body text.
         return "<non-json provider response>"
 
+
+def _metaapi_provisioning_error(
+    status: int,
+    body: str,
+    *,
+    retry_after: str | None = None,
+    transaction_id: str | None = None,
+) -> Dict[str, Any]:
+    """Map MetaApi broker/provisioning failures to stable, user-actionable codes.
+
+    Provider bodies are parsed only to extract bounded non-secret diagnostics.
+    Passwords/logins are never echoed back or logged.
+    """
+    import json
+
+    parsed: Dict[str, Any] = {}
+    try:
+        raw = json.loads(str(body or ""))
+        parsed = raw if isinstance(raw, dict) else {}
+    except Exception:
+        parsed = {}
+
+    details = parsed.get("details")
+    detail_map = details if isinstance(details, dict) else {}
+    provider_code = str(
+        detail_map.get("code")
+        or parsed.get("code")
+        or parsed.get("error")
+        or ""
+    ).strip()
+    provider_message = str(
+        detail_map.get("message")
+        or parsed.get("message")
+        or parsed.get("errorMessage")
+        or ""
+    ).strip()
+
+    suggestions: list[str] = []
+    servers_by_brokers = (
+        detail_map.get("serversByBrokers")
+        or parsed.get("serversByBrokers")
+        or {}
+    )
+    if isinstance(servers_by_brokers, dict):
+        for values in servers_by_brokers.values():
+            if isinstance(values, (list, tuple)):
+                suggestions.extend(str(v).strip() for v in values if str(v).strip())
+            elif str(values or "").strip():
+                suggestions.append(str(values).strip())
+    for key in ("servers", "suggestedServers", "serverSuggestions"):
+        values = detail_map.get(key) or parsed.get(key)
+        if isinstance(values, (list, tuple)):
+            suggestions.extend(str(v).strip() for v in values if str(v).strip())
+    suggestions = list(dict.fromkeys(suggestions))[:12]
+
+    code_upper = provider_code.upper()
+    message_lower = provider_message.lower()
+
+    stable_code = "provisioning_failed"
+    message = "MetaTrader account provisioning failed. Check the broker details and try again."
+    can_use_secure_link = True
+
+    if code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"} or "server" in message_lower and "not found" in message_lower:
+        stable_code = "server_not_found"
+        message = (
+            "The broker server was not recognized. Enter the exact server name shown in MetaTrader"
+            + (" or choose one of the suggested servers below." if suggestions else ".")
+        )
+    elif code_upper in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"} or any(
+        token in message_lower for token in ("invalid login", "invalid password", "authorization failed", "authentication failed")
+    ):
+        stable_code = "authentication_failed"
+        message = "The broker rejected the login/password. Re-enter the MT4/MT5 trading credentials for this exact server."
+        can_use_secure_link = True
+    elif code_upper in {"E_SERVER_TIMEZONE", "E_BROKER_SETTINGS", "E_SETTINGS_DETECTION"} or (
+        "timezone" in message_lower or "broker settings" in message_lower
+    ):
+        stable_code = "broker_settings_detection_failed"
+        message = "MetaApi could not automatically detect this broker's terminal settings. Use the secure connection flow or an administrator-provided provisioning profile."
+    elif code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED"} or "disabled" in message_lower:
+        stable_code = "account_disabled"
+        message = "The broker account is disabled or unavailable. Confirm the account is active in MetaTrader before reconnecting."
+        can_use_secure_link = False
+    elif code_upper in {"E_NO_SYMBOLS", "E_SYMBOLS"} or "no symbols" in message_lower:
+        stable_code = "no_symbols"
+        message = "The broker account connected but exposes no tradable symbols. Check the account/server with the broker."
+        can_use_secure_link = False
+    elif code_upper in {"E_PASSWORD_CHANGE", "E_PASSWORD_EXPIRED"} or "change password" in message_lower:
+        stable_code = "password_change_required"
+        message = "The broker requires a password change before API access. Change it in MetaTrader first, then reconnect."
+        can_use_secure_link = False
+    elif int(status) == 429 or code_upper in {"E_RATE_LIMIT", "E_TOO_MANY_REQUESTS"}:
+        stable_code = "provider_rate_limited"
+        message = "MetaApi temporarily rate-limited provisioning. Do not submit repeatedly; retry after the indicated delay."
+    elif code_upper in {"E_RESOURCE_SLOTS", "E_CAPACITY", "E_NO_CAPACITY"} or "slot" in message_lower:
+        stable_code = "provider_capacity"
+        message = "The MetaApi account has no available provisioning capacity. Free a slot or update the provider plan before adding another account."
+        can_use_secure_link = False
+    elif int(status) in {401, 403} and not code_upper:
+        stable_code = "provider_authorization_failed"
+        message = "SignalRankAI's MetaApi connection is not authorized. An administrator must refresh the MetaApi integration token."
+        can_use_secure_link = False
+    elif int(status) >= 500:
+        stable_code = "provider_unavailable"
+        message = "MetaApi is temporarily unavailable. Your credentials were not marked connected; retry later."
+    elif int(status) == 202:
+        stable_code = "broker_detection_pending"
+        message = "MetaApi is still detecting the broker server settings. Wait before retrying; repeated new provisioning attempts are intentionally avoided."
+
+    result: Dict[str, Any] = {
+        "success": False,
+        "code": stable_code,
+        "error": message,
+        "provider_code": provider_code or None,
+        "provider_status": int(status),
+        "suggested_servers": suggestions,
+        "retry_after": retry_after,
+        "can_use_secure_link": bool(can_use_secure_link),
+        "diagnostic": _safe_error_body(body),
+    }
+    if transaction_id:
+        result["transaction_id"] = str(transaction_id)
+    return result
+
 # ---------------------------------------------------------------------------
 # URL helpers
 # ---------------------------------------------------------------------------
@@ -1242,7 +1366,11 @@ async def get_platform_mt5_link_status(user_id: int) -> Dict[str, Any]:
 # Provider-neutral MetaTrader connection helpers (MT4 + MT5)
 # ---------------------------------------------------------------------------
 
-async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def _provision_metatrader_account(
+    payload: Dict[str, Any],
+    *,
+    transaction_id: str | None = None,
+) -> Dict[str, Any]:
     """Create one MetaApi MT4/MT5 account without automatic retries.
 
     MetaApi can bill repeated invalid broker-auth attempts. A single request is
@@ -1254,7 +1382,8 @@ async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, An
     from uuid import uuid4
 
     headers = _headers()
-    headers["transaction-id"] = uuid4().hex
+    tx_id = str(transaction_id or "").strip()[:64] or uuid4().hex
+    headers["transaction-id"] = tx_id
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -1269,7 +1398,7 @@ async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, An
                         data = await resp.json()
                     except Exception:
                         data = {}
-                    return {"success": True, "pending": False, "data": data}
+                    return {"success": True, "pending": False, "data": data, "transaction_id": tx_id}
                 if resp.status == 202:
                     try:
                         data = await resp.json()
@@ -1280,18 +1409,29 @@ async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, An
                         "pending": True,
                         "data": data,
                         "retry_after": resp.headers.get("Retry-After"),
+                        "transaction_id": tx_id,
                     }
-                return {
-                    "success": False,
-                    "error": f"MetaApi provisioning failed ({resp.status})",
-                    "diagnostic": _safe_error_body(body),
-                }
+                return _metaapi_provisioning_error(
+                    int(resp.status),
+                    body,
+                    retry_after=resp.headers.get("Retry-After"),
+                    transaction_id=tx_id,
+                )
     except Exception as exc:
         logger.warning(
             "[metatrader] provisioning request failed err=%s",
             type(exc).__name__,
         )
-        return {"success": False, "error": f"MetaApi unavailable: {type(exc).__name__}"}
+        return {
+            "success": False,
+            "code": "provider_unavailable",
+            "error": "MetaApi is temporarily unavailable. The connection was not saved as ready.",
+            "provider_code": type(exc).__name__,
+            "provider_status": None,
+            "suggested_servers": [],
+            "retry_after": None,
+            "can_use_secure_link": True,
+        }
 
 
 async def _create_configuration_link(
@@ -1355,6 +1495,7 @@ async def link_platform_metatrader_account(
     broker_name: str | None = None,
     account_label: str | None = None,
     environment: str = "unknown",
+    provisioning_transaction_id: str | None = None,
 ) -> Dict[str, Any]:
     """Link an MT4 or MT5 account to the canonical platform account."""
     from services.broker_connections import upsert_connection
@@ -1386,7 +1527,8 @@ async def link_platform_metatrader_account(
                 "signalrank_user_id": int(user_id),
                 "source": "signalrank-platform",
             },
-        }
+        },
+        transaction_id=provisioning_transaction_id,
     )
     if not provision.get("success"):
         return provision
