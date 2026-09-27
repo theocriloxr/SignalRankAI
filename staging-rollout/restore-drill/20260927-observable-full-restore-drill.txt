@@ -1,0 +1,6 @@
+SignalRank staging observable PostgreSQL restore drill.
+Runs after DR stage logging, bounded pg_dump lock wait, and safe stale-target pre-clean passed clean-room.
+Expected schema head: 0045_mt5_credential_retirement.
+Production/source mutation: forbidden.
+All live-money execution/payment/payout paths remain disabled.
+No secrets are stored in this marker.
