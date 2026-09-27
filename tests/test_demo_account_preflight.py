@@ -7,6 +7,8 @@ def test_demo_preflight_is_counts_only_staging_read_only() -> None:
     source = Path("scripts/demo_account_preflight.py").read_text(encoding="utf-8")
 
     assert "demo_account_preflight_requires_staging" in source
+    assert "Path(__file__).resolve().parents[1]" in source
+    assert "sys.path.insert(0, str(ROOT))" in source
     assert "SELECT version_num FROM alembic_version" in source
     assert "UPPER(COALESCE(p.account_mode, '')) = 'DEMO'" in source
     assert "UPPER(COALESCE(r.status, '')) = 'HEALTHY'" in source
