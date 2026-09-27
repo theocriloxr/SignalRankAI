@@ -1245,6 +1245,110 @@ async def get_reconciliation_snapshot(
     }
 
 
+async def refresh_platform_metatrader_reconciliation(
+    user_id: int,
+    connection_id: str,
+    account_id: str,
+    *,
+    account_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Persist read-only MetaTrader reconciliation without changing permission.
+
+    HEALTHY is recorded only when provider account information is connected and
+    the provider positions endpoint is available.  Any unavailable proof stays
+    RECONCILING; onboarding never fabricates readiness and never freezes an
+    otherwise valid account merely because a transient read failed.
+    """
+    from services.account_policies import record_reconciliation
+
+    try:
+        snapshot = await get_reconciliation_snapshot(
+            str(account_id),
+            account_info=account_info,
+        )
+        info = (
+            dict(snapshot.get("account_info") or {})
+            if isinstance(snapshot.get("account_info"), dict)
+            else {}
+        )
+        positions = snapshot.get("positions")
+        checked_at = snapshot.get("checked_at")
+        checked_iso = (
+            checked_at.isoformat()
+            if isinstance(checked_at, datetime)
+            else datetime.now(timezone.utc).isoformat()
+        )
+        ready = bool(snapshot.get("ready"))
+        status = "HEALTHY" if ready else "RECONCILING"
+        details: Dict[str, Any] = {
+            "provider": "metaapi",
+            "positions_count": len(positions) if isinstance(positions, list) else None,
+            "checked_at": checked_iso,
+            "currency": info.get("currency") or "USD",
+            "balance": info.get("balance"),
+            "equity": info.get("equity"),
+            "margin": info.get("margin"),
+            "free_margin": info.get("free_margin"),
+            "unrealized_pnl": info.get("profit"),
+            "verification_source": "read_only_provider_snapshot",
+        }
+        if ready:
+            details["ledger_source_event_id"] = (
+                f"verification_reconciliation:{checked_iso}"[:160]
+            )
+        persisted = await record_reconciliation(
+            int(user_id),
+            str(connection_id),
+            status=status,
+            discrepancy_code=None if ready else "provider_reconciliation_pending",
+            details=details,
+        )
+        return {
+            "status": str(persisted.get("status") or status),
+            "ready": bool(persisted.get("ready")),
+            "positions_count": details["positions_count"],
+            "checked_at": checked_iso,
+        }
+    except Exception as exc:
+        # Verification/reconciliation is intentionally fail-closed.  A broker
+        # link remains useful for signals/paper while demo execution readiness
+        # stays blocked.  Never log credentials or provider response bodies.
+        logger.warning(
+            "[metatrader] read_only_reconciliation_pending user=%s err=%s",
+            int(user_id),
+            type(exc).__name__,
+        )
+        try:
+            persisted = await record_reconciliation(
+                int(user_id),
+                str(connection_id),
+                status="RECONCILING",
+                discrepancy_code="provider_reconciliation_pending",
+                details={
+                    "provider": "metaapi",
+                    "verification_source": "read_only_provider_snapshot",
+                },
+            )
+            return {
+                "status": str(persisted.get("status") or "RECONCILING"),
+                "ready": False,
+                "positions_count": None,
+                "checked_at": None,
+            }
+        except Exception as persist_exc:
+            logger.warning(
+                "[metatrader] reconciliation_state_persist_pending user=%s err=%s",
+                int(user_id),
+                type(persist_exc).__name__,
+            )
+            return {
+                "status": "RECONCILING",
+                "ready": False,
+                "positions_count": None,
+                "checked_at": None,
+            }
+
+
 def _position_id_from_row(row: dict[str, Any]) -> str:
     for key in ("id", "positionId", "position_id", "orderId", "order_id"):
         val = row.get(key)
@@ -1861,7 +1965,7 @@ async def link_platform_metatrader_account(
                 env = "live"
             if bool(info.get("connected")):
                 status = "verified"
-                verified_at = datetime.now(timezone.utc)
+                verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     connection = await upsert_connection(
         user_id=int(user_id),
@@ -1881,6 +1985,7 @@ async def link_platform_metatrader_account(
         },
         server=server_n,
         status=status,
+        verified_at=verified_at,
         permissions={"read": True, "trade": True},
         capabilities={
             "market_data": True,
@@ -1898,6 +2003,15 @@ async def link_platform_metatrader_account(
         },
     )
 
+    reconciliation = None
+    if account_id and isinstance(info, dict):
+        reconciliation = await refresh_platform_metatrader_reconciliation(
+            int(user_id),
+            str(connection.get("connection_id") or ""),
+            account_id,
+            account_info=info,
+        )
+
     # Preserve only non-secret compatibility metadata. The password exists only
     # in the canonical context-bound broker credential envelope.
     if platform_n == "mt5":
@@ -1913,6 +2027,7 @@ async def link_platform_metatrader_account(
         "pending": bool(provision.get("pending")),
         "connection": connection,
         "account_info": info,
+        "reconciliation": reconciliation,
     }
 
 
