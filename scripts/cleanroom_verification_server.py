@@ -59,6 +59,7 @@ _TESTS = [
     "tests/test_release_provenance.py",
     "tests/test_traceability_completion_boundary.py",
     "tests/test_completion_evidence_ledger.py",
+    "tests/test_external_blocker_preflight.py",
     "tests/test_load_certification.py",
     "tests/test_copy_trade_safety_foundation.py",
 ]
