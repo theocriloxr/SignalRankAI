@@ -252,9 +252,10 @@ was restored into an isolated database, Alembic 0045 and nine critical tables
 were verified, the immutable-ledger trigger was present, and cleanup passed
 without source or production mutation.
 
-The read-only demo-account preflight deployment
-`ad501371-bd3a-431c-8683-701e09c05b4f` found zero canonical broker
-connections in staging. Demo execution certification therefore remains
+The current read-only demo-account preflight deployment
+`20be1193-0339-461f-8560-a68ca75bd79b` on marker `cf70d1c817b7...`
+found zero canonical broker connections in staging, placed zero orders,
+performed no activation and returned no secrets. Demo execution certification therefore remains
 external and blocked until an explicitly owned demo account is connected.
 
 The following are not claimed complete by this report:
