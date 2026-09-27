@@ -445,6 +445,34 @@ async function loadBroker(){
     $('#brokerStatus').innerHTML=`<p class="negative">${esc(err.message)}</p>`;
   }
 
+  if($('#brokerServerLookupButton'))$('#brokerServerLookupButton').onclick=async()=>{
+    const form=$('#brokerLinkForm');
+    if(!form)return;
+    const platform=String(form.elements.platform?.value||'mt5');
+    const company=String(form.elements.broker_name?.value||'').trim();
+    const server=String(form.elements.server?.value||'').trim();
+    const query=company||server;
+    const resultEl=$('#brokerServerLookupResult');
+    if(query.length<2){toast('Enter at least two characters of the broker/company or server name first',true);form.elements.broker_name?.focus();return}
+    const button=$('#brokerServerLookupButton');if(button)button.disabled=true;
+    if(resultEl){resultEl.hidden=false;resultEl.innerHTML='<p class="muted">Searching MetaApi known servers…</p>'}
+    try{
+      const data=await request('/broker/metatrader/servers?'+new URLSearchParams({platform,q:query}));
+      const groups=Array.isArray(data.brokers)?data.brokers:[];
+      if(!resultEl)return;
+      resultEl.innerHTML=groups.length?groups.map(group=>`<section class="server-result-group"><strong>${esc(group.broker||'Broker')}</strong><div class="server-result-buttons">${(group.servers||[]).map(item=>`<button class="ghost known-server-choice" type="button" data-broker="${esc(group.broker||'')}" data-server="${esc(item)}">${esc(item)}</button>`).join('')}</div></section>`).join(''):'<p class="muted">No known server match was returned. You can still use an exact server copied from MetaTrader.</p>';
+      $('.known-server-choice').forEach(choice=>choice.onclick=()=>{
+        form.elements.server.value=choice.dataset.server||'';
+        if(!String(form.elements.broker_name.value||'').trim())form.elements.broker_name.value=choice.dataset.broker||'';
+        resultEl.innerHTML=`<p class="positive"><strong>Selected:</strong> ${esc(choice.dataset.server||'')}</p><small class="muted">Confirm this is the same server shown inside your MetaTrader account before connecting.</small>`;
+        form.elements.login?.focus();
+      });
+    }catch(err){
+      if(resultEl)resultEl.innerHTML=`<p class="negative">${esc(err.message)}</p><small class="muted">Server search is optional; you can still paste the exact server shown in MetaTrader.</small>`;
+      toast(err.message,true);
+    }finally{if(button)button.disabled=false}
+  };
+
   if($('#brokerLinkForm'))$('#brokerLinkForm').onsubmit=async e=>{
     e.preventDefault();
     const form=e.target;
