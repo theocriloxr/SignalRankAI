@@ -70,3 +70,16 @@ def test_new_account_defaults_match_conservative_policy():
         assert 'Decimal("0.02")' in source
         assert 'Decimal("0.04")' in source
         assert 'Decimal("0.06")' in source
+
+
+def test_adaptive_candle_store_uses_short_transaction_default():
+    source=(ROOT/"engine"/"adaptive"/"candle_store.py").read_text(encoding="utf-8")
+    assert 'os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "50")' in source
+    assert "for offset in range(0, len(records), chunk_size):" in source
+    loop=source.index("for offset in range(0, len(records), chunk_size):")
+    commit=source.index("await session.commit()", loop)
+    assert commit > loop
+    # The per-chunk session must be inside the chunk loop rather than wrapping
+    # the entire initial history backfill in a single transaction.
+    session=source.index("async with get_session(", loop)
+    assert loop < session < commit
