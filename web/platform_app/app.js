@@ -1,6 +1,9 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
 const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[]};
+const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
+let sessionRefreshPromise=null;
+let secureLinkVerifyTimer=null;
 const THEME_KEY='signalrank.theme';
 const themeMedia=window.matchMedia?.('(prefers-color-scheme: light)');
 function resolvedTheme(){const explicit=document.documentElement.dataset.theme;if(explicit==='light'||explicit==='dark')return explicit;return themeMedia?.matches?'light':'dark'}
@@ -10,14 +13,44 @@ function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}
 const esc=(v)=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function toast(message,error=false){const el=$('#toast');el.textContent=typeof message==='string'?message:JSON.stringify(message);el.style.borderColor=error?'rgba(255,107,117,.7)':'rgba(100,240,180,.5)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),4000)}
 function cookie(name){return document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.split('=').slice(1).join('=')||''}
-async function request(path,options={}){const method=String(options.method||'GET').toUpperCase();const headers={'Content-Type':'application/json',...(options.headers||{})};if(!['GET','HEAD','OPTIONS'].includes(method)){const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf}const response=await fetch(API+path,{credentials:'include',headers,...options});let data={};try{data=await response.json()}catch{}if(!response.ok){const detail=data.detail;const serverMessage=typeof detail==='string'?detail:(detail?.message||detail?.code||'');const fallback=response.status>=500?'SignalRank services are temporarily unavailable. Please retry in a moment.':`Request failed (${response.status})`;const error=new Error(serverMessage||fallback);error.status=response.status;error.detail=detail;error.payload=data;throw error}return data}
+async function refreshBrowserSession(){
+  if(sessionRefreshPromise)return sessionRefreshPromise;
+  sessionRefreshPromise=(async()=>{
+    const headers={'Content-Type':'application/json'};
+    const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf;
+    const response=await fetch(API+'/auth/refresh',{method:'POST',credentials:'include',headers,body:JSON.stringify({client_type:'web'})});
+    if(!response.ok)return false;
+    try{const data=await response.json();if(data?.user)state.user=data.user}catch{}
+    return true
+  })().finally(()=>{sessionRefreshPromise=null});
+  return sessionRefreshPromise
+}
+async function request(path,options={},allowSessionRefresh=true){
+  const method=String(options.method||'GET').toUpperCase();
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(!['GET','HEAD','OPTIONS'].includes(method)){const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf}
+  const response=await fetch(API+path,{credentials:'include',headers,...options});
+  let data={};try{data=await response.json()}catch{}
+  const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
+  if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
+    const refreshed=await refreshBrowserSession().catch(()=>false);
+    if(refreshed)return request(path,options,false)
+  }
+  if(!response.ok){
+    const detail=data.detail;
+    const serverMessage=typeof detail==='string'?detail:(detail?.message||detail?.code||'');
+    const fallback=response.status>=500?'SignalRank services are temporarily unavailable. Please retry in a moment.':`Request failed (${response.status})`;
+    const error=new Error(serverMessage||fallback);error.status=response.status;error.detail=detail;error.payload=data;throw error
+  }
+  return data
+}
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function fmt(value,digits=2){const number=Number(value||0);return Number.isFinite(number)?number.toLocaleString(undefined,{maximumFractionDigits:digits}):'—'}
 function time(value){if(!value)return'—';return new Date(value).toLocaleString()}
 function statusClass(value){const v=String(value||'').toLowerCase();return ['tp1','tp2','tp3','win','open','active'].some(x=>v.includes(x))?'positive':['sl','loss','closed_sl'].some(x=>v.includes(x))?'negative':''}
-function setLoggedIn(value){$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;const compact=$('#compactNav');if(compact)compact.hidden=!value;document.body.classList.toggle('session-active',value)}
+function setLoggedIn(value){const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=true;$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;const compact=$('#compactNav');if(compact)compact.hidden=!value;document.body.classList.toggle('session-active',value);document.body.classList.remove('session-booting')}
 function hasFeature(feature){const features=state.entitlements?.features||[];return features.includes('*')||features.includes(feature)}
-function applyEntitlements(){$$('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!allowed)el.title='Available on a higher SignalRankAI plan'})}
+function applyEntitlements(){$('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);const revealLocked=el.dataset.entitlementDisplay==='lock';el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!revealLocked)el.hidden=!allowed;if(!allowed)el.title='Available on a higher SignalRankAI plan';else if(el.title==='Available on a higher SignalRankAI plan')el.removeAttribute('title')})}
 function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate')}
 $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>setAuthTab('register');$('#activateTab').onclick=()=>setAuthTab('activate');
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
@@ -32,7 +65,7 @@ $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your acco
 function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount};loaders[name]?.().catch(err=>toast(err.message,true))}
 $$('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 $('#viewSwitcher')?.addEventListener('change',e=>showView(e.target.value));
-async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();const initial=[loadOverview(),loadSignals()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}}catch{state.user=null;state.entitlements=null;setLoggedIn(false)}}
+async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();const initial=[loadOverview(),loadSignals()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch{state.user=null;state.entitlements=null;setLoggedIn(false)}}
 async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;$('#accountSubtitle').textContent='Your signals, paper portfolio and market intelligence in one place.';$('#tierBadge').textContent=String(state.user?.tier||'free').toUpperCase();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
@@ -134,7 +167,11 @@ $('#createApiKeyButton').onclick=async()=>{const name=prompt('Name this API key'
 $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Turn off subscription auto-renew? Your current paid access remains active until its expiry, and this does not issue a refund.'))return;try{const result=await request('/billing/cancel-auto-renew',{method:'POST',body:JSON.stringify({confirm:true})});toast(result.provider_follow_up_required?'Auto-renew is off in SignalRankAI, but Paystack needs manual follow-up. A billing review is recommended.':'Auto-renew cancelled. Current access remains until expiry.');await loadAccount()}catch(err){toast(err.message,true)}});
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
-async function loadBillingProducts(){const data=await request('/billing/products');const products=data.products||[];$('#billingProducts').innerHTML=products.length?products.map(p=>`<article class="metric-card"><small>${esc(String(p.tier).toUpperCase())}</small><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}">Choose plan</button></article>`).join(''):'<p>No public checkout products are available.</p>';$$('.billing-checkout').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;toast(err.message,true)}})}
+async function loadBillingProducts(){
+  const data=await request('/billing/products');const products=data.products||[];const current=String(state.user?.tier||'free').toLowerCase();
+  $('#billingProducts').innerHTML=products.length?products.map(p=>{const active=String(p.tier||'').toLowerCase()===current;return `<article class="metric-card plan-card ${active?'current-plan':''}"><div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button></article>`}).join(''):'<p>No public checkout products are available right now.</p>';
+  $('.billing-checkout').forEach(button=>button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Opening secure checkout…';try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;button.textContent=original;if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');toast(err.message,true)}})
+}
 async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile();const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
 function brokerPolicyFraction(value){const n=Number(value);return Number.isFinite(n)?n/100:0}
@@ -643,29 +680,22 @@ async function loadBroker(){
     if(!form)return;
     const raw=formData(form);
     if(!raw.server){toast('Enter the exact broker server first',true);return}
-    const payload={
-      platform:raw.platform,
-      server:raw.server,
-      broker_name:raw.broker_name||null,
-      account_label:raw.account_label||null,
-      environment:raw.environment||'unknown',
-      ttl_days:3
-    };
+    const payload={platform:raw.platform,server:raw.server,broker_name:raw.broker_name||null,account_label:raw.account_label||null,environment:raw.environment||'unknown',ttl_days:3};
     try{
       const result=await request('/broker/metatrader/secure-link',{method:'POST',body:JSON.stringify(payload)});
+      const connectionId=String(result.connection?.connection_id||'');
+      if(connectionId){try{sessionStorage.setItem(SECURE_LINK_PENDING_KEY,JSON.stringify({connection_id:connectionId,created_at:Date.now(),configuration_link:result.configuration_link||''}))}catch{}}
       const target=$('#brokerSecureLinkResult');
-      target.innerHTML=`<p class="positive">Secure credential link created.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a></p><p class="muted">After entering the account credentials there, return here and press Verify on the connection.</p>`;
-      window.open(result.configuration_link,'_blank','noopener,noreferrer');
+      target.innerHTML=`<div class="secure-link-handoff"><p class="positive">Account slot saved in SignalRank.</p><p>Finish the broker credential step in MetaApi. Keep this SignalRank tab open; when you return, we will verify and store the completed connection automatically.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a> <button id="verifySecureLinkNow" class="ghost" type="button">I've finished · verify now</button></p><small>Execution stays disabled until your separate account policy and safety gates are enabled.</small></div>`;
+      $('#verifySecureLinkNow')?.addEventListener('click',()=>reconcilePendingSecureLink({notify:true}));
+      const opened=window.open(result.configuration_link,'_blank','noopener,noreferrer');
+      if(!opened)toast('Popup blocked. Use the “Open MetaApi secure connection” button.',true);
       await loadBroker();
+      scheduleSecureLinkVerification()
     }catch(err){
       const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
       const feedback=$('#brokerProvisioningResult');
-      if(feedback){
-        feedback.hidden=false;
-        feedback.className='connection-feedback negative-feedback';
-        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));
-        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Secure link failed')}</strong><p>${esc(err.message)}</p><small>${operatorFault?'This is a SignalRankAI → MetaApi integration authorization problem. Your broker details are not the cause.':'The secure-link request could not be created.'}</small>`;
-      }
+      if(feedback){feedback.hidden=false;feedback.className='connection-feedback negative-feedback';const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Secure link failed')}</strong><p>${esc(err.message)}</p><small>${operatorFault?'This is a SignalRankAI → MetaApi integration authorization problem. Your broker details are not the cause.':'The secure-link request could not be created.'}</small>`}
       toast(err.message,true)
     }
   };
@@ -688,6 +718,26 @@ async function loadBroker(){
     }catch(err){toast(err.message,true)}
   };
 }
+function pendingSecureLink(){try{const raw=sessionStorage.getItem(SECURE_LINK_PENDING_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data?.connection_id)return null;if(Date.now()-Number(data.created_at||0)>3*24*60*60*1000){sessionStorage.removeItem(SECURE_LINK_PENDING_KEY);return null}return data}catch{return null}}
+function clearPendingSecureLink(){try{sessionStorage.removeItem(SECURE_LINK_PENDING_KEY)}catch{}if(secureLinkVerifyTimer){clearTimeout(secureLinkVerifyTimer);secureLinkVerifyTimer=null}}
+function scheduleSecureLinkVerification(){if(secureLinkVerifyTimer)clearTimeout(secureLinkVerifyTimer);if(!pendingSecureLink())return;secureLinkVerifyTimer=setTimeout(()=>reconcilePendingSecureLink({notify:false}),5000)}
+async function reconcilePendingSecureLink({notify=false}={}){
+  const pending=pendingSecureLink();if(!pending||!state.user||!hasFeature('broker_connection'))return false;
+  try{
+    const verified=await request('/broker/connections/'+encodeURIComponent(pending.connection_id)+'/verify',{method:'POST',body:'{}'});
+    clearPendingSecureLink();await loadBroker();
+    const target=$('#brokerSecureLinkResult');if(target)target.innerHTML='<div class="connection-feedback positive-feedback"><strong>Secure MetaTrader connection verified</strong><p>The account is stored in SignalRank and ready for your account-policy review. Execution remains disabled by default.</p></div>';
+    if(notify)toast('MetaTrader connection verified and stored');
+    return Boolean(verified?.success)
+  }catch(err){
+    if([403,404].includes(Number(err.status)))clearPendingSecureLink();
+    else if(Number(err.status)===409)scheduleSecureLinkVerification();
+    if(notify)toast(Number(err.status)===409?'MetaApi is still finalizing the account. We will keep checking.':err.message,true);
+    return false
+  }
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reconcilePendingSecureLink({notify:false})});
+window.addEventListener('focus',()=>reconcilePendingSecureLink({notify:false}));
 async function acceptExecutionTerms(){if(!confirm('I understand that live broker execution can lose money and that SignalRankAI safety checks do not guarantee outcomes. Accept execution-risk terms?'))return;try{await request('/execution-terms/accept',{method:'POST',body:JSON.stringify({confirm:true})});await loadBroker();toast('Execution-risk terms accepted')}catch(err){toast(err.message,true)}}
 async function setupMfa(){try{const setup=await request('/security/mfa/setup',{method:'POST',body:'{}'});const code=prompt(`Add this secret to your authenticator:\n${setup.secret}\n\nThen enter the 6-digit code.`);if(!code)return;const result=await request('/security/mfa/enable',{method:'POST',body:JSON.stringify({code})});alert('Store these recovery codes offline:\n\n'+result.recovery_codes.join('\n'));await loadAccount();toast('MFA enabled')}catch(err){toast(err.message,true)}}
 async function disableMfa(){const code=prompt('Enter an authenticator or recovery code to disable MFA');if(!code)return;try{await request('/security/mfa/disable',{method:'POST',body:JSON.stringify({code})});await loadAccount();toast('MFA disabled')}catch(err){toast(err.message,true)}}
@@ -696,7 +746,21 @@ $('#refreshTelegramButton')?.addEventListener('click',async()=>{try{const me=awa
 $('#notificationForm').onsubmit=async e=>{e.preventDefault();const payload={};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>payload[name]=e.target.elements[name].checked);for(const name of ['quiet_hours_start','quiet_hours_end','timezone']){const value=e.target.elements[name]?.value?.trim();payload[name]=value||null}try{await request('/notifications/preferences',{method:'PUT',body:JSON.stringify(payload)});toast('Notification preferences saved across your account')}catch(err){toast(err.message,true)}};
 async function logout(){try{await request('/auth/logout',{method:'POST',body:'{}'})}finally{state.user=null;setLoggedIn(false);location.reload()}}
 $('#logoutButton').onclick=logout;$('#logoutAllButton').onclick=async()=>{if(!confirm('Sign out every device?'))return;try{await request('/auth/logout-all',{method:'POST',body:'{}'});location.reload()}catch(err){toast(err.message,true)}};
-async function processUrlActions(){const qs=new URLSearchParams(location.search);const token=qs.get('token');if(token){setAuthTab('activate');$('#activationCredential').value=token}const reset=qs.get('password_reset');if(reset){setAuthTab('login');$('#loginForm').hidden=true;$('#passwordResetForm').hidden=false;$('#passwordResetForm [name="token"]').value=reset}const verify=qs.get('verify_email');if(verify){try{await request('/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token:verify,client_type:'web'})});history.replaceState({},'',location.pathname);toast('Email verified')}catch(err){toast(err.message,true)}}const magic=qs.get('magic_login');if(magic){try{await completeAuth(await request('/auth/magic-link/complete',{method:'POST',body:JSON.stringify({token:magic,client_type:'web'})}));history.replaceState({},'',location.pathname)}catch(err){toast(err.message,true)}}}
+async function processUrlActions(){
+  const qs=new URLSearchParams(location.search);const token=qs.get('token');
+  if(token){setAuthTab('activate');$('#activationCredential').value=token}
+  const reset=qs.get('password_reset');if(reset){setAuthTab('login');$('#loginForm').hidden=true;$('#passwordResetForm').hidden=false;$('#passwordResetForm [name="token"]').value=reset}
+  const verify=qs.get('verify_email');if(verify){try{await request('/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token:verify,client_type:'web'})});history.replaceState({},'',location.pathname);toast('Email verified')}catch(err){toast(err.message,true)}}
+  const magic=qs.get('magic_login');if(magic){try{await completeAuth(await request('/auth/magic-link/complete',{method:'POST',body:JSON.stringify({token:magic,client_type:'web'})}));history.replaceState({},'',location.pathname)}catch(err){toast(err.message,true)}}
+  const paymentReference=qs.get('reference')||qs.get('trxref');
+  if(location.pathname==='/billing/complete'&&paymentReference){
+    try{
+      const result=await request('/billing/confirm',{method:'POST',body:JSON.stringify({reference:paymentReference})});
+      history.replaceState({},'', '/app?billing=complete');
+      toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment is confirmed and already being reconciled.');
+    }catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}
+  }
+}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/app/service-worker.js').catch(()=>{}))}
 initTheme();
 processUrlActions().then(boot);
