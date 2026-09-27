@@ -21,8 +21,8 @@ No requirement may be called complete with prose such as “mostly done”, “s
 - Current verified release head: `e7196d4310180b2e901ab020e7041de7c5e18a91`.
 - Baseline engine/delivery/analytics runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
 - Current component heads: frontdoor `e7196d4310180b2e901ab020e7041de7c5e18a91`; engine/delivery/analytics remain on the certified baseline because subsequent changes are frontdoor/demo-readiness/preparation-only.
-- Tracked requirements: **72**.
-- `VERIFIED`: **68**.
+- Tracked requirements: **73**.
+- `VERIFIED`: **69**.
 - `IMPLEMENTED`: **0**.
 - `BLOCKED_EXTERNAL`: **4**.
 - `DEFERRED_WITH_REASON`: **0**.
