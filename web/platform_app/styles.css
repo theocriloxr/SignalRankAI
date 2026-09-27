@@ -229,3 +229,38 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 .demo-cert-check.is-pass>span{color:var(--green)}
 .demo-cert-check.is-blocked>span{color:var(--coral)}
 @media(max-width:720px){.demo-cert-checklist{grid-template-columns:1fr}}
+
+/* 2026-09-28 account, billing and session hardening */
+body.session-booting main{min-height:calc(100vh - 82px);display:grid;align-items:center}
+.bootstrap-shell{width:min(720px,100%);margin:7vh auto;display:grid;grid-template-columns:auto 1fr;gap:20px 22px;align-items:center;padding:clamp(24px,5vw,42px);border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 94%,transparent);box-shadow:var(--shadow);border-radius:18px}
+.bootstrap-shell h1{margin:.15rem 0 .4rem;font-size:clamp(28px,5vw,48px);letter-spacing:-.045em}
+.bootstrap-shell p:not(.eyebrow){margin:0;color:var(--muted);line-height:1.6}
+.bootstrap-mark{display:grid;place-items:center;width:76px;height:76px;border:1px solid color-mix(in srgb,var(--cyan) 35%,var(--line));border-radius:20px;background:var(--panel-soft);box-shadow:0 12px 35px color-mix(in srgb,var(--cyan) 12%,transparent)}
+.bootstrap-progress{grid-column:1/-1;height:3px;overflow:hidden;background:var(--meter-rest);border-radius:999px}
+.bootstrap-progress span{display:block;width:42%;height:100%;background:var(--cyan);animation:bootstrap-scan 1.15s ease-in-out infinite alternate;border-radius:999px}
+@keyframes bootstrap-scan{from{transform:translateX(-10%)}to{transform:translateX(150%)}}
+
+.topbar{backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+button,.link-button,input,select,textarea{border-radius:9px}
+button{transition:transform .14s ease,background .14s ease,border-color .14s ease,color .14s ease}
+button:not(:disabled):active{transform:translateY(1px)}
+button:disabled{cursor:not-allowed;opacity:.55}
+.panel,.hero-card,.auth-card,.market-card{border-radius:14px}
+.auth-shell{background:transparent;border:0;gap:16px}
+.card-grid{gap:10px;background:transparent;border:0}
+.metric-card{border:1px solid var(--line);border-radius:13px;box-shadow:0 8px 28px color-mix(in srgb,#000 11%,transparent)}
+.metric-card:hover{border-color:color-mix(in srgb,var(--cyan) 38%,var(--line))}
+.plan-card{position:relative;display:flex;min-height:190px;flex-direction:column;gap:10px;justify-content:flex-start}
+.plan-card p{color:var(--muted);line-height:1.5}
+.plan-card .billing-checkout{margin-top:auto;width:100%}
+.plan-card-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.plan-current-badge{font:700 9px Consolas,monospace;letter-spacing:.12em;color:var(--green);border:1px solid color-mix(in srgb,var(--green) 55%,var(--line));padding:4px 7px;border-radius:999px}
+.plan-card.current-plan{border-color:color-mix(in srgb,var(--green) 45%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--green) 5%,var(--panel)),var(--panel))}
+.secure-link-handoff{display:grid;gap:10px;padding:14px;border:1px solid color-mix(in srgb,var(--cyan) 40%,var(--line));border-left:3px solid var(--cyan);background:var(--panel-soft);border-radius:10px}
+.secure-link-handoff p{margin:0;line-height:1.55}
+.secure-link-handoff small{color:var(--muted)}
+.secure-link-handoff .link-button,.secure-link-handoff button{display:inline-flex;align-items:center;justify-content:center;margin:4px 6px 0 0;text-decoration:none}
+.locked-nav[hidden]{display:none!important}
+@media(max-width:700px){.bootstrap-shell{grid-template-columns:1fr;text-align:left;margin:4vh auto}.bootstrap-progress{grid-column:1}.bootstrap-mark{width:64px;height:64px}.plan-card{min-height:0}.secure-link-handoff .link-button,.secure-link-handoff button{width:100%;margin-right:0}}
+@media(prefers-reduced-motion:reduce){.bootstrap-progress span{animation:none;width:100%}}
+
