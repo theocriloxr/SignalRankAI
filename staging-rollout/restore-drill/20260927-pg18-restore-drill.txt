@@ -1,0 +1,4 @@
+SignalRank staging PostgreSQL backup/restore drill trigger.
+Uses Dockerfile.restore-drill with PostgreSQL 18 client.
+Source staging database remains read-only; restore target is disposable and dropped after verification.
+All live-money and payout paths remain disabled.
