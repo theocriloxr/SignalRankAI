@@ -2,8 +2,8 @@
 
 Status: **BLOCKED_EXTERNAL**
 
-Railway deployment: `e8582346-1bcf-4476-aec9-4de033ee0a28`  
-Rollout commit: `41b8049e720d87e5861e9c035c74ef9c498636d0`
+Railway deployment: `e80fa087-d487-40fc-859e-76df71a3b7b7`  
+Rollout commit: `a77694b52529de25b1da6d90170c536e3249f385`
 
 ## Purpose
 
@@ -13,13 +13,20 @@ returning any broker secret:
 > Is there already a canonical staging DEMO account that is ready to enter the
 > bounded demo-certification workflow?
 
-The answer at the time of this run was **no**.
+The answer at the time of this run was **no**. The preflight process exited
+non-zero by design because a BLOCKED certification preflight is fail-closed;
+Railway therefore labels the short-lived job `CRASHED`, which is expected for
+this blocked result and is not a frontdoor/runtime crash.
 
-This refresh ran after the read-only onboarding improvements were certified and
-deployed to staging frontdoor commit `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
-Frontdoor deployment: `f15466a0-eb9e-4f32-9205-3130332c0361`.
-The result therefore reflects the current canonical onboarding/readiness path,
-not the earlier pre-onboarding baseline.
+This refresh ran after the explicit safe DEMO-certification preparation workflow
+was clean-room certified and deployed to staging frontdoor commit
+`e7196d4310180b2e901ab020e7041de7c5e18a91`.
+Frontdoor deployment: `713ee164-5002-4499-a7cf-66f67dba0802`.
+That release passed Alembic `0045` schema admission, decomposed
+`mode=frontdoor` ownership, MetaApi startup probing and `/healthz=200`.
+The preparation action performs provider-backed read-only verification and
+reconciliation, applies a bounded `DEMO/MANUAL` policy, and deliberately leaves
+execution disabled. It cannot place an order or activate live money.
 
 ## Environment / schema evidence
 
@@ -68,15 +75,19 @@ the canonical ownership and wrong-account-execution protections.
 An explicitly owned broker DEMO account must be connected through the canonical
 web or Telegram broker-linking flow. After that:
 
-1. read-only broker verification must succeed;
-2. the account policy must classify the connection as `DEMO`;
-3. explicit demo execution permission must be configured;
-4. reconciliation must become `HEALTHY`;
-5. the account must remain unfrozen and pass all deterministic risk gates;
-6. bounded demo order / modify / close / reconciliation evidence must be
-   captured through the canonical execution path;
-7. the resulting execution/account-ledger evidence must be retained in a demo
-   certification report.
+1. use the canonical **Prepare DEMO certification** action; it re-runs
+   provider-backed read-only verification/reconciliation and refuses any
+   live/ambiguous account;
+2. the preparation action applies a bounded `DEMO/MANUAL` policy while keeping
+   execution **OFF** and without placing an order;
+3. accept the execution-risk terms and separately enable only that DEMO account;
+4. the account must remain unfrozen, reconciliation must be `HEALTHY`, and all
+   deterministic risk/quote/session/market gates must continue to pass;
+5. execute the bounded demo order / modify / close / reconciliation lifecycle
+   through the canonical router;
+6. retain broker acknowledgement, account-ledger, realized P/L/fee,
+   restart/idempotency and reconciliation evidence in a demo certification
+   report.
 
 Only then may a demo certification report ID be used by later live-money
 activation gates.
