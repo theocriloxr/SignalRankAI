@@ -312,7 +312,29 @@
 
       <section id="accountView" class="view" hidden>
         <div class="two-column">
-          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><label><input name="timezone_auto_update" type="checkbox" /> Travel mode <small>Allow SignalRankAI to periodically prompt you to refresh your timezone when travelling. No continuous location tracking is required.</small></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel account-profile-panel">
+            <div class="panel-heading"><div><p class="eyebrow">IDENTITY & CHANNELS</p><h2>Account</h2><p>One SignalRank identity across web, Telegram and mobile.</p></div><span id="telegramStatusBadge" class="status-pill">CHECKING</span></div>
+            <div id="profileDetails" class="detail-list"></div>
+            <form id="profileForm" class="stack-form">
+              <label>Display name<input name="display_name" maxlength="160" /></label>
+              <label>Country<input name="country" maxlength="2" placeholder="NG" /></label>
+              <label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label>
+              <label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label>
+              <label>Preferred currency<input name="preferred_currency" maxlength="8" /></label>
+              <label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label>
+              <label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label>
+              <label><input name="timezone_auto_update" type="checkbox" /> Travel mode <small>Allow SignalRankAI to periodically prompt you to refresh your timezone when travelling. No continuous location tracking is required.</small></label>
+              <button class="primary">Save profile</button>
+            </form>
+            <div id="telegramLinkPanel" class="channel-card">
+              <div class="channel-card-head"><div><strong>Telegram</strong><small id="telegramStatusText">Checking connection…</small></div><span aria-hidden="true">↗</span></div>
+              <div class="form-actions">
+                <button id="connectTelegramButton" class="primary" type="button">Connect Telegram</button>
+                <button id="refreshTelegramButton" class="ghost" type="button">Refresh status</button>
+              </div>
+              <div id="telegramLinkResult" class="detail-list" hidden></div>
+            </div>
+          </article>
           <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
         </div>
         <article class="panel trading-profile-panel">
@@ -354,20 +376,35 @@
           <div id="brokerPlatformCatalog" class="card-grid compact-card-grid"></div>
           <div class="split-grid">
             <div>
-              <h3>Connect MetaTrader</h3>
-              <p class="muted">Use MT4 or MT5 with any broker MetaApi can resolve. For your AssexMarkets demo, select MT5 + Demo and enter the exact server shown inside MetaTrader.</p>
-              <form id="brokerLinkForm" class="stack-form">
-                <label>Platform<select name="platform"><option value="mt5">MetaTrader 5</option><option value="mt4">MetaTrader 4</option></select></label>
-                <label>Broker name<input name="broker_name" maxlength="128" placeholder="AssexMarkets" /></label>
-                <label>Account label<input name="account_label" maxlength="128" placeholder="My demo account" /></label>
-                <label>Environment<select name="environment"><option value="demo">Demo</option><option value="unknown">Detect automatically</option><option value="live">Live</option></select></label>
-                <label>Broker server<input name="server" maxlength="128" placeholder="Exact server name from MT4/MT5" required /></label>
-                <label>Trading login<input name="login" maxlength="64" autocomplete="username" required /></label>
-                <label>Trading password<input name="password" type="password" maxlength="256" autocomplete="current-password" required /></label>
-                <button class="primary" type="submit">Connect with encrypted credentials</button>
-                <button id="brokerSecureLinkButton" class="ghost" type="button">Use provider-hosted secure credential link</button>
+              <div class="connect-section-head">
+                <div><p class="eyebrow">ADD TRADING ACCOUNT</p><h3>Connect MetaTrader</h3><p class="muted">Add MT4/MT5 accounts one at a time. Your account can hold several broker connections; each keeps separate health, policy, default routing and execution permission.</p></div>
+                <span id="brokerAccountAllowance" class="status-pill">MULTI-ACCOUNT</span>
+              </div>
+              <div class="connector-guide">
+                <strong>Use the exact values from MetaTrader</strong>
+                <span><b>Company</b> is the broker/company display name.</span>
+                <span><b>Server</b> is the exact terminal server string and is not interchangeable with the company name.</span>
+                <span>Example from your screenshot: company <code>Assexmarkets Global Limited</code>, server <code>AssexmarketsGlobal-Trade</code>.</span>
+              </div>
+              <form id="brokerLinkForm" class="stack-form broker-connect-form">
+                <div class="two-field-grid">
+                  <label>Platform<select name="platform"><option value="mt5">MetaTrader 5</option><option value="mt4">MetaTrader 4</option></select></label>
+                  <label>Account type<select name="environment"><option value="demo">Demo</option><option value="unknown">Detect automatically</option><option value="live">Live</option></select></label>
+                </div>
+                <label>Broker / company<input name="broker_name" maxlength="128" placeholder="e.g. Assexmarkets Global Limited" /><small>The company shown in your MetaTrader account details.</small></label>
+                <label class="server-field">Exact MetaTrader server<input name="server" maxlength="128" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. AssexmarketsGlobal-Trade" required /><small>Copy this exactly from MetaTrader → account details → Server. Spaces, hyphens and suffixes matter.</small></label>
+                <div class="two-field-grid">
+                  <label>Trading login<input name="login" maxlength="64" inputmode="numeric" autocomplete="username" placeholder="MT account number" required /></label>
+                  <label>Account label<input name="account_label" maxlength="128" placeholder="e.g. Assex demo 1" /><small>Only for your own organization inside SignalRank.</small></label>
+                </div>
+                <label>Trading password<input name="password" type="password" maxlength="256" autocomplete="current-password" required /><small>Use the trading/master password, not an investor/read-only password.</small></label>
+                <div class="form-actions">
+                  <button class="primary" type="submit">Connect account</button>
+                  <button id="brokerSecureLinkButton" class="ghost" type="button">Use MetaApi secure link</button>
+                </div>
               </form>
-              <p class="muted">Secure-link mode sends you to MetaApi to enter the trading login/password there; SignalRankAI never receives that password. Direct mode encrypts the password before persistence and never returns it to the browser.</p>
+              <div id="brokerProvisioningResult" class="connection-feedback" hidden></div>
+              <p class="muted">Secure-link mode sends you to MetaApi to enter credentials there; SignalRankAI never receives that password. Direct mode encrypts the password before persistence and never returns it to the browser. A connection never enables trading by itself.</p>
               <div id="brokerSecureLinkResult" class="detail-list"></div>
               <hr />
               <h3>Connect crypto exchange</h3>
@@ -397,8 +434,8 @@
               <div id="brokerStats" class="detail-list"></div>
             </div>
           </div>
-          <div class="panel-heading"><div><h3>Connected accounts</h3><p>Verify health, choose the default route and separately grant or revoke execution permission per account.</p></div></div>
-          <div id="brokerConnections" class="data-list"></div>
+          <div class="panel-heading connected-heading"><div><p class="eyebrow">ACCOUNT SWITCHER</p><h3>Connected accounts</h3><p>Choose a default route like a trading-terminal account switcher. Switching the default never turns execution on automatically.</p></div><button id="scrollToConnectAccount" class="primary" type="button">+ Add account</button></div>
+          <div id="brokerConnections" class="broker-account-grid"></div>
           <section id="brokerPolicyEditor" class="subpanel" hidden>
             <div class="panel-heading">
               <div>
