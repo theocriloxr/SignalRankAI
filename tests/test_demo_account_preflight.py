@@ -39,3 +39,48 @@ def test_demo_preflight_blockers_are_explicit() -> None:
         "demo_execution_already_enabled_review_required",
     ):
         assert blocker in source
+
+
+def test_web_demo_certification_readiness_is_read_only_and_canonical() -> None:
+    api = Path("web/platform_api.py").read_text(encoding="utf-8")
+    html = Path("web/platform_app/index.html").read_text(encoding="utf-8")
+    app = Path("web/platform_app/app.js").read_text(encoding="utf-8")
+
+    for marker in (
+        '"demo_certification"',
+        '"connected_demo_accounts"',
+        '"preflight_ready_accounts"',
+        '"bounded_lifecycle_ready_accounts"',
+        '"execution_disabled_for_preflight"',
+        '"orders_placed_by_readiness_check": 0',
+        '"activation_performed": False',
+        '"bounded_demo_lifecycle_required": True',
+        '"certification_report_required_for_live_activation": True',
+    ):
+        assert marker in api
+
+    for blocker in (
+        "demo_account_not_read_only_verified",
+        "demo_account_credentials_not_ready",
+        "demo_policy_not_configured",
+        "demo_execution_permission_not_configured",
+        "demo_reconciliation_not_healthy",
+        "demo_policy_frozen",
+        "demo_execution_already_enabled_review_required",
+    ):
+        assert blocker in api
+
+    assert 'id="demoCertificationPanel"' in html
+    assert 'id="demoCertificationAccounts"' in html
+    assert 'id="demoCertificationConnect"' in html
+    assert "data.demo_certification||{}" in app
+    assert "Execution OFF for preflight" in app
+    assert "bounded demo order/modify/close/reconciliation lifecycle" in app
+
+    panel = html[
+        html.index('id="demoCertificationPanel"'):
+        html.index('id="brokerPolicyEditor"'),
+    ]
+    assert "Enable execution" not in panel
+    assert "Place order" not in panel
+    assert "Execute trade" not in panel
