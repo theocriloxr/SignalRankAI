@@ -299,7 +299,7 @@ class Worker:
 
         if (
             _env_bool("MT5_RECONCILIATION_ENABLED", True)
-            and bool(str(os.getenv("META_API_TOKEN") or "").strip())
+            and bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip())
         ):
             try:
                 from services.mt5_reconciler import mt5_reconciliation_loop
@@ -314,7 +314,7 @@ class Worker:
         else:
             logger.info(
                 "[worker] MT5ExecutionReconciliation disabled token_configured=%s",
-                bool(str(os.getenv("META_API_TOKEN") or "").strip()),
+                bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()),
             )
 
         if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
