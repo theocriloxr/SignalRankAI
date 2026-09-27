@@ -36,6 +36,13 @@ execution disabled. Production remains a separate controlled rollout and must
 satisfy its own backup, release, provider, demo/canary, legal and owner
 authorization gates.
 
+Staging disaster recovery is independently verified through a full isolated
+PostgreSQL restore drill. Canonical demo broker connections currently present
+in staging: **0**. A read-only demo preflight therefore blocks demo execution
+certification until an explicitly owned demo account is linked through the
+canonical account flow. Environment-level broker credential variables are not
+treated as account ownership or execution authorization.
+
 Current completion boundary:
 
 - `FINAL_COMPLETION_REPORT_20260926.md`
