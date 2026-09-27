@@ -8,8 +8,8 @@ Repository Alembic head: 0045_mt5_credential_retirement
 Staging schema: certified at 0045_mt5_credential_retirement
 Staging topology: decomposed frontdoor + engine + delivery + analytics
 Staging live-money posture: disabled / fail-closed
-Current verified frontdoor release: d09535105bf44ca9c53008007394d9f804104a81
-Current read-only demo preflight: 20be1193-0339-461f-8560-a68ca75bd79b on cf70d1c817b7... (BLOCKED_EXTERNAL; 0 canonical broker connections)
+Current verified frontdoor release: c4d1e6d6ec5e968497d080b7fc288704b561bbd4
+Current read-only demo preflight: 9757cac0-7f68-466a-a9a0-8e458f1390cd on 3656eabaf56a... (BLOCKED_EXTERNAL; 0 canonical broker connections)
 Production promotion: separate controlled gate; not implied by staging health
 ```
 
@@ -40,23 +40,27 @@ authorization gates.
 
 Staging disaster recovery is independently verified through a full isolated
 PostgreSQL restore drill. Canonical demo broker connections currently present
-in staging: **0**. Frontdoor deployment
-`33c9b981-29c0-4fef-890f-b314e817a566` at `d09535105bf44...`
-retains the explicit fail-closed **Prepare DEMO certification** workflow and
-also aligns Telegram MT5 linking/status copy with the same account-safety
-contract: linking/provisioning does not grant execution permission;
-provider-backed read-only verification/reconciliation → bounded
-`DEMO/MANUAL` policy → execution remains OFF. Clean-room marker
-`d09535105bf44...` passed Alembic 0045/schema/provenance and **465 targeted
-tests**, including MT5 linking-copy safety; the frontdoor image passed **356
-build tests** plus readiness checks. Runtime ownership is frontdoor-only
-(http+Telegram on; engine+worker off), webhook pending=0, and /healthz=200.
-Fresh read-only preflight `20be1193-0339-461f-8560-a68ca75bd79b` on marker
-`cf70d1c817b7...` still found zero canonical accounts and confirmed
-activation=false, orders=0 and secrets_returned=false. Demo execution certification therefore remains blocked
-only until an explicitly owned demo account is linked and the external broker
-lifecycle is proven. Environment-level broker credential variables are not
-treated as account ownership or execution authorization.
+in staging: **0**. The latest secure Broker Hub handoff is live on frontdoor
+deployment `68219e01-9b4a-48a8-8abb-9e4372f634f9` at
+`c4d1e6d6ec5e...`. Telegram no longer collects broker passwords in chat; users
+are handed off to the authenticated Broker Hub, where canonical ownership,
+credential-envelope storage, read-only verification and the explicit
+fail-closed **Prepare DEMO certification** workflow apply. Linking/provisioning
+does not grant execution permission; provider-backed read-only
+verification/reconciliation → bounded `DEMO/MANUAL` policy → execution remains
+OFF.
+
+Clean-room `c4d1e6d6...` passed Alembic 0045/schema/provenance and **469
+targeted tests**; the frontdoor image passed **356 build tests** plus all 12
+readiness checks. Runtime ownership is frontdoor-only (http+Telegram on;
+engine+worker off), webhook pending=0, and /healthz=200. The post-secure-link
+read-only preflight `9757cac0-7f68-466a-a9a0-8e458f1390cd` on marker
+`3656eabaf56a...` still found zero canonical broker connections and confirmed
+activation=false, orders=0 and secrets_returned=false. Demo execution
+certification therefore remains blocked only until an explicitly owned DEMO
+account is linked and the external broker lifecycle is proven.
+Environment-level broker credential variables are not treated as account
+ownership or execution authorization.
 
 Current completion boundary:
 
