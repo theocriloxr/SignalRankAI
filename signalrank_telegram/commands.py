@@ -7399,7 +7399,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	Usage: /mt5_link <login> <password> <server>
 	Example: /mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo
 
-	Credentials are encrypted with Fernet symmetric encryption before storage.
+	Credentials are encrypted before storage by the configured credential vault.
 	"""
 	if update.effective_user is None or update.message is None:
 		return
@@ -7544,7 +7544,12 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
 		status = await get_user_mt5_link_status(int(user_id))
 		if status.get("executable"):
-			reply += (\n\t\t\t"\\nProvider bridge: PROVISIONED\\n"\n\t\t\t"Execution permission: NOT IMPLIED BY LINKING\\n"\n\t\t\t"Run /verifybroker for read-only verification. For DEMO, then use Prepare DEMO certification in the web Broker Hub."\n\t\t)
+			reply += (
+				"\nProvider bridge: PROVISIONED\n"
+				"Execution permission: NOT IMPLIED BY LINKING\n"
+				"Run /verifybroker for read-only verification. For DEMO, then use "
+				"Prepare DEMO certification in the web Broker Hub."
+			)
 		else:
 			reply += (
 				"\nProvider bridge: NOT PROVISIONED\n"
