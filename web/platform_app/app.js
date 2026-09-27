@@ -371,6 +371,9 @@ async function loadBroker(){
         const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify health</button>':'';
         const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
         const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
+        const demoPrepareButton=(String(x.environment||'').toLowerCase()==='demo'&&mode==='DEMO')
+          ?'<button class="ghost broker-action" data-action="demo_prepare">Prepare DEMO certification</button>'
+          :'';
         const readiness=x.readiness||{};
         const blockers=Array.isArray(readiness.blockers)?readiness.blockers:[];
         const primaryBlocker=blockers[0]?.message||blockers[0]?.code||'Execution readiness not yet evaluated';
@@ -395,6 +398,7 @@ async function loadBroker(){
           </div>
           <div class="broker-card-actions">
             ${verifyButton}
+            ${demoPrepareButton}
             <button class="ghost broker-action" data-action="default" ${x.is_default?'disabled':''}>${x.is_default?'Default account':'Make default'}</button>
             <button class="ghost broker-action" data-action="policy">Risk policy</button>
             <button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button>
@@ -494,6 +498,20 @@ async function loadBroker(){
           const environment=String(verified.environment||connection.environment||'').toUpperCase();
           toast(provider+' connection verified'+(environment?' · '+environment:''));
           await loadBroker();
+          return;
+        }else if(action==='demo_prepare'){
+          const warning='Prepare this DEMO account for certification? SignalRankAI will run read-only provider verification and reconciliation, apply a conservative MANUAL DEMO policy, and keep execution OFF. No order will be placed.';
+          if(!confirm(warning))return;
+          const prepared=await request('/broker/connections/'+encodeURIComponent(connectionId)+'/demo-certification/prepare',{
+            method:'POST',
+            body:JSON.stringify({confirm:true})
+          });
+          toast(prepared.demo_certification_prepared
+            ?'DEMO certification policy prepared · execution is still OFF'
+            :'DEMO account still needs verification');
+          await loadBroker();
+          const refreshed=(state.broker?.connections||[]).find(x=>x.connection_id===connectionId);
+          if(refreshed)await openBrokerPolicy(refreshed);
           return;
         }else if(action==='default'){
           await request('/broker/connections/'+encodeURIComponent(connectionId)+'/default',{method:'POST',body:JSON.stringify({confirm:true})});
