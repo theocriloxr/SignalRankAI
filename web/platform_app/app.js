@@ -271,7 +271,7 @@ async function loadBroker(){
     const catalog=$('#brokerPlatformCatalog');
     if(catalog){
       catalog.innerHTML=platforms.map(p=>{
-        const stateLabel=p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connector integration':'Custom integration';
+        const stateLabel=p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connection ready · execution adapter pending':p.execution_adapter==='connection_only'?'Connection only':'Custom integration';
         return `<div class="metric-card"><small>${esc(p.name)}</small><strong>${esc(stateLabel)}</strong><span class="${p.configured?'positive':'muted'}">${p.configured?'Configured':'Setup required'}</span><small>${esc((p.asset_classes||[]).join(' · '))}</small></div>`;
       }).join('');
     }
@@ -373,6 +373,33 @@ async function loadBroker(){
       e.target.elements.password.value='';
       await loadBroker();
       toast(raw.environment==='demo'?raw.platform.toUpperCase()+' demo connection saved':raw.platform.toUpperCase()+' connection saved');
+    }catch(err){toast(err.message,true)}
+  };
+
+  if($('#exchangeBrokerLinkForm'))$('#exchangeBrokerLinkForm').onsubmit=async e=>{
+    e.preventDefault();
+    const raw=formData(e.target);
+    const payload={
+      provider:raw.provider,
+      api_key:raw.api_key,
+      api_secret:raw.api_secret,
+      passphrase:raw.passphrase||null,
+      sandbox:String(raw.sandbox).toLowerCase()==='true',
+      read:true,
+      trade:true,
+      withdraw:false,
+      internal_transfer:false,
+      account_label:raw.account_label||null
+    };
+    try{
+      const result=await request('/broker/exchange',{method:'POST',body:JSON.stringify(payload)});
+      e.target.elements.api_key.value='';
+      e.target.elements.api_secret.value='';
+      if(e.target.elements.passphrase)e.target.elements.passphrase.value='';
+      await loadBroker();
+      toast(result.permissions_verified
+        ? raw.provider.toUpperCase()+' account connected and permissions verified'
+        : raw.provider.toUpperCase()+' account connected; execution remains pending provider verification');
     }catch(err){toast(err.message,true)}
   };
 
