@@ -664,17 +664,17 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
         max_daily_loss_pct=_decimal(
             value.get("max_daily_loss_pct"),
             field_name="max_daily_loss_pct",
-            default="0.04",
+            default="0.02",
         ),
         max_weekly_loss_pct=_decimal(
             value.get("max_weekly_loss_pct"),
             field_name="max_weekly_loss_pct",
-            default="0.08",
+            default="0.04",
         ),
         max_total_drawdown_pct=_decimal(
             value.get("max_total_drawdown_pct"),
             field_name="max_total_drawdown_pct",
-            default="0.08",
+            default="0.06",
         ),
         max_open_positions=int(
             value.get("max_open_positions")
