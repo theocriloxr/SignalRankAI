@@ -151,7 +151,7 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v20" in sw
+    assert "signalrank-shell-v21" in sw
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
@@ -182,3 +182,64 @@ def test_known_server_preflight_is_credential_free_and_wired_to_ui() -> None:
     assert 'id="brokerServerLookupResult"' in html
     assert "known-server-choice" in app
     assert "No trading password is sent when searching." in html
+
+
+def test_metaapi_http_401_is_operator_token_failure_not_broker_auth() -> None:
+    result = _metaapi_provisioning_error(
+        401,
+        json.dumps(
+            {
+                "error": "UnauthorizedError",
+                "message": "Authorization failed",
+            }
+        ),
+    )
+    assert result["code"] == "provider_authorization_failed"
+    assert result["provider_code"] == "UnauthorizedError"
+    assert result["can_use_secure_link"] is False
+    assert "MetaApi API token" in result["error"]
+    assert "MT4/MT5 credentials were not the cause" in result["error"]
+
+
+def test_metaapi_http_403_is_operator_permission_failure() -> None:
+    result = _metaapi_provisioning_error(
+        403,
+        json.dumps(
+            {
+                "error": "ForbiddenError",
+                "message": "Method or resource access permissions are missing",
+            }
+        ),
+    )
+    assert result["code"] == "provider_permissions_missing"
+    assert result["can_use_secure_link"] is False
+    assert "permissions" in result["error"].lower()
+
+
+def test_broker_e_auth_remains_distinct_from_metaapi_token_auth() -> None:
+    result = _metaapi_provisioning_error(
+        400,
+        json.dumps(
+            {
+                "error": "ValidationError",
+                "message": "We failed to authenticate to your broker using credentials provided.",
+                "details": "E_AUTH",
+            }
+        ),
+    )
+    assert result["code"] == "authentication_failed"
+    assert result["provider_code"] == "E_AUTH"
+
+
+def test_runtime_actively_probes_metaapi_token_instead_of_presence_only() -> None:
+    mt5 = source("services/mt5_client.py")
+    runtime = source("railway_main.py")
+    api = source("web/platform_api.py")
+    app = source("web/platform_app/app.js")
+    sw = source("web/platform_app/service-worker.js")
+    assert "async def probe_metaapi_authorization()" in mt5
+    assert "[metaapi_startup_probe] status=PASS" in runtime
+    assert "[metaapi_startup_probe] status=FAIL" in runtime
+    assert "provider_permissions_missing" in api
+    assert "integration problem, not an error in your broker login/server" in app
+    assert "signalrank-shell-v21" in sw
