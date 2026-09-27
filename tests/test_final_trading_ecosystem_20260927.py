@@ -133,3 +133,15 @@ def test_broker_hub_exposes_account_readiness_without_bypassing_trade_gates():
     assert "kill_switch" in api
     assert "Account-level execution prerequisites ready" in js
     assert "every trade still passes live safety gates" in js
+
+
+def test_orm_account_policy_defaults_match_conservative_policy():
+    model=(ROOT/"db"/"models.py").read_text(encoding="utf-8")
+    block=model[
+        model.index("class TradingAccountPolicyRecord"):
+        model.index("class BrokerReconciliationState")
+    ]
+    assert "default=0.005" in block
+    assert "default=0.02" in block
+    assert "default=0.04" in block
+    assert "default=0.06" in block
