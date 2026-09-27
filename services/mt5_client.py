@@ -338,11 +338,14 @@ async def search_known_metatrader_servers(
     query: str,
 ) -> Dict[str, Any]:
     """Search MetaApi's known MT server registry without broker credentials."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return {
             "success": False,
-            "code": "provider_not_configured",
-            "error": "MetaTrader connection service is not configured",
+            "code": str(auth.get("code") or "provider_not_configured"),
+            "error": "MetaApi authorization is unavailable. An administrator must refresh the integration token." if auth.get("configured") else "MetaTrader connection service is not configured",
+            "provider_status": auth.get("provider_status"),
+            "provider_code": auth.get("provider_code"),
             "brokers": [],
         }
     platform_n = str(platform or "").strip().lower()
@@ -509,7 +512,8 @@ def _account_provisioning_payload(
 
 async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
     """Authenticated GET → parsed JSON or None."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return None
     try:
         async with aiohttp.ClientSession() as session:
@@ -531,7 +535,8 @@ async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
 
 async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
     """Authenticated POST → parsed JSON or None."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return None
     try:
         async with aiohttp.ClientSession() as session:
@@ -556,7 +561,8 @@ async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
 
 async def _http_put(url: str, payload: Dict) -> bool:
     """Authenticated PUT → True on success."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return False
     try:
         async with aiohttp.ClientSession() as session:
@@ -1662,8 +1668,18 @@ async def _provision_metatrader_account(
     therefore made per explicit user action; pending broker discovery is
     surfaced to the caller instead of being looped automatically.
     """
-    if not _check_token():
-        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
+        return {
+            "success": False,
+            "code": str(auth.get("code") or "provider_authorization_failed"),
+            "error": "SignalRankAI cannot authenticate to MetaApi. An administrator must refresh the integration token before broker provisioning.",
+            "provider_code": auth.get("provider_code"),
+            "provider_status": auth.get("provider_status"),
+            "suggested_servers": [],
+            "retry_after": None,
+            "can_use_secure_link": False,
+        }
     from uuid import uuid4
 
     headers = _headers()
@@ -1733,8 +1749,15 @@ async def _create_configuration_link(
     ttl_days: int = 3,
 ) -> Dict[str, Any]:
     """Return a provider-hosted credential-entry link for one MetaApi account."""
-    if not _check_token():
-        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
+        return {
+            "success": False,
+            "code": str(auth.get("code") or "provider_authorization_failed"),
+            "error": "SignalRankAI cannot authenticate to MetaApi. An administrator must refresh the integration token before creating a secure configuration link.",
+            "provider_code": auth.get("provider_code"),
+            "provider_status": auth.get("provider_status"),
+        }
     account_id = str(account_id or "").strip()
     if not account_id:
         return {"success": False, "error": "MetaApi account id is required"}
