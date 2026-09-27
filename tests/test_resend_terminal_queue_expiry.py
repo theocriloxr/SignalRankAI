@@ -20,7 +20,7 @@ def test_queue_expiry_is_persisted_as_delivery_terminal_runtime_state() -> None:
 
     queue_block = source[
         source.index("queue_result = evaluate_time_to_telegraph(payload)"):
-        source.index("fresh_ranked.append(signal_row)"),
+        source.index("fresh_ranked.append(signal_row)")
     ]
     assert '"state": "EXPIRED_IN_QUEUE"' in queue_block
     assert '"source": "telegram_resend_freshness"' in queue_block
@@ -33,7 +33,7 @@ def test_queue_expiry_does_not_mutate_analytical_signal_or_lifecycle() -> None:
     source = _source()
     queue_block = source[
         source.index("queue_result = evaluate_time_to_telegraph(payload)"):
-        source.index("fresh_ranked.append(signal_row)"),
+        source.index("fresh_ranked.append(signal_row)")
     ]
 
     assert "expire_signal" not in queue_block
@@ -46,7 +46,7 @@ def test_queue_expiry_remains_fail_closed_if_marker_persistence_fails() -> None:
     source = _source()
     queue_block = source[
         source.index("queue_result = evaluate_time_to_telegraph(payload)"):
-        source.index("fresh_ranked.append(signal_row)"),
+        source.index("fresh_ranked.append(signal_row)")
     ]
     assert "delivery-terminal marker persist failed" in queue_block
     # The signal is still skipped for the current run even when the
