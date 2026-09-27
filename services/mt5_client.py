@@ -109,7 +109,18 @@ def _metaapi_provisioning_error(
     message = "MetaTrader account provisioning failed. Check the broker details and try again."
     can_use_secure_link = True
 
-    if code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"} or "server" in message_lower and "not found" in message_lower:
+    # MetaApi REST authorization failures are operator integration failures,
+    # not broker-account credential failures. Provider docs reserve broker
+    # login/password failures for the E_AUTH validation code.
+    if int(status) == 401 and code_upper not in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"}:
+        stable_code = "provider_authorization_failed"
+        message = "SignalRankAI's MetaApi authorization is invalid or expired. An administrator must refresh the MetaApi API token; your MT4/MT5 credentials were not the cause."
+        can_use_secure_link = False
+    elif int(status) == 403 and code_upper not in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"}:
+        stable_code = "provider_permissions_missing"
+        message = "SignalRankAI's MetaApi token does not have the permissions required for account provisioning. An administrator must update the MetaApi integration permissions."
+        can_use_secure_link = False
+    elif code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"} or "server" in message_lower and "not found" in message_lower:
         stable_code = "server_not_found"
         message = (
             "The broker server was not recognized. Enter the exact server name shown in MetaTrader"
@@ -144,10 +155,6 @@ def _metaapi_provisioning_error(
     elif code_upper in {"E_RESOURCE_SLOTS", "E_CAPACITY", "E_NO_CAPACITY"} or "slot" in message_lower:
         stable_code = "provider_capacity"
         message = "The MetaApi account has no available provisioning capacity. Free a slot or update the provider plan before adding another account."
-        can_use_secure_link = False
-    elif int(status) in {401, 403} and not code_upper:
-        stable_code = "provider_authorization_failed"
-        message = "SignalRankAI's MetaApi connection is not authorized. An administrator must refresh the MetaApi integration token."
         can_use_secure_link = False
     elif int(status) >= 500:
         stable_code = "provider_unavailable"
@@ -197,6 +204,41 @@ def _headers() -> Dict[str, str]:
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+
+
+async def probe_metaapi_authorization() -> Dict[str, Any]:
+    """Validate the configured MetaApi auth token without broker credentials."""
+    if not _check_token():
+        return {
+            "ok": False,
+            "code": "provider_not_configured",
+            "provider_status": None,
+        }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                _provisioning_base(),
+                headers=_headers(),
+                params={"limit": "1"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                body = await resp.text()
+                if resp.status == 200:
+                    return {"ok": True, "code": "authorized", "provider_status": 200}
+                mapped = _metaapi_provisioning_error(resp.status, body)
+                return {
+                    "ok": False,
+                    "code": str(mapped.get("code") or "provider_probe_failed"),
+                    "provider_status": int(resp.status),
+                    "provider_code": mapped.get("provider_code"),
+                }
+    except Exception as exc:
+        logger.warning("[metaapi_auth_probe] unavailable error_type=%s", type(exc).__name__)
+        return {
+            "ok": False,
+            "code": "provider_unavailable",
+            "provider_status": None,
+        }
 
 
 async def search_known_metatrader_servers(
@@ -254,15 +296,18 @@ async def search_known_metatrader_servers(
                         "brokers": brokers,
                         "count": sum(len(row["servers"]) for row in brokers),
                     }
+                mapped = _metaapi_provisioning_error(resp.status, body)
                 logger.warning(
-                    "[metatrader] known_server_search_failed status=%s",
+                    "[metatrader] known_server_search_failed status=%s code=%s",
                     resp.status,
+                    mapped.get("code"),
                 )
                 return {
                     "success": False,
-                    "code": "server_search_failed",
-                    "error": f"MetaApi server search failed ({resp.status})",
+                    "code": str(mapped.get("code") or "server_search_failed"),
+                    "error": str(mapped.get("error") or f"MetaApi server search failed ({resp.status})"),
                     "provider_status": int(resp.status),
+                    "provider_code": mapped.get("provider_code"),
                     "diagnostic": _safe_error_body(body),
                     "brokers": [],
                 }
