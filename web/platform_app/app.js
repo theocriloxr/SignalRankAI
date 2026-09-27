@@ -413,6 +413,54 @@ async function loadBroker(){
     ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')+
       '<p class="muted">Demo, personal-live and PROP performance are not combined into one headline. Open each account policy/ledger for its own evidence.</p>';
 
+    const demo=data.demo_certification||{};
+    const demoAccounts=Array.isArray(demo.accounts)?demo.accounts:[];
+    const demoBadge=$('#demoCertificationBadge');
+    if(demoBadge){
+      const ready=String(demo.status||'ACTION_REQUIRED')==='PREFLIGHT_READY';
+      demoBadge.textContent=ready?'PREFLIGHT READY':'ACTION REQUIRED';
+      demoBadge.className='account-state '+(ready?'positive':'pending-text');
+    }
+    const demoSummary=$('#demoCertificationSummary');
+    if(demoSummary){
+      const blocker=(Array.isArray(demo.blockers)&&demo.blockers[0])||null;
+      demoSummary.innerHTML=[
+        ['Connected demo accounts',Number(demo.connected_demo_accounts||0)],
+        ['Preflight-ready',Number(demo.preflight_ready_accounts||0)],
+        ['Bounded-lifecycle ready',Number(demo.bounded_lifecycle_ready_accounts||0)],
+        ['Next blocker',blocker?String(blocker.message||blocker.code||'Action required'):(demoAccounts.length?'None before operator certification':'Connect a demo account')]
+      ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+    }
+    const demoEmpty=$('#demoCertificationEmpty');
+    const demoList=$('#demoCertificationAccounts');
+    if(demoEmpty)demoEmpty.hidden=demoAccounts.length>0;
+    if(demoList){
+      const labels={
+        connected_as_demo:'Connected as DEMO',
+        read_only_verified:'Read-only broker verification',
+        canonical_credentials_ready:'Canonical secure credentials',
+        demo_policy_configured:'DEMO account policy',
+        explicit_execution_permission:'Explicit execution permission',
+        reconciliation_healthy:'Healthy reconciliation',
+        policy_unfrozen:'Policy unfrozen',
+        execution_disabled_for_preflight:'Execution OFF for preflight',
+        execution_terms_accepted:'Execution-risk terms accepted',
+        provider_execution_adapter_ready:'Provider execution adapter certified'
+      };
+      demoList.innerHTML=demoAccounts.map(account=>{
+        const checklist=account.checklist||{};
+        const checks=Object.entries(labels).map(([key,label])=>{
+          const ok=checklist[key]===true;
+          return `<div class="demo-cert-check ${ok?'is-pass':'is-blocked'}"><span>${ok?'✓':'•'}</span><div><strong>${esc(label)}</strong><small>${ok?'Ready':'Action required'}</small></div></div>`;
+        }).join('');
+        const blocker=(Array.isArray(account.blockers)&&account.blockers[0])||null;
+        return `<article class="demo-cert-account"><div class="broker-card-top"><div><span class="broker-platform">${esc(String(account.provider||'broker').toUpperCase())}</span><h4>${esc(account.account_label||'Demo account')}</h4><small>Policy v${esc(account.policy_version||'—')} · Reconciliation ${esc(account.reconciliation_status||'UNKNOWN')}</small></div><span class="account-state ${account.preflight_ready?'positive':'pending-text'}">${account.preflight_ready?'PREFLIGHT READY':'NOT READY'}</span></div><div class="demo-cert-checklist">${checks}</div><p class="${blocker?'negative':'positive'}">${esc(account.next_action||blocker?.message||'Ready for operator-controlled demo certification.')}</p></article>`;
+      }).join('');
+    }
+    const demoNote=$('#demoCertificationNote');
+    if(demoNote)demoNote.textContent=String(demo.note||'This readiness view is read-only. A later bounded demo order/modify/close/reconciliation lifecycle is still required before a demo certification report can unlock any live-money gate.');
+    $('#demoCertificationConnect')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
+
     $('#brokerStatus').innerHTML=[
       ['Connection does not grant trading','Yes'],
       ['Demo-first support','Yes'],
