@@ -1,0 +1,7 @@
+FROM postgres:17-alpine
+
+RUN apk add --no-cache python3 bash ca-certificates
+WORKDIR /app
+COPY scripts/staging_backup_restore_drill.py /app/scripts/staging_backup_restore_drill.py
+
+CMD ["python3", "-u", "/app/scripts/staging_backup_restore_drill.py"]
