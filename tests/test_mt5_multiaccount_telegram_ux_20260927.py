@@ -130,3 +130,11 @@ def test_tablet_navigation_breakpoint_avoids_early_fixed_sidebar() -> None:
     assert "@media(min-width:1320px)" in css
     assert "@media(max-width:1319px) and (min-width:701px)" in css
     assert ".broker-account-grid" in css
+
+
+def test_manual_execution_can_target_an_explicit_connected_account() -> None:
+    app = source("web/platform_app/app.js")
+    api = source("web/platform_api.py")
+    assert "executionConnectionSelect" in app
+    assert "connection_id:connection.connection_id" in app
+    assert "connection_id: str | None" in api
