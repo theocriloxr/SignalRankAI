@@ -149,6 +149,9 @@ re-enter resend recovery after queue expiry.
 | SR-SCHEMA-012 | VERIFIED | STAGING / INTEGRATION | Staging database and all long-lived runtime roles admit against Alembic 0045 credential-retirement schema | schema/release admission + role runtimes · clean-room locked build + live Railway admission · `0044_broker_credential_envelope`, `0045_mt5_credential_retirement` \| Analytics `4d0bf12c...`; engine `7aac8cf2...`; delivery `2eaf24e7...`; frontdoor `7abdb8e6...` |
 | SR-SEC-013 | VERIFIED | STAGING / INTEGRATION | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | `scripts/broker_credential_inventory.py` · `tests/test_broker_credential_inventory.py` · evidence doc above \| Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
 
+| SR-DR-010 | VERIFIED | STAGING / INTEGRATION | Full staging PostgreSQL backup/restore drill proves bounded dump, isolated restore, 0045 schema/data recovery, immutable-ledger trigger recovery and cleanup without source/production mutation | `scripts/staging_backup_restore_drill.py`, `Dockerfile.restore-drill` · `tests/test_staging_backup_restore_drill.py` · deployment `59a52067-b83f-46bb-83f6-67080b818c7d`: dump 199,493,675 bytes, restore 297.755s, restored head 0045, 48,132 signals + 6 users, cleanup PASS, source/production mutation false |
+
+
 ## Release rule
 
 A production/live promotion report may only state “complete” when:
