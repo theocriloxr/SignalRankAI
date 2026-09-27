@@ -44,7 +44,7 @@ def test_first_party_platform_has_canonical_exchange_link_and_delivery_proof_gat
     assert "register_platform_exchange_connection" in api
     execute=api[
         api.index('@router.post("/signals/{signal_id}/execute")'):
-        api.index('@router.post("/signals/{signal_id}/feedback")')
+        api.index('@router.post("/signals/{signal_id}/feedback",')
     ]
     assert "signal_deliveries" in execute
     assert "notification_events" in execute
