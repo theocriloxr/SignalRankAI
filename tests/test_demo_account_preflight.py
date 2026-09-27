@@ -93,7 +93,7 @@ def test_metatrader_demo_onboarding_persists_provider_verification_and_reconcili
 
     upsert = registry[
         registry.index("async def upsert_connection("):
-        registry.index("async def set_execution_enabled("),
+        registry.index("async def set_execution_enabled(")
     ]
     assert "verified_at: datetime | None = None" in upsert
     assert "row.verified_at = verified_at" in upsert
@@ -102,7 +102,7 @@ def test_metatrader_demo_onboarding_persists_provider_verification_and_reconcili
 
     link = mt5[
         mt5.index("async def link_platform_metatrader_account("):
-        mt5.index("async def create_platform_metatrader_secure_link("),
+        mt5.index("async def create_platform_metatrader_secure_link(")
     ]
     assert "verified_at=verified_at" in link
     assert "datetime.now(timezone.utc).replace(tzinfo=None)" in link
@@ -111,7 +111,7 @@ def test_metatrader_demo_onboarding_persists_provider_verification_and_reconcili
 
     reconcile = mt5[
         mt5.index("async def refresh_platform_metatrader_reconciliation("):
-        mt5.index("def _position_id_from_row("),
+        mt5.index("def _position_id_from_row(")
     ]
     assert "get_reconciliation_snapshot(" in reconcile
     assert 'status = "HEALTHY" if ready else "RECONCILING"' in reconcile
@@ -121,7 +121,7 @@ def test_metatrader_demo_onboarding_persists_provider_verification_and_reconcili
 
     verify = verification[
         verification.index("async def verify_broker_connection_read_only("):
-        verification.index("__all__ ="),
+        verification.index("__all__ =")
     ]
     assert "verify_platform_metatrader_connection(" in verify
     assert "refresh_platform_metatrader_reconciliation(" in verify
