@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import quote, urlparse
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -136,6 +137,10 @@ class PushDeviceRequest(BaseModel):
 class CheckoutCreateRequest(BaseModel):
     product_id: str = Field(min_length=3, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]+$")
     currency: str = Field(default="NGN", pattern=r"^NGN$")
+
+
+class BillingConfirmRequest(BaseModel):
+    reference: str = Field(min_length=3, max_length=160, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
 class SubscriptionCancelRequest(BaseModel):
@@ -4783,6 +4788,73 @@ async def create_billing_checkout(
         logger.warning("[billing_checkout] user=%s product=%s blocked=%s", uid, payload.product_id, exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return checkout
+
+
+@router.post("/billing/confirm")
+async def confirm_billing_checkout(
+    payload: BillingConfirmRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Verify a Paystack return against the provider and reconcile entitlements.
+
+    The browser never supplies an amount, tier, duration or user identity.
+    Those values are accepted only from the provider transaction metadata and
+    must point back to the authenticated canonical SignalRank user.
+    """
+    secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Payment confirmation is not configured")
+    reference = str(payload.reference or "").strip()
+    base_url = str(os.getenv("PAYSTACK_BASE_URL") or "https://api.paystack.co").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{base_url}/transaction/verify/{quote(reference, safe='')}",
+                headers={"Authorization": f"Bearer {secret}", "Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("[billing_confirm] provider request failed type=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Payment provider verification is temporarily unavailable") from exc
+    if response.status_code != 200:
+        logger.warning("[billing_confirm] provider rejected reference status=%s", response.status_code)
+        raise HTTPException(status_code=409, detail="Payment has not been confirmed by Paystack yet")
+    try:
+        envelope = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Payment provider returned an invalid response") from exc
+    transaction = envelope.get("data") if isinstance(envelope, dict) else None
+    if not envelope.get("status") or not isinstance(transaction, dict):
+        raise HTTPException(status_code=409, detail="Payment has not been confirmed by Paystack yet")
+    if str(transaction.get("status") or "").lower() != "success":
+        raise HTTPException(status_code=409, detail="Payment is not successful yet")
+
+    metadata = transaction.get("metadata")
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=409, detail="Payment metadata is incomplete")
+    try:
+        paid_user_id = int(metadata.get("user_id"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="Payment is not linked to a SignalRank account") from exc
+    if paid_user_id != int(user["id"]):
+        logger.warning("[billing_confirm] ownership mismatch user=%s", user["id"])
+        raise HTTPException(status_code=403, detail="This payment belongs to a different SignalRank account")
+
+    from payments.paystack import process_event
+    result = await process_event({"event": "charge.success", "data": transaction})
+    if not bool((result or {}).get("processed")):
+        reason = str((result or {}).get("reason") or "Payment reconciliation is still pending")
+        logger.warning("[billing_confirm] reconciliation pending user=%s reason=%s", user["id"], reason)
+        raise HTTPException(status_code=409, detail=reason)
+
+    async with get_session(label="platform.billing.confirm", timeout_seconds=10.0) as session:
+        snapshot = await user_snapshot(session, int(user["id"]))
+        await session.rollback()
+    return {
+        "processed": True,
+        "idempotent": bool((result or {}).get("idempotent")),
+        "tier": str((snapshot or {}).get("tier") or (result or {}).get("tier") or "").lower(),
+        "reference": reference,
+    }
 
 
 @router.get("/billing")
