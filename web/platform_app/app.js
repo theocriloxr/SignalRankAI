@@ -67,10 +67,40 @@ async function loadJournal(){const rows=(await request('/journal?limit=100')).en
 $('#journalForm').onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={title:raw.title||null,notes:raw.notes||'',emotion:raw.emotion||null,mistake_category:raw.mistake_category||null,plan_adherence:raw.plan_adherence?Number(raw.plan_adherence):null,result_r:raw.result_r?Number(raw.result_r):null,tags:String(raw.tags||'').split(',').map(x=>x.trim()).filter(Boolean)};try{await request('/journal',{method:'POST',body:JSON.stringify(payload)});e.target.reset();await loadJournal();toast('Journal entry saved')}catch(err){toast(err.message,true)}};
 async function loadSupport(){const rows=(await request('/support/tickets')).tickets||[];$('#supportTickets').innerHTML=rows.length?rows.map(t=>`<div class="list-row"><div><strong>${esc(t.subject)}</strong><small>${esc(t.category)} · ${esc(t.priority)} · ${time(t.updated_at)}</small></div><span>${esc(t.status)}</span></div>`).join(''):'<p>No support tickets.</p>'}
 $('#supportForm').onsubmit=async e=>{e.preventDefault();try{await request('/support/tickets',{method:'POST',body:JSON.stringify(formData(e.target))});e.target.reset();await loadSupport();toast('Support ticket created')}catch(err){toast(err.message,true)}};
-function renderProfile(){const u=state.user||{};const entries=[['Public ID',u.public_user_id],['Email',u.primary_email||'Not set'],['Email verified',u.email_verified_at?'Yes':'No'],['Telegram',u.telegram_user_id?'Linked':'Not linked'],['Tier',String(u.tier||'free').toUpperCase()],['Timezone',u.timezone||'UTC'],['Travel mode',u.timezone_auto_update?'On':'Off'],['Account status',u.account_status]];$('#profileDetails').innerHTML=entries.map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');const form=$('#profileForm');if(form){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}}
+function telegramLinkState(){
+  const u=state.user||{};
+  if(u.telegram_user_id)return{status:'linked',label:'LINKED',text:'Telegram is connected to this SignalRank account.',connected:true};
+  const status=String(u.telegram_link_status||'not_linked').toLowerCase();
+  if(status==='merge_review')return{status,label:'VERIFIED',text:'Telegram ownership is verified. Account history reconciliation is pending; you do not need to reconnect.',connected:true};
+  if(status==='link_pending')return{status,label:'PENDING',text:'A Telegram link code is active. Complete it in the bot or create a new code after it expires.',connected:false};
+  return{status:'not_linked',label:'NOT LINKED',text:'Connect Telegram once to share identity, preferences and delivery state across channels.',connected:false};
+}
+function renderProfile(){
+  const u=state.user||{};
+  const tg=telegramLinkState();
+  const telegramDisplay=tg.status==='merge_review'?'Verified · reconciliation pending':tg.status==='link_pending'?'Link pending':u.telegram_user_id?'Linked':'Not linked';
+  const entries=[['Public ID',u.public_user_id],['Email',u.primary_email||'Not set'],['Email verified',u.email_verified_at?'Yes':'No'],['Telegram',telegramDisplay],['Tier',String(u.tier||'free').toUpperCase()],['Timezone',u.timezone||'UTC'],['Travel mode',u.timezone_auto_update?'On':'Off'],['Account status',u.account_status]];
+  $('#profileDetails').innerHTML=entries.map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
+  const badge=$('#telegramStatusBadge');if(badge){badge.textContent=tg.label;badge.dataset.state=tg.status}
+  const statusText=$('#telegramStatusText');if(statusText)statusText.textContent=tg.text;
+  const connect=$('#connectTelegramButton');
+  if(connect){
+    connect.hidden=tg.connected;
+    connect.textContent=tg.status==='link_pending'?'Create new link code':'Connect Telegram';
+  }
+  const result=$('#telegramLinkResult');
+  if(result&&tg.status==='merge_review'){
+    result.hidden=false;
+    result.innerHTML='<div class="connection-feedback positive-feedback"><strong>Telegram verified</strong><p>Your web and Telegram identities both passed possession checks. SignalRank is reconciling the older Telegram-side account history before treating them as one canonical record.</p><small>Do not create another account or link code. Your Telegram connection is already recognized.</small></div>';
+  }else if(result&&tg.status==='linked'){
+    result.hidden=true;result.innerHTML='';
+  }
+  const form=$('#profileForm');
+  if(form){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}
+}
 $('#profileForm').onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={timezone_auto_update:Boolean(e.target.elements.timezone_auto_update?.checked)};for(const [k,v] of Object.entries(raw)){if(k==='timezone_auto_update')continue;if(v!=='')payload[k]=['max_risk_percentage','max_daily_drawdown_pct'].includes(k)?Number(v):v}try{state.user=(await request('/profile',{method:'PATCH',body:JSON.stringify(payload)})).user;renderProfile();toast('Profile updated')}catch(err){toast(err.message,true)}};
 function csvValues(value,{upper=false}={}){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean).map(x=>upper?x.toUpperCase():x.toLowerCase())}
-function renderTradingProfile(data){state.tradingProfile=data;const p=data?.preferences||{};const form=$('#tradingProfileForm');if(!form)return;for(const name of ['trade_profile','risk_profile','min_signal_score','risk_per_trade_pct','max_daily_loss_pct','max_signals_per_day','max_concurrent_positions']){if(form.elements[name])form.elements[name].value=p[name]??''}for(const name of ['preferred_assets','blocked_assets','preferred_timeframes','preferred_strategies','sessions']){if(form.elements[name])form.elements[name].value=(p[name]||[]).join(', ')}const classes=new Set(p.asset_classes||[]);$$('#tradingProfileForm input[name="asset_class"]').forEach(input=>input.checked=classes.has(input.value));for(const name of ['notify_on_entry','notify_on_exit','notify_on_tp','notify_on_sl']){if(form.elements[name])form.elements[name].checked=p[name]!==false}const sync=$('#tradingProfileSync');if(sync)sync.textContent=state.user?.telegram_user_id?'Synced with your linked Telegram account':'Saved for web now; it will sync when Telegram is linked'}
+function renderTradingProfile(data){state.tradingProfile=data;const p=data?.preferences||{};const form=$('#tradingProfileForm');if(!form)return;for(const name of ['trade_profile','risk_profile','min_signal_score','risk_per_trade_pct','max_daily_loss_pct','max_signals_per_day','max_concurrent_positions']){if(form.elements[name])form.elements[name].value=p[name]??''}for(const name of ['preferred_assets','blocked_assets','preferred_timeframes','preferred_strategies','sessions']){if(form.elements[name])form.elements[name].value=(p[name]||[]).join(', ')}const classes=new Set(p.asset_classes||[]);$$('#tradingProfileForm input[name="asset_class"]').forEach(input=>input.checked=classes.has(input.value));for(const name of ['notify_on_entry','notify_on_exit','notify_on_tp','notify_on_sl']){if(form.elements[name])form.elements[name].checked=p[name]!==false}const sync=$('#tradingProfileSync');if(sync){const tg=telegramLinkState();sync.textContent=tg.connected?'Synced with your Telegram identity':'Saved for web now; it will sync when Telegram is linked'}}
 $('#tradingProfileForm').onsubmit=async e=>{e.preventDefault();const form=e.target;const classes=[...document.querySelectorAll('#tradingProfileForm input[name="asset_class"]:checked')].map(x=>x.value);if(!classes.length){toast('Choose at least one market',true);return}const n=name=>form.elements[name]?.value;const num=name=>{const value=n(name);return value===''?null:Number(value)};const payload={trade_profile:n('trade_profile'),risk_profile:n('risk_profile'),asset_classes:classes,preferred_assets:csvValues(n('preferred_assets'),{upper:true}),blocked_assets:csvValues(n('blocked_assets'),{upper:true}),preferred_timeframes:csvValues(n('preferred_timeframes')),preferred_strategies:csvValues(n('preferred_strategies')),sessions:csvValues(n('sessions')),min_signal_score:num('min_signal_score'),risk_per_trade_pct:num('risk_per_trade_pct'),max_daily_loss_pct:num('max_daily_loss_pct'),max_signals_per_day:num('max_signals_per_day'),max_concurrent_positions:num('max_concurrent_positions'),notify_on_entry:form.elements.notify_on_entry.checked,notify_on_exit:form.elements.notify_on_exit.checked,notify_on_tp:form.elements.notify_on_tp.checked,notify_on_sl:form.elements.notify_on_sl.checked};for(const key of Object.keys(payload)){if(payload[key]===null)delete payload[key]}try{const result=await request('/trading-profile',{method:'PUT',body:JSON.stringify(payload)});renderTradingProfile(result);toast('Trading profile synced across SignalRankAI')}catch(err){toast(err.message,true)}};
 async function loadReferralLeaderboard(){const el=$('#referralLeaderboard');if(!el)return;try{const data=await request('/referrals/leaderboard');const rows=data.leaders||[];el.innerHTML=rows.length?rows.map(row=>`<div class="list-row"><div><strong>#${esc(row.rank)} · ${esc(row.label)}</strong><small>${row.is_current_user?'Your account · ':''}${esc(row.valid_referrals)} successful referrals</small></div></div>`).join(''):`<p class="muted">No successful referrals yet. You have ${esc(data.your_valid_referrals||0)}.</p>`}catch{el.innerHTML='<p class="muted">Referral leaderboard is temporarily unavailable.</p>'}}
 async function loadExecutionWebhook(){const panel=$('#executionWebhookPanel');if(!panel)return;try{const data=await request('/execution-webhook');panel.hidden=false;const row=data.webhook||{};const form=$('#executionWebhookForm');if(form?.elements.url)form.elements.url.value=row.webhook_url||'';$('#executionWebhookStatus').innerHTML=row.webhook_url?`<div class="detail-row"><span>Status</span><strong>${row.is_active?'Active':'Disabled'}</strong></div><div class="detail-row"><span>Endpoint</span><strong>${esc(row.webhook_url)}</strong></div>`:'<p class="muted">No eligible execution webhook configured.</p>'}catch{panel.hidden=true}}
@@ -83,7 +113,7 @@ $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Tur
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
 async function loadBillingProducts(){const data=await request('/billing/products');const products=data.products||[];$('#billingProducts').innerHTML=products.length?products.map(p=>`<article class="metric-card"><small>${esc(String(p.tier).toUpperCase())}</small><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}">Choose plan</button></article>`).join(''):'<p>No public checkout products are available.</p>';$$('.billing-checkout').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;toast(err.message,true)}})}
-async function loadAccount(){const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
+async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile();const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
 function brokerPolicyFraction(value){const n=Number(value);return Number.isFinite(n)?n/100:0}
 function brokerPolicyCsv(value){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean)}
@@ -267,6 +297,9 @@ async function loadBroker(){
     const readyConnections=connections.filter(x=>['verified','ready','linked'].includes(String(x.status||'').toLowerCase()));
     const executableConnections=connections.filter(x=>x.execution_enabled===true);
     $('#brokerReadinessBadge').textContent=executableConnections.length?'EXECUTION READY':readyConnections.length?'CONNECTED':'NOT CONNECTED';
+    const connectionLimit=Number(platforms.find(p=>Number.isFinite(Number(p.connection_limit)))?.connection_limit||0);
+    const allowance=$('#brokerAccountAllowance');
+    if(allowance)allowance.textContent=connectionLimit>0?`${connections.length}/${connectionLimit} CONNECTED`:`${connections.length} CONNECTED`;
 
     const catalog=$('#brokerPlatformCatalog');
     if(catalog){
@@ -281,29 +314,44 @@ async function loadBroker(){
       connectionList.innerHTML=connections.length?connections.map(x=>{
         const status=String(x.status||'pending').toUpperCase();
         const env=String(x.environment||'unknown').toUpperCase();
-        const exec=x.execution_enabled?'Execution allowed':'Execution off';
-        const defaultTag=x.is_default?'Default · ':'';
+        const exec=x.execution_enabled?'Execution on':'Execution off';
         const account=x.account_ref_masked||'Account hidden';
         const verifySupported=['metaapi','bybit'].includes(String(x.connector||'').toLowerCase())||String(x.platform||'').toLowerCase()==='bybit';
-        const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
+        const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify health</button>':'';
         const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
+        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
+        const readiness=x.readiness||{};
+        const blockers=Array.isArray(readiness.blockers)?readiness.blockers:[];
+        const primaryBlocker=blockers[0]?.message||blockers[0]?.code||'Execution readiness not yet evaluated';
         const perfParts=[
           accountPerf.executions!==undefined?`${accountPerf.executions} executions`:'',
           accountPerf.wins!==undefined?`${accountPerf.wins} wins`:'',
           accountPerf.losses!==undefined?`${accountPerf.losses} losses`:'',
-          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`realized P/L ${fmt(accountPerf.realized_pnl||0)}`:''
+          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`P/L ${fmt(accountPerf.realized_pnl||0)}`:''
         ].filter(Boolean).join(' · ');
-        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
-        const readiness=x.readiness||{};
-        const blockers=Array.isArray(readiness.blockers)?readiness.blockers:[];
-        const readinessText=readiness.execution_ready
-          ?'Account-level execution prerequisites ready · every trade still passes live safety gates'
-          :blockers.length
-            ?'Execution blocked · '+blockers.map(item=>item.message||item.code).join(' · ')
-            :'Execution readiness not yet evaluated';
-        const readinessClass=readiness.execution_ready?'positive':'muted';
-        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small class="${readinessClass}">${esc(readinessText)}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
-      }).join(''):'<p class="muted">No trading accounts connected yet.</p>';
+        const title=x.account_label||x.broker_name||String(x.platform||'').toUpperCase()||'Trading account';
+        return `<article class="broker-account-card ${x.is_default?'is-default':''}" data-connection-id="${esc(x.connection_id)}">
+          <div class="broker-card-top">
+            <div><span class="broker-platform">${esc(String(x.platform||'').toUpperCase())}</span><h4>${esc(title)}</h4><small>${esc(x.broker_name||x.connector||'Broker')} · ${esc(account)}</small></div>
+            <span class="account-state ${['VERIFIED','READY','LINKED'].includes(status)?'positive':'pending-text'}">${esc(status)}</span>
+          </div>
+          <div class="broker-tags"><span>${esc(env)}</span><span>${esc(mode)}</span><span class="${x.execution_enabled?'positive':''}">${esc(exec)}</span>${x.is_default?'<span class="default-tag">DEFAULT ROUTE</span>':''}</div>
+          <div class="broker-card-details">
+            <div><small>Server</small><strong>${esc(x.server||'—')}</strong></div>
+            <div><small>Health</small><strong>${x.last_health_at?esc(time(x.last_health_at)):'Not verified yet'}</strong></div>
+            <div><small>Readiness</small><strong class="${readiness.execution_ready?'positive':'muted'}">${esc(readiness.execution_ready?'Account prerequisites ready':primaryBlocker)}</strong></div>
+            <div><small>Evidence</small><strong>${esc(perfParts||'No closed execution evidence yet')}</strong></div>
+          </div>
+          <div class="broker-card-actions">
+            ${verifyButton}
+            <button class="ghost broker-action" data-action="default" ${x.is_default?'disabled':''}>${x.is_default?'Default account':'Make default'}</button>
+            <button class="ghost broker-action" data-action="policy">Risk policy</button>
+            <button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button>
+            <button class="danger broker-action" data-action="remove">Remove</button>
+          </div>
+        </article>`;
+      }).join(''):'<div class="empty-state"><strong>No broker accounts yet</strong><p>Add an MT4/MT5 or supported exchange account. Connecting it will not enable execution.</p><button class="primary" type="button" id="emptyAddBroker">+ Add first account</button></div>';
+      $('#emptyAddBroker')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
     }
 
     $('#brokerStats').innerHTML=[
@@ -332,7 +380,9 @@ async function loadBroker(){
       :'<p class="muted">Broker execution remains blocked until you explicitly accept the execution-risk terms.</p><button id="acceptExecutionTerms" class="ghost" type="button">Accept execution-risk terms</button>';
     $('#acceptExecutionTerms')?.addEventListener('click',acceptExecutionTerms);
 
-    $$('.broker-action').forEach(button=>button.onclick=async()=>{
+    $('#scrollToConnectAccount')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
+
+    $('.broker-action').forEach(button=>button.onclick=async()=>{
       const row=button.closest('[data-connection-id]');
       const connectionId=row?.dataset.connectionId;
       const connection=connections.find(x=>x.connection_id===connectionId);
@@ -375,13 +425,37 @@ async function loadBroker(){
 
   if($('#brokerLinkForm'))$('#brokerLinkForm').onsubmit=async e=>{
     e.preventDefault();
-    const raw=formData(e.target);
+    const form=e.target;
+    const raw=formData(form);
+    raw.server=String(raw.server||'').trim();
+    raw.broker_name=String(raw.broker_name||'').trim()||null;
+    raw.account_label=String(raw.account_label||'').trim()||null;
+    const feedback=$('#brokerProvisioningResult');
+    if(feedback){feedback.hidden=false;feedback.className='connection-feedback';feedback.innerHTML='<strong>Connecting account…</strong><p>Checking the exact MetaTrader server and broker credentials. This request is not auto-retried.</p>'}
+    const submit=form.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
     try{
-      await request('/broker/metatrader',{method:'POST',body:JSON.stringify(raw)});
-      e.target.elements.password.value='';
+      const result=await request('/broker/metatrader',{method:'POST',body:JSON.stringify(raw)});
+      form.elements.password.value='';
+      if(feedback){
+        const connection=result.connection||{};
+        feedback.className='connection-feedback positive-feedback';
+        feedback.innerHTML=`<strong>Account connected</strong><p>${esc(String(connection.platform||raw.platform).toUpperCase())} · ${esc(connection.broker_name||raw.broker_name||'Broker')} · ${esc(connection.server||raw.server)} · ${esc(String(connection.environment||raw.environment||'unknown').toUpperCase())}</p><small>Execution remains off until this account's policy and safety gates are explicitly enabled.</small>`;
+      }
       await loadBroker();
-      toast(raw.environment==='demo'?raw.platform.toUpperCase()+' demo connection saved':raw.platform.toUpperCase()+' connection saved');
-    }catch(err){toast(err.message,true)}
+      toast('Trading account connected');
+    }catch(err){
+      const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
+      const suggestions=Array.isArray(detail.suggested_servers)?detail.suggested_servers:[];
+      if(feedback){
+        const suggestionHtml=suggestions.length?`<div class="server-suggestions"><small>Suggested servers</small>${suggestions.map(server=>`<button class="ghost server-suggestion" type="button" data-server="${esc(server)}">${esc(server)}</button>`).join('')}</div>`:'';
+        const secureHint=detail.can_use_secure_link?'<p class="muted">You can also try the provider-hosted secure-link flow after confirming the exact server.</p>':'';
+        const retryHint=detail.retry_after?`<p class="muted">Provider retry guidance: ${esc(detail.retry_after)}</p>`:'';
+        feedback.className='connection-feedback negative-feedback';
+        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${secureHint}<small>No password is shown or returned. Correct the indicated field before submitting again.</small>`;
+        $('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
+      }
+      toast(err.message,true);
+    }finally{if(submit)submit.disabled=false}
   };
 
   if($('#exchangeBrokerLinkForm'))$('#exchangeBrokerLinkForm').onsubmit=async e=>{
@@ -454,7 +528,8 @@ async function loadBroker(){
 async function acceptExecutionTerms(){if(!confirm('I understand that live broker execution can lose money and that SignalRankAI safety checks do not guarantee outcomes. Accept execution-risk terms?'))return;try{await request('/execution-terms/accept',{method:'POST',body:JSON.stringify({confirm:true})});await loadBroker();toast('Execution-risk terms accepted')}catch(err){toast(err.message,true)}}
 async function setupMfa(){try{const setup=await request('/security/mfa/setup',{method:'POST',body:'{}'});const code=prompt(`Add this secret to your authenticator:\n${setup.secret}\n\nThen enter the 6-digit code.`);if(!code)return;const result=await request('/security/mfa/enable',{method:'POST',body:JSON.stringify({code})});alert('Store these recovery codes offline:\n\n'+result.recovery_codes.join('\n'));await loadAccount();toast('MFA enabled')}catch(err){toast(err.message,true)}}
 async function disableMfa(){const code=prompt('Enter an authenticator or recovery code to disable MFA');if(!code)return;try{await request('/security/mfa/disable',{method:'POST',body:JSON.stringify({code})});await loadAccount();toast('MFA disabled')}catch(err){toast(err.message,true)}}
-$('#connectTelegramButton').onclick=async()=>{try{const data=await request('/account/telegram-link',{method:'POST',body:'{}'});const result=$('#telegramLinkResult');result.hidden=false;result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}`;toast('Telegram link code created')}catch(err){toast(err.message,true)}};
+$('#connectTelegramButton').onclick=async()=>{const tg=telegramLinkState();if(tg.connected){toast('Telegram is already verified for this account');return}try{const data=await request('/account/telegram-link',{method:'POST',body:'{}'});const result=$('#telegramLinkResult');result.hidden=false;result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}<p class="muted">After sending the command, return here and press Refresh status. Do not create another account.</p>`;state.user.telegram_link_status='link_pending';renderProfile();toast('Telegram link code created')}catch(err){toast(err.message,true)}};
+$('#refreshTelegramButton')?.addEventListener('click',async()=>{try{const me=await request('/me');state.user=me.user;renderProfile();const tg=telegramLinkState();toast(tg.connected?'Telegram connection recognized':'Telegram status refreshed')}catch(err){toast(err.message,true)}});
 $('#notificationForm').onsubmit=async e=>{e.preventDefault();const payload={};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>payload[name]=e.target.elements[name].checked);for(const name of ['quiet_hours_start','quiet_hours_end','timezone']){const value=e.target.elements[name]?.value?.trim();payload[name]=value||null}try{await request('/notifications/preferences',{method:'PUT',body:JSON.stringify(payload)});toast('Notification preferences saved across your account')}catch(err){toast(err.message,true)}};
 async function logout(){try{await request('/auth/logout',{method:'POST',body:'{}'})}finally{state.user=null;setLoggedIn(false);location.reload()}}
 $('#logoutButton').onclick=logout;$('#logoutAllButton').onclick=async()=>{if(!confirm('Sign out every device?'))return;try{await request('/auth/logout-all',{method:'POST',body:'{}'});location.reload()}catch(err){toast(err.message,true)}};
