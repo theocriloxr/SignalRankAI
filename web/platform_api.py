@@ -360,9 +360,9 @@ class TradingAccountPolicyUpdateRequest(BaseModel):
     reset_timezone: str = Field(default="UTC", min_length=1, max_length=64)
     currency: str = Field(default="USD", min_length=3, max_length=8)
     max_risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"), ge=0, le=Decimal("0.20"))
-    max_daily_loss_pct: Decimal = Field(default=Decimal("0.04"), ge=0, le=Decimal("0.50"))
-    max_weekly_loss_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
-    max_total_drawdown_pct: Decimal = Field(default=Decimal("0.08"), ge=0, le=Decimal("0.90"))
+    max_daily_loss_pct: Decimal = Field(default=Decimal("0.02"), ge=0, le=Decimal("0.50"))
+    max_weekly_loss_pct: Decimal = Field(default=Decimal("0.04"), ge=0, le=Decimal("0.90"))
+    max_total_drawdown_pct: Decimal = Field(default=Decimal("0.06"), ge=0, le=Decimal("0.90"))
     max_open_positions: int = Field(default=3, ge=0, le=1000)
     max_leverage: Decimal = Field(default=Decimal("1"), ge=0, le=Decimal("200"))
     max_spread_bps: Decimal = Field(default=Decimal("50"), ge=0, le=Decimal("10000"))
@@ -3259,6 +3259,30 @@ async def strategy_leaderboard(
         ).mappings().all()
         await session.rollback()
     return {"window_days": int(days), "strategies": [dict(row) for row in rows]}
+
+
+@router.get("/broker/risk-presets")
+async def broker_risk_presets(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Expose safe account-policy starting points; external rules may only tighten them."""
+    _assert_feature(user, "broker_connection")
+    from core.account_risk_presets import RISK_PRESETS
+
+    def serialise(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, dict):
+            return {str(k): serialise(v) for k, v in value.items()}
+        return value
+
+    return {
+        "recommended": "conservative",
+        "first_live_canary": "live_canary",
+        "presets": {
+            name: serialise(dict(values))
+            for name, values in RISK_PRESETS.items()
+        },
+        "rule": "External broker/prop-firm limits may only make these limits stricter.",
+    }
 
 
 @router.get("/broker/platforms")
