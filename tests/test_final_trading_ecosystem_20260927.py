@@ -78,7 +78,10 @@ def test_new_account_defaults_match_conservative_policy():
 
 def test_adaptive_candle_store_uses_short_transaction_default():
     source=(ROOT/"engine"/"adaptive"/"candle_store.py").read_text(encoding="utf-8")
-    assert 'os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "50")' in source
+    assert 'def _is_decomposed_engine()' in source
+    assert '"10" if _is_decomposed_engine() else "50"' in source
+    assert 'default="60" if _is_decomposed_engine() else "200"' in source
+    assert 'default = "1" if _is_decomposed_engine() else "2"' in source
     assert "for offset in range(0, len(records), chunk_size):" in source
     loop=source.index("for offset in range(0, len(records), chunk_size):")
     commit=source.index("await session.commit()", loop)
