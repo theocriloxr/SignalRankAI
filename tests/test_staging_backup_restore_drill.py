@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -33,7 +34,10 @@ def test_restore_drill_image_uses_postgresql_18_client() -> None:
 
 def test_restore_drill_cleanup_is_separate_and_final_pass_requires_cleanup() -> None:
     text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
-    helper = text[text.index("def _cleanup_database"):text.index("def main")]
+    helper = text[
+        text.index("def _cleanup_database"):
+        text.index("def _stale_restore_databases")
+    ]
     assert helper.count("_psql(") == 2
     first_call, second_call = helper.split("_psql(", 2)[1:]
     assert '"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "' in first_call
@@ -57,7 +61,21 @@ def test_restore_drill_cleanup_only_mode_is_name_guarded() -> None:
 def test_restore_drill_emits_secret_free_stage_markers() -> None:
     text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
     assert "STAGING_RESTORE_DRILL_STAGE" in text
-    for stage in (
+
+    tree = ast.parse(text)
+    seen: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "_stage":
+            continue
+        if not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            seen.add(first.value)
+
+    expected = {
         "dump_start",
         "dump_complete",
         "target_create_start",
@@ -68,8 +86,8 @@ def test_restore_drill_emits_secret_free_stage_markers() -> None:
         "verification_complete",
         "cleanup_start",
         "cleanup_complete",
-    ):
-        assert f'_stage("{stage}"' in text
+    }
+    assert expected.issubset(seen)
     assert "source_database=source_db" in text
     assert "source_database_url" not in text
 
