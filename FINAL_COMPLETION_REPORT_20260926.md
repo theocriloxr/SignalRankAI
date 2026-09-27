@@ -29,12 +29,16 @@ All four roles enforce release-source and database-schema admission before
 business work.
 
 Current post-0045 staging role deployments are aligned on the same certified
-provider-opt-in hardening commit `b2249fe64b8ae05b178ccec5e0879590c56f7130`:
+runtime commit `93039e2e77800c4aa6b9ba1b1a8ce45797814210`:
 
-- analytics: deployment `c1d51cca-be56-43ed-b87c-446e651793bc`;
-- engine: deployment `f550a99e-0669-4bf8-a794-a41e90330b30`;
-- delivery: deployment `52ab68b7-a301-49e3-ada8-b74f2af49f2c`;
-- frontdoor: deployment `7b06848a-11dd-4fb0-bcc7-bd0ae3595f39`.
+- analytics: deployment `28c378a5-52e8-4f15-a877-e26a82b82ea6`;
+- engine: deployment `ab915899-6177-4608-b8a3-7b539537e25b`;
+- delivery: deployment `0683abb8-0128-4266-869c-14f34d821658`;
+- frontdoor: deployment `33ccd5cf-9e60-495e-b872-cafecb41f241`.
+
+Matching clean-room deployment `e2ef6763-34a8-4f2c-9e85-00e978e82256`
+verified the exact runtime commit with Alembic 0045/schema/provenance PASS and
+**411 targeted tests passed**.
 
 All four passed release-source and `0045_mt5_credential_retirement` schema
 admission. Frontdoor explicitly skips engine/worker ownership, while the other
