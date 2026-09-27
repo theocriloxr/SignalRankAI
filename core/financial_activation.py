@@ -123,7 +123,7 @@ def evaluate_financial_activation(
     transfer_ack_valid = _raw(environ, "PAYSTACK_TRANSFERS_APPROVED_ACK") == PAYSTACK_TRANSFERS_ACK_VALUE
     bybit_dedicated_ack_valid = _raw(environ, "BYBIT_DEDICATED_ACCOUNT_ACK") == BYBIT_DEDICATED_ACCOUNT_ACK_VALUE
     encryption_key = _raw(environ, "ENCRYPTION_KEY")
-    metaapi_token = _raw(environ, "META_API_TOKEN")
+    metaapi_token = _raw(environ, "META_API_TOKEN") or _raw(environ, "METAAPI_TOKEN")
     paystack_secret = _raw(environ, "PAYSTACK_SECRET_KEY")
     paystack_public = _raw(environ, "PAYSTACK_PUBLIC_KEY")
     owner_id = _raw(environ, "LIVE_ACTIVATION_OWNER_TELEGRAM_ID")
@@ -192,7 +192,7 @@ def evaluate_financial_activation(
         ActivationCheck("global_kill_switch_clear", (not live_execution_requested) or not _bool(environ, "GLOBAL_EXECUTION_KILL_SWITCH", True), "GLOBAL_EXECUTION_KILL_SWITCH must be 0"),
         ActivationCheck("auto_execution_dependency", (not (auto_trade or copy_trade)) or auto_execution, "AUTO_TRADE/COPY_TRADE require AUTO_EXECUTION_ENABLED"),
         ActivationCheck("real_execution_dependency", (not (auto_execution or auto_trade or copy_trade or mt5_live or bybit_execution)) or real_execution, "all broker automation requires REAL_EXECUTION_ENABLED"),
-        ActivationCheck("mt5_token", (not mt5_live) or _configured(metaapi_token), "META_API_TOKEN required for live MT5"),
+        ActivationCheck("mt5_token", (not mt5_live) or _configured(metaapi_token), "META_API_TOKEN or METAAPI_TOKEN required for live MT5"),
         ActivationCheck(
             "mt5_reconciliation",
             (not mt5_live) or _bool(environ, "MT5_RECONCILIATION_ENABLED", False),
