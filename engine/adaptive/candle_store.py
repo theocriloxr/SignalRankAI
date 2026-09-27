@@ -312,38 +312,37 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
     )
     inserted = 0
     try:
-        async with get_session(
-            priority=capture_priority,
-            label="adaptive.candle_capture",
-            timeout_seconds=admission_timeout,
-            # Candle snapshots are idempotent learning evidence. Under DB pressure
-            # they must yield immediately to decision, delivery and command writes;
-            # the full batch is requeued below for a later retry.
-            drop_if_busy=noncritical,
-        ) as session:
-            # Bound PostgreSQL lock/statement waits inside the admitted session as
-            # well. Admission can be fast while a contended upsert still blocks.
-            lock_timeout_ms = _capture_lock_timeout_ms()
-            statement_timeout_ms = _capture_statement_timeout_ms()
-            await session.execute(
-                sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
-            )
-            await session.execute(
-                sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
-            )
-
-            # The schema already has uq_market_candles_symbol_tf_open. A true
-            # PostgreSQL bulk upsert both removes asyncpg bind ambiguity and
-            # updates the still-open candle instead of preserving its first tick.
-            chunk_size = max(
-                25,
-                min(
-                    500,
-                    int(os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "200") or 200),
-                ),
-            )
-            for offset in range(0, len(records), chunk_size):
-                chunk = records[offset : offset + chunk_size]
+        # Commit each bounded upsert chunk independently. Initial history
+        # snapshots can contain hundreds of candles; keeping every chunk inside
+        # one transaction holds row/index locks for the whole backfill and can
+        # starve interactive/analytics work. The operation is idempotent, so
+        # short transactions are safer and a later retry can replay the batch.
+        chunk_size = max(
+            10,
+            min(
+                100,
+                int(os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "50") or 50),
+            ),
+        )
+        lock_timeout_ms = _capture_lock_timeout_ms()
+        statement_timeout_ms = _capture_statement_timeout_ms()
+        for offset in range(0, len(records), chunk_size):
+            chunk = records[offset : offset + chunk_size]
+            async with get_session(
+                priority=capture_priority,
+                label="adaptive.candle_capture",
+                timeout_seconds=admission_timeout,
+                # Candle snapshots are idempotent learning evidence. Under DB
+                # pressure they yield immediately to decisions, delivery and
+                # interactive commands.
+                drop_if_busy=noncritical,
+            ) as session:
+                await session.execute(
+                    sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
+                )
+                await session.execute(
+                    sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
+                )
                 stmt = pg_insert(MarketCandle).values(chunk)
                 stmt = stmt.on_conflict_do_update(
                     constraint="uq_market_candles_symbol_tf_open",
@@ -359,12 +358,11 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
                     },
                 )
                 await session.execute(stmt)
+                await session.commit()
                 inserted += len(chunk)
-            await session.commit()
     except Exception:
-        # The operation is idempotent and the session is rolled back/closed by
-        # get_session. Restore the complete batch so transient capacity/lock
-        # pressure never silently discards learning evidence.
+        # Some earlier chunks may already be committed. Requeueing the full batch
+        # is still correct because the unique-key upsert is idempotent.
         requeued = 0
         for item in batch:
             try:
