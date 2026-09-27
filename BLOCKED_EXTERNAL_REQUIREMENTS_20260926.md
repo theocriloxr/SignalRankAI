@@ -98,6 +98,17 @@ into a user's canonical broker connection.
 
 See `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md`.
 
+A later frontdoor-only safety rollout, deployment
+`33c9b981-29c0-4fef-890f-b314e817a566` at
+`d09535105bf44...`, aligned Telegram MT5 linking/status language with this
+same boundary. Linking or MetaApi provisioning is no longer described as
+execution readiness; users are directed through `/verifybroker` and, for
+DEMO accounts, **Prepare DEMO certification**. The rollout passed 465
+clean-room targeted tests, 356 frontdoor image-build tests/readiness checks,
+Alembic 0045/schema admission, frontdoor-only ownership, healthy webhook
+startup and /healthz=200. It did not create a broker connection, enable
+execution, place an order or change the external demo-account blocker.
+
 Before owner-authorized live execution:
 
 1. connect one explicitly identified DEMO account;
