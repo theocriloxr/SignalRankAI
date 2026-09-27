@@ -152,7 +152,7 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v24" in sw
+    assert "signalrank-shell-v25" in sw
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
