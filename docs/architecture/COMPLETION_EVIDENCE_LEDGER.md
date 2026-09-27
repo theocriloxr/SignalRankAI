@@ -72,12 +72,12 @@ before the bounded DEMO execution lifecycle.
 - PWA shell: v24;
 - clean-room rollout marker `e7196d43...`: Alembic 0045/schema/provenance PASS,
   **462 targeted tests passed**;
-- staging frontdoor `713ee164-5002-4499-a7cf-66f67dba0802`: **356 image-gate tests**
+- staging frontdoor `33c9b981-29c0-4fef-890f-b314e817a566`: **356 image-gate tests**
   + readiness PASS, release-source/schema PASS, `mode=frontdoor`,
   `engine=false`, `worker=false`, MetaApi startup probe PASS and
   `/healthz=200`;
-- refreshed read-only preflight `e80fa087-d487-40fc-859e-76df71a3b7b7`
-  on marker `a77694b5...`: **BLOCKED_EXTERNAL**, broker connections=0,
+- refreshed read-only preflight `2d1fa0ed-453e-4ccd-af92-2c2535d79d9b`
+  on marker `2397b5af...`: **BLOCKED_EXTERNAL**, broker connections=0,
   activation=false, orders=0, secrets_returned=false.
 
 The remaining DEMO blocker is therefore not hidden application work: an
@@ -187,7 +187,7 @@ re-enter resend recovery after queue expiry.
 | SR-SEC-013 | VERIFIED | STAGING / INTEGRATION | Counts-only broker credential inventory emits no credential values and confirms staging legacy-secret retirement | `scripts/broker_credential_inventory.py` · `tests/test_broker_credential_inventory.py` · evidence doc above \| Deployment `a41c2703-63a8-4d60-9437-f85c349f7823`; envelope_v1 rows=0, legacy rows=0 |
 
 | SR-DR-010 | VERIFIED | STAGING / INTEGRATION | Full staging PostgreSQL backup/restore drill proves bounded dump, isolated restore, 0045 schema/data recovery, immutable-ledger trigger recovery and cleanup without source/production mutation | `scripts/staging_backup_restore_drill.py`, `Dockerfile.restore-drill` · `tests/test_staging_backup_restore_drill.py` · deployment `59a52067-b83f-46bb-83f6-67080b818c7d`: dump 199,493,675 bytes, restore 297.755s, restored head 0045, 48,132 signals + 6 users, cleanup PASS, source/production mutation false |
-| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | SignalRank-side DEMO onboarding/preparation is complete and fail-closed; the remaining acceptance proof requires an explicitly owned external DEMO account plus bounded provider order/modify/close/restart/reconciliation evidence before any demo/live promotion claim | `services/demo_certification.py`, `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · safe-prepare frontdoor `713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d43...`; refreshed preflight `e80fa087-d487-40fc-859e-76df71a3b7b7` on marker `a77694b5...`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
+| SR-DEMO-010 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | SignalRank-side DEMO onboarding/preparation is complete and fail-closed; the remaining acceptance proof requires an explicitly owned external DEMO account plus bounded provider order/modify/close/restart/reconciliation evidence before any demo/live promotion claim | `services/demo_certification.py`, `scripts/demo_account_preflight.py`, canonical broker onboarding/verification/policy/reconciliation/execution layers · `tests/test_demo_account_preflight.py` · safe-prepare frontdoor `713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d43...`; refreshed preflight `e80fa087-d487-40fc-859e-76df71a3b7b7` on marker `2397b5af...`: broker connections=0, activation=false, orders=0, secrets returned=false; exact blockers recorded in `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md` |
 
 
 ## Release rule
