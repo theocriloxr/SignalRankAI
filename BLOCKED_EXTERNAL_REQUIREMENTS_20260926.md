@@ -81,15 +81,16 @@ integration-verified enabled provider set under `SR-PROVIDER-007`.
 ## 2. Broker demo/canary/live-money certification
 
 2026-09-27 current read-only staging preflight evidence: deployment
-`20be1193-0339-461f-8560-a68ca75bd79b` on marker
-`cf70d1c817b77868c948c1229224f07633d1ec1b` ran against Alembic
-`0045_mt5_credential_retirement` after current frontdoor deployment
-`33c9b981-29c0-4fef-890f-b314e817a566` at `d09535105bf44...`. The frontdoor
-now includes a provider-proven **Prepare DEMO certification** action that
+`9757cac0-7f68-466a-a9a0-8e458f1390cd` on marker
+`3656eabaf56a7468a49667e078289d4bf00028af` ran against Alembic
+`0045_mt5_credential_retirement` after secure Broker Hub frontdoor deployment
+`68219e01-9b4a-48a8-8abb-9e4372f634f9` at `c4d1e6d6ec5e...`. The frontdoor
+keeps broker secrets out of Telegram chat, hands authenticated users to Broker
+Hub, and retains the provider-proven **Prepare DEMO certification** action that
 re-verifies read-only broker state, requires HEALTHY reconciliation, applies a
-bounded `DEMO/MANUAL` policy and keeps execution disabled. The preflight still
-found **zero canonical broker connections** and therefore correctly returned
-BLOCKED with `demo_account_not_connected`,
+bounded `DEMO/MANUAL` policy and keeps execution disabled. The refreshed
+preflight still found **zero canonical broker connections** and therefore
+correctly returned BLOCKED with `demo_account_not_connected`,
 `demo_account_not_read_only_verified`,
 `demo_account_credentials_not_ready`, `demo_reconciliation_not_healthy`
 and `demo_execution_permission_not_configured`. It performed no activation,
@@ -99,16 +100,17 @@ into a user's canonical broker connection.
 
 See `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md`.
 
-A later frontdoor-only safety rollout, deployment
-`33c9b981-29c0-4fef-890f-b314e817a566` at
-`d09535105bf44...`, aligned Telegram MT5 linking/status language with this
-same boundary. Linking or MetaApi provisioning is no longer described as
-execution readiness; users are directed through `/verifybroker` and, for
-DEMO accounts, **Prepare DEMO certification**. The rollout passed 465
-clean-room targeted tests, 356 frontdoor image-build tests/readiness checks,
-Alembic 0045/schema admission, frontdoor-only ownership, healthy webhook
-startup and /healthz=200. It did not create a broker connection, enable
-execution, place an order or change the external demo-account blocker.
+The latest frontdoor-only safety rollout, deployment
+`68219e01-9b4a-48a8-8abb-9e4372f634f9` at
+`c4d1e6d6ec5e...`, adds the secure Broker Hub handoff and preserves the same
+fail-closed verification/preparation boundary. Telegram does not collect broker
+passwords; users are directed through the authenticated Broker Hub and
+`/verifybroker`, and DEMO accounts must still pass **Prepare DEMO
+certification** before any execution enablement. The rollout passed 469
+clean-room targeted tests, 356 frontdoor image-build tests plus all 12
+readiness checks, Alembic 0045/schema admission, frontdoor-only ownership,
+healthy webhook startup and /healthz=200. It did not create a broker connection,
+enable execution, place an order or change the external demo-account blocker.
 
 Before owner-authorized live execution:
 
