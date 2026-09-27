@@ -180,3 +180,18 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 }
 
 .execution-account-select{display:grid;gap:.45rem;margin:1rem 0;color:var(--muted);font-size:.8rem}.execution-account-select select{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);padding:12px;outline:none}.execution-account-select select:focus{border-color:var(--cyan)}
+
+.compact-nav{display:none;min-width:0}
+.compact-nav span{display:block;color:var(--muted);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.2rem}
+.compact-nav select{width:100%;min-width:190px;background:var(--panel-soft);color:var(--text);border:1px solid var(--line);padding:.65rem .8rem;outline:none}
+.compact-nav select:focus{border-color:var(--cyan)}
+@media(max-width:1319px){
+  body.session-active #sessionNav{display:none!important}
+  body.session-active .compact-nav{display:block!important;flex:1 1 260px;max-width:420px}
+  body.session-active .topbar{gap:.8rem}
+}
+@media(max-width:700px){
+  body.session-active .compact-nav{order:3;flex:1 1 100%;max-width:none;width:100%}
+  body.session-active .compact-nav select{min-width:0}
+  body.session-active .topbar .brand{padding-right:100px}
+}
