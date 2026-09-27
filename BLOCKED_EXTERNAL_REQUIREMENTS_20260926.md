@@ -8,6 +8,28 @@ changes alone. Source-code, deterministic tests, staging schema migration,
 credential-retirement proof, and decomposed role admission are already covered
 by the current release evidence.
 
+## 2026-09-27 executable preflight refresh
+
+Staging deployment `3a95addd-510d-47d2-acd8-f2257f529ea4` executed
+`scripts/external_blocker_preflight.py` against the current external activation
+contract. No credential values were printed and every check reported
+`activation_performed=false`.
+
+- FMP: BLOCKED on entitlement, live-market-data certification and
+  redistribution-rights evidence.
+- Alpha Vantage: BLOCKED on entitlement, request-budget, live-market-data
+  certification and redistribution-rights evidence.
+- OANDA: BLOCKED on missing provider secret, missing `OANDA_ACCOUNT_ID`, and
+  missing intended-environment / market-data / regional certification.
+- FRED: BLOCKED on missing provider secret and missing attribution, live-macro
+  and point-in-time/vintage certification.
+- 100k / 20k-concurrent scale claim: BLOCKED; no valid `large_scale` PASS,
+  claim permission or required concurrency evidence exists.
+- Public copy marketplace: BLOCKED; external publisher/trust/legal/commercial
+  evidence and runtime copy-safety certification remain incomplete.
+
+See `docs/evidence/EXTERNAL_BLOCKER_PREFLIGHT_20260927.md`.
+
 ## 1. Optional provider and venue certification
 
 The **enabled staging market-data provider set is now integration-verified**.
