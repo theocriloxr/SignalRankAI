@@ -1,6 +1,6 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[]};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
@@ -65,7 +65,17 @@ $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your acco
 function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount};loaders[name]?.().catch(err=>toast(err.message,true))}
 $$('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 $('#viewSwitcher')?.addEventListener('change',e=>showView(e.target.value));
-async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();const initial=[loadOverview(),loadSignals()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch{state.user=null;state.entitlements=null;setLoggedIn(false)}}
+async function confirmPendingBillingReturn(){
+  const reference=String(state.pendingBillingReference||'').trim();if(!reference)return false;
+  const result=await request('/billing/confirm',{method:'POST',body:JSON.stringify({reference})});
+  state.pendingBillingReference=null;
+  const [me,entitlements]=await Promise.all([request('/me'),request('/entitlements')]);
+  state.user=me.user;state.entitlements=entitlements;applyEntitlements();renderProfile();
+  history.replaceState({},'', '/app?billing=complete');
+  toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment confirmed and reconciled.');
+  return true
+}
+async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}const initial=[loadOverview(),loadSignals()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch{state.user=null;state.entitlements=null;setLoggedIn(false)}}
 async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;$('#accountSubtitle').textContent='Your signals, paper portfolio and market intelligence in one place.';$('#tierBadge').textContent=String(state.user?.tier||'free').toUpperCase();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
@@ -684,7 +694,7 @@ async function loadBroker(){
     try{
       const result=await request('/broker/metatrader/secure-link',{method:'POST',body:JSON.stringify(payload)});
       const connectionId=String(result.connection?.connection_id||'');
-      if(connectionId){try{sessionStorage.setItem(SECURE_LINK_PENDING_KEY,JSON.stringify({connection_id:connectionId,created_at:Date.now(),configuration_link:result.configuration_link||''}))}catch{}}
+      if(connectionId){try{localStorage.setItem(SECURE_LINK_PENDING_KEY,JSON.stringify({connection_id:connectionId,created_at:Date.now(),configuration_link:result.configuration_link||''}))}catch{}}
       const target=$('#brokerSecureLinkResult');
       target.innerHTML=`<div class="secure-link-handoff"><p class="positive">Account slot saved in SignalRank.</p><p>Finish the broker credential step in MetaApi. Keep this SignalRank tab open; when you return, we will verify and store the completed connection automatically.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a> <button id="verifySecureLinkNow" class="ghost" type="button">I've finished · verify now</button></p><small>Execution stays disabled until your separate account policy and safety gates are enabled.</small></div>`;
       $('#verifySecureLinkNow')?.addEventListener('click',()=>reconcilePendingSecureLink({notify:true}));
@@ -718,8 +728,8 @@ async function loadBroker(){
     }catch(err){toast(err.message,true)}
   };
 }
-function pendingSecureLink(){try{const raw=sessionStorage.getItem(SECURE_LINK_PENDING_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data?.connection_id)return null;if(Date.now()-Number(data.created_at||0)>3*24*60*60*1000){sessionStorage.removeItem(SECURE_LINK_PENDING_KEY);return null}return data}catch{return null}}
-function clearPendingSecureLink(){try{sessionStorage.removeItem(SECURE_LINK_PENDING_KEY)}catch{}if(secureLinkVerifyTimer){clearTimeout(secureLinkVerifyTimer);secureLinkVerifyTimer=null}}
+function pendingSecureLink(){try{const raw=localStorage.getItem(SECURE_LINK_PENDING_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data?.connection_id)return null;if(Date.now()-Number(data.created_at||0)>3*24*60*60*1000){localStorage.removeItem(SECURE_LINK_PENDING_KEY);return null}return data}catch{return null}}
+function clearPendingSecureLink(){try{localStorage.removeItem(SECURE_LINK_PENDING_KEY)}catch{}if(secureLinkVerifyTimer){clearTimeout(secureLinkVerifyTimer);secureLinkVerifyTimer=null}}
 function scheduleSecureLinkVerification(){if(secureLinkVerifyTimer)clearTimeout(secureLinkVerifyTimer);if(!pendingSecureLink())return;secureLinkVerifyTimer=setTimeout(()=>reconcilePendingSecureLink({notify:false}),5000)}
 async function reconcilePendingSecureLink({notify=false}={}){
   const pending=pendingSecureLink();if(!pending||!state.user||!hasFeature('broker_connection'))return false;
@@ -753,13 +763,7 @@ async function processUrlActions(){
   const verify=qs.get('verify_email');if(verify){try{await request('/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token:verify,client_type:'web'})});history.replaceState({},'',location.pathname);toast('Email verified')}catch(err){toast(err.message,true)}}
   const magic=qs.get('magic_login');if(magic){try{await completeAuth(await request('/auth/magic-link/complete',{method:'POST',body:JSON.stringify({token:magic,client_type:'web'})}));history.replaceState({},'',location.pathname)}catch(err){toast(err.message,true)}}
   const paymentReference=qs.get('reference')||qs.get('trxref');
-  if(location.pathname==='/billing/complete'&&paymentReference){
-    try{
-      const result=await request('/billing/confirm',{method:'POST',body:JSON.stringify({reference:paymentReference})});
-      history.replaceState({},'', '/app?billing=complete');
-      toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment is confirmed and already being reconciled.');
-    }catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}
-  }
+  if(location.pathname==='/billing/complete'&&paymentReference)state.pendingBillingReference=paymentReference;
 }
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/app/service-worker.js').catch(()=>{}))}
 initTheme();
