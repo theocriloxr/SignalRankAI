@@ -1,0 +1,65 @@
+schema_version: 1
+
+provider_activation:
+  fmp:
+    gate: FMP_ENABLED
+    required_secret_names: [FMP_API_KEY]
+    evidence:
+      - entitlement_approved
+      - redistribution_rights_approved
+      - live_market_data_certified
+  alphavantage:
+    gate: ALPHAVANTAGE_ENABLED
+    gate_aliases: [ALPHA_VANTAGE_ENABLED]
+    required_secret_names: [ALPHAVANTAGE_API_KEY, ALPHA_VANTAGE_API_KEY]
+    evidence:
+      - entitlement_approved
+      - request_budget_approved
+      - redistribution_rights_approved
+      - live_market_data_certified
+  oanda:
+    gate: OANDA_ENABLED
+    related_gates: [OANDA_MARKET_DATA_ENABLED, OANDA_STREAMING_ENABLED, OANDA_PAPER_ENABLED, OANDA_LIVE_EXECUTION_ENABLED]
+    required_secret_names: [OANDA_API_KEY, OANDA_TOKEN]
+    required_config_names: [OANDA_ACCOUNT_ID]
+    evidence:
+      - intended_environment_approved
+      - market_data_certified
+      - regional_access_approved
+    conditional_execution_evidence:
+      - execution_certified
+      - reconciliation_certified
+  fred:
+    gate: FRED_ENABLED
+    required_secret_names: [FRED_API_KEY]
+    evidence:
+      - attribution_requirements_approved
+      - vintage_point_in_time_discipline_certified
+      - live_macro_data_certified
+
+scale_activation:
+  requirement_id: SR-SCALE-003
+  required_profile: large_scale
+  registered_users: 100000
+  concurrent_users: 20000
+  certification_kind: signalrank_scale_certification
+  required_status: PASS
+  required_claim_allowed: true
+
+marketplace_activation:
+  requirement_id: SR-MARKETPLACE-001
+  activation_gate: COPY_MARKETPLACE_ENABLED
+  copy_trade_gate: COPY_TRADE_ENABLED
+  evidence:
+    - publisher_identity_review
+    - follower_consent_and_revocation
+    - suitability_review
+    - transparent_performance_disclosure
+    - abuse_controls_review
+    - jurisdiction_approval
+    - commercial_terms_approval
+  runtime_evidence:
+    - copy_execution_certified
+    - account_risk_certified
+    - duplicate_order_protection_certified
+    - kill_switch_certified
