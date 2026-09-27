@@ -152,7 +152,7 @@ def test_demo_onboarding_does_not_silently_grant_execution_permission() -> None:
     ]
     link = mt5[
         mt5.index("async def link_platform_metatrader_account("):
-        mt5.index("async def create_platform_metatrader_secure_link("),
+        mt5.index("async def create_platform_metatrader_secure_link(")
     ]
 
     assert 'execution_permission="SIGNALS_ONLY"' in upsert
