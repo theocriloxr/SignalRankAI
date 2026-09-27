@@ -3431,7 +3431,7 @@ async def search_broker_metatrader_servers(
 ) -> dict[str, Any]:
     """Search MetaApi's known-server registry before credentials are submitted."""
     _assert_feature(user, "broker_connection")
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(status_code=503, detail="MetaTrader connection service is not configured")
     from services.mt5_client import search_known_metatrader_servers
 
@@ -3459,7 +3459,7 @@ async def link_broker_metatrader(
             status_code=503,
             detail="Secure broker credential storage is unavailable",
         )
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MetaTrader connection service is not configured",
@@ -3511,7 +3511,7 @@ async def create_broker_metatrader_secure_link(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     _assert_feature(user, "broker_connection")
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MetaTrader connection service is not configured",
@@ -4217,7 +4217,7 @@ async def link_broker_mt5(
             status_code=503,
             detail="Secure broker credential storage is unavailable",
         )
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MT5/MetaApi connection is not configured",
