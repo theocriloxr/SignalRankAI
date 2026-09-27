@@ -18,7 +18,7 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
-- Current verified head at ledger creation: `49ccf27e50106e3deecfe129c7f547ae2079982f`.
+- Current verified runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
 - Tracked requirements: **70**.
 - `VERIFIED`: **67**.
 - `IMPLEMENTED`: **0**.
@@ -27,6 +27,25 @@ No requirement may be called complete with prose such as “mostly done”, “s
 - `NOT_APPLICABLE`: **0**.
 
 The three externally blocked items are intentionally fail-closed: optional provider activation, representative 100k/20k scale certification, and public copy-marketplace activation. Their blocked status does **not** activate the associated capability.
+
+### Superseding staging evidence — 2026-09-27
+
+The current staging runtime and clean-room verifier are aligned on commit
+`93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
+
+- clean-room deployment: `e2ef6763-34a8-4f2c-9e85-00e978e82256`;
+- Alembic release-chain: `0045_mt5_credential_retirement` PASS;
+- schema audit: PASS, including broker credential-envelope and immutable account-ledger contracts;
+- release provenance/SBOM self-check: PASS;
+- targeted clean-room suite: **411 passed**;
+- staging frontdoor: `33ccd5cf-9e60-495e-b872-cafecb41f241`;
+- staging engine: `ab915899-6177-4608-b8a3-7b539537e25b`;
+- staging delivery/outcome: `0683abb8-0128-4266-869c-14f34d821658`;
+- staging analytics: `28c378a5-52e8-4f15-a877-e26a82b82ea6`.
+
+All four long-lived roles passed release-source and `0045` schema admission.
+Frontdoor reports `engine=false` and `worker=false`; the other roles boot only
+their declared dedicated runtime modes.
 
 ## Ledger
 
@@ -65,7 +84,7 @@ The three externally blocked items are intentionally fail-closed: optional provi
 | SR-SCALE-001 | VERIFIED | REPOSITORY / UNIT-CONTRACT | SLO registry + error budgets + degradation | `core/slo_registry.py` · `test_v20_slo_registry.py` · — |
 | SR-SCALE-002 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Bounded queues / backpressure / DLQ | `core/redis_streams.py`, `core/transactional_outbox.py` · queue tests · — |
 | SR-SCALE-003 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | 100k-user / 20k-concurrent representative infrastructure certification | `scripts/load_certification.py`, `requirements/scale_profiles.yaml`, SLO/queue/role architecture, and `scripts/external_blocker_preflight.py scale` · `tests/test_load_certification.py`, `tests/test_external_blocker_preflight.py` · Only an exact `large_scale` PASS with `claim_allowed=true`, ≥20k configured concurrency and representative runtime metrics/soak evidence can permit a capacity claim |
-| SR-OBS-010 | VERIFIED | STAGING / INTEGRATION | Canonical SLO metrics have operational dashboards, alert thresholds, explicit owners, automatic degradation actions and incident runbook coverage | `core/slo_registry.py`, `core/telemetry.py`, `observability/slo_operations.py`, Prometheus/Grafana artifacts · `tests/test_observability_operations_contract.py` + clean-room gate · Clean-room `d37b8c8a...`: 0045/schema/provenance PASS; 368 targeted tests PASS |
+| SR-OBS-010 | VERIFIED | STAGING / INTEGRATION | Canonical SLO metrics have operational dashboards, alert thresholds, explicit owners, automatic degradation actions and incident runbook coverage | `core/slo_registry.py`, `core/telemetry.py`, `observability/slo_operations.py`, Prometheus/Grafana artifacts · `tests/test_observability_operations_contract.py` + clean-room gate · Clean-room `e2ef6763-34a8-4f2c-9e85-00e978e82256`: 0045/schema/provenance PASS; 411 targeted tests PASS on runtime commit `93039e2e...` |
 | SR-NOTIF-001 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Notification outbox repair bounded | outcome reconciliation · v1.3.6.9 tests · — |
 | SR-NOTIF-002 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Dedicated fan-out reservation/idempotency boundary | `db/pg_features.py`, `delivery/service.py`, outbox/receipt layers · `tests/test_phase4_pass3_delivery_reliability.py`, `tests/test_delivery_fanout_planner.py` · — |
 | SR-ORDER-001 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Canonical monotonic order/execution state machine with one position-state projection | `core/execution_state_machine.py`, MT5/Bybit routers and reconcilers · `tests/test_execution_state_machine.py`, `tests/test_canonical_broker_entrypoints.py` · `REAL_EXECUTION_ENABLED=0` |
