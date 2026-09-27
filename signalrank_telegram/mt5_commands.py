@@ -14,7 +14,7 @@ def _mt5_not_configured_message() -> str:
     )
 
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Link a MetaTrader 5 account for one-click trade execution."""
+    """Link a MetaTrader 5 account without granting execution permission."""
     if update.effective_user is None or update.message is None:
         return
     
@@ -44,7 +44,8 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "⚙️ <b>Link your MT5 Account</b>\n\n"
             "Usage: <code>/mt5_link <login> <password> <server></code>\n\n"
             "Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
-            "🔒 Password encrypted with AES-256 before storage.",
+            "🔒 Password encrypted by the configured credential vault before storage.\n"
+            "Linking never enables trading by itself.",
             parse_mode="HTML"
         )
         return
@@ -79,10 +80,10 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             if meta_id:
                 reply += f"☁️ MetaApi ID: {meta_id}\n"
             reply += (
-                "\n⚡ Use Trade buttons on signals to execute.\n\n"
-                "⚙️ /execution manual|auto|none\n"
-                "⚙️ /setlot 0.01\n"
-                "⚙️ /setrisk 1.0%"
+                "\n🔒 Linking does not enable trading.\n"
+                "Next, run /verifybroker for read-only verification.\n"
+                "For DEMO accounts, use Prepare DEMO certification in the web Broker Hub. "
+                "Execution remains OFF until separately enabled after policy and reconciliation checks."
             )
         else:
             err = result.get("error", "Unknown error")
@@ -132,7 +133,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         if row.metaapi_account_id:
             reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
-        reply += "\n⚡ Ready for signal execution."
+        reply += "\n🔒 Linked only — execution permission remains OFF until separately verified and enabled."
         await update.message.reply_text(reply)
     except Exception as exc:
         await update.message.reply_text(safe_command_error("Could not fetch MT5 status.", exc))
