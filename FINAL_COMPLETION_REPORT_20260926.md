@@ -28,23 +28,36 @@ The long-lived staging topology is decomposed and role-owned:
 All four roles enforce release-source and database-schema admission before
 business work.
 
-Current post-0045 staging role deployments are aligned on the same certified
-runtime commit `93039e2e77800c4aa6b9ba1b1a8ce45797814210`:
+The certified four-role staging baseline is runtime commit
+`93039e2e77800c4aa6b9ba1b1a8ce45797814210`:
 
 - analytics: deployment `28c378a5-52e8-4f15-a877-e26a82b82ea6`;
 - engine: deployment `ab915899-6177-4608-b8a3-7b539537e25b`;
 - delivery: deployment `0683abb8-0128-4266-869c-14f34d821658`;
-- frontdoor: deployment `33ccd5cf-9e60-495e-b872-cafecb41f241`.
+- baseline frontdoor: deployment `33ccd5cf-9e60-495e-b872-cafecb41f241`.
 
 Matching clean-room deployment `e2ef6763-34a8-4f2c-9e85-00e978e82256`
-verified the exact runtime commit with Alembic 0045/schema/provenance PASS and
-**411 targeted tests passed**.
+verified that baseline with Alembic 0045/schema/provenance PASS and **411
+targeted tests passed**.
 
-All four passed release-source and `0045_mt5_credential_retirement` schema
-admission. Frontdoor explicitly skips engine/worker ownership, while the other
-three roles start only their declared dedicated runtime lanes. Role-specific
-Railway watch paths plus the controlled common staging-rollout path prevent
-unrelated production promotion.
+A later frontdoor-only delivery-recovery maintenance patch is deployed at
+`3379cae487d59f1f28edcedb1a1b362a33cef419` without rebuilding the other
+three roles:
+
+- clean-room deployment: `5c3a09c9-df98-41b0-b89c-b4b6307fe9c4`;
+- clean-room: Alembic 0045/schema/provenance PASS and **414 targeted tests
+  passed**;
+- staging frontdoor: `f3693c26-3d84-44c0-bd1e-090ca203d13f`;
+- frontdoor build gate: **356 tests passed** plus readiness PASS;
+- runtime: release/source PASS, 0045 schema PASS, `mode=frontdoor`,
+  `engine=false`, `worker=false`, `/healthz=200`, Telegram webhook
+  pending=0.
+
+All four long-lived roles therefore remain schema/release admitted, with
+frontdoor explicitly excluding engine/worker ownership and the other three
+roles remaining on the certified baseline because the maintenance patch is
+frontdoor-specific. Role-specific Railway watch paths prevent unrelated role
+restarts or production promotion.
 
 ## Multi-user / multi-account execution
 
@@ -159,6 +172,10 @@ Implemented and tested:
 - ambiguous-send no-blind-retry behavior;
 - receipt stash/reconciliation;
 - bounded/retry-aware fan-out and outbox recovery;
+- durable `EXPIRED_IN_QUEUE` resend terminality in `runtime_state`, bounded
+  by TTL and isolated from analytical signal/outcome lifecycle;
+- bootstrap suppression prevents the same expired signal version from being
+  reconsidered every scheduler tick;
 - frontdoor does not own worker outcome reconciliation.
 
 ## Database/runtime safety
