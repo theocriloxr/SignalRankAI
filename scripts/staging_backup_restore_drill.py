@@ -108,6 +108,19 @@ def _safe_environment() -> None:
             raise RuntimeError(f"restore_drill_requires_flag_off:{flag}")
 
 
+def _cleanup_database(admin_url: str, target_db: str) -> None:
+    if not SAFE_DB_RE.fullmatch(target_db):
+        raise RuntimeError("unsafe_restore_database_name")
+    _psql(
+        admin_url,
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        f"WHERE datname='{target_db}' AND pid <> pg_backend_pid()",
+    )
+    # DROP DATABASE must be its own top-level statement; combining it with the
+    # terminate query makes PostgreSQL treat the -c payload as one transaction.
+    _psql(admin_url, f'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE)')
+
+
 def main() -> int:
     _safe_environment()
     source = _normalize_url(
@@ -127,6 +140,19 @@ def main() -> int:
         raise RuntimeError("unsafe_restore_database_name")
 
     admin_url = _replace_database(source, "postgres")
+
+    cleanup_target = str(os.getenv("STAGING_RESTORE_CLEANUP_TARGET") or "").strip()
+    if cleanup_target:
+        if not SAFE_DB_RE.fullmatch(cleanup_target):
+            raise RuntimeError("unsafe_restore_database_name")
+        _cleanup_database(admin_url, cleanup_target)
+        print(
+            "STAGING_RESTORE_CLEANUP_PASS "
+            + json.dumps({"target_database": cleanup_target}, sort_keys=True),
+            flush=True,
+        )
+        return 0
+
     target_url = _replace_database(source, target_db)
 
     report: dict[str, object] = {
@@ -243,18 +269,23 @@ def main() -> int:
             report["ledger_immutability_trigger"] = True
             report["status"] = "PASS"
             report["total_seconds"] = round(time.monotonic() - started, 3)
-            print("STAGING_BACKUP_RESTORE_DRILL_PASS " + json.dumps(report, sort_keys=True), flush=True)
+            print(
+                "STAGING_BACKUP_RESTORE_VERIFIED_PENDING_CLEANUP "
+                + json.dumps(report, sort_keys=True),
+                flush=True,
+            )
             return 0
     finally:
         if created:
             try:
-                _psql(
-                    admin_url,
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    f"WHERE datname='{target_db}' AND pid <> pg_backend_pid(); "
-                    f'DROP DATABASE IF EXISTS "{target_db}" WITH (FORCE);',
-                )
+                _cleanup_database(admin_url, target_db)
                 report["cleanup"] = "PASS"
+                if report.get("status") == "PASS":
+                    print(
+                        "STAGING_BACKUP_RESTORE_DRILL_PASS "
+                        + json.dumps(report, sort_keys=True),
+                        flush=True,
+                    )
             except Exception as exc:
                 report["cleanup"] = "FAILED"
                 print(
