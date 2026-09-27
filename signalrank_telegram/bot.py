@@ -151,10 +151,11 @@ async def _resend_unsent_signals_async():
         # get_all_user_ids_compat() (which uses run_sync() internally and would
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
-        from sqlalchemy import select
-        from db.models import Outcome, SignalDelivery, User
+        from sqlalchemy import or_, select
+        from db.models import Outcome, RuntimeState, SignalDelivery, User
         formatter_failed_signal_ids: set[str] = set()
         terminal_signal_ids: set[str] = set()
+        delivery_terminal_signal_ids: set[str] = set()
         db_product_tiers: dict[int, str] = {}
         try:
             async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
@@ -184,6 +185,27 @@ async def _resend_unsent_signals_async():
                         str(signal_id)
                         for signal_id, status in (terminal_rows.all() or [])
                         if str(status or "").strip().lower() in _terminal_statuses
+                    }
+
+                    from utils.timeutils import now_utc_naive as _resend_now_utc_naive
+                    _resend_terminal_prefix = "resend_terminal:"
+                    _resend_terminal_keys = [
+                        f"{_resend_terminal_prefix}{signal_id}"
+                        for signal_id in _signal_ids
+                    ]
+                    delivery_terminal_rows = await _bootstrap_session.execute(
+                        select(RuntimeState.key).where(
+                            RuntimeState.key.in_(_resend_terminal_keys),
+                            or_(
+                                RuntimeState.expires_at.is_(None),
+                                RuntimeState.expires_at > _resend_now_utc_naive(),
+                            ),
+                        )
+                    )
+                    delivery_terminal_signal_ids = {
+                        str(key)[len(_resend_terminal_prefix):]
+                        for key in (delivery_terminal_rows.scalars().all() or [])
+                        if str(key or "").startswith(_resend_terminal_prefix)
                     }
                 user_rows = (
                     await _bootstrap_session.execute(
@@ -310,6 +332,16 @@ async def _resend_unsent_signals_async():
             ]
             logger.info("[resend] suppressed formatter_failed signals=%s", len(formatter_failed_signal_ids))
 
+        if delivery_terminal_signal_ids:
+            raw_signals = [
+                signal for signal in (raw_signals or [])
+                if str(getattr(signal, "signal_id", "") or "") not in delivery_terminal_signal_ids
+            ]
+            logger.info(
+                "[resend] suppressed delivery-terminal signals=%s",
+                len(delivery_terminal_signal_ids),
+            )
+
         if not raw_signals:
             logger.info("[resend] no active signals found in last 24h")
             return
@@ -386,8 +418,80 @@ async def _resend_unsent_signals_async():
                         float(queue_result.queue_age_seconds or 0.0),
                         float(queue_result.max_queue_age_seconds or 0.0),
                     )
-                    # Queue staleness blocks this resend attempt but does not mutate
-                    # analytical lifecycle state used by monitoring/outcome tracking.
+                    # Persist a delivery-terminal marker instead of mutating the
+                    # analytical signal/lifecycle. This prevents the same signal
+                    # version from being reconsidered every scheduler tick while
+                    # monitoring/outcome tracking remains intact.
+                    try:
+                        from datetime import timedelta as _resend_timedelta
+                        from sqlalchemy.dialects.postgresql import insert as _pg_insert
+                        from db.models import RuntimeState as _RuntimeState
+                        from utils.timeutils import now_utc_naive as _resend_now_utc_naive
+
+                        _terminal_ttl = max(
+                            3600,
+                            int(
+                                os.getenv(
+                                    "RESEND_TERMINAL_TTL_SECONDS",
+                                    "172800",
+                                )
+                                or 172800
+                            ),
+                        )
+                        _terminal_now = _resend_now_utc_naive()
+                        _terminal_key = f"resend_terminal:{sid}"[:128]
+                        _terminal_value = {
+                            "state": "EXPIRED_IN_QUEUE",
+                            "reason": str(queue_result.reason or "")[:256],
+                            "queue_age_seconds": float(
+                                queue_result.queue_age_seconds or 0.0
+                            ),
+                            "max_queue_age_seconds": float(
+                                queue_result.max_queue_age_seconds or 0.0
+                            ),
+                            "marked_at": _terminal_now.isoformat(),
+                            "source": "telegram_resend_freshness",
+                        }
+                        async with get_session(
+                            priority="background",
+                            label="resend.mark_delivery_terminal",
+                            timeout_seconds=2.0,
+                        ) as terminal_session:
+                            await terminal_session.execute(
+                                _pg_insert(_RuntimeState.__table__)
+                                .values(
+                                    key=_terminal_key,
+                                    value=_terminal_value,
+                                    expires_at=(
+                                        _terminal_now
+                                        + _resend_timedelta(seconds=_terminal_ttl)
+                                    ),
+                                    updated_at=_terminal_now,
+                                )
+                                .on_conflict_do_update(
+                                    index_elements=[_RuntimeState.key],
+                                    set_={
+                                        "value": _terminal_value,
+                                        "expires_at": (
+                                            _terminal_now
+                                            + _resend_timedelta(
+                                                seconds=_terminal_ttl
+                                            )
+                                        ),
+                                        "updated_at": _terminal_now,
+                                    },
+                                )
+                            )
+                            await terminal_session.commit()
+                    except Exception as _terminal_err:
+                        # Delivery still fails closed for this run even if the
+                        # housekeeping marker cannot be persisted.
+                        logger.warning(
+                            "[resend] delivery-terminal marker persist failed "
+                            "signal=%s err=%s",
+                            sid,
+                            _terminal_err,
+                        )
                     continue
                 fresh_ranked.append(signal_row)
             signals = fresh_ranked
