@@ -25,7 +25,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if tier_rank(tier) < tier_rank("PREMIUM"):
         await update.message.reply_text(
             "🔒 MT5 account linking requires a Premium or VIP subscription.\n"
-            "Use /upgrade to unlock one-click MT5 execution."
+            "Use /upgrade to unlock broker connection and verification features."
         )
         return
     
