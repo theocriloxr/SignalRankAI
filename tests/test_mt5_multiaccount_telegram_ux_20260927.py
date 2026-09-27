@@ -237,7 +237,7 @@ def test_runtime_actively_probes_metaapi_token_instead_of_presence_only() -> Non
     api = source("web/platform_api.py")
     app = source("web/platform_app/app.js")
     sw = source("web/platform_app/service-worker.js")
-    assert "async def probe_metaapi_authorization()" in mt5
+    assert "async def probe_metaapi_authorization(*, force: bool = False)" in mt5
     assert "[metaapi_startup_probe] status=PASS" in runtime
     assert "[metaapi_startup_probe] status=FAIL" in runtime
     assert "provider_permissions_missing" in api
