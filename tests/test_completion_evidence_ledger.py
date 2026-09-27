@@ -71,6 +71,7 @@ def test_blocked_external_rows_are_explicitly_fail_closed() -> None:
         "SR-PROVIDER-008",
         "SR-SCALE-003",
         "SR-MARKETPLACE-001",
+        "SR-DEMO-010",
     }
 
 
