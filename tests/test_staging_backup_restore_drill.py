@@ -52,3 +52,23 @@ def test_restore_drill_cleanup_only_mode_is_name_guarded() -> None:
     assert "STAGING_RESTORE_CLEANUP_TARGET" in text
     assert "SAFE_DB_RE.fullmatch(cleanup_target)" in text
     assert "STAGING_RESTORE_CLEANUP_PASS" in text
+
+
+def test_restore_drill_emits_secret_free_stage_markers() -> None:
+    text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
+    assert "STAGING_RESTORE_DRILL_STAGE" in text
+    for stage in (
+        "dump_start",
+        "dump_complete",
+        "target_create_start",
+        "target_create_complete",
+        "restore_start",
+        "restore_complete",
+        "verification_start",
+        "verification_complete",
+        "cleanup_start",
+        "cleanup_complete",
+    ):
+        assert f'_stage("{stage}"' in text
+    assert "source_database=source_db" in text
+    assert "source_database_url" not in text
