@@ -79,7 +79,7 @@ def test_web_demo_certification_readiness_is_read_only_and_canonical() -> None:
 
     panel = html[
         html.index('id="demoCertificationPanel"'):
-        html.index('id="brokerPolicyEditor"'),
+        html.index('id="brokerPolicyEditor"')
     ]
     assert "Enable execution" not in panel
     assert "Place order" not in panel
