@@ -7394,20 +7394,12 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # --------- MT5 LINK COMMAND ---------
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Link a MetaTrader 5 account without granting execution permission.
-
-	Usage: /mt5_link <login> <password> <server>
-	Example: /mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo
-
-	Credentials are encrypted before storage by the configured credential vault.
-	"""
+	"""Open the secure first-party Broker Hub; never collect broker passwords in Telegram."""
 	if update.effective_user is None or update.message is None:
 		return
 
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
-
-	# Require at least PREMIUM tier to link MT5
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
 			"🔒 MT5 account linking requires a Premium or VIP subscription.\n"
@@ -7415,89 +7407,15 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		)
 		return
 
-	missing_vars = []
-	if not (os.getenv("ENCRYPTION_KEY") or "").strip():
-		missing_vars.append("ENCRYPTION_KEY")
-	if not (os.getenv("META_API_TOKEN") or "").strip():
-		missing_vars.append("META_API_TOKEN")
-	if missing_vars:
-		await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
-		return
-
-	args = (context.args or [])
-	if len(args) < 3:
-		await update.message.reply_text(
-			"⚙️ <b>Link your MT5 Account</b>\n\n"
-			"Usage: <code>/mt5_link &lt;login&gt; &lt;password&gt; &lt;server&gt;</code>\n\n"
-			"Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
-			"🔒 Your password is encrypted by the configured credential vault before storage.\n"
-			"Linking the account never enables trading by itself.",
-			parse_mode="HTML"
-		)
-		return
-
-	mt5_login = args[0].strip()
-	mt5_password = args[1].strip()
-	mt5_server = " ".join(args[2:]).strip()  # server names can contain spaces
-
-	# Delete the message immediately to prevent credential exposure in chat history
 	try:
-		await update.message.delete()
-	except Exception:
-		pass
-
-	processing_msg = await update.effective_chat.send_message(
-		"🔄 Linking your MT5 account… please wait."
-	)
-
-	try:
-		from services.mt5_client import link_mt5_account
-		result = await link_mt5_account(
-			telegram_user_id=user_id,
-			mt5_login=mt5_login,
-			mt5_password=mt5_password,
-			mt5_server=mt5_server,
-		)
-		if result.get("success"):
-			meta_id = result.get("metaapi_account_id") or ""
-			reply = (
-				"✅ MT5 Account Linked Successfully!\n\n"
-				f"🏦 Server: {mt5_server}\n"
-				f"🔐 Login: {mt5_login} (credentials encrypted)\n"
-			)
-			if meta_id:
-				reply += f"☁️ MetaApi Account ID: {meta_id}\n"
-			reply += (
-				"\n🔒 Linking does not enable trading.\n"
-				"Next, run /verifybroker for read-only provider verification.\n"
-				"For a DEMO account, use Prepare DEMO certification in the web Broker Hub. "
-				"That applies a bounded DEMO/MANUAL policy while keeping execution OFF.\n"
-				"Execution can only be enabled separately after verification, healthy reconciliation, "
-				"policy checks and explicit confirmation."
-			)
-			if not result.get("executable"):
-				reply = (
-					"MT5 credentials saved, but the provider bridge is not provisioned yet.\n\n"
-					f"Server: {mt5_server}\n"
-					f"Login: {mt5_login} (credentials encrypted)\n\n"
-					"MetaApi did not return an executable account ID. "
-					"Signals and paper trading can continue. Broker execution remains disabled.\n\n"
-					"Run /mt5_status to check provider provisioning; after provisioning, use /verifybroker. "
-					"Provisioning still does not grant execution permission."
-				)
-		else:
-			err = result.get("error", "Unknown error")
-			reply = safe_command_error(
-				"MT5 account linking failed.",
-				RuntimeError(str(err)),
-			)
+		from .broker_linking import send_secure_broker_hub_link
+		await send_secure_broker_hub_link(update)
 	except Exception as exc:
-		reply = safe_command_error("MT5 account linking failed.", exc)
-
-	try:
-		await processing_msg.edit_text(reply)
-	except Exception:
-		await update.effective_chat.send_message(reply)
+		logger.exception("[mt5_link] secure Broker Hub handoff failed: %s", exc)
+		await update.message.reply_text(
+			"Secure broker linking is temporarily unavailable. "
+			"Do not send broker passwords in Telegram; please try /app or /support."
+		)
 
 
 # --------- MT5 STATUS COMMAND ---------
@@ -7532,7 +7450,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)).scalar_one_or_none()
 		if row is None:
 			await update.message.reply_text(
-				"No MT5 account linked.\n\nUse /mt5_link <login> <password> <server> to connect."
+				"No MT5 account linked.\n\nUse /mt5_link to open the secure Broker Hub."
 			)
 			return
 		reply = (
@@ -8511,179 +8429,52 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# /connect_broker  — FSM-guided MT5 account setup
+# /connect_broker — secure Broker Hub handoff
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Conversation states
-_CB_ASK_LOGIN = 0
-_CB_ASK_PASSWORD = 1
-_CB_ASK_SERVER = 2
-_CB_CONFIRM = 3
-
-
 async def connect_broker_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-	"""Entry point for the /connect_broker conversation."""
+	"""Compatibility entry point that never accepts broker credentials in Telegram."""
 	if update.effective_user is None or update.message is None:
 		return -1
+
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
-
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		await update.message.reply_text(
-			"🔒 MT5 broker connection requires <b>PREMIUM</b> or above.\nUse /upgrade.",
+			"🔒 Broker connection requires <b>PREMIUM</b> or above.\nUse /upgrade.",
 			parse_mode="HTML",
 		)
-		return -1  # ConversationHandler.END
-
-	await update.message.reply_text(
-		"🔗 <b>Connect Your MT5 Broker</b>\n\n"
-		"I'll walk you through linking your MetaTrader 5 account.\n\n"
-		"<b>Step 1/3</b> — Enter your <b>MT5 login number</b> (numeric account ID):\n\n"
-		"Type /cancel at any time to abort.",
-		parse_mode="HTML",
-	)
-	return _CB_ASK_LOGIN
-
-
-async def connect_broker_got_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-	if update.message is None or update.message.text is None:
-		return _CB_ASK_LOGIN
-	login_text = update.message.text.strip()
-	if not login_text.isdigit():
-		await update.message.reply_text("❌ Login must be a numeric account ID. Try again:")
-		return _CB_ASK_LOGIN
-	context.user_data["mt5_login"] = login_text
-	await update.message.reply_text(
-		"<b>Step 2/3</b> — Enter your <b>MT5 password</b>:\n\n"
-		"⚠️ Your password will be <b>encrypted</b> before storage. "
-		"We never store it in plain text.",
-		parse_mode="HTML",
-	)
-	return _CB_ASK_PASSWORD
-
-
-async def connect_broker_got_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-	if update.message is None or update.message.text is None:
-		return _CB_ASK_PASSWORD
-	context.user_data["mt5_password"] = update.message.text.strip()
-	# Delete the password message for security
-	try:
-		await update.message.delete()
-	except Exception:
-		pass
-	await update.message.reply_text(
-		"✅ Password received and will be encrypted.\n\n"
-		"<b>Step 3/3</b> — Enter your <b>MT5 server name</b> (e.g. <code>ICMarkets-Demo</code>):",
-		parse_mode="HTML",
-	)
-	return _CB_ASK_SERVER
-
-
-async def connect_broker_got_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-	if update.message is None or update.message.text is None:
-		return _CB_ASK_SERVER
-	server = update.message.text.strip()
-	if not server:
-		await update.message.reply_text("❌ Server name cannot be empty. Try again:")
-		return _CB_ASK_SERVER
-	context.user_data["mt5_server"] = server
-	login = context.user_data.get("mt5_login", "")
-	await update.message.reply_text(
-		f"<b>Confirm your MT5 details:</b>\n\n"
-		f"🔢 Login: <code>{login}</code>\n"
-		f"🏦 Server: <code>{server}</code>\n"
-		f"🔐 Password: <code>{'*' * 8}</code> (hidden)\n\n"
-		"Reply <b>YES</b> to confirm or <b>NO</b> to cancel.",
-		parse_mode="HTML",
-	)
-	return _CB_CONFIRM
-
-
-async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-	if update.message is None or update.effective_user is None:
-		return -1
-	text = (update.message.text or "").strip().upper()
-	if text != "YES":
-		await update.message.reply_text("❌ Setup cancelled. Use /connect_broker to start again.")
-		context.user_data.clear()
-		return -1  # END
-
-	user_id: int = update.effective_user.id
-	login: str = context.user_data.get("mt5_login", "")
-	password: str = context.user_data.get("mt5_password", "")
-	server: str = context.user_data.get("mt5_server", "")
-	context.user_data.clear()
-
-	missing_vars = []
-	if not (os.getenv("ENCRYPTION_KEY") or "").strip():
-		missing_vars.append("ENCRYPTION_KEY")
-	if not (os.getenv("META_API_TOKEN") or "").strip():
-		missing_vars.append("META_API_TOKEN")
-	if missing_vars:
-		await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
 		return -1
 
-	await update.message.reply_text("⏳ Linking your account via MetaApi… (this may take 30–60 s)")
-
 	try:
-		from services.mt5_client import link_mt5_account
-		result = await link_mt5_account(
-			telegram_user_id=user_id,
-			mt5_login=login,
-			mt5_password=password,
-			mt5_server=server,
-		)
-		if bool(result.get("success")):
-			account_id = result.get("metaapi_account_id") or result.get("id") or "pending"
-			await update.message.reply_text(
-				f"✅ <b>MT5 account linked!</b>\n\n"
-				f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
-				"You can now use ⚡ buttons on signals to execute trades instantly.\n"
-				"Use /setlot to configure your lot size.\n"
-				"Use /execution manual|none|auto [count|all] to choose execution mode.",
-				parse_mode="HTML",
-			)
-		else:
-			err = str(result.get("error") or "unknown error")
-			await update.message.reply_text(
-				f"❌ <b>Failed to link account:</b> {err}\n\n"
-				"Check your login/password/server and try /connect_broker again.",
-				parse_mode="HTML",
-			)
+		from .broker_linking import send_secure_broker_hub_link
+		await send_secure_broker_hub_link(update)
 	except Exception as exc:
+		logger.exception("[connect_broker] secure Broker Hub handoff failed: %s", exc)
 		await update.message.reply_text(
-			f"❌ <b>Failed to link account:</b> {exc}\n\n"
-			"Check your login/password/server and try /connect_broker again.",
-			parse_mode="HTML",
+			"Secure broker linking is temporarily unavailable. "
+			"Do not send broker passwords in Telegram; please try /app or /support."
 		)
-	return -1  # END
+	return -1
 
 
 async def connect_broker_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 	if update.message:
-		await update.message.reply_text("❌ Broker setup cancelled.")
+		await update.message.reply_text("No broker credentials were collected. Secure setup is available through /mt5_link.")
 	if context.user_data:
 		context.user_data.clear()
-	return -1  # END
+	return -1
 
 
 def build_connect_broker_conversation():
-	"""Build and return the ConversationHandler for /connect_broker.
-
-	Register this in bot.py with ``application.add_handler()``.
-	"""
-	from telegram.ext import ConversationHandler, MessageHandler, filters, CommandHandler as _CH
+	"""Preserve the registered /connect_broker surface while disabling chat credential collection."""
+	from telegram.ext import ConversationHandler, CommandHandler as _CH
 
 	return ConversationHandler(
 		entry_points=[_CH("connect_broker", connect_broker_start)],
-		states={
-			_CB_ASK_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_login)],
-			_CB_ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_password)],
-			_CB_ASK_SERVER: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_server)],
-			_CB_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_confirm)],
-		},
+		states={},
 		fallbacks=[_CH("cancel", connect_broker_cancel)],
-		conversation_timeout=300,
+		conversation_timeout=60,
 	)
 
 
