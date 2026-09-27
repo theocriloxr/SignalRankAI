@@ -195,3 +195,5 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
   body.session-active .compact-nav select{min-width:0}
   body.session-active .topbar .brand{padding-right:100px}
 }
+
+.pending-feedback{border-left:3px solid var(--amber)}
