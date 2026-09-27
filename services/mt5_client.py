@@ -221,6 +221,70 @@ def _check_token() -> bool:
     return True
 
 
+def _configured_provisioning_profile(server: str, platform: str) -> str | None:
+    """Resolve an operator-approved MetaApi provisioning profile for a server."""
+    import json
+
+    raw = str(os.getenv("META_API_PROVISIONING_PROFILE_MAP_JSON") or "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        logger.error("[metatrader] META_API_PROVISIONING_PROFILE_MAP_JSON is invalid JSON")
+        return None
+    if not isinstance(data, dict):
+        return None
+    server_n = str(server or "").strip().lower()
+    platform_n = str(platform or "").strip().lower()
+    candidates = (
+        data.get(f"{platform_n}:{server_n}")
+        or data.get(str(server or "").strip())
+        or data.get(server_n)
+    )
+    profile_id = str(candidates or "").strip()
+    return profile_id or None
+
+
+def _account_provisioning_payload(
+    *,
+    user_id: int,
+    platform: str,
+    server: str,
+    account_label: str | None,
+    broker_name: str | None,
+    login: str | None = None,
+    password: str | None = None,
+    source: str,
+) -> Dict[str, Any]:
+    """Build a MetaApi account payload with an optional approved profile."""
+    platform_n = str(platform or "").strip().lower()
+    server_n = str(server or "").strip()
+    payload: Dict[str, Any] = {
+        "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
+        "type": "cloud-g2",
+        "server": server_n,
+        "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
+        "keywords": [str(broker_name).strip()] if broker_name else [],
+        "reliability": "high",
+        "metadata": {
+            "signalrank_user_id": int(user_id),
+            "source": str(source),
+        },
+    }
+    if login is not None:
+        payload["login"] = str(login).strip()
+    if password is not None:
+        payload["password"] = str(password)
+    profile_id = _configured_provisioning_profile(server_n, platform_n)
+    if profile_id:
+        payload["provisioningProfileId"] = profile_id
+        payload["metadata"]["provisioning_profile_configured"] = True
+    else:
+        payload["platform"] = platform_n
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Low-level HTTP helpers
 # ---------------------------------------------------------------------------
@@ -1414,12 +1478,20 @@ async def _provision_metatrader_account(
                         "retry_after": resp.headers.get("Retry-After"),
                         "transaction_id": tx_id,
                     }
-                return _metaapi_provisioning_error(
+                failure = _metaapi_provisioning_error(
                     int(resp.status),
                     body,
                     retry_after=resp.headers.get("Retry-After"),
                     transaction_id=tx_id,
                 )
+                logger.warning(
+                    "[metatrader] provisioning_failed status=%s code=%s provider_code=%s suggested_servers=%s",
+                    failure.get("provider_status"),
+                    failure.get("code"),
+                    failure.get("provider_code"),
+                    len(failure.get("suggested_servers") or []),
+                )
+                return failure
     except Exception as exc:
         logger.warning(
             "[metatrader] provisioning request failed err=%s",
@@ -1516,21 +1588,16 @@ async def link_platform_metatrader_account(
         return {"success": False, "error": "Secure credential storage is unavailable"}
 
     provision = await _provision_metatrader_account(
-        {
-            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
-            "type": "cloud-g2",
-            "login": login_n,
-            "password": password_n,
-            "server": server_n,
-            "platform": platform_n,
-            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
-            "keywords": [str(broker_name).strip()] if broker_name else [],
-            "reliability": "high",
-            "metadata": {
-                "signalrank_user_id": int(user_id),
-                "source": "signalrank-platform",
-            },
-        },
+        _account_provisioning_payload(
+            user_id=int(user_id),
+            platform=platform_n,
+            server=server_n,
+            account_label=account_label,
+            broker_name=broker_name,
+            login=login_n,
+            password=password_n,
+            source="signalrank-platform",
+        ),
         transaction_id=provisioning_transaction_id,
     )
     if not provision.get("success"):
@@ -1629,19 +1696,14 @@ async def create_platform_metatrader_secure_link(
         return {"success": False, "error": "broker server is required"}
 
     provision = await _provision_metatrader_account(
-        {
-            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
-            "type": "cloud-g2",
-            "server": server_n,
-            "platform": platform_n,
-            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
-            "keywords": [str(broker_name).strip()] if broker_name else [],
-            "reliability": "high",
-            "metadata": {
-                "signalrank_user_id": int(user_id),
-                "source": "signalrank-secure-link",
-            },
-        }
+        _account_provisioning_payload(
+            user_id=int(user_id),
+            platform=platform_n,
+            server=server_n,
+            account_label=account_label,
+            broker_name=broker_name,
+            source="signalrank-secure-link",
+        )
     )
     if not provision.get("success"):
         return provision
