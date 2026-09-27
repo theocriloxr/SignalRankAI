@@ -89,3 +89,28 @@ footer{display:flex;justify-content:space-between;gap:20px;padding:20px clamp(18
 .subpanel .stack-form{padding:6px 0 0}
 .subpanel .stack-form label:has(input[type="checkbox"]){display:flex;grid-template-columns:none;align-items:center;gap:9px}
 .subpanel .stack-form input[type="checkbox"]{width:auto}
+
+/* Isolated live production site hardening — 2026-09-28 */
+body.session-booting main{min-height:calc(100vh - 82px);display:grid;align-items:center}
+.bootstrap-shell{width:min(720px,100%);margin:7vh auto;display:grid;grid-template-columns:auto 1fr;gap:20px 22px;align-items:center;padding:clamp(24px,5vw,42px);border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow);border-radius:18px}
+.bootstrap-shell h1{margin:.15rem 0 .4rem;font-size:clamp(28px,5vw,48px);letter-spacing:-.045em}
+.bootstrap-shell p:not(.eyebrow){margin:0;color:var(--muted);line-height:1.6}
+.bootstrap-mark{display:grid;place-items:center;width:76px;height:76px;border:1px solid var(--line);border-radius:20px;background:var(--panel-soft)}
+.bootstrap-progress{grid-column:1/-1;height:3px;overflow:hidden;background:var(--meter-rest);border-radius:999px}
+.bootstrap-progress span{display:block;width:42%;height:100%;background:var(--cyan);animation:bootstrap-scan 1.15s ease-in-out infinite alternate;border-radius:999px}
+.bootstrap-retry{margin-top:16px;padding-inline:16px}
+@keyframes bootstrap-scan{from{transform:translateX(-10%)}to{transform:translateX(150%)}}
+.plan-card{position:relative;display:flex;min-height:190px;flex-direction:column;gap:10px}
+.plan-card p{color:var(--muted);line-height:1.5}
+.plan-card .billing-checkout{margin-top:auto;width:100%}
+.plan-card-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.plan-current-badge{font:700 9px Consolas,monospace;letter-spacing:.12em;color:var(--green);border:1px solid var(--line);padding:4px 7px;border-radius:999px}
+.plan-card.current-plan{border-color:var(--green)}
+.secure-link-handoff{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-left:3px solid var(--cyan);background:var(--panel-soft);border-radius:10px}
+.secure-link-handoff p{margin:0;line-height:1.55}
+.secure-link-handoff small{color:var(--muted)}
+.secure-link-handoff .link-button,.secure-link-handoff button{display:inline-flex;align-items:center;justify-content:center;margin:4px 6px 0 0;text-decoration:none}
+.locked-nav[hidden]{display:none!important}
+@media(max-width:700px){.bootstrap-shell{grid-template-columns:1fr;margin:4vh auto}.bootstrap-progress{grid-column:1}.bootstrap-mark{width:64px;height:64px}.plan-card{min-height:0}.secure-link-handoff .link-button,.secure-link-handoff button{width:100%;margin-right:0}}
+@media(prefers-reduced-motion:reduce){.bootstrap-progress span{animation:none;width:100%}}
+
