@@ -87,3 +87,22 @@ def test_adaptive_candle_store_uses_short_transaction_default():
     # the entire initial history backfill in a single transaction.
     session=source.index("async with get_session(", loop)
     assert loop < session < commit
+
+
+def test_provider_routers_require_user_delivery_evidence_before_execution():
+    bybit=(ROOT/"services"/"bybit_signal_router.py").read_text(encoding="utf-8")
+    mt5=(ROOT/"services"/"mt5_signal_router.py").read_text(encoding="utf-8")
+
+    # Bybit must bind the signal to the canonical user delivery row and require
+    # successful delivery before the canonical ExecutionGate can approve it.
+    assert "SignalDelivery.user_id == int(user.id)" in bybit
+    assert "SignalDelivery.signal_id == signal_id" in bybit
+    assert "SignalDelivery.sent_ok.is_(True)" in bybit
+    assert "evidence_allowed=delivery is not None" in bybit
+
+    # MT4/MT5 share the explicit cross-channel evidence resolver and fail
+    # closed when the delivery/access proof cannot be established.
+    assert "async def _has_execution_evidence(" in mt5
+    assert 'evidence.get("delivery_proven")' in mt5
+    assert 'evidence.get("access_proven")' in mt5
+    assert "evidence_allowed=bool(evidence)" in mt5
