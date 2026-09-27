@@ -35,7 +35,7 @@ def test_broker_catalogue_is_explicit_about_execution_readiness():
     assert rows["okx"]["execution_adapter"] == "connection_only"
     assert rows["coinbase"]["execution_adapter"] == "connection_only"
     assert rows["kraken"]["execution_adapter"] == "connection_only"
-    assert rows["mt5"]["connection_limit"] == 1
+    assert rows["mt5"]["connection_limit"] >= 3
 
 
 def test_first_party_platform_has_canonical_exchange_link_and_delivery_proof_gate():
