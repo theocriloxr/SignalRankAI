@@ -882,7 +882,53 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
             {"uid": int(user_id)},
         )
     ).mappings().first()
-    return dict(row) if row else None
+    if not row:
+        return None
+
+    snapshot = dict(row)
+    telegram_status = "linked" if snapshot.get("telegram_user_id") is not None else "not_linked"
+    telegram_merge_id = None
+    telegram_linked_user_id = None
+
+    if telegram_status != "linked":
+        merge = (
+            await session.execute(
+                text(
+                    "SELECT merge_id,merged_user_id,status FROM account_merge_records "
+                    "WHERE canonical_user_id=:uid AND status='pending_review' "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"uid": int(user_id)},
+            )
+        ).mappings().first()
+        if merge:
+            telegram_status = "merge_review"
+            telegram_merge_id = str(merge.get("merge_id") or "") or None
+            telegram_linked_user_id = int(merge["merged_user_id"]) if merge.get("merged_user_id") is not None else None
+        else:
+            link = (
+                await session.execute(
+                    text(
+                        "SELECT status,expires_at FROM account_link_requests "
+                        "WHERE requesting_user_id=:uid AND provider='telegram' "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"uid": int(user_id)},
+                )
+            ).mappings().first()
+            if link:
+                link_status = str(link.get("status") or "").strip().lower()
+                expires_at = link.get("expires_at")
+                if link_status == "merge_review":
+                    telegram_status = "merge_review"
+                elif link_status == "pending" and expires_at is not None and expires_at > now_utc_naive():
+                    telegram_status = "link_pending"
+
+    snapshot["telegram_link_status"] = telegram_status
+    snapshot["telegram_merge_id"] = telegram_merge_id
+    snapshot["telegram_linked_user_id"] = telegram_linked_user_id
+    snapshot["telegram_connected_or_pending"] = telegram_status in {"linked", "merge_review"}
+    return snapshot
 
 
 @dataclass(frozen=True, slots=True)
