@@ -80,6 +80,19 @@ integration-verified enabled provider set under `SR-PROVIDER-007`.
 
 ## 2. Broker demo/canary/live-money certification
 
+2026-09-27 read-only staging preflight evidence: deployment
+`ad501371-bd3a-431c-8683-701e09c05b4f` ran against Alembic
+`0045_mt5_credential_retirement` and found **zero canonical broker
+connections**. It therefore correctly returned BLOCKED with
+`demo_account_not_connected`, `demo_account_not_read_only_verified`,
+`demo_account_credentials_not_ready`, `demo_reconciliation_not_healthy`
+and `demo_execution_permission_not_configured`. The preflight performed no
+activation, placed zero orders and returned no secrets. Environment-level
+broker credential variables are not treated as account ownership and are not
+silently adopted into a user's canonical broker connection.
+
+See `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md`.
+
 Before owner-authorized live execution:
 
 1. connect one explicitly identified DEMO account;
@@ -226,12 +239,13 @@ claim.
 
 ## Current safe boundary
 
-As of 2026-09-26:
+As of 2026-09-27:
 
 - staging database is certified at Alembic `0045_mt5_credential_retirement`;
 - staging frontdoor, engine, delivery and analytics roles pass release/schema
   admission on the decomposed topology;
 - broker legacy-secret inventory is clean in certified staging;
+- canonical demo broker connections currently present in staging: **0**; demo certification remains blocked until an explicitly owned demo account is linked through the canonical flow;
 - real execution, copy execution, live broker-account execution, mainnet
   Hyperliquid, real payouts and Paystack transfers remain disabled;
 - production remains a separate controlled rollout and was not promoted merely
