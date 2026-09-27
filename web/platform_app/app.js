@@ -460,11 +460,12 @@ async function loadBroker(){
       form.elements.password.value='';
       if(feedback){
         const connection=result.connection||{};
-        feedback.className='connection-feedback positive-feedback';
-        feedback.innerHTML=`<strong>Account connected</strong><p>${esc(String(connection.platform||raw.platform).toUpperCase())} · ${esc(connection.broker_name||raw.broker_name||'Broker')} · ${esc(connection.server||raw.server)} · ${esc(String(connection.environment||raw.environment||'unknown').toUpperCase())}</p><small>Execution remains off until this account's policy and safety gates are explicitly enabled.</small>`;
+        const pending=Boolean(result.pending);
+        feedback.className='connection-feedback '+(pending?'pending-feedback':'positive-feedback');
+        feedback.innerHTML=`<strong>${pending?'Provisioning pending':'Account connected'}</strong><p>${esc(String(connection.platform||raw.platform).toUpperCase())} · ${esc(connection.broker_name||raw.broker_name||'Broker')} · ${esc(connection.server||raw.server)} · ${esc(String(connection.environment||raw.environment||'unknown').toUpperCase())}</p><small>${pending?'MetaApi accepted the request but broker discovery is still running. Do not submit repeated new attempts; verify this account after the provider finishes.':'Execution remains off until this account\'s policy and safety gates are explicitly enabled.'}</small>`;
       }
       await loadBroker();
-      toast('Trading account connected');
+      toast(result.pending?'MetaTrader provisioning accepted and pending':'Trading account connected');
     }catch(err){
       const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
       const suggestions=Array.isArray(detail.suggested_servers)?detail.suggested_servers:[];
@@ -472,8 +473,9 @@ async function loadBroker(){
         const suggestionHtml=suggestions.length?`<div class="server-suggestions"><small>Suggested servers</small>${suggestions.map(server=>`<button class="ghost server-suggestion" type="button" data-server="${esc(server)}">${esc(server)}</button>`).join('')}</div>`:'';
         const secureHint=detail.can_use_secure_link?'<p class="muted">You can also try the provider-hosted secure-link flow after confirming the exact server.</p>':'';
         const retryHint=detail.retry_after?`<p class="muted">Provider retry guidance: ${esc(detail.retry_after)}</p>`:'';
+        const slotsHint=detail.recommended_resource_slots?`<p class="muted">MetaApi recommends ${esc(detail.recommended_resource_slots)} resource slot(s) for this broker account. An administrator must configure that provider requirement before retrying.</p>`:'';
         feedback.className='connection-feedback negative-feedback';
-        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${secureHint}<small>No password is shown or returned. Correct the indicated field before submitting again.</small>`;
+        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${slotsHint}${secureHint}<small>No password is shown or returned. Correct the indicated field before submitting again.</small>`;
         $$('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
       }
       toast(err.message,true);
