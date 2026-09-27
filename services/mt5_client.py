@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote
@@ -31,6 +32,9 @@ import aiohttp
 from core.security import redact_secrets
 
 logger = logging.getLogger(__name__)
+
+
+_METAAPI_AUTH_CACHE: tuple[float, Dict[str, Any]] | None = None
 
 
 def _safe_error_body(body: str) -> str:
@@ -206,14 +210,38 @@ def _headers() -> Dict[str, str]:
     }
 
 
-async def probe_metaapi_authorization() -> Dict[str, Any]:
-    """Validate the configured MetaApi auth token without broker credentials."""
+async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
+    """Validate the configured MetaApi auth token without broker credentials.
+
+    Results are cached briefly so loading the Broker workspace does not create
+    an external provider request on every render. A Railway variable change
+    causes a process restart, which clears this cache.
+    """
+    global _METAAPI_AUTH_CACHE
+
+    ttl = max(
+        5.0,
+        min(
+            float(os.getenv("META_API_AUTH_PROBE_CACHE_SECONDS", "60") or 60),
+            600.0,
+        ),
+    )
+    now = time.monotonic()
+    if not force and _METAAPI_AUTH_CACHE is not None:
+        cached_at, cached = _METAAPI_AUTH_CACHE
+        if now - cached_at <= ttl:
+            return dict(cached)
+
     if not _check_token():
-        return {
+        result = {
             "ok": False,
+            "configured": False,
             "code": "provider_not_configured",
             "provider_status": None,
         }
+        _METAAPI_AUTH_CACHE = (now, result)
+        return dict(result)
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -224,21 +252,33 @@ async def probe_metaapi_authorization() -> Dict[str, Any]:
             ) as resp:
                 body = await resp.text()
                 if resp.status == 200:
-                    return {"ok": True, "code": "authorized", "provider_status": 200}
-                mapped = _metaapi_provisioning_error(resp.status, body)
-                return {
-                    "ok": False,
-                    "code": str(mapped.get("code") or "provider_probe_failed"),
-                    "provider_status": int(resp.status),
-                    "provider_code": mapped.get("provider_code"),
-                }
+                    result = {
+                        "ok": True,
+                        "configured": True,
+                        "code": "authorized",
+                        "provider_status": 200,
+                    }
+                else:
+                    mapped = _metaapi_provisioning_error(resp.status, body)
+                    result = {
+                        "ok": False,
+                        "configured": True,
+                        "code": str(mapped.get("code") or "provider_probe_failed"),
+                        "provider_status": int(resp.status),
+                        "provider_code": mapped.get("provider_code"),
+                    }
+                _METAAPI_AUTH_CACHE = (now, result)
+                return dict(result)
     except Exception as exc:
         logger.warning("[metaapi_auth_probe] unavailable error_type=%s", type(exc).__name__)
-        return {
+        result = {
             "ok": False,
+            "configured": True,
             "code": "provider_unavailable",
             "provider_status": None,
         }
+        _METAAPI_AUTH_CACHE = (now, result)
+        return dict(result)
 
 
 async def search_known_metatrader_servers(
