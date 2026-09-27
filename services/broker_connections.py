@@ -345,6 +345,8 @@ async def register_platform_exchange_connection(
         connector=provider_n,
         account_ref=account_ref,
         external_account_id=None,
+        broker_name=provider_n.upper(),
+        account_label=str(payload.get("account_label") or "").strip()[:128] or None,
         environment="demo" if sandbox else "live",
         auth_mode="api_key",
         credential_payload=dict(payload),
