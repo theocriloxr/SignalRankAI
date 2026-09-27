@@ -8,7 +8,7 @@ Repository Alembic head: 0045_mt5_credential_retirement
 Staging schema: certified at 0045_mt5_credential_retirement
 Staging topology: decomposed frontdoor + engine + delivery + analytics
 Staging live-money posture: disabled / fail-closed
-Current verified frontdoor release: e7196d4310180b2e901ab020e7041de7c5e18a91
+Current verified frontdoor release: d09535105bf44ca9c53008007394d9f804104a81
 Current read-only demo preflight: e80fa087-d487-40fc-859e-76df71a3b7b7 (BLOCKED_EXTERNAL; 0 canonical broker connections)
 Production promotion: separate controlled gate; not implied by staging health
 ```
@@ -41,12 +41,16 @@ authorization gates.
 Staging disaster recovery is independently verified through a full isolated
 PostgreSQL restore drill. Canonical demo broker connections currently present
 in staging: **0**. Frontdoor deployment
-`713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d431018...`
-now exposes an explicit fail-closed **Prepare DEMO certification** workflow:
+`33c9b981-29c0-4fef-890f-b314e817a566` at `d09535105bf44...`
+retains the explicit fail-closed **Prepare DEMO certification** workflow and
+also aligns Telegram MT5 linking/status copy with the same account-safety
+contract: linking/provisioning does not grant execution permission;
 provider-backed read-only verification/reconciliation → bounded
 `DEMO/MANUAL` policy → execution remains OFF. Clean-room marker
-`e7196d431018...` passed Alembic 0045/schema/provenance and **462 targeted
-tests**; the frontdoor image passed **356 build tests** plus readiness checks.
+`d09535105bf44...` passed Alembic 0045/schema/provenance and **465 targeted
+tests**, including MT5 linking-copy safety; the frontdoor image passed **356
+build tests** plus readiness checks. Runtime ownership is frontdoor-only
+(http+Telegram on; engine+worker off), webhook pending=0, and /healthz=200.
 Fresh read-only preflight `e80fa087-d487-40fc-859e-76df71a3b7b7` still found
 zero canonical accounts and confirmed activation=false, orders=0 and
 secrets_returned=false. Demo execution certification therefore remains blocked
