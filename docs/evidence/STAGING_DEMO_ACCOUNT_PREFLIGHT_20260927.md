@@ -2,8 +2,8 @@
 
 Status: **BLOCKED_EXTERNAL**
 
-Railway deployment: `ad501371-bd3a-431c-8683-701e09c05b4f`  
-Rollout commit: `bd94225d37322a280a334dd7286b7c20c5b3b548`
+Railway deployment: `e8582346-1bcf-4476-aec9-4de033ee0a28`  
+Rollout commit: `41b8049e720d87e5861e9c035c74ef9c498636d0`
 
 ## Purpose
 
@@ -14,6 +14,12 @@ returning any broker secret:
 > bounded demo-certification workflow?
 
 The answer at the time of this run was **no**.
+
+This refresh ran after the read-only onboarding improvements were certified and
+deployed to staging frontdoor commit `34963afc8b5df5d9787e3e6e9e83335419f631ca`.
+Frontdoor deployment: `f15466a0-eb9e-4f32-9205-3130332c0361`.
+The result therefore reflects the current canonical onboarding/readiness path,
+not the earlier pre-onboarding baseline.
 
 ## Environment / schema evidence
 
