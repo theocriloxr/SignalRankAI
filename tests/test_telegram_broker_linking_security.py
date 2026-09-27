@@ -60,7 +60,7 @@ def test_connect_broker_alias_is_compatibility_handoff_only() -> None:
     commands = _source("signalrank_telegram/commands.py")
     block = commands[
         commands.index("async def connect_broker_start"):
-        commands.index("async def cancel_command"),
+        commands.index("async def cancel_command")
     ]
 
     assert "send_secure_broker_hub_link" in block
