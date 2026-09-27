@@ -584,6 +584,34 @@ def _log_railway_env_readiness() -> None:
         logger.warning("[railway] missing env vars: %s", ", ".join(missing))
 
 
+async def _probe_metaapi_startup_authorization() -> None:
+    """Prove that META_API_TOKEN is accepted, not merely present."""
+    if not str(os.getenv("META_API_TOKEN") or "").strip():
+        logger.warning("[metaapi_startup_probe] status=SKIP reason=token_not_configured")
+        return
+    try:
+        from services.mt5_client import probe_metaapi_authorization
+
+        result = await probe_metaapi_authorization()
+        if result.get("ok"):
+            logger.info(
+                "[metaapi_startup_probe] status=PASS provider_status=%s",
+                result.get("provider_status"),
+            )
+            return
+        logger.error(
+            "[metaapi_startup_probe] status=FAIL code=%s provider_status=%s provider_code=%s",
+            result.get("code"),
+            result.get("provider_status"),
+            result.get("provider_code"),
+        )
+    except Exception as exc:
+        logger.error(
+            "[metaapi_startup_probe] status=FAIL code=probe_exception error_type=%s",
+            type(exc).__name__,
+        )
+
+
 async def _run_startup_ops(run_mode: str = "all") -> None:
     """Run DB migrations/startup ops first.
 
@@ -1324,6 +1352,8 @@ async def lifespan(_: FastAPI):
     ownership = _railway_process_ownership()
     _validate_production_runtime_contract()
     _log_railway_env_readiness()
+    metaapi_probe_task = asyncio.create_task(_probe_metaapi_startup_authorization())
+    metaapi_probe_task.add_done_callback(lambda t: _log_task_failure(t, "metaapi-startup-probe"))
     try:
         from core.version import get_version_banner
         from core.startup_diagnostics import render_startup_diagnostics
