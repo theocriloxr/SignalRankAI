@@ -1,0 +1,4 @@
+SignalRank staging demo-account read-only preflight trigger.
+Purpose: re-evaluate canonical broker connection/read-only verification/reconciliation/policy readiness at the current branch head.
+This trigger must not link accounts, enable execution, place orders, or return secrets.
+All live-money and payout paths remain disabled.
