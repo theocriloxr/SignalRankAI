@@ -4822,7 +4822,9 @@ async def confirm_billing_checkout(
         envelope = response.json()
     except ValueError as exc:
         raise HTTPException(status_code=502, detail="Payment provider returned an invalid response") from exc
-    transaction = envelope.get("data") if isinstance(envelope, dict) else None
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=502, detail="Payment provider returned an invalid response")
+    transaction = envelope.get("data")
     if not envelope.get("status") or not isinstance(transaction, dict):
         raise HTTPException(status_code=409, detail="Payment has not been confirmed by Paystack yet")
     if str(transaction.get("status") or "").lower() != "success":
