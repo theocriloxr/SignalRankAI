@@ -7,6 +7,7 @@ from services.broker_connections import _connection_limit
 from services.mt5_client import (
     _account_provisioning_payload,
     _metaapi_provisioning_error,
+    _metaapi_token_candidates,
 )
 
 
@@ -262,3 +263,37 @@ def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
     assert "control.disabled=!metaapiReady" in app
     assert "provider-health-error" in css
     assert "signalrank-shell-v22" in sw
+
+
+def test_metaapi_token_alias_candidates_are_ordered_and_deduplicated(monkeypatch) -> None:
+    monkeypatch.setenv("META_API_TOKEN", "canonical-stale")
+    monkeypatch.setenv("METAAPI_TOKEN", "legacy-valid")
+    assert _metaapi_token_candidates() == [
+        ("META_API_TOKEN", "canonical-stale"),
+        ("METAAPI_TOKEN", "legacy-valid"),
+    ]
+    monkeypatch.setenv("METAAPI_TOKEN", "canonical-stale")
+    assert _metaapi_token_candidates() == [
+        ("META_API_TOKEN", "canonical-stale"),
+    ]
+
+
+def test_metaapi_alias_selection_is_wired_across_runtime_gates() -> None:
+    mt5 = source("services/mt5_client.py")
+    runtime = source("railway_main.py")
+    api = source("web/platform_api.py")
+    broker = source("services/broker_connections.py")
+    worker = source("worker/worker.py")
+    activation = source("core/financial_activation.py")
+    data = source("data/get_live_price.py")
+
+    assert 'for env_name in ("META_API_TOKEN", "METAAPI_TOKEN")' in mt5
+    assert "for env_name, token in candidates:" in mt5
+    assert "_METAAPI_ACTIVE_TOKEN_ENV = env_name" in mt5
+    assert "token_source=%s" in runtime
+    assert 'os.getenv("METAAPI_TOKEN")' in runtime
+    assert 'os.getenv("METAAPI_TOKEN")' in api
+    assert 'os.getenv("METAAPI_TOKEN")' in broker
+    assert 'os.getenv("METAAPI_TOKEN")' in worker
+    assert '_raw(environ, "METAAPI_TOKEN")' in activation
+    assert 'os.getenv("METAAPI_TOKEN")' in data
