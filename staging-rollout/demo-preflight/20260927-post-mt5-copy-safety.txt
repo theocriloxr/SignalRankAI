@@ -1,0 +1,3 @@
+SignalRank read-only demo preflight after MT5 linking-copy safety rollout.
+Purpose: re-check canonical demo-account lifecycle state only.
+This marker must not enable execution, place orders, or expose credentials.
