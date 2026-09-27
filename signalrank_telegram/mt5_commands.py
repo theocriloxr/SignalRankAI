@@ -1,5 +1,3 @@
-import os
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -14,84 +12,32 @@ def _mt5_not_configured_message() -> str:
     )
 
 async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Link a MetaTrader 5 account without granting execution permission."""
+    """Open the secure first-party Broker Hub; never collect broker passwords in Telegram."""
     if update.effective_user is None or update.message is None:
         return
-    
+
     user_id: int = update.effective_user.id
     tier: str = _effective_tier(user_id)
-    
-    # Require PREMIUM+
     if tier_rank(tier) < tier_rank("PREMIUM"):
         await update.message.reply_text(
             "🔒 MT5 account linking requires a Premium or VIP subscription.\n"
             "Use /upgrade to unlock broker connection and verification features."
         )
         return
-    
-    missing_vars = []
-    if not (os.getenv("ENCRYPTION_KEY") or "").strip():
-        missing_vars.append("ENCRYPTION_KEY")
-    if not (os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
-        missing_vars.append("META_API_TOKEN|METAAPI_TOKEN")
-    if missing_vars:
-        await update.message.reply_text(_mt5_not_configured_message())
-        return
-    
-    args = context.args or []
-    if len(args) < 3:
-        await update.message.reply_text(
-            "⚙️ <b>Link your MT5 Account</b>\n\n"
-            "Usage: <code>/mt5_link <login> <password> <server></code>\n\n"
-            "Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
-            "🔒 Password encrypted by the configured credential vault before storage.\n"
-            "Linking never enables trading by itself.",
-            parse_mode="HTML"
-        )
-        return
-    
-    mt5_login = args[0].strip()
-    mt5_password = args[1].strip()
-    mt5_server = " ".join(args[2:]).strip()
-    
-    # Delete credential message
+
     try:
-        await update.message.delete()
-    except Exception:
-        pass
-    
-    processing_msg = await update.effective_chat.send_message("🔄 Linking MT5 account...")
-    
-    try:
-        from services.mt5_client import link_mt5_account
-        result = await link_mt5_account(
-            telegram_user_id=user_id,
-            mt5_login=mt5_login,
-            mt5_password=mt5_password,
-            mt5_server=mt5_server,
-        )
-        if result.get("success"):
-            meta_id = result.get("metaapi_account_id") or ""
-            reply = (
-                f"✅ MT5 Account Linked!\n\n"
-                f"🏦 Server: {mt5_server}\n"
-                f"🔐 Login: {mt5_login}\n"
-            )
-            if meta_id:
-                reply += f"☁️ MetaApi ID: {meta_id}\n"
-            reply += (
-                "\n🔒 Linking does not enable trading.\n"
-                "Next, run /verifybroker for read-only verification.\n"
-                "For DEMO accounts, use Prepare DEMO certification in the web Broker Hub. "
-                "Execution remains OFF until separately enabled after policy and reconciliation checks."
-            )
-        else:
-            err = result.get("error", "Unknown error")
-            reply = safe_command_error("MT5 account linking failed.", RuntimeError(str(err)))
+        from signalrank_telegram.broker_linking import send_secure_broker_hub_link
+
+        await send_secure_broker_hub_link(update)
     except Exception as exc:
-        reply = safe_command_error("MT5 account linking failed.", exc)
-    
-    await processing_msg.edit_text(reply)
+        await update.message.reply_text(
+            safe_command_error(
+                "Secure broker linking is temporarily unavailable. "
+                "Do not send broker passwords in Telegram.",
+                exc,
+            )
+        )
+
 
 async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show linked MT5 account status."""
@@ -123,7 +69,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )).scalar_one_or_none()
         
         if row is None:
-            await update.message.reply_text("No MT5 account linked.\n\n/mt5_link <login> <password> <server>")
+            await update.message.reply_text("No MT5 account linked.\n\nUse /mt5_link to open the secure Broker Hub.")
             return
         
         reply = (
