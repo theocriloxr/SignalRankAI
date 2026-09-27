@@ -81,30 +81,37 @@ integration-verified enabled provider set under `SR-PROVIDER-007`.
 ## 2. Broker demo/canary/live-money certification
 
 2026-09-27 read-only staging preflight evidence: deployment
-`ad501371-bd3a-431c-8683-701e09c05b4f` ran against Alembic
-`0045_mt5_credential_retirement` and found **zero canonical broker
-connections**. It therefore correctly returned BLOCKED with
-`demo_account_not_connected`, `demo_account_not_read_only_verified`,
+`e80fa087-d487-40fc-859e-76df71a3b7b7` ran against Alembic
+`0045_mt5_credential_retirement` after frontdoor deployment
+`713ee164-5002-4499-a7cf-66f67dba0802` at `e7196d431018...`. The frontdoor
+now includes a provider-proven **Prepare DEMO certification** action that
+re-verifies read-only broker state, requires HEALTHY reconciliation, applies a
+bounded `DEMO/MANUAL` policy and keeps execution disabled. The preflight still
+found **zero canonical broker connections** and therefore correctly returned
+BLOCKED with `demo_account_not_connected`,
+`demo_account_not_read_only_verified`,
 `demo_account_credentials_not_ready`, `demo_reconciliation_not_healthy`
-and `demo_execution_permission_not_configured`. The preflight performed no
-activation, placed zero orders and returned no secrets. Environment-level
-broker credential variables are not treated as account ownership and are not
-silently adopted into a user's canonical broker connection.
+and `demo_execution_permission_not_configured`. It performed no activation,
+placed zero orders and returned no secrets. Environment-level broker credential
+variables are not treated as account ownership and are not silently adopted
+into a user's canonical broker connection.
 
 See `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md`.
 
 Before owner-authorized live execution:
 
 1. connect one explicitly identified DEMO account;
-2. prove account policy, broker identity, quote freshness and reconciliation;
-3. execute bounded demo orders through the canonical router;
-4. prove broker acknowledgement, canonical execution lifecycle, account ledger,
+2. run the canonical safe DEMO-preparation action, then separately accept terms
+   and explicitly enable only that DEMO account;
+3. prove account policy, broker identity, quote freshness and reconciliation;
+4. execute bounded demo orders through the canonical router;
+5. prove broker acknowledgement, canonical execution lifecycle, account ledger,
    realized P/L/fees, restart reconciliation and idempotency;
-5. complete a documented demo certification report;
-6. use a tightly capped canary account before any wider live rollout;
-7. for PROP/funded accounts, independently validate the exact firm/product rule
+6. complete a documented demo certification report;
+7. use a tightly capped canary account before any wider live rollout;
+8. for PROP/funded accounts, independently validate the exact firm/product rule
    set and certify the immutable policy version;
-8. keep LLMs advisory: no model may bypass deterministic risk limits.
+9. keep LLMs advisory: no model may bypass deterministic risk limits.
 
 Current staging certification does not activate real execution.
 
