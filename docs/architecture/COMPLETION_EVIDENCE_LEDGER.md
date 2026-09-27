@@ -18,7 +18,8 @@ No requirement may be called complete with prose such as “mostly done”, “s
 
 - Active Alembic head: `0045_mt5_credential_retirement`.
 - Blueprint branch: `codex/signalrank-master-blueprint-20260925`.
-- Current verified head at ledger creation: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
+- Baseline four-role staging runtime head: `93039e2e77800c4aa6b9ba1b1a8ce45797814210`.
+- Current component maintenance head: frontdoor `3379cae487d59f1f28edcedb1a1b362a33cef419`; engine/delivery/analytics remain on the baseline because the patch is frontdoor-only.
 - Tracked requirements: **70**.
 - `VERIFIED`: **67**.
 - `IMPLEMENTED`: **0**.
@@ -46,6 +47,31 @@ The current staging runtime and clean-room verifier are aligned on commit
 All four long-lived roles passed release-source and `0045` schema admission.
 Frontdoor reports `engine=false` and `worker=false`; the other roles boot only
 their declared dedicated runtime modes.
+
+### Frontdoor delivery-terminal maintenance — 2026-09-27
+
+A live staging sweep found the resend scheduler reconsidering one
+`EXPIRED_IN_QUEUE` signal every 30 seconds. The repair keeps analytical
+signal/outcome lifecycle untouched and persists a bounded
+`runtime_state` delivery-terminal marker named
+`resend_terminal:<signal_id>` so the same immutable signal version does not
+re-enter resend recovery after queue expiry.
+
+- implementation commit: `35ca0ca088d74d5d487b14cc012c0388cf1aae7e`;
+- focused regression: `tests/test_resend_terminal_queue_expiry.py`;
+- certified rollout commit: `3379cae487d59f1f28edcedb1a1b362a33cef419`;
+- clean-room deployment: `5c3a09c9-df98-41b0-b89c-b4b6307fe9c4`;
+- clean-room result: Alembic 0045/schema/provenance PASS and **414 targeted tests passed**;
+- staging frontdoor deployment: `f3693c26-3d84-44c0-bd1e-090ca203d13f`;
+- frontdoor locked-image build: **356 tests passed** plus production-readiness PASS;
+- live admission: release-source PASS, Alembic 0045/schema PASS,
+  `mode=frontdoor`, `engine=false`, `worker=false`, `/healthz=200`,
+  Telegram webhook pending=0;
+- post-cutover resend cycles completed without another reference to the prior
+  repeatedly-stale signal and without a delivery-terminal marker persistence
+  error. That historical signal had already left the active candidate set
+  during cutover, so the live run is not represented as a fresh marker-write
+  proof; the marker path is covered by the clean-room regression.
 
 ## Ledger
 
@@ -86,7 +112,7 @@ their declared dedicated runtime modes.
 | SR-SCALE-003 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | 100k-user / 20k-concurrent representative infrastructure certification | `scripts/load_certification.py`, `requirements/scale_profiles.yaml`, SLO/queue/role architecture, and `scripts/external_blocker_preflight.py scale` · `tests/test_load_certification.py`, `tests/test_external_blocker_preflight.py` · Staging deployment `3a95addd-510d-47d2-acd8-f2257f529ea4` correctly rejected non-certification input for kind/profile/PASS/claim/concurrency/load-summary requirements and returned `capacity_claim_allowed=false`; see `docs/evidence/EXTERNAL_BLOCKER_PREFLIGHT_20260927.md` |
 | SR-OBS-010 | VERIFIED | STAGING / INTEGRATION | Canonical SLO metrics have operational dashboards, alert thresholds, explicit owners, automatic degradation actions and incident runbook coverage | `core/slo_registry.py`, `core/telemetry.py`, `observability/slo_operations.py`, Prometheus/Grafana artifacts · `tests/test_observability_operations_contract.py` + clean-room gate · Clean-room `e2ef6763-34a8-4f2c-9e85-00e978e82256`: 0045/schema/provenance PASS; 411 targeted tests PASS on runtime commit `93039e2e...` |
 | SR-NOTIF-001 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Notification outbox repair bounded | outcome reconciliation · v1.3.6.9 tests · — |
-| SR-NOTIF-002 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Dedicated fan-out reservation/idempotency boundary | `db/pg_features.py`, `delivery/service.py`, outbox/receipt layers · `tests/test_phase4_pass3_delivery_reliability.py`, `tests/test_delivery_fanout_planner.py` · — |
+| SR-NOTIF-002 | VERIFIED | STAGING / INTEGRATION | Dedicated fan-out reservation/idempotency boundary plus durable terminal suppression of queue-expired resend candidates | `db/pg_features.py`, `delivery/service.py`, outbox/receipt layers, `signalrank_telegram/bot.py` · `tests/test_phase4_pass3_delivery_reliability.py`, `tests/test_delivery_fanout_planner.py`, `tests/test_resend_terminal_queue_expiry.py` · clean-room `5c3a09c9...` 414 PASS; frontdoor `f3693c26...` healthy on 0045 |
 | SR-ORDER-001 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Canonical monotonic order/execution state machine with one position-state projection | `core/execution_state_machine.py`, MT5/Bybit routers and reconcilers · `tests/test_execution_state_machine.py`, `tests/test_canonical_broker_entrypoints.py` · `REAL_EXECUTION_ENABLED=0` |
 | SR-ORDER-002 | VERIFIED | REPOSITORY / UNIT-CONTRACT | Copy-trade execution safety foundation requires explicit copy consent, leader provenance, follower/account risk, account policy, kill switch and duplicate protection before canonical broker routing | `services/ecosystem_policy.py`, `execution/service.py`, MT5/Bybit routers, release/financial guards · `tests/test_copy_trade_safety_foundation.py`, broker execution tests · `COPY_TRADE_ENABLED=0` by default |
 | SR-MARKETPLACE-001 | BLOCKED_EXTERNAL | EXTERNAL PREREQUISITE | Public copy marketplace / publisher trust / suitability / commercial strategy-bot activation | Copy-execution safety primitives and canonical broker/risk layers are present; `requirements/external_activation_requirements.yaml` + `scripts/external_blocker_preflight.py marketplace` require publisher identity, follower consent/revocation, suitability, performance disclosure, abuse controls, jurisdiction/commercial approval and runtime copy-safety evidence · staging deployment `3a95addd-510d-47d2-acd8-f2257f529ea4` returned `public_marketplace_claim_allowed=false` with all required external/runtime evidence still missing and `activation_performed=false`; see `docs/evidence/EXTERNAL_BLOCKER_PREFLIGHT_20260927.md` |
