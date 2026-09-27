@@ -1,0 +1,4 @@
+SignalRank staging DEMO account preflight after safe certification-preparation rollout.
+Purpose: re-evaluate canonical DEMO readiness after frontdoor deployment e7196d43.
+This preflight is counts-only/read-only, places no orders, changes no execution permission, and returns no secrets.
+No secrets are stored in this marker.
