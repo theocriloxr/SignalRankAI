@@ -77,6 +77,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _stage(name: str, **details: object) -> None:
+    payload = {"stage": str(name), **details}
+    print(
+        "STAGING_RESTORE_DRILL_STAGE " + json.dumps(payload, sort_keys=True),
+        flush=True,
+    )
+
+
 def _safe_environment() -> None:
     environment = str(
         os.getenv("RAILWAY_ENVIRONMENT_NAME")
@@ -174,6 +182,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="signalrank-restore-drill-") as temp_dir:
             dump_path = Path(temp_dir) / "staging.dump"
 
+            _stage("dump_start", source_database=source_db)
             dump_started = time.monotonic()
             _run(
                 [
@@ -191,10 +200,19 @@ def main() -> int:
             report["dump_seconds"] = round(time.monotonic() - dump_started, 3)
             report["dump_bytes"] = dump_path.stat().st_size
             report["dump_sha256"] = _sha256(dump_path)
+            _stage(
+                "dump_complete",
+                dump_seconds=report["dump_seconds"],
+                dump_bytes=report["dump_bytes"],
+                dump_sha256=report["dump_sha256"],
+            )
 
+            _stage("target_create_start", target_database=target_db)
             _psql(admin_url, f'CREATE DATABASE "{target_db}"')
             created = True
+            _stage("target_create_complete", target_database=target_db)
 
+            _stage("restore_start", target_database=target_db)
             restore_started = time.monotonic()
             _run(
                 [
@@ -209,6 +227,12 @@ def main() -> int:
                 timeout=1800,
             )
             report["restore_seconds"] = round(time.monotonic() - restore_started, 3)
+            _stage(
+                "restore_complete",
+                target_database=target_db,
+                restore_seconds=report["restore_seconds"],
+            )
+            _stage("verification_start", target_database=target_db)
 
             restored_head = _psql(
                 target_url,
@@ -267,6 +291,12 @@ def main() -> int:
 
             report["critical_table_counts"] = counts
             report["ledger_immutability_trigger"] = True
+            _stage(
+                "verification_complete",
+                restored_alembic_head=restored_head,
+                critical_tables=len(counts),
+                ledger_immutability_trigger=True,
+            )
             report["status"] = "PASS"
             report["total_seconds"] = round(time.monotonic() - started, 3)
             print(
@@ -278,8 +308,10 @@ def main() -> int:
     finally:
         if created:
             try:
+                _stage("cleanup_start", target_database=target_db)
                 _cleanup_database(admin_url, target_db)
                 report["cleanup"] = "PASS"
+                _stage("cleanup_complete", target_database=target_db)
                 if report.get("status") == "PASS":
                     print(
                         "STAGING_BACKUP_RESTORE_DRILL_PASS "
