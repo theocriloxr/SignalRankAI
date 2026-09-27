@@ -734,10 +734,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data == "mt5_link_guide":
 		try:
 			await query.message.reply_text(
-				"To connect your MT5 account for auto-trading, use one of these:\n\n"
-				"1) Guided setup: /connect_broker\n"
-				"2) Direct command: /mt5_link <Account Number> <Password> <Server Name>\n\n"
-				"Example: /mt5_link 12345678 MyPass123 Exness-MT5-Real"
+				"🔐 Secure MT5 linking\n\n"
+				"Use /mt5_link or /connect_broker to open the first-party Broker Hub. "
+				"SignalRankAI does not accept broker passwords in Telegram.\n\n"
+				"After linking, run /verifybroker for read-only verification. "
+				"For DEMO accounts, use Prepare DEMO certification in Broker Hub; "
+				"execution remains OFF until separately enabled."
 			)
 			return
 		except Exception:
