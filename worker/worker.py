@@ -95,12 +95,19 @@ class Worker:
                 return
             exc = task.exception()
             if exc is not None:
-                logger.error(
-                    "[worker] task crashed: %s err=%s",
-                    name,
-                    exc,
-                    exc_info=(type(exc), exc, exc.__traceback__),
-                )
+                if type(exc).__name__ == "AnalyticsWorkDeferred":
+                    logger.info(
+                        "[worker] task deferred by DB admission: %s err=%s",
+                        name,
+                        exc,
+                    )
+                else:
+                    logger.error(
+                        "[worker] task crashed: %s err=%s",
+                        name,
+                        exc,
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
         except Exception as inspect_exc:
             logger.warning("[worker] could not inspect task state for %s: %s", name, inspect_exc)
 
@@ -824,11 +831,17 @@ class Worker:
 
                         await run_with_db_retry(_run)
             except Exception as exc:
-                logger.warning(
-                    "[outcome_reconciliation] iteration failed: %s",
-                    exc,
-                    exc_info=True,
-                )
+                if type(exc).__name__ == "AnalyticsWorkDeferred":
+                    logger.info(
+                        "[outcome_reconciliation] deferred reason=db_foreground_pressure detail=%s",
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "[outcome_reconciliation] iteration failed: %s",
+                        exc,
+                        exc_info=True,
+                    )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
