@@ -2088,12 +2088,13 @@ def _ml_starvation_recovery_context() -> dict[str, Any]:
         from ml.drift_monitor import detect_prediction_starvation
         from ml.live_drift import load_live_prediction_samples
 
+        minimum_samples=max(
+            10,
+            _env_int("ML_STARVATION_MIN_LIVE_SAMPLES", 50),
+        )
         result=detect_prediction_starvation(
             load_live_prediction_samples(),
-            minimum_samples=max(
-                10,
-                _env_int("ML_STARVATION_MIN_LIVE_SAMPLES", 50),
-            ),
+            minimum_samples=minimum_samples,
             minimum_pass_rate=max(
                 0.0,
                 min(
@@ -2102,6 +2103,29 @@ def _ml_starvation_recovery_context() -> dict[str, Any]:
                 ),
             ),
         )
+        # Engine-local prediction samples reset whenever the scanner process is
+        # replaced. Analytics continuously publishes the same governed
+        # starvation verdict into shared Redis; use that only when the fresh
+        # engine has not accumulated enough local observations yet. This keeps
+        # recovery behaviour stable across deploys without relaxing the
+        # certified ML threshold or changing the starvation criteria.
+        if not bool(result.get("actionable")):
+            try:
+                shared_raw=state.get_sync("signalrankai:ml:starvation:summary")
+                shared=(
+                    __import__("json").loads(shared_raw)
+                    if isinstance(shared_raw, str) and shared_raw.strip()
+                    else {}
+                )
+                if (
+                    isinstance(shared, dict)
+                    and bool(shared.get("actionable"))
+                    and int(shared.get("samples") or 0) >= minimum_samples
+                ):
+                    result=dict(shared)
+                    result["source"]="analytics_shared_redis"
+            except Exception:
+                pass
     except Exception as exc:
         result={
             "actionable": False,
