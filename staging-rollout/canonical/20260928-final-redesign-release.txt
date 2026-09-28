@@ -1,0 +1,3 @@
+SignalRankAI final staging release marker.
+Scope: operator safety regression repair, PWA v31 responsive workstation redesign, cache-contract alignment, and canonical release revalidation.
+Live execution, copy trading, payouts and automatic trading remain fail-closed pending external demo/canary certification.
