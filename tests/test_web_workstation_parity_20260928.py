@@ -107,3 +107,24 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     for asset in (icon, logo):
         assert "data:image/webp;base64," in asset
         assert "Signal Rank AI" in asset
+
+
+def test_market_explorer_exposes_broader_research_classes_without_execution_claim() -> None:
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    api = source("web/platform_api.py")
+    for marker in (
+        'id="assetClassFilter"',
+        'id="instrumentTypeFilter"',
+        '<option value="etf">ETFs</option>',
+        '<option value="option">Options · research</option>',
+        '<option value="future">Futures · research</option>',
+        '<option value="bond">Bonds · research</option>',
+        '<option value="perpetual">Perpetual</option>',
+        '<option value="dated_future">Dated future</option>',
+    ):
+        assert marker in html
+    assert "instrumentType=$('#instrumentTypeFilter')?.value" in app
+    assert "qs.set('instrument_type',instrumentType)" in app
+    assert 'instrument_type: str | None = Query(default=None, max_length=32)' in api
+    assert "Analysis only" in app
