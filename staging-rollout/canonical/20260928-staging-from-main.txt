@@ -1,0 +1,4 @@
+SignalRankAI canonical staging branch.
+Base main commit: bb1fa9d4791542906cbdff2bc1d1ce89a3cc568d
+Purpose: staging deployment must track the same canonical application tree as main, with staging-only rollout evidence.
+Production-release markers may exist in history but staging services watch staging-rollout/** only.
