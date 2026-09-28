@@ -1,6 +1,6 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,operatorMaintenance:null,pendingBillingReference:null};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,operatorMaintenance:null,operatorBusiness:null,pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
@@ -149,11 +149,36 @@ async function runOwnerAction(action,button){
 }
 Array.from(document.querySelectorAll('[data-owner-action]')).forEach(button=>button.addEventListener('click',()=>runOwnerAction(button.dataset.ownerAction,button).catch(err=>{showOperatorActionResult({error:err.message});toast(err.message,true)})));
 $('#refreshOperatorMaintenance')?.addEventListener('click',()=>loadOperatorMaintenance().catch(err=>toast(err.message,true)));
+$('#refreshOperatorBusiness')?.addEventListener('click',()=>loadOperatorBusiness().catch(err=>toast(err.message,true)));
+$('#operatorMarketScan')?.addEventListener('click',async e=>{
+  if(!confirm('Run the controlled recent-signal ML scan? This audits existing recent signals only and does not create or deliver a trade.'))return;
+  const button=e.currentTarget;const original=button.textContent;button.disabled=true;button.textContent='Scanning…';
+  try{
+    const result=await request('/operator/market-scan',{method:'POST',body:JSON.stringify({confirm:true,hours:4,limit:50})});
+    const target=$('#operatorMarketScanResult');if(target)target.textContent=`Scanned ${result.total}; approved ${result.approved}; rejected ${result.rejected}; errors ${result.errors}; threshold ${result.threshold??'auto'}.`;
+    toast('Controlled market scan completed')
+  }catch(err){toast(err.message,true)}finally{button.disabled=false;button.textContent=original}
+});
 
+function renderOperatorBusiness(){
+  const panel=$('#operatorBusinessPanel');const target=$('#operatorBusiness');if(!panel||!target)return;
+  const b=state.operatorBusiness;if(!b){panel.hidden=true;return}
+  panel.hidden=false;
+  const users=b.users||{};const revenue=b.revenue_ngn||{};const active=users.active_subscriptions_by_tier||{};
+  const cards=[['Total users',users.total??0],['Active Premium',active.premium??0],['Active VIP',active.vip??0],['Verified revenue',`₦${Number(revenue.total||0).toLocaleString()}`]];
+  target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div><details class="diagnostic-details"><summary>Revenue breakdown</summary><pre>${esc(JSON.stringify(revenue,null,2))}</pre></details>`
+}
+async function loadOperatorBusiness(){
+  if(String(state.operator?.authority||'')!=='OWNER'){state.operatorBusiness=null;renderOperatorBusiness();return null}
+  state.operatorBusiness=await request('/operator/business');renderOperatorBusiness();return state.operatorBusiness
+}
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
-  const [overview,diagnostics,maintenance]=await Promise.all([request('/operator/overview'),request('/operator/diagnostics'),request('/operator/maintenance')]);
-  state.operator=overview;state.operatorDiagnostics=diagnostics;state.operatorMaintenance=maintenance;
+  const overview=await request('/operator/overview');state.operator=overview;
+  const jobs=[request('/operator/diagnostics'),request('/operator/maintenance')];
+  if(String(overview.authority||'')==='OWNER')jobs.push(request('/operator/business'));
+  const results=await Promise.all(jobs);
+  state.operatorDiagnostics=results[0];state.operatorMaintenance=results[1];state.operatorBusiness=results[2]||null;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
   const cards=[
@@ -177,6 +202,7 @@ async function loadOperator(){
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
   renderOperatorDiagnostics();
   renderOperatorMaintenance();
+  renderOperatorBusiness();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
