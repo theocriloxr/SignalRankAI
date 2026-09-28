@@ -18,16 +18,61 @@ _ML_TRAIN_LOCK=asyncio.Lock()
 
 
 async def _run_ml_training_serialized(*, reason: str, lookback_days: int | None=None) -> bool:
-    """Serialize analytics-owned training so drift and scheduled jobs cannot collide."""
+    """Serialize analytics-owned training and suppress redundant drift retrains."""
     from core.redis_state import state
+    retrain_reason=str(reason or "").strip().lower()
+    min_gap_seconds=max(
+        300,
+        int(os.getenv("ML_RETRAIN_MIN_GAP_SECONDS", "3600") or 3600),
+    )
+    if retrain_reason in {"feature_drift", "prediction_starvation"}:
+        try:
+            last_completed=float(
+                state.get_sync("signalrankai:ml:train:last_completed_epoch") or 0.0
+            )
+        except Exception:
+            last_completed=0.0
+        age=max(0.0, __import__("time").time()-last_completed) if last_completed else None
+        if age is not None and age < float(min_gap_seconds):
+            logger.info(
+                "[analytics_ml_train] reason=%s status=cooldown age_seconds=%.1f min_gap_seconds=%s",
+                reason,
+                age,
+                min_gap_seconds,
+            )
+            return False
     if _ML_TRAIN_LOCK.locked():
         logger.info("[analytics_ml_train] reason=%s status=waiting_for_existing_training", reason)
     async with _ML_TRAIN_LOCK:
+        # Re-check after waiting for an existing training run: that run may have
+        # just completed successfully while this drift-triggered request waited.
+        if retrain_reason in {"feature_drift", "prediction_starvation"}:
+            try:
+                last_completed=float(
+                    state.get_sync("signalrankai:ml:train:last_completed_epoch") or 0.0
+                )
+            except Exception:
+                last_completed=0.0
+            age=max(0.0, __import__("time").time()-last_completed) if last_completed else None
+            if age is not None and age < float(min_gap_seconds):
+                logger.info(
+                    "[analytics_ml_train] reason=%s status=cooldown_after_wait age_seconds=%.1f min_gap_seconds=%s",
+                    reason,
+                    age,
+                    min_gap_seconds,
+                )
+                return False
         lease_seconds=max(900, int(os.getenv("ML_TRAIN_LEASE_SECONDS", "1800") or 1800))
         state.set_sync("signalrankai:ml:drift:retrain_running", "1", ex=lease_seconds)
         try:
             from ml import train_model as ml_train
             ok=await ml_train.main(lookback_days=lookback_days)
+            if ok:
+                state.set_sync(
+                    "signalrankai:ml:train:last_completed_epoch",
+                    str(__import__("time").time()),
+                    ex=max(86400, min_gap_seconds * 4),
+                )
             logger.info(
                 "[analytics_ml_train] reason=%s status=%s lookback_days=%s",
                 reason,
