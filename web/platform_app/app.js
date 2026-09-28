@@ -1,6 +1,6 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,pendingBillingReference:null};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
@@ -72,9 +72,28 @@ $('#mfaForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await
 $('#passwordResetForm').onsubmit=async e=>{e.preventDefault();try{await request('/auth/password-reset/complete',{method:'POST',body:JSON.stringify(formData(e.target))});history.replaceState({},'',location.pathname);setAuthTab('login');toast('Password reset. Sign in again.')}catch(err){toast(err.message,true)}};
 $('#magicLinkButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/magic-link/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, a sign-in link was queued.')}catch(err){toast(err.message,true)}};
 $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, reset instructions were queued.')}catch(err){toast(err.message,true)}};
+function renderOperatorDiagnostics(){
+  const target=$('#operatorDiagnostics');if(!target)return;
+  const d=state.operatorDiagnostics||{};const providers=d.providers||{};const performance=d.performance||{};const outcomes=d.outcomes||{};const payments=d.payments||{};
+  const cards=[
+    ['Database',d.database?.ok?'HEALTHY':'DEGRADED',d.database?.ok?'positive':'negative'],
+    ['Redis',d.redis?.configured?'CONNECTED':'UNAVAILABLE',d.redis?.configured?'positive':'negative'],
+    ['Performance ledger',performance.ok?'PASS':'BLOCKED',performance.ok?'positive':'negative'],
+    ['Outcome projections',outcomes.ok?'PASS':'BLOCKED',outcomes.ok?'positive':'negative'],
+    ['Provider circuits',Object.values(providers.circuits||{}).some(x=>x?.open)?'OPEN':'CLEAR',Object.values(providers.circuits||{}).some(x=>x?.open)?'warning':'positive'],
+    ['Payment receipt gap',payments.receipt_gap??'—',Number(payments.receipt_gap||0)>0?'warning':'positive']
+  ];
+  target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v,cls])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong class="${cls}">${esc(v)}</strong></div>`).join('')}</div><details class="diagnostic-details"><summary>Raw evidence</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
+}
+async function loadOperatorDiagnostics(){
+  state.operatorDiagnostics=await request('/operator/diagnostics');
+  renderOperatorDiagnostics();
+  return state.operatorDiagnostics
+}
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
-  state.operator=await request('/operator/overview');
+  const [overview,diagnostics]=await Promise.all([request('/operator/overview'),request('/operator/diagnostics')]);
+  state.operator=overview;state.operatorDiagnostics=diagnostics;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
   const cards=[
@@ -96,9 +115,22 @@ async function loadOperator(){
     ['Signal model',ai.signal_model||ai.fast_model||'—'],['Deep model',ai.deep_model||'—'],
     ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  renderOperatorDiagnostics();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
+$('#refreshOperatorDiagnostics')?.addEventListener('click',()=>loadOperatorDiagnostics().catch(err=>toast(err.message,true)));
+$('#operatorAiTest')?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;const original=button.textContent;button.textContent='Testing…';try{const result=await request('/operator/ai-test',{method:'POST',body:'{}'});toast(result.test?.connected||result.test?.ok?'OpenAI connection verified':'OpenAI probe completed');await loadOperator()}catch(err){toast(err.message,true)}finally{button.disabled=false;button.textContent=original}});
+async function updateOperatorKillSwitch(action){
+  const enabling=action==='on';
+  const wording=enabling?'ENABLE the global execution kill switch? This pauses live execution paths.':'DISABLE the global execution kill switch? This can allow otherwise-eligible execution paths to proceed.';
+  if(!confirm(wording))return;
+  const result=await request('/operator/kill-switch',{method:'POST',body:JSON.stringify({action,confirm:true})});
+  toast(`Kill switch ${result.enabled?'enabled':'disabled'}`);
+  await loadOperator()
+}
+$('#operatorKillSwitchOn')?.addEventListener('click',()=>updateOperatorKillSwitch('on').catch(err=>toast(err.message,true)));
+$('#operatorKillSwitchOff')?.addEventListener('click',()=>updateOperatorKillSwitch('off').catch(err=>toast(err.message,true)));
 
 function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount,ops:loadOperator};loaders[name]?.().catch(err=>toast(err.message,true))}
 $$('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
