@@ -362,3 +362,13 @@ def test_starvation_recovery_rejections_are_observable() -> None:
     assert '"ml_recovery_rejection_reasons"' in core
     assert "[engine_ml_recovery] no_eligible_recovery" in core
     assert '"starvation_not_detected"' in core
+
+
+def test_analytics_training_has_cross_trigger_cooldown() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "runtime" / "analytics.py").read_text(encoding="utf-8")
+    block = source[source.index("async def _run_ml_training_serialized"):source.index("async def _openai_startup_probe")]
+    assert "ML_RETRAIN_MIN_GAP_SECONDS" in block
+    assert "signalrankai:ml:train:last_completed_epoch" in block
+    assert "cooldown_after_wait" in block
+    assert 'retrain_reason in {"feature_drift", "prediction_starvation"}' in block
