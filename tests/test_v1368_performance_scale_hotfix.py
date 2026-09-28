@@ -18,6 +18,9 @@ def test_performance_reconciliation_is_isolated_resumable_and_diagnostic() -> No
     source = (ROOT / "services" / "performance_ledger.py").read_text("utf-8")
     sweep = source[source.index("async def reconcile_all_performance_ledgers"):source.index("async def performance_ledger_health")]
     assert "async with session.begin_nested()" in sweep
+    assert "await session.commit()" in sweep
+    assert "await session.rollback()" in sweep
+    assert "PendingRollbackError" in sweep
     assert "User.id > int(after_user_id)" in sweep
     assert "telegram_user_id=%s internal_user_id=%s" in sweep
     assert "failed_users_by_reason" in sweep

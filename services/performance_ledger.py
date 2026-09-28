@@ -822,6 +822,14 @@ async def reconcile_all_performance_ledgers(
                     dry_run=bool(dry_run),
                 ) or 0)
             if not dry_run:
+                # Commit each successfully reconciled user before moving to the
+                # next one. A timeout/cancellation can invalidate the current
+                # PostgreSQL transaction even after a SAVEPOINT rollback; without
+                # this boundary the next user may inherit PendingRollbackError.
+                # Per-user commits also make the existing retry/DLQ contract
+                # truthful: already-successful users remain durable if a later
+                # user fails.
+                await session.commit()
                 retry_by_id.pop(int(internal_user_id), None)
                 resolved_at = now_utc_naive().isoformat()
                 for record in dead_letter_records:
@@ -832,6 +840,20 @@ async def reconcile_all_performance_ledgers(
                         record["resolved_at"] = resolved_at
                         record["resolved_reconciliation_id"] = reconciliation_id
         except Exception as exc:
+            # Cancellation/driver errors can leave the outer AsyncSession in a
+            # failed transaction state even though begin_nested() attempted to
+            # roll back its SAVEPOINT. Explicitly reset it before the next user
+            # so one timeout cannot poison the rest of the reconciliation page.
+            try:
+                await session.rollback()
+            except Exception:
+                logger.warning(
+                    "[performance_reconciliation] session_reset_failed "
+                    "reconciliation_id=%s internal_user_id=%s",
+                    reconciliation_id,
+                    int(internal_user_id),
+                    exc_info=True,
+                )
             failed += 1
             failed_ids.append(int(internal_user_id))
             reason = _failure_reason(exc)

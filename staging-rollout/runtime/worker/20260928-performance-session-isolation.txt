@@ -1,0 +1,3 @@
+SignalRankAI staging worker certification marker.
+Scope: per-user performance reconciliation commit/rollback isolation after production PendingRollbackError evidence.
+No execution, payout, entitlement, broker, pricing or signal-quality policy changes.
