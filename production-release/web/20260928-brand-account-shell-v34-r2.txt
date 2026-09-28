@@ -1,0 +1,3 @@
+SignalRankAI production web rollout retry after locked-gate contract repair.
+Includes official logo/favicons, emerald/silver light+dark theme, true sidebar close/reopen, account-aware landing, transient session bootstrap retries, PWA shell v34, canonical boot compatibility contracts, and corrected PWA theme metadata.
+No signal threshold, execution, payout, copy-trade or live-money policy changes.
