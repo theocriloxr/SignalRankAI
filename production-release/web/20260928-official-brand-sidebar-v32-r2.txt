@@ -1,0 +1,2 @@
+SignalRankAI production web rollout retry after release-contract reconciliation.
+Scope unchanged: official owner-supplied emerald/silver logo, favicon/PWA branding, light/dark palette alignment, reliable sidebar collapse, PWA v32.
