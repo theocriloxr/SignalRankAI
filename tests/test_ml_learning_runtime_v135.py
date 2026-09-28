@@ -155,6 +155,9 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     assert "ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS" in candle
     assert 'sql_text("SET TRANSACTION READ WRITE")' in candle
     assert candle.index('SET TRANSACTION READ WRITE') < candle.index("SET LOCAL lock_timeout")
+    assert "dispose_engine_for_event_loop" in candle
+    assert '"read-only transaction" in _error_text(exc).lower()' in candle
+    assert "for read_write_attempt in range(2)" in candle
     assert "SET LOCAL lock_timeout" in candle
     assert "SET LOCAL statement_timeout" in candle
     assert "for item in batch:" in candle
@@ -218,6 +221,48 @@ async def test_adaptive_candle_pressure_requeues_full_batch(monkeypatch) -> None
 
     restored = [candle_store._QUEUE.get_nowait() for _ in original]
     assert [item["asset"] for item in restored] == ["BTCUSDT", "ETHUSDT"]
+
+    # A read-only pooled transaction is recoverable: evict only the affected
+    # event-loop engine and retry the same idempotent chunk once.
+    while True:
+        try:
+            candle_store._QUEUE.get_nowait()
+        except candle_store.queue.Empty:
+            break
+    candle_store._QUEUE.put_nowait(snapshot("BTCUSDT", 3_000))
+
+    calls = {"sessions": 0, "evictions": 0, "insert_attempts": 0}
+
+    class FakeSession:
+        async def execute(self, statement):
+            text_value = str(statement)
+            if text_value.lstrip().upper().startswith("INSERT"):
+                calls["insert_attempts"] += 1
+                if calls["insert_attempts"] == 1:
+                    raise RuntimeError("cannot execute INSERT in a read-only transaction")
+            return None
+
+        async def commit(self):
+            return None
+
+    @asynccontextmanager
+    async def flaky_readonly_session(**kwargs):
+        calls["sessions"] += 1
+        yield FakeSession()
+
+    async def evict_loop_engine():
+        calls["evictions"] += 1
+        return True
+
+    monkeypatch.setattr(candle_store, "get_session", flaky_readonly_session)
+    monkeypatch.setattr(candle_store, "dispose_engine_for_event_loop", evict_loop_engine)
+
+    result = await candle_store.persist_queued_snapshots(1)
+    assert result == {"snapshots": 1, "candles": 1}
+    assert calls["sessions"] == 2
+    assert calls["insert_attempts"] == 2
+    assert calls["evictions"] == 1
+    assert candle_store.queue_depth() == 0
 
 
 def test_secondary_evidence_trains_candidate_without_live_promotion() -> None:
