@@ -1,0 +1,3 @@
+SignalRankAI production diagnostics cleanup.
+Fixes direct execution of scripts/validate_env_contract.py without PYTHONPATH so post-deploy environment-contract diagnostics can import repository core modules reliably.
+No runtime trading, signal, user, entitlement, broker, payout or live-money policy changes.
