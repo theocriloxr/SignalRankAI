@@ -1,0 +1,3 @@
+SignalRankAI production QA rollout.
+Fixes same-key market_candles bulk-upsert conflicts, makes cold ML readiness prefer the latest durable champion, and exposes exact starvation-recovery veto reasons.
+Certified ML threshold, live execution, copy trading and payouts remain unchanged and fail-closed.
