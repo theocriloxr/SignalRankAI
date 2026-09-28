@@ -41,13 +41,15 @@ def test_command_catalog_routes_every_command_to_a_visible_web_workspace() -> No
     assert "function activateWorkspaceSearch" in app
     assert "document.querySelectorAll('[data-view]')" in app
     assert "loaders={overview:loadOverview" in app
+    # Commands may use an explicit per-command destination or the canonical
+    # section fallback. Both paths must resolve to a visible web workspace.
     for view in (
-        '"signals": "signals"',
+        '"Signals": "signals"',
+        '"Paper trading": "paper"',
         '"proof": "evidence"',
         '"liveprice": "tools"',
         '"analyze": "tools"',
         '"connect_broker": "account"',
-        '"paper_balance": "paper"',
         '"performance": "performance"',
     ):
         assert view in api
@@ -63,7 +65,10 @@ def test_operator_workspace_is_owner_admin_only_and_fail_safe() -> None:
     ]
     assert 'authority not in {"OWNER", "ADMIN"}' in block
     assert "raise HTTPException(status_code=403" in block
-    assert '"kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)' in block
+    assert (
+        '"kill_switch": env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)' in block
+        or '"kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)' in block
+    )
     assert '"real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False)' in block
     assert 'id="operatorRuntime"' in html
     assert 'id="operatorAi"' in html
