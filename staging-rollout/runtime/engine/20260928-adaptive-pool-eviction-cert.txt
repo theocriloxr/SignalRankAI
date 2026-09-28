@@ -1,0 +1,2 @@
+SignalRankAI staging certification marker for loop-scoped adaptive DB recovery.
+Purpose: certify eviction/retry after intermittent read-only pooled transaction state without changing trading or payment safety gates.
