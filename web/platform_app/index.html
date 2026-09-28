@@ -15,12 +15,13 @@
     })();
   </script>
   <link rel="manifest" href="/app/manifest.webmanifest" />
-  <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
-  <link rel="shortcut icon" href="/app-assets/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/app-assets/brand-icon.webp" type="image/webp" />
+  <link rel="shortcut icon" href="/app-assets/brand-icon.webp" type="image/webp" />
+  <link rel="apple-touch-icon" href="/app-assets/brand-icon.webp" />
   <link rel="apple-touch-icon" href="/app-assets/icon.svg" />
   <meta name="msapplication-TileColor" content="#050907" />
   <link rel="stylesheet" href="/app-assets/styles.css" />
-  <title>SignalRankAI</title>
+  <title>SignalRankAI · Trading Intelligence</title>
 </head>
 <body class="session-booting">
   <div id="toast" role="status" aria-live="polite"></div>
@@ -84,10 +85,13 @@
       <span id="themeLabel">Theme</span>
     </button>
   </header>
+  <button id="navReopen" class="nav-reopen" type="button" aria-label="Open navigation" title="Open navigation" hidden>
+    <span aria-hidden="true">☰</span><span class="nav-reopen-label">Menu</span>
+  </button>
 
   <main>
     <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
-      <div class="bootstrap-mark"><img src="/app-assets/icon.svg" alt="" width="54" height="54" /></div>
+      <div class="bootstrap-mark"><img src="/app-assets/brand-icon.webp" alt="" width="54" height="54" /></div>
       <div>
         <p class="eyebrow">SIGNALRANKAI · TRADING INTELLIGENCE</p>
         <h1 id="bootstrapTitle">Restoring your secure session…</h1>
@@ -99,7 +103,7 @@
 
     <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
-        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg" alt="Signal Rank AI" /></div>
+        <div class="auth-brand-lockup"><img src="/app-assets/brand-logo.webp" alt="SignalRankAI" /></div>
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
         <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and supported connected-account workflows.</p>
