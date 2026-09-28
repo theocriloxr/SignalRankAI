@@ -88,5 +88,33 @@ def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
 
 def test_pwa_cache_rotated_for_canonical_workstation() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v27" in worker
+    assert "signalrank-shell-v28" in worker
+
+def test_owner_maintenance_web_parity_is_strict_and_confirmed() -> None:
+    api = source("web/platform_api.py")
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    for route in (
+        '@router.get("/operator/maintenance")',
+        '@router.post("/operator/performance-rebuild")',
+        '@router.post("/operator/outcome-rebuild")',
+        '@router.post("/operator/queue-replay")',
+        '@router.post("/operator/adaptive")',
+    ):
+        assert route in api
+    for marker in (
+        'id="operatorMaintenance"',
+        'data-owner-action="performance-apply"',
+        'data-owner-action="outcome-apply"',
+        'data-owner-action="queue-dead-letter"',
+        'data-owner-action="adaptive-pause"',
+    ):
+        assert marker in html
+    assert "authority != \"OWNER\"" in api
+    assert "payload.confirm is not True" in api
+    assert "runOwnerAction" in app
+    assert "/operator/performance-rebuild" in app
+    assert "/operator/outcome-rebuild" in app
+    assert "/operator/queue-replay" in app
+    assert "/operator/adaptive" in app
 
