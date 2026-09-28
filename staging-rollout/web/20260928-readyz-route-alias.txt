@@ -1,0 +1,2 @@
+Dedicated web runtime readiness route compatibility.
+/ready and /readyz now reuse the bounded web health handler so Railway probes cannot fail with 404 while schema/source gates remain mandatory before startup.
