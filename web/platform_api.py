@@ -849,6 +849,126 @@ async def capabilities() -> dict[str, Any]:
     }
 
 
+@router.get("/command-catalog")
+async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Expose the canonical Telegram capability catalogue with web destinations.
+
+    The catalogue is filtered by the same tier/owner authority used by Telegram,
+    so the website can present one complete cross-channel capability map without
+    inventing a second entitlement model.
+    """
+    from signalrank_telegram.command_catalog import visible_commands
+
+    authority = _platform_operator_authority(user)
+    effective_tier = authority or str(user.get("tier") or "FREE").upper()
+    section_views = {
+        "Getting started": "overview",
+        "Account": "account",
+        "Signals": "signals",
+        "Market": "markets",
+        "Preferences": "account",
+        "Paper trading": "paper",
+        "Referrals": "account",
+        "Support": "support",
+        "Analytics": "performance",
+        "Broker": "account",
+        "VIP analytics": "performance",
+        "VIP controls": "account",
+        "VIP signals": "signals",
+        "Admin": "ops",
+        "Adaptive": "ops",
+        "Owner": "ops",
+        "Admin diagnostics": "ops",
+        "Owner diagnostics": "ops",
+    }
+    command_views = {
+        "liveprice": "tools",
+        "analyze": "tools",
+        "alerts": "tools",
+        "notify": "tools",
+        "dashboard": "overview",
+        "portfolio": "portfolio",
+        "mission": "overview",
+        "history": "signals",
+        "proof": "evidence",
+        "performance": "performance",
+        "stats": "performance",
+        "report": "performance",
+        "simulate": "performance",
+        "connect_broker": "account",
+        "mt5_link": "account",
+        "mt5_status": "account",
+        "verifybroker": "account",
+        "execution": "account",
+        "setlot": "account",
+        "setrisk": "account",
+        "mystats": "account",
+        "pricing": "account",
+        "upgrade": "account",
+        "tiers": "account",
+        "devices": "account",
+        "security": "account",
+        "settings": "account",
+        "profile": "account",
+        "risk": "account",
+        "filter": "account",
+        "language": "account",
+        "timezone": "account",
+        "feedback": "support",
+        "faq": "support",
+        "disclaimer": "support",
+        "myid": "account",
+        "invite": "account",
+        "referral": "account",
+        "referral_rewards": "account",
+        "referral_leaderboard": "account",
+        "cancel": "account",
+    }
+    items = []
+    for spec in visible_commands(effective_tier):
+        view = command_views.get(spec.name) or section_views.get(spec.section) or "tools"
+        items.append({
+            "name": spec.name,
+            "description": spec.description,
+            "minimum_tier": spec.tier,
+            "section": spec.section,
+            "web_view": view,
+            "operator_only": view == "ops",
+        })
+    return {
+        "effective_tier": effective_tier,
+        "authority": authority,
+        "count": len(items),
+        "commands": items,
+        "sections": sorted({item["section"] for item in items}),
+        "parity_model": "shared_services_same_entitlements",
+    }
+
+
+@router.get("/operator/overview")
+async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from services.openai_ai import provider_status as openai_provider_status
+
+    return {
+        "authority": authority,
+        "release": {
+            "branch": str(os.getenv("RAILWAY_GIT_BRANCH") or os.getenv("GIT_BRANCH") or ""),
+            "commit": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT") or ""),
+            "environment": str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("SIGNALRANK_ENV_PROFILE") or ""),
+        },
+        "ai": dict(openai_provider_status() or {}),
+        "execution": {
+            "live_financial_features_enabled": _env_bool("LIVE_FINANCIAL_FEATURES_ENABLED", False),
+            "real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False),
+            "auto_execution_enabled": _env_bool("AUTO_EXECUTION_ENABLED", False),
+            "kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True),
+        },
+    }
+
+
 @router.post("/auth/register", status_code=201)
 async def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, Any]:
     if not is_db_configured():
