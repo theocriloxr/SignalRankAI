@@ -460,9 +460,13 @@ def provider_status() -> dict[str, Any]:
         usage_output_tokens = int(_USAGE_OUTPUT_TOKENS)
     window_seconds = _env_int("OPENAI_AI_WINDOW_SECONDS", 60, minimum=10, maximum=3600)
     max_calls = _env_int("OPENAI_AI_MAX_CALLS_PER_WINDOW", 6, minimum=0, maximum=10000)
+    configured = bool(_api_key())
+    signal_model = _model(deep=False)
     return {
         "provider": "openai",
-        "configured": bool(_api_key()),
+        "configured": configured,
+        # Backward-compatible secret-safe alias used by operator/web diagnostics.
+        "key_configured": configured,
         "enabled": _env_bool("OPENAI_AI_ENABLED", True),
         "signal_review_enabled": _env_bool("OPENAI_SIGNAL_REVIEW_ENABLED", True),
         "available": openai_available(),
@@ -470,7 +474,10 @@ def provider_status() -> dict[str, Any]:
         "provider_order": list(provider_order()),
         "responses_api": True,
         "store": False,
-        "signal_model": _model(deep=False),
+        "signal_model": signal_model,
+        # Compatibility alias for earlier AI-operator clients. This is a model
+        # identifier only and never contains API-key material.
+        "fast_model": signal_model,
         "deep_model": _model(deep=True),
         "signal_reasoning_effort": _reasoning_effort(deep=False),
         "deep_reasoning_effort": _reasoning_effort(deep=True),
