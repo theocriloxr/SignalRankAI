@@ -3727,6 +3727,23 @@ def main_loop(DRY_RUN: bool = False):
                                 )
                                 approved = True
                             else:
+                                recovery_reason = str(
+                                    recovery_details.get("reason")
+                                    or (
+                                        "starvation_not_detected"
+                                        if not bool(
+                                            (recovery_details.get("health") or {}).get(
+                                                "starvation_detected"
+                                            )
+                                        )
+                                        else "recovery_not_eligible"
+                                    )
+                                )
+                                _bump_cycle_reason(
+                                    pipeline_stats,
+                                    "ml_recovery_rejection_reasons",
+                                    recovery_reason,
+                                )
                                 sig['ml_advisory'] = 'filtered_by_ml'
                                 _increment_engine_veto("ml")
                                 _log_decision(
@@ -3795,6 +3812,24 @@ def main_loop(DRY_RUN: bool = False):
                     pipeline_stats["ml_passed"] = int(pipeline_stats.get("ml_passed") or 0) + len(risk_passed)
                     if not risk_passed:
                         _record_gate_failure(asset, "ml_filter", "no_ml_passed_candidates")
+                        recovery_health = _ml_starvation_recovery_context()
+                        if bool(recovery_health.get("starvation_detected")):
+                            logger.info(
+                                "[engine_ml_recovery] no_eligible_recovery asset=%s "
+                                "health=%s top_reasons=%s",
+                                asset,
+                                {
+                                    "samples": recovery_health.get("samples"),
+                                    "pass_rate": recovery_health.get("pass_rate"),
+                                    "raw_max": recovery_health.get("raw_max"),
+                                    "threshold_min": recovery_health.get("threshold_min"),
+                                },
+                                _top_cycle_reasons(
+                                    pipeline_stats,
+                                    "ml_recovery_rejection_reasons",
+                                    limit=5,
+                                ),
+                            )
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
 
