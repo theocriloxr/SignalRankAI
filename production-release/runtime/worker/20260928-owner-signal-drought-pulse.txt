@@ -1,0 +1,2 @@
+SignalRankAI production observability rollout marker.
+Scope: owner Engine Pulse signal-drought diagnostics only. No signal-admission, execution, payout, broker, copy-trading, or entitlement changes.
