@@ -376,6 +376,8 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse)
 @app.get("/healthz", response_model=HealthResponse)
+@app.get("/ready", response_model=HealthResponse)
+@app.get("/readyz", response_model=HealthResponse)
 async def health():
     """Liveness + readiness probe.
     
