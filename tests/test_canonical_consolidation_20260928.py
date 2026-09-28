@@ -70,8 +70,8 @@ def test_cross_channel_command_catalog_and_operator_controls_are_real_routes() -
     assert 'id="opsView"' in html
     assert "loadCommandCatalog" in app
     assert "loadOperatorDiagnostics" in app
-    assert "$$('[data-view]').filter" in app
-    assert "$('[data-view]').filter" not in app
+    assert "Array.from(document.querySelectorAll('[data-view]')).filter" in app
+    assert "return $('[data-view]').filter" not in app
 
 
 def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
