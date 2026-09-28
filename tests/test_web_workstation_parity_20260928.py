@@ -88,26 +88,44 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
 
     assert 'id="navToggle"' in html
     assert 'id="navToggleIcon"' in html
+    assert 'id="navReopen"' in html
+    assert '/app-assets/icon.svg' in html
     assert '/app-assets/logo.svg' in html
     assert 'class="auth-brand-lockup"' in html
     assert "NAV_COLLAPSE_KEY='signalrank.nav.collapsed'" in app
     assert "function initNavToggle()" in app
+    assert "$('#navReopen')?.addEventListener('click',()=>setNavCollapsed(false))" in app
     assert "document.body.classList.toggle('nav-collapsed'" in app
     assert "initNavToggle();" in app
-    assert "body.nav-collapsed{--sidebar:78px}" in css
-    assert "--brand-emerald:#00e596" in css
-    assert "--brand-silver:#e6eeeb" in css
+    assert "body.session-active.nav-collapsed{--sidebar:0px}" in css
+    assert "transform:translateX(calc(-100% - 20px))" in css
+    assert "--brand-emerald:#00e88f" in css
+    assert "--brand-silver:#dfe7e2" in css
     assert "--brand-gradient:linear-gradient" in css
-    assert "top:27px;right:12px" in css
-    assert "navCollapsedMemory" in app
     assert ':root[data-theme="light"]' in css
-    assert "#050907" in manifest
-    assert "signalrank-shell-v33" in worker
+    assert "#00a96e" in manifest
+    assert "signalrank-shell-v34" in worker
+    assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
         assert "data:image/webp;base64," in asset
         assert "Signal Rank AI" in asset
 
+
+def test_account_aware_bootstrap_retries_and_routes_by_authority_and_tier() -> None:
+    app = source("web/platform_app/app.js")
+
+    assert "async function requestWithRetry(" in app
+    assert "requestWithRetry('/me'" in app
+    assert "requestWithRetry('/entitlements'" in app
+    assert "function accountLandingView()" in app
+    assert "if(authority==='OWNER'||authority==='ADMIN')return 'ops'" in app
+    assert "if((tier==='institutional'||tier==='professional')&&hasFeature('performance_analytics'))return 'performance'" in app
+    assert "if(tier==='vip'||tier==='premium')return 'signals'" in app
+    assert "return 'overview'" in app
+    assert "showView(landing)" in app
+    assert "Reconnecting to SignalRank" in app
+    assert "bootstrapRetryTimer=setTimeout" in app
 
 def test_market_explorer_exposes_broader_research_classes_without_execution_claim() -> None:
     html = source("web/platform_app/index.html")

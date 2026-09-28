@@ -4,6 +4,7 @@ const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,po
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
+let bootstrapRetryTimer=null;
 const THEME_KEY='signalrank.theme';
 const NAV_COLLAPSE_KEY='signalrank.nav.collapsed';
 let navCollapsedMemory=null;
@@ -17,13 +18,14 @@ function navPreference(){if(navCollapsedMemory!==null)return navCollapsedMemory;
 function syncNavUi(){
   const collapsed=Boolean(desktopNavMedia?.matches&&navPreference());
   document.body.classList.toggle('nav-collapsed',collapsed);
-  const toggle=$('#navToggle');const icon=$('#navToggleIcon');
+  const toggle=$('#navToggle');const icon=$('#navToggleIcon');const reopen=$('#navReopen');
   if(toggle){
     toggle.setAttribute('aria-expanded',String(!collapsed));
     toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
     toggle.title=collapsed?'Expand navigation':'Collapse navigation';
   }
-  if(icon)icon.textContent=collapsed?'›':'‹';
+  if(icon)icon.textContent=collapsed?'›':'×';
+  if(reopen)reopen.hidden=!collapsed;
   $$('#sessionNav button').forEach(button=>{
     const label=(button.textContent||'').trim().replace(/\s+/g,' ');
     if(label&&!button.getAttribute('aria-label'))button.setAttribute('aria-label',label);
@@ -39,6 +41,7 @@ function setNavCollapsed(collapsed){
 function initNavToggle(){
   syncNavUi();
   $('#navToggle')?.addEventListener('click',()=>setNavCollapsed(!navPreference()));
+  $('#navReopen')?.addEventListener('click',()=>setNavCollapsed(false));
   desktopNavMedia?.addEventListener?.('change',syncNavUi);
 }
 const esc=(v)=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -75,6 +78,22 @@ async function request(path,options={},allowSessionRefresh=true){
   }
   return data
 }
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function requestWithRetry(path,options={},config={}){
+  const attempts=Math.max(1,Number(config.attempts||5));
+  const baseDelay=Math.max(150,Number(config.baseDelay||450));
+  let lastError;
+  for(let attempt=1;attempt<=attempts;attempt++){
+    try{return await request(path,options)}catch(err){
+      lastError=err;
+      const status=Number(err?.status||0);
+      const retryable=!status||status===408||status===425||status===429||status>=500;
+      if(!retryable||attempt>=attempts)throw err;
+      await wait(Math.min(3500,baseDelay*Math.pow(1.65,attempt-1))+Math.floor(Math.random()*120));
+    }
+  }
+  throw lastError||new Error('SignalRank request failed');
+}
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function fmt(value,digits=2){const number=Number(value||0);return Number.isFinite(number)?number.toLocaleString(undefined,{maximumFractionDigits:digits}):'—'}
 function time(value){if(!value)return'—';return new Date(value).toLocaleString()}
@@ -82,16 +101,45 @@ function statusClass(value){const v=String(value||'').toLowerCase();return ['tp1
 function setLoggedIn(value){const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=true;$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;const compact=$('#compactNav');if(compact)compact.hidden=!value;document.body.classList.toggle('session-active',value);document.body.classList.remove('session-booting')}
 function showBootstrapError(message){
   state.user=null;state.entitlements=null;
+  if(bootstrapRetryTimer){clearTimeout(bootstrapRetryTimer);bootstrapRetryTimer=null}
   const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=false;
   $('#authShell').hidden=true;$('#appShell').hidden=true;$('#sessionNav').hidden=true;const compact=$('#compactNav');if(compact)compact.hidden=true;
   document.body.classList.remove('session-active');document.body.classList.add('session-booting');
   const title=$('#bootstrapTitle');const copy=$('#bootstrapCopy');const retry=$('#bootstrapRetry');
-  if(title)title.textContent='SignalRank services are temporarily unavailable';
-  if(copy)copy.textContent=String(message||'We could not reach the account service. Your session and stored account data have not been discarded.');
-  if(retry){retry.hidden=false;retry.onclick=async()=>{retry.disabled=true;retry.textContent='Retrying…';if(title)title.textContent='Restoring your secure session…';if(copy)copy.textContent='Loading your account, plan entitlements and connected trading workspace.';try{await boot()}finally{retry.disabled=false;retry.textContent='Retry connection'}}}
+  if(title)title.textContent='Reconnecting to SignalRank…';
+  if(copy)copy.textContent=String(message||'The app service is warming up or reconnecting. Your session and stored account data are safe; SignalRank will retry automatically.');
+  const retryNow=async()=>{if(retry){retry.disabled=true;retry.textContent='Reconnecting…'}try{await boot()}finally{if(retry){retry.disabled=false;retry.textContent='Retry now'}}};
+  if(retry){retry.hidden=false;retry.textContent='Retry now';retry.onclick=retryNow}
+  bootstrapRetryTimer=setTimeout(()=>{bootstrapRetryTimer=null;retryNow().catch(()=>{})},3500);
 }
 function hasFeature(feature){const features=state.entitlements?.features||[];return features.includes('*')||features.includes(feature)}
 function applyEntitlements(){document.querySelectorAll('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);const revealLocked=el.dataset.entitlementDisplay==='lock';el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!revealLocked)el.hidden=!allowed;if(!allowed)el.title='Available on a higher SignalRankAI plan';else if(el.title==='Available on a higher SignalRankAI plan')el.removeAttribute('title')})}
+function accountAuthority(){return String(state.commandCatalog?.authority||state.user?.authority||state.user?.role||'').trim().toUpperCase()}
+function accountLandingView(){
+  const requested=String(new URLSearchParams(location.search).get('view')||'').trim().toLowerCase();
+  const valid=new Set(['overview','signals','evidence','markets','tools','paper','portfolio','performance','journal','support','account','ops']);
+  const requestedTrigger=requested?document.querySelector('[data-view="'+requested+'"]'):null;
+  if(requested&&valid.has(requested)&&requestedTrigger&&!requestedTrigger.hidden&&(!requestedTrigger.dataset.feature||hasFeature(requestedTrigger.dataset.feature)))return requested;
+  const authority=accountAuthority();
+  if(authority==='OWNER'||authority==='ADMIN')return 'ops';
+  const tier=String(state.user?.tier||'free').toLowerCase();
+  if((tier==='institutional'||tier==='professional')&&hasFeature('performance_analytics'))return 'performance';
+  if(tier==='vip'||tier==='premium')return 'signals';
+  if(hasFeature('paper_trading')&&String(state.user?.account_status||'').toLowerCase()==='paper')return 'paper';
+  return 'overview';
+}
+function applyAccountExperience(){
+  const tier=String(state.user?.tier||'free').toLowerCase();const authority=accountAuthority();
+  document.body.dataset.accountTier=tier;
+  if(authority)document.body.dataset.accountAuthority=authority.toLowerCase();else delete document.body.dataset.accountAuthority;
+  const badge=$('#tierBadge');if(badge)badge.textContent=authority==='OWNER'?'OWNER':authority==='ADMIN'?'ADMIN':tier.toUpperCase();
+  const subtitle=$('#accountSubtitle');if(!subtitle)return;
+  subtitle.textContent=authority==='OWNER'?'Owner control room · system health, signal quality, users, brokers and governed execution.'
+    :authority==='ADMIN'?'Administrative workspace · operations, support and governed platform controls.'
+    :(tier==='institutional'||tier==='professional')?'Professional intelligence · portfolio, performance, signals and connected-account workflows.'
+    :(tier==='vip'||tier==='premium')?'Premium signal intelligence · delivery-proven setups, evidence and performance.'
+    :'Your signals, paper portfolio and market intelligence in one place.';
+}
 function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate')}
 $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>setAuthTab('register');$('#activateTab').onclick=()=>setAuthTab('activate');
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
@@ -315,8 +363,34 @@ async function confirmPendingBillingReturn(){
   toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment confirmed and reconciled.');
   return true
 }
-async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}const initial=[loadOverview(),loadSignals(),loadCommandCatalog()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch(err){state.user=null;state.entitlements=null;if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError(err?.message)}}
-async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;$('#accountSubtitle').textContent='Your signals, paper portfolio and market intelligence in one place.';$('#tierBadge').textContent=String(state.user?.tier||'free').toUpperCase();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
+async function boot(){
+  try{
+    if(bootstrapRetryTimer){clearTimeout(bootstrapRetryTimer);bootstrapRetryTimer=null}
+    const me=await requestWithRetry('/me',{}, {attempts:6,baseDelay:450});
+    state.user=me.user;
+    try{state.entitlements=await requestWithRetry('/entitlements',{}, {attempts:4,baseDelay:400})}
+    catch(err){state.entitlements={features:[]};toast('Plan access is still syncing. Core account access is available.',true)}
+    setLoggedIn(true);applyEntitlements();renderProfile();
+    if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}
+    const commandResult=await Promise.allSettled([loadCommandCatalog()]);
+    if(commandResult[0]?.status==='rejected')state.commandCatalog={commands:[],authority:null,count:0};
+    applyAccountExperience();
+    const landing=accountLandingView();
+    const preload=[loadSignals()];
+    if(landing==='overview')preload.push(loadOverview());
+    if(hasFeature('paper_trading'))preload.push(loadPaper());
+    await Promise.allSettled(preload);
+    showView(landing);
+    const invite=new URLSearchParams(location.search).get('organization_invite');
+    if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}
+    await reconcilePendingSecureLink({notify:false});
+  }catch(err){
+    const status=Number(err?.status||0);
+    if(status===401){state.user=null;state.entitlements=null;setLoggedIn(false)}
+    else showBootstrapError(status>=500?'SignalRank is online, but your account session endpoint is still warming up. Retrying automatically…':err?.message);
+  }
+}
+async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;applyAccountExperience();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
 function renderOverviewLists(){const recent=state.signals.slice(0,5);$('#latestSignals').innerHTML=recent.length?recent.map(s=>`<div class="list-row"><div><strong>${esc(s.asset)} ${esc(String(s.direction).toUpperCase())}</strong><small>${esc(s.timeframe)} · ${esc(s.strategy_name||'Strategy')}</small></div><div class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||'Pending')}</div></div>`).join(''):'<p>No confirmed signals yet.</p>';const positions=(state.paper?.positions||[]).filter(p=>p.status==='open').slice(0,5);$('#overviewPositions').innerHTML=positions.length?positions.map(p=>`<div class="list-row"><div><strong>${esc(p.asset)} ${esc(String(p.direction).toUpperCase())}</strong><small>Entry ${fmt(p.fill_entry,6)}</small></div><div class="${Number(p.unrealized_pnl)>=0?'positive':'negative'}">$${fmt(p.unrealized_pnl)}</div></div>`).join(''):'<p>No open paper positions.</p>'}
@@ -365,7 +439,7 @@ function renderCommandCatalog(query=''){
   document.querySelectorAll('[data-web-view]').forEach(button=>{button.onclick=()=>{const view=button.dataset.webView;if(view&&view!=='ops')showView(view);else if(view==='ops'&&data.authority)showView('ops')}})
 }
 async function loadCommandCatalog(){
-  state.commandCatalog=await request('/command-catalog');
+  state.commandCatalog=await requestWithRetry('/command-catalog',{}, {attempts:3,baseDelay:350});
   const authority=state.commandCatalog?.authority||null;
   const opsButton=$('#opsNavButton');if(opsButton)opsButton.hidden=!authority;
   const opsOption=$('#opsSwitcherOption');if(opsOption)opsOption.hidden=!authority;
