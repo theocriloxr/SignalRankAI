@@ -570,3 +570,45 @@ tbody tr:last-child td{border-bottom:0}
   .broker-account-grid{grid-template-columns:1fr}
 }
 
+/* Canonical cross-channel control room */
+.operator-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.operator-diagnostics{display:grid;gap:12px}
+.diagnostic-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px}
+.diagnostic-card{
+  min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft);
+  font-variant-numeric:tabular-nums
+}
+.diagnostic-card small{display:block;color:var(--muted);font-size:9px;font-weight:750;letter-spacing:.075em;text-transform:uppercase}
+.diagnostic-card strong{display:block;margin-top:6px;font-size:14px;letter-spacing:-.025em;overflow:hidden;text-overflow:ellipsis}
+.diagnostic-details{border-top:1px solid var(--line);padding-top:10px}
+.diagnostic-details summary{cursor:pointer;color:var(--muted);font-size:11px;font-weight:700}
+.diagnostic-details pre{
+  margin:10px 0 0;max-height:420px;overflow:auto;padding:12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--bg-elev);color:var(--muted);font:10px/1.55 "SFMono-Regular",Consolas,monospace;white-space:pre-wrap;word-break:break-word
+}
+
+/* Terminal-quality visual hierarchy: persistent navigation, compact high-signal surfaces,
+   and command-first discoverability inspired by professional market workstations. */
+.workspace-nav .nav-group+ .nav-group{padding-top:3px;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.command-catalog-panel{background:
+  linear-gradient(135deg,color-mix(in srgb,var(--cyan) 5%,transparent),transparent 42%),
+  linear-gradient(180deg,var(--panel),color-mix(in srgb,var(--panel) 96%,var(--bg)))
+}
+.command-card{cursor:pointer;transition:transform .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease),box-shadow .15s var(--ease)}
+.command-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.command-card:active{transform:translateY(0)}
+#opsView .panel{overflow:hidden}
+#opsView .metric-card strong{font-size:clamp(16px,1.6vw,23px)}
+#opsView .status-pill{font-variant-numeric:tabular-nums}
+
+@media(max-width:1180px){
+  .diagnostic-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .diagnostic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .operator-actions>button{flex:1 1 180px}
+}
+@media(max-width:420px){
+  .diagnostic-grid{grid-template-columns:1fr}
+}
+
