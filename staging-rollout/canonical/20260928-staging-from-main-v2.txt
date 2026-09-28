@@ -1,0 +1,4 @@
+SignalRankAI canonical staging line.
+Parent: main b479cb0894c18901dfee02c4c8f3b069c933a1fc.
+Purpose: staging-only rollout marker; application code is inherited from main.
+Promotion rule: changes land on staging/certification first, then merge/promote into main.
