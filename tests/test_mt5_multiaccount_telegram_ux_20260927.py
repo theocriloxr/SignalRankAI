@@ -7,7 +7,8 @@ from services.broker_connections import _connection_limit
 from services.mt5_client import (
     _account_provisioning_payload,
     _client_base,
-    _metaapi_domain,
+    _metaapi_client_domain,
+    _metaapi_provisioning_domain,
     _metaapi_provisioning_error,
     _metaapi_region,
     _metaapi_token_candidates,
@@ -25,17 +26,19 @@ def source(path: str) -> str:
 def test_metaapi_client_url_uses_documented_regional_host(monkeypatch) -> None:
     monkeypatch.delenv("META_API_DOMAIN", raising=False)
     monkeypatch.delenv("META_API_REGION", raising=False)
-    assert _metaapi_domain() == "agiliumtrade.ai"
+    assert _metaapi_client_domain() == "agiliumtrade.ai"
+    assert _metaapi_provisioning_domain() == "agiliumtrade.agiliumtrade.ai"
     assert _metaapi_region() == "new-york"
     assert _client_base() == "https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts"
     assert _client_base("account-123") == "https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/account-123"
-    assert _provisioning_base() == "https://mt-provisioning-api-v1.agiliumtrade.ai/users/current/accounts"
+    assert _provisioning_base() == "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts"
 
 
 def test_metaapi_legacy_host_configuration_is_normalized(monkeypatch) -> None:
     monkeypatch.setenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
     monkeypatch.setenv("META_API_REGION", "mt-client-api-v1")
-    assert _metaapi_domain() == "agiliumtrade.ai"
+    assert _metaapi_client_domain() == "agiliumtrade.ai"
+    assert _metaapi_provisioning_domain() == "agiliumtrade.agiliumtrade.ai"
     assert _metaapi_region() == "new-york"
     assert "agiliumtrade.agiliumtrade.ai" not in _client_base()
     assert _client_base().startswith("https://mt-client-api-v1.new-york.agiliumtrade.ai/")

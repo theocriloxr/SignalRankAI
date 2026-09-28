@@ -188,12 +188,27 @@ def _metaapi_provisioning_error(
 # URL helpers
 # ---------------------------------------------------------------------------
 
-def _metaapi_domain() -> str:
-    """Return the canonical MetaApi API domain without legacy duplicated labels."""
-    domain = str(os.getenv("META_API_DOMAIN") or "agiliumtrade.ai").strip().lower().strip(".")
+def _metaapi_client_domain() -> str:
+    """Return the documented MetaApi regional client/trading API domain."""
+    domain = str(
+        os.getenv("META_API_CLIENT_DOMAIN")
+        or os.getenv("META_API_DOMAIN")
+        or "agiliumtrade.ai"
+    ).strip().lower().strip(".")
     if domain == "agiliumtrade.agiliumtrade.ai":
         domain = "agiliumtrade.ai"
     return domain
+
+
+def _metaapi_provisioning_domain() -> str:
+    """Return the documented MetaApi provisioning/account-management domain."""
+    explicit = str(os.getenv("META_API_PROVISIONING_DOMAIN") or "").strip().lower().strip(".")
+    if explicit:
+        return explicit
+    legacy = str(os.getenv("META_API_DOMAIN") or "").strip().lower().strip(".")
+    if legacy == "agiliumtrade.agiliumtrade.ai":
+        return legacy
+    return "agiliumtrade.agiliumtrade.ai"
 
 
 def _metaapi_region() -> str:
@@ -206,13 +221,13 @@ def _metaapi_region() -> str:
 
 def _client_base(account_id: str | None = None) -> str:
     """Base URL for the MetaApi *client* REST API (prices + account state)."""
-    root = f"https://mt-client-api-v1.{_metaapi_region()}.{_metaapi_domain()}/users/current/accounts"
+    root = f"https://mt-client-api-v1.{_metaapi_region()}.{_metaapi_client_domain()}/users/current/accounts"
     return f"{root}/{account_id}" if account_id else root
 
 
 def _provisioning_base() -> str:
     """Base URL for the MetaApi *provisioning* REST API (account management)."""
-    return f"https://mt-provisioning-api-v1.{_metaapi_domain()}/users/current/accounts"
+    return f"https://mt-provisioning-api-v1.{_metaapi_provisioning_domain()}/users/current/accounts"
 
 
 def _metaapi_token_candidates() -> list[tuple[str, str]]:
@@ -369,7 +384,7 @@ async def search_known_metatrader_servers(
         return {"success": False, "code": "query_too_short", "error": "Enter at least 2 characters of the broker or server name", "brokers": []}
 
     version = "5" if platform_n == "mt5" else "4"
-    domain = _metaapi_domain()
+    domain = _metaapi_provisioning_domain()
     url = f"https://mt-provisioning-api-v1.{domain}/known-mt-servers/{version}/search"
     try:
         async with aiohttp.ClientSession() as session:
