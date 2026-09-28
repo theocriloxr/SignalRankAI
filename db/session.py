@@ -1441,6 +1441,28 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def dispose_engine_for_event_loop() -> bool:
+    """Dispose only the async engine bound to the current event loop.
+
+    This is a targeted recovery primitive for a poisoned/transient connection
+    state. It deliberately leaves engines owned by other loops untouched.
+    """
+    global _global_engine
+    loop_id = _loop_identity()
+    with _engine_lock:
+        engine = _engines_by_loop.pop(loop_id, None)
+        _sessionmakers_by_loop.pop(loop_id, None)
+        if _global_engine is engine:
+            _global_engine = None
+    if engine is None:
+        return False
+    try:
+        await engine.dispose()
+    except Exception as exc:
+        logger.debug("[db] loop-scoped dispose failed loop=%s: %s", loop_id, exc)
+    return True
+
+
 async def dispose_engine() -> None:
     """Dispose all cached async engines and the thread-local sync engine."""
     global _global_engine
