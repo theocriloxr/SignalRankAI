@@ -376,18 +376,18 @@ async function boot(){
     if(commandResult[0]?.status==='rejected')state.commandCatalog={commands:[],authority:null,count:0};
     applyAccountExperience();
     const landing=accountLandingView();
-    const preload=[loadSignals()];
-    if(landing==='overview')preload.push(loadOverview());
-    if(hasFeature('paper_trading'))preload.push(loadPaper());
-    await Promise.allSettled(preload);
+    const initial=[loadSignals()];
+    if(landing==='overview')initial.push(loadOverview());
+    if(hasFeature('paper_trading'))initial.push(loadPaper());
+    await Promise.allSettled(initial);
     showView(landing);
     const invite=new URLSearchParams(location.search).get('organization_invite');
     if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}
     await reconcilePendingSecureLink({notify:false});
   }catch(err){
     const status=Number(err?.status||0);
-    if(status===401){state.user=null;state.entitlements=null;setLoggedIn(false)}
-    else showBootstrapError(status>=500?'SignalRank is online, but your account session endpoint is still warming up. Retrying automatically…':err?.message);
+    state.user=null;state.entitlements=null;
+    if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError(status>=500?'SignalRank is online, but your account session endpoint is still warming up. Retrying automatically…':err?.message);
   }
 }
 async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;applyAccountExperience();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
