@@ -87,34 +87,35 @@ class SqueezeDetector:
             funding_rate = await self.get_funding_rate(asset)
             if funding_rate is None:
                 return "NEUTRAL"
-                
-                # Log the funding rate for debugging
-                funding_rate_pct = funding_rate * 100
-                logger.debug(
-                    f"[derivatives] {asset} funding rate: {funding_rate_pct:.4f}% "
-                    f"(threshold: ±{self.extreme_funding_threshold * 100:.4f}%)"
+
+            # A valid funding rate must actually reach the squeeze decision.
+            # Keep provider failure fail-open, but never silently fall through
+            # with None when the public derivatives feed succeeded.
+            funding_rate_pct = funding_rate * 100
+            logger.debug(
+                f"[derivatives] {asset} funding rate: {funding_rate_pct:.4f}% "
+                f"(threshold: ±{self.extreme_funding_threshold * 100:.4f}%)"
+            )
+
+            # Positive extreme funding => longs are crowded => bearish squeeze bias.
+            if funding_rate >= self.extreme_funding_threshold:
+                logger.warning(
+                    f"🧲 SQUEEZE DETECTED: {asset} Longs are over-leveraged "
+                    f"(Funding: {funding_rate_pct:.4f}%). "
+                    f"Bias: BEARISH. Veto LONG signals."
                 )
-                
-                # Check for Long Squeeze (over-leveraged longs)
-                if funding_rate >= self.extreme_funding_threshold:
-                    logger.warning(
-                        f"🧲 SQUEEZE DETECTED: {asset} Longs are over-leveraged "
-                        f"(Funding: {funding_rate_pct:.4f}%). "
-                        f"Bias: BEARISH. Veto LONG signals."
-                    )
-                    return "BEARISH"
-                
-                # Check for Short Squeeze (over-leveraged shorts)
-                elif funding_rate <= -self.extreme_funding_threshold:
-                    logger.warning(
-                        f"🧲 SQUEEZE DETECTED: {asset} Shorts are trapped "
-                        f"(Funding: {funding_rate_pct:.4f}%). "
-                        f"Bias: BULLISH. Veto SHORT signals."
-                    )
-                    return "BULLISH"
-                
-                # Neutral - no extreme funding rate
-                return "NEUTRAL"
+                return "BEARISH"
+
+            # Negative extreme funding => shorts are crowded => bullish squeeze bias.
+            if funding_rate <= -self.extreme_funding_threshold:
+                logger.warning(
+                    f"🧲 SQUEEZE DETECTED: {asset} Shorts are trapped "
+                    f"(Funding: {funding_rate_pct:.4f}%). "
+                    f"Bias: BULLISH. Veto SHORT signals."
+                )
+                return "BULLISH"
+
+            return "NEUTRAL"
         except Exception as e:
             logger.debug(
                 f"[derivatives] Funding rate check failed for {asset}: {e}. "
