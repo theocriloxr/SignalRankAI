@@ -146,3 +146,24 @@ def test_market_explorer_exposes_broader_research_classes_without_execution_clai
     assert "qs.set('instrument_type',instrumentType)" in app
     assert 'instrument_type: str | None = Query(default=None, max_length=32)' in api
     assert "Analysis only" in app
+
+
+def test_account_identity_is_authoritative_and_safe_reads_self_heal() -> None:
+    api = source("web/platform_api.py")
+    app = source("web/platform_app/app.js")
+
+    me = api[api.index('@router.get("/me")'):api.index('@router.get("/entitlements")')]
+    assert 'payload["authority"] = authority' in me
+    assert 'payload["default_workspace"] = default_workspace' in me
+    assert 'authority in {"OWNER", "ADMIN"}' in me
+    assert 'default_workspace = "ops"' in me
+    assert 'default_workspace = "performance"' in me
+    assert 'default_workspace = "signals"' in me
+    assert 'default_workspace = "overview"' in me
+
+    assert "const safeRead=method==='GET'||method==='HEAD'" in app
+    assert "[502,503,504].includes(response.status)" in app
+    assert "transientAttempt<2" in app
+    assert "state.user?.default_workspace" in app
+    assert "const canOperate=authority==='OWNER'||authority==='ADMIN'" in app
+    assert "SignalRank services are temporarily unavailable" not in app
