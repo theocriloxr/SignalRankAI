@@ -102,7 +102,7 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "navCollapsedMemory" in app
     assert ':root[data-theme="light"]' in css
     assert "#050907" in manifest
-    assert "signalrank-shell-v32" in worker
+    assert "signalrank-shell-v33" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
         assert "data:image/webp;base64," in asset
