@@ -1,0 +1,4 @@
+SignalRankAI canonical production rollout marker.
+Source: staging-certified workstation/safety release 92acb6b68730c9d2249b4bcdc6669424df2c3987.
+Scope: regression repairs, responsive PWA v31 redesign, five-class scan coverage configuration, and release-source hardening.
+Live execution, copy trading and payouts remain fail-closed; this release does not authorize live-money activation.
