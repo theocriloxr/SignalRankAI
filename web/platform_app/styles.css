@@ -637,3 +637,76 @@ tbody tr:last-child td{border-bottom:0}
 .operator-force-form .switch-row{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-soft)}
 @media(max-width:700px){.operator-force-form{grid-template-columns:1fr}.operator-force-form>*{grid-column:1!important}}
 
+
+
+/* FINAL WORKSTATION POLISH 2026-09-28
+   Visual-only layer: preserves canonical IDs, entitlement gates and command behavior. */
+:root{
+  --sr-shell-max:1680px;
+  --sr-panel-radius:18px;
+  --sr-control-radius:12px;
+  --sr-hairline:color-mix(in srgb,var(--border) 76%,transparent);
+  --sr-elevated:color-mix(in srgb,var(--panel) 94%,transparent);
+  --sr-muted-surface:color-mix(in srgb,var(--panel-2) 82%,transparent);
+}
+body{
+  background:
+    radial-gradient(circle at 82% -8%,color-mix(in srgb,var(--cyan) 10%,transparent),transparent 33rem),
+    radial-gradient(circle at 2% 38%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 30rem),
+    var(--bg);
+}
+main{width:min(var(--sr-shell-max),100%);margin-inline:auto}
+.topbar{backdrop-filter:blur(18px) saturate(1.15);-webkit-backdrop-filter:blur(18px) saturate(1.15);border-bottom:1px solid var(--sr-hairline)}
+.brand strong{letter-spacing:-.035em}
+.brand small{letter-spacing:.13em;text-transform:uppercase;font-size:.62rem}
+.dashboard-header{
+  padding:1.15rem 1.2rem;border:1px solid var(--sr-hairline);border-radius:var(--sr-panel-radius);
+  background:linear-gradient(135deg,var(--sr-elevated),color-mix(in srgb,var(--panel) 78%,transparent));
+  box-shadow:0 20px 60px color-mix(in srgb,#000 16%,transparent)
+}
+.dashboard-header h1{font-size:clamp(1.55rem,3vw,2.55rem);letter-spacing:-.045em}
+.trust-rail{
+  display:grid;grid-template-columns:minmax(240px,1.45fr) repeat(4,minmax(128px,.72fr));gap:1px;
+  margin:.8rem 0 1rem;overflow:hidden;border:1px solid var(--sr-hairline);border-radius:14px;
+  background:var(--sr-hairline);box-shadow:0 14px 40px color-mix(in srgb,#000 10%,transparent)
+}
+.trust-rail>div{min-height:64px;padding:.72rem .9rem;background:var(--sr-muted-surface);display:flex;flex-direction:column;justify-content:center;gap:.2rem}
+.trust-rail small{font-size:.64rem;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.trust-rail strong{font-size:.82rem;line-height:1.2}
+.trust-rail-lead{position:relative;padding-left:2.15rem!important}
+.trust-pulse{position:absolute;left:.9rem;top:50%;width:.62rem;height:.62rem;border-radius:50%;transform:translateY(-50%);background:var(--cyan);box-shadow:0 0 0 5px color-mix(in srgb,var(--cyan) 12%,transparent),0 0 18px color-mix(in srgb,var(--cyan) 48%,transparent)}
+.trust-rail-emphasis strong{color:var(--cyan)}
+.panel,.tool-card,.evidence-canvas,.evidence-spine,.evidence-verdict,.evidence-ledger{border-radius:var(--sr-panel-radius);border-color:var(--sr-hairline);box-shadow:0 18px 50px color-mix(in srgb,#000 8%,transparent)}
+.panel-heading{gap:.75rem}
+.panel-heading h2,.workspace-title h2,.evidence-heading h2{letter-spacing:-.035em}
+.workspace-nav button,.compact-nav select,input,select,textarea,.ghost,.primary{border-radius:var(--sr-control-radius)}
+.workspace-nav button{transition:background-color .16s ease,border-color .16s ease,transform .16s ease}
+.workspace-nav button:hover{transform:translateX(2px)}
+.table-wrap{border-radius:14px;overflow:auto;border:1px solid var(--sr-hairline)}
+.market-grid,.card-grid,.tools-grid{align-items:stretch}
+.tier-badge,.status-pill,.paper-chip{letter-spacing:.07em}
+.data-list>*,.ledger-row{transition:background-color .16s ease,border-color .16s ease}
+.data-list>*:hover,.ledger-row:hover{background:color-mix(in srgb,var(--panel-2) 90%,var(--cyan) 3%)}
+@media (max-width:1080px){
+  .trust-rail{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .trust-rail-lead{grid-column:1/-1}
+}
+@media (max-width:720px){
+  main{padding-inline:.7rem}
+  .dashboard-header{padding:1rem}
+  .trust-rail{grid-template-columns:1fr 1fr;margin-top:.65rem}
+  .trust-rail>div{min-height:58px;padding:.65rem .72rem}
+  .trust-rail-lead{grid-column:1/-1}
+  .trust-rail-emphasis{grid-column:1/-1}
+  .workspace-title,.panel-heading,.evidence-heading{align-items:flex-start}
+  .table-wrap{margin-inline:-.15rem}
+}
+@media (max-width:440px){
+  .trust-rail{grid-template-columns:1fr}
+  .trust-rail-lead,.trust-rail-emphasis{grid-column:auto}
+  .dashboard-header h1{font-size:1.65rem}
+}
+@media (prefers-reduced-motion:reduce){
+  .workspace-nav button,.data-list>*,.ledger-row{transition:none!important}
+  .workspace-nav button:hover{transform:none}
+}
