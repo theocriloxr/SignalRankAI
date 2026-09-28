@@ -90,6 +90,11 @@ class RegisterRequest(BaseModel):
     utm_term: str | None = Field(default=None, max_length=200)
 
 
+class OperatorKillSwitchRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|on|off)$")
+    confirm: bool = False
+
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=1, max_length=256)
@@ -966,6 +971,122 @@ async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dic
             "auto_execution_enabled": _env_bool("AUTO_EXECUTION_ENABLED", False),
             "kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True),
         },
+    }
+
+
+@router.get("/operator/diagnostics")
+async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+
+    from core.circuit_breaker import get_provider_breaker_snapshot
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+    from data import fetcher
+    from services.outcome_reconciliation import outcome_projection_health
+    from services.performance_ledger import performance_ledger_health
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    unhealthy = []
+    try:
+        unhealthy = [
+            {"provider": str(name), "down_minutes": float(minutes)}
+            for name, minutes in fetcher.get_unhealthy_providers()
+        ]
+    except Exception:
+        unhealthy = []
+    try:
+        provider_circuits = dict(get_provider_breaker_snapshot() or {})
+    except Exception:
+        provider_circuits = {}
+
+    db_ok = True
+    db_error = None
+    performance = {}
+    outcomes = {}
+    payment = {}
+    try:
+        async with get_session(label="platform.operator.diagnostics", timeout_seconds=12.0) as session:
+            await session.execute(text("SELECT 1"))
+            performance = await performance_ledger_health(session, days=30, environment=environment)
+            outcomes = await outcome_projection_health(session, days=30)
+            from sqlalchemy import func, select
+            from db.models import PaymentEvent, PaymentReceipt, ProcessedWebhookEvent
+            event_count = int((await session.execute(select(func.count(PaymentEvent.id)))).scalar_one() or 0)
+            receipt_count = int((await session.execute(select(func.count(PaymentReceipt.id)))).scalar_one() or 0)
+            pending_hooks = int((
+                await session.execute(
+                    select(func.count(ProcessedWebhookEvent.id)).where(
+                        func.lower(ProcessedWebhookEvent.status).in_(("pending", "failed"))
+                    )
+                )
+            ).scalar_one() or 0)
+            payment = {
+                "payment_events": event_count,
+                "payment_receipts": receipt_count,
+                "pending_or_failed_webhooks": pending_hooks,
+                "receipt_gap": max(0, event_count - receipt_count),
+            }
+            await session.rollback()
+    except Exception as exc:
+        db_ok = False
+        db_error = f"{type(exc).__name__}: {exc}"
+
+    kill = await redis_state.get_killswitch()
+    return {
+        "authority": authority,
+        "environment": environment,
+        "database": {"ok": db_ok, "error": db_error},
+        "redis": {"configured": bool(redis_state.has_redis_sync())},
+        "kill_switch": {
+            "enabled": bool(getattr(kill, "enabled", True)),
+            "reason": str(getattr(kill, "reason", "") or ""),
+        },
+        "providers": {
+            "unhealthy": unhealthy,
+            "circuits": provider_circuits,
+        },
+        "performance": performance,
+        "outcomes": outcomes,
+        "payments": payment,
+    }
+
+
+@router.post("/operator/ai-test")
+async def operator_ai_test(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from services.openai_ai import provider_status, test_connection
+    status = dict(provider_status() or {})
+    if not bool(status.get("key_configured")):
+        raise HTTPException(status_code=409, detail="OpenAI API key is not configured")
+    result = await test_connection()
+    return {"authority": authority, "status": status, "test": result}
+
+
+@router.post("/operator/kill-switch")
+async def operator_kill_switch(
+    payload: OperatorKillSwitchRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from core.redis_state import state as redis_state
+    action = str(payload.action or "status").lower()
+    if action in {"on", "off"} and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if action == "on":
+        await redis_state.set_killswitch(True, reason="platform_owner_kill_switch")
+    elif action == "off":
+        await redis_state.set_killswitch(False, reason="platform_owner_release")
+    status = await redis_state.get_killswitch()
+    return {
+        "authority": authority,
+        "enabled": bool(getattr(status, "enabled", True)),
+        "reason": str(getattr(status, "reason", "") or ""),
     }
 
 
