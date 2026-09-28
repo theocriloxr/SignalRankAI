@@ -1,0 +1,1 @@
+Final semantic release-gate retry: canonical env_bool helper for real-execution fail-closed assertion. Product behavior unchanged.
