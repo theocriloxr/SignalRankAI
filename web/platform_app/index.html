@@ -388,6 +388,78 @@
           <div class="panel-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h3>Readiness evidence</h3><p>Database, Redis, provider circuits, outcome projections, performance ledger and payment reconciliation from the same production services.</p></div><button id="refreshOperatorDiagnostics" class="ghost" type="button">Run diagnostics</button></div>
           <div id="operatorDiagnostics" class="operator-diagnostics"><p class="muted">Diagnostics load when the control room opens.</p></div>
         </article>
+        <article id="operatorBusinessPanel" class="panel" hidden>
+          <div class="panel-heading">
+            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions & verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
+            <button id="refreshOperatorBusiness" class="ghost" type="button">Refresh</button>
+          </div>
+          <div id="operatorBusiness" class="operator-business-grid"><p class="muted">Owner business metrics load here.</p></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">CONTROLLED ADMIN DIAGNOSTIC</p><h3>Recent-signal ML scan</h3><p>Re-evaluates recent stored signals that do not yet have an ML probability. It does not create a new signal, send a trade, or bypass delivery/risk gates.</p></div>
+            <button id="operatorMarketScan" class="primary" type="button">Run controlled scan</button>
+          </div>
+          <div id="operatorMarketScanResult" class="muted">No operator scan has run in this browser session.</div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">OPERATOR-ONLY E2E TEST</p><h3>Generate diagnostic signal</h3><p>Uses the same market-state/strategy primitives as Telegram's force-signal command. It persists one diagnostic signal and can deliver only to your linked Telegram account; it never triggers broker execution.</p></div>
+            <span class="status-pill">NO BROKER ORDER</span>
+          </div>
+          <form id="operatorForceSignalForm" class="operator-force-form">
+            <label>Asset (optional)<input name="asset" placeholder="BTCUSDT, EURUSD, XAUUSD…" maxlength="32" /></label>
+            <label>Timeframe (optional)<select name="timeframe"><option value="">Best of 15m / 1h / 4h</option><option>5m</option><option>15m</option><option>1h</option><option>4h</option><option>1d</option></select></label>
+            <label id="operatorOverrideQualityRow" class="switch-row"><input name="override_quality" type="checkbox" /> <span>Owner-only: override strict diagnostic quality gates</span></label>
+            <label id="operatorOverridePhraseRow" hidden>Override confirmation<input name="override_confirmation" placeholder="OVERRIDE QUALITY GATES" autocomplete="off" /></label>
+            <button class="primary" type="submit">Generate operator-only signal</button>
+          </form>
+          <div id="operatorForceSignalResult" class="tool-result muted">No diagnostic signal generated in this browser session.</div>
+        </article>
+        <article class="panel operator-maintenance-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds & queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
+            <button id="refreshOperatorMaintenance" class="ghost" type="button">Refresh</button>
+          </div>
+          <div id="operatorMaintenance" class="operator-maintenance-summary"><p class="muted">Loading maintenance state…</p></div>
+          <div class="operator-control-grid">
+            <section class="operator-control-card">
+              <p class="eyebrow">PERFORMANCE LEDGER</p><h4>Projection rebuild</h4><p>Audit or rebuild one bounded batch of canonical performance projections.</p>
+              <div class="operator-control-actions">
+                <button data-owner-action="performance-status" class="ghost" type="button">Status</button>
+                <button data-owner-action="performance-dry" class="ghost" type="button">Dry run</button>
+                <button data-owner-action="performance-apply" class="primary" type="button">Apply rebuild</button>
+              </div>
+            </section>
+            <section class="operator-control-card">
+              <p class="eyebrow">OUTCOMES</p><h4>Projection & outbox repair</h4><p>Rebuild canonical outcomes first, then independently repair notification outbox state.</p>
+              <div class="operator-control-actions">
+                <button data-owner-action="outcome-status" class="ghost" type="button">Status</button>
+                <button data-owner-action="outcome-dry" class="ghost" type="button">Dry run</button>
+                <button data-owner-action="outcome-apply" class="primary" type="button">Apply repair</button>
+              </div>
+            </section>
+            <section class="operator-control-card">
+              <p class="eyebrow">RECONCILIATION QUEUES</p><h4>Replay controls</h4><p>Replay performance retries or move dead-letter records back to the bounded retry queue.</p>
+              <div class="operator-control-actions">
+                <button data-owner-action="queue-performance" class="ghost" type="button">Replay performance</button>
+                <button data-owner-action="queue-dead-letter" class="danger" type="button">Replay dead letters</button>
+              </div>
+            </section>
+            <section class="operator-control-card">
+              <p class="eyebrow">ADAPTIVE LEARNING</p><h4>Learning lifecycle</h4><p>Pause or resume optimisation without changing approved runtime risk/execution gates.</p>
+              <div class="operator-control-actions">
+                <button data-owner-action="adaptive-status" class="ghost" type="button">Status</button>
+                <button data-owner-action="adaptive-pause" class="ghost" type="button">Pause</button>
+                <button data-owner-action="adaptive-resume" class="primary" type="button">Resume</button>
+              </div>
+            </section>
+          </div>
+          <details class="operator-result-shell">
+            <summary>Latest owner action result</summary>
+            <pre id="operatorActionResult">No owner action has run in this browser session.</pre>
+          </details>
+        </article>
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
           <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
