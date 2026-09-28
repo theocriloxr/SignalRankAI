@@ -53,3 +53,24 @@ def test_deployment_diagnostics_direct_script_can_import_repository_modules(tmp_
     route = next(item for item in payload["checks"] if item["name"] == "fastapi_route_inventory")
     assert route["status"] in {"PASS", "FAIL"}
     assert "No module named 'core'" not in route["detail"]
+
+
+def test_env_contract_validator_direct_script_imports_core_without_pythonpath():
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_env_contract.py",
+            "configs/env/production.env.example",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    assert "ModuleNotFoundError" not in combined
+    assert "No module named 'core'" not in combined
