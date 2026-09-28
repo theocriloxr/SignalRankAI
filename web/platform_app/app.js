@@ -4,6 +4,7 @@ const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,po
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
+let bootstrapRetryTimer=null;
 const THEME_KEY='signalrank.theme';
 const NAV_COLLAPSE_KEY='signalrank.nav.collapsed';
 let navCollapsedMemory=null;
@@ -17,13 +18,14 @@ function navPreference(){if(navCollapsedMemory!==null)return navCollapsedMemory;
 function syncNavUi(){
   const collapsed=Boolean(desktopNavMedia?.matches&&navPreference());
   document.body.classList.toggle('nav-collapsed',collapsed);
-  const toggle=$('#navToggle');const icon=$('#navToggleIcon');
+  const toggle=$('#navToggle');const icon=$('#navToggleIcon');const reopen=$('#navReopen');
   if(toggle){
     toggle.setAttribute('aria-expanded',String(!collapsed));
     toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
     toggle.title=collapsed?'Expand navigation':'Collapse navigation';
   }
-  if(icon)icon.textContent=collapsed?'›':'‹';
+  if(icon)icon.textContent=collapsed?'›':'×';
+  if(reopen)reopen.hidden=!collapsed;
   $$('#sessionNav button').forEach(button=>{
     const label=(button.textContent||'').trim().replace(/\s+/g,' ');
     if(label&&!button.getAttribute('aria-label'))button.setAttribute('aria-label',label);
@@ -39,6 +41,7 @@ function setNavCollapsed(collapsed){
 function initNavToggle(){
   syncNavUi();
   $('#navToggle')?.addEventListener('click',()=>setNavCollapsed(!navPreference()));
+  $('#navReopen')?.addEventListener('click',()=>setNavCollapsed(false));
   desktopNavMedia?.addEventListener?.('change',syncNavUi);
 }
 const esc=(v)=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -74,6 +77,22 @@ async function request(path,options={},allowSessionRefresh=true){
     const error=new Error(serverMessage||fallback);error.status=response.status;error.detail=detail;error.payload=data;throw error
   }
   return data
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function requestWithRetry(path,options={},config={}){
+  const attempts=Math.max(1,Number(config.attempts||5));
+  const baseDelay=Math.max(150,Number(config.baseDelay||450));
+  let lastError;
+  for(let attempt=1;attempt<=attempts;attempt++){
+    try{return await request(path,options)}catch(err){
+      lastError=err;
+      const status=Number(err?.status||0);
+      const retryable=!status||status===408||status===425||status===429||status>=500;
+      if(!retryable||attempt>=attempts)throw err;
+      await wait(Math.min(3500,baseDelay*Math.pow(1.65,attempt-1))+Math.floor(Math.random()*120));
+    }
+  }
+  throw lastError||new Error('SignalRank request failed');
 }
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function fmt(value,digits=2){const number=Number(value||0);return Number.isFinite(number)?number.toLocaleString(undefined,{maximumFractionDigits:digits}):'—'}
