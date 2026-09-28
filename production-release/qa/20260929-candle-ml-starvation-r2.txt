@@ -1,0 +1,3 @@
+SignalRankAI production QA rollout r2.
+Includes market_candles same-key dedupe, durable champion cold-load synchronization, observable ML starvation-recovery veto reasons, and cross-trigger ML retrain cooldown. The r1 release was blocked by a QA-test import and never replaced the healthy production containers.
+Certified ML threshold and all live-money execution/payout/copy-trade controls remain unchanged.
