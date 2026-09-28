@@ -75,3 +75,34 @@ def test_all_launch_command_sections_have_web_destination() -> None:
     route = api[api.index('@router.get("/command-catalog")'):api.index('@router.get("/operator/overview")')]
     for section in expected_sections:
         assert f'"{section}"' in route
+
+
+def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
+    html = source("web/platform_app/index.html")
+    css = source("web/platform_app/styles.css")
+    app = source("web/platform_app/app.js")
+    icon = source("web/platform_app/icon.svg")
+    logo = source("web/platform_app/logo.svg")
+    manifest = source("web/platform_app/manifest.webmanifest")
+    worker = source("web/platform_app/service-worker.js")
+
+    assert 'id="navToggle"' in html
+    assert 'id="navToggleIcon"' in html
+    assert '/app-assets/logo.svg' in html
+    assert 'class="auth-brand-lockup"' in html
+    assert "NAV_COLLAPSE_KEY='signalrank.nav.collapsed'" in app
+    assert "function initNavToggle()" in app
+    assert "document.body.classList.toggle('nav-collapsed'" in app
+    assert "initNavToggle();" in app
+    assert "body.nav-collapsed{--sidebar:78px}" in css
+    assert "--brand-cyan:#05e8ff" in css
+    assert "--brand-blue:#2f91ff" in css
+    assert "--brand-purple:#b44cff" in css
+    assert ':root[data-theme="light"]' in css
+    assert "#05060a" in manifest
+    assert "/app-assets/logo.svg" in worker
+    for asset in (icon, logo):
+        assert "#05E8FF" in asset
+        assert "#2F91FF" in asset
+        assert "#B44CFF" in asset
+        assert "Signal Rank AI" in asset

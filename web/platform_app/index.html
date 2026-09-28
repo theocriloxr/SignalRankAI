@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#07131d" />
+  <meta name="theme-color" content="#05060a" />
   <meta name="color-scheme" content="dark light" />
   <meta name="description" content="SignalRankAI multi-asset trading intelligence workstation for evidence, signals, portfolio analysis and controlled execution workflows" />
   <script>
@@ -16,16 +16,20 @@
   </script>
   <link rel="manifest" href="/app/manifest.webmanifest" />
   <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/app-assets/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/app-assets/styles.css" />
   <title>SignalRankAI</title>
 </head>
 <body class="session-booting">
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
-    <a class="brand" href="/app" aria-label="SignalRankAI home">
+    <a class="brand" href="/app" aria-label="Signal Rank AI home">
       <span class="brand-logo"><img src="/app-assets/icon.svg" alt="" width="42" height="42" /></span>
-      <span><strong>SignalRank</strong><small>Trading Intelligence</small></span>
+      <span class="brand-copy"><strong>Signal Rank AI</strong><small>Trading Intelligence</small></span>
     </a>
+    <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">
+      <span id="navToggleIcon" aria-hidden="true">‹</span>
+    </button>
     <label id="compactNav" class="compact-nav" hidden>
       <span>Workspace</span>
       <select id="viewSwitcher" aria-label="Choose SignalRank workspace">
@@ -93,6 +97,7 @@
 
     <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
+        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg" alt="Signal Rank AI" /></div>
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
         <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and supported connected-account workflows.</p>

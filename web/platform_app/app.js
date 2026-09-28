@@ -5,11 +5,39 @@ const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
 const THEME_KEY='signalrank.theme';
+const NAV_COLLAPSE_KEY='signalrank.nav.collapsed';
+const desktopNavMedia=window.matchMedia?.('(min-width: 1320px)');
 const themeMedia=window.matchMedia?.('(prefers-color-scheme: light)');
 function resolvedTheme(){const explicit=document.documentElement.dataset.theme;if(explicit==='light'||explicit==='dark')return explicit;return themeMedia?.matches?'light':'dark'}
-function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#07131d':'#f4f8f7'}
+function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#05060a':'#f6f7ff'}
 function setTheme(theme,{persist=true}={}){if(theme==='light'||theme==='dark'){document.documentElement.dataset.theme=theme;if(persist){try{localStorage.setItem(THEME_KEY,theme)}catch{}}}else{delete document.documentElement.dataset.theme;if(persist){try{localStorage.removeItem(THEME_KEY)}catch{}}}syncThemeUi()}
 function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}catch{}if(saved==='light'||saved==='dark')document.documentElement.dataset.theme=saved;syncThemeUi();themeMedia?.addEventListener?.('change',()=>{let explicit='';try{explicit=localStorage.getItem(THEME_KEY)||''}catch{}if(!explicit)syncThemeUi()});$('#themeToggle')?.addEventListener('click',()=>setTheme(resolvedTheme()==='dark'?'light':'dark'))}
+function navPreference(){try{return localStorage.getItem(NAV_COLLAPSE_KEY)==='1'}catch{return false}}
+function syncNavUi(){
+  const collapsed=Boolean(desktopNavMedia?.matches&&navPreference());
+  document.body.classList.toggle('nav-collapsed',collapsed);
+  const toggle=$('#navToggle');const icon=$('#navToggleIcon');
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(!collapsed));
+    toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
+    toggle.title=collapsed?'Expand navigation':'Collapse navigation';
+  }
+  if(icon)icon.textContent=collapsed?'›':'‹';
+  $$('#sessionNav button').forEach(button=>{
+    const label=(button.textContent||'').trim().replace(/\s+/g,' ');
+    if(label&&!button.getAttribute('aria-label'))button.setAttribute('aria-label',label);
+    if(label)button.title=collapsed?label:'';
+  });
+}
+function setNavCollapsed(collapsed){
+  try{localStorage.setItem(NAV_COLLAPSE_KEY,collapsed?'1':'0')}catch{}
+  syncNavUi();
+}
+function initNavToggle(){
+  syncNavUi();
+  $('#navToggle')?.addEventListener('click',()=>setNavCollapsed(!navPreference()));
+  desktopNavMedia?.addEventListener?.('change',syncNavUi);
+}
 const esc=(v)=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function toast(message,error=false){const el=$('#toast');el.textContent=typeof message==='string'?message:JSON.stringify(message);el.style.borderColor=error?'rgba(255,107,117,.7)':'rgba(100,240,180,.5)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),4000)}
 function cookie(name){return document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.split('=').slice(1).join('=')||''}
@@ -977,6 +1005,7 @@ async function processUrlActions(){
 }
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/app/service-worker.js').catch(()=>{}))}
 initTheme();
+initNavToggle();
 processUrlActions().then(boot);
 
 $('#refreshPaper')?.addEventListener('click',()=>loadPaper().catch(e=>toast(e.message,true)));
