@@ -1,6 +1,6 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,pendingBillingReference:null};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,operatorMaintenance:null,operatorBusiness:null,pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
@@ -90,12 +90,125 @@ async function loadOperatorDiagnostics(){
   renderOperatorDiagnostics();
   return state.operatorDiagnostics
 }
+function renderOperatorMaintenance(){
+  const target=$('#operatorMaintenance');if(!target)return;
+  const m=state.operatorMaintenance||{};const q=m.queues||{};const n=m.notifications||{};const p=m.paper||{};const a=m.adaptive||{};
+  const cards=[
+    ['Retry queue',q.performance_retry??'—'],
+    ['Dead letters',q.performance_dead_letter??'—'],
+    ['Notification failed',n.states?.failed??0],
+    ['Delivery proof gaps',n.missing_delivery_proof_rows??0],
+    ['Paper open',p.open_positions??'—'],
+    ['Adaptive learning',a.paused?'PAUSED':'ACTIVE']
+  ];
+  target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>`;
+}
+async function loadOperatorMaintenance(){
+  state.operatorMaintenance=await request('/operator/maintenance');
+  renderOperatorMaintenance();
+  return state.operatorMaintenance
+}
+function showOperatorActionResult(value){
+  const target=$('#operatorActionResult');if(target)target.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)
+}
+async function runOwnerAction(action,button){
+  const mutations=new Set(['performance-apply','outcome-apply','queue-performance','queue-dead-letter','adaptive-pause','adaptive-resume']);
+  if(mutations.has(action)){
+    const warning={
+      'performance-apply':'Apply a bounded canonical performance-ledger rebuild?',
+      'outcome-apply':'Apply canonical outcome projection and outbox repair?',
+      'queue-performance':'Replay the bounded performance reconciliation queue?',
+      'queue-dead-letter':'Move dead-letter items back to the retry queue?',
+      'adaptive-pause':'Pause adaptive optimisation? Approved runtime profiles remain unchanged.',
+      'adaptive-resume':'Resume adaptive optimisation? New candidates still begin behind governance gates.'
+    }[action];
+    if(!confirm(warning))return
+  }
+  const original=button?.textContent;if(button){button.disabled=true;button.textContent='Running…'}
+  try{
+    let result;
+    if(action.startsWith('performance-')){
+      const mode=action.endsWith('status')?'status':action.endsWith('dry')?'dry_run':'apply';
+      result=await request('/operator/performance-rebuild',{method:'POST',body:JSON.stringify({action:mode,confirm:mode==='apply',days:30,limit:100})})
+    }else if(action.startsWith('outcome-')){
+      const mode=action.endsWith('status')?'status':action.endsWith('dry')?'dry_run':'apply';
+      result=await request('/operator/outcome-rebuild',{method:'POST',body:JSON.stringify({action:mode,confirm:mode==='apply',days:30,limit:25})})
+    }else if(action==='queue-performance'||action==='queue-dead-letter'){
+      result=await request('/operator/queue-replay',{method:'POST',body:JSON.stringify({target:action==='queue-performance'?'performance':'dead_letter',confirm:true})})
+    }else if(action.startsWith('adaptive-')){
+      const mode=action.split('-')[1];
+      result=await request('/operator/adaptive',{method:'POST',body:JSON.stringify({action:mode,confirm:mode!=='status'})})
+    }else{
+      throw new Error('Unsupported owner action')
+    }
+    showOperatorActionResult(result);toast('Owner action completed');
+    await Promise.allSettled([loadOperatorMaintenance(),loadOperatorDiagnostics()])
+  }finally{
+    if(button){button.disabled=false;button.textContent=original}
+  }
+}
+Array.from(document.querySelectorAll('[data-owner-action]')).forEach(button=>button.addEventListener('click',()=>runOwnerAction(button.dataset.ownerAction,button).catch(err=>{showOperatorActionResult({error:err.message});toast(err.message,true)})));
+$('#refreshOperatorMaintenance')?.addEventListener('click',()=>loadOperatorMaintenance().catch(err=>toast(err.message,true)));
+$('#refreshOperatorBusiness')?.addEventListener('click',()=>loadOperatorBusiness().catch(err=>toast(err.message,true)));
+$('#operatorMarketScan')?.addEventListener('click',async e=>{
+  if(!confirm('Run the controlled recent-signal ML scan? This audits existing recent signals only and does not create or deliver a trade.'))return;
+  const button=e.currentTarget;const original=button.textContent;button.disabled=true;button.textContent='Scanning…';
+  try{
+    const result=await request('/operator/market-scan',{method:'POST',body:JSON.stringify({confirm:true,hours:4,limit:50})});
+    const target=$('#operatorMarketScanResult');if(target)target.textContent=`Scanned ${result.total}; approved ${result.approved}; rejected ${result.rejected}; errors ${result.errors}; threshold ${result.threshold??'auto'}.`;
+    toast('Controlled market scan completed')
+  }catch(err){toast(err.message,true)}finally{button.disabled=false;button.textContent=original}
+});
+
+function renderOperatorBusiness(){
+  const panel=$('#operatorBusinessPanel');const target=$('#operatorBusiness');if(!panel||!target)return;
+  const b=state.operatorBusiness;if(!b){panel.hidden=true;return}
+  panel.hidden=false;
+  const users=b.users||{};const revenue=b.revenue_ngn||{};const active=users.active_subscriptions_by_tier||{};
+  const cards=[['Total users',users.total??0],['Active Premium',active.premium??0],['Active VIP',active.vip??0],['Verified revenue',`₦${Number(revenue.total||0).toLocaleString()}`]];
+  target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div><details class="diagnostic-details"><summary>Revenue breakdown</summary><pre>${esc(JSON.stringify(revenue,null,2))}</pre></details>`
+}
+async function loadOperatorBusiness(){
+  if(String(state.operator?.authority||'')!=='OWNER'){state.operatorBusiness=null;renderOperatorBusiness();return null}
+  state.operatorBusiness=await request('/operator/business');renderOperatorBusiness();return state.operatorBusiness
+}
+const forceOverride=$('#operatorForceSignalForm [name="override_quality"]');
+forceOverride?.addEventListener('change',e=>{const row=$('#operatorOverridePhraseRow');if(row)row.hidden=!e.currentTarget.checked});
+$('#operatorForceSignalForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const form=e.currentTarget;const raw=formData(form);const override=Boolean(form.elements.override_quality?.checked);
+  const confirmation=String(raw.override_confirmation||'').trim();
+  if(override&&confirmation.toUpperCase()!=='OVERRIDE QUALITY GATES'){toast('Type OVERRIDE QUALITY GATES before using the owner override.',true);return}
+  const warning=override
+    ?'Generate and persist an operator-only diagnostic signal while overriding the strict diagnostic quality gates? No broker order will be placed.'
+    :'Generate and persist one operator-only diagnostic signal using the normal strict quality gates? No broker order will be placed.';
+  if(!confirm(warning))return;
+  const button=form.querySelector('button[type="submit"]');const original=button?.textContent;if(button){button.disabled=true;button.textContent='Generating…'}
+  try{
+    const result=await request('/operator/force-signal',{method:'POST',body:JSON.stringify({
+      asset:String(raw.asset||'').trim()||null,
+      timeframe:String(raw.timeframe||'').trim()||null,
+      override_quality:override,
+      override_confirmation:override?confirmation:null,
+      confirm:true,
+      delivery_scope:'operator_only'
+    })});
+    const target=$('#operatorForceSignalResult');if(target)target.innerHTML=`<div class="connection-feedback positive-feedback"><strong>${esc(result.asset)} ${esc(result.timeframe)} · ${esc(result.direction)}</strong><p>Score ${esc(result.score)} · ML ${esc(result.ml_probability??'N/A')} · R/R ${esc(result.rr_ratio??'N/A')}</p><small>Ref ${esc(String(result.signal_id||'').slice(0,12))} · Telegram ${result.telegram_delivered?'delivered':result.telegram_linked?'not delivered':'not linked'} · broker execution not triggered</small></div>`
+    showOperatorActionResult(result);toast('Operator diagnostic signal generated')
+  }catch(err){showOperatorActionResult({error:err.message,detail:err.detail});toast(err.message,true)}
+  finally{if(button){button.disabled=false;button.textContent=original}}
+});
+
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
-  const [overview,diagnostics]=await Promise.all([request('/operator/overview'),request('/operator/diagnostics')]);
-  state.operator=overview;state.operatorDiagnostics=diagnostics;
+  const overview=await request('/operator/overview');state.operator=overview;
+  const jobs=[request('/operator/diagnostics'),request('/operator/maintenance')];
+  if(String(overview.authority||'')==='OWNER')jobs.push(request('/operator/business'));
+  const results=await Promise.all(jobs);
+  state.operatorDiagnostics=results[0];state.operatorMaintenance=results[1];state.operatorBusiness=results[2]||null;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
+  const overrideRow=$('#operatorOverrideQualityRow');if(overrideRow)overrideRow.hidden=String(op.authority||'')!=='OWNER';
   const cards=[
     ['Environment',release.environment||'—'],
     ['Release',String(release.commit||'').slice(0,12)||'—'],
@@ -116,6 +229,8 @@ async function loadOperator(){
     ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
   renderOperatorDiagnostics();
+  renderOperatorMaintenance();
+  renderOperatorBusiness();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
