@@ -402,6 +402,20 @@
           </div>
           <div id="operatorMarketScanResult" class="muted">No operator scan has run in this browser session.</div>
         </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">OPERATOR-ONLY E2E TEST</p><h3>Generate diagnostic signal</h3><p>Uses the same market-state/strategy primitives as Telegram's force-signal command. It persists one diagnostic signal and can deliver only to your linked Telegram account; it never triggers broker execution.</p></div>
+            <span class="status-pill">NO BROKER ORDER</span>
+          </div>
+          <form id="operatorForceSignalForm" class="operator-force-form">
+            <label>Asset (optional)<input name="asset" placeholder="BTCUSDT, EURUSD, XAUUSD…" maxlength="32" /></label>
+            <label>Timeframe (optional)<select name="timeframe"><option value="">Best of 15m / 1h / 4h</option><option>5m</option><option>15m</option><option>1h</option><option>4h</option><option>1d</option></select></label>
+            <label id="operatorOverrideQualityRow" class="switch-row"><input name="override_quality" type="checkbox" /> <span>Owner-only: override strict diagnostic quality gates</span></label>
+            <label id="operatorOverridePhraseRow" hidden>Override confirmation<input name="override_confirmation" placeholder="OVERRIDE QUALITY GATES" autocomplete="off" /></label>
+            <button class="primary" type="submit">Generate operator-only signal</button>
+          </form>
+          <div id="operatorForceSignalResult" class="tool-result muted">No diagnostic signal generated in this browser session.</div>
+        </article>
         <article class="panel operator-maintenance-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds & queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
