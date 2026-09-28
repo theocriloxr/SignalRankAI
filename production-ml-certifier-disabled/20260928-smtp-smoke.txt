@@ -1,0 +1,1 @@
+SignalRankAI isolated SMTP smoke trigger. This path rebuilds only the disabled certification helper; live app roles are excluded by watch patterns.
