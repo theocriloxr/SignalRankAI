@@ -147,7 +147,7 @@ async function runOwnerAction(action,button){
     if(button){button.disabled=false;button.textContent=original}
   }
 }
-$('[data-owner-action]').forEach(button=>button.addEventListener('click',()=>runOwnerAction(button.dataset.ownerAction,button).catch(err=>{showOperatorActionResult({error:err.message});toast(err.message,true)})));
+Array.from(document.querySelectorAll('[data-owner-action]')).forEach(button=>button.addEventListener('click',()=>runOwnerAction(button.dataset.ownerAction,button).catch(err=>{showOperatorActionResult({error:err.message});toast(err.message,true)})));
 $('#refreshOperatorMaintenance')?.addEventListener('click',()=>loadOperatorMaintenance().catch(err=>toast(err.message,true)));
 
 async function loadOperator(){
