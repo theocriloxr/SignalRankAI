@@ -97,3 +97,19 @@ def test_canonical_frontend_is_a_responsive_workstation_not_a_single_dashboard()
     assert "@media(min-width:1320px)" in css
     assert "initTheme" in app
     assert "signalrank-shell-v30" in sw
+
+def test_worker_db_backpressure_is_classified_as_expected_deferral() -> None:
+    worker = source("worker/worker.py")
+    assert '[worker] task deferred by DB admission:' in worker
+    assert '[outcome_reconciliation] deferred reason=db_foreground_pressure' in worker
+    task_block = worker[
+        worker.index("def _log_task_result"):
+        worker.index("def _spawn_task")
+    ]
+    assert 'type(exc).__name__ == "AnalyticsWorkDeferred"' in task_block
+    reconciliation = worker[
+        worker.index("async def _outcome_reconciliation_loop"):
+        worker.index("async def _adaptive_learning_loop")
+    ]
+    assert 'type(exc).__name__ == "AnalyticsWorkDeferred"' in reconciliation
+
