@@ -172,6 +172,33 @@ async function loadOperatorBusiness(){
   if(String(state.operator?.authority||'')!=='OWNER'){state.operatorBusiness=null;renderOperatorBusiness();return null}
   state.operatorBusiness=await request('/operator/business');renderOperatorBusiness();return state.operatorBusiness
 }
+const forceOverride=$('#operatorForceSignalForm [name="override_quality"]');
+forceOverride?.addEventListener('change',e=>{const row=$('#operatorOverridePhraseRow');if(row)row.hidden=!e.currentTarget.checked});
+$('#operatorForceSignalForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const form=e.currentTarget;const raw=formData(form);const override=Boolean(form.elements.override_quality?.checked);
+  const confirmation=String(raw.override_confirmation||'').trim();
+  if(override&&confirmation.toUpperCase()!=='OVERRIDE QUALITY GATES'){toast('Type OVERRIDE QUALITY GATES before using the owner override.',true);return}
+  const warning=override
+    ?'Generate and persist an operator-only diagnostic signal while overriding the strict diagnostic quality gates? No broker order will be placed.'
+    :'Generate and persist one operator-only diagnostic signal using the normal strict quality gates? No broker order will be placed.';
+  if(!confirm(warning))return;
+  const button=form.querySelector('button[type="submit"]');const original=button?.textContent;if(button){button.disabled=true;button.textContent='Generating…'}
+  try{
+    const result=await request('/operator/force-signal',{method:'POST',body:JSON.stringify({
+      asset:String(raw.asset||'').trim()||null,
+      timeframe:String(raw.timeframe||'').trim()||null,
+      override_quality:override,
+      override_confirmation:override?confirmation:null,
+      confirm:true,
+      delivery_scope:'operator_only'
+    })});
+    const target=$('#operatorForceSignalResult');if(target)target.innerHTML=`<div class="connection-feedback positive-feedback"><strong>${esc(result.asset)} ${esc(result.timeframe)} · ${esc(result.direction)}</strong><p>Score ${esc(result.score)} · ML ${esc(result.ml_probability??'N/A')} · R/R ${esc(result.rr_ratio??'N/A')}</p><small>Ref ${esc(String(result.signal_id||'').slice(0,12))} · Telegram ${result.telegram_delivered?'delivered':result.telegram_linked?'not delivered':'not linked'} · broker execution not triggered</small></div>`
+    showOperatorActionResult(result);toast('Operator diagnostic signal generated')
+  }catch(err){showOperatorActionResult({error:err.message,detail:err.detail});toast(err.message,true)}
+  finally{if(button){button.disabled=false;button.textContent=original}}
+});
+
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
   const overview=await request('/operator/overview');state.operator=overview;
@@ -181,6 +208,7 @@ async function loadOperator(){
   state.operatorDiagnostics=results[0];state.operatorMaintenance=results[1];state.operatorBusiness=results[2]||null;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
+  const overrideRow=$('#operatorOverrideQualityRow');if(overrideRow)overrideRow.hidden=String(op.authority||'')!=='OWNER';
   const cards=[
     ['Environment',release.environment||'—'],
     ['Release',String(release.commit||'').slice(0,12)||'—'],
