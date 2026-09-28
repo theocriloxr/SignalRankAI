@@ -119,6 +119,15 @@ class OperatorMarketScanRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=200)
 
 
+class OperatorForceSignalRequest(BaseModel):
+    asset: str | None = Field(default=None, max_length=32)
+    timeframe: str | None = Field(default=None, max_length=8)
+    override_quality: bool = False
+    confirm: bool = False
+    override_confirmation: str | None = Field(default=None, max_length=64)
+    delivery_scope: str = Field(default="operator_only", pattern=r"^operator_only$")
+
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=1, max_length=256)
@@ -1580,6 +1589,242 @@ async def operator_market_scan(
         "errors": errors,
         "threshold": threshold,
         "hours": int(payload.hours),
+    }
+
+
+@router.post("/operator/force-signal")
+async def operator_force_signal(
+    payload: OperatorForceSignalRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Generate one controlled diagnostic signal using the Telegram owner path's
+    market-state and strategy primitives.
+
+    Delivery is restricted to the requesting operator's linked Telegram account.
+    This endpoint never broad-fanouts the forced signal and never places a broker
+    order. Core quality gates remain active unless the owner supplies the explicit
+    override phrase.
+    """
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if payload.override_quality:
+        if authority != "OWNER":
+            raise HTTPException(status_code=403, detail="Only the owner can override diagnostic quality gates")
+        if str(payload.override_confirmation or "").strip().upper() != "OVERRIDE QUALITY GATES":
+            raise HTTPException(status_code=422, detail="Type OVERRIDE QUALITY GATES to confirm the quality override")
+
+    import asyncio
+    from datetime import timedelta
+    from uuid import uuid4
+    from config import config
+    from db.models import AdminEvent, Signal
+    from engine.market_state import get_market_state_async
+    from engine.strategies.signal_generator import SignalGenerator
+    from utils.timeutils import now_utc_naive
+
+    requested_asset = str(payload.asset or "").upper().replace("/", "").strip()
+    requested_tf = str(payload.timeframe or "").lower().strip()
+    candidate_assets = [requested_asset] if requested_asset else [
+        value.strip().upper().replace("/", "")
+        for value in str(getattr(config, "FORCE_SIGNAL_ASSETS", "BTCUSDT,ETHUSDT,XAUUSD,EURUSD") or "").split(",")
+        if value.strip()
+    ]
+    candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
+    generator = SignalGenerator()
+    best_signal = None
+    best_asset = None
+    best_tf = None
+    best_ml_prob = None
+    best_regime = "NEUTRAL"
+    timeout_s = max(2.0, float(os.getenv("FORCE_SIGNAL_FETCH_TIMEOUT_SECONDS", "8") or 8))
+
+    for asset in candidate_assets:
+        for timeframe in candidate_timeframes:
+            try:
+                market_state = await asyncio.wait_for(
+                    get_market_state_async(asset, [timeframe], include_ml=True),
+                    timeout=timeout_s,
+                )
+                tf_data = (market_state.get("timeframes") or {}).get(timeframe) or {}
+                candles = tf_data.get("candles") or []
+                indicators = tf_data.get("indicators") or {}
+                ml_prob = tf_data.get("ml_score")
+                if len(candles) < 50:
+                    continue
+                generated = generator.generate_signals(
+                    asset,
+                    timeframe,
+                    {
+                        "candles": candles,
+                        "indicators": indicators,
+                        "ml_probability": ml_prob,
+                    },
+                )
+                if not generated:
+                    continue
+                current_best = max(
+                    generated,
+                    key=lambda item: float(getattr(item, "score", 0) or 0),
+                )
+                if best_signal is None or float(current_best.score or 0) > float(best_signal.score or 0):
+                    best_signal = current_best
+                    best_asset = asset
+                    best_tf = timeframe
+                    best_ml_prob = ml_prob
+                    best_regime = str(indicators.get("regime") or "NEUTRAL")
+            except Exception:
+                continue
+
+    if best_signal is None or best_asset is None or best_tf is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "No fresh diagnostic signal could be generated right now",
+                "assets_checked": candidate_assets,
+                "timeframes_checked": candidate_timeframes,
+            },
+        )
+
+    score_value = float(getattr(best_signal, "score", 0) or 0)
+    try:
+        ml_value = None if best_ml_prob is None else float(best_ml_prob)
+    except Exception:
+        ml_value = None
+    min_score = float(getattr(config, "FORCE_SIGNAL_MIN_SCORE", 55.0) or 55.0)
+    min_ml = float(getattr(config, "FORCE_SIGNAL_MIN_ML_PROB", 0.0) or 0.0)
+    strict_mode = str(getattr(config, "FORCE_SIGNAL_STRICT_MODE", "1") or "1").strip().lower() in {"1","true","yes","on"}
+    if strict_mode and not payload.override_quality:
+        quality_ok = score_value >= min_score and (ml_value is None or ml_value >= min_ml)
+        if not quality_ok:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Diagnostic force-signal blocked by strict quality gates",
+                    "score": score_value,
+                    "minimum_score": min_score,
+                    "ml_probability": ml_value,
+                    "minimum_ml_probability": min_ml,
+                    "override_available_to_owner": authority == "OWNER",
+                },
+            )
+
+    tp_levels: list[float] = []
+    try:
+        tp_levels = [
+            float(level.get("price"))
+            for level in (best_signal.take_profit or [])
+            if isinstance(level, dict) and level.get("price") is not None
+        ]
+    except Exception:
+        tp_levels = []
+    rr_ratio = None
+    try:
+        if tp_levels:
+            risk = abs(float(best_signal.entry) - float(best_signal.stop_loss))
+            reward = abs(float(tp_levels[0]) - float(best_signal.entry))
+            rr_ratio = reward / risk if risk > 0 else None
+    except Exception:
+        rr_ratio = None
+
+    signal_id = str(uuid4())
+    expires_at = now_utc_naive() + timedelta(hours=12)
+    async with get_session(label="platform.operator.force_signal", timeout_seconds=20.0) as session:
+        session.add(
+            Signal(
+                signal_id=signal_id,
+                asset=best_asset,
+                timeframe=best_tf,
+                direction=best_signal.direction,
+                entry=float(best_signal.entry),
+                stop_loss=float(best_signal.stop_loss),
+                take_profit=json.dumps(best_signal.take_profit or []),
+                rr_estimate=rr_ratio,
+                score=score_value,
+                regime=best_regime,
+                ml_probability=ml_value,
+                strategy_name=str(best_signal.strategy_name),
+                strategy_group=str(best_signal.strategy_group),
+                strength=float(best_signal.confidence or 0.0),
+                fingerprint=f"{best_asset}_{best_tf}_{best_signal.direction}_{int(float(best_signal.entry) or 0)}",
+                archived=False,
+                expired=False,
+                expires_at=expires_at,
+            )
+        )
+        session.add(
+            AdminEvent(
+                event_type="platform_force_signal",
+                actor_telegram_user_id=int(user.get("telegram_user_id") or 0) or None,
+                details={
+                    "canonical_user_id": int(user["id"]),
+                    "signal_id": signal_id,
+                    "asset": best_asset,
+                    "timeframe": best_tf,
+                    "score": score_value,
+                    "override_quality": bool(payload.override_quality),
+                    "delivery_scope": "operator_only",
+                },
+            )
+        )
+        await session.commit()
+
+    signal_payload = {
+        "signal_id": signal_id,
+        "asset": best_asset,
+        "timeframe": best_tf,
+        "direction": best_signal.direction,
+        "entry": best_signal.entry,
+        "stop_loss": best_signal.stop_loss,
+        "take_profit": best_signal.take_profit,
+        "tp_levels": tp_levels,
+        "rr_ratio": rr_ratio,
+        "score": score_value,
+        "regime": best_regime,
+        "ml_probability": ml_value,
+        "strategy_name": best_signal.strategy_name,
+        "strategy_group": best_signal.strategy_group,
+        "strength": best_signal.confidence,
+        "confidence": best_signal.confidence,
+        "created_at": now_utc_naive(),
+        "expires_at": expires_at,
+    }
+
+    delivered = False
+    delivery_error = None
+    telegram_user_id = int(user.get("telegram_user_id") or 0)
+    if telegram_user_id > 0:
+        try:
+            from telegram import Bot
+            from signalrank_telegram.bot import _deliver_or_update_signal_sync, _require_telegram_token
+            delivered = bool(
+                await asyncio.to_thread(
+                    _deliver_or_update_signal_sync,
+                    Bot(token=_require_telegram_token()),
+                    telegram_user_id=telegram_user_id,
+                    signal=dict(signal_payload),
+                    display_tier="vip",
+                )
+            )
+        except Exception as exc:
+            delivery_error = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "signal_id": signal_id,
+        "asset": best_asset,
+        "timeframe": best_tf,
+        "direction": str(best_signal.direction),
+        "score": score_value,
+        "ml_probability": ml_value,
+        "rr_ratio": rr_ratio,
+        "quality_override": bool(payload.override_quality),
+        "delivery_scope": "operator_only",
+        "telegram_linked": telegram_user_id > 0,
+        "telegram_delivered": delivered,
+        "delivery_error": delivery_error,
+        "broker_execution_triggered": False,
     }
 
 
