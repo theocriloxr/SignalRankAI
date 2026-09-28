@@ -1,0 +1,4 @@
+SignalRankAI canonical staging web certification trigger.
+Canonical source branch: staging.
+Compatibility source ref mirrors this exact commit until Railway source selector can be changed.
+No production-only secrets or execution flags are encoded here.
