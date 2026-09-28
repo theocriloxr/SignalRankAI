@@ -354,3 +354,11 @@ def test_challenger_scoring_restores_durable_candidate_without_promotion():
     assert "booster.predict" in scorer
     assert '"passed": probability >= threshold' in scorer
     assert "persist_active_model_artifact" not in scorer
+
+
+def test_starvation_recovery_rejections_are_observable() -> None:
+    root = Path(__file__).resolve().parents[1]
+    core = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    assert '"ml_recovery_rejection_reasons"' in core
+    assert "[engine_ml_recovery] no_eligible_recovery" in core
+    assert '"starvation_not_detected"' in core

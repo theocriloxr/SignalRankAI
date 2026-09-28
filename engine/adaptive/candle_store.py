@@ -326,6 +326,31 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
     if not records:
         return {"snapshots": len(batch), "candles": 0}
 
+    # A single drain batch can contain overlapping snapshots for the same
+    # asset/timeframe while an open candle is refreshed or a newly opened bar
+    # causes the previous bar to be re-finalised. PostgreSQL cannot update the
+    # same ON CONFLICT target twice inside one INSERT statement, so collapse the
+    # batch to the exact database unique key first. Last observation wins,
+    # preserving the freshest OHLC/finality values without dropping the batch.
+    unique_records: dict[tuple[str, str, int], dict[str, Any]] = {}
+    for record in records:
+        unique_records[
+            (
+                str(record["symbol"]),
+                str(record["timeframe"]),
+                int(record["open_time_ms"]),
+            )
+        ] = record
+    duplicate_records = len(records) - len(unique_records)
+    if duplicate_records:
+        logger.info(
+            "[adaptive_candles] deduplicated batch duplicates=%s unique=%s snapshots=%s",
+            duplicate_records,
+            len(unique_records),
+            len(batch),
+        )
+    records = list(unique_records.values())
+
     capture_priority = _capture_db_priority()
     noncritical = capture_priority in {"background", "analytics"}
     admission_timeout = (

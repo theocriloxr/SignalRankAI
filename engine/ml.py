@@ -193,9 +193,14 @@ def _load_model() -> None:
     assert xgb is not None
 
     path = _model_path()
-    # Dedicated roles do not run db.auto_ops, so synchronize the analytics-owned
-    # durable champion before trusting the image-baked local artifact.
-    if should_sync_durable or (not path.exists() and _durable_model_retry_due()):
+    # Dedicated roles do not run db.auto_ops. On every cold cache load, prefer
+    # the analytics-owned durable champion before trusting an image-baked model.
+    # The previous condition only synchronized when the local file was missing,
+    # which allowed a stale image artifact (including an obsolete categorical
+    # encoding contract) to make readiness disagree with the actively trained
+    # production model.
+    sync_due = should_sync_durable or _durable_model_retry_due()
+    if sync_due:
         _restore_durable_primary_if_enabled(path)
     if not path.exists():
         _MODEL_CACHE["error"] = f"model_missing:{path}"
