@@ -1,0 +1,4 @@
+SignalRankAI canonical staging certification marker.
+Base: main cdb0f22c40ee88d1cc63b6e3ad2e808aa5362876.
+Purpose: certify the exact canonical production tree on staging before production source cutover.
+No production-only secret or execution flag changes are encoded in this file.
