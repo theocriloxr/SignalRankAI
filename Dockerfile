@@ -101,8 +101,11 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_copy_trade_safety_foundation.py \
       tests/test_final_trading_ecosystem_20260927.py \
       tests/test_mt5_multiaccount_telegram_ux_20260927.py \
+      tests/test_site_account_billing_hardening_20260928.py \
+      tests/test_recent_chat_requirements_20260928.py \
       tests/test_canonical_consolidation_20260928.py \
       tests/test_web_workstation_parity_20260928.py \
+      tests/test_web_command_parity_redesign_20260928.py \
     && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
     && python scripts/production_readiness_check.py
 
