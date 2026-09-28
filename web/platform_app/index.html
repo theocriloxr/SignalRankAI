@@ -374,12 +374,20 @@
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">RELEASE & SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
             <div id="operatorRuntime" class="detail-list"><p class="muted">Loading operator status…</p></div>
+            <div class="operator-actions">
+              <button id="operatorKillSwitchOn" class="danger" type="button">Enable kill switch</button>
+              <button id="operatorKillSwitchOff" class="ghost" type="button">Disable kill switch</button>
+            </div>
           </article>
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">AI ROUTING</p><h3>Model control plane</h3></div></div>
+            <div class="panel-heading"><div><p class="eyebrow">AI ROUTING</p><h3>Model control plane</h3></div><button id="operatorAiTest" class="ghost" type="button">Test OpenAI</button></div>
             <div id="operatorAi" class="detail-list"><p class="muted">Loading AI provider status…</p></div>
           </article>
         </div>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h3>Readiness evidence</h3><p>Database, Redis, provider circuits, outcome projections, performance ledger and payment reconciliation from the same production services.</p></div><button id="refreshOperatorDiagnostics" class="ghost" type="button">Run diagnostics</button></div>
+          <div id="operatorDiagnostics" class="operator-diagnostics"><p class="muted">Diagnostics load when the control room opens.</p></div>
+        </article>
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
           <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
