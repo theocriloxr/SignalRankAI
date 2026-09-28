@@ -114,7 +114,7 @@ def test_provider_routers_require_user_delivery_evidence_before_execution():
 def test_pwa_cache_and_execution_contract_copy_are_current():
     sw=(ROOT/"web"/"platform_app"/"service-worker.js").read_text(encoding="utf-8")
     html=(ROOT/"web"/"platform_app"/"index.html").read_text(encoding="utf-8")
-    assert "signalrank-shell-v32" in sw
+    assert "signalrank-shell-v33" in sw
     assert "Only signals delivered to your account can execute" in html
 
 
