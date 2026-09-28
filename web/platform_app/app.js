@@ -165,7 +165,7 @@ function renderCommandCatalog(query=''){
   if(target)target.innerHTML=html||'<p class="empty-state">No capabilities match this search.</p>';
   if(operatorTarget){const ops=rows.filter(item=>item.operator_only);const by=ops.reduce((acc,item)=>{(acc[item.section]||(acc[item.section]=[])).push(item);return acc},{});operatorTarget.innerHTML=Object.entries(by).map(([section,items])=>`<section class="command-group"><div class="command-group-head"><h4>${esc(section)}</h4><span>${items.length}</span></div><div class="command-grid">${items.map(item=>`<button class="command-card operator-command-card" type="button" data-command="${esc(item.name)}" data-web-view="ops"><span class="command-slash">/${esc(item.name)}</span><strong>${esc(item.description)}</strong><small>${esc(item.minimum_tier)} · audited operator surface</small></button>`).join('')}</div></section>`).join('')||'<p class="muted">No operator-only commands are available for this account.</p>'}
   const count=$('#commandCatalogCount');if(count)count.textContent=`${rows.length} / ${data.count||0}`;
-  $('[data-web-view]').forEach(button=>{button.onclick=()=>{const view=button.dataset.webView;if(view&&view!=='ops')showView(view);else if(view==='ops'&&data.authority)showView('ops')}})
+  document.querySelectorAll('[data-web-view]').forEach(button=>{button.onclick=()=>{const view=button.dataset.webView;if(view&&view!=='ops')showView(view);else if(view==='ops'&&data.authority)showView('ops')}})
 }
 async function loadCommandCatalog(){
   state.commandCatalog=await request('/command-catalog');
