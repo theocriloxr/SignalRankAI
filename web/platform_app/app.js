@@ -1,6 +1,6 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,pendingBillingReference:null};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,operatorMaintenance:null,pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
@@ -90,10 +90,70 @@ async function loadOperatorDiagnostics(){
   renderOperatorDiagnostics();
   return state.operatorDiagnostics
 }
+function renderOperatorMaintenance(){
+  const target=$('#operatorMaintenance');if(!target)return;
+  const m=state.operatorMaintenance||{};const q=m.queues||{};const n=m.notifications||{};const p=m.paper||{};const a=m.adaptive||{};
+  const cards=[
+    ['Retry queue',q.performance_retry??'—'],
+    ['Dead letters',q.performance_dead_letter??'—'],
+    ['Notification failed',n.states?.failed??0],
+    ['Delivery proof gaps',n.missing_delivery_proof_rows??0],
+    ['Paper open',p.open_positions??'—'],
+    ['Adaptive learning',a.paused?'PAUSED':'ACTIVE']
+  ];
+  target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>`;
+}
+async function loadOperatorMaintenance(){
+  state.operatorMaintenance=await request('/operator/maintenance');
+  renderOperatorMaintenance();
+  return state.operatorMaintenance
+}
+function showOperatorActionResult(value){
+  const target=$('#operatorActionResult');if(target)target.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)
+}
+async function runOwnerAction(action,button){
+  const mutations=new Set(['performance-apply','outcome-apply','queue-performance','queue-dead-letter','adaptive-pause','adaptive-resume']);
+  if(mutations.has(action)){
+    const warning={
+      'performance-apply':'Apply a bounded canonical performance-ledger rebuild?',
+      'outcome-apply':'Apply canonical outcome projection and outbox repair?',
+      'queue-performance':'Replay the bounded performance reconciliation queue?',
+      'queue-dead-letter':'Move dead-letter items back to the retry queue?',
+      'adaptive-pause':'Pause adaptive optimisation? Approved runtime profiles remain unchanged.',
+      'adaptive-resume':'Resume adaptive optimisation? New candidates still begin behind governance gates.'
+    }[action];
+    if(!confirm(warning))return
+  }
+  const original=button?.textContent;if(button){button.disabled=true;button.textContent='Running…'}
+  try{
+    let result;
+    if(action.startsWith('performance-')){
+      const mode=action.endsWith('status')?'status':action.endsWith('dry')?'dry_run':'apply';
+      result=await request('/operator/performance-rebuild',{method:'POST',body:JSON.stringify({action:mode,confirm:mode==='apply',days:30,limit:100})})
+    }else if(action.startsWith('outcome-')){
+      const mode=action.endsWith('status')?'status':action.endsWith('dry')?'dry_run':'apply';
+      result=await request('/operator/outcome-rebuild',{method:'POST',body:JSON.stringify({action:mode,confirm:mode==='apply',days:30,limit:25})})
+    }else if(action==='queue-performance'||action==='queue-dead-letter'){
+      result=await request('/operator/queue-replay',{method:'POST',body:JSON.stringify({target:action==='queue-performance'?'performance':'dead_letter',confirm:true})})
+    }else if(action.startsWith('adaptive-')){
+      const mode=action.split('-')[1];
+      result=await request('/operator/adaptive',{method:'POST',body:JSON.stringify({action:mode,confirm:mode!=='status'})})
+    }else{
+      throw new Error('Unsupported owner action')
+    }
+    showOperatorActionResult(result);toast('Owner action completed');
+    await Promise.allSettled([loadOperatorMaintenance(),loadOperatorDiagnostics()])
+  }finally{
+    if(button){button.disabled=false;button.textContent=original}
+  }
+}
+$('[data-owner-action]').forEach(button=>button.addEventListener('click',()=>runOwnerAction(button.dataset.ownerAction,button).catch(err=>{showOperatorActionResult({error:err.message});toast(err.message,true)})));
+$('#refreshOperatorMaintenance')?.addEventListener('click',()=>loadOperatorMaintenance().catch(err=>toast(err.message,true)));
+
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
-  const [overview,diagnostics]=await Promise.all([request('/operator/overview'),request('/operator/diagnostics')]);
-  state.operator=overview;state.operatorDiagnostics=diagnostics;
+  const [overview,diagnostics,maintenance]=await Promise.all([request('/operator/overview'),request('/operator/diagnostics'),request('/operator/maintenance')]);
+  state.operator=overview;state.operatorDiagnostics=diagnostics;state.operatorMaintenance=maintenance;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
   const cards=[
@@ -116,6 +176,7 @@ async function loadOperator(){
     ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
   renderOperatorDiagnostics();
+  renderOperatorMaintenance();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
