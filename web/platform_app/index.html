@@ -249,7 +249,7 @@
 
       <section id="marketsView" class="view" hidden>
         <div class="panel-heading"><div><p class="eyebrow">DYNAMIC PROVIDER REGISTRY</p><h2>Market explorer</h2></div></div>
-        <div class="filters"><input id="marketSearch" placeholder="Search BTC, gold, EURUSD, AAPL…" /><select id="assetClassFilter"><option value="">All classes</option><option value="crypto_spot">Crypto</option><option value="forex">Forex</option><option value="equity">Stocks</option><option value="commodity_spot">Commodities</option><option value="index">Indices</option></select><button id="searchMarkets" class="primary">Search</button></div>
+        <div class="filters"><input id="marketSearch" placeholder="Search BTC, gold, EURUSD, AAPL…" /><select id="assetClassFilter" aria-label="Asset class"><option value="">All classes</option><option value="crypto_spot">Crypto</option><option value="forex">Forex</option><option value="equity">Stocks</option><option value="etf">ETFs</option><option value="commodity_spot">Commodities</option><option value="index">Indices</option><option value="option">Options · research</option><option value="future">Futures · research</option><option value="bond">Bonds · research</option></select><select id="instrumentTypeFilter" aria-label="Instrument type"><option value="">All instrument types</option><option value="spot">Spot</option><option value="cash_equity">Cash equity / ETF</option><option value="perpetual">Perpetual</option><option value="dated_future">Dated future</option><option value="option">Option</option><option value="cfd">CFD</option></select><button id="searchMarkets" class="primary">Search</button></div>
         <div id="marketResults" class="market-grid"></div>
       </section>
 
