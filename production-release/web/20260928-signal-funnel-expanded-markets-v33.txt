@@ -1,0 +1,3 @@
+SignalRankAI production web/operator rollout marker.
+Scope: owner signal-admission funnel diagnostics, broader research/watchlist Market Explorer classes (ETF/options/futures/bonds), instrument-type filters, PWA v33.
+No new signal execution eligibility, provider certification, broker routing, payout, copy-trade, or live-money activation.
