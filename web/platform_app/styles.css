@@ -520,3 +520,53 @@ tbody tr:last-child td{border-bottom:0}
 @media(prefers-reduced-motion:reduce){
   *,*:before,*:after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
+
+/* Cross-generation workstation contracts */
+.provider-health-error{
+  border-color:color-mix(in srgb,var(--red) 42%,var(--line))!important;
+  background:var(--red-soft)!important;
+  color:var(--red)!important;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    color-scheme:light;
+    --bg:#f4f7f9;--bg-elev:#eef3f6;--panel:#ffffff;--panel-2:#f8fafb;--panel-3:#f0f5f7;
+    --panel-soft:#f7fafb;--glass:rgba(255,255,255,.88);--line:#d9e3e8;--line-strong:#c5d3da;
+    --text:#17222b;--text-strong:#071018;--muted:#60717d;--muted-2:#80909b;--cyan:#087e91;
+    --cyan-soft:rgba(8,126,145,.08);--blue:#315fd3;--green:#13865b;--green-soft:rgba(19,134,91,.08);
+    --red:#cb3949;--red-soft:rgba(203,57,73,.08);--amber:#a76d0b;--amber-soft:rgba(167,109,11,.08);
+    --purple:#6947bd;--shadow:0 24px 60px rgba(28,48,61,.10);--shadow-sm:0 8px 24px rgba(28,48,61,.08);
+    --meter-rest:#dfe7eb;
+  }
+}
+@media(min-width:1320px){
+  body.session-active #sessionNav{display:flex!important}
+  body.session-active .compact-nav{display:none!important}
+}
+@media(max-width:1319px) and (min-width:701px){
+  :root{--sidebar:0px}
+  .topbar{
+    position:sticky;inset:auto;top:0;width:100%;height:auto;display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:9px 14px;
+    border-right:0;border-bottom:1px solid var(--line)
+  }
+  .brand{border:0;padding:0;min-height:auto}
+  .brand-logo{width:35px;height:35px}.brand-logo img{width:24px;height:24px}
+  .brand small{display:none}
+  body.session-active #sessionNav{display:none!important}
+  body.session-active .compact-nav{display:block!important;justify-self:end;width:min(320px,100%)}
+  .compact-nav>span{display:none}
+  .compact-nav select{min-height:36px}
+  .theme-toggle{width:40px;min-height:36px;padding:0}
+  .theme-toggle #themeLabel{display:none}
+  main{margin-left:0}
+  #appShell{padding:16px 18px 60px}
+  .dashboard-header{top:54px;margin:-16px -18px 18px;padding:14px 18px 13px}
+  .broker-account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .profile-settings-grid{grid-template-columns:1fr}
+  .profile-span{grid-column:1}
+  .broker-account-grid{grid-template-columns:1fr}
+}
+
