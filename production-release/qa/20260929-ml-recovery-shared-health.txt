@@ -1,0 +1,3 @@
+SignalRankAI production QA follow-up.
+Keeps paper-only ML starvation recovery health stable across engine restarts by using the analytics-published shared verdict when local samples are not yet sufficient.
+Certified ML thresholds and all live-money controls remain unchanged.
