@@ -95,6 +95,24 @@ class OperatorKillSwitchRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorRebuildRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|dry_run|apply)$")
+    confirm: bool = False
+    days: int = Field(default=30, ge=1, le=3650)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class OperatorReplayRequest(BaseModel):
+    target: str = Field(default="dead_letter", pattern=r"^(dead_letter|performance)$")
+    confirm: bool = False
+
+
+class OperatorAdaptiveRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|pause|resume)$")
+    asset: str | None = Field(default=None, max_length=32)
+    confirm: bool = False
+
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=1, max_length=256)
@@ -1092,6 +1110,318 @@ async def operator_kill_switch(
         "enabled": bool(getattr(status, "enabled", True)),
         "reason": str(getattr(status, "reason", "") or ""),
     }
+
+
+@router.get("/operator/maintenance")
+async def operator_maintenance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+    from sqlalchemy import func, select
+    from db.models import (
+        OutcomeNotification,
+        PaperAccount,
+        PaperLedgerEntry,
+        PaperPosition,
+        PaperTradeAttempt,
+        SignalDelivery,
+    )
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    retry_key = f"performance_reconciliation:retry:{environment}"
+    dlq_key = f"performance_reconciliation:dlq:{environment}"
+    status_key = f"performance_reconciliation:status:{environment}"
+
+    retry_raw, dlq_raw, status_raw = await asyncio.gather(
+        asyncio.to_thread(redis_state.get_sync, retry_key),
+        asyncio.to_thread(redis_state.get_sync, dlq_key),
+        asyncio.to_thread(redis_state.get_sync, status_key),
+    )
+    retry_items = json.loads(retry_raw) if retry_raw else []
+    dlq_items = json.loads(dlq_raw) if dlq_raw else []
+    last_batch = json.loads(status_raw) if status_raw else {}
+
+    async with get_session(label="platform.operator.maintenance", timeout_seconds=15.0) as session:
+        notification_rows = (
+            await session.execute(
+                select(OutcomeNotification.delivery_state, func.count(OutcomeNotification.id))
+                .group_by(OutcomeNotification.delivery_state)
+            )
+        ).all()
+        duplicate_attempts = int((
+            await session.execute(
+                select(func.count(OutcomeNotification.id)).where(
+                    OutcomeNotification.attempt_count > 1
+                )
+            )
+        ).scalar_one() or 0)
+        missing_message_proof = int((
+            await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_message_id.is_(None),
+                )
+            )
+        ).scalar_one() or 0)
+        paper_accounts = int((await session.execute(select(func.count(PaperAccount.id)))).scalar_one() or 0)
+        paper_open = int((
+            await session.execute(
+                select(func.count(PaperPosition.position_id)).where(
+                    func.lower(PaperPosition.status) == "open"
+                )
+            )
+        ).scalar_one() or 0)
+        paper_closed = int((
+            await session.execute(
+                select(func.count(PaperPosition.position_id)).where(
+                    func.lower(PaperPosition.status) == "closed"
+                )
+            )
+        ).scalar_one() or 0)
+        paper_attempts = int((await session.execute(select(func.count(PaperTradeAttempt.id)))).scalar_one() or 0)
+        paper_skipped = int((
+            await session.execute(
+                select(func.count(PaperTradeAttempt.id)).where(
+                    func.lower(PaperTradeAttempt.decision).in_(("skip", "rejected", "retry"))
+                )
+            )
+        ).scalar_one() or 0)
+        paper_ledger = int((await session.execute(select(func.count(PaperLedgerEntry.id)))).scalar_one() or 0)
+
+        adaptive_rows = (
+            await session.execute(
+                text(
+                    "SELECT profile_id,asset,version,state,is_current,sample_size "
+                    "FROM adaptive_asset_profiles ORDER BY is_current DESC,asset,version DESC LIMIT 24"
+                )
+            )
+        ).mappings().all()
+        await session.rollback()
+
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    return {
+        "authority": authority,
+        "environment": environment,
+        "queues": {
+            "performance_retry": len(retry_items),
+            "performance_dead_letter": len(dlq_items),
+            "dead_letter_sample": dlq_items[-5:],
+            "last_performance_batch": last_batch,
+        },
+        "notifications": {
+            "states": {str(name or "unknown"): int(count or 0) for name, count in notification_rows},
+            "duplicate_attempt_rows": duplicate_attempts,
+            "missing_delivery_proof_rows": missing_message_proof,
+        },
+        "paper": {
+            "accounts": paper_accounts,
+            "open_positions": paper_open,
+            "closed_positions": paper_closed,
+            "trade_attempts": paper_attempts,
+            "skipped_or_retry_attempts": paper_skipped,
+            "ledger_rows": paper_ledger,
+        },
+        "adaptive": {
+            "paused": paused,
+            "profiles": [dict(row) for row in adaptive_rows],
+        },
+    }
+
+
+@router.post("/operator/performance-rebuild")
+async def operator_performance_rebuild(
+    payload: OperatorRebuildRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.action == "apply" and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+    from services.performance_ledger import (
+        performance_ledger_health,
+        reconcile_all_performance_ledgers,
+        persist_performance_reconciliation_result,
+    )
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    status_key = f"performance_reconciliation:status:{environment}"
+    if payload.action == "status":
+        raw = await asyncio.to_thread(redis_state.get_sync, status_key)
+        async with get_session(label="platform.operator.performance.status", timeout_seconds=15.0) as session:
+            health = await performance_ledger_health(
+                session, days=int(payload.days), environment=environment
+            )
+            await session.rollback()
+        return {"action": "status", "environment": environment, "last_batch": json.loads(raw) if raw else None, "health": health}
+
+    async with get_session(label="platform.operator.performance.rebuild", timeout_seconds=45.0) as session:
+        result = await reconcile_all_performance_ledgers(
+            session,
+            environment=environment,
+            limit_users=int(payload.limit),
+            dry_run=(payload.action == "dry_run"),
+            reset_cursor=True,
+            persist_cursor=(payload.action == "apply"),
+            wrap_cursor=False,
+        )
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+    await persist_performance_reconciliation_result(
+        result,
+        environment=environment,
+        persist_cursor=(payload.action == "apply"),
+    )
+    return {"action": payload.action, "environment": environment, "result": result.as_dict()}
+
+
+@router.post("/operator/outcome-rebuild")
+async def operator_outcome_rebuild(
+    payload: OperatorRebuildRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.action == "apply" and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.outcome_reconciliation import (
+        ensure_outcome_projections,
+        outcome_projection_health,
+        repair_outcome_notification_outbox,
+    )
+    if payload.action == "status":
+        async with get_session(label="platform.operator.outcome.status", timeout_seconds=15.0) as session:
+            health = await outcome_projection_health(session, days=int(payload.days))
+            await session.rollback()
+        return {"action": "status", "health": health}
+
+    async with get_session(label="platform.operator.outcome.projections", timeout_seconds=45.0) as session:
+        projection = await ensure_outcome_projections(session, queue_notifications=False)
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+
+    # Notification repair remains independent so a delivery backlog can never
+    # erase or block canonical outcome projection truth.
+    async with get_session(label="platform.operator.outcome.outbox", timeout_seconds=45.0) as session:
+        outbox = await repair_outcome_notification_outbox(
+            session,
+            limit=max(1, min(int(payload.limit), 100)),
+        )
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+    return {
+        "action": payload.action,
+        "projection": projection.as_dict(),
+        "outbox": outbox.as_dict(),
+    }
+
+
+@router.post("/operator/queue-replay")
+async def operator_queue_replay(
+    payload: OperatorReplayRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    if payload.target == "dead_letter":
+        dlq_key = f"performance_reconciliation:dlq:{environment}"
+        retry_key = f"performance_reconciliation:retry:{environment}"
+        dlq_raw = await asyncio.to_thread(redis_state.get_sync, dlq_key)
+        retry_raw = await asyncio.to_thread(redis_state.get_sync, retry_key)
+        dlq_items = json.loads(dlq_raw) if dlq_raw else []
+        retry_items = json.loads(retry_raw) if retry_raw else []
+        moved = 0
+        for item in dlq_items:
+            if not isinstance(item, dict):
+                continue
+            retry_items.append({
+                "internal_user_id": int(item.get("internal_user_id") or 0),
+                "telegram_user_id": int(item.get("telegram_user_id") or 0),
+                "attempts": 1,
+                "last_error_code": str(item.get("last_error_code") or "replay"),
+                "last_failed_at": datetime.utcnow().isoformat(),
+            })
+            moved += 1
+        await asyncio.to_thread(redis_state.set_sync, retry_key, json.dumps(retry_items, sort_keys=True))
+        await asyncio.to_thread(redis_state.set_sync, dlq_key, json.dumps([], sort_keys=True))
+        return {"target": "dead_letter", "moved": moved}
+
+    from services.performance_ledger import (
+        reconcile_all_performance_ledgers,
+        persist_performance_reconciliation_result,
+    )
+    async with get_session(label="platform.operator.queue_replay", timeout_seconds=45.0) as session:
+        result = await reconcile_all_performance_ledgers(
+            session,
+            environment=environment,
+            dry_run=False,
+            reset_cursor=False,
+            persist_cursor=True,
+            wrap_cursor=False,
+        )
+        await session.commit()
+    await persist_performance_reconciliation_result(result, environment=environment, persist_cursor=True)
+    return {"target": "performance", "result": result.as_dict()}
+
+
+@router.post("/operator/adaptive")
+async def operator_adaptive(
+    payload: OperatorAdaptiveRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from core.redis_state import state as redis_state
+
+    action = str(payload.action).lower()
+    if action in {"pause", "resume"} and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if action == "pause":
+        redis_state.set_sync("adaptive:optimisation:paused", "1")
+    elif action == "resume":
+        redis_state.set_sync("adaptive:optimisation:paused", "0")
+
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    asset = str(payload.asset or "").strip().upper() or None
+    async with get_session(label="platform.operator.adaptive", timeout_seconds=10.0) as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,metadata "
+                    "FROM adaptive_asset_profiles WHERE (:asset IS NULL OR asset=:asset) "
+                    "ORDER BY asset,is_current DESC,version DESC LIMIT 24"
+                ),
+                {"asset": asset},
+            )
+        ).mappings().all()
+        await session.rollback()
+    return {"action": action, "paused": paused, "profiles": [dict(row) for row in rows]}
 
 
 @router.post("/auth/register", status_code=201)
