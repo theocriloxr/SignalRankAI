@@ -88,7 +88,7 @@ def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
 
 def test_pwa_cache_rotated_for_canonical_workstation() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v28" in worker
+    assert "signalrank-shell-v29" in worker
 
 def test_owner_maintenance_web_parity_is_strict_and_confirmed() -> None:
     api = source("web/platform_api.py")
@@ -117,4 +117,25 @@ def test_owner_maintenance_web_parity_is_strict_and_confirmed() -> None:
     assert "/operator/outcome-rebuild" in app
     assert "/operator/queue-replay" in app
     assert "/operator/adaptive" in app
+
+def test_operator_business_and_market_scan_have_web_parity() -> None:
+    api = source("web/platform_api.py")
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+    assert '@router.get("/operator/business")' in api
+    assert '@router.post("/operator/market-scan")' in api
+    assert 'authority != "OWNER"' in api[api.index('@router.get("/operator/business")'):api.index('@router.post("/operator/market-scan")')]
+    scan = api[api.index('@router.post("/operator/market-scan")'):api.index('@router.post("/auth/register"')]
+    assert 'authority not in {"OWNER", "ADMIN"}' in scan
+    assert "payload.confirm is not True" in scan
+    assert "platform_force_market_scan" in scan
+    assert 'id="operatorBusinessPanel"' in html
+    assert 'id="operatorMarketScan"' in html
+    assert "loadOperatorBusiness" in app
+    assert "/operator/market-scan" in app
+
+
+def test_pwa_cache_rotated_for_operator_business_release() -> None:
+    worker = source("web/platform_app/service-worker.js")
+    assert "signalrank-shell-v29" in worker
 
