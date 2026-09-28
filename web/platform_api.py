@@ -619,10 +619,13 @@ def _platform_operator_authority(user: dict[str, Any]) -> str | None:
     if telegram_user_id > 0 and telegram_user_id in owner_ids:
         return "OWNER"
 
+    tier = str(user.get("tier") or "").strip().upper()
+    if tier == "OWNER":
+        return "OWNER"
     admin_ids = {int(value) for value in (ADMIN_IDS or set())}
     if telegram_user_id > 0 and telegram_user_id in admin_ids:
         return "ADMIN"
-    if str(user.get("tier") or "").strip().upper() == "ADMIN":
+    if tier == "ADMIN":
         return "ADMIN"
     return None
 
