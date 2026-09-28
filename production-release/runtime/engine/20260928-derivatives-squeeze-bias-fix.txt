@@ -1,0 +1,2 @@
+SignalRankAI production engine rollout marker.
+Scope: restore tested public funding-rate squeeze bias/veto evaluation and gate it in Docker release tests. No execution, payout, copy-trading, entitlement, or broker-activation changes.
