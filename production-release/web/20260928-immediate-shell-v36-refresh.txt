@@ -1,0 +1,3 @@
+SignalRankAI production PWA rollout marker.
+Scope: immediately activate v36 service worker, claim open clients, and cache-bust official logo/icon/CSS/JS/manifest assets so existing users receive sidebar, branding, theme and account-aware shell fixes without manual cache clearing.
+No signal, broker execution, payout, copy-trade or live-money policy changes.
