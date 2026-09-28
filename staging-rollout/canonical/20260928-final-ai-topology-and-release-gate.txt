@@ -1,0 +1,3 @@
+SignalRankAI final canonical staging certification.
+Scope: OpenAI operator-status compatibility, canonical branch/variable documentation, and mandatory release gating for recent session/billing/command-parity requirements.
+Target: staging only. Live financial/execution flags remain unchanged and fail-closed.
