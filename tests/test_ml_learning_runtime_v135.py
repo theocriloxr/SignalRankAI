@@ -153,6 +153,8 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     assert "ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION" in candle
     assert "ADAPTIVE_CANDLE_DB_LOCK_TIMEOUT_MS" in candle
     assert "ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS" in candle
+    assert 'sql_text("SET TRANSACTION READ WRITE")' in candle
+    assert candle.index('SET TRANSACTION READ WRITE') < candle.index("SET LOCAL lock_timeout")
     assert "SET LOCAL lock_timeout" in candle
     assert "SET LOCAL statement_timeout" in candle
     assert "for item in batch:" in candle
