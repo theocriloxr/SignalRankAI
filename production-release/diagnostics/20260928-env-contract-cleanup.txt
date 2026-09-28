@@ -1,0 +1,3 @@
+SignalRankAI production diagnostics cleanup.
+Removes duplicate OPENAI_CODEX_REVIEW_* keys from the root .env.example so direct post-deploy environment contract validation can pass honestly.
+No deployed secret, runtime signal threshold, broker execution, copy trading, payout or live-money policy changes.
