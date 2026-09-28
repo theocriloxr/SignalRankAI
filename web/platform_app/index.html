@@ -33,7 +33,8 @@
         <option value="signals">Signals</option>
         <option value="evidence">Evidence</option>
         <option value="markets">Markets</option>
-        <option value="tools">Tools</option>
+        <option value="tools">Command center</option>
+        <option id="opsSwitcherOption" value="ops" hidden>Operations</option>
         <option value="paper" data-feature="paper_trading">Paper trading</option>
         <option value="portfolio" data-feature="portfolio_analytics">Portfolio</option>
         <option value="performance" data-feature="performance_analytics">Performance</option>
@@ -42,19 +43,35 @@
         <option value="account">Account & brokers</option>
       </select>
     </label>
-    <nav id="sessionNav" hidden>
-      <button data-view="overview">Overview</button>
-      <button data-view="signals">Signals</button>
-      <button data-view="evidence">Evidence</button>
-      <button data-view="markets">Markets</button>
-      <button data-view="tools">Tools</button>
-      <button data-view="paper" data-feature="paper_trading">Paper</button>
-      <button data-view="portfolio" data-feature="portfolio_analytics">Portfolio</button>
-      <button data-view="performance" data-feature="performance_analytics">Performance</button>
-      <button data-view="journal">Journal</button>
-      <button data-view="support">Support</button>
-      <button data-view="account">Account</button>
-      <button id="logoutButton" class="ghost">Log out</button>
+    <nav id="sessionNav" class="workspace-nav" hidden>
+      <div class="nav-search-wrap">
+        <span class="nav-search-icon" aria-hidden="true">⌕</span>
+        <input id="workspaceSearch" class="nav-search" type="search" placeholder="Jump to workspace…" autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Intelligence</span>
+        <button data-view="overview"><span class="nav-icon">⌂</span><span>Overview</span></button>
+        <button data-view="signals"><span class="nav-icon">↗</span><span>Signals</span></button>
+        <button data-view="evidence"><span class="nav-icon">◎</span><span>Evidence</span></button>
+        <button data-view="markets"><span class="nav-icon">⌁</span><span>Markets</span></button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Workspace</span>
+        <button data-view="tools"><span class="nav-icon">⌘</span><span>Command center</span></button>
+        <button data-view="paper" data-feature="paper_trading"><span class="nav-icon">◫</span><span>Paper desk</span></button>
+        <button data-view="portfolio" data-feature="portfolio_analytics"><span class="nav-icon">◇</span><span>Portfolio</span></button>
+        <button data-view="performance" data-feature="performance_analytics"><span class="nav-icon">∿</span><span>Performance</span></button>
+        <button data-view="journal"><span class="nav-icon">≡</span><span>Journal</span></button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">System</span>
+        <button data-view="support"><span class="nav-icon">?</span><span>Support</span></button>
+        <button data-view="account"><span class="nav-icon">⚙</span><span>Account & brokers</span></button>
+        <button id="opsNavButton" data-view="ops" hidden><span class="nav-icon">◉</span><span>Operations</span></button>
+      </div>
+      <div class="nav-spacer"></div>
+      <button id="logoutButton" class="ghost nav-logout"><span class="nav-icon">⇥</span><span>Log out</span></button>
     </nav>
     <button id="themeToggle" class="theme-toggle ghost" type="button" aria-label="Switch color theme" title="Switch color theme">
       <span id="themeIcon" aria-hidden="true">◐</span>
@@ -219,7 +236,17 @@
       </section>
 
       <section id="toolsView" class="view" hidden>
-        <div class="panel-heading"><div><p class="eyebrow">CROSS-CHANNEL TOOLKIT</p><h2>Market & account tools</h2><p>Use the same account data and market providers as Telegram without leaving the website.</p></div><span class="status-pill">WEB + TELEGRAM</span></div>
+        <div class="workspace-title">
+          <div><p class="eyebrow">CROSS-CHANNEL COMMAND CENTER</p><h2>Everything you can do with SignalRank</h2><p>One capability map for web and Telegram, filtered by your current tier and operator authority.</p></div>
+          <span class="status-pill">SHARED SERVICES · SAME ENTITLEMENTS</span>
+        </div>
+        <article class="panel command-catalog-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">TELEGRAM ↔ WEB PARITY</p><h3>Capability navigator</h3><p>Search the same commands exposed by the bot, then open the equivalent web workspace.</p></div>
+            <div class="command-search-row"><input id="commandSearch" type="search" placeholder="Search commands or capabilities…" /><span id="commandCatalogCount" class="status-pill">—</span></div>
+          </div>
+          <div id="commandCatalog" class="command-catalog"><p class="muted">Loading your capability map…</p></div>
+        </article>
         <div class="tools-grid">
           <article class="panel tool-card">
             <div class="tool-heading"><div><p class="eyebrow">LIVE DATA</p><h3>Live quote</h3></div><span class="tool-icon" aria-hidden="true">⌁</span></div>
@@ -335,6 +362,28 @@
 
       <section id="supportView" class="view" hidden>
         <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
+      </section>
+
+      <section id="opsView" class="view" hidden>
+        <div class="workspace-title">
+          <div><p class="eyebrow">OWNER / ADMIN</p><h2>Operations control room</h2><p>Release identity, AI routing, financial safety state and operator-only capability map. Destructive actions remain explicitly confirmed and audited.</p></div>
+          <span id="operatorAuthorityBadge" class="status-pill">OPERATOR</span>
+        </div>
+        <div id="operatorSummary" class="card-grid"></div>
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">RELEASE & SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
+            <div id="operatorRuntime" class="detail-list"><p class="muted">Loading operator status…</p></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">AI ROUTING</p><h3>Model control plane</h3></div></div>
+            <div id="operatorAi" class="detail-list"><p class="muted">Loading AI provider status…</p></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
+          <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
+        </article>
       </section>
 
       <section id="accountView" class="view" hidden>
