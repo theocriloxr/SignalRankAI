@@ -1,0 +1,3 @@
+canonical staging worker trigger
+branch=staging
+source_contract=main-plus-staging-markers
