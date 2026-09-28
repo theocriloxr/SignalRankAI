@@ -363,8 +363,34 @@ async function confirmPendingBillingReturn(){
   toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment confirmed and reconciled.');
   return true
 }
-async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}const initial=[loadOverview(),loadSignals(),loadCommandCatalog()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch(err){state.user=null;state.entitlements=null;if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError(err?.message)}}
-async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;$('#accountSubtitle').textContent='Your signals, paper portfolio and market intelligence in one place.';$('#tierBadge').textContent=String(state.user?.tier||'free').toUpperCase();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
+async function boot(){
+  try{
+    if(bootstrapRetryTimer){clearTimeout(bootstrapRetryTimer);bootstrapRetryTimer=null}
+    const me=await requestWithRetry('/me',{}, {attempts:6,baseDelay:450});
+    state.user=me.user;
+    try{state.entitlements=await requestWithRetry('/entitlements',{}, {attempts:4,baseDelay:400})}
+    catch(err){state.entitlements={features:[]};toast('Plan access is still syncing. Core account access is available.',true)}
+    setLoggedIn(true);applyEntitlements();renderProfile();
+    if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}
+    const commandResult=await Promise.allSettled([loadCommandCatalog()]);
+    if(commandResult[0]?.status==='rejected')state.commandCatalog={commands:[],authority:null,count:0};
+    applyAccountExperience();
+    const landing=accountLandingView();
+    const preload=[loadSignals()];
+    if(landing==='overview')preload.push(loadOverview());
+    if(hasFeature('paper_trading'))preload.push(loadPaper());
+    await Promise.allSettled(preload);
+    showView(landing);
+    const invite=new URLSearchParams(location.search).get('organization_invite');
+    if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}
+    await reconcilePendingSecureLink({notify:false});
+  }catch(err){
+    const status=Number(err?.status||0);
+    if(status===401){state.user=null;state.entitlements=null;setLoggedIn(false)}
+    else showBootstrapError(status>=500?'SignalRank is online, but your account session endpoint is still warming up. Retrying automatically…':err?.message);
+  }
+}
+async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;applyAccountExperience();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
 function renderOverviewLists(){const recent=state.signals.slice(0,5);$('#latestSignals').innerHTML=recent.length?recent.map(s=>`<div class="list-row"><div><strong>${esc(s.asset)} ${esc(String(s.direction).toUpperCase())}</strong><small>${esc(s.timeframe)} · ${esc(s.strategy_name||'Strategy')}</small></div><div class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||'Pending')}</div></div>`).join(''):'<p>No confirmed signals yet.</p>';const positions=(state.paper?.positions||[]).filter(p=>p.status==='open').slice(0,5);$('#overviewPositions').innerHTML=positions.length?positions.map(p=>`<div class="list-row"><div><strong>${esc(p.asset)} ${esc(String(p.direction).toUpperCase())}</strong><small>Entry ${fmt(p.fill_entry,6)}</small></div><div class="${Number(p.unrealized_pnl)>=0?'positive':'negative'}">$${fmt(p.unrealized_pnl)}</div></div>`).join(''):'<p>No open paper positions.</p>'}
@@ -413,7 +439,7 @@ function renderCommandCatalog(query=''){
   document.querySelectorAll('[data-web-view]').forEach(button=>{button.onclick=()=>{const view=button.dataset.webView;if(view&&view!=='ops')showView(view);else if(view==='ops'&&data.authority)showView('ops')}})
 }
 async function loadCommandCatalog(){
-  state.commandCatalog=await request('/command-catalog');
+  state.commandCatalog=await requestWithRetry('/command-catalog',{}, {attempts:3,baseDelay:350});
   const authority=state.commandCatalog?.authority||null;
   const opsButton=$('#opsNavButton');if(opsButton)opsButton.hidden=!authority;
   const opsOption=$('#opsSwitcherOption');if(opsOption)opsOption.hidden=!authority;
