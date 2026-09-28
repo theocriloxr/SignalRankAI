@@ -10,10 +10,10 @@ Same public API:
 
 Environment variables:
     META_API_TOKEN       — MetaApi cloud token (https://metaapi.cloud dashboard)
-    META_API_DOMAIN      — Optional: domain override
-                           (default: agiliumtrade.agiliumtrade.ai)
-    META_API_REGION      — Optional: region prefix
-                           (default: mt-client-api-v1)
+    META_API_DOMAIN      — Optional: MetaApi domain override
+                           (default: agiliumtrade.ai)
+    META_API_REGION      — Optional MetaApi client region
+                           (default: new-york)
     SLIPPAGE_TOLERANCE   — Max pips/points between signal price and live price
                            (default: 10)
 """
@@ -188,18 +188,31 @@ def _metaapi_provisioning_error(
 # URL helpers
 # ---------------------------------------------------------------------------
 
+def _metaapi_domain() -> str:
+    """Return the canonical MetaApi API domain without legacy duplicated labels."""
+    domain = str(os.getenv("META_API_DOMAIN") or "agiliumtrade.ai").strip().lower().strip(".")
+    if domain == "agiliumtrade.agiliumtrade.ai":
+        domain = "agiliumtrade.ai"
+    return domain
+
+
+def _metaapi_region() -> str:
+    """Return the regional client-api label used by MetaApi REST endpoints."""
+    region = str(os.getenv("META_API_REGION") or "new-york").strip().lower().strip(".")
+    if region in {"mt-client-api-v1", "default", "auto"}:
+        region = "new-york"
+    return region
+
+
 def _client_base(account_id: str | None = None) -> str:
-    """Base URL for the MetaApi *client* REST API (prices + trading)."""
-    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
-    region = os.getenv("META_API_REGION", "mt-client-api-v1")
-    root = f"https://{region}.{domain}/users/current/accounts"
+    """Base URL for the MetaApi *client* REST API (prices + account state)."""
+    root = f"https://mt-client-api-v1.{_metaapi_region()}.{_metaapi_domain()}/users/current/accounts"
     return f"{root}/{account_id}" if account_id else root
 
 
 def _provisioning_base() -> str:
     """Base URL for the MetaApi *provisioning* REST API (account management)."""
-    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
-    return f"https://mt-provisioning-api-v1.{domain}/users/current/accounts"
+    return f"https://mt-provisioning-api-v1.{_metaapi_domain()}/users/current/accounts"
 
 
 def _metaapi_token_candidates() -> list[tuple[str, str]]:
@@ -356,7 +369,7 @@ async def search_known_metatrader_servers(
         return {"success": False, "code": "query_too_short", "error": "Enter at least 2 characters of the broker or server name", "brokers": []}
 
     version = "5" if platform_n == "mt5" else "4"
-    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
+    domain = _metaapi_domain()
     url = f"https://mt-provisioning-api-v1.{domain}/known-mt-servers/{version}/search"
     try:
         async with aiohttp.ClientSession() as session:
