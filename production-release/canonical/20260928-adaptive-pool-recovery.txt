@@ -1,0 +1,3 @@
+SignalRankAI production pooled-state recovery rollout.
+Promoted after staging certification on 38b80a16625e0c31987850c5b25465ec6777e529: all four staging roles SUCCESS and all five cert services SUCCESS.
+Behavior: on intermittent adaptive-candle read-only transaction failure, evict only the affected event-loop DB engine and retry the bounded idempotent chunk once. Live execution, copy trading, payouts and public payments remain disabled.
