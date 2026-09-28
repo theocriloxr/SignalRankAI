@@ -1,0 +1,8 @@
+SignalRankAI canonical main production promotion — 2026-09-28.
+Source of truth: main, promoted from staging after canonical branch consolidation.
+Pre-promotion staging evidence: SHA a49c70aeec1a8bb8a9ec9ddf314574773d1a08b9.
+Docker gate: 373 tests PASS; release provenance PASS; 12/12 readiness checks PASS.
+Staging release_source_gate PASS; quiescent certification PASS with live-money switches disabled.
+Scope includes consolidated provider/MT5/multi-account/AI/operator/frontend work and full web command catalogue parity.
+No new database migration in this promotion; Alembic head remains 0045_mt5_credential_retirement.
+Broker credential keyring initialized separately in Railway; email delivery remains disabled until SMTP password is supplied.
