@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote
@@ -31,6 +32,10 @@ import aiohttp
 from core.security import redact_secrets
 
 logger = logging.getLogger(__name__)
+
+
+_METAAPI_AUTH_CACHE: tuple[float, Dict[str, Any]] | None = None
+_METAAPI_ACTIVE_TOKEN_ENV: str | None = None
 
 
 def _safe_error_body(body: str) -> str:
@@ -44,6 +49,140 @@ def _safe_error_body(body: str) -> str:
         # Plain-text provider responses may echo request credentials.  Status
         # and URL are sufficient diagnostics; never log arbitrary body text.
         return "<non-json provider response>"
+
+
+def _metaapi_provisioning_error(
+    status: int,
+    body: str,
+    *,
+    retry_after: str | None = None,
+    transaction_id: str | None = None,
+) -> Dict[str, Any]:
+    """Map MetaApi broker/provisioning failures to stable, user-actionable codes.
+
+    Provider bodies are parsed only to extract bounded non-secret diagnostics.
+    Passwords/logins are never echoed back or logged.
+    """
+    import json
+
+    parsed: Dict[str, Any] = {}
+    try:
+        raw = json.loads(str(body or ""))
+        parsed = raw if isinstance(raw, dict) else {}
+    except Exception:
+        parsed = {}
+
+    details = parsed.get("details")
+    detail_map = details if isinstance(details, dict) else {}
+    detail_code = details if isinstance(details, str) else None
+    provider_code = str(
+        detail_map.get("code")
+        or detail_code
+        or parsed.get("code")
+        or parsed.get("error")
+        or ""
+    ).strip()
+    provider_message = str(
+        detail_map.get("message")
+        or parsed.get("message")
+        or parsed.get("errorMessage")
+        or ""
+    ).strip()
+
+    suggestions: list[str] = []
+    servers_by_brokers = (
+        detail_map.get("serversByBrokers")
+        or parsed.get("serversByBrokers")
+        or {}
+    )
+    if isinstance(servers_by_brokers, dict):
+        for values in servers_by_brokers.values():
+            if isinstance(values, (list, tuple)):
+                suggestions.extend(str(v).strip() for v in values if str(v).strip())
+            elif str(values or "").strip():
+                suggestions.append(str(values).strip())
+    for key in ("servers", "suggestedServers", "serverSuggestions"):
+        values = detail_map.get(key) or parsed.get(key)
+        if isinstance(values, (list, tuple)):
+            suggestions.extend(str(v).strip() for v in values if str(v).strip())
+    suggestions = list(dict.fromkeys(suggestions))[:12]
+
+    code_upper = provider_code.upper()
+    message_lower = provider_message.lower()
+
+    stable_code = "provisioning_failed"
+    message = "MetaTrader account provisioning failed. Check the broker details and try again."
+    can_use_secure_link = True
+
+    # MetaApi REST authorization failures are operator integration failures,
+    # not broker-account credential failures. Provider docs reserve broker
+    # login/password failures for the E_AUTH validation code.
+    if int(status) == 401 and code_upper not in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"}:
+        stable_code = "provider_authorization_failed"
+        message = "SignalRankAI's MetaApi authorization is invalid or expired. An administrator must refresh the MetaApi API token; your MT4/MT5 credentials were not the cause."
+        can_use_secure_link = False
+    elif int(status) == 403 and code_upper not in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"}:
+        stable_code = "provider_permissions_missing"
+        message = "SignalRankAI's MetaApi token does not have the permissions required for account provisioning. An administrator must update the MetaApi integration permissions."
+        can_use_secure_link = False
+    elif code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"} or "server" in message_lower and "not found" in message_lower:
+        stable_code = "server_not_found"
+        message = (
+            "The broker server was not recognized. Enter the exact server name shown in MetaTrader"
+            + (" or choose one of the suggested servers below." if suggestions else ".")
+        )
+    elif code_upper in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"} or any(
+        token in message_lower for token in ("invalid login", "invalid password", "authorization failed", "authentication failed")
+    ):
+        stable_code = "authentication_failed"
+        message = "The broker rejected the login/password. Re-enter the MT4/MT5 trading credentials for this exact server."
+        can_use_secure_link = True
+    elif code_upper in {"E_SERVER_TIMEZONE", "E_BROKER_SETTINGS", "E_SETTINGS_DETECTION"} or (
+        "timezone" in message_lower or "broker settings" in message_lower
+    ):
+        stable_code = "broker_settings_detection_failed"
+        message = "MetaApi could not automatically detect this broker's terminal settings. Use the secure connection flow or an administrator-provided provisioning profile."
+    elif code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED", "E_TRADING_ACCOUNT_DISABLED"} or "disabled" in message_lower:
+        stable_code = "account_disabled"
+        message = "The broker account is disabled or unavailable. Confirm the account is active in MetaTrader before reconnecting."
+        can_use_secure_link = False
+    elif code_upper in {"E_NO_SYMBOLS", "E_SYMBOLS"} or "no symbols" in message_lower:
+        stable_code = "no_symbols"
+        message = "The broker account connected but exposes no tradable symbols. Check the account/server with the broker."
+        can_use_secure_link = False
+    elif code_upper in {"E_PASSWORD_CHANGE", "E_PASSWORD_EXPIRED"} or "change password" in message_lower:
+        stable_code = "password_change_required"
+        message = "The broker requires a password change before API access. Change it in MetaTrader first, then reconnect."
+        can_use_secure_link = False
+    elif int(status) == 429 or code_upper in {"E_RATE_LIMIT", "E_TOO_MANY_REQUESTS"}:
+        stable_code = "provider_rate_limited"
+        message = "MetaApi temporarily rate-limited provisioning. Do not submit repeatedly; retry after the indicated delay."
+    elif code_upper in {"E_RESOURCE_SLOTS", "E_CAPACITY", "E_NO_CAPACITY"} or "slot" in message_lower:
+        stable_code = "provider_capacity"
+        message = "The MetaApi account has no available provisioning capacity. Free a slot or update the provider plan before adding another account."
+        can_use_secure_link = False
+    elif int(status) >= 500:
+        stable_code = "provider_unavailable"
+        message = "MetaApi is temporarily unavailable. Your credentials were not marked connected; retry later."
+    elif int(status) == 202:
+        stable_code = "broker_detection_pending"
+        message = "MetaApi is still detecting the broker server settings. Wait before retrying; repeated new provisioning attempts are intentionally avoided."
+
+    result: Dict[str, Any] = {
+        "success": False,
+        "code": stable_code,
+        "error": message,
+        "provider_code": provider_code or None,
+        "provider_status": int(status),
+        "suggested_servers": suggestions,
+        "recommended_resource_slots": detail_map.get("recommendedResourceSlots"),
+        "retry_after": retry_after,
+        "can_use_secure_link": bool(can_use_secure_link),
+        "diagnostic": _safe_error_body(body),
+    }
+    if transaction_id:
+        result["transaction_id"] = str(transaction_id)
+    return result
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -63,13 +202,222 @@ def _provisioning_base() -> str:
     return f"https://mt-provisioning-api-v1.{domain}/users/current/accounts"
 
 
-def _headers() -> Dict[str, str]:
-    token = (os.getenv("META_API_TOKEN") or "").strip()
+def _metaapi_token_candidates() -> list[tuple[str, str]]:
+    """Return configured MetaApi token aliases without exposing secret values."""
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for env_name in ("META_API_TOKEN", "METAAPI_TOKEN"):
+        value = str(os.getenv(env_name) or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        candidates.append((env_name, value))
+    return candidates
+
+
+def _selected_metaapi_token() -> tuple[str | None, str]:
+    global _METAAPI_ACTIVE_TOKEN_ENV
+    if _METAAPI_ACTIVE_TOKEN_ENV:
+        value = str(os.getenv(_METAAPI_ACTIVE_TOKEN_ENV) or "").strip()
+        if value:
+            return _METAAPI_ACTIVE_TOKEN_ENV, value
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+    candidates = _metaapi_token_candidates()
+    return candidates[0] if candidates else (None, "")
+
+
+def _headers(token_override: str | None = None) -> Dict[str, str]:
+    token = str(token_override or "").strip()
+    if not token:
+        _, token = _selected_metaapi_token()
     return {
         "auth-token": token,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+
+
+async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
+    """Validate configured MetaApi token aliases without broker credentials."""
+    global _METAAPI_AUTH_CACHE, _METAAPI_ACTIVE_TOKEN_ENV
+
+    ttl = max(
+        5.0,
+        min(
+            float(os.getenv("META_API_AUTH_PROBE_CACHE_SECONDS", "60") or 60),
+            600.0,
+        ),
+    )
+    now = time.monotonic()
+    if not force and _METAAPI_AUTH_CACHE is not None:
+        cached_at, cached = _METAAPI_AUTH_CACHE
+        if now - cached_at <= ttl:
+            return dict(cached)
+
+    candidates = _metaapi_token_candidates()
+    if not candidates:
+        result = {
+            "ok": False,
+            "configured": False,
+            "code": "provider_not_configured",
+            "provider_status": None,
+            "token_source": None,
+            "candidate_names": [],
+        }
+        _METAAPI_AUTH_CACHE = (now, result)
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+        return dict(result)
+
+    failures: list[Dict[str, Any]] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            for env_name, token in candidates:
+                async with session.get(
+                    _provisioning_base(),
+                    headers=_headers(token),
+                    params={"limit": "1"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status == 200:
+                        _METAAPI_ACTIVE_TOKEN_ENV = env_name
+                        result = {
+                            "ok": True,
+                            "configured": True,
+                            "code": "authorized",
+                            "provider_status": 200,
+                            "token_source": env_name,
+                            "candidate_names": [name for name, _ in candidates],
+                        }
+                        _METAAPI_AUTH_CACHE = (now, result)
+                        return dict(result)
+                    mapped = _metaapi_provisioning_error(resp.status, body)
+                    failures.append(
+                        {
+                            "token_source": env_name,
+                            "code": str(mapped.get("code") or "provider_probe_failed"),
+                            "provider_status": int(resp.status),
+                            "provider_code": mapped.get("provider_code"),
+                        }
+                    )
+
+        _METAAPI_ACTIVE_TOKEN_ENV = None
+        primary = failures[0] if failures else {
+            "code": "provider_probe_failed",
+            "provider_status": None,
+            "provider_code": None,
+        }
+        result = {
+            "ok": False,
+            "configured": True,
+            "code": primary.get("code"),
+            "provider_status": primary.get("provider_status"),
+            "provider_code": primary.get("provider_code"),
+            "token_source": None,
+            "candidate_names": [name for name, _ in candidates],
+            "failed_candidate_names": [str(item.get("token_source")) for item in failures],
+        }
+        _METAAPI_AUTH_CACHE = (now, result)
+        return dict(result)
+    except Exception as exc:
+        logger.warning("[metaapi_auth_probe] unavailable error_type=%s", type(exc).__name__)
+        result = {
+            "ok": False,
+            "configured": True,
+            "code": "provider_unavailable",
+            "provider_status": None,
+            "token_source": None,
+            "candidate_names": [name for name, _ in candidates],
+        }
+        _METAAPI_AUTH_CACHE = (now, result)
+        return dict(result)
+
+
+async def search_known_metatrader_servers(
+    platform: str,
+    query: str,
+) -> Dict[str, Any]:
+    """Search MetaApi's known MT server registry without broker credentials."""
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
+        return {
+            "success": False,
+            "code": str(auth.get("code") or "provider_not_configured"),
+            "error": "MetaApi authorization is unavailable. An administrator must refresh the integration token." if auth.get("configured") else "MetaTrader connection service is not configured",
+            "provider_status": auth.get("provider_status"),
+            "provider_code": auth.get("provider_code"),
+            "brokers": [],
+        }
+    platform_n = str(platform or "").strip().lower()
+    if platform_n not in {"mt4", "mt5"}:
+        return {"success": False, "code": "invalid_platform", "error": "platform must be mt4 or mt5", "brokers": []}
+    query_n = " ".join(str(query or "").strip().split())[:128]
+    if len(query_n) < 2:
+        return {"success": False, "code": "query_too_short", "error": "Enter at least 2 characters of the broker or server name", "brokers": []}
+
+    version = "5" if platform_n == "mt5" else "4"
+    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
+    url = f"https://mt-provisioning-api-v1.{domain}/known-mt-servers/{version}/search"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=_headers(),
+                params={"query": query_n},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.text()
+                if resp.status == 200:
+                    try:
+                        parsed = await resp.json()
+                    except Exception:
+                        parsed = {}
+                    groups = parsed if isinstance(parsed, dict) else {}
+                    brokers: list[Dict[str, Any]] = []
+                    for broker, values in list(groups.items())[:10]:
+                        servers = values if isinstance(values, list) else []
+                        cleaned = list(dict.fromkeys(
+                            str(value).strip() for value in servers if str(value).strip()
+                        ))[:10]
+                        if cleaned:
+                            brokers.append({
+                                "broker": str(broker).strip()[:160],
+                                "servers": cleaned,
+                            })
+                    return {
+                        "success": True,
+                        "platform": platform_n,
+                        "query": query_n,
+                        "brokers": brokers,
+                        "count": sum(len(row["servers"]) for row in brokers),
+                    }
+                mapped = _metaapi_provisioning_error(resp.status, body)
+                logger.warning(
+                    "[metatrader] known_server_search_failed status=%s code=%s",
+                    resp.status,
+                    mapped.get("code"),
+                )
+                return {
+                    "success": False,
+                    "code": str(mapped.get("code") or "server_search_failed"),
+                    "error": str(mapped.get("error") or f"MetaApi server search failed ({resp.status})"),
+                    "provider_status": int(resp.status),
+                    "provider_code": mapped.get("provider_code"),
+                    "diagnostic": _safe_error_body(body),
+                    "brokers": [],
+                }
+    except Exception as exc:
+        logger.warning(
+            "[metatrader] known_server_search_unavailable err=%s",
+            type(exc).__name__,
+        )
+        return {
+            "success": False,
+            "code": "provider_unavailable",
+            "error": "MetaApi server search is temporarily unavailable",
+            "provider_status": None,
+            "brokers": [],
+        }
 
 
 def _slippage_tolerance() -> float:
@@ -88,10 +436,74 @@ def _quote_max_age_seconds() -> float:
 
 
 def _check_token() -> bool:
-    if not (os.getenv("META_API_TOKEN") or "").strip():
-        logger.error("[mt5_client] META_API_TOKEN is not set")
+    if not _metaapi_token_candidates():
+        logger.error("[mt5_client] MetaApi token is not set (META_API_TOKEN/METAAPI_TOKEN)")
         return False
     return True
+
+
+def _configured_provisioning_profile(server: str, platform: str) -> str | None:
+    """Resolve an operator-approved MetaApi provisioning profile for a server."""
+    import json
+
+    raw = str(os.getenv("META_API_PROVISIONING_PROFILE_MAP_JSON") or "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        logger.error("[metatrader] META_API_PROVISIONING_PROFILE_MAP_JSON is invalid JSON")
+        return None
+    if not isinstance(data, dict):
+        return None
+    server_n = str(server or "").strip().lower()
+    platform_n = str(platform or "").strip().lower()
+    candidates = (
+        data.get(f"{platform_n}:{server_n}")
+        or data.get(str(server or "").strip())
+        or data.get(server_n)
+    )
+    profile_id = str(candidates or "").strip()
+    return profile_id or None
+
+
+def _account_provisioning_payload(
+    *,
+    user_id: int,
+    platform: str,
+    server: str,
+    account_label: str | None,
+    broker_name: str | None,
+    login: str | None = None,
+    password: str | None = None,
+    source: str,
+) -> Dict[str, Any]:
+    """Build a MetaApi account payload with an optional approved profile."""
+    platform_n = str(platform or "").strip().lower()
+    server_n = str(server or "").strip()
+    payload: Dict[str, Any] = {
+        "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
+        "type": "cloud-g2",
+        "server": server_n,
+        "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
+        "keywords": [str(broker_name).strip()] if broker_name else [],
+        "reliability": "high",
+        "metadata": {
+            "signalrank_user_id": int(user_id),
+            "source": str(source),
+        },
+    }
+    if login is not None:
+        payload["login"] = str(login).strip()
+    if password is not None:
+        payload["password"] = str(password)
+    profile_id = _configured_provisioning_profile(server_n, platform_n)
+    if profile_id:
+        payload["provisioningProfileId"] = profile_id
+        payload["metadata"]["provisioning_profile_configured"] = True
+    else:
+        payload["platform"] = platform_n
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +512,8 @@ def _check_token() -> bool:
 
 async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
     """Authenticated GET → parsed JSON or None."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return None
     try:
         async with aiohttp.ClientSession() as session:
@@ -122,7 +535,8 @@ async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
 
 async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
     """Authenticated POST → parsed JSON or None."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return None
     try:
         async with aiohttp.ClientSession() as session:
@@ -147,7 +561,8 @@ async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
 
 async def _http_put(url: str, payload: Dict) -> bool:
     """Authenticated PUT → True on success."""
-    if not _check_token():
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
         return False
     try:
         async with aiohttp.ClientSession() as session:
@@ -830,6 +1245,110 @@ async def get_reconciliation_snapshot(
     }
 
 
+async def refresh_platform_metatrader_reconciliation(
+    user_id: int,
+    connection_id: str,
+    account_id: str,
+    *,
+    account_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Persist read-only MetaTrader reconciliation without changing permission.
+
+    HEALTHY is recorded only when provider account information is connected and
+    the provider positions endpoint is available.  Any unavailable proof stays
+    RECONCILING; onboarding never fabricates readiness and never freezes an
+    otherwise valid account merely because a transient read failed.
+    """
+    from services.account_policies import record_reconciliation
+
+    try:
+        snapshot = await get_reconciliation_snapshot(
+            str(account_id),
+            account_info=account_info,
+        )
+        info = (
+            dict(snapshot.get("account_info") or {})
+            if isinstance(snapshot.get("account_info"), dict)
+            else {}
+        )
+        positions = snapshot.get("positions")
+        checked_at = snapshot.get("checked_at")
+        checked_iso = (
+            checked_at.isoformat()
+            if isinstance(checked_at, datetime)
+            else datetime.now(timezone.utc).isoformat()
+        )
+        ready = bool(snapshot.get("ready"))
+        status = "HEALTHY" if ready else "RECONCILING"
+        details: Dict[str, Any] = {
+            "provider": "metaapi",
+            "positions_count": len(positions) if isinstance(positions, list) else None,
+            "checked_at": checked_iso,
+            "currency": info.get("currency") or "USD",
+            "balance": info.get("balance"),
+            "equity": info.get("equity"),
+            "margin": info.get("margin"),
+            "free_margin": info.get("free_margin"),
+            "unrealized_pnl": info.get("profit"),
+            "verification_source": "read_only_provider_snapshot",
+        }
+        if ready:
+            details["ledger_source_event_id"] = (
+                f"verification_reconciliation:{checked_iso}"[:160]
+            )
+        persisted = await record_reconciliation(
+            int(user_id),
+            str(connection_id),
+            status=status,
+            discrepancy_code=None if ready else "provider_reconciliation_pending",
+            details=details,
+        )
+        return {
+            "status": str(persisted.get("status") or status),
+            "ready": bool(persisted.get("ready")),
+            "positions_count": details["positions_count"],
+            "checked_at": checked_iso,
+        }
+    except Exception as exc:
+        # Verification/reconciliation is intentionally fail-closed.  A broker
+        # link remains useful for signals/paper while demo execution readiness
+        # stays blocked.  Never log credentials or provider response bodies.
+        logger.warning(
+            "[metatrader] read_only_reconciliation_pending user=%s err=%s",
+            int(user_id),
+            type(exc).__name__,
+        )
+        try:
+            persisted = await record_reconciliation(
+                int(user_id),
+                str(connection_id),
+                status="RECONCILING",
+                discrepancy_code="provider_reconciliation_pending",
+                details={
+                    "provider": "metaapi",
+                    "verification_source": "read_only_provider_snapshot",
+                },
+            )
+            return {
+                "status": str(persisted.get("status") or "RECONCILING"),
+                "ready": False,
+                "positions_count": None,
+                "checked_at": None,
+            }
+        except Exception as persist_exc:
+            logger.warning(
+                "[metatrader] reconciliation_state_persist_pending user=%s err=%s",
+                int(user_id),
+                type(persist_exc).__name__,
+            )
+            return {
+                "status": "RECONCILING",
+                "ready": False,
+                "positions_count": None,
+                "checked_at": None,
+            }
+
+
 def _position_id_from_row(row: dict[str, Any]) -> str:
     for key in ("id", "positionId", "position_id", "orderId", "order_id"):
         val = row.get(key)
@@ -1242,19 +1761,34 @@ async def get_platform_mt5_link_status(user_id: int) -> Dict[str, Any]:
 # Provider-neutral MetaTrader connection helpers (MT4 + MT5)
 # ---------------------------------------------------------------------------
 
-async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def _provision_metatrader_account(
+    payload: Dict[str, Any],
+    *,
+    transaction_id: str | None = None,
+) -> Dict[str, Any]:
     """Create one MetaApi MT4/MT5 account without automatic retries.
 
     MetaApi can bill repeated invalid broker-auth attempts. A single request is
     therefore made per explicit user action; pending broker discovery is
     surfaced to the caller instead of being looped automatically.
     """
-    if not _check_token():
-        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
+        return {
+            "success": False,
+            "code": str(auth.get("code") or "provider_authorization_failed"),
+            "error": "SignalRankAI cannot authenticate to MetaApi. An administrator must refresh the integration token before broker provisioning.",
+            "provider_code": auth.get("provider_code"),
+            "provider_status": auth.get("provider_status"),
+            "suggested_servers": [],
+            "retry_after": None,
+            "can_use_secure_link": False,
+        }
     from uuid import uuid4
 
     headers = _headers()
-    headers["transaction-id"] = uuid4().hex
+    tx_id = str(transaction_id or "").strip()[:64] or uuid4().hex
+    headers["transaction-id"] = tx_id
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -1269,7 +1803,7 @@ async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, An
                         data = await resp.json()
                     except Exception:
                         data = {}
-                    return {"success": True, "pending": False, "data": data}
+                    return {"success": True, "pending": False, "data": data, "transaction_id": tx_id}
                 if resp.status == 202:
                     try:
                         data = await resp.json()
@@ -1280,18 +1814,37 @@ async def _provision_metatrader_account(payload: Dict[str, Any]) -> Dict[str, An
                         "pending": True,
                         "data": data,
                         "retry_after": resp.headers.get("Retry-After"),
+                        "transaction_id": tx_id,
                     }
-                return {
-                    "success": False,
-                    "error": f"MetaApi provisioning failed ({resp.status})",
-                    "diagnostic": _safe_error_body(body),
-                }
+                failure = _metaapi_provisioning_error(
+                    int(resp.status),
+                    body,
+                    retry_after=resp.headers.get("Retry-After"),
+                    transaction_id=tx_id,
+                )
+                logger.warning(
+                    "[metatrader] provisioning_failed status=%s code=%s provider_code=%s suggested_servers=%s",
+                    failure.get("provider_status"),
+                    failure.get("code"),
+                    failure.get("provider_code"),
+                    len(failure.get("suggested_servers") or []),
+                )
+                return failure
     except Exception as exc:
         logger.warning(
             "[metatrader] provisioning request failed err=%s",
             type(exc).__name__,
         )
-        return {"success": False, "error": f"MetaApi unavailable: {type(exc).__name__}"}
+        return {
+            "success": False,
+            "code": "provider_unavailable",
+            "error": "MetaApi is temporarily unavailable. The connection was not saved as ready.",
+            "provider_code": type(exc).__name__,
+            "provider_status": None,
+            "suggested_servers": [],
+            "retry_after": None,
+            "can_use_secure_link": True,
+        }
 
 
 async def _create_configuration_link(
@@ -1300,8 +1853,15 @@ async def _create_configuration_link(
     ttl_days: int = 3,
 ) -> Dict[str, Any]:
     """Return a provider-hosted credential-entry link for one MetaApi account."""
-    if not _check_token():
-        return {"success": False, "error": "META_API_TOKEN is not configured"}
+    auth = await probe_metaapi_authorization()
+    if not auth.get("ok"):
+        return {
+            "success": False,
+            "code": str(auth.get("code") or "provider_authorization_failed"),
+            "error": "SignalRankAI cannot authenticate to MetaApi. An administrator must refresh the integration token before creating a secure configuration link.",
+            "provider_code": auth.get("provider_code"),
+            "provider_status": auth.get("provider_status"),
+        }
     account_id = str(account_id or "").strip()
     if not account_id:
         return {"success": False, "error": "MetaApi account id is required"}
@@ -1355,6 +1915,7 @@ async def link_platform_metatrader_account(
     broker_name: str | None = None,
     account_label: str | None = None,
     environment: str = "unknown",
+    provisioning_transaction_id: str | None = None,
 ) -> Dict[str, Any]:
     """Link an MT4 or MT5 account to the canonical platform account."""
     from services.broker_connections import upsert_connection
@@ -1372,21 +1933,17 @@ async def link_platform_metatrader_account(
         return {"success": False, "error": "Secure credential storage is unavailable"}
 
     provision = await _provision_metatrader_account(
-        {
-            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
-            "type": "cloud-g2",
-            "login": login_n,
-            "password": password_n,
-            "server": server_n,
-            "platform": platform_n,
-            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
-            "keywords": [str(broker_name).strip()] if broker_name else [],
-            "reliability": "high",
-            "metadata": {
-                "signalrank_user_id": int(user_id),
-                "source": "signalrank-platform",
-            },
-        }
+        _account_provisioning_payload(
+            user_id=int(user_id),
+            platform=platform_n,
+            server=server_n,
+            account_label=account_label,
+            broker_name=broker_name,
+            login=login_n,
+            password=password_n,
+            source="signalrank-platform",
+        ),
+        transaction_id=provisioning_transaction_id,
     )
     if not provision.get("success"):
         return provision
@@ -1408,7 +1965,7 @@ async def link_platform_metatrader_account(
                 env = "live"
             if bool(info.get("connected")):
                 status = "verified"
-                verified_at = datetime.now(timezone.utc)
+                verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     connection = await upsert_connection(
         user_id=int(user_id),
@@ -1428,6 +1985,7 @@ async def link_platform_metatrader_account(
         },
         server=server_n,
         status=status,
+        verified_at=verified_at,
         permissions={"read": True, "trade": True},
         capabilities={
             "market_data": True,
@@ -1445,6 +2003,15 @@ async def link_platform_metatrader_account(
         },
     )
 
+    reconciliation = None
+    if account_id and isinstance(info, dict):
+        reconciliation = await refresh_platform_metatrader_reconciliation(
+            int(user_id),
+            str(connection.get("connection_id") or ""),
+            account_id,
+            account_info=info,
+        )
+
     # Preserve only non-secret compatibility metadata. The password exists only
     # in the canonical context-bound broker credential envelope.
     if platform_n == "mt5":
@@ -1460,6 +2027,7 @@ async def link_platform_metatrader_account(
         "pending": bool(provision.get("pending")),
         "connection": connection,
         "account_info": info,
+        "reconciliation": reconciliation,
     }
 
 
@@ -1484,19 +2052,14 @@ async def create_platform_metatrader_secure_link(
         return {"success": False, "error": "broker server is required"}
 
     provision = await _provision_metatrader_account(
-        {
-            "name": str(account_label or f"SignalRankAI-{platform_n}-{int(user_id)}")[:128],
-            "type": "cloud-g2",
-            "server": server_n,
-            "platform": platform_n,
-            "magic": int(os.getenv("SIGNALRANK_METAAPI_MAGIC", "12345") or 12345),
-            "keywords": [str(broker_name).strip()] if broker_name else [],
-            "reliability": "high",
-            "metadata": {
-                "signalrank_user_id": int(user_id),
-                "source": "signalrank-secure-link",
-            },
-        }
+        _account_provisioning_payload(
+            user_id=int(user_id),
+            platform=platform_n,
+            server=server_n,
+            account_label=account_label,
+            broker_name=broker_name,
+            source="signalrank-secure-link",
+        )
     )
     if not provision.get("success"):
         return provision

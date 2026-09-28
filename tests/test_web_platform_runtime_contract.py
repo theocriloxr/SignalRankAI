@@ -274,3 +274,10 @@ def test_web_delivery_priority_matches_authoritative_telegram_receipts():
     assert "priority=DBPriority.INTERACTIVE" in telegram
     assert 'label="platform.web_signal_fanout.snapshot"' in fanout
     assert 'label="platform.web_signal_fanout.persist"' in fanout
+
+def test_web_health_probe_counts_rows_instead_of_returning_signal_id() -> None:
+    app = (ROOT / "web/app.py").read_text(encoding="utf-8")
+    assert "select(func.count()).select_from(Signal)" in app
+    assert "active_signals = int(result.scalar_one() or 0)" in app
+    assert "select(Signal.signal_id)" not in app[app.index("async def health()"):app.index('@app.get("/metrics"')]
+

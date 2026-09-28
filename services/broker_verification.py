@@ -164,7 +164,10 @@ async def verify_broker_connection_read_only(
     platform = str(row.platform or "").strip().lower()
 
     if connector == "metaapi" and platform in {"mt4", "mt5"}:
-        from services.mt5_client import verify_platform_metatrader_connection
+        from services.mt5_client import (
+            refresh_platform_metatrader_reconciliation,
+            verify_platform_metatrader_connection,
+        )
 
         result = await verify_platform_metatrader_connection(
             int(user_id),
@@ -179,6 +182,21 @@ async def verify_broker_connection_read_only(
             "platform": account_info.get("platform"),
             "account_number_masked": _masked(account_info.get("account_number")),
         }
+        reconciliation = {
+            "status": "RECONCILING",
+            "ready": False,
+            "positions_count": None,
+            "checked_at": None,
+        }
+        if bool(result.get("success")):
+            account_id = str(public.get("external_account_id") or "").strip()
+            if account_id:
+                reconciliation = await refresh_platform_metatrader_reconciliation(
+                    int(user_id),
+                    str(connection_id),
+                    account_id,
+                    account_info=account_info,
+                )
         return {
             "success": bool(result.get("success")),
             "provider": "metaapi",
@@ -188,6 +206,7 @@ async def verify_broker_connection_read_only(
             ).upper(),
             "connection_id": str(connection_id),
             "account_info": safe_info,
+            "reconciliation": reconciliation,
             "error": result.get("error"),
         }
 

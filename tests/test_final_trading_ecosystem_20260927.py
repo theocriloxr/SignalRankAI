@@ -35,7 +35,7 @@ def test_broker_catalogue_is_explicit_about_execution_readiness():
     assert rows["okx"]["execution_adapter"] == "connection_only"
     assert rows["coinbase"]["execution_adapter"] == "connection_only"
     assert rows["kraken"]["execution_adapter"] == "connection_only"
-    assert rows["mt5"]["connection_limit"] == 1
+    assert rows["mt5"]["connection_limit"] >= 3
 
 
 def test_first_party_platform_has_canonical_exchange_link_and_delivery_proof_gate():
@@ -78,7 +78,10 @@ def test_new_account_defaults_match_conservative_policy():
 
 def test_adaptive_candle_store_uses_short_transaction_default():
     source=(ROOT/"engine"/"adaptive"/"candle_store.py").read_text(encoding="utf-8")
-    assert 'os.getenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "50")' in source
+    assert 'def _is_decomposed_engine()' in source
+    assert '"10" if _is_decomposed_engine() else "50"' in source
+    assert 'default="60" if _is_decomposed_engine() else "200"' in source
+    assert 'default = "1" if _is_decomposed_engine() else "2"' in source
     assert "for offset in range(0, len(records), chunk_size):" in source
     loop=source.index("for offset in range(0, len(records), chunk_size):")
     commit=source.index("await session.commit()", loop)
@@ -87,3 +90,58 @@ def test_adaptive_candle_store_uses_short_transaction_default():
     # the entire initial history backfill in a single transaction.
     session=source.index("async with get_session(", loop)
     assert loop < session < commit
+
+
+def test_provider_routers_require_user_delivery_evidence_before_execution():
+    bybit=(ROOT/"services"/"bybit_signal_router.py").read_text(encoding="utf-8")
+    mt5=(ROOT/"services"/"mt5_signal_router.py").read_text(encoding="utf-8")
+
+    # Bybit must bind the signal to the canonical user delivery row and require
+    # successful delivery before the canonical ExecutionGate can approve it.
+    assert "SignalDelivery.user_id == int(user.id)" in bybit
+    assert "SignalDelivery.signal_id == signal_id" in bybit
+    assert "SignalDelivery.sent_ok.is_(True)" in bybit
+    assert "evidence_allowed=delivery is not None" in bybit
+
+    # MT4/MT5 share the explicit cross-channel evidence resolver and fail
+    # closed when the delivery/access proof cannot be established.
+    assert "async def _has_execution_evidence(" in mt5
+    assert 'evidence.get("delivery_proven")' in mt5
+    assert 'evidence.get("access_proven")' in mt5
+    assert "evidence_allowed=bool(evidence)" in mt5
+
+
+def test_pwa_cache_and_execution_contract_copy_are_current():
+    sw=(ROOT/"web"/"platform_app"/"service-worker.js").read_text(encoding="utf-8")
+    html=(ROOT/"web"/"platform_app"/"index.html").read_text(encoding="utf-8")
+    assert "signalrank-shell-v26" in sw
+    assert "Only signals delivered to your account can execute" in html
+
+
+def test_broker_hub_exposes_account_readiness_without_bypassing_trade_gates():
+    api=(ROOT/"web"/"platform_api.py").read_text(encoding="utf-8")
+    js=(ROOT/"web"/"platform_app"/"app.js").read_text(encoding="utf-8")
+    assert "provider_execution_adapter_not_certified" in api
+    assert "broker_verification_required" in api
+    assert "account_policy_required" in api
+    assert "prop_policy_certification_required" in api
+    assert "reconciliation_required" in api
+    assert "execution_terms_required" in api
+    assert "explicit_execution_enable_required" in api
+    assert "delivered_signal_evidence" in api
+    assert "fresh_broker_quote" in api
+    assert "kill_switch" in api
+    assert "Account-level execution prerequisites ready" in js
+    assert "every trade still passes live safety gates" in js
+
+
+def test_orm_account_policy_defaults_match_conservative_policy():
+    model=(ROOT/"db"/"models.py").read_text(encoding="utf-8")
+    block=model[
+        model.index("class TradingAccountPolicyRecord"):
+        model.index("class BrokerReconciliationState")
+    ]
+    assert "default=0.005" in block
+    assert "default=0.02" in block
+    assert "default=0.04" in block
+    assert "default=0.06" in block

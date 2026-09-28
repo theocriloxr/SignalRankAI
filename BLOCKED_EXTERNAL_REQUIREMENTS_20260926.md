@@ -8,6 +8,28 @@ changes alone. Source-code, deterministic tests, staging schema migration,
 credential-retirement proof, and decomposed role admission are already covered
 by the current release evidence.
 
+## 2026-09-27 executable preflight refresh
+
+Staging deployment `3a95addd-510d-47d2-acd8-f2257f529ea4` executed
+`scripts/external_blocker_preflight.py` against the current external activation
+contract. No credential values were printed and every check reported
+`activation_performed=false`.
+
+- FMP: BLOCKED on entitlement, live-market-data certification and
+  redistribution-rights evidence.
+- Alpha Vantage: BLOCKED on entitlement, request-budget, live-market-data
+  certification and redistribution-rights evidence.
+- OANDA: BLOCKED on missing provider secret, missing `OANDA_ACCOUNT_ID`, and
+  missing intended-environment / market-data / regional certification.
+- FRED: BLOCKED on missing provider secret and missing attribution, live-macro
+  and point-in-time/vintage certification.
+- 100k / 20k-concurrent scale claim: BLOCKED; no valid `large_scale` PASS,
+  claim permission or required concurrency evidence exists.
+- Public copy marketplace: BLOCKED; external publisher/trust/legal/commercial
+  evidence and runtime copy-safety certification remain incomplete.
+
+See `docs/evidence/EXTERNAL_BLOCKER_PREFLIGHT_20260927.md`.
+
 ## 1. Optional provider and venue certification
 
 The **enabled staging market-data provider set is now integration-verified**.
@@ -58,18 +80,52 @@ integration-verified enabled provider set under `SR-PROVIDER-007`.
 
 ## 2. Broker demo/canary/live-money certification
 
+2026-09-27 current read-only staging preflight evidence: deployment
+`9757cac0-7f68-466a-a9a0-8e458f1390cd` on marker
+`3656eabaf56a7468a49667e078289d4bf00028af` ran against Alembic
+`0045_mt5_credential_retirement` after secure Broker Hub frontdoor deployment
+`68219e01-9b4a-48a8-8abb-9e4372f634f9` at `c4d1e6d6ec5e...`. The frontdoor
+keeps broker secrets out of Telegram chat, hands authenticated users to Broker
+Hub, and retains the provider-proven **Prepare DEMO certification** action that
+re-verifies read-only broker state, requires HEALTHY reconciliation, applies a
+bounded `DEMO/MANUAL` policy and keeps execution disabled. The refreshed
+preflight still found **zero canonical broker connections** and therefore
+correctly returned BLOCKED with `demo_account_not_connected`,
+`demo_account_not_read_only_verified`,
+`demo_account_credentials_not_ready`, `demo_reconciliation_not_healthy`
+and `demo_execution_permission_not_configured`. It performed no activation,
+placed zero orders and returned no secrets. Environment-level broker credential
+variables are not treated as account ownership and are not silently adopted
+into a user's canonical broker connection.
+
+See `docs/evidence/STAGING_DEMO_ACCOUNT_PREFLIGHT_20260927.md`.
+
+The latest frontdoor-only safety rollout, deployment
+`68219e01-9b4a-48a8-8abb-9e4372f634f9` at
+`c4d1e6d6ec5e...`, adds the secure Broker Hub handoff and preserves the same
+fail-closed verification/preparation boundary. Telegram does not collect broker
+passwords; users are directed through the authenticated Broker Hub and
+`/verifybroker`, and DEMO accounts must still pass **Prepare DEMO
+certification** before any execution enablement. The rollout passed 469
+clean-room targeted tests, 356 frontdoor image-build tests plus all 12
+readiness checks, Alembic 0045/schema admission, frontdoor-only ownership,
+healthy webhook startup and /healthz=200. It did not create a broker connection,
+enable execution, place an order or change the external demo-account blocker.
+
 Before owner-authorized live execution:
 
 1. connect one explicitly identified DEMO account;
-2. prove account policy, broker identity, quote freshness and reconciliation;
-3. execute bounded demo orders through the canonical router;
-4. prove broker acknowledgement, canonical execution lifecycle, account ledger,
+2. run the canonical safe DEMO-preparation action, then separately accept terms
+   and explicitly enable only that DEMO account;
+3. prove account policy, broker identity, quote freshness and reconciliation;
+4. execute bounded demo orders through the canonical router;
+5. prove broker acknowledgement, canonical execution lifecycle, account ledger,
    realized P/L/fees, restart reconciliation and idempotency;
-5. complete a documented demo certification report;
-6. use a tightly capped canary account before any wider live rollout;
-7. for PROP/funded accounts, independently validate the exact firm/product rule
+6. complete a documented demo certification report;
+7. use a tightly capped canary account before any wider live rollout;
+8. for PROP/funded accounts, independently validate the exact firm/product rule
    set and certify the immutable policy version;
-8. keep LLMs advisory: no model may bypass deterministic risk limits.
+9. keep LLMs advisory: no model may bypass deterministic risk limits.
 
 Current staging certification does not activate real execution.
 
@@ -204,12 +260,13 @@ claim.
 
 ## Current safe boundary
 
-As of 2026-09-26:
+As of 2026-09-27:
 
 - staging database is certified at Alembic `0045_mt5_credential_retirement`;
 - staging frontdoor, engine, delivery and analytics roles pass release/schema
   admission on the decomposed topology;
 - broker legacy-secret inventory is clean in certified staging;
+- canonical demo broker connections currently present in staging: **0**; demo certification remains blocked until an explicitly owned demo account is linked through the canonical flow;
 - real execution, copy execution, live broker-account execution, mainnet
   Hyperliquid, real payouts and Paystack transfers remain disabled;
 - production remains a separate controlled rollout and was not promoted merely

@@ -672,13 +672,13 @@ class TradingAccountPolicyRecord(Base):
         Numeric(12, 8), default=0.005, nullable=False
     )
     max_daily_loss_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.04, nullable=False
+        Numeric(12, 8), default=0.02, nullable=False
     )
     max_weekly_loss_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.08, nullable=False
+        Numeric(12, 8), default=0.04, nullable=False
     )
     max_total_drawdown_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.08, nullable=False
+        Numeric(12, 8), default=0.06, nullable=False
     )
     max_open_positions: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_leverage: Mapped[Any] = mapped_column(Numeric(18, 8), default=1, nullable=False)

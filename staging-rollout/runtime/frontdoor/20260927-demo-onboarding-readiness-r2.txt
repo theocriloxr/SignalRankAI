@@ -1,0 +1,4 @@
+SignalRank staging frontdoor demo-onboarding readiness rollout.
+Includes provider-backed verification timestamps and read-only MetaTrader reconciliation refresh.
+Execution remains disabled; this rollout only improves proof/readiness before external demo certification.
+No secrets are stored in this marker.

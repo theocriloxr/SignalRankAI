@@ -36,6 +36,9 @@ _TESTS = [
     "tests/test_auth_fail_closed_boundaries.py",
     "tests/test_blueprint_certification_safety.py",
     "tests/test_quiescent_role_certification.py",
+    "tests/test_demo_account_preflight.py",
+    "tests/test_staging_backup_restore_drill.py",
+    "tests/test_resend_terminal_queue_expiry.py",
     "tests/test_provider_live_contract_repairs.py",
     "tests/test_provider_catalog_and_certification.py",
     "tests/test_provider_registry_fail_closed.py",
@@ -55,6 +58,8 @@ _TESTS = [
     "tests/test_v131_live_financial_activation.py",
     "tests/test_v130_production_cutover_outcome_recovery.py",
     "tests/test_mt5_reconciliation_ledger.py",
+    "tests/test_telegram_broker_linking_security.py",
+    "tests/test_mt5_linking_copy_safety.py",
     "tests/test_web_first_signup_contract.py",
     "tests/test_release_provenance.py",
     "tests/test_traceability_completion_boundary.py",
@@ -62,6 +67,8 @@ _TESTS = [
     "tests/test_external_blocker_preflight.py",
     "tests/test_load_certification.py",
     "tests/test_copy_trade_safety_foundation.py",
+    "tests/test_final_trading_ecosystem_20260927.py",
+    "tests/test_mt5_multiaccount_telegram_ux_20260927.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [

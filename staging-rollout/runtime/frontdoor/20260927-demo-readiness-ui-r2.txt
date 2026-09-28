@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout retry: demo certification readiness UI.
+Parent head passed clean-room with 455 targeted tests including final ecosystem and MT5 UX contracts.
+Purpose: deploy the read-only demo readiness panel after PWA cache contract alignment.
+No execution flag is enabled and no order path is changed.
+Engine, delivery and analytics must skip this marker.

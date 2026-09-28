@@ -1,0 +1,7 @@
+SignalRank staging frontdoor-only rollout: secure broker-link handoff.
+Telegram /mt5_link and /connect_broker no longer accept broker passwords.
+Both commands issue a one-time first-party app activation link into Broker Hub.
+Read-only /verifybroker and Prepare DEMO certification remain the post-link safety path.
+Linking does not grant execution permission; all live-money switches remain disabled.
+Alembic head remains 0045_mt5_credential_retirement.
+No secrets are stored in this marker.

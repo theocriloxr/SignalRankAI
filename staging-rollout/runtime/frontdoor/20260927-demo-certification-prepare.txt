@@ -1,0 +1,4 @@
+SignalRank staging frontdoor rollout trigger for explicit DEMO certification preparation.
+Purpose: deploy provider-proven read-only verification + conservative MANUAL DEMO policy preparation.
+This rollout does not enable broker execution, place orders, activate live money, or modify production.
+No secrets are stored in this marker.

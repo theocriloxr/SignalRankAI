@@ -1,0 +1,4 @@
+SignalRank staging DEMO account preflight refresh after secure Broker Hub handoff.
+Read-only check only: canonical broker connection ownership, verification, policy, reconciliation and prior execution evidence.
+Must not activate execution, place orders, return secrets or mutate production.
+No credentials or secrets are stored in this marker.

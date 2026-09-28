@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import quote, urlparse
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -136,6 +137,10 @@ class PushDeviceRequest(BaseModel):
 class CheckoutCreateRequest(BaseModel):
     product_id: str = Field(min_length=3, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]+$")
     currency: str = Field(default="NGN", pattern=r"^NGN$")
+
+
+class BillingConfirmRequest(BaseModel):
+    reference: str = Field(min_length=3, max_length=160, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
 class SubscriptionCancelRequest(BaseModel):
@@ -342,6 +347,7 @@ class MetaTraderBrokerLinkRequest(BaseModel):
     broker_name: str | None = Field(default=None, max_length=128)
     account_label: str | None = Field(default=None, max_length=128)
     environment: str = Field(default="unknown", pattern=r"^(unknown|demo|live)$")
+    provisioning_transaction_id: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 class MetaTraderSecureLinkRequest(BaseModel):
@@ -402,6 +408,10 @@ class AccountFreezeRequest(BaseModel):
     frozen: bool
     confirm: bool
     reason: str | None = Field(default=None, max_length=256)
+
+
+class DemoCertificationPrepareRequest(BaseModel):
+    confirm: bool
 
 
 class PropPolicyCertificationRequest(BaseModel):
@@ -836,6 +846,126 @@ async def capabilities() -> dict[str, Any]:
         "planned_login_methods": ["google", "apple", "passkey", "institutional_sso"],
         "clients": ["telegram", "web", "pwa", "android", "ios", "api"],
         "live_execution_enabled": False,
+    }
+
+
+@router.get("/command-catalog")
+async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Expose the canonical Telegram capability catalogue with web destinations.
+
+    The catalogue is filtered by the same tier/owner authority used by Telegram,
+    so the website can present one complete cross-channel capability map without
+    inventing a second entitlement model.
+    """
+    from signalrank_telegram.command_catalog import visible_commands
+
+    authority = _platform_operator_authority(user)
+    effective_tier = authority or str(user.get("tier") or "FREE").upper()
+    section_views = {
+        "Getting started": "overview",
+        "Account": "account",
+        "Signals": "signals",
+        "Market": "markets",
+        "Preferences": "account",
+        "Paper trading": "paper",
+        "Referrals": "account",
+        "Support": "support",
+        "Analytics": "performance",
+        "Broker": "account",
+        "VIP analytics": "performance",
+        "VIP controls": "account",
+        "VIP signals": "signals",
+        "Admin": "ops",
+        "Adaptive": "ops",
+        "Owner": "ops",
+        "Admin diagnostics": "ops",
+        "Owner diagnostics": "ops",
+    }
+    command_views = {
+        "liveprice": "tools",
+        "analyze": "tools",
+        "alerts": "tools",
+        "notify": "tools",
+        "dashboard": "overview",
+        "portfolio": "portfolio",
+        "mission": "overview",
+        "history": "signals",
+        "proof": "evidence",
+        "performance": "performance",
+        "stats": "performance",
+        "report": "performance",
+        "simulate": "performance",
+        "connect_broker": "account",
+        "mt5_link": "account",
+        "mt5_status": "account",
+        "verifybroker": "account",
+        "execution": "account",
+        "setlot": "account",
+        "setrisk": "account",
+        "mystats": "account",
+        "pricing": "account",
+        "upgrade": "account",
+        "tiers": "account",
+        "devices": "account",
+        "security": "account",
+        "settings": "account",
+        "profile": "account",
+        "risk": "account",
+        "filter": "account",
+        "language": "account",
+        "timezone": "account",
+        "feedback": "support",
+        "faq": "support",
+        "disclaimer": "support",
+        "myid": "account",
+        "invite": "account",
+        "referral": "account",
+        "referral_rewards": "account",
+        "referral_leaderboard": "account",
+        "cancel": "account",
+    }
+    items = []
+    for spec in visible_commands(effective_tier):
+        view = command_views.get(spec.name) or section_views.get(spec.section) or "tools"
+        items.append({
+            "name": spec.name,
+            "description": spec.description,
+            "minimum_tier": spec.tier,
+            "section": spec.section,
+            "web_view": view,
+            "operator_only": view == "ops",
+        })
+    return {
+        "effective_tier": effective_tier,
+        "authority": authority,
+        "count": len(items),
+        "commands": items,
+        "sections": sorted({item["section"] for item in items}),
+        "parity_model": "shared_services_same_entitlements",
+    }
+
+
+@router.get("/operator/overview")
+async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from services.openai_ai import provider_status as openai_provider_status
+
+    return {
+        "authority": authority,
+        "release": {
+            "branch": str(os.getenv("RAILWAY_GIT_BRANCH") or os.getenv("GIT_BRANCH") or ""),
+            "commit": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT") or ""),
+            "environment": str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("SIGNALRANK_ENV_PROFILE") or ""),
+        },
+        "ai": dict(openai_provider_status() or {}),
+        "execution": {
+            "live_financial_features_enabled": _env_bool("LIVE_FINANCIAL_FEATURES_ENABLED", False),
+            "real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False),
+            "auto_execution_enabled": _env_bool("AUTO_EXECUTION_ENABLED", False),
+            "kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True),
+        },
     }
 
 
@@ -2099,6 +2229,19 @@ async def create_telegram_link(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     """Create a one-time Telegram deep-link for an authenticated app user."""
+    if user.get("telegram_user_id") is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "telegram_already_linked", "message": "Telegram is already linked to this SignalRank account."},
+        )
+    if str(user.get("telegram_link_status") or "").strip().lower() == "merge_review":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "telegram_verified_merge_pending",
+                "message": "Telegram ownership is already verified. Account history reconciliation is pending; do not reconnect.",
+            },
+        )
     async with get_session() as session:
         request = await create_telegram_link_request(session, user_id=int(user["id"]))
         await session.commit()
@@ -3409,6 +3552,31 @@ async def link_broker_exchange(
     }
 
 
+@router.get("/broker/metatrader/servers")
+async def search_broker_metatrader_servers(
+    platform: str = Query(default="mt5", pattern=r"^(mt4|mt5)$"),
+    q: str = Query(min_length=2, max_length=128),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Search MetaApi's known-server registry before credentials are submitted."""
+    _assert_feature(user, "broker_connection")
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
+        raise HTTPException(status_code=503, detail="MetaTrader connection service is not configured")
+    from services.mt5_client import search_known_metatrader_servers
+
+    result = await search_known_metatrader_servers(platform, q)
+    if not result.get("success"):
+        code = str(result.get("code") or "server_search_failed")
+        raise HTTPException(
+            status_code=503 if code in {"provider_unavailable", "provider_not_configured", "provider_authorization_failed", "provider_permissions_missing"} else 502,
+            detail={
+                "code": code,
+                "message": str(result.get("error") or "MetaTrader server search failed"),
+            },
+        )
+    return result
+
+
 @router.post("/broker/metatrader")
 async def link_broker_metatrader(
     payload: MetaTraderBrokerLinkRequest,
@@ -3420,7 +3588,7 @@ async def link_broker_metatrader(
             status_code=503,
             detail="Secure broker credential storage is unavailable",
         )
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MetaTrader connection service is not configured",
@@ -3432,6 +3600,8 @@ async def link_broker_metatrader(
         await assert_connection_capacity(
             int(user["id"]),
             str(user.get("tier") or "free"),
+            platform=payload.platform,
+            account_ref=payload.login,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -3445,12 +3615,22 @@ async def link_broker_metatrader(
         broker_name=payload.broker_name,
         account_label=payload.account_label,
         environment=payload.environment,
+        provisioning_transaction_id=payload.provisioning_transaction_id,
     )
     if not result.get("success"):
-        raise HTTPException(
-            status_code=502,
-            detail=str(result.get("error") or "MetaTrader account linking failed"),
-        )
+        detail = {
+            "code": str(result.get("code") or "metatrader_provisioning_failed"),
+            "message": str(result.get("error") or "MetaTrader account linking failed"),
+            "provider_code": result.get("provider_code"),
+            "provider_status": result.get("provider_status"),
+            "suggested_servers": list(result.get("suggested_servers") or []),
+            "recommended_resource_slots": result.get("recommended_resource_slots"),
+            "retry_after": result.get("retry_after"),
+            "can_use_secure_link": bool(result.get("can_use_secure_link")),
+            "transaction_id": result.get("transaction_id"),
+        }
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        raise HTTPException(status_code=status_code, detail=detail)
     return result
 
 
@@ -3460,7 +3640,7 @@ async def create_broker_metatrader_secure_link(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     _assert_feature(user, "broker_connection")
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MetaTrader connection service is not configured",
@@ -3486,11 +3666,54 @@ async def create_broker_metatrader_secure_link(
         ttl_days=payload.ttl_days,
     )
     if not result.get("success"):
-        raise HTTPException(
-            status_code=502,
-            detail=str(result.get("error") or "Secure MetaTrader linking failed"),
-        )
+        detail = {
+            "code": str(result.get("code") or "metatrader_secure_link_failed"),
+            "message": str(result.get("error") or "Secure MetaTrader linking failed"),
+            "provider_code": result.get("provider_code"),
+            "provider_status": result.get("provider_status"),
+            "suggested_servers": list(result.get("suggested_servers") or []),
+            "recommended_resource_slots": result.get("recommended_resource_slots"),
+            "retry_after": result.get("retry_after"),
+            "can_use_secure_link": bool(result.get("can_use_secure_link")),
+            "transaction_id": result.get("transaction_id"),
+        }
+        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        raise HTTPException(status_code=status_code, detail=detail)
     return result
+
+
+@router.post("/broker/connections/{connection_id}/demo-certification/prepare")
+async def prepare_broker_demo_certification(
+    connection_id: str,
+    payload: DemoCertificationPrepareRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Prepare one provider-proven DEMO account without enabling execution."""
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.demo_certification import prepare_demo_certification
+
+    try:
+        result = await prepare_demo_certification(
+            int(user["id"]),
+            connection_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        **result,
+        "explicit_enable_still_required": True,
+        "live_activation_changed": False,
+    }
 
 
 @router.get("/broker/connections/{connection_id}/policy")
@@ -3858,8 +4081,9 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
     _assert_feature(user, "broker_connection")
     uid = int(user["id"])
     from services.broker_connections import list_connections, platform_catalog
-    from services.mt5_client import get_platform_mt5_link_status
+    from services.mt5_client import get_platform_mt5_link_status, probe_metaapi_authorization
 
+    metaapi_health = await probe_metaapi_authorization()
     mt5 = await get_platform_mt5_link_status(uid)
     connections = await list_connections(uid)
     platforms = platform_catalog(str(user.get("tier") or "free"))
@@ -3891,6 +4115,33 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                 {"uid": uid},
             )
         ).mappings().first()
+        readiness_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT c.connection_id,
+                           p.policy_id,
+                           p.policy_version,
+                           p.account_mode,
+                           p.execution_permission,
+                           p.status AS policy_status,
+                           p.certified_at,
+                           p.prop_rules_version,
+                           p.frozen_at AS policy_frozen_at,
+                           r.status AS reconciliation_status,
+                           r.discrepancy_code,
+                           r.frozen_at AS reconciliation_frozen_at
+                    FROM broker_connections c
+                    LEFT JOIN trading_account_policies p
+                      ON p.connection_id=c.connection_id AND p.user_id=c.user_id
+                    LEFT JOIN broker_reconciliation_state r
+                      ON r.connection_id=c.connection_id AND r.user_id=c.user_id
+                    WHERE c.user_id=:uid
+                    """
+                ),
+                {"uid": uid},
+            )
+        ).mappings().all()
         provider_stats = (
             await session.execute(
                 text(
@@ -3980,10 +4231,285 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             }
         )
 
+    readiness_by_id = {
+        str(row.get("connection_id")): dict(row)
+        for row in readiness_rows
+        if row.get("connection_id")
+    }
+    platform_by_name = {
+        str(row.get("platform") or "").strip().lower(): row
+        for row in platforms
+    }
+    accepted_terms = bool(account_payload.get("accepted_terms"))
+    preflight_entitled = evaluate_feature_access(
+        str(user.get("tier") or "free"),
+        "execution_preflight",
+    ).allowed
+    enriched_connections: list[dict[str, Any]] = []
+    for raw_connection in connections:
+        connection = dict(raw_connection)
+        snapshot = readiness_by_id.get(str(connection.get("connection_id") or "")) or {}
+        blockers: list[dict[str, str]] = []
+
+        def block(code: str, message: str) -> None:
+            blockers.append({"code": code, "message": message})
+
+        platform_name = str(connection.get("platform") or "").strip().lower()
+        adapter = str(
+            (platform_by_name.get(platform_name) or {}).get("execution_adapter")
+            or "custom"
+        )
+        if adapter != "ready":
+            block(
+                "provider_execution_adapter_not_certified",
+                "This provider can be connected, but its order-placement adapter is not certified yet.",
+            )
+        if str(connection.get("status") or "").strip().lower() not in {"linked", "ready", "verified"}:
+            block("broker_verification_required", "Verify the broker connection before execution.")
+        permissions = dict(connection.get("permissions") or {})
+        if permissions.get("trade") is not True:
+            block("trade_permission_required", "The broker key/account must allow trading.")
+        if permissions.get("withdraw", False) is not False or permissions.get("internal_transfer", False) is not False:
+            block(
+                "unsafe_broker_permissions",
+                "Withdrawal and internal-transfer permissions must be disabled.",
+            )
+        if not snapshot.get("policy_id"):
+            block("account_policy_required", "Configure this account's risk/execution policy.")
+        else:
+            if snapshot.get("policy_frozen_at") is not None:
+                block("account_policy_frozen", "The account has an active safety freeze.")
+            permission = str(snapshot.get("execution_permission") or "").strip().upper()
+            if permission not in {"MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION"}:
+                block(
+                    "execution_permission_blocked",
+                    "Choose a broker execution permission in the account policy.",
+                )
+            account_mode = str(snapshot.get("account_mode") or "").strip().upper()
+            if account_mode == "PROP" and (
+                snapshot.get("certified_at") is None
+                or not str(snapshot.get("prop_rules_version") or "").strip()
+            ):
+                block(
+                    "prop_policy_certification_required",
+                    "This exact prop-firm ruleset must be owner/admin certified before execution.",
+                )
+        reconciliation_status = str(
+            snapshot.get("reconciliation_status") or "UNKNOWN"
+        ).strip().upper()
+        if reconciliation_status != "HEALTHY" or snapshot.get("reconciliation_frozen_at") is not None:
+            block(
+                "reconciliation_required",
+                "Broker reconciliation must be healthy before a trade can execute.",
+            )
+        if not accepted_terms:
+            block("execution_terms_required", "Accept the broker execution-risk terms.")
+        if not bool(connection.get("execution_enabled")):
+            block(
+                "explicit_execution_enable_required",
+                "Execution is still disabled for this account; enable it explicitly after verification.",
+            )
+
+        connection["readiness"] = {
+            "execution_ready": len(blockers) == 0,
+            "auto_execution_tier_entitled": bool(preflight_entitled),
+            "provider_execution_adapter": adapter,
+            "policy_version": snapshot.get("policy_version"),
+            "reconciliation_status": reconciliation_status,
+            "blockers": blockers,
+            "per_trade_gates": [
+                "delivered_signal_evidence",
+                "fresh_broker_quote",
+                "market_open",
+                "signal_and_account_risk",
+                "position_and_daily_limits",
+                "kill_switch",
+                "idempotency_and_reconciliation",
+            ],
+        }
+        enriched_connections.append(connection)
+
+    demo_accounts: list[dict[str, Any]] = []
+    for connection in enriched_connections:
+        connection_id = str(connection.get("connection_id") or "")
+        snapshot = readiness_by_id.get(connection_id) or {}
+        account_mode = str(
+            snapshot.get("account_mode")
+            or connection.get("account_classification")
+            or ""
+        ).strip().upper()
+        if account_mode != "DEMO":
+            continue
+
+        status = str(connection.get("status") or "").strip().lower()
+        permission = str(snapshot.get("execution_permission") or "").strip().upper()
+        reconciliation_status = str(
+            snapshot.get("reconciliation_status") or "UNKNOWN"
+        ).strip().upper()
+        credential_format = str(connection.get("credential_format") or "").strip().lower()
+        provider_adapter = str(
+            (connection.get("readiness") or {}).get("provider_execution_adapter")
+            or "custom"
+        ).strip().lower()
+
+        checklist = {
+            "connected_as_demo": True,
+            "read_only_verified": (
+                status in {"verified", "ready", "linked"}
+                and connection.get("verified_at") is not None
+            ),
+            "canonical_credentials_ready": credential_format in {
+                "envelope_v1",
+                "provider_managed",
+            },
+            "demo_policy_configured": bool(snapshot.get("policy_id")),
+            "explicit_execution_permission": permission in {
+                "MANUAL",
+                "ASSISTED_EXECUTION",
+                "AUTO_EXECUTION",
+            },
+            "reconciliation_healthy": (
+                reconciliation_status == "HEALTHY"
+                and snapshot.get("reconciliation_frozen_at") is None
+            ),
+            "policy_unfrozen": snapshot.get("policy_frozen_at") is None,
+            "execution_disabled_for_preflight": not bool(
+                connection.get("execution_enabled")
+            ),
+            "execution_terms_accepted": accepted_terms,
+            "provider_execution_adapter_ready": provider_adapter == "ready",
+        }
+
+        preflight_blockers: list[dict[str, str]] = []
+
+        def demo_block(code: str, message: str) -> None:
+            preflight_blockers.append({"code": code, "message": message})
+
+        if not checklist["read_only_verified"]:
+            demo_block(
+                "demo_account_not_read_only_verified",
+                "Verify this demo account with the broker before certification.",
+            )
+        if not checklist["canonical_credentials_ready"]:
+            demo_block(
+                "demo_account_credentials_not_ready",
+                "Store broker credentials through the canonical secure connection flow.",
+            )
+        if not checklist["demo_policy_configured"]:
+            demo_block(
+                "demo_policy_not_configured",
+                "Configure this account's policy and keep account mode set to DEMO.",
+            )
+        if not checklist["explicit_execution_permission"]:
+            demo_block(
+                "demo_execution_permission_not_configured",
+                "Choose MANUAL, ASSISTED_EXECUTION or AUTO_EXECUTION in the account policy.",
+            )
+        if not checklist["reconciliation_healthy"]:
+            demo_block(
+                "demo_reconciliation_not_healthy",
+                "Broker reconciliation must be HEALTHY before the bounded demo test.",
+            )
+        if not checklist["policy_unfrozen"]:
+            demo_block(
+                "demo_policy_frozen",
+                "Clear the account safety freeze before certification.",
+            )
+        if not checklist["execution_disabled_for_preflight"]:
+            demo_block(
+                "demo_execution_already_enabled_review_required",
+                "Disable execution until the bounded demo-certification window is opened.",
+            )
+
+        lifecycle_blockers = list(preflight_blockers)
+        if not checklist["execution_terms_accepted"]:
+            lifecycle_blockers.append(
+                {
+                    "code": "execution_terms_required",
+                    "message": "Accept the broker execution-risk terms before the bounded demo lifecycle.",
+                }
+            )
+        if not checklist["provider_execution_adapter_ready"]:
+            lifecycle_blockers.append(
+                {
+                    "code": "provider_execution_adapter_not_certified",
+                    "message": "This provider's order adapter must be certified before the bounded demo lifecycle.",
+                }
+            )
+
+        preflight_ready = not preflight_blockers
+        lifecycle_ready = not lifecycle_blockers
+        demo_accounts.append(
+            {
+                "connection_id": connection_id,
+                "account_label": connection.get("account_label"),
+                "provider": str(connection.get("platform") or connection.get("connector") or "broker"),
+                "status": str(connection.get("status") or "unknown"),
+                "policy_version": snapshot.get("policy_version"),
+                "reconciliation_status": reconciliation_status,
+                "checklist": checklist,
+                "preflight_ready": preflight_ready,
+                "bounded_lifecycle_ready": lifecycle_ready,
+                "blockers": lifecycle_blockers,
+                "next_action": (
+                    "Ready for operator-controlled bounded demo certification. Keep execution disabled until the certification window starts."
+                    if preflight_ready
+                    else str(preflight_blockers[0]["message"])
+                ),
+            }
+        )
+
+    demo_summary_blockers = (
+        []
+        if demo_accounts
+        else [
+            {
+                "code": "demo_account_not_connected",
+                "message": "Connect an explicitly owned broker demo account to begin certification.",
+            }
+        ]
+    )
+    if demo_accounts and not any(row["preflight_ready"] for row in demo_accounts):
+        demo_summary_blockers = [
+            {
+                "code": str(row["blockers"][0]["code"]),
+                "message": str(row["blockers"][0]["message"]),
+            }
+            for row in demo_accounts
+            if row["blockers"]
+        ][:1]
+
     return {
         "mt5": mt5,
-        "connections": connections,
+        "connections": enriched_connections,
         "platforms": platforms,
+        "provider_health": {
+            "metaapi": metaapi_health,
+        },
+        "demo_certification": {
+            "status": (
+                "PREFLIGHT_READY"
+                if any(row["preflight_ready"] for row in demo_accounts)
+                else "ACTION_REQUIRED"
+            ),
+            "connected_demo_accounts": len(demo_accounts),
+            "preflight_ready_accounts": sum(
+                1 for row in demo_accounts if row["preflight_ready"]
+            ),
+            "bounded_lifecycle_ready_accounts": sum(
+                1 for row in demo_accounts if row["bounded_lifecycle_ready"]
+            ),
+            "accounts": demo_accounts,
+            "blockers": demo_summary_blockers,
+            "activation_performed": False,
+            "orders_placed_by_readiness_check": 0,
+            "bounded_demo_lifecycle_required": True,
+            "certification_report_required_for_live_activation": True,
+            "note": (
+                "This readiness summary is read-only. It never enables execution "
+                "or places an order."
+            ),
+        },
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
             "trading_mode": str(prefs.trading_mode or "paper"),
@@ -4010,10 +4536,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             "live_execution_requested": bool(
                 str(prefs.trading_mode or "paper").lower() in {"live", "both"}
             ),
-            "execution_preflight_entitled": evaluate_feature_access(
-                str(user.get("tier") or "free"),
-                "execution_preflight",
-            ).allowed,
+            "execution_preflight_entitled": bool(preflight_entitled),
             "global_activation_still_required": True,
         },
     }
@@ -4031,7 +4554,7 @@ async def link_broker_mt5(
             status_code=503,
             detail="Secure broker credential storage is unavailable",
         )
-    if not str(os.getenv("META_API_TOKEN") or "").strip():
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
         raise HTTPException(
             status_code=503,
             detail="MT5/MetaApi connection is not configured",
@@ -4385,6 +4908,75 @@ async def create_billing_checkout(
         logger.warning("[billing_checkout] user=%s product=%s blocked=%s", uid, payload.product_id, exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return checkout
+
+
+@router.post("/billing/confirm")
+async def confirm_billing_checkout(
+    payload: BillingConfirmRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Verify a Paystack return against the provider and reconcile entitlements.
+
+    The browser never supplies an amount, tier, duration or user identity.
+    Those values are accepted only from the provider transaction metadata and
+    must point back to the authenticated canonical SignalRank user.
+    """
+    secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Payment confirmation is not configured")
+    reference = str(payload.reference or "").strip()
+    base_url = str(os.getenv("PAYSTACK_BASE_URL") or "https://api.paystack.co").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{base_url}/transaction/verify/{quote(reference, safe='')}",
+                headers={"Authorization": f"Bearer {secret}", "Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("[billing_confirm] provider request failed type=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Payment provider verification is temporarily unavailable") from exc
+    if response.status_code != 200:
+        logger.warning("[billing_confirm] provider rejected reference status=%s", response.status_code)
+        raise HTTPException(status_code=409, detail="Payment has not been confirmed by Paystack yet")
+    try:
+        envelope = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Payment provider returned an invalid response") from exc
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=502, detail="Payment provider returned an invalid response")
+    transaction = envelope.get("data")
+    if not envelope.get("status") or not isinstance(transaction, dict):
+        raise HTTPException(status_code=409, detail="Payment has not been confirmed by Paystack yet")
+    if str(transaction.get("status") or "").lower() != "success":
+        raise HTTPException(status_code=409, detail="Payment is not successful yet")
+
+    metadata = transaction.get("metadata")
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=409, detail="Payment metadata is incomplete")
+    try:
+        paid_user_id = int(metadata.get("user_id"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="Payment is not linked to a SignalRank account") from exc
+    if paid_user_id != int(user["id"]):
+        logger.warning("[billing_confirm] ownership mismatch user=%s", user["id"])
+        raise HTTPException(status_code=403, detail="This payment belongs to a different SignalRank account")
+
+    from payments.paystack import process_event
+    result = await process_event({"event": "charge.success", "data": transaction})
+    if not bool((result or {}).get("processed")):
+        reason = str((result or {}).get("reason") or "Payment reconciliation is still pending")
+        logger.warning("[billing_confirm] reconciliation pending user=%s reason=%s", user["id"], reason)
+        raise HTTPException(status_code=409, detail=reason)
+
+    async with get_session(label="platform.billing.confirm", timeout_seconds=10.0) as session:
+        snapshot = await user_snapshot(session, int(user["id"]))
+        await session.rollback()
+    return {
+        "processed": True,
+        "idempotent": bool((result or {}).get("idempotent")),
+        "tier": str((snapshot or {}).get("tier") or (result or {}).get("tier") or "").lower(),
+        "reference": reference,
+    }
 
 
 @router.get("/billing")

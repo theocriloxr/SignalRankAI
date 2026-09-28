@@ -158,16 +158,30 @@ _PLATFORM_CATALOG: tuple[dict[str, Any], ...] = (
 
 
 def _connection_limit(tier: str) -> int:
+    """Return the total connected-account allowance for a plan.
+
+    SignalRankAI is multi-account by design. Defaults intentionally allow more
+    than one MetaTrader account on paid plans and remain environment-overridable
+    so product packaging can change without a code release.
+    """
     value = normalize_tier(tier).value
-    return {
+    defaults = {
         "FREE": 0,
-        "PREMIUM": 1,
-        "VIP": 3,
-        "PROFESSIONAL": 10,
-        "INSTITUTIONAL": 50,
-        "ADMIN": 50,
-        "OWNER": 100,
-    }.get(value, 0)
+        "PREMIUM": 3,
+        "VIP": 10,
+        "PROFESSIONAL": 25,
+        "INSTITUTIONAL": 100,
+        "ADMIN": 100,
+        "OWNER": 250,
+    }
+    default = int(defaults.get(value, 0))
+    raw = str(os.getenv(f"BROKER_CONNECTION_LIMIT_{value}") or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0, min(int(raw), 500))
+    except ValueError:
+        return default
 
 
 def platform_catalog(tier: str) -> list[dict[str, Any]]:
@@ -177,7 +191,7 @@ def platform_catalog(tier: str) -> list[dict[str, Any]]:
         item = dict(row)
         platform = str(item["platform"])
         if platform in {"mt4", "mt5"}:
-            item["configured"] = bool(str(os.getenv("META_API_TOKEN") or "").strip())
+            item["configured"] = bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip())
         elif platform == "ctrader":
             item["configured"] = bool(
                 str(os.getenv("CTRADER_CLIENT_ID") or "").strip()
@@ -390,16 +404,56 @@ async def register_exchange_connection(
     )
 
 
-async def assert_connection_capacity(user_id: int, tier: str) -> None:
+async def assert_connection_capacity(
+    user_id: int,
+    tier: str,
+    *,
+    platform: str | None = None,
+    account_ref: str | None = None,
+    external_account_id: str | None = None,
+) -> None:
+    """Reject only genuinely new accounts once the plan limit is reached.
+
+    Re-linking an account already owned by the same canonical user must not be
+    blocked by capacity; upsert_connection will rotate/update that record.
+    """
     limit = _connection_limit(tier)
     if limit <= 0:
         raise PermissionError("This plan does not include broker connections")
     async with get_session(label="broker.connections.capacity", timeout_seconds=6.0) as session:
+        params: dict[str, Any] = {"uid": int(user_id)}
+        existing = None
+        platform_n = str(platform or "").strip().lower()
+        account_ref_n = str(account_ref or "").strip()
+        external_n = str(external_account_id or "").strip()
+        if platform_n and account_ref_n:
+            existing = (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM broker_connections "
+                        "WHERE user_id=:uid AND platform=:platform AND account_ref=:account_ref LIMIT 1"
+                    ),
+                    {"uid": int(user_id), "platform": platform_n, "account_ref": account_ref_n},
+                )
+            ).first()
+        elif external_n:
+            existing = (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM broker_connections "
+                        "WHERE user_id=:uid AND external_account_id=:external_account_id LIMIT 1"
+                    ),
+                    {"uid": int(user_id), "external_account_id": external_n},
+                )
+            ).first()
+        if existing:
+            await session.rollback()
+            return
         count = int(
             (
                 await session.execute(
                     text("SELECT COUNT(*) FROM broker_connections WHERE user_id=:uid"),
-                    {"uid": int(user_id)},
+                    params,
                 )
             ).scalar_one()
             or 0
@@ -408,7 +462,7 @@ async def assert_connection_capacity(user_id: int, tier: str) -> None:
     if count >= limit:
         raise PermissionError(
             f"Your plan supports {limit} connected trading account(s). "
-            "Upgrade or remove an existing connection before adding another."
+            "Remove an account or use a plan with a higher account allowance before adding another."
         )
 
 
@@ -427,6 +481,7 @@ async def upsert_connection(
     secret_encrypted: str | None = None,
     server: str | None = None,
     status: str = "pending",
+    verified_at: datetime | None = None,
     permissions: dict[str, Any] | None = None,
     capabilities: dict[str, Any] | None = None,
     execution_enabled: bool = False,
@@ -568,6 +623,11 @@ async def upsert_connection(
             row.credential_revision = 0
         row.server = str(server).strip()[:128] if server else row.server
         row.status = str(status or "pending").strip().lower()[:32]
+        if verified_at is not None:
+            # Only a provider-backed caller may supply this timestamp.  A
+            # textual "verified" status alone never manufactures verification.
+            row.verified_at = verified_at
+            row.last_health_at = verified_at
         row.permissions = dict(permissions or row.permissions or {})
         row.capabilities = dict(capabilities or row.capabilities or {})
         # Never let a relink implicitly turn execution on.

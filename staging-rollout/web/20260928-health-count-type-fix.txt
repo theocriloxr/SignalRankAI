@@ -1,0 +1,1 @@
+Fix dedicated web health probe to execute COUNT(*) and coerce the scalar to int. Prevents string signal_id values from reaching numeric health comparisons and causing HTTP 500.

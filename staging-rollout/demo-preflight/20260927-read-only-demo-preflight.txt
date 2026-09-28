@@ -1,0 +1,3 @@
+SignalRank staging read-only demo-account preflight trigger.
+Purpose: report non-secret demo account readiness blockers only.
+No broker credentials, account identifiers or order actions are stored here.

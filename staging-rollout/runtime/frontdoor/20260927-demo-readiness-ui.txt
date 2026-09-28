@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout: demo certification readiness UI.
+Purpose: expose authenticated read-only demo preflight/checklist state in the broker page.
+No execution flag is enabled and no order path is changed by this marker.
+Engine, delivery and analytics watch paths must skip this rollout.
+No secrets are stored in this file.

@@ -1,0 +1,10 @@
+SignalRankAI staging rollout marker
+Date: 2026-09-27
+Purpose: MT5 provisioning diagnostics, multi-account UX, Telegram identity-state parity, responsive navigation/UI hardening.
+Base certified staging: 878747fcd084e572b8afcf18272e38ecf5db7bed
+Feature head before marker: 5c11717986abe5ef73054f60c3db3a4a25eacf7b
+Scope: staging only. Does not authorize live/real-money execution.
+
+Retry 2: release-gate compatibility fixed; dedicated MT5 multi-account/Telegram UX regression suite added to Docker build.
+
+Retry 3: selector and broker safety-copy compatibility contracts fixed.

@@ -115,7 +115,7 @@ def _provider_is_configured(provider: str) -> bool:
             or (os.getenv("OWNER_IDS") or "").strip()
         )
         return bool(
-            (os.getenv("META_API_TOKEN") or "").strip()
+            (os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()
             and (
                 os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
                 or os.getenv("META_API_ACCOUNT_ID")

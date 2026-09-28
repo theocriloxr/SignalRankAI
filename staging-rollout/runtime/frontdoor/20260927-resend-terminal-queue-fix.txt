@@ -1,0 +1,5 @@
+SignalRank staging frontdoor rollout trigger.
+Purpose: deploy durable EXPIRED_IN_QUEUE resend suppression without mutating analytical signal lifecycle.
+Scope: frontdoor Telegram resend scheduler only.
+All real-money execution and payout paths remain fail-closed.
+No secrets are stored in this marker.

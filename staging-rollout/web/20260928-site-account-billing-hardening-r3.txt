@@ -1,0 +1,3 @@
+SignalRankAI staging web rollout retry r3
+Includes final querySelectorAll correction for billing plan buttons after 355/356 release-gate tests passed.
+Expected result: full Docker release gate green before staging runtime startup.

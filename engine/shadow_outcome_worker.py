@@ -83,7 +83,7 @@ class ShadowOutcomeWorker:
     async def _load_rows(self) -> list[dict[str, Any]]:
         from db.models import MLRejectedSignal
         from db.priority import DBPriority
-        from db.session import NoncriticalWriteDropped, get_session
+        from db.session import AnalyticsWorkDeferred, NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
         cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
@@ -294,8 +294,12 @@ class ShadowOutcomeWorker:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
-                self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
+                if type(exc).__name__ == "AnalyticsWorkDeferred":
+                    logger.info("[shadow_tracker] deferred reason=db_foreground_pressure detail=%s", exc)
+                    self._publish_health("deferred", error=str(exc))
+                else:
+                    logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
+                    self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
             except asyncio.TimeoutError:

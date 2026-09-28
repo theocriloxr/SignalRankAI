@@ -19,26 +19,59 @@
   <link rel="stylesheet" href="/app-assets/styles.css" />
   <title>SignalRankAI</title>
 </head>
-<body>
+<body class="session-booting">
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="SignalRankAI home">
       <span class="brand-logo"><img src="/app-assets/icon.svg" alt="" width="42" height="42" /></span>
       <span><strong>SignalRank</strong><small>Trading Intelligence</small></span>
     </a>
-    <nav id="sessionNav" hidden>
-      <button data-view="overview">Overview</button>
-      <button data-view="signals">Signals</button>
-      <button data-view="evidence">Evidence</button>
-      <button data-view="markets">Markets</button>
-      <button data-view="tools">Tools</button>
-      <button data-view="paper" data-feature="paper_trading">Paper</button>
-      <button data-view="portfolio" data-feature="portfolio_analytics">Portfolio</button>
-      <button data-view="performance" data-feature="performance_analytics">Performance</button>
-      <button data-view="journal">Journal</button>
-      <button data-view="support">Support</button>
-      <button data-view="account">Account</button>
-      <button id="logoutButton" class="ghost">Log out</button>
+    <label id="compactNav" class="compact-nav" hidden>
+      <span>Workspace</span>
+      <select id="viewSwitcher" aria-label="Choose SignalRank workspace">
+        <option value="overview">Overview</option>
+        <option value="signals">Signals</option>
+        <option value="evidence">Evidence</option>
+        <option value="markets">Markets</option>
+        <option value="tools">Command center</option>
+        <option id="opsSwitcherOption" value="ops" hidden>Operations</option>
+        <option value="paper" data-feature="paper_trading">Paper trading</option>
+        <option value="portfolio" data-feature="portfolio_analytics">Portfolio</option>
+        <option value="performance" data-feature="performance_analytics">Performance</option>
+        <option value="journal">Journal</option>
+        <option value="support">Support</option>
+        <option value="account">Account & brokers</option>
+      </select>
+    </label>
+    <nav id="sessionNav" class="workspace-nav" hidden>
+      <div class="nav-search-wrap">
+        <span class="nav-search-icon" aria-hidden="true">⌕</span>
+        <input id="workspaceSearch" class="nav-search" type="search" placeholder="Jump to workspace…" autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Intelligence</span>
+        <button data-view="overview"><span class="nav-icon">⌂</span><span>Overview</span></button>
+        <button data-view="signals"><span class="nav-icon">↗</span><span>Signals</span></button>
+        <button data-view="evidence"><span class="nav-icon">◎</span><span>Evidence</span></button>
+        <button data-view="markets"><span class="nav-icon">⌁</span><span>Markets</span></button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Workspace</span>
+        <button data-view="tools"><span class="nav-icon">⌘</span><span>Command center</span></button>
+        <button data-view="paper" data-feature="paper_trading"><span class="nav-icon">◫</span><span>Paper desk</span></button>
+        <button data-view="portfolio" data-feature="portfolio_analytics"><span class="nav-icon">◇</span><span>Portfolio</span></button>
+        <button data-view="performance" data-feature="performance_analytics"><span class="nav-icon">∿</span><span>Performance</span></button>
+        <button data-view="journal"><span class="nav-icon">≡</span><span>Journal</span></button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">System</span>
+        <button data-view="support"><span class="nav-icon">?</span><span>Support</span></button>
+        <button data-view="account"><span class="nav-icon">⚙</span><span>Account & brokers</span></button>
+        <button id="opsNavButton" data-view="ops" hidden><span class="nav-icon">◉</span><span>Operations</span></button>
+      </div>
+      <div class="nav-spacer"></div>
+      <button id="logoutButton" class="ghost nav-logout"><span class="nav-icon">⇥</span><span>Log out</span></button>
     </nav>
     <button id="themeToggle" class="theme-toggle ghost" type="button" aria-label="Switch color theme" title="Switch color theme">
       <span id="themeIcon" aria-hidden="true">◐</span>
@@ -47,7 +80,18 @@
   </header>
 
   <main>
-    <section id="authShell" class="auth-shell">
+    <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
+      <div class="bootstrap-mark"><img src="/app-assets/icon.svg" alt="" width="54" height="54" /></div>
+      <div>
+        <p class="eyebrow">SIGNALRANKAI</p>
+        <h1 id="bootstrapTitle">Restoring your secure session…</h1>
+        <p id="bootstrapCopy">Loading your account, plan entitlements and connected trading workspace.</p>
+        <button id="bootstrapRetry" class="ghost bootstrap-retry" type="button" hidden>Retry connection</button>
+      </div>
+      <div class="bootstrap-progress" aria-hidden="true"><span></span></div>
+    </section>
+
+    <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
@@ -192,7 +236,17 @@
       </section>
 
       <section id="toolsView" class="view" hidden>
-        <div class="panel-heading"><div><p class="eyebrow">CROSS-CHANNEL TOOLKIT</p><h2>Market & account tools</h2><p>Use the same account data and market providers as Telegram without leaving the website.</p></div><span class="status-pill">WEB + TELEGRAM</span></div>
+        <div class="workspace-title">
+          <div><p class="eyebrow">CROSS-CHANNEL COMMAND CENTER</p><h2>Everything you can do with SignalRank</h2><p>One capability map for web and Telegram, filtered by your current tier and operator authority.</p></div>
+          <span class="status-pill">SHARED SERVICES · SAME ENTITLEMENTS</span>
+        </div>
+        <article class="panel command-catalog-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">TELEGRAM ↔ WEB PARITY</p><h3>Capability navigator</h3><p>Search the same commands exposed by the bot, then open the equivalent web workspace.</p></div>
+            <div class="command-search-row"><input id="commandSearch" type="search" placeholder="Search commands or capabilities…" /><span id="commandCatalogCount" class="status-pill">—</span></div>
+          </div>
+          <div id="commandCatalog" class="command-catalog"><p class="muted">Loading your capability map…</p></div>
+        </article>
         <div class="tools-grid">
           <article class="panel tool-card">
             <div class="tool-heading"><div><p class="eyebrow">LIVE DATA</p><h3>Live quote</h3></div><span class="tool-icon" aria-hidden="true">⌁</span></div>
@@ -310,9 +364,53 @@
         <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
       </section>
 
+      <section id="opsView" class="view" hidden>
+        <div class="workspace-title">
+          <div><p class="eyebrow">OWNER / ADMIN</p><h2>Operations control room</h2><p>Release identity, AI routing, financial safety state and operator-only capability map. Destructive actions remain explicitly confirmed and audited.</p></div>
+          <span id="operatorAuthorityBadge" class="status-pill">OPERATOR</span>
+        </div>
+        <div id="operatorSummary" class="card-grid"></div>
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">RELEASE & SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
+            <div id="operatorRuntime" class="detail-list"><p class="muted">Loading operator status…</p></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">AI ROUTING</p><h3>Model control plane</h3></div></div>
+            <div id="operatorAi" class="detail-list"><p class="muted">Loading AI provider status…</p></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
+          <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
+        </article>
+      </section>
+
       <section id="accountView" class="view" hidden>
         <div class="two-column">
-          <article class="panel"><h2>Account</h2><div id="profileDetails" class="detail-list"></div><form id="profileForm" class="stack-form"><label>Display name<input name="display_name" maxlength="160" /></label><label>Country<input name="country" maxlength="2" placeholder="NG" /></label><label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label><label>Preferred currency<input name="preferred_currency" maxlength="8" /></label><label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label><label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label><label><input name="timezone_auto_update" type="checkbox" /> Travel mode <small>Allow SignalRankAI to periodically prompt you to refresh your timezone when travelling. No continuous location tracking is required.</small></label><button class="primary">Save profile</button></form><div id="telegramLinkPanel"><button id="connectTelegramButton" class="primary">Connect Telegram</button><div id="telegramLinkResult" class="detail-list" hidden></div></div></article>
+          <article class="panel account-profile-panel">
+            <div class="panel-heading"><div><p class="eyebrow">IDENTITY & CHANNELS</p><h2>Account</h2><p>One SignalRank identity across web, Telegram and mobile.</p></div><span id="telegramStatusBadge" class="status-pill">CHECKING</span></div>
+            <div id="profileDetails" class="detail-list"></div>
+            <form id="profileForm" class="stack-form">
+              <label>Display name<input name="display_name" maxlength="160" /></label>
+              <label>Country<input name="country" maxlength="2" placeholder="NG" /></label>
+              <label>Timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label>
+              <label>Language / locale<input name="locale" maxlength="16" placeholder="en" /></label>
+              <label>Preferred currency<input name="preferred_currency" maxlength="8" /></label>
+              <label>Risk per trade %<input name="max_risk_percentage" type="number" min="0.1" max="10" step="0.1" /></label>
+              <label>Daily drawdown limit %<input name="max_daily_drawdown_pct" type="number" min="0.5" max="50" step="0.5" /></label>
+              <label><input name="timezone_auto_update" type="checkbox" /> Travel mode <small>Allow SignalRankAI to periodically prompt you to refresh your timezone when travelling. No continuous location tracking is required.</small></label>
+              <button class="primary">Save profile</button>
+            </form>
+            <div id="telegramLinkPanel" class="channel-card">
+              <div class="channel-card-head"><div><strong>Telegram</strong><small id="telegramStatusText">Checking connection…</small></div><span aria-hidden="true">↗</span></div>
+              <div class="form-actions">
+                <button id="connectTelegramButton" class="primary" type="button">Connect Telegram</button>
+                <button id="refreshTelegramButton" class="ghost" type="button">Refresh status</button>
+              </div>
+              <div id="telegramLinkResult" class="detail-list" hidden></div>
+            </div>
+          </article>
           <article class="panel"><h2>Security and sessions</h2><div id="emailVerificationPanel"></div><div id="mfaPanel" class="detail-list"></div><div id="sessionList" class="data-list"></div><button id="logoutAllButton" class="danger">Sign out everywhere</button></article>
         </div>
         <article class="panel trading-profile-panel">
@@ -346,27 +444,48 @@
           </div>
           <div class="trust-strip">
             <span>Connection ≠ execution permission</span>
+            <span>Only signals delivered to your account can execute</span>
             <span>Demo-first supported</span>
             <span>Encrypted or provider-managed credentials</span>
             <span>Live activation remains separately gated</span>
           </div>
+          <div id="brokerProviderHealth" class="provider-health-banner" hidden></div>
           <div id="brokerPlatformCatalog" class="card-grid compact-card-grid"></div>
           <div class="split-grid">
             <div>
-              <h3>Connect MetaTrader</h3>
-              <p class="muted">Use MT4 or MT5 with any broker MetaApi can resolve. For your AssexMarkets demo, select MT5 + Demo and enter the exact server shown inside MetaTrader.</p>
-              <form id="brokerLinkForm" class="stack-form">
-                <label>Platform<select name="platform"><option value="mt5">MetaTrader 5</option><option value="mt4">MetaTrader 4</option></select></label>
-                <label>Broker name<input name="broker_name" maxlength="128" placeholder="AssexMarkets" /></label>
-                <label>Account label<input name="account_label" maxlength="128" placeholder="My demo account" /></label>
-                <label>Environment<select name="environment"><option value="demo">Demo</option><option value="unknown">Detect automatically</option><option value="live">Live</option></select></label>
-                <label>Broker server<input name="server" maxlength="128" placeholder="Exact server name from MT4/MT5" required /></label>
-                <label>Trading login<input name="login" maxlength="64" autocomplete="username" required /></label>
-                <label>Trading password<input name="password" type="password" maxlength="256" autocomplete="current-password" required /></label>
-                <button class="primary" type="submit">Connect with encrypted credentials</button>
-                <button id="brokerSecureLinkButton" class="ghost" type="button">Use provider-hosted secure credential link</button>
+              <div class="connect-section-head">
+                <div><p class="eyebrow">ADD TRADING ACCOUNT</p><h3>Connect MetaTrader</h3><p class="muted">Add MT4/MT5 accounts one at a time. Your account can hold several broker connections; each keeps separate health, policy, default routing and execution permission.</p></div>
+                <span id="brokerAccountAllowance" class="status-pill">MULTI-ACCOUNT</span>
+              </div>
+              <div class="connector-guide">
+                <strong>Use the exact values from MetaTrader</strong>
+                <span><b>Company</b> is the broker/company display name.</span>
+                <span><b>Server</b> is the exact terminal server string and is not interchangeable with the company name.</span>
+                <span>Example from your screenshot: company <code>Assexmarkets Global Limited</code>, server <code>AssexmarketsGlobal-Trade</code>.</span>
+              </div>
+              <form id="brokerLinkForm" class="stack-form broker-connect-form">
+                <div class="two-field-grid">
+                  <label>Platform<select name="platform"><option value="mt5">MetaTrader 5</option><option value="mt4">MetaTrader 4</option></select></label>
+                  <label>Account type<select name="environment"><option value="demo">Demo</option><option value="unknown">Detect automatically</option><option value="live">Live</option></select></label>
+                </div>
+                <label>Broker / company<input name="broker_name" maxlength="128" placeholder="e.g. Assexmarkets Global Limited" /><small>The company shown in your MetaTrader account details.</small></label>
+                <div class="server-field">
+                  <label>Exact MetaTrader server<input name="server" maxlength="128" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. AssexmarketsGlobal-Trade" required /><small>Copy this exactly from MetaTrader → account details → Server. Spaces, hyphens and suffixes matter.</small></label>
+                  <div class="server-search-actions"><button id="brokerServerLookupButton" class="ghost" type="button">Find broker server</button><small>No trading password is sent when searching.</small></div>
+                  <div id="brokerServerLookupResult" class="server-lookup-result" hidden></div>
+                </div>
+                <div class="two-field-grid">
+                  <label>Trading login<input name="login" maxlength="64" inputmode="numeric" autocomplete="username" placeholder="MT account number" required /></label>
+                  <label>Account label<input name="account_label" maxlength="128" placeholder="e.g. Assex demo 1" /><small>Only for your own organization inside SignalRank.</small></label>
+                </div>
+                <label>Trading password<input name="password" type="password" maxlength="256" autocomplete="current-password" required /><small>Use the trading/master password, not an investor/read-only password.</small></label>
+                <div class="form-actions">
+                  <button class="primary" type="submit">Connect account</button>
+                  <button id="brokerSecureLinkButton" class="ghost" type="button">Use MetaApi secure link</button>
+                </div>
               </form>
-              <p class="muted">Secure-link mode sends you to MetaApi to enter the trading login/password there; SignalRankAI never receives that password. Direct mode encrypts the password before persistence and never returns it to the browser.</p>
+              <div id="brokerProvisioningResult" class="connection-feedback" hidden></div>
+              <p class="muted">Secure-link mode sends you to MetaApi to enter credentials there; SignalRankAI never receives that password. Direct mode encrypts the password before persistence and never returns it to the browser. A connection never enables trading by itself.</p>
               <div id="brokerSecureLinkResult" class="detail-list"></div>
               <hr />
               <h3>Connect crypto exchange</h3>
@@ -394,10 +513,28 @@
               </form>
               <div id="executionTermsPanel" class="detail-list"></div>
               <div id="brokerStats" class="detail-list"></div>
+              <section id="demoCertificationPanel" class="demo-certification-card">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">DEMO CERTIFICATION</p>
+                    <h3>Demo → live/prop readiness</h3>
+                    <p class="muted">A demo account must pass the canonical preflight and a bounded broker lifecycle before any later live-money certification can use it as evidence.</p>
+                  </div>
+                  <span id="demoCertificationBadge" class="account-state pending-text">ACTION REQUIRED</span>
+                </div>
+                <div id="demoCertificationSummary" class="detail-list"></div>
+                <div id="demoCertificationAccounts" class="demo-certification-accounts"></div>
+                <div id="demoCertificationEmpty" class="empty-state" hidden>
+                  <strong>No demo account connected yet</strong>
+                  <p>Connect an explicitly owned demo/test account first. Connecting it does not enable trading.</p>
+                  <button id="demoCertificationConnect" class="primary" type="button">Connect demo account</button>
+                </div>
+                <p id="demoCertificationNote" class="muted"></p>
+              </section>
             </div>
           </div>
-          <div class="panel-heading"><div><h3>Connected accounts</h3><p>Verify health, choose the default route and separately grant or revoke execution permission per account.</p></div></div>
-          <div id="brokerConnections" class="data-list"></div>
+          <div class="panel-heading connected-heading"><div><p class="eyebrow">ACCOUNT SWITCHER</p><h3>Connected accounts</h3><p>Choose a default route like a trading-terminal account switcher. Switching the default never turns execution on automatically.</p></div><button id="scrollToConnectAccount" class="primary" type="button">+ Add account</button></div>
+          <div id="brokerConnections" class="broker-account-grid"></div>
           <section id="brokerPolicyEditor" class="subpanel" hidden>
             <div class="panel-heading">
               <div>

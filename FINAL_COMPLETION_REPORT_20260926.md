@@ -28,19 +28,36 @@ The long-lived staging topology is decomposed and role-owned:
 All four roles enforce release-source and database-schema admission before
 business work.
 
-Current post-0045 staging role deployments are aligned on the same certified
-provider-opt-in hardening commit `b2249fe64b8ae05b178ccec5e0879590c56f7130`:
+The certified four-role staging baseline is runtime commit
+`93039e2e77800c4aa6b9ba1b1a8ce45797814210`:
 
-- analytics: deployment `c1d51cca-be56-43ed-b87c-446e651793bc`;
-- engine: deployment `f550a99e-0669-4bf8-a794-a41e90330b30`;
-- delivery: deployment `52ab68b7-a301-49e3-ada8-b74f2af49f2c`;
-- frontdoor: deployment `7b06848a-11dd-4fb0-bcc7-bd0ae3595f39`.
+- analytics: deployment `28c378a5-52e8-4f15-a877-e26a82b82ea6`;
+- engine: deployment `ab915899-6177-4608-b8a3-7b539537e25b`;
+- delivery: deployment `0683abb8-0128-4266-869c-14f34d821658`;
+- baseline frontdoor: deployment `33ccd5cf-9e60-495e-b872-cafecb41f241`.
 
-All four passed release-source and `0045_mt5_credential_retirement` schema
-admission. Frontdoor explicitly skips engine/worker ownership, while the other
-three roles start only their declared dedicated runtime lanes. Role-specific
-Railway watch paths plus the controlled common staging-rollout path prevent
-unrelated production promotion.
+Matching clean-room deployment `e2ef6763-34a8-4f2c-9e85-00e978e82256`
+verified that baseline with Alembic 0045/schema/provenance PASS and **411
+targeted tests passed**.
+
+A later frontdoor-only delivery-recovery maintenance patch is deployed at
+`3379cae487d59f1f28edcedb1a1b362a33cef419` without rebuilding the other
+three roles:
+
+- clean-room deployment: `5c3a09c9-df98-41b0-b89c-b4b6307fe9c4`;
+- clean-room: Alembic 0045/schema/provenance PASS and **414 targeted tests
+  passed**;
+- staging frontdoor: `f3693c26-3d84-44c0-bd1e-090ca203d13f`;
+- frontdoor build gate: **356 tests passed** plus readiness PASS;
+- runtime: release/source PASS, 0045 schema PASS, `mode=frontdoor`,
+  `engine=false`, `worker=false`, `/healthz=200`, Telegram webhook
+  pending=0.
+
+All four long-lived roles therefore remain schema/release admitted, with
+frontdoor explicitly excluding engine/worker ownership and the other three
+roles remaining on the certified baseline because the maintenance patch is
+frontdoor-specific. Role-specific Railway watch paths prevent unrelated role
+restarts or production promotion.
 
 ## Multi-user / multi-account execution
 
@@ -155,6 +172,10 @@ Implemented and tested:
 - ambiguous-send no-blind-retry behavior;
 - receipt stash/reconciliation;
 - bounded/retry-aware fan-out and outbox recovery;
+- durable `EXPIRED_IN_QUEUE` resend terminality in `runtime_state`, bounded
+  by TTL and isolated from analytical signal/outcome lifecycle;
+- bootstrap suppression prevents the same expired signal version from being
+  reconsidered every scheduler tick;
 - frontdoor does not own worker outcome reconciliation.
 
 ## Database/runtime safety
@@ -225,11 +246,23 @@ The current release path has:
 
 ## Deliberately incomplete external claims
 
+Staging backup/restore recovery has since been verified by deployment
+`59a52067-b83f-46bb-83f6-67080b818c7d`: a 199,493,675-byte staging dump
+was restored into an isolated database, Alembic 0045 and nine critical tables
+were verified, the immutable-ledger trigger was present, and cleanup passed
+without source or production mutation.
+
+The current read-only demo-account preflight deployment
+`20be1193-0339-461f-8560-a68ca75bd79b` on marker `cf70d1c817b7...`
+found zero canonical broker connections in staging, placed zero orders,
+performed no activation and returned no secrets. Demo execution certification therefore remains
+external and blocked until an explicitly owned demo account is connected.
+
 The following are not claimed complete by this report:
 
 - every declared venue live/sandbox certified;
 - 100,000-user infrastructure load certification;
-- 24-hour+ final production-candidate soak and disaster-recovery exercise;
+- 24-hour+ final production-candidate soak and production-environment recovery exercise; staging PostgreSQL backup/restore recovery is independently verified;
 - real payment settlement/email/OAuth/mobile-store external-provider proof;
 - external artifact signature/attestation;
 - copy-trading/marketplace legal/trust certification;

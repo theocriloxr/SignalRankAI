@@ -42,7 +42,7 @@ from db.repository import (
     count_active_vip_users,
 )
 from db.models import ApiToken, User, Signal, RuntimeState
-from sqlalchemy import select
+from sqlalchemy import func, select
 from core.redis_state import state
 from core.env import env_bool
 from core.redis_cache import cache_stats
@@ -87,6 +87,7 @@ if os.path.isdir(_PLATFORM_DIR):
 
     @app.get("/app", include_in_schema=False)
     @app.get("/activate", include_in_schema=False)
+    @app.get("/billing/complete", include_in_schema=False)
     async def platform_application() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "index.html"))
 
@@ -375,6 +376,8 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse)
 @app.get("/healthz", response_model=HealthResponse)
+@app.get("/ready", response_model=HealthResponse)
+@app.get("/readyz", response_model=HealthResponse)
 async def health():
     """Liveness + readiness probe.
     
@@ -413,18 +416,18 @@ async def health():
                 
                 # Try with fallback columns - check if archived/expired exist
                 try:
-                    count_stmt = select(Signal.signal_id).where(
+                    count_stmt = select(func.count()).select_from(Signal).where(
                         Signal.archived == False,
                         Signal.expired == False
                     )
                     result = await session.execute(count_stmt)
-                    active_signals = result.scalar() or 0
+                    active_signals = int(result.scalar_one() or 0)
                 except Exception as col_err:
                     # Fallback: count all signals if columns don't exist
                     logger.warning(f"[healthz] Column check failed, trying fallback: {col_err}")
-                    count_stmt = select(Signal.signal_id)
+                    count_stmt = select(func.count()).select_from(Signal)
                     result = await session.execute(count_stmt)
-                    active_signals = result.scalar() or 0
+                    active_signals = int(result.scalar_one() or 0)
         except (TimeoutError, asyncio.TimeoutError) as e:
             # DB query took too long - still healthy but degraded
             logger.warning(f"[healthz] DB query timeout: {e}, returning degraded status")

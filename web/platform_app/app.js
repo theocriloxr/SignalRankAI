@@ -1,6 +1,9 @@
 const API='/api/v1/platform';
 const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorAll(s)];
-const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[]};
+const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,pendingBillingReference:null};
+const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
+let sessionRefreshPromise=null;
+let secureLinkVerifyTimer=null;
 const THEME_KEY='signalrank.theme';
 const themeMedia=window.matchMedia?.('(prefers-color-scheme: light)');
 function resolvedTheme(){const explicit=document.documentElement.dataset.theme;if(explicit==='light'||explicit==='dark')return explicit;return themeMedia?.matches?'light':'dark'}
@@ -10,14 +13,54 @@ function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}
 const esc=(v)=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function toast(message,error=false){const el=$('#toast');el.textContent=typeof message==='string'?message:JSON.stringify(message);el.style.borderColor=error?'rgba(255,107,117,.7)':'rgba(100,240,180,.5)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),4000)}
 function cookie(name){return document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.split('=').slice(1).join('=')||''}
-async function request(path,options={}){const method=String(options.method||'GET').toUpperCase();const headers={'Content-Type':'application/json',...(options.headers||{})};if(!['GET','HEAD','OPTIONS'].includes(method)){const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf}const response=await fetch(API+path,{credentials:'include',headers,...options});let data={};try{data=await response.json()}catch{}if(!response.ok){const detail=data.detail;const serverMessage=typeof detail==='string'?detail:(detail?.message||detail?.code||'');const fallback=response.status>=500?'SignalRank sign-in services are temporarily unavailable. Please retry in a moment.':`Request failed (${response.status})`;throw new Error(serverMessage||fallback)}return data}
+async function refreshBrowserSession(){
+  if(sessionRefreshPromise)return sessionRefreshPromise;
+  sessionRefreshPromise=(async()=>{
+    const headers={'Content-Type':'application/json'};
+    const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf;
+    const response=await fetch(API+'/auth/refresh',{method:'POST',credentials:'include',headers,body:JSON.stringify({client_type:'web'})});
+    if(!response.ok)return false;
+    try{const data=await response.json();if(data?.user)state.user=data.user}catch{}
+    return true
+  })().finally(()=>{sessionRefreshPromise=null});
+  return sessionRefreshPromise
+}
+async function request(path,options={},allowSessionRefresh=true){
+  const method=String(options.method||'GET').toUpperCase();
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(!['GET','HEAD','OPTIONS'].includes(method)){const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf}
+  const response=await fetch(API+path,{credentials:'include',headers,...options});
+  let data={};try{data=await response.json()}catch{}
+  const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
+  if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
+    const refreshed=await refreshBrowserSession().catch(()=>false);
+    if(refreshed)return request(path,options,false)
+  }
+  if(!response.ok){
+    const detail=data.detail;
+    const serverMessage=typeof detail==='string'?detail:(detail?.message||detail?.code||'');
+    const fallback=response.status>=500?'SignalRank services are temporarily unavailable. Please retry in a moment.':`Request failed (${response.status})`;
+    const error=new Error(serverMessage||fallback);error.status=response.status;error.detail=detail;error.payload=data;throw error
+  }
+  return data
+}
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function fmt(value,digits=2){const number=Number(value||0);return Number.isFinite(number)?number.toLocaleString(undefined,{maximumFractionDigits:digits}):'—'}
 function time(value){if(!value)return'—';return new Date(value).toLocaleString()}
 function statusClass(value){const v=String(value||'').toLowerCase();return ['tp1','tp2','tp3','win','open','active'].some(x=>v.includes(x))?'positive':['sl','loss','closed_sl'].some(x=>v.includes(x))?'negative':''}
-function setLoggedIn(value){$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;document.body.classList.toggle('session-active',value)}
+function setLoggedIn(value){const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=true;$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;const compact=$('#compactNav');if(compact)compact.hidden=!value;document.body.classList.toggle('session-active',value);document.body.classList.remove('session-booting')}
+function showBootstrapError(message){
+  state.user=null;state.entitlements=null;
+  const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=false;
+  $('#authShell').hidden=true;$('#appShell').hidden=true;$('#sessionNav').hidden=true;const compact=$('#compactNav');if(compact)compact.hidden=true;
+  document.body.classList.remove('session-active');document.body.classList.add('session-booting');
+  const title=$('#bootstrapTitle');const copy=$('#bootstrapCopy');const retry=$('#bootstrapRetry');
+  if(title)title.textContent='SignalRank services are temporarily unavailable';
+  if(copy)copy.textContent=String(message||'We could not reach the account service. Your session and stored account data have not been discarded.');
+  if(retry){retry.hidden=false;retry.onclick=async()=>{retry.disabled=true;retry.textContent='Retrying…';if(title)title.textContent='Restoring your secure session…';if(copy)copy.textContent='Loading your account, plan entitlements and connected trading workspace.';try{await boot()}finally{retry.disabled=false;retry.textContent='Retry connection'}}}
+}
 function hasFeature(feature){const features=state.entitlements?.features||[];return features.includes('*')||features.includes(feature)}
-function applyEntitlements(){$$('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!allowed)el.title='Available on a higher SignalRankAI plan'})}
+function applyEntitlements(){document.querySelectorAll('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);const revealLocked=el.dataset.entitlementDisplay==='lock';el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!revealLocked)el.hidden=!allowed;if(!allowed)el.title='Available on a higher SignalRankAI plan';else if(el.title==='Available on a higher SignalRankAI plan')el.removeAttribute('title')})}
 function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate')}
 $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>setAuthTab('register');$('#activateTab').onclick=()=>setAuthTab('activate');
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
@@ -29,16 +72,81 @@ $('#mfaForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await
 $('#passwordResetForm').onsubmit=async e=>{e.preventDefault();try{await request('/auth/password-reset/complete',{method:'POST',body:JSON.stringify(formData(e.target))});history.replaceState({},'',location.pathname);setAuthTab('login');toast('Password reset. Sign in again.')}catch(err){toast(err.message,true)}};
 $('#magicLinkButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/magic-link/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, a sign-in link was queued.')}catch(err){toast(err.message,true)}};
 $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, reset instructions were queued.')}catch(err){toast(err.message,true)}};
-function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount};loaders[name]?.().catch(err=>toast(err.message,true))}
+async function loadOperator(){
+  if(!state.commandCatalog)await loadCommandCatalog();
+  state.operator=await request('/operator/overview');
+  const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
+  const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
+  const cards=[
+    ['Environment',release.environment||'—'],
+    ['Release',String(release.commit||'').slice(0,12)||'—'],
+    ['AI provider',ai.provider||ai.primary_provider||'—'],
+    ['Kill switch',ex.kill_switch?'ON':'OFF']
+  ];
+  const summary=$('#operatorSummary');if(summary)summary.innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('');
+  const runtime=$('#operatorRuntime');if(runtime)runtime.innerHTML=[
+    ['Branch',release.branch||'—'],['Commit',release.commit||'—'],['Environment',release.environment||'—'],
+    ['Live financial features',ex.live_financial_features_enabled?'Enabled':'Disabled'],
+    ['Real execution',ex.real_execution_enabled?'Enabled':'Disabled'],
+    ['Auto execution',ex.auto_execution_enabled?'Enabled':'Disabled'],
+    ['Global kill switch',ex.kill_switch?'ON':'OFF']
+  ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  const aiTarget=$('#operatorAi');if(aiTarget)aiTarget.innerHTML=[
+    ['Provider',ai.provider||ai.primary_provider||'—'],['Available',ai.available?'Yes':'No'],
+    ['Signal model',ai.signal_model||ai.fast_model||'—'],['Deep model',ai.deep_model||'—'],
+    ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
+  ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  renderCommandCatalog($('#commandSearch')?.value||'')
+}
+$('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
+
+function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount,ops:loadOperator};loaders[name]?.().catch(err=>toast(err.message,true))}
 $$('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
-async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();const initial=[loadOverview(),loadSignals()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}}catch{state.user=null;state.entitlements=null;setLoggedIn(false)}}
+$('#viewSwitcher')?.addEventListener('change',e=>showView(e.target.value));
+function workspaceCandidates(){return $('[data-view]').filter(el=>!el.hidden).map(el=>({view:el.dataset.view,label:(el.textContent||'').trim()})).filter(x=>x.view)}
+function activateWorkspaceSearch(query){const q=String(query||'').trim().toLowerCase();if(!q)return false;const match=workspaceCandidates().find(x=>x.label.toLowerCase().includes(q)||x.view.toLowerCase().includes(q));if(match){showView(match.view);return true}showView('tools');const input=$('#commandSearch');if(input){input.value=query;renderCommandCatalog(query);input.focus()}return false}
+$('#workspaceSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();activateWorkspaceSearch(e.currentTarget.value);e.currentTarget.value=''}});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='k'){e.preventDefault();const input=$('#workspaceSearch');if(input&&!input.hidden){input.focus();input.select()}else{showView('tools');setTimeout(()=>$('#commandSearch')?.focus(),0)}}});
+
+async function confirmPendingBillingReturn(){
+  const reference=String(state.pendingBillingReference||'').trim();if(!reference)return false;
+  const result=await request('/billing/confirm',{method:'POST',body:JSON.stringify({reference})});
+  state.pendingBillingReference=null;
+  const [me,entitlements]=await Promise.all([request('/me'),request('/entitlements')]);
+  state.user=me.user;state.entitlements=entitlements;applyEntitlements();renderProfile();
+  history.replaceState({},'', '/app?billing=complete');
+  toast(result.processed?'Payment confirmed. Your plan is now active.':'Payment confirmed and reconciled.');
+  return true
+}
+async function boot(){try{const me=await request('/me');state.user=me.user;try{state.entitlements=await request('/entitlements')}catch{state.entitlements={features:[]}}setLoggedIn(true);applyEntitlements();renderProfile();if(state.pendingBillingReference){try{await confirmPendingBillingReturn()}catch(err){toast('Payment return received, but confirmation is still pending: '+err.message,true)}}const initial=[loadOverview(),loadSignals(),loadCommandCatalog()];if(hasFeature('paper_trading'))initial.push(loadPaper());await Promise.allSettled(initial);const invite=new URLSearchParams(location.search).get('organization_invite');if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}await reconcilePendingSecureLink({notify:false})}catch(err){state.user=null;state.entitlements=null;if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError(err?.message)}}
 async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;$('#accountSubtitle').textContent='Your signals, paper portfolio and market intelligence in one place.';$('#tierBadge').textContent=String(state.user?.tier||'free').toUpperCase();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
 function renderOverviewLists(){const recent=state.signals.slice(0,5);$('#latestSignals').innerHTML=recent.length?recent.map(s=>`<div class="list-row"><div><strong>${esc(s.asset)} ${esc(String(s.direction).toUpperCase())}</strong><small>${esc(s.timeframe)} · ${esc(s.strategy_name||'Strategy')}</small></div><div class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||'Pending')}</div></div>`).join(''):'<p>No confirmed signals yet.</p>';const positions=(state.paper?.positions||[]).filter(p=>p.status==='open').slice(0,5);$('#overviewPositions').innerHTML=positions.length?positions.map(p=>`<div class="list-row"><div><strong>${esc(p.asset)} ${esc(String(p.direction).toUpperCase())}</strong><small>Entry ${fmt(p.fill_entry,6)}</small></div><div class="${Number(p.unrealized_pnl)>=0?'positive':'negative'}">$${fmt(p.unrealized_pnl)}</div></div>`).join(''):'<p>No open paper positions.</p>'}
 function renderSignals(){const rows=state.signals;$('#signalsTable').innerHTML=rows.length?`<table><thead><tr><th>Asset</th><th>Market</th><th>Direction</th><th>Timeframe</th><th>Entry</th><th>Stop</th><th>Score</th><th>ML</th><th>Strategy</th><th>Outcome</th><th>Delivered</th><th></th></tr></thead><tbody>${rows.map(s=>`<tr><td><strong>${esc(s.asset)}</strong><br><small>${esc(s.display_id||String(s.signal_id).slice(0,8))}</small></td><td><span class="market-badge">${esc(String(s.asset_class||'unknown').toUpperCase())}</span></td><td>${esc(String(s.direction).toUpperCase())}</td><td>${esc(s.timeframe)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.entry,6)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.stop_loss,6)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.score,1)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':(s.ml_probability_calibrated==null?'—':fmt(Number(s.ml_probability_calibrated)*100,1)+'%')}</td><td>${esc(s.strategy_name||'—')}</td><td class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||s.status||'Pending')}</td><td>${time(s.delivered_at)}</td><td><button class="ghost signal-detail" data-id="${esc(s.signal_id)}" type="button">View</button></td></tr>`).join('')}</tbody></table>`:'<div class="panel">No delivery-proven signals match this view.</div>';$$('.signal-detail').forEach(button=>button.onclick=()=>loadSignalDetail(button.dataset.id).catch(e=>toast(e.message,true)))}
 $('#refreshSignals').onclick=loadSignals;['#signalAssetFilter','#signalClassFilter','#signalTimeframeFilter','#signalStrategyFilter','#signalStatusFilter'].forEach(selector=>{const el=$(selector);if(!el)return;el.onchange=loadSignals;if(el.tagName==='INPUT')el.onkeydown=e=>{if(e.key==='Enter')loadSignals()}});
-async function loadSignalDetail(signalId){const data=await request('/signals/'+encodeURIComponent(signalId));const x=data.signal||{};const events=data.events||[];const panel=$('#signalDetailPanel');$('#signalDetailTitle').textContent=`${x.asset||'Signal'} · ${String(x.direction||'').toUpperCase()} · ${x.timeframe||''}`;const targets=Array.isArray(x.take_profit)?x.take_profit:[];const targetsText=targets.map(t=>typeof t==='object'?(t.price??t.tp??t.target??''):t).filter(v=>v!==''&&v!=null).map(v=>fmt(v,6)).join(' · ')||'—';const proof=data.proof||{};const locked=Boolean(x.exact_levels_locked);const gated=(value,digits=6)=>locked?'Premium only':fmt(value,digits);$('#signalDetailBody').innerHTML=`<div class="mini-metrics signal-proof-grid"><div><small>Entry</small><strong>${esc(gated(x.entry,6))}</strong></div><div><small>Stop</small><strong>${esc(gated(x.stop_loss,6))}</strong></div><div><small>Targets</small><strong>${esc(targetsText)}</strong></div><div><small>R/R</small><strong>${esc(gated(x.rr_estimate,2))}</strong></div><div><small>Score</small><strong>${esc(gated(x.score,1))}</strong></div><div><small>ML confidence</small><strong>${locked?'Premium only':(x.ml_probability_calibrated==null?'—':fmt(Number(x.ml_probability_calibrated)*100,1)+'%')}</strong></div><div><small>Lifecycle</small><strong>${esc(x.lifecycle_state||x.outcome_status||x.status||'Pending')}</strong></div><div><small>Outcome</small><strong class="${statusClass(x.outcome_status)}">${esc(x.outcome_status||'Pending')}</strong></div></div><div class="proof-strip ${proof.access_proven?'positive':'negative'}"><b>${proof.access_proven?'Signal receipt confirmed':'Signal receipt incomplete'}</b><span>${esc(proof.delivery_channel||'unknown')} · ${esc(proof.delivery_state||'unknown')} · ${time(proof.delivery_confirmed_at||x.delivered_at)} · age ${esc(proof.signal_age_at_delivery_seconds??'—')}s</span><small>Telegram proof: ${proof.delivery_proven?'yes':'no'} · Web receipt: ${proof.web_delivery_proven?'yes':'no'}</small></div>${x.ml_recovery_mode?'<div class="proof-strip warning"><b>Model-health recovery signal</b><span>Strict deterministic quality gates passed while the serving model is starved. Live broker execution is disabled; use paper trading for validation.</span></div>':''}<div class="two-column"><div><h3>Trade state</h3><div class="detail-list">${[['Strategy',x.strategy_name],['Regime',x.regime],['Last price',x.last_price==null?'—':fmt(x.last_price,6)],['MFE',x.mfe_r==null?'—':fmt(x.mfe_r,2)+'R'],['MAE',x.mae_r==null?'—':fmt(x.mae_r,2)+'R'],['Highest TP',x.highest_tp_hit??0],['Terminal event',x.terminal_event_type||'—'],['Terminal price',x.terminal_price==null?'—':fmt(x.terminal_price,6)]].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')}</div></div><div><h3>Lifecycle timeline</h3><div class="timeline">${events.length?events.map(e=>`<div class="timeline-event"><span></span><div><strong>${esc(String(e.event_type||'event').replaceAll('_',' '))}</strong><small>${time(e.event_time)}${e.price==null?'':` · ${fmt(e.price,6)}`}${e.r_multiple==null?'':` · ${fmt(e.r_multiple,2)}R`}</small></div></div>`).join(''):'<p class="muted">No lifecycle events recorded yet.</p>'}</div></div></div>`;if(hasFeature('broker_connection')&&!x.ml_recovery_mode){$('#signalDetailBody').insertAdjacentHTML('beforeend',`<article class="panel signal-execution-panel"><div class="panel-heading"><div><p class="eyebrow">MANUAL BROKER EXECUTION</p><h3>Execute this signal</h3><p>This submits one order through your connected MT5 account only after the server re-checks broker readiness, terms, live quote freshness, market status, risk, quota, reconciliation and kill switches.</p></div></div><div class="detail-list"><div class="detail-row"><span>Asset</span><strong>${esc(x.asset||'—')}</strong></div><div class="detail-row"><span>Direction</span><strong>${esc(String(x.direction||'').toUpperCase())}</strong></div><div class="detail-row"><span>Entry / Stop</span><strong>${fmt(x.entry,6)} / ${fmt(x.stop_loss,6)}</strong></div></div><button id="executeSignalButton" class="danger" type="button">Confirm and submit to MT5</button><p class="muted">A broker order can lose money. This action is not an auto-trade toggle and does not guarantee execution or profit.</p></article>`);const executeButton=$('#executeSignalButton');if(executeButton)executeButton.onclick=async()=>{const label=`${x.asset||'this signal'} ${String(x.direction||'').toUpperCase()} at ${fmt(x.entry,6)} with stop ${fmt(x.stop_loss,6)}`;if(!confirm(`Submit ${label} to your connected MT5 account?\n\nThe server will block the trade if any safety, risk, quote, market, consent, quota or reconciliation gate fails.`))return;executeButton.disabled=true;try{const result=await request('/signals/'+encodeURIComponent(signalId)+'/execute',{method:'POST',body:JSON.stringify({confirm:true,provider:((state.broker?.connections||[]).find(x=>x.is_default&&['mt4','mt5'].includes(x.platform))?.platform||(['mt4','mt5'].includes(state.broker?.execution?.execution_provider)?state.broker.execution.execution_provider:'mt5'))})});toast(result.order_id?`Order submitted: ${result.order_id}`:'Broker submission accepted');await loadSignalDetail(signalId)}catch(err){toast(err.message,true)}finally{executeButton.disabled=false}}};$('#signalDetailBody').insertAdjacentHTML('beforeend',`<article class="panel signal-feedback-panel"><div class="panel-heading"><div><h3>Signal feedback</h3><p>Rate this delivered signal or report a specific problem. Feedback is attached to this signal and your canonical account.</p></div></div><form id="signalFeedbackForm" class="stack-form"><label>Rating<select name="rating"><option value="">No rating</option><option value="5">5 — excellent</option><option value="4">4 — good</option><option value="3">3 — mixed</option><option value="2">2 — poor</option><option value="1">1 — bad</option></select></label><label>Issue<select name="issue"><option value="">No issue</option><option value="stale">Stale</option><option value="bad_setup">Bad setup</option><option value="wrong_levels">Wrong levels</option><option value="wrong_outcome">Wrong outcome</option><option value="late_delivery">Late delivery</option><option value="duplicate">Duplicate</option><option value="unclear">Unclear</option><option value="other">Other</option></select></label><label>Comment<textarea name="comment" rows="3" maxlength="4000" placeholder="What should SignalRankAI learn from this?"></textarea></label><button class="primary" type="submit">Send feedback</button></form></article>`);const feedbackForm=$('#signalFeedbackForm');if(feedbackForm)feedbackForm.onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={rating:raw.rating?Number(raw.rating):null,issue:raw.issue||null,comment:String(raw.comment||'').trim()||null};if(payload.rating==null&&!payload.issue){toast('Choose a rating or issue',true);return}try{await request('/signals/'+encodeURIComponent(signalId)+'/feedback',{method:'POST',body:JSON.stringify(payload)});e.target.reset();toast('Feedback recorded for this signal')}catch(err){toast(err.message,true)}};panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'})}
+async function loadSignalDetail(signalId){const data=await request('/signals/'+encodeURIComponent(signalId));const x=data.signal||{};const events=data.events||[];const panel=$('#signalDetailPanel');$('#signalDetailTitle').textContent=`${x.asset||'Signal'} · ${String(x.direction||'').toUpperCase()} · ${x.timeframe||''}`;const targets=Array.isArray(x.take_profit)?x.take_profit:[];const targetsText=targets.map(t=>typeof t==='object'?(t.price??t.tp??t.target??''):t).filter(v=>v!==''&&v!=null).map(v=>fmt(v,6)).join(' · ')||'—';const proof=data.proof||{};const locked=Boolean(x.exact_levels_locked);const gated=(value,digits=6)=>locked?'Premium only':fmt(value,digits);$('#signalDetailBody').innerHTML=`<div class="mini-metrics signal-proof-grid"><div><small>Entry</small><strong>${esc(gated(x.entry,6))}</strong></div><div><small>Stop</small><strong>${esc(gated(x.stop_loss,6))}</strong></div><div><small>Targets</small><strong>${esc(targetsText)}</strong></div><div><small>R/R</small><strong>${esc(gated(x.rr_estimate,2))}</strong></div><div><small>Score</small><strong>${esc(gated(x.score,1))}</strong></div><div><small>ML confidence</small><strong>${locked?'Premium only':(x.ml_probability_calibrated==null?'—':fmt(Number(x.ml_probability_calibrated)*100,1)+'%')}</strong></div><div><small>Lifecycle</small><strong>${esc(x.lifecycle_state||x.outcome_status||x.status||'Pending')}</strong></div><div><small>Outcome</small><strong class="${statusClass(x.outcome_status)}">${esc(x.outcome_status||'Pending')}</strong></div></div><div class="proof-strip ${proof.access_proven?'positive':'negative'}"><b>${proof.access_proven?'Signal receipt confirmed':'Signal receipt incomplete'}</b><span>${esc(proof.delivery_channel||'unknown')} · ${esc(proof.delivery_state||'unknown')} · ${time(proof.delivery_confirmed_at||x.delivered_at)} · age ${esc(proof.signal_age_at_delivery_seconds??'—')}s</span><small>Telegram proof: ${proof.delivery_proven?'yes':'no'} · Web receipt: ${proof.web_delivery_proven?'yes':'no'}</small></div>${x.ml_recovery_mode?'<div class="proof-strip warning"><b>Model-health recovery signal</b><span>Strict deterministic quality gates passed while the serving model is starved. Live broker execution is disabled; use paper trading for validation.</span></div>':''}<div class="two-column"><div><h3>Trade state</h3><div class="detail-list">${[['Strategy',x.strategy_name],['Regime',x.regime],['Last price',x.last_price==null?'—':fmt(x.last_price,6)],['MFE',x.mfe_r==null?'—':fmt(x.mfe_r,2)+'R'],['MAE',x.mae_r==null?'—':fmt(x.mae_r,2)+'R'],['Highest TP',x.highest_tp_hit??0],['Terminal event',x.terminal_event_type||'—'],['Terminal price',x.terminal_price==null?'—':fmt(x.terminal_price,6)]].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')}</div></div><div><h3>Lifecycle timeline</h3><div class="timeline">${events.length?events.map(e=>`<div class="timeline-event"><span></span><div><strong>${esc(String(e.event_type||'event').replaceAll('_',' '))}</strong><small>${time(e.event_time)}${e.price==null?'':` · ${fmt(e.price,6)}`}${e.r_multiple==null?'':` · ${fmt(e.r_multiple,2)}R`}</small></div></div>`).join(''):'<p class="muted">No lifecycle events recorded yet.</p>'}</div></div></div>`;if(hasFeature('broker_connection')&&!x.ml_recovery_mode){
+  if(!state.broker){try{state.broker=await request('/broker')}catch{}}
+  const mtConnections=(state.broker?.connections||[]).filter(connection=>['mt4','mt5'].includes(String(connection.platform||'').toLowerCase()));
+  const defaultConnection=mtConnections.find(connection=>connection.is_default)||mtConnections[0]||null;
+  const accountOptions=mtConnections.map(connection=>`<option value="${esc(connection.connection_id)}" ${connection.connection_id===defaultConnection?.connection_id?'selected':''}>${esc(connection.account_label||connection.broker_name||String(connection.platform||'').toUpperCase())} · ${esc(String(connection.platform||'').toUpperCase())} · ${esc(connection.account_ref_masked||'account')}${connection.is_default?' · default':''}</option>`).join('');
+  $('#signalDetailBody').insertAdjacentHTML('beforeend',`<article class="panel signal-execution-panel"><div class="panel-heading"><div><p class="eyebrow">MANUAL BROKER EXECUTION</p><h3>Execute this signal</h3><p>Choose the exact MetaTrader account for this order. The selected account keeps its own risk policy, execution permission and reconciliation state.</p></div></div><div class="detail-list"><div class="detail-row"><span>Asset</span><strong>${esc(x.asset||'—')}</strong></div><div class="detail-row"><span>Direction</span><strong>${esc(String(x.direction||'').toUpperCase())}</strong></div><div class="detail-row"><span>Entry / Stop</span><strong>${fmt(x.entry,6)} / ${fmt(x.stop_loss,6)}</strong></div></div>${mtConnections.length?`<label class="execution-account-select">Trading account<select id="executionConnectionSelect">${accountOptions}</select></label><button id="executeSignalButton" class="danger" type="button">Confirm and submit to MT5</button>`:'<div class="connection-feedback negative-feedback"><strong>No MetaTrader account available</strong><p>Connect and verify an MT4/MT5 account from Account → Trading connections first.</p></div>'}<p class="muted">A broker order can lose money. Selecting or switching an account does not bypass SignalRankAI risk, quote, market, consent, quota, reconciliation or kill-switch gates; every trade still passes live safety gates.</p></article>`);
+  const executeButton=$('#executeSignalButton');
+  if(executeButton)executeButton.onclick=async()=>{
+    const selectedId=$('#executionConnectionSelect')?.value||defaultConnection?.connection_id;
+    const connection=mtConnections.find(item=>item.connection_id===selectedId);
+    if(!connection){toast('Choose a MetaTrader account first',true);return}
+    const label=`${x.asset||'this signal'} ${String(x.direction||'').toUpperCase()} at ${fmt(x.entry,6)} with stop ${fmt(x.stop_loss,6)}`;
+    const accountLabel=connection.account_label||connection.broker_name||String(connection.platform||'').toUpperCase();
+    if(!confirm(`Submit ${label} to ${accountLabel}?\n\nThe server will block the trade if any account permission, policy, broker health, quote freshness, market-state, quota, reconciliation or global kill-switch gate fails.`))return;
+    executeButton.disabled=true;
+    try{
+      const result=await request('/signals/'+encodeURIComponent(signalId)+'/execute',{method:'POST',body:JSON.stringify({confirm:true,provider:String(connection.platform||'mt5').toLowerCase(),connection_id:connection.connection_id})});
+      toast(result.order_id?`Order submitted: ${result.order_id}`:'Broker submission accepted');
+      await loadSignalDetail(signalId)
+    }catch(err){toast(err.message,true)}finally{executeButton.disabled=false}
+  }
+};$('#signalDetailBody').insertAdjacentHTML('beforeend',`<article class="panel signal-feedback-panel"><div class="panel-heading"><div><h3>Signal feedback</h3><p>Rate this delivered signal or report a specific problem. Feedback is attached to this signal and your canonical account.</p></div></div><form id="signalFeedbackForm" class="stack-form"><label>Rating<select name="rating"><option value="">No rating</option><option value="5">5 — excellent</option><option value="4">4 — good</option><option value="3">3 — mixed</option><option value="2">2 — poor</option><option value="1">1 — bad</option></select></label><label>Issue<select name="issue"><option value="">No issue</option><option value="stale">Stale</option><option value="bad_setup">Bad setup</option><option value="wrong_levels">Wrong levels</option><option value="wrong_outcome">Wrong outcome</option><option value="late_delivery">Late delivery</option><option value="duplicate">Duplicate</option><option value="unclear">Unclear</option><option value="other">Other</option></select></label><label>Comment<textarea name="comment" rows="3" maxlength="4000" placeholder="What should SignalRankAI learn from this?"></textarea></label><button class="primary" type="submit">Send feedback</button></form></article>`);const feedbackForm=$('#signalFeedbackForm');if(feedbackForm)feedbackForm.onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={rating:raw.rating?Number(raw.rating):null,issue:raw.issue||null,comment:String(raw.comment||'').trim()||null};if(payload.rating==null&&!payload.issue){toast('Choose a rating or issue',true);return}try{await request('/signals/'+encodeURIComponent(signalId)+'/feedback',{method:'POST',body:JSON.stringify(payload)});e.target.reset();toast('Feedback recorded for this signal')}catch(err){toast(err.message,true)}};panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'})}
 $('#closeSignalDetail')?.addEventListener('click',()=>{$('#signalDetailPanel').hidden=true});
 
 async function searchMarkets(){const qs=new URLSearchParams({q:$('#marketSearch')?.value||'',limit:'60'});const assetClass=$('#assetClassFilter')?.value;if(assetClass)qs.set('asset_class',assetClass);const rows=(await request('/instruments/search?'+qs)).instruments||[];$('#marketResults').innerHTML=rows.length?rows.map(i=>`<article class="market-card"><div class="market-card-top"><h3>${esc(i.display_symbol||i.canonical_symbol)}</h3><button class="ghost market-watch" data-instrument="${esc(i.instrument_id)}" data-symbol="${esc(i.display_symbol||i.canonical_symbol)}" type="button">Watch</button></div><p>${esc(i.asset_class)} · ${esc(i.instrument_type)}</p><p>${i.tradable?'Tradable':'Analysis only'} · ${esc(i.discovery_status)}</p><div class="provider-pills">${(i.providers||[]).map(p=>`<span>${esc(p)}</span>`).join('')}</div></article>`).join(''):'<p>No registry instruments found. Run provider discovery after migration.</p>';$$('.market-watch').forEach(button=>button.onclick=()=>addInstrumentToWatchlist(button.dataset.instrument,button.dataset.symbol))}
@@ -48,7 +156,27 @@ async function loadWatchlists(){const data=await request('/watchlists');state.wa
 async function addInstrumentToWatchlist(instrumentId,symbol){if(!state.watchlists.length)await loadWatchlists();if(!state.watchlists.length){toast('Create a watchlist in Tools first.',true);showView('tools');return}let selected=state.watchlists[0];if(state.watchlists.length>1){const menu=state.watchlists.map((w,i)=>`${i+1}. ${w.name}`).join('\n');const pick=prompt(`Add ${symbol} to which watchlist?\n${menu}`,'1');const index=Math.max(0,Math.min(state.watchlists.length-1,Number(pick||1)-1));selected=state.watchlists[index]}try{await request('/watchlists/'+encodeURIComponent(selected.watchlist_id)+'/items',{method:'POST',body:JSON.stringify({instrument_id:instrumentId})});toast(`${symbol} added to ${selected.name}`);await loadWatchlists()}catch(err){toast(err.message,true)}}
 async function loadAlerts(){try{const data=await request('/alerts');state.alerts=data.alerts||[];$('#alertList').innerHTML=state.alerts.length?state.alerts.map(a=>`<div class="list-row"><div><strong>${esc(a.asset||a.instrument_id||'Market')} · ${esc(String(a.alert_type||'').replaceAll('_',' '))}</strong><small>${a.active?'Active':'Disabled'} · ${(a.channels||[]).map(esc).join(', ')}</small></div>${a.active?`<button class="danger alert-delete" data-id="${esc(a.alert_id)}" type="button">Disable</button>`:''}</div>`).join(''):'<p>No alerts configured.</p>';$$('.alert-delete').forEach(b=>b.onclick=async()=>{await request('/alerts/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});await loadAlerts()})}catch(err){$('#alertList').innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
 async function loadNotifications(){const data=await request('/notifications?limit=50');state.notifications=data.notifications||[];$('#notificationCenter').innerHTML=state.notifications.length?state.notifications.map(n=>`<div class="notification-row ${n.read_at?'':'unread'}"><div><small>${esc(String(n.event_type||'update').replaceAll('_',' '))} · ${time(n.created_at)}</small><strong>${esc(n.title||'SignalRankAI update')}</strong><p>${esc(n.body||'')}</p></div>${n.read_at?'':`<button class="ghost notification-read" data-id="${esc(n.notification_id)}" type="button">Mark read</button>`}</div>`).join(''):'<p class="muted">No notifications yet.</p>';$$('.notification-read').forEach(b=>b.onclick=async()=>{await request('/notifications/'+encodeURIComponent(b.dataset.id)+'/read',{method:'POST',body:'{}'});await loadNotifications()})}
-async function loadTools(){await Promise.allSettled([loadRecap(),loadWatchlists(),loadAlerts(),loadNotifications()])}
+function commandMatches(item,query){const q=String(query||'').trim().toLowerCase();if(!q)return true;return [item.name,item.description,item.section,item.minimum_tier].some(v=>String(v||'').toLowerCase().includes(q))}
+function renderCommandCatalog(query=''){
+  const data=state.commandCatalog||{commands:[]};const rows=(data.commands||[]).filter(item=>commandMatches(item,query));
+  const target=$('#commandCatalog');const operatorTarget=$('#operatorCommandCatalog');
+  const grouped=rows.reduce((acc,item)=>{(acc[item.section]||(acc[item.section]=[])).push(item);return acc},{});
+  const html=Object.entries(grouped).map(([section,items])=>`<section class="command-group"><div class="command-group-head"><h4>${esc(section)}</h4><span>${items.length}</span></div><div class="command-grid">${items.map(item=>`<button class="command-card" type="button" data-command="${esc(item.name)}" data-web-view="${esc(item.web_view)}"><span class="command-slash">/${esc(item.name)}</span><strong>${esc(item.description)}</strong><small>${esc(item.minimum_tier)} · open ${esc(item.web_view)}</small></button>`).join('')}</div></section>`).join('');
+  if(target)target.innerHTML=html||'<p class="empty-state">No capabilities match this search.</p>';
+  if(operatorTarget){const ops=rows.filter(item=>item.operator_only);const by=ops.reduce((acc,item)=>{(acc[item.section]||(acc[item.section]=[])).push(item);return acc},{});operatorTarget.innerHTML=Object.entries(by).map(([section,items])=>`<section class="command-group"><div class="command-group-head"><h4>${esc(section)}</h4><span>${items.length}</span></div><div class="command-grid">${items.map(item=>`<button class="command-card operator-command-card" type="button" data-command="${esc(item.name)}" data-web-view="ops"><span class="command-slash">/${esc(item.name)}</span><strong>${esc(item.description)}</strong><small>${esc(item.minimum_tier)} · audited operator surface</small></button>`).join('')}</div></section>`).join('')||'<p class="muted">No operator-only commands are available for this account.</p>'}
+  const count=$('#commandCatalogCount');if(count)count.textContent=`${rows.length} / ${data.count||0}`;
+  document.querySelectorAll('[data-web-view]').forEach(button=>{button.onclick=()=>{const view=button.dataset.webView;if(view&&view!=='ops')showView(view);else if(view==='ops'&&data.authority)showView('ops')}})
+}
+async function loadCommandCatalog(){
+  state.commandCatalog=await request('/command-catalog');
+  const authority=state.commandCatalog?.authority||null;
+  const opsButton=$('#opsNavButton');if(opsButton)opsButton.hidden=!authority;
+  const opsOption=$('#opsSwitcherOption');if(opsOption)opsOption.hidden=!authority;
+  renderCommandCatalog($('#commandSearch')?.value||'');
+  return state.commandCatalog
+}
+async function loadTools(){await Promise.allSettled([loadCommandCatalog(),loadRecap(),loadWatchlists(),loadAlerts(),loadNotifications()])}
+$('#commandSearch')?.addEventListener('input',e=>renderCommandCatalog(e.target.value));
 $('#refreshRecap')?.addEventListener('click',()=>loadRecap().catch(e=>toast(e.message,true)));$('#refreshNotifications')?.addEventListener('click',()=>loadNotifications().catch(e=>toast(e.message,true)));
 $('#liveQuoteForm')?.addEventListener('submit',async e=>{e.preventDefault();const asset=String(formData(e.target).asset||'').trim().toUpperCase();const target=$('#liveQuoteResult');target.innerHTML='<span class="loading-dot">Fetching provider quote…</span>';try{const q=await request('/live-price?asset='+encodeURIComponent(asset));const spread=q.bid!=null&&q.ask!=null?Math.abs(Number(q.ask)-Number(q.bid)):null;target.innerHTML=`<div class="quote-hero"><div><small>${esc(String(q.asset_class||'market').toUpperCase())}</small><strong>${esc(q.asset)} · ${fmt(q.price,6)}</strong></div><span class="${q.is_stale?'negative':'positive'}">${q.is_stale?'STALE':'LIVE'}</span></div><div class="mini-metrics"><div><small>Provider</small><strong>${esc(q.provider)}</strong></div><div><small>Latency</small><strong>${esc(q.latency_ms)} ms</strong></div><div><small>Confidence</small><strong>${fmt(Number(q.confidence||0)*100,0)}%</strong></div><div><small>Spread</small><strong>${spread==null?'—':fmt(spread,6)}</strong></div></div><small>${esc(q.quote_kind)} · ${esc(q.provider_health)} · ${esc(q.market_status||'unknown')} · request ${esc(String(q.request_id||'').slice(0,10))}</small>`}catch(err){target.textContent=err.message;target.classList.add('negative')}});
 $('#aiAnalyzeForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);const target=$('#aiAnalysisResult');target.innerHTML='<span class="loading-dot">Running market analysis…</span>';try{const result=await request('/ai/analyze',{method:'POST',body:JSON.stringify({asset:String(raw.asset||'').toUpperCase(),timeframe:raw.timeframe||'1h'})});if(!result.setup){target.innerHTML=`<p><strong>No qualified setup right now.</strong></p><p>${esc(String(result.reason||'No setup').replaceAll('_',' '))} · ${esc(result.candles||0)} candles checked.</p>`;return}const x=result.setup;const ai=result.openai||{};target.innerHTML=`<div class="analysis-hero"><div><small>${esc(String(result.asset_class||'').toUpperCase())} · ${esc(result.timeframe)}</small><strong>${esc(result.asset)} ${esc(String(x.direction||'').toUpperCase())}</strong></div><span class="score-ring">${fmt(x.score,0)}</span></div><div class="mini-metrics"><div><small>Entry</small><strong>${fmt(x.entry,6)}</strong></div><div><small>Stop</small><strong>${fmt(x.stop_loss,6)}</strong></div><div><small>Confidence</small><strong>${fmt(Number(x.confidence||0)*100,1)}%</strong></div><div><small>Strategy</small><strong>${esc(x.strategy_name||'—')}</strong></div></div>${ai.explanation?`<div class="ai-explanation"><b>OpenAI explanation</b><p>${esc(ai.explanation)}</p>${(ai.strengths||[]).length?`<p><b>Strengths:</b> ${(ai.strengths||[]).map(esc).join(' · ')}</p>`:''}${(ai.risks||[]).length?`<p><b>Risks:</b> ${(ai.risks||[]).map(esc).join(' · ')}</p>`:''}</div>`:''}<small>${esc(result.disclaimer)}</small>`}catch(err){target.innerHTML=`<p class="negative">${esc(err.message)}</p>`}});
@@ -67,10 +195,40 @@ async function loadJournal(){const rows=(await request('/journal?limit=100')).en
 $('#journalForm').onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={title:raw.title||null,notes:raw.notes||'',emotion:raw.emotion||null,mistake_category:raw.mistake_category||null,plan_adherence:raw.plan_adherence?Number(raw.plan_adherence):null,result_r:raw.result_r?Number(raw.result_r):null,tags:String(raw.tags||'').split(',').map(x=>x.trim()).filter(Boolean)};try{await request('/journal',{method:'POST',body:JSON.stringify(payload)});e.target.reset();await loadJournal();toast('Journal entry saved')}catch(err){toast(err.message,true)}};
 async function loadSupport(){const rows=(await request('/support/tickets')).tickets||[];$('#supportTickets').innerHTML=rows.length?rows.map(t=>`<div class="list-row"><div><strong>${esc(t.subject)}</strong><small>${esc(t.category)} · ${esc(t.priority)} · ${time(t.updated_at)}</small></div><span>${esc(t.status)}</span></div>`).join(''):'<p>No support tickets.</p>'}
 $('#supportForm').onsubmit=async e=>{e.preventDefault();try{await request('/support/tickets',{method:'POST',body:JSON.stringify(formData(e.target))});e.target.reset();await loadSupport();toast('Support ticket created')}catch(err){toast(err.message,true)}};
-function renderProfile(){const u=state.user||{};const entries=[['Public ID',u.public_user_id],['Email',u.primary_email||'Not set'],['Email verified',u.email_verified_at?'Yes':'No'],['Telegram',u.telegram_user_id?'Linked':'Not linked'],['Tier',String(u.tier||'free').toUpperCase()],['Timezone',u.timezone||'UTC'],['Travel mode',u.timezone_auto_update?'On':'Off'],['Account status',u.account_status]];$('#profileDetails').innerHTML=entries.map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');const form=$('#profileForm');if(form){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}}
+function telegramLinkState(){
+  const u=state.user||{};
+  if(u.telegram_user_id)return{status:'linked',label:'LINKED',text:'Telegram is connected to this SignalRank account.',connected:true};
+  const status=String(u.telegram_link_status||'not_linked').toLowerCase();
+  if(status==='merge_review')return{status,label:'VERIFIED',text:'Telegram ownership is verified. Account history reconciliation is pending; you do not need to reconnect.',connected:true};
+  if(status==='link_pending')return{status,label:'PENDING',text:'A Telegram link code is active. Complete it in the bot or create a new code after it expires.',connected:false};
+  return{status:'not_linked',label:'NOT LINKED',text:'Connect Telegram once to share identity, preferences and delivery state across channels.',connected:false};
+}
+function renderProfile(){
+  const u=state.user||{};
+  const tg=telegramLinkState();
+  const telegramDisplay=tg.status==='merge_review'?'Verified · reconciliation pending':tg.status==='link_pending'?'Link pending':u.telegram_user_id?'Linked':'Not linked';
+  const entries=[['Public ID',u.public_user_id],['Email',u.primary_email||'Not set'],['Email verified',u.email_verified_at?'Yes':'No'],['Telegram',telegramDisplay],['Tier',String(u.tier||'free').toUpperCase()],['Timezone',u.timezone||'UTC'],['Travel mode',u.timezone_auto_update?'On':'Off'],['Account status',u.account_status]];
+  $('#profileDetails').innerHTML=entries.map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
+  const badge=$('#telegramStatusBadge');if(badge){badge.textContent=tg.label;badge.dataset.state=tg.status}
+  const statusText=$('#telegramStatusText');if(statusText)statusText.textContent=tg.text;
+  const connect=$('#connectTelegramButton');
+  if(connect){
+    connect.hidden=tg.connected;
+    connect.textContent=tg.status==='link_pending'?'Create new link code':'Connect Telegram';
+  }
+  const result=$('#telegramLinkResult');
+  if(result&&tg.status==='merge_review'){
+    result.hidden=false;
+    result.innerHTML='<div class="connection-feedback positive-feedback"><strong>Telegram verified</strong><p>Your web and Telegram identities both passed possession checks. SignalRank is reconciling the older Telegram-side account history before treating them as one canonical record.</p><small>Do not create another account or link code. Your Telegram connection is already recognized.</small></div>';
+  }else if(result&&tg.status==='linked'){
+    result.hidden=true;result.innerHTML='';
+  }
+  const form=$('#profileForm');
+  if(form){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}
+}
 $('#profileForm').onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={timezone_auto_update:Boolean(e.target.elements.timezone_auto_update?.checked)};for(const [k,v] of Object.entries(raw)){if(k==='timezone_auto_update')continue;if(v!=='')payload[k]=['max_risk_percentage','max_daily_drawdown_pct'].includes(k)?Number(v):v}try{state.user=(await request('/profile',{method:'PATCH',body:JSON.stringify(payload)})).user;renderProfile();toast('Profile updated')}catch(err){toast(err.message,true)}};
 function csvValues(value,{upper=false}={}){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean).map(x=>upper?x.toUpperCase():x.toLowerCase())}
-function renderTradingProfile(data){state.tradingProfile=data;const p=data?.preferences||{};const form=$('#tradingProfileForm');if(!form)return;for(const name of ['trade_profile','risk_profile','min_signal_score','risk_per_trade_pct','max_daily_loss_pct','max_signals_per_day','max_concurrent_positions']){if(form.elements[name])form.elements[name].value=p[name]??''}for(const name of ['preferred_assets','blocked_assets','preferred_timeframes','preferred_strategies','sessions']){if(form.elements[name])form.elements[name].value=(p[name]||[]).join(', ')}const classes=new Set(p.asset_classes||[]);$$('#tradingProfileForm input[name="asset_class"]').forEach(input=>input.checked=classes.has(input.value));for(const name of ['notify_on_entry','notify_on_exit','notify_on_tp','notify_on_sl']){if(form.elements[name])form.elements[name].checked=p[name]!==false}const sync=$('#tradingProfileSync');if(sync)sync.textContent=state.user?.telegram_user_id?'Synced with your linked Telegram account':'Saved for web now; it will sync when Telegram is linked'}
+function renderTradingProfile(data){state.tradingProfile=data;const p=data?.preferences||{};const form=$('#tradingProfileForm');if(!form)return;for(const name of ['trade_profile','risk_profile','min_signal_score','risk_per_trade_pct','max_daily_loss_pct','max_signals_per_day','max_concurrent_positions']){if(form.elements[name])form.elements[name].value=p[name]??''}for(const name of ['preferred_assets','blocked_assets','preferred_timeframes','preferred_strategies','sessions']){if(form.elements[name])form.elements[name].value=(p[name]||[]).join(', ')}const classes=new Set(p.asset_classes||[]);$$('#tradingProfileForm input[name="asset_class"]').forEach(input=>input.checked=classes.has(input.value));for(const name of ['notify_on_entry','notify_on_exit','notify_on_tp','notify_on_sl']){if(form.elements[name])form.elements[name].checked=p[name]!==false}const sync=$('#tradingProfileSync');if(sync){const tg=telegramLinkState();sync.textContent=tg.status==='merge_review'?'Telegram verified; account-history reconciliation pending':tg.connected?'Synced with your linked Telegram account':'Saved for web now; it will sync when Telegram is linked'}}
 $('#tradingProfileForm').onsubmit=async e=>{e.preventDefault();const form=e.target;const classes=[...document.querySelectorAll('#tradingProfileForm input[name="asset_class"]:checked')].map(x=>x.value);if(!classes.length){toast('Choose at least one market',true);return}const n=name=>form.elements[name]?.value;const num=name=>{const value=n(name);return value===''?null:Number(value)};const payload={trade_profile:n('trade_profile'),risk_profile:n('risk_profile'),asset_classes:classes,preferred_assets:csvValues(n('preferred_assets'),{upper:true}),blocked_assets:csvValues(n('blocked_assets'),{upper:true}),preferred_timeframes:csvValues(n('preferred_timeframes')),preferred_strategies:csvValues(n('preferred_strategies')),sessions:csvValues(n('sessions')),min_signal_score:num('min_signal_score'),risk_per_trade_pct:num('risk_per_trade_pct'),max_daily_loss_pct:num('max_daily_loss_pct'),max_signals_per_day:num('max_signals_per_day'),max_concurrent_positions:num('max_concurrent_positions'),notify_on_entry:form.elements.notify_on_entry.checked,notify_on_exit:form.elements.notify_on_exit.checked,notify_on_tp:form.elements.notify_on_tp.checked,notify_on_sl:form.elements.notify_on_sl.checked};for(const key of Object.keys(payload)){if(payload[key]===null)delete payload[key]}try{const result=await request('/trading-profile',{method:'PUT',body:JSON.stringify(payload)});renderTradingProfile(result);toast('Trading profile synced across SignalRankAI')}catch(err){toast(err.message,true)}};
 async function loadReferralLeaderboard(){const el=$('#referralLeaderboard');if(!el)return;try{const data=await request('/referrals/leaderboard');const rows=data.leaders||[];el.innerHTML=rows.length?rows.map(row=>`<div class="list-row"><div><strong>#${esc(row.rank)} · ${esc(row.label)}</strong><small>${row.is_current_user?'Your account · ':''}${esc(row.valid_referrals)} successful referrals</small></div></div>`).join(''):`<p class="muted">No successful referrals yet. You have ${esc(data.your_valid_referrals||0)}.</p>`}catch{el.innerHTML='<p class="muted">Referral leaderboard is temporarily unavailable.</p>'}}
 async function loadExecutionWebhook(){const panel=$('#executionWebhookPanel');if(!panel)return;try{const data=await request('/execution-webhook');panel.hidden=false;const row=data.webhook||{};const form=$('#executionWebhookForm');if(form?.elements.url)form.elements.url.value=row.webhook_url||'';$('#executionWebhookStatus').innerHTML=row.webhook_url?`<div class="detail-row"><span>Status</span><strong>${row.is_active?'Active':'Disabled'}</strong></div><div class="detail-row"><span>Endpoint</span><strong>${esc(row.webhook_url)}</strong></div>`:'<p class="muted">No eligible execution webhook configured.</p>'}catch{panel.hidden=true}}
@@ -82,8 +240,12 @@ $('#createApiKeyButton').onclick=async()=>{const name=prompt('Name this API key'
 $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Turn off subscription auto-renew? Your current paid access remains active until its expiry, and this does not issue a refund.'))return;try{const result=await request('/billing/cancel-auto-renew',{method:'POST',body:JSON.stringify({confirm:true})});toast(result.provider_follow_up_required?'Auto-renew is off in SignalRankAI, but Paystack needs manual follow-up. A billing review is recommended.':'Auto-renew cancelled. Current access remains until expiry.');await loadAccount()}catch(err){toast(err.message,true)}});
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
-async function loadBillingProducts(){const data=await request('/billing/products');const products=data.products||[];$('#billingProducts').innerHTML=products.length?products.map(p=>`<article class="metric-card"><small>${esc(String(p.tier).toUpperCase())}</small><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}">Choose plan</button></article>`).join(''):'<p>No public checkout products are available.</p>';$$('.billing-checkout').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;toast(err.message,true)}})}
-async function loadAccount(){const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
+async function loadBillingProducts(){
+  const data=await request('/billing/products');const products=data.products||[];const current=String(state.user?.tier||'free').toLowerCase();
+  $('#billingProducts').innerHTML=products.length?products.map(p=>{const active=String(p.tier||'').toLowerCase()===current;return `<article class="metric-card plan-card ${active?'current-plan':''}"><div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button></article>`}).join(''):'<p>No public checkout products are available right now.</p>';
+  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Opening secure checkout…';try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;button.textContent=original;if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');toast(err.message,true)}})
+}
+async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile();const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
 function brokerPolicyFraction(value){const n=Number(value);return Number.isFinite(n)?n/100:0}
 function brokerPolicyCsv(value){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean)}
@@ -262,17 +424,49 @@ async function loadBroker(){
     const ex=data.execution||{};
     const connections=data.connections||[];
     const platforms=data.platforms||[];
+    const metaapiHealth=data.provider_health?.metaapi||{};
+    const metaapiReady=metaapiHealth.ok===true;
+    const metaapiCode=String(metaapiHealth.code||'unknown');
+    const metaapiBanner=$('#brokerProviderHealth');
+    if(metaapiBanner){
+      if(metaapiReady){
+        metaapiBanner.hidden=false;
+        metaapiBanner.className='provider-health-banner provider-health-ok';
+        metaapiBanner.innerHTML='<strong>MetaTrader provider online</strong><span>SignalRankAI is authorized with MetaApi. Account-specific broker checks still run when you connect or verify an account.</span>';
+      }else{
+        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(metaapiCode);
+        const message=operatorFault
+          ?'SignalRankAI\'s MetaApi authorization needs administrator attention. Your MT4/MT5 login, password and server are not the cause.'
+          :metaapiCode==='provider_not_configured'
+            ?'MetaTrader connectivity is not configured for this environment.'
+            :'MetaTrader connectivity is temporarily unavailable. Do not repeatedly resubmit broker credentials.';
+        metaapiBanner.hidden=false;
+        metaapiBanner.className='provider-health-banner provider-health-error';
+        metaapiBanner.innerHTML=`<strong>MetaTrader connection temporarily unavailable</strong><span>${esc(message)}</span><small>Provider status: ${esc(metaapiCode.replaceAll('_',' '))}${metaapiHealth.provider_status?' · HTTP '+esc(metaapiHealth.provider_status):''}</small>`;
+      }
+    }
+    const mtForm=$('#brokerLinkForm');
+    const mtSubmit=mtForm?.querySelector('button[type="submit"]');
+    const mtLookup=$('#brokerServerLookupButton');
+    const mtSecure=$('#brokerSecureLinkButton');
+    for(const control of [mtSubmit,mtLookup,mtSecure])if(control)control.disabled=!metaapiReady;
     const accountStats=data.stats?.accounts||[];
     const accountStatsById=new Map(accountStats.map(row=>[String(row.connection_id||''),row]));
     const readyConnections=connections.filter(x=>['verified','ready','linked'].includes(String(x.status||'').toLowerCase()));
     const executableConnections=connections.filter(x=>x.execution_enabled===true);
     $('#brokerReadinessBadge').textContent=executableConnections.length?'EXECUTION READY':readyConnections.length?'CONNECTED':'NOT CONNECTED';
+    const connectionLimit=Number(platforms.find(p=>Number.isFinite(Number(p.connection_limit)))?.connection_limit||0);
+    const allowance=$('#brokerAccountAllowance');
+    if(allowance)allowance.textContent=connectionLimit>0?`${connections.length}/${connectionLimit} CONNECTED`:`${connections.length} CONNECTED`;
 
     const catalog=$('#brokerPlatformCatalog');
     if(catalog){
       catalog.innerHTML=platforms.map(p=>{
-        const stateLabel=p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connection ready · execution adapter pending':p.execution_adapter==='connection_only'?'Connection only':'Custom integration';
-        return `<div class="metric-card"><small>${esc(p.name)}</small><strong>${esc(stateLabel)}</strong><span class="${p.configured?'positive':'muted'}">${p.configured?'Configured':'Setup required'}</span><small>${esc((p.asset_classes||[]).join(' · '))}</small></div>`;
+        const isMetaTrader=['mt4','mt5'].includes(String(p.platform||'').toLowerCase());
+        const providerUnavailable=isMetaTrader&&!metaapiReady;
+        const stateLabel=providerUnavailable?'Provider authorization unavailable':p.execution_adapter==='ready'?'Execution ready':p.execution_adapter==='integration'?'Connection ready · execution adapter pending':p.execution_adapter==='connection_only'?'Connection only':'Custom integration';
+        const configured=p.configured&&!providerUnavailable;
+        return `<div class="metric-card"><small>${esc(p.name)}</small><strong>${esc(stateLabel)}</strong><span class="${configured?'positive':providerUnavailable?'negative':'muted'}">${configured?'Configured':providerUnavailable?'Provider unavailable':'Setup required'}</span><small>${esc((p.asset_classes||[]).join(' · '))}</small></div>`;
       }).join('');
     }
 
@@ -281,21 +475,48 @@ async function loadBroker(){
       connectionList.innerHTML=connections.length?connections.map(x=>{
         const status=String(x.status||'pending').toUpperCase();
         const env=String(x.environment||'unknown').toUpperCase();
-        const exec=x.execution_enabled?'Execution allowed':'Execution off';
-        const defaultTag=x.is_default?'Default · ':'';
+        const exec=x.execution_enabled?'Execution on':'Execution off';
         const account=x.account_ref_masked||'Account hidden';
         const verifySupported=['metaapi','bybit'].includes(String(x.connector||'').toLowerCase())||String(x.platform||'').toLowerCase()==='bybit';
-        const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify</button>':'';
+        const verifyButton=verifySupported?'<button class="ghost broker-action" data-action="verify">Verify health</button>':'';
         const accountPerf=accountStatsById.get(String(x.connection_id||''))||{};
+        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
+        const demoPrepareButton=(String(x.environment||'').toLowerCase()==='demo'&&mode==='DEMO')
+          ?'<button class="ghost broker-action" data-action="demo_prepare">Prepare DEMO certification</button>'
+          :'';
+        const readiness=x.readiness||{};
+        const blockers=Array.isArray(readiness.blockers)?readiness.blockers:[];
+        const primaryBlocker=blockers[0]?.message||blockers[0]?.code||'Execution readiness not yet evaluated';
         const perfParts=[
           accountPerf.executions!==undefined?`${accountPerf.executions} executions`:'',
           accountPerf.wins!==undefined?`${accountPerf.wins} wins`:'',
           accountPerf.losses!==undefined?`${accountPerf.losses} losses`:'',
-          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`realized P/L ${fmt(accountPerf.realized_pnl||0)}`:''
+          accountPerf.realized_pnl!==null&&accountPerf.realized_pnl!==undefined?`P/L ${fmt(accountPerf.realized_pnl||0)}`:''
         ].filter(Boolean).join(' · ');
-        const mode=String(accountPerf.account_mode||x.account_classification||'UNKNOWN').toUpperCase();
-        return `<div class="list-row" data-connection-id="${esc(x.connection_id)}"><div><strong>${esc(x.account_label||x.platform?.toUpperCase()||'Trading account')}</strong><small>${esc(defaultTag+String(x.platform||'').toUpperCase())} · ${esc(x.broker_name||x.connector||'Broker')} · ${esc(env)} · ${esc(mode)} · ${esc(account)}</small><small>${esc(status)} · ${esc(exec)}${x.last_error_message?' · '+esc(x.last_error_message):''}</small><small>${esc(perfParts||'No account-specific closed performance yet')}</small></div><div class="row-actions">${verifyButton}<button class="ghost broker-action" data-action="default">Default</button><button class="ghost broker-action" data-action="policy">Risk policy</button><button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button><button class="danger broker-action" data-action="remove">Remove</button></div></div>`;
-      }).join(''):'<p class="muted">No trading accounts connected yet.</p>';
+        const title=x.account_label||x.broker_name||String(x.platform||'').toUpperCase()||'Trading account';
+        return `<article class="broker-account-card ${x.is_default?'is-default':''}" data-connection-id="${esc(x.connection_id)}">
+          <div class="broker-card-top">
+            <div><span class="broker-platform">${esc(String(x.platform||'').toUpperCase())}</span><h4>${esc(title)}</h4><small>${esc(x.broker_name||x.connector||'Broker')} · ${esc(account)}</small></div>
+            <span class="account-state ${['VERIFIED','READY','LINKED'].includes(status)?'positive':'pending-text'}">${esc(status)}</span>
+          </div>
+          <div class="broker-tags"><span>${esc(env)}</span><span>${esc(mode)}</span><span class="${x.execution_enabled?'positive':''}">${esc(exec)}</span>${x.is_default?'<span class="default-tag">DEFAULT ROUTE</span>':''}</div>
+          <div class="broker-card-details">
+            <div><small>Server</small><strong>${esc(x.server||'—')}</strong></div>
+            <div><small>Health</small><strong>${x.last_health_at?esc(time(x.last_health_at)):'Not verified yet'}</strong></div>
+            <div><small>Readiness</small><strong class="${readiness.execution_ready?'positive':'muted'}">${esc(readiness.execution_ready?'Account-level execution prerequisites ready':primaryBlocker)}</strong></div>
+            <div><small>Evidence</small><strong>${esc(perfParts||'No closed execution evidence yet')}</strong></div>
+          </div>
+          <div class="broker-card-actions">
+            ${verifyButton}
+            ${demoPrepareButton}
+            <button class="ghost broker-action" data-action="default" ${x.is_default?'disabled':''}>${x.is_default?'Default account':'Make default'}</button>
+            <button class="ghost broker-action" data-action="policy">Risk policy</button>
+            <button class="${x.execution_enabled?'danger':'primary'} broker-action" data-action="execution">${x.execution_enabled?'Disable execution':'Enable execution'}</button>
+            <button class="danger broker-action" data-action="remove">Remove</button>
+          </div>
+        </article>`;
+      }).join(''):'<div class="empty-state"><strong>No broker accounts yet</strong><p>Add an MT4/MT5 or supported exchange account. Connecting it will not enable execution.</p><button class="primary" type="button" id="emptyAddBroker">+ Add first account</button></div>';
+      $('#emptyAddBroker')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
     }
 
     $('#brokerStats').innerHTML=[
@@ -305,6 +526,54 @@ async function loadBroker(){
       ['Performance scope','Per account only']
     ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')+
       '<p class="muted">Demo, personal-live and PROP performance are not combined into one headline. Open each account policy/ledger for its own evidence.</p>';
+
+    const demo=data.demo_certification||{};
+    const demoAccounts=Array.isArray(demo.accounts)?demo.accounts:[];
+    const demoBadge=$('#demoCertificationBadge');
+    if(demoBadge){
+      const ready=String(demo.status||'ACTION_REQUIRED')==='PREFLIGHT_READY';
+      demoBadge.textContent=ready?'PREFLIGHT READY':'ACTION REQUIRED';
+      demoBadge.className='account-state '+(ready?'positive':'pending-text');
+    }
+    const demoSummary=$('#demoCertificationSummary');
+    if(demoSummary){
+      const blocker=(Array.isArray(demo.blockers)&&demo.blockers[0])||null;
+      demoSummary.innerHTML=[
+        ['Connected demo accounts',Number(demo.connected_demo_accounts||0)],
+        ['Preflight-ready',Number(demo.preflight_ready_accounts||0)],
+        ['Bounded-lifecycle ready',Number(demo.bounded_lifecycle_ready_accounts||0)],
+        ['Next blocker',blocker?String(blocker.message||blocker.code||'Action required'):(demoAccounts.length?'None before operator certification':'Connect a demo account')]
+      ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+    }
+    const demoEmpty=$('#demoCertificationEmpty');
+    const demoList=$('#demoCertificationAccounts');
+    if(demoEmpty)demoEmpty.hidden=demoAccounts.length>0;
+    if(demoList){
+      const labels={
+        connected_as_demo:'Connected as DEMO',
+        read_only_verified:'Read-only broker verification',
+        canonical_credentials_ready:'Canonical secure credentials',
+        demo_policy_configured:'DEMO account policy',
+        explicit_execution_permission:'Explicit execution permission',
+        reconciliation_healthy:'Healthy reconciliation',
+        policy_unfrozen:'Policy unfrozen',
+        execution_disabled_for_preflight:'Execution OFF for preflight',
+        execution_terms_accepted:'Execution-risk terms accepted',
+        provider_execution_adapter_ready:'Provider execution adapter certified'
+      };
+      demoList.innerHTML=demoAccounts.map(account=>{
+        const checklist=account.checklist||{};
+        const checks=Object.entries(labels).map(([key,label])=>{
+          const ok=checklist[key]===true;
+          return `<div class="demo-cert-check ${ok?'is-pass':'is-blocked'}"><span>${ok?'✓':'•'}</span><div><strong>${esc(label)}</strong><small>${ok?'Ready':'Action required'}</small></div></div>`;
+        }).join('');
+        const blocker=(Array.isArray(account.blockers)&&account.blockers[0])||null;
+        return `<article class="demo-cert-account"><div class="broker-card-top"><div><span class="broker-platform">${esc(String(account.provider||'broker').toUpperCase())}</span><h4>${esc(account.account_label||'Demo account')}</h4><small>Policy v${esc(account.policy_version||'—')} · Reconciliation ${esc(account.reconciliation_status||'UNKNOWN')}</small></div><span class="account-state ${account.preflight_ready?'positive':'pending-text'}">${account.preflight_ready?'PREFLIGHT READY':'NOT READY'}</span></div><div class="demo-cert-checklist">${checks}</div><p class="${blocker?'negative':'positive'}">${esc(account.next_action||blocker?.message||'Ready for operator-controlled demo certification.')}</p></article>`;
+      }).join('');
+    }
+    const demoNote=$('#demoCertificationNote');
+    if(demoNote)demoNote.textContent=String(demo.note||'This readiness view is read-only. A later bounded demo order/modify/close/reconciliation lifecycle is still required before a demo certification report can unlock any live-money gate.');
+    $('#demoCertificationConnect')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
 
     $('#brokerStatus').innerHTML=[
       ['Connection does not grant trading','Yes'],
@@ -324,6 +593,8 @@ async function loadBroker(){
       :'<p class="muted">Broker execution remains blocked until you explicitly accept the execution-risk terms.</p><button id="acceptExecutionTerms" class="ghost" type="button">Accept execution-risk terms</button>';
     $('#acceptExecutionTerms')?.addEventListener('click',acceptExecutionTerms);
 
+    $('#scrollToConnectAccount')?.addEventListener('click',()=>$('#brokerLinkForm')?.scrollIntoView({behavior:'smooth',block:'center'}));
+
     $$('.broker-action').forEach(button=>button.onclick=async()=>{
       const row=button.closest('[data-connection-id]');
       const connectionId=row?.dataset.connectionId;
@@ -337,6 +608,20 @@ async function loadBroker(){
           const environment=String(verified.environment||connection.environment||'').toUpperCase();
           toast(provider+' connection verified'+(environment?' · '+environment:''));
           await loadBroker();
+          return;
+        }else if(action==='demo_prepare'){
+          const warning='Prepare this DEMO account for certification? SignalRankAI will run read-only provider verification and reconciliation, apply a conservative MANUAL DEMO policy, and keep execution OFF. No order will be placed.';
+          if(!confirm(warning))return;
+          const prepared=await request('/broker/connections/'+encodeURIComponent(connectionId)+'/demo-certification/prepare',{
+            method:'POST',
+            body:JSON.stringify({confirm:true})
+          });
+          toast(prepared.demo_certification_prepared
+            ?'DEMO certification policy prepared · execution is still OFF'
+            :'DEMO account still needs verification');
+          await loadBroker();
+          const refreshed=(state.broker?.connections||[]).find(x=>x.connection_id===connectionId);
+          if(refreshed)await openBrokerPolicy(refreshed);
           return;
         }else if(action==='default'){
           await request('/broker/connections/'+encodeURIComponent(connectionId)+'/default',{method:'POST',body:JSON.stringify({confirm:true})});
@@ -365,15 +650,74 @@ async function loadBroker(){
     $('#brokerStatus').innerHTML=`<p class="negative">${esc(err.message)}</p>`;
   }
 
+  if($('#brokerServerLookupButton'))$('#brokerServerLookupButton').onclick=async()=>{if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. No broker credential retry is needed.',true);return}
+    const form=$('#brokerLinkForm');
+    if(!form)return;
+    const platform=String(form.elements.platform?.value||'mt5');
+    const company=String(form.elements.broker_name?.value||'').trim();
+    const server=String(form.elements.server?.value||'').trim();
+    const query=company||server;
+    const resultEl=$('#brokerServerLookupResult');
+    if(query.length<2){toast('Enter at least two characters of the broker/company or server name first',true);form.elements.broker_name?.focus();return}
+    const button=$('#brokerServerLookupButton');if(button)button.disabled=true;
+    if(resultEl){resultEl.hidden=false;resultEl.innerHTML='<p class="muted">Searching MetaApi known servers…</p>'}
+    try{
+      const data=await request('/broker/metatrader/servers?'+new URLSearchParams({platform,q:query}));
+      const groups=Array.isArray(data.brokers)?data.brokers:[];
+      if(!resultEl)return;
+      resultEl.innerHTML=groups.length?groups.map(group=>`<section class="server-result-group"><strong>${esc(group.broker||'Broker')}</strong><div class="server-result-buttons">${(group.servers||[]).map(item=>`<button class="ghost known-server-choice" type="button" data-broker="${esc(group.broker||'')}" data-server="${esc(item)}">${esc(item)}</button>`).join('')}</div></section>`).join(''):'<p class="muted">No known server match was returned. You can still use an exact server copied from MetaTrader.</p>';
+      $$('.known-server-choice').forEach(choice=>choice.onclick=()=>{
+        form.elements.server.value=choice.dataset.server||'';
+        if(!String(form.elements.broker_name.value||'').trim())form.elements.broker_name.value=choice.dataset.broker||'';
+        resultEl.innerHTML=`<p class="positive"><strong>Selected:</strong> ${esc(choice.dataset.server||'')}</p><small class="muted">Confirm this is the same server shown inside your MetaTrader account before connecting.</small>`;
+        form.elements.login?.focus();
+      });
+    }catch(err){
+      if(resultEl)resultEl.innerHTML=`<p class="negative">${esc(err.message)}</p><small class="muted">Server search is optional; you can still paste the exact server shown in MetaTrader.</small>`;
+      toast(err.message,true);
+    }finally{if(button)button.disabled=false}
+  };
+
   if($('#brokerLinkForm'))$('#brokerLinkForm').onsubmit=async e=>{
     e.preventDefault();
-    const raw=formData(e.target);
+    if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. Your broker credentials are not the cause.',true);return}
+    const form=e.target;
+    const raw=formData(form);
+    raw.server=String(raw.server||'').trim();
+    raw.broker_name=String(raw.broker_name||'').trim()||null;
+    raw.account_label=String(raw.account_label||'').trim()||null;
+    const feedback=$('#brokerProvisioningResult');
+    if(feedback){feedback.hidden=false;feedback.className='connection-feedback';feedback.innerHTML='<strong>Connecting account…</strong><p>Checking the exact MetaTrader server and broker credentials. This request is not auto-retried.</p>'}
+    const submit=form.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
     try{
-      await request('/broker/metatrader',{method:'POST',body:JSON.stringify(raw)});
-      e.target.elements.password.value='';
+      const result=await request('/broker/metatrader',{method:'POST',body:JSON.stringify(raw)});
+      form.elements.password.value='';
+      if(feedback){
+        const connection=result.connection||{};
+        const pending=Boolean(result.pending);
+        feedback.className='connection-feedback '+(pending?'pending-feedback':'positive-feedback');
+        feedback.innerHTML=`<strong>${pending?'Provisioning pending':'Account connected'}</strong><p>${esc(String(connection.platform||raw.platform).toUpperCase())} · ${esc(connection.broker_name||raw.broker_name||'Broker')} · ${esc(connection.server||raw.server)} · ${esc(String(connection.environment||raw.environment||'unknown').toUpperCase())}</p><small>${pending?'MetaApi accepted the request but broker discovery is still running. Do not submit repeated new attempts; verify this account after the provider finishes.':'Execution remains off until this account\'s policy and safety gates are explicitly enabled.'}</small>`;
+      }
       await loadBroker();
-      toast(raw.environment==='demo'?raw.platform.toUpperCase()+' demo connection saved':raw.platform.toUpperCase()+' connection saved');
-    }catch(err){toast(err.message,true)}
+      toast(result.pending?'MetaTrader provisioning accepted and pending':'Trading account connected');
+    }catch(err){
+      const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
+      const suggestions=Array.isArray(detail.suggested_servers)?detail.suggested_servers:[];
+      if(feedback){
+        const suggestionHtml=suggestions.length?`<div class="server-suggestions"><small>Suggested servers</small>${suggestions.map(server=>`<button class="ghost server-suggestion" type="button" data-server="${esc(server)}">${esc(server)}</button>`).join('')}</div>`:'';
+        const secureHint=detail.can_use_secure_link?'<p class="muted">You can also try the provider-hosted secure-link flow after confirming the exact server.</p>':'';
+        const retryHint=detail.retry_after?`<p class="muted">Provider retry guidance: ${esc(detail.retry_after)}</p>`:'';
+        const slotsHint=detail.recommended_resource_slots?`<p class="muted">MetaApi recommends ${esc(detail.recommended_resource_slots)} resource slot(s) for this broker account. An administrator must configure that provider requirement before retrying.</p>`:'';
+        const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));
+        const finalHint=operatorFault
+          ?'<small>This is a SignalRankAI → MetaApi integration problem, not an error in your broker login/server. Do not keep resubmitting the same MT5 credentials until the integration token is refreshed.</small>'
+          :'<small>No password is shown or returned. Correct the indicated field before submitting again.</small>';
+        feedback.className='connection-feedback negative-feedback';
+        feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Connection failed')}</strong><p>${esc(err.message)}</p>${suggestionHtml}${retryHint}${slotsHint}${secureHint}${finalHint}`;
+        $$('.server-suggestion').forEach(button=>button.onclick=()=>{form.elements.server.value=button.dataset.server||'';form.elements.server.focus()});
+      }
+      toast(err.message,true);
+    }finally{if(submit)submit.disabled=false}
   };
 
   if($('#exchangeBrokerLinkForm'))$('#exchangeBrokerLinkForm').onsubmit=async e=>{
@@ -404,25 +748,29 @@ async function loadBroker(){
   };
 
   if($('#brokerSecureLinkButton'))$('#brokerSecureLinkButton').onclick=async()=>{
+    if(state.broker?.provider_health?.metaapi?.ok!==true){toast('MetaTrader provider authorization is unavailable. Secure-link creation is paused until the integration token is restored.',true);return}
     const form=$('#brokerLinkForm');
     if(!form)return;
     const raw=formData(form);
     if(!raw.server){toast('Enter the exact broker server first',true);return}
-    const payload={
-      platform:raw.platform,
-      server:raw.server,
-      broker_name:raw.broker_name||null,
-      account_label:raw.account_label||null,
-      environment:raw.environment||'unknown',
-      ttl_days:3
-    };
+    const payload={platform:raw.platform,server:raw.server,broker_name:raw.broker_name||null,account_label:raw.account_label||null,environment:raw.environment||'unknown',ttl_days:3};
     try{
       const result=await request('/broker/metatrader/secure-link',{method:'POST',body:JSON.stringify(payload)});
+      const connectionId=String(result.connection?.connection_id||'');
+      if(connectionId){try{localStorage.setItem(SECURE_LINK_PENDING_KEY,JSON.stringify({connection_id:connectionId,created_at:Date.now(),configuration_link:result.configuration_link||''}))}catch{}}
       const target=$('#brokerSecureLinkResult');
-      target.innerHTML=`<p class="positive">Secure credential link created.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a></p><p class="muted">After entering the account credentials there, return here and press Verify on the connection.</p>`;
-      window.open(result.configuration_link,'_blank','noopener,noreferrer');
+      target.innerHTML=`<div class="secure-link-handoff"><p class="positive">Account slot saved in SignalRank.</p><p>Finish the broker credential step in MetaApi. Keep this SignalRank tab open; when you return, we will verify and store the completed connection automatically.</p><p><a class="primary link-button" href="${esc(result.configuration_link)}" target="_blank" rel="noopener noreferrer">Open MetaApi secure connection</a> <button id="verifySecureLinkNow" class="ghost" type="button">I've finished · verify now</button></p><small>Execution stays disabled until your separate account policy and safety gates are enabled.</small></div>`;
+      $('#verifySecureLinkNow')?.addEventListener('click',()=>reconcilePendingSecureLink({notify:true}));
+      const opened=window.open(result.configuration_link,'_blank','noopener,noreferrer');
+      if(!opened)toast('Popup blocked. Use the “Open MetaApi secure connection” button.',true);
       await loadBroker();
-    }catch(err){toast(err.message,true)}
+      scheduleSecureLinkVerification()
+    }catch(err){
+      const detail=err.detail&&typeof err.detail==='object'?err.detail:{};
+      const feedback=$('#brokerProvisioningResult');
+      if(feedback){feedback.hidden=false;feedback.className='connection-feedback negative-feedback';const operatorFault=['provider_authorization_failed','provider_permissions_missing'].includes(String(detail.code||''));feedback.innerHTML=`<strong>${esc(detail.code?String(detail.code).replaceAll('_',' '):'Secure link failed')}</strong><p>${esc(err.message)}</p><small>${operatorFault?'This is a SignalRankAI → MetaApi integration authorization problem. Your broker details are not the cause.':'The secure-link request could not be created.'}</small>`}
+      toast(err.message,true)
+    }
   };
 
   if($('#executionSettingsForm'))$('#executionSettingsForm').onsubmit=async e=>{
@@ -443,14 +791,43 @@ async function loadBroker(){
     }catch(err){toast(err.message,true)}
   };
 }
+function pendingSecureLink(){try{const raw=localStorage.getItem(SECURE_LINK_PENDING_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data?.connection_id)return null;if(Date.now()-Number(data.created_at||0)>3*24*60*60*1000){localStorage.removeItem(SECURE_LINK_PENDING_KEY);return null}return data}catch{return null}}
+function clearPendingSecureLink(){try{localStorage.removeItem(SECURE_LINK_PENDING_KEY)}catch{}if(secureLinkVerifyTimer){clearTimeout(secureLinkVerifyTimer);secureLinkVerifyTimer=null}}
+function scheduleSecureLinkVerification(){if(secureLinkVerifyTimer)clearTimeout(secureLinkVerifyTimer);if(!pendingSecureLink())return;secureLinkVerifyTimer=setTimeout(()=>reconcilePendingSecureLink({notify:false}),5000)}
+async function reconcilePendingSecureLink({notify=false}={}){
+  const pending=pendingSecureLink();if(!pending||!state.user||!hasFeature('broker_connection'))return false;
+  try{
+    const verified=await request('/broker/connections/'+encodeURIComponent(pending.connection_id)+'/verify',{method:'POST',body:'{}'});
+    clearPendingSecureLink();await loadBroker();
+    const target=$('#brokerSecureLinkResult');if(target)target.innerHTML='<div class="connection-feedback positive-feedback"><strong>Secure MetaTrader connection verified</strong><p>The account is stored in SignalRank and ready for your account-policy review. Execution remains disabled by default.</p></div>';
+    if(notify)toast('MetaTrader connection verified and stored');
+    return Boolean(verified?.success)
+  }catch(err){
+    if([403,404].includes(Number(err.status)))clearPendingSecureLink();
+    else if(Number(err.status)===409)scheduleSecureLinkVerification();
+    if(notify)toast(Number(err.status)===409?'MetaApi is still finalizing the account. We will keep checking.':err.message,true);
+    return false
+  }
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reconcilePendingSecureLink({notify:false})});
+window.addEventListener('focus',()=>reconcilePendingSecureLink({notify:false}));
 async function acceptExecutionTerms(){if(!confirm('I understand that live broker execution can lose money and that SignalRankAI safety checks do not guarantee outcomes. Accept execution-risk terms?'))return;try{await request('/execution-terms/accept',{method:'POST',body:JSON.stringify({confirm:true})});await loadBroker();toast('Execution-risk terms accepted')}catch(err){toast(err.message,true)}}
 async function setupMfa(){try{const setup=await request('/security/mfa/setup',{method:'POST',body:'{}'});const code=prompt(`Add this secret to your authenticator:\n${setup.secret}\n\nThen enter the 6-digit code.`);if(!code)return;const result=await request('/security/mfa/enable',{method:'POST',body:JSON.stringify({code})});alert('Store these recovery codes offline:\n\n'+result.recovery_codes.join('\n'));await loadAccount();toast('MFA enabled')}catch(err){toast(err.message,true)}}
 async function disableMfa(){const code=prompt('Enter an authenticator or recovery code to disable MFA');if(!code)return;try{await request('/security/mfa/disable',{method:'POST',body:JSON.stringify({code})});await loadAccount();toast('MFA disabled')}catch(err){toast(err.message,true)}}
-$('#connectTelegramButton').onclick=async()=>{try{const data=await request('/account/telegram-link',{method:'POST',body:'{}'});const result=$('#telegramLinkResult');result.hidden=false;result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}`;toast('Telegram link code created')}catch(err){toast(err.message,true)}};
+$('#connectTelegramButton').onclick=async()=>{const tg=telegramLinkState();if(tg.connected){toast('Telegram is already verified for this account');return}try{const data=await request('/account/telegram-link',{method:'POST',body:'{}'});const result=$('#telegramLinkResult');result.hidden=false;result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}<p class="muted">After sending the command, return here and press Refresh status. Do not create another account.</p>`;state.user.telegram_link_status='link_pending';renderProfile();toast('Telegram link code created')}catch(err){toast(err.message,true)}};
+$('#refreshTelegramButton')?.addEventListener('click',async()=>{try{const me=await request('/me');state.user=me.user;renderProfile();const tg=telegramLinkState();toast(tg.connected?'Telegram connection recognized':'Telegram status refreshed')}catch(err){toast(err.message,true)}});
 $('#notificationForm').onsubmit=async e=>{e.preventDefault();const payload={};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>payload[name]=e.target.elements[name].checked);for(const name of ['quiet_hours_start','quiet_hours_end','timezone']){const value=e.target.elements[name]?.value?.trim();payload[name]=value||null}try{await request('/notifications/preferences',{method:'PUT',body:JSON.stringify(payload)});toast('Notification preferences saved across your account')}catch(err){toast(err.message,true)}};
 async function logout(){try{await request('/auth/logout',{method:'POST',body:'{}'})}finally{state.user=null;setLoggedIn(false);location.reload()}}
 $('#logoutButton').onclick=logout;$('#logoutAllButton').onclick=async()=>{if(!confirm('Sign out every device?'))return;try{await request('/auth/logout-all',{method:'POST',body:'{}'});location.reload()}catch(err){toast(err.message,true)}};
-async function processUrlActions(){const qs=new URLSearchParams(location.search);const token=qs.get('token');if(token){setAuthTab('activate');$('#activationCredential').value=token}const reset=qs.get('password_reset');if(reset){setAuthTab('login');$('#loginForm').hidden=true;$('#passwordResetForm').hidden=false;$('#passwordResetForm [name="token"]').value=reset}const verify=qs.get('verify_email');if(verify){try{await request('/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token:verify,client_type:'web'})});history.replaceState({},'',location.pathname);toast('Email verified')}catch(err){toast(err.message,true)}}const magic=qs.get('magic_login');if(magic){try{await completeAuth(await request('/auth/magic-link/complete',{method:'POST',body:JSON.stringify({token:magic,client_type:'web'})}));history.replaceState({},'',location.pathname)}catch(err){toast(err.message,true)}}}
+async function processUrlActions(){
+  const qs=new URLSearchParams(location.search);const token=qs.get('token');
+  if(token){setAuthTab('activate');$('#activationCredential').value=token}
+  const reset=qs.get('password_reset');if(reset){setAuthTab('login');$('#loginForm').hidden=true;$('#passwordResetForm').hidden=false;$('#passwordResetForm [name="token"]').value=reset}
+  const verify=qs.get('verify_email');if(verify){try{await request('/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token:verify,client_type:'web'})});history.replaceState({},'',location.pathname);toast('Email verified')}catch(err){toast(err.message,true)}}
+  const magic=qs.get('magic_login');if(magic){try{await completeAuth(await request('/auth/magic-link/complete',{method:'POST',body:JSON.stringify({token:magic,client_type:'web'})}));history.replaceState({},'',location.pathname)}catch(err){toast(err.message,true)}}
+  const paymentReference=qs.get('reference')||qs.get('trxref');
+  if(location.pathname==='/billing/complete'&&paymentReference)state.pendingBillingReference=paymentReference;
+}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/app/service-worker.js').catch(()=>{}))}
 initTheme();
 processUrlActions().then(boot);

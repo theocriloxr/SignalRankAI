@@ -549,7 +549,7 @@ def _log_railway_env_readiness() -> None:
     has_openai = bool((os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip())
     has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
     has_ai_provider = bool(has_openai or has_gemini)
-    has_mt5_token = bool((os.getenv("META_API_TOKEN") or "").strip())
+    has_mt5_token = bool((os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip())
     has_encryption = bool((os.getenv("ENCRYPTION_KEY") or "").strip())
     has_owner = bool((os.getenv("OWNER_IDS") or "").strip() or (os.getenv("OWNER_TELEGRAM_ID") or "").strip() or (os.getenv("TELEGRAM_OWNER_ID") or "").strip())
     has_telegram_token = bool((os.getenv("TELEGRAM_BOT_TOKEN") or "").strip())
@@ -582,6 +582,36 @@ def _log_railway_env_readiness() -> None:
         missing.append("ENCRYPTION_KEY")
     if missing:
         logger.warning("[railway] missing env vars: %s", ", ".join(missing))
+
+
+async def _probe_metaapi_startup_authorization() -> None:
+    """Prove that META_API_TOKEN is accepted, not merely present."""
+    if not str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip():
+        logger.warning("[metaapi_startup_probe] status=SKIP reason=token_not_configured")
+        return
+    try:
+        from services.mt5_client import probe_metaapi_authorization
+
+        result = await probe_metaapi_authorization()
+        if result.get("ok"):
+            logger.info(
+                "[metaapi_startup_probe] status=PASS provider_status=%s token_source=%s",
+                result.get("provider_status"),
+                result.get("token_source"),
+            )
+            return
+        logger.error(
+            "[metaapi_startup_probe] status=FAIL code=%s provider_status=%s provider_code=%s candidate_names=%s",
+            result.get("code"),
+            result.get("provider_status"),
+            result.get("provider_code"),
+            result.get("candidate_names"),
+        )
+    except Exception as exc:
+        logger.error(
+            "[metaapi_startup_probe] status=FAIL code=probe_exception error_type=%s",
+            type(exc).__name__,
+        )
 
 
 async def _run_startup_ops(run_mode: str = "all") -> None:
@@ -1324,6 +1354,8 @@ async def lifespan(_: FastAPI):
     ownership = _railway_process_ownership()
     _validate_production_runtime_contract()
     _log_railway_env_readiness()
+    metaapi_probe_task = asyncio.create_task(_probe_metaapi_startup_authorization())
+    metaapi_probe_task.add_done_callback(lambda t: _log_task_failure(t, "metaapi-startup-probe"))
     try:
         from core.version import get_version_banner
         from core.startup_diagnostics import render_startup_diagnostics
@@ -2745,9 +2777,9 @@ def _production_cutover_check() -> dict[str, object]:
         violations.append("state_and_delivery_redis_not_distinct")
 
     if _env_bool("DEMO_EXECUTION_ENABLED", False) and _is_unconfigured_runtime_value(
-        os.getenv("META_API_TOKEN")
+        os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN")
     ):
-        violations.append("missing_or_placeholder:META_API_TOKEN")
+        violations.append("missing_or_placeholder:META_API_TOKEN|METAAPI_TOKEN")
 
     if _env_bool("PAYMENTS_ENABLED", False) or _env_bool("PAYMENTS_PUBLIC_ENABLED", False):
         paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
