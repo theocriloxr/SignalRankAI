@@ -85,5 +85,5 @@ def test_platform_theme_and_brand_contract() -> None:
     assert "prefers-color-scheme:light" in css
     assert "signalrank.theme" in js
     assert "Switch to" in js
-    assert "linearGradient" in icon
-    assert "SignalRank" in icon
+    assert "data:image/webp;base64," in icon
+    assert "Signal Rank AI" in icon
