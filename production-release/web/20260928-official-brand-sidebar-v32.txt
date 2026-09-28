@@ -1,0 +1,3 @@
+SignalRankAI production web rollout marker.
+Scope: owner-supplied official emerald/silver logo, favicon/PWA branding, light/dark palette alignment, reliable desktop sidebar collapse, PWA shell v32.
+No signal-generation, execution, broker, billing, entitlement, payout, copy-trade, or financial-safety behavior changes.
