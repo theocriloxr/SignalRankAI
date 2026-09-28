@@ -1,0 +1,3 @@
+SignalRankAI production web rollout marker.
+Scope: official logo/favicons, emerald/silver light+dark theme, true sidebar close/reopen, account-aware landing, transient session bootstrap retries, PWA shell v34.
+Staging remains suspended by owner request. This release does not change signal thresholds, broker execution, copy trading, payouts, or live-money safety policy.
