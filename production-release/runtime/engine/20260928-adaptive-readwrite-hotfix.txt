@@ -1,0 +1,3 @@
+SignalRankAI production engine hotfix marker.
+Source: staging-certified adaptive candle READ WRITE repair.
+Scope: restore bounded durable market-candle learning persistence without changing execution, payout, copy-trade, broker, or entitlement policy.
