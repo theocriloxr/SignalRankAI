@@ -69,7 +69,10 @@ def test_operator_workspace_is_owner_admin_only_and_fail_safe() -> None:
         '"kill_switch": env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)' in block
         or '"kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)' in block
     )
-    assert '"real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False)' in block
+    assert (
+        '"real_execution_enabled": env_bool("REAL_EXECUTION_ENABLED", False)' in block
+        or '"real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False)' in block
+    )
     assert 'id="operatorRuntime"' in html
     assert 'id="operatorAi"' in html
     assert "async function loadOperator()" in app
