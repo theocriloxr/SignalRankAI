@@ -51,3 +51,42 @@ def test_platform_hardening_survives_canonical_merge() -> None:
     assert '@app.get("/readyz"' in web
     assert "select(func.count()).select_from(Signal)" in web
     assert "SignalRankAI <hello@criloxsolutions.com>" in mail
+
+def test_cross_channel_command_catalog_and_operator_controls_are_real_routes() -> None:
+    api = source("web/platform_api.py")
+    html = source("web/platform_app/index.html")
+    app = source("web/platform_app/app.js")
+
+    for route in (
+        '@router.get("/command-catalog")',
+        '@router.get("/operator/overview")',
+        '@router.get("/operator/diagnostics")',
+        '@router.post("/operator/ai-test")',
+        '@router.post("/operator/kill-switch")',
+    ):
+        assert route in api
+    assert "visible_commands(effective_tier)" in api
+    assert 'id="commandCatalog"' in html
+    assert 'id="opsView"' in html
+    assert "loadCommandCatalog" in app
+    assert "loadOperatorDiagnostics" in app
+    assert "$$('[data-view]').filter" in app
+    assert "$('[data-view]').filter" not in app
+
+
+def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
+    api = source("web/platform_api.py")
+    section = api[
+        api.index('@router.post("/operator/kill-switch")'):
+        api.index('@router.post("/auth/register"')
+    ]
+    assert 'authority != "OWNER"' in section
+    assert "payload.confirm is not True" in section
+    assert "set_killswitch(True" in section
+    assert "set_killswitch(False" in section
+
+
+def test_pwa_cache_rotated_for_canonical_workstation() -> None:
+    worker = source("web/platform_app/service-worker.js")
+    assert "signalrank-shell-v27" in worker
+
