@@ -1,0 +1,3 @@
+SignalRankAI production worker rollout marker.
+Promotes staging-certified per-user performance reconciliation commit/rollback isolation.
+Live execution, copy trading, payouts and broker activation remain unchanged and fail-closed.
