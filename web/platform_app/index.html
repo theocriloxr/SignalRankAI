@@ -388,6 +388,20 @@
           <div class="panel-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h3>Readiness evidence</h3><p>Database, Redis, provider circuits, outcome projections, performance ledger and payment reconciliation from the same production services.</p></div><button id="refreshOperatorDiagnostics" class="ghost" type="button">Run diagnostics</button></div>
           <div id="operatorDiagnostics" class="operator-diagnostics"><p class="muted">Diagnostics load when the control room opens.</p></div>
         </article>
+        <article id="operatorBusinessPanel" class="panel" hidden>
+          <div class="panel-heading">
+            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions & verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
+            <button id="refreshOperatorBusiness" class="ghost" type="button">Refresh</button>
+          </div>
+          <div id="operatorBusiness" class="operator-business-grid"><p class="muted">Owner business metrics load here.</p></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">CONTROLLED ADMIN DIAGNOSTIC</p><h3>Recent-signal ML scan</h3><p>Re-evaluates recent stored signals that do not yet have an ML probability. It does not create a new signal, send a trade, or bypass delivery/risk gates.</p></div>
+            <button id="operatorMarketScan" class="primary" type="button">Run controlled scan</button>
+          </div>
+          <div id="operatorMarketScanResult" class="muted">No operator scan has run in this browser session.</div>
+        </article>
         <article class="panel operator-maintenance-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds & queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
