@@ -59,11 +59,21 @@ async function refreshBrowserSession(){
   })().finally(()=>{sessionRefreshPromise=null});
   return sessionRefreshPromise
 }
-async function request(path,options={},allowSessionRefresh=true){
+async function request(path,options={},allowSessionRefresh=true,transientAttempt=0){
   const method=String(options.method||'GET').toUpperCase();
+  const safeRead=method==='GET'||method==='HEAD';
   const headers={'Content-Type':'application/json',...(options.headers||{})};
   if(!['GET','HEAD','OPTIONS'].includes(method)){const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf}
-  const response=await fetch(API+path,{credentials:'include',headers,...options});
+  let response;
+  try{response=await fetch(API+path,{credentials:'include',headers,...options})}
+  catch(fetchError){
+    if(safeRead&&transientAttempt<2){await wait(350*(transientAttempt+1));return request(path,options,allowSessionRefresh,transientAttempt+1)}
+    const error=new Error('SignalRank connection was interrupted. Your session is safe; please retry.');error.status=0;error.cause=fetchError;throw error
+  }
+  if(safeRead&&[502,503,504].includes(response.status)&&transientAttempt<2){
+    await wait(350*(transientAttempt+1));
+    return request(path,options,allowSessionRefresh,transientAttempt+1)
+  }
   let data={};try{data=await response.json()}catch{}
   const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
   if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
@@ -73,7 +83,7 @@ async function request(path,options={},allowSessionRefresh=true){
   if(!response.ok){
     const detail=data.detail;
     const serverMessage=typeof detail==='string'?detail:(detail?.message||detail?.code||'');
-    const fallback=response.status>=500?'SignalRank services are temporarily unavailable. Please retry in a moment.':`Request failed (${response.status})`;
+    const fallback=response.status>=500?'SignalRank could not complete this request yet. The service is reconnecting automatically.':`Request failed (${response.status})`;
     const error=new Error(serverMessage||fallback);error.status=response.status;error.detail=detail;error.payload=data;throw error
   }
   return data
@@ -121,6 +131,11 @@ function accountLandingView(){
   const requestedTrigger=requested?document.querySelector('[data-view="'+requested+'"]'):null;
   if(requested&&valid.has(requested)&&requestedTrigger&&!requestedTrigger.hidden&&(!requestedTrigger.dataset.feature||hasFeature(requestedTrigger.dataset.feature)))return requested;
   const authority=accountAuthority();
+  const serverHint=String(state.user?.default_workspace||'').trim().toLowerCase();
+  if(serverHint&&valid.has(serverHint)){
+    const hinted=document.querySelector('[data-view="'+serverHint+'"]');
+    if(serverHint==='ops'||!hinted||!hinted.dataset.feature||hasFeature(hinted.dataset.feature))return serverHint
+  }
   if(authority==='OWNER'||authority==='ADMIN')return 'ops';
   const tier=String(state.user?.tier||'free').toLowerCase();
   if((tier==='institutional'||tier==='professional')&&hasFeature('performance_analytics'))return 'performance';
@@ -130,6 +145,9 @@ function accountLandingView(){
 }
 function applyAccountExperience(){
   const tier=String(state.user?.tier||'free').toLowerCase();const authority=accountAuthority();
+  const canOperate=authority==='OWNER'||authority==='ADMIN';
+  const opsButton=$('#opsNavButton');if(opsButton)opsButton.hidden=!canOperate;
+  const opsOption=$('#opsSwitcherOption');if(opsOption)opsOption.hidden=!canOperate;
   document.body.dataset.accountTier=tier;
   if(authority)document.body.dataset.accountAuthority=authority.toLowerCase();else delete document.body.dataset.accountAuthority;
   const badge=$('#tierBadge');if(badge)badge.textContent=authority==='OWNER'?'OWNER':authority==='ADMIN'?'ADMIN':tier.toUpperCase();

@@ -2120,7 +2120,24 @@ async def logout_all(response: Response, user: dict[str, Any] = Depends(current_
 
 @router.get("/me")
 async def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    return {"user": user}
+    payload = dict(user)
+    authority = _platform_operator_authority(user)
+    if authority:
+        payload["authority"] = authority
+    tier = str(payload.get("tier") or "free").strip().lower()
+    policy = get_entitlements(tier)
+    if authority in {"OWNER", "ADMIN"}:
+        default_workspace = "ops"
+    elif tier in {"institutional", "professional"} and policy.has("performance_analytics"):
+        default_workspace = "performance"
+    elif tier in {"vip", "premium"}:
+        default_workspace = "signals"
+    elif policy.has("paper_trading") and str(payload.get("account_status") or "").strip().lower() == "paper":
+        default_workspace = "paper"
+    else:
+        default_workspace = "overview"
+    payload["default_workspace"] = default_workspace
+    return {"user": payload}
 
 
 @router.get("/entitlements")
