@@ -772,14 +772,8 @@ class Worker:
                                 ),
                                 budget_seconds=phase_budget,
                             )
-                            outbox_repair = await _run_phase(
-                                "outcome_reconciliation.outbox",
-                                lambda session: repair_outcome_notification_outbox(
-                                    session,
-                                    limit=outbox_limit,
-                                ),
-                                budget_seconds=phase_budget,
-                            )
+                            # Financial/performance truth is safety-critical and must
+                            # not be blocked by a slow notification-repair batch.
                             repaired_partial_exits = await _run_phase(
                                 "outcome_reconciliation.partial_exits",
                                 repair_partial_exit_outcomes,
@@ -794,12 +788,32 @@ class Worker:
                                 performance_result,
                                 persist_cursor=True,
                             )
+
+                            outbox_repair = None
+                            outbox_error = None
+                            try:
+                                outbox_repair = await _run_phase(
+                                    "outcome_reconciliation.outbox",
+                                    lambda session: repair_outcome_notification_outbox(
+                                        session,
+                                        limit=outbox_limit,
+                                    ),
+                                    budget_seconds=phase_budget,
+                                )
+                            except Exception as exc:
+                                outbox_error = f"{type(exc).__name__}: {exc}"
+                                logger.warning(
+                                    "[outcome_reconciliation] notification outbox repair deferred after truth reconciliation: %s",
+                                    outbox_error,
+                                )
+
                             logger.info(
-                                "[outcome_reconciliation] completed outcome=%s outbox=%s partial_exit_repairs=%s performance=%s",
+                                "[outcome_reconciliation] completed outcome=%s partial_exit_repairs=%s performance=%s outbox=%s outbox_error=%s",
                                 result.as_dict(),
-                                outbox_repair.as_dict(),
                                 repaired_partial_exits,
                                 performance_result.as_dict(),
+                                outbox_repair.as_dict() if outbox_repair is not None else None,
+                                outbox_error,
                             )
                             if performance_result.certification_failed:
                                 raise RuntimeError(
