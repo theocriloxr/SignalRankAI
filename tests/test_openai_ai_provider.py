@@ -266,10 +266,12 @@ def test_openai_provider_status_is_secret_safe(monkeypatch):
     status = ai.provider_status()
 
     assert status["configured"] is True
+    assert status["key_configured"] is True
     assert status["available"] is True
     assert status["responses_api"] is True
     assert status["store"] is False
     assert status["signal_model"] == "gpt-5.6-luna"
+    assert status["fast_model"] == "gpt-5.6-luna"
     assert status["deep_model"] == "gpt-5.6-terra"
     assert status["cache"]["entries"] == 0
     assert status["cache"]["hits"] == 0
