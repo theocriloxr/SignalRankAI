@@ -1,0 +1,3 @@
+SignalRankAI production web rollout marker.
+Scope: authoritative account-type landing workspace, transient GET self-healing, removal of legacy temporary-unavailable shell copy, PWA cache v35, and continued official emerald/silver branding + true sidebar close behavior.
+No signal threshold, broker execution, payout, copy-trade or live-money activation changes.
