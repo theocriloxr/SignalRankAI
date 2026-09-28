@@ -1,0 +1,5 @@
+SignalRankAI canonical production promotion.
+Source of truth: main.
+Staging certification: staging commit b1e74e9a1e0e48f0a9cb376d6e8e7fa2c1e74bdc passed 375 Docker-gate tests, provenance/readiness checks, and live /healthz + /readyz.
+Includes branch consolidation, recent-chat requirements, Telegram/web parity command centre, operator control room, account/billing/broker/session hardening, and redesigned responsive frontend.
+Railway legacy source alias remains temporary because Railway Agent source-branch mutation is quota-blocked; alias is pinned to this exact main commit.
