@@ -90,7 +90,7 @@ def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
 
 def test_pwa_cache_rotated_for_canonical_workstation() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v35" in worker
+    assert "signalrank-shell-v36" in worker
 
 def test_owner_maintenance_web_parity_is_strict_and_confirmed() -> None:
     api = source("web/platform_api.py")
@@ -139,7 +139,7 @@ def test_operator_business_and_market_scan_have_web_parity() -> None:
 
 def test_pwa_cache_rotated_for_operator_business_release() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v35" in worker
+    assert "signalrank-shell-v36" in worker
 
 def test_operator_force_signal_is_operator_only_confirmed_and_never_executes_broker() -> None:
     api = source("web/platform_api.py")
@@ -160,5 +160,5 @@ def test_operator_force_signal_is_operator_only_confirmed_and_never_executes_bro
 
 def test_pwa_cache_rotated_for_operator_force_signal_release() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v35" in worker
+    assert "signalrank-shell-v36" in worker
 

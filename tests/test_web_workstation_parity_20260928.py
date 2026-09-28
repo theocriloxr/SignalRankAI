@@ -104,7 +104,7 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "--brand-gradient:linear-gradient" in css
     assert ':root[data-theme="light"]' in css
     assert "#00a96e" in manifest
-    assert "signalrank-shell-v35" in worker
+    assert "signalrank-shell-v36" in worker
     assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
@@ -167,3 +167,14 @@ def test_account_identity_is_authoritative_and_safe_reads_self_heal() -> None:
     assert "state.user?.default_workspace" in app
     assert "const canOperate=authority==='OWNER'||authority==='ADMIN'" in app
     assert "SignalRank services are temporarily unavailable" not in app
+
+
+def test_pwa_brand_shell_updates_existing_clients_immediately() -> None:
+    worker = source("web/platform_app/service-worker.js")
+    html = source("web/platform_app/index.html")
+    assert "self.skipWaiting()" in worker
+    assert "self.clients.claim()" in worker
+    assert "styles.css?v=36" in html
+    assert "app.js?v=36" in html
+    assert "icon.svg?v=36" in html
+    assert "logo.svg?v=36" in html
