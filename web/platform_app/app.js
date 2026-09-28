@@ -6,13 +6,14 @@ let sessionRefreshPromise=null;
 let secureLinkVerifyTimer=null;
 const THEME_KEY='signalrank.theme';
 const NAV_COLLAPSE_KEY='signalrank.nav.collapsed';
+let navCollapsedMemory=null;
 const desktopNavMedia=window.matchMedia?.('(min-width: 1320px)');
 const themeMedia=window.matchMedia?.('(prefers-color-scheme: light)');
 function resolvedTheme(){const explicit=document.documentElement.dataset.theme;if(explicit==='light'||explicit==='dark')return explicit;return themeMedia?.matches?'light':'dark'}
-function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#05060a':'#f6f7ff'}
+function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#050907':'#f3f8f5'}
 function setTheme(theme,{persist=true}={}){if(theme==='light'||theme==='dark'){document.documentElement.dataset.theme=theme;if(persist){try{localStorage.setItem(THEME_KEY,theme)}catch{}}}else{delete document.documentElement.dataset.theme;if(persist){try{localStorage.removeItem(THEME_KEY)}catch{}}}syncThemeUi()}
 function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}catch{}if(saved==='light'||saved==='dark')document.documentElement.dataset.theme=saved;syncThemeUi();themeMedia?.addEventListener?.('change',()=>{let explicit='';try{explicit=localStorage.getItem(THEME_KEY)||''}catch{}if(!explicit)syncThemeUi()});$('#themeToggle')?.addEventListener('click',()=>setTheme(resolvedTheme()==='dark'?'light':'dark'))}
-function navPreference(){try{return localStorage.getItem(NAV_COLLAPSE_KEY)==='1'}catch{return false}}
+function navPreference(){if(navCollapsedMemory!==null)return navCollapsedMemory;try{navCollapsedMemory=localStorage.getItem(NAV_COLLAPSE_KEY)==='1'}catch{navCollapsedMemory=false}return navCollapsedMemory}
 function syncNavUi(){
   const collapsed=Boolean(desktopNavMedia?.matches&&navPreference());
   document.body.classList.toggle('nav-collapsed',collapsed);
@@ -30,7 +31,9 @@ function syncNavUi(){
   });
 }
 function setNavCollapsed(collapsed){
-  try{localStorage.setItem(NAV_COLLAPSE_KEY,collapsed?'1':'0')}catch{}
+  navCollapsedMemory=Boolean(collapsed);
+  document.body.classList.toggle('nav-collapsed',Boolean(navCollapsedMemory&&desktopNavMedia?.matches));
+  try{localStorage.setItem(NAV_COLLAPSE_KEY,navCollapsedMemory?'1':'0')}catch{}
   syncNavUi();
 }
 function initNavToggle(){
