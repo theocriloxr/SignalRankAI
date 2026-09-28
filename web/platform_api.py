@@ -865,10 +865,12 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
     so the website can present one complete cross-channel capability map without
     inventing a second entitlement model.
     """
-    from signalrank_telegram.command_catalog import visible_commands
+    from core.tier_policy import tier_rank
+    from signalrank_telegram.command_catalog import COMMANDS, normalized_tier
 
     authority = _platform_operator_authority(user)
-    effective_tier = authority or str(user.get("tier") or "FREE").upper()
+    effective_tier = normalized_tier(authority or str(user.get("tier") or "FREE").upper())
+    effective_rank = tier_rank(effective_tier)
     section_views = {
         "Getting started": "overview",
         "Account": "account",
@@ -933,7 +935,9 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         "cancel": "account",
     }
     items = []
-    for spec in visible_commands(effective_tier):
+    for spec in COMMANDS:
+        if tier_rank(spec.tier) > effective_rank:
+            continue
         view = command_views.get(spec.name) or section_views.get(spec.section) or "tools"
         items.append({
             "name": spec.name,
@@ -947,6 +951,7 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         "effective_tier": effective_tier,
         "authority": authority,
         "count": len(items),
+        "telegram_menu_limit": 100,
         "commands": items,
         "sections": sorted({item["section"] for item in items}),
         "parity_model": "shared_services_same_entitlements",
