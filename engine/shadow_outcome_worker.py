@@ -293,12 +293,13 @@ class ShadowOutcomeWorker:
                 await self.run_once()
             except asyncio.CancelledError:
                 raise
-            except AnalyticsWorkDeferred as exc:
-                logger.info("[shadow_tracker] deferred reason=db_foreground_pressure detail=%s", exc)
-                self._publish_health("deferred", error=str(exc))
             except Exception as exc:
-                logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
-                self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
+                if type(exc).__name__ == "AnalyticsWorkDeferred":
+                    logger.info("[shadow_tracker] deferred reason=db_foreground_pressure detail=%s", exc)
+                    self._publish_health("deferred", error=str(exc))
+                else:
+                    logger.error("[shadow_tracker] iteration failed: %s", exc, exc_info=True)
+                    self._publish_health("degraded", error=f"{type(exc).__name__}: {exc}")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
             except asyncio.TimeoutError:
