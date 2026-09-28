@@ -1,0 +1,3 @@
+SignalRankAI canonical staging gate retry.
+Only stale regression assertions were corrected: current PWA shell v30, canonical env_bool fail-safe kill-switch helper, and section-fallback command-to-web routing.
+No product safety gate or feature behavior weakened.
