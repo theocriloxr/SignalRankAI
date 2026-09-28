@@ -1364,7 +1364,7 @@ async def operator_queue_replay(
                 "telegram_user_id": int(item.get("telegram_user_id") or 0),
                 "attempts": 1,
                 "last_error_code": str(item.get("last_error_code") or "replay"),
-                "last_failed_at": datetime.utcnow().isoformat(),
+                "last_failed_at": datetime.now().isoformat(),
             })
             moved += 1
         await asyncio.to_thread(redis_state.set_sync, retry_key, json.dumps(retry_items, sort_keys=True))
