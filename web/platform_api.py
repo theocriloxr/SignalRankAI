@@ -955,6 +955,7 @@ async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dic
     authority = _platform_operator_authority(user)
     if authority not in {"OWNER", "ADMIN"}:
         raise HTTPException(status_code=403, detail="Operator access required")
+    from core.env import env_bool
     from services.openai_ai import provider_status as openai_provider_status
 
     return {
@@ -966,10 +967,10 @@ async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dic
         },
         "ai": dict(openai_provider_status() or {}),
         "execution": {
-            "live_financial_features_enabled": _env_bool("LIVE_FINANCIAL_FEATURES_ENABLED", False),
-            "real_execution_enabled": _env_bool("REAL_EXECUTION_ENABLED", False),
-            "auto_execution_enabled": _env_bool("AUTO_EXECUTION_ENABLED", False),
-            "kill_switch": _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True),
+            "live_financial_features_enabled": env_bool("LIVE_FINANCIAL_FEATURES_ENABLED", False),
+            "real_execution_enabled": env_bool("REAL_EXECUTION_ENABLED", False),
+            "auto_execution_enabled": env_bool("AUTO_EXECUTION_ENABLED", False),
+            "kill_switch": env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True),
         },
     }
 
