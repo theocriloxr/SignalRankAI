@@ -95,14 +95,15 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "document.body.classList.toggle('nav-collapsed'" in app
     assert "initNavToggle();" in app
     assert "body.nav-collapsed{--sidebar:78px}" in css
-    assert "--brand-cyan:#05e8ff" in css
-    assert "--brand-blue:#2f91ff" in css
-    assert "--brand-purple:#b44cff" in css
+    assert "--brand-emerald:#00e596" in css
+    assert "--brand-silver:#e6eeeb" in css
+    assert "--brand-gradient:linear-gradient" in css
+    assert "top:27px;right:12px" in css
+    assert "navCollapsedMemory" in app
     assert ':root[data-theme="light"]' in css
-    assert "#05060a" in manifest
+    assert "#050907" in manifest
+    assert "signalrank-shell-v32" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
-        assert "#05E8FF" in asset
-        assert "#2F91FF" in asset
-        assert "#B44CFF" in asset
+        assert "data:image/webp;base64," in asset
         assert "Signal Rank AI" in asset
