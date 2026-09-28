@@ -95,6 +95,39 @@ class OperatorKillSwitchRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorRebuildRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|dry_run|apply)$")
+    confirm: bool = False
+    days: int = Field(default=30, ge=1, le=3650)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class OperatorReplayRequest(BaseModel):
+    target: str = Field(default="dead_letter", pattern=r"^(dead_letter|performance)$")
+    confirm: bool = False
+
+
+class OperatorAdaptiveRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|pause|resume)$")
+    asset: str | None = Field(default=None, max_length=32)
+    confirm: bool = False
+
+
+class OperatorMarketScanRequest(BaseModel):
+    confirm: bool = False
+    hours: int = Field(default=4, ge=1, le=24)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class OperatorForceSignalRequest(BaseModel):
+    asset: str | None = Field(default=None, max_length=32)
+    timeframe: str | None = Field(default=None, max_length=8)
+    override_quality: bool = False
+    confirm: bool = False
+    override_confirmation: str | None = Field(default=None, max_length=64)
+    delivery_scope: str = Field(default="operator_only", pattern=r"^operator_only$")
+
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=1, max_length=256)
@@ -865,12 +898,10 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
     so the website can present one complete cross-channel capability map without
     inventing a second entitlement model.
     """
-    from core.tier_policy import tier_rank
-    from signalrank_telegram.command_catalog import COMMANDS, normalized_tier
+    from signalrank_telegram.command_catalog import visible_commands
 
     authority = _platform_operator_authority(user)
-    effective_tier = normalized_tier(authority or str(user.get("tier") or "FREE").upper())
-    effective_rank = tier_rank(effective_tier)
+    effective_tier = authority or str(user.get("tier") or "FREE").upper()
     section_views = {
         "Getting started": "overview",
         "Account": "account",
@@ -935,9 +966,7 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         "cancel": "account",
     }
     items = []
-    for spec in COMMANDS:
-        if tier_rank(spec.tier) > effective_rank:
-            continue
+    for spec in visible_commands(effective_tier):
         view = command_views.get(spec.name) or section_views.get(spec.section) or "tools"
         items.append({
             "name": spec.name,
@@ -951,7 +980,6 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         "effective_tier": effective_tier,
         "authority": authority,
         "count": len(items),
-        "telegram_menu_limit": 100,
         "commands": items,
         "sections": sorted({item["section"] for item in items}),
         "parity_model": "shared_services_same_entitlements",
@@ -1096,6 +1124,707 @@ async def operator_kill_switch(
         "authority": authority,
         "enabled": bool(getattr(status, "enabled", True)),
         "reason": str(getattr(status, "reason", "") or ""),
+    }
+
+
+@router.get("/operator/maintenance")
+async def operator_maintenance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+    from sqlalchemy import func, select
+    from db.models import (
+        OutcomeNotification,
+        PaperAccount,
+        PaperLedgerEntry,
+        PaperPosition,
+        PaperTradeAttempt,
+        SignalDelivery,
+    )
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    retry_key = f"performance_reconciliation:retry:{environment}"
+    dlq_key = f"performance_reconciliation:dlq:{environment}"
+    status_key = f"performance_reconciliation:status:{environment}"
+
+    retry_raw, dlq_raw, status_raw = await asyncio.gather(
+        asyncio.to_thread(redis_state.get_sync, retry_key),
+        asyncio.to_thread(redis_state.get_sync, dlq_key),
+        asyncio.to_thread(redis_state.get_sync, status_key),
+    )
+    retry_items = json.loads(retry_raw) if retry_raw else []
+    dlq_items = json.loads(dlq_raw) if dlq_raw else []
+    last_batch = json.loads(status_raw) if status_raw else {}
+
+    async with get_session(label="platform.operator.maintenance", timeout_seconds=15.0) as session:
+        notification_rows = (
+            await session.execute(
+                select(OutcomeNotification.delivery_state, func.count(OutcomeNotification.id))
+                .group_by(OutcomeNotification.delivery_state)
+            )
+        ).all()
+        duplicate_attempts = int((
+            await session.execute(
+                select(func.count(OutcomeNotification.id)).where(
+                    OutcomeNotification.attempt_count > 1
+                )
+            )
+        ).scalar_one() or 0)
+        missing_message_proof = int((
+            await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_message_id.is_(None),
+                )
+            )
+        ).scalar_one() or 0)
+        paper_accounts = int((await session.execute(select(func.count(PaperAccount.id)))).scalar_one() or 0)
+        paper_open = int((
+            await session.execute(
+                select(func.count(PaperPosition.position_id)).where(
+                    func.lower(PaperPosition.status) == "open"
+                )
+            )
+        ).scalar_one() or 0)
+        paper_closed = int((
+            await session.execute(
+                select(func.count(PaperPosition.position_id)).where(
+                    func.lower(PaperPosition.status) == "closed"
+                )
+            )
+        ).scalar_one() or 0)
+        paper_attempts = int((await session.execute(select(func.count(PaperTradeAttempt.id)))).scalar_one() or 0)
+        paper_skipped = int((
+            await session.execute(
+                select(func.count(PaperTradeAttempt.id)).where(
+                    func.lower(PaperTradeAttempt.decision).in_(("skip", "rejected", "retry"))
+                )
+            )
+        ).scalar_one() or 0)
+        paper_ledger = int((await session.execute(select(func.count(PaperLedgerEntry.id)))).scalar_one() or 0)
+
+        adaptive_rows = (
+            await session.execute(
+                text(
+                    "SELECT profile_id,asset,version,state,is_current,sample_size "
+                    "FROM adaptive_asset_profiles ORDER BY is_current DESC,asset,version DESC LIMIT 24"
+                )
+            )
+        ).mappings().all()
+        await session.rollback()
+
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    return {
+        "authority": authority,
+        "environment": environment,
+        "queues": {
+            "performance_retry": len(retry_items),
+            "performance_dead_letter": len(dlq_items),
+            "dead_letter_sample": dlq_items[-5:],
+            "last_performance_batch": last_batch,
+        },
+        "notifications": {
+            "states": {str(name or "unknown"): int(count or 0) for name, count in notification_rows},
+            "duplicate_attempt_rows": duplicate_attempts,
+            "missing_delivery_proof_rows": missing_message_proof,
+        },
+        "paper": {
+            "accounts": paper_accounts,
+            "open_positions": paper_open,
+            "closed_positions": paper_closed,
+            "trade_attempts": paper_attempts,
+            "skipped_or_retry_attempts": paper_skipped,
+            "ledger_rows": paper_ledger,
+        },
+        "adaptive": {
+            "paused": paused,
+            "profiles": [dict(row) for row in adaptive_rows],
+        },
+    }
+
+
+@router.post("/operator/performance-rebuild")
+async def operator_performance_rebuild(
+    payload: OperatorRebuildRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.action == "apply" and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+    from services.performance_ledger import (
+        performance_ledger_health,
+        reconcile_all_performance_ledgers,
+        persist_performance_reconciliation_result,
+    )
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    status_key = f"performance_reconciliation:status:{environment}"
+    if payload.action == "status":
+        raw = await asyncio.to_thread(redis_state.get_sync, status_key)
+        async with get_session(label="platform.operator.performance.status", timeout_seconds=15.0) as session:
+            health = await performance_ledger_health(
+                session, days=int(payload.days), environment=environment
+            )
+            await session.rollback()
+        return {"action": "status", "environment": environment, "last_batch": json.loads(raw) if raw else None, "health": health}
+
+    async with get_session(label="platform.operator.performance.rebuild", timeout_seconds=45.0) as session:
+        result = await reconcile_all_performance_ledgers(
+            session,
+            environment=environment,
+            limit_users=int(payload.limit),
+            dry_run=(payload.action == "dry_run"),
+            reset_cursor=True,
+            persist_cursor=(payload.action == "apply"),
+            wrap_cursor=False,
+        )
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+    await persist_performance_reconciliation_result(
+        result,
+        environment=environment,
+        persist_cursor=(payload.action == "apply"),
+    )
+    return {"action": payload.action, "environment": environment, "result": result.as_dict()}
+
+
+@router.post("/operator/outcome-rebuild")
+async def operator_outcome_rebuild(
+    payload: OperatorRebuildRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.action == "apply" and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from services.outcome_reconciliation import (
+        ensure_outcome_projections,
+        outcome_projection_health,
+        repair_outcome_notification_outbox,
+    )
+    if payload.action == "status":
+        async with get_session(label="platform.operator.outcome.status", timeout_seconds=15.0) as session:
+            health = await outcome_projection_health(session, days=int(payload.days))
+            await session.rollback()
+        return {"action": "status", "health": health}
+
+    async with get_session(label="platform.operator.outcome.projections", timeout_seconds=45.0) as session:
+        projection = await ensure_outcome_projections(session, queue_notifications=False)
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+
+    # Notification repair remains independent so a delivery backlog can never
+    # erase or block canonical outcome projection truth.
+    async with get_session(label="platform.operator.outcome.outbox", timeout_seconds=45.0) as session:
+        outbox = await repair_outcome_notification_outbox(
+            session,
+            limit=max(1, min(int(payload.limit), 100)),
+        )
+        if payload.action == "apply":
+            await session.commit()
+        else:
+            await session.rollback()
+    return {
+        "action": payload.action,
+        "projection": projection.as_dict(),
+        "outbox": outbox.as_dict(),
+    }
+
+
+@router.post("/operator/queue-replay")
+async def operator_queue_replay(
+    payload: OperatorReplayRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    import asyncio
+    from core.env import runtime_environment_name
+    from core.redis_state import state as redis_state
+
+    environment = str(runtime_environment_name("development") or "development").lower()
+    if payload.target == "dead_letter":
+        dlq_key = f"performance_reconciliation:dlq:{environment}"
+        retry_key = f"performance_reconciliation:retry:{environment}"
+        dlq_raw = await asyncio.to_thread(redis_state.get_sync, dlq_key)
+        retry_raw = await asyncio.to_thread(redis_state.get_sync, retry_key)
+        dlq_items = json.loads(dlq_raw) if dlq_raw else []
+        retry_items = json.loads(retry_raw) if retry_raw else []
+        moved = 0
+        for item in dlq_items:
+            if not isinstance(item, dict):
+                continue
+            retry_items.append({
+                "internal_user_id": int(item.get("internal_user_id") or 0),
+                "telegram_user_id": int(item.get("telegram_user_id") or 0),
+                "attempts": 1,
+                "last_error_code": str(item.get("last_error_code") or "replay"),
+                "last_failed_at": datetime.now().isoformat(),
+            })
+            moved += 1
+        await asyncio.to_thread(redis_state.set_sync, retry_key, json.dumps(retry_items, sort_keys=True))
+        await asyncio.to_thread(redis_state.set_sync, dlq_key, json.dumps([], sort_keys=True))
+        return {"target": "dead_letter", "moved": moved}
+
+    from services.performance_ledger import (
+        reconcile_all_performance_ledgers,
+        persist_performance_reconciliation_result,
+    )
+    async with get_session(label="platform.operator.queue_replay", timeout_seconds=45.0) as session:
+        result = await reconcile_all_performance_ledgers(
+            session,
+            environment=environment,
+            dry_run=False,
+            reset_cursor=False,
+            persist_cursor=True,
+            wrap_cursor=False,
+        )
+        await session.commit()
+    await persist_performance_reconciliation_result(result, environment=environment, persist_cursor=True)
+    return {"target": "performance", "result": result.as_dict()}
+
+
+@router.post("/operator/adaptive")
+async def operator_adaptive(
+    payload: OperatorAdaptiveRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from core.redis_state import state as redis_state
+
+    action = str(payload.action).lower()
+    if action in {"pause", "resume"} and payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if action == "pause":
+        redis_state.set_sync("adaptive:optimisation:paused", "1")
+    elif action == "resume":
+        redis_state.set_sync("adaptive:optimisation:paused", "0")
+
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    asset = str(payload.asset or "").strip().upper() or None
+    async with get_session(label="platform.operator.adaptive", timeout_seconds=10.0) as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,metadata "
+                    "FROM adaptive_asset_profiles WHERE (:asset IS NULL OR asset=:asset) "
+                    "ORDER BY asset,is_current DESC,version DESC LIMIT 24"
+                ),
+                {"asset": asset},
+            )
+        ).mappings().all()
+        await session.rollback()
+    return {"action": action, "paused": paused, "profiles": [dict(row) for row in rows]}
+
+
+@router.get("/operator/business")
+async def operator_business(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from sqlalchemy import func, select
+    from db.models import PaymentEvent, Subscription, User
+
+    async with get_session(label="platform.operator.business", timeout_seconds=15.0) as session:
+        total_users = int((await session.execute(select(func.count(User.id)))).scalar_one() or 0)
+        active_rows = (
+            await session.execute(
+                select(Subscription.tier, func.count(Subscription.id))
+                .where(
+                    Subscription.status == "active",
+                    Subscription.expires_at.is_not(None),
+                    Subscription.expires_at > func.now(),
+                )
+                .group_by(Subscription.tier)
+            )
+        ).all()
+        revenue_rows = (
+            await session.execute(
+                select(
+                    PaymentEvent.kind,
+                    PaymentEvent.tier,
+                    func.coalesce(func.sum(PaymentEvent.amount_ngn), 0),
+                )
+                .group_by(PaymentEvent.kind, PaymentEvent.tier)
+            )
+        ).all()
+        plan_rows = (
+            await session.execute(
+                select(
+                    PaymentEvent.tier,
+                    PaymentEvent.duration_days,
+                    PaymentEvent.plan_code,
+                    func.coalesce(func.sum(PaymentEvent.amount_ngn), 0),
+                )
+                .where(PaymentEvent.kind == "subscription")
+                .group_by(PaymentEvent.tier, PaymentEvent.duration_days, PaymentEvent.plan_code)
+                .order_by(func.coalesce(func.sum(PaymentEvent.amount_ngn), 0).desc())
+                .limit(10)
+            )
+        ).all()
+        await session.rollback()
+
+    active = {str(tier or "unknown").lower(): int(count or 0) for tier, count in active_rows}
+    by_kind: dict[str, int] = {}
+    by_tier: dict[str, int] = {}
+    for kind, tier, amount in revenue_rows:
+        by_kind[str(kind or "unknown")] = by_kind.get(str(kind or "unknown"), 0) + int(amount or 0)
+        by_tier[str(tier or "unknown").lower()] = by_tier.get(str(tier or "unknown").lower(), 0) + int(amount or 0)
+    return {
+        "authority": authority,
+        "users": {"total": total_users, "active_subscriptions_by_tier": active},
+        "revenue_ngn": {
+            "total": sum(by_kind.values()),
+            "by_kind": by_kind,
+            "by_tier": by_tier,
+            "top_plans": [
+                {
+                    "tier": str(tier or "unknown"),
+                    "duration_days": int(days) if days is not None else None,
+                    "plan_code": str(plan_code or "") or None,
+                    "amount_ngn": int(amount or 0),
+                }
+                for tier, days, plan_code, amount in plan_rows
+            ],
+        },
+    }
+
+
+@router.post("/operator/market-scan")
+async def operator_market_scan(
+    payload: OperatorMarketScanRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from datetime import timedelta
+    from sqlalchemy import select
+    from db.models import AdminEvent, Signal
+    from ml.features import extract_features
+    from ml.inference import MLFilter
+    from utils.timeutils import now_utc_naive
+
+    ml_filter = MLFilter()
+    if not bool(getattr(ml_filter, "active", False)):
+        raise HTTPException(status_code=409, detail="ML model is not loaded")
+    threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
+    threshold = float(threshold_raw) if threshold_raw else None
+    cutoff = now_utc_naive() - timedelta(hours=int(payload.hours))
+
+    async with get_session(label="platform.operator.market_scan", timeout_seconds=20.0) as session:
+        rows = await session.execute(
+            select(Signal)
+            .where(
+                Signal.created_at >= cutoff,
+                Signal.ml_probability.is_(None),
+                Signal.expired.is_(False),
+            )
+            .limit(int(payload.limit))
+        )
+        signals = rows.scalars().all()
+
+        approved = rejected = errors = 0
+        for signal_row in signals:
+            try:
+                signal_dict = {
+                    column.name: getattr(signal_row, column.name)
+                    for column in signal_row.__table__.columns
+                }
+                features = extract_features(signal_dict, {})
+                ok, _prob = ml_filter.ml_filter(features, threshold=threshold)
+                if ok:
+                    approved += 1
+                else:
+                    rejected += 1
+            except Exception:
+                errors += 1
+
+        session.add(
+            AdminEvent(
+                event_type="platform_force_market_scan",
+                actor_telegram_user_id=int(user.get("telegram_user_id") or 0) or None,
+                details={
+                    "canonical_user_id": int(user["id"]),
+                    "total": len(signals),
+                    "approved": approved,
+                    "rejected": rejected,
+                    "errors": errors,
+                    "threshold": threshold,
+                    "hours": int(payload.hours),
+                },
+            )
+        )
+        await session.commit()
+    return {
+        "authority": authority,
+        "total": len(signals),
+        "approved": approved,
+        "rejected": rejected,
+        "errors": errors,
+        "threshold": threshold,
+        "hours": int(payload.hours),
+    }
+
+
+@router.post("/operator/force-signal")
+async def operator_force_signal(
+    payload: OperatorForceSignalRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Generate one controlled diagnostic signal using the Telegram owner path's
+    market-state and strategy primitives.
+
+    Delivery is restricted to the requesting operator's linked Telegram account.
+    This endpoint never broad-fanouts the forced signal and never places a broker
+    order. Core quality gates remain active unless the owner supplies the explicit
+    override phrase.
+    """
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    if payload.override_quality:
+        if authority != "OWNER":
+            raise HTTPException(status_code=403, detail="Only the owner can override diagnostic quality gates")
+        if str(payload.override_confirmation or "").strip().upper() != "OVERRIDE QUALITY GATES":
+            raise HTTPException(status_code=422, detail="Type OVERRIDE QUALITY GATES to confirm the quality override")
+
+    import asyncio
+    from datetime import timedelta
+    from uuid import uuid4
+    from config import config
+    from db.models import AdminEvent, Signal
+    from engine.market_state import get_market_state_async
+    from engine.strategies.signal_generator import SignalGenerator
+    from utils.timeutils import now_utc_naive
+
+    requested_asset = str(payload.asset or "").upper().replace("/", "").strip()
+    requested_tf = str(payload.timeframe or "").lower().strip()
+    candidate_assets = [requested_asset] if requested_asset else [
+        value.strip().upper().replace("/", "")
+        for value in str(getattr(config, "FORCE_SIGNAL_ASSETS", "BTCUSDT,ETHUSDT,XAUUSD,EURUSD") or "").split(",")
+        if value.strip()
+    ]
+    candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
+    generator = SignalGenerator()
+    best_signal = None
+    best_asset = None
+    best_tf = None
+    best_ml_prob = None
+    best_regime = "NEUTRAL"
+    timeout_s = max(2.0, float(os.getenv("FORCE_SIGNAL_FETCH_TIMEOUT_SECONDS", "8") or 8))
+
+    for asset in candidate_assets:
+        for timeframe in candidate_timeframes:
+            try:
+                market_state = await asyncio.wait_for(
+                    get_market_state_async(asset, [timeframe], include_ml=True),
+                    timeout=timeout_s,
+                )
+                tf_data = (market_state.get("timeframes") or {}).get(timeframe) or {}
+                candles = tf_data.get("candles") or []
+                indicators = tf_data.get("indicators") or {}
+                ml_prob = tf_data.get("ml_score")
+                if len(candles) < 50:
+                    continue
+                generated = generator.generate_signals(
+                    asset,
+                    timeframe,
+                    {
+                        "candles": candles,
+                        "indicators": indicators,
+                        "ml_probability": ml_prob,
+                    },
+                )
+                if not generated:
+                    continue
+                current_best = max(
+                    generated,
+                    key=lambda item: float(getattr(item, "score", 0) or 0),
+                )
+                if best_signal is None or float(current_best.score or 0) > float(best_signal.score or 0):
+                    best_signal = current_best
+                    best_asset = asset
+                    best_tf = timeframe
+                    best_ml_prob = ml_prob
+                    best_regime = str(indicators.get("regime") or "NEUTRAL")
+            except Exception:
+                continue
+
+    if best_signal is None or best_asset is None or best_tf is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "No fresh diagnostic signal could be generated right now",
+                "assets_checked": candidate_assets,
+                "timeframes_checked": candidate_timeframes,
+            },
+        )
+
+    score_value = float(getattr(best_signal, "score", 0) or 0)
+    try:
+        ml_value = None if best_ml_prob is None else float(best_ml_prob)
+    except Exception:
+        ml_value = None
+    min_score = float(getattr(config, "FORCE_SIGNAL_MIN_SCORE", 55.0) or 55.0)
+    min_ml = float(getattr(config, "FORCE_SIGNAL_MIN_ML_PROB", 0.0) or 0.0)
+    strict_mode = str(getattr(config, "FORCE_SIGNAL_STRICT_MODE", "1") or "1").strip().lower() in {"1","true","yes","on"}
+    if strict_mode and not payload.override_quality:
+        quality_ok = score_value >= min_score and (ml_value is None or ml_value >= min_ml)
+        if not quality_ok:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Diagnostic force-signal blocked by strict quality gates",
+                    "score": score_value,
+                    "minimum_score": min_score,
+                    "ml_probability": ml_value,
+                    "minimum_ml_probability": min_ml,
+                    "override_available_to_owner": authority == "OWNER",
+                },
+            )
+
+    tp_levels: list[float] = []
+    try:
+        tp_levels = [
+            float(level.get("price"))
+            for level in (best_signal.take_profit or [])
+            if isinstance(level, dict) and level.get("price") is not None
+        ]
+    except Exception:
+        tp_levels = []
+    rr_ratio = None
+    try:
+        if tp_levels:
+            risk = abs(float(best_signal.entry) - float(best_signal.stop_loss))
+            reward = abs(float(tp_levels[0]) - float(best_signal.entry))
+            rr_ratio = reward / risk if risk > 0 else None
+    except Exception:
+        rr_ratio = None
+
+    signal_id = str(uuid4())
+    expires_at = now_utc_naive() + timedelta(hours=12)
+    async with get_session(label="platform.operator.force_signal", timeout_seconds=20.0) as session:
+        session.add(
+            Signal(
+                signal_id=signal_id,
+                asset=best_asset,
+                timeframe=best_tf,
+                direction=best_signal.direction,
+                entry=float(best_signal.entry),
+                stop_loss=float(best_signal.stop_loss),
+                take_profit=json.dumps(best_signal.take_profit or []),
+                rr_estimate=rr_ratio,
+                score=score_value,
+                regime=best_regime,
+                ml_probability=ml_value,
+                strategy_name=str(best_signal.strategy_name),
+                strategy_group=str(best_signal.strategy_group),
+                strength=float(best_signal.confidence or 0.0),
+                fingerprint=f"{best_asset}_{best_tf}_{best_signal.direction}_{int(float(best_signal.entry) or 0)}",
+                archived=False,
+                expired=False,
+                expires_at=expires_at,
+            )
+        )
+        session.add(
+            AdminEvent(
+                event_type="platform_force_signal",
+                actor_telegram_user_id=int(user.get("telegram_user_id") or 0) or None,
+                details={
+                    "canonical_user_id": int(user["id"]),
+                    "signal_id": signal_id,
+                    "asset": best_asset,
+                    "timeframe": best_tf,
+                    "score": score_value,
+                    "override_quality": bool(payload.override_quality),
+                    "delivery_scope": "operator_only",
+                },
+            )
+        )
+        await session.commit()
+
+    signal_payload = {
+        "signal_id": signal_id,
+        "asset": best_asset,
+        "timeframe": best_tf,
+        "direction": best_signal.direction,
+        "entry": best_signal.entry,
+        "stop_loss": best_signal.stop_loss,
+        "take_profit": best_signal.take_profit,
+        "tp_levels": tp_levels,
+        "rr_ratio": rr_ratio,
+        "score": score_value,
+        "regime": best_regime,
+        "ml_probability": ml_value,
+        "strategy_name": best_signal.strategy_name,
+        "strategy_group": best_signal.strategy_group,
+        "strength": best_signal.confidence,
+        "confidence": best_signal.confidence,
+        "created_at": now_utc_naive(),
+        "expires_at": expires_at,
+    }
+
+    delivered = False
+    delivery_error = None
+    telegram_user_id = int(user.get("telegram_user_id") or 0)
+    if telegram_user_id > 0:
+        try:
+            from telegram import Bot
+            from signalrank_telegram.bot import _deliver_or_update_signal_sync, _require_telegram_token
+            delivered = bool(
+                await asyncio.to_thread(
+                    _deliver_or_update_signal_sync,
+                    Bot(token=_require_telegram_token()),
+                    telegram_user_id=telegram_user_id,
+                    signal=dict(signal_payload),
+                    display_tier="vip",
+                )
+            )
+        except Exception as exc:
+            delivery_error = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "signal_id": signal_id,
+        "asset": best_asset,
+        "timeframe": best_tf,
+        "direction": str(best_signal.direction),
+        "score": score_value,
+        "ml_probability": ml_value,
+        "rr_ratio": rr_ratio,
+        "quality_override": bool(payload.override_quality),
+        "delivery_scope": "operator_only",
+        "telegram_linked": telegram_user_id > 0,
+        "telegram_delivered": delivered,
+        "delivery_error": delivery_error,
+        "broker_execution_triggered": False,
     }
 
 
