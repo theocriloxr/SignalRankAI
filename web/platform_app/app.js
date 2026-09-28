@@ -23,7 +23,7 @@ function syncNavUi(){
     toggle.title=collapsed?'Expand navigation':'Collapse navigation';
   }
   if(icon)icon.textContent=collapsed?'›':'‹';
-  $('#sessionNav button').forEach(button=>{
+  $$('#sessionNav button').forEach(button=>{
     const label=(button.textContent||'').trim().replace(/\s+/g,' ');
     if(label&&!button.getAttribute('aria-label'))button.setAttribute('aria-label',label);
     if(label)button.title=collapsed?label:'';
