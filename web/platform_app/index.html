@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#05060a" />
+  <meta name="theme-color" content="#050907" />
   <meta name="color-scheme" content="dark light" />
   <meta name="description" content="SignalRankAI multi-asset trading intelligence workstation for evidence, signals, portfolio analysis and controlled execution workflows" />
   <script>
@@ -17,6 +17,8 @@
   <link rel="manifest" href="/app/manifest.webmanifest" />
   <link rel="icon" href="/app-assets/icon.svg" type="image/svg+xml" />
   <link rel="shortcut icon" href="/app-assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/app-assets/icon.svg" />
+  <meta name="msapplication-TileColor" content="#050907" />
   <link rel="stylesheet" href="/app-assets/styles.css" />
   <title>SignalRankAI</title>
 </head>
@@ -25,9 +27,9 @@
   <header class="topbar">
     <a class="brand" href="/app" aria-label="Signal Rank AI home">
       <span class="brand-logo"><img src="/app-assets/icon.svg" alt="" width="42" height="42" /></span>
-      <span class="brand-copy"><strong>Signal Rank AI</strong><small>Trading Intelligence</small></span>
+      <span class="brand-copy"><strong>SignalRankAI</strong><small>Trading Intelligence</small></span>
     </a>
-    <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">
+    <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sessionNav" title="Collapse navigation">
       <span id="navToggleIcon" aria-hidden="true">‹</span>
     </button>
     <label id="compactNav" class="compact-nav" hidden>
@@ -87,7 +89,7 @@
     <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
       <div class="bootstrap-mark"><img src="/app-assets/icon.svg" alt="" width="54" height="54" /></div>
       <div>
-        <p class="eyebrow">SIGNALRANKAI</p>
+        <p class="eyebrow">SIGNALRANKAI · TRADING INTELLIGENCE</p>
         <h1 id="bootstrapTitle">Restoring your secure session…</h1>
         <p id="bootstrapCopy">Loading your account, plan entitlements and connected trading workspace.</p>
         <button id="bootstrapRetry" class="ghost bootstrap-retry" type="button" hidden>Retry connection</button>
