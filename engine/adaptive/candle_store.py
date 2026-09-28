@@ -366,6 +366,12 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
                 # interactive commands.
                 drop_if_busy=noncritical,
             ) as session:
+                # This path is intentionally a durable write path. Some pooled
+                # production connections can inherit a read-only transaction
+                # characteristic from prior audit/read workloads; declare the
+                # bounded candle transaction READ WRITE before any SET LOCAL or
+                # DML so idempotent learning evidence cannot be stranded.
+                await session.execute(sql_text("SET TRANSACTION READ WRITE"))
                 await session.execute(
                     sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
                 )

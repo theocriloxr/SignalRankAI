@@ -1,0 +1,3 @@
+SignalRankAI staging engine certification marker r2.
+Exact purpose: trigger a source build containing the adaptive candle READ WRITE hotfix after the release-source pin is reconciled.
+Live execution, copy trading, public payments and payouts remain disabled.
