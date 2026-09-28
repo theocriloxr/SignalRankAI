@@ -77,6 +77,13 @@ def test_operator_workspace_is_owner_admin_only_and_fail_safe() -> None:
     assert 'id="operatorAi"' in html
     assert "async function loadOperator()" in app
     assert "opsButton.hidden=!authority" in app
+    assert 'redis_state.get_sync, "engine:last_cycle"' in block
+    assert '"engine": engine_cycle' in block
+    assert '"strict_candidates"' in block
+    assert '"ml_passed"' in block
+    assert '"final_signals"' in block
+    assert "Signal admission funnel" in app
+    assert "Recovery passes" in app
 
 
 def test_workstation_redesign_keeps_tier_gating_and_core_safety_copy() -> None:

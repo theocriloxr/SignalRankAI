@@ -1075,6 +1075,62 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
         db_ok = False
         db_error = f"{type(exc).__name__}: {exc}"
 
+    engine_cycle: dict[str, Any] = {}
+    try:
+        import asyncio as _asyncio
+        raw_cycle = await _asyncio.to_thread(redis_state.get_sync, "engine:last_cycle")
+        parsed_cycle = (
+            raw_cycle
+            if isinstance(raw_cycle, dict)
+            else json.loads(str(raw_cycle))
+            if raw_cycle
+            else {}
+        )
+        if isinstance(parsed_cycle, dict):
+            pipeline = parsed_cycle.get("pipeline_stats")
+            pipeline = pipeline if isinstance(pipeline, dict) else {}
+            def _cycle_value(key: str, default: Any = None) -> Any:
+                value = parsed_cycle.get(key)
+                if value is None:
+                    value = pipeline.get(key)
+                return default if value is None else value
+            engine_cycle = {
+                "status": str(_cycle_value("status", "unknown") or "unknown"),
+                "cycle": _cycle_value("cycle"),
+                "round": _cycle_value("round"),
+                "started_at": _cycle_value("started_at"),
+                "completed_at": _cycle_value("completed_at"),
+                "duration_ms": _cycle_value("duration_ms"),
+                "class_counts": dict(_cycle_value("class_counts", {}) or {}),
+                "market_data_assets": int(_cycle_value("market_data_assets", 0) or 0),
+                "strategy_signals": int(_cycle_value("strategy_signals", 0) or 0),
+                "strict_candidates": int(_cycle_value("strict_candidates", 0) or 0),
+                "ml_passed": int(_cycle_value("ml_passed", 0) or 0),
+                "ml_recovery_passed": int(_cycle_value("ml_recovery_passed", 0) or 0),
+                "risk_passed": int(_cycle_value("risk_passed", 0) or 0),
+                "final_signals": int(_cycle_value("final_signals", 0) or 0),
+                "stored": int(_cycle_value("stored", 0) or 0),
+                "dispatched": int(_cycle_value("dispatched", 0) or 0),
+                "ml_raw_probability_max": _cycle_value("ml_raw_probability_max"),
+                "ml_calibrated_probability_max": _cycle_value("ml_calibrated_probability_max"),
+                "ml_threshold_raw": _cycle_value("ml_threshold_raw"),
+                "max_score_pre_threshold": _cycle_value("max_score_pre_threshold"),
+                "max_score": _cycle_value("max_score"),
+                "quality_rejected": int(_cycle_value("quality_rejected", 0) or 0),
+                "advanced_filter_failed": int(_cycle_value("advanced_filter_failed", 0) or 0),
+                "risk_failed": int(_cycle_value("risk_failed", 0) or 0),
+                "score_rejected": int(_cycle_value("score_rejected", 0) or 0),
+                "top_rejections": {
+                    "quality": list(_cycle_value("quality_rejected_top", []) or [])[:5],
+                    "structure": list(_cycle_value("advanced_filter_top", []) or [])[:5],
+                    "risk": list(_cycle_value("risk_failed_top", []) or [])[:5],
+                    "score": list(_cycle_value("score_rejected_top", []) or [])[:5],
+                    "market_data": list(_cycle_value("market_data_failure_top", []) or [])[:5],
+                },
+            }
+    except Exception as exc:
+        engine_cycle = {"status": "unavailable", "error": f"{type(exc).__name__}: {exc}"}
+
     kill = await redis_state.get_killswitch()
     return {
         "authority": authority,
@@ -1089,6 +1145,7 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
             "unhealthy": unhealthy,
             "circuits": provider_circuits,
         },
+        "engine": engine_cycle,
         "performance": performance,
         "outcomes": outcomes,
         "payments": payment,

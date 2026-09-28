@@ -1066,3 +1066,24 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .auth-brand-lockup{width:min(330px,92%)}
   .dashboard-header:after{width:48px;height:48px;opacity:.045}
 }
+
+
+/* OWNER SIGNAL-FUNNEL / EXPANDED MARKET RESEARCH */
+.signal-funnel-panel{
+  margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--cyan) 5%,var(--panel)),var(--panel));
+  box-shadow:var(--shadow-sm)
+}
+.signal-funnel-panel .panel-heading{margin-bottom:12px}
+.signal-funnel-grid{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;
+  overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--line)
+}
+.signal-funnel-grid>div{padding:11px 12px;background:var(--panel-2);display:flex;flex-direction:column;gap:4px;min-height:66px}
+.signal-funnel-grid small{color:var(--muted);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase}
+.signal-funnel-grid strong{font-size:1.12rem;color:var(--text-strong)}
+.signal-funnel-ml{margin:11px 2px 8px;font-size:.78rem}
+.signal-veto-list{border-top:1px solid var(--line);padding-top:6px}
+.signal-veto-list .detail-row strong{max-width:72%;text-align:right;font-size:.76rem}
+@media(max-width:900px){.signal-funnel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.signal-funnel-grid{grid-template-columns:1fr}.signal-veto-list .detail-row{align-items:flex-start;gap:8px}.signal-veto-list .detail-row strong{max-width:62%}}
