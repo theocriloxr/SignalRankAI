@@ -104,7 +104,7 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "--brand-gradient:linear-gradient" in css
     assert ':root[data-theme="light"]' in css
     assert "#00a96e" in manifest
-    assert "signalrank-shell-v34" in worker
+    assert "signalrank-shell-v35" in worker
     assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
