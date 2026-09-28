@@ -15,7 +15,9 @@ def test_web_exposes_shared_telegram_command_catalog() -> None:
     html = source("web/platform_app/index.html")
 
     assert '@router.get("/command-catalog")' in api
-    assert "visible_commands(effective_tier)" in api
+    assert "from signalrank_telegram.command_catalog import COMMANDS" in api
+    assert "if tier_rank(spec.tier) > effective_rank" in api
+    assert '"telegram_menu_limit": 100' in api
     assert '"parity_model": "shared_services_same_entitlements"' in api
     assert 'id="commandCatalog"' in html
     assert 'id="commandSearch"' in html
