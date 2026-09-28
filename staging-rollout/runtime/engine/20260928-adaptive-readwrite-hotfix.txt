@@ -1,0 +1,3 @@
+SignalRankAI staging engine hotfix marker.
+Scope: force bounded adaptive candle persistence transactions READ WRITE before DML after production audit exposed pooled read-only transaction inheritance.
+No live-execution, payout, copy-trade, entitlement, or broker policy changes.
