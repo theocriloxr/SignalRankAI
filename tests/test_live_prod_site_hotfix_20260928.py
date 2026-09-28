@@ -65,6 +65,8 @@ def test_live_hotfix_email_identity_and_readiness_routes() -> None:
     assert "EMAIL_REPLY_TO" in delivery
     assert '@app.get("/ready"' in app
     assert '@app.get("/readyz"' in app
+    assert "select(func.count()).select_from(Signal)" in app
+    assert "active_signals = int(result.scalar_one() or 0)" in app
 
 
 def test_live_hotfix_has_no_single_selector_foreach_and_bumps_cache() -> None:
