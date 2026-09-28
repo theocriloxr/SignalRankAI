@@ -71,4 +71,4 @@ def test_transactional_email_defaults_to_crilox_hello_identity() -> None:
 
 def test_new_shell_assets_force_cache_refresh() -> None:
     sw = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v30" in sw
+    assert "signalrank-shell-v31" in sw
