@@ -101,16 +101,45 @@ function statusClass(value){const v=String(value||'').toLowerCase();return ['tp1
 function setLoggedIn(value){const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=true;$('#authShell').hidden=value;$('#appShell').hidden=!value;$('#sessionNav').hidden=!value;const compact=$('#compactNav');if(compact)compact.hidden=!value;document.body.classList.toggle('session-active',value);document.body.classList.remove('session-booting')}
 function showBootstrapError(message){
   state.user=null;state.entitlements=null;
+  if(bootstrapRetryTimer){clearTimeout(bootstrapRetryTimer);bootstrapRetryTimer=null}
   const bootstrap=$('#bootstrapShell');if(bootstrap)bootstrap.hidden=false;
   $('#authShell').hidden=true;$('#appShell').hidden=true;$('#sessionNav').hidden=true;const compact=$('#compactNav');if(compact)compact.hidden=true;
   document.body.classList.remove('session-active');document.body.classList.add('session-booting');
   const title=$('#bootstrapTitle');const copy=$('#bootstrapCopy');const retry=$('#bootstrapRetry');
-  if(title)title.textContent='SignalRank services are temporarily unavailable';
-  if(copy)copy.textContent=String(message||'We could not reach the account service. Your session and stored account data have not been discarded.');
-  if(retry){retry.hidden=false;retry.onclick=async()=>{retry.disabled=true;retry.textContent='Retrying…';if(title)title.textContent='Restoring your secure session…';if(copy)copy.textContent='Loading your account, plan entitlements and connected trading workspace.';try{await boot()}finally{retry.disabled=false;retry.textContent='Retry connection'}}}
+  if(title)title.textContent='Reconnecting to SignalRank…';
+  if(copy)copy.textContent=String(message||'The app service is warming up or reconnecting. Your session and stored account data are safe; SignalRank will retry automatically.');
+  const retryNow=async()=>{if(retry){retry.disabled=true;retry.textContent='Reconnecting…'}try{await boot()}finally{if(retry){retry.disabled=false;retry.textContent='Retry now'}}};
+  if(retry){retry.hidden=false;retry.textContent='Retry now';retry.onclick=retryNow}
+  bootstrapRetryTimer=setTimeout(()=>{bootstrapRetryTimer=null;retryNow().catch(()=>{})},3500);
 }
 function hasFeature(feature){const features=state.entitlements?.features||[];return features.includes('*')||features.includes(feature)}
 function applyEntitlements(){document.querySelectorAll('[data-feature]').forEach(el=>{const allowed=hasFeature(el.dataset.feature);const revealLocked=el.dataset.entitlementDisplay==='lock';el.classList.toggle('locked-nav',!allowed);el.setAttribute('aria-disabled',allowed?'false':'true');if(!revealLocked)el.hidden=!allowed;if(!allowed)el.title='Available on a higher SignalRankAI plan';else if(el.title==='Available on a higher SignalRankAI plan')el.removeAttribute('title')})}
+function accountAuthority(){return String(state.commandCatalog?.authority||state.user?.authority||state.user?.role||'').trim().toUpperCase()}
+function accountLandingView(){
+  const requested=String(new URLSearchParams(location.search).get('view')||'').trim().toLowerCase();
+  const valid=new Set(['overview','signals','evidence','markets','tools','paper','portfolio','performance','journal','support','account','ops']);
+  const requestedTrigger=requested?document.querySelector('[data-view="'+requested+'"]'):null;
+  if(requested&&valid.has(requested)&&requestedTrigger&&!requestedTrigger.hidden&&(!requestedTrigger.dataset.feature||hasFeature(requestedTrigger.dataset.feature)))return requested;
+  const authority=accountAuthority();
+  if(authority==='OWNER'||authority==='ADMIN')return 'ops';
+  const tier=String(state.user?.tier||'free').toLowerCase();
+  if((tier==='institutional'||tier==='professional')&&hasFeature('performance_analytics'))return 'performance';
+  if(tier==='vip'||tier==='premium')return 'signals';
+  if(hasFeature('paper_trading')&&String(state.user?.account_status||'').toLowerCase()==='paper')return 'paper';
+  return 'overview';
+}
+function applyAccountExperience(){
+  const tier=String(state.user?.tier||'free').toLowerCase();const authority=accountAuthority();
+  document.body.dataset.accountTier=tier;
+  if(authority)document.body.dataset.accountAuthority=authority.toLowerCase();else delete document.body.dataset.accountAuthority;
+  const badge=$('#tierBadge');if(badge)badge.textContent=authority==='OWNER'?'OWNER':authority==='ADMIN'?'ADMIN':tier.toUpperCase();
+  const subtitle=$('#accountSubtitle');if(!subtitle)return;
+  subtitle.textContent=authority==='OWNER'?'Owner control room · system health, signal quality, users, brokers and governed execution.'
+    :authority==='ADMIN'?'Administrative workspace · operations, support and governed platform controls.'
+    :(tier==='institutional'||tier==='professional')?'Professional intelligence · portfolio, performance, signals and connected-account workflows.'
+    :(tier==='vip'||tier==='premium')?'Premium signal intelligence · delivery-proven setups, evidence and performance.'
+    :'Your signals, paper portfolio and market intelligence in one place.';
+}
 function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate')}
 $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>setAuthTab('register');$('#activateTab').onclick=()=>setAuthTab('activate');
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
