@@ -65,7 +65,9 @@ def test_cross_channel_command_catalog_and_operator_controls_are_real_routes() -
         '@router.post("/operator/kill-switch")',
     ):
         assert route in api
-    assert "visible_commands(effective_tier)" in api
+    assert "from signalrank_telegram.command_catalog import COMMANDS" in api
+    assert "if tier_rank(spec.tier) > effective_rank" in api
+    assert '"telegram_menu_limit": 100' in api
     assert 'id="commandCatalog"' in html
     assert 'id="opsView"' in html
     assert "loadCommandCatalog" in app
