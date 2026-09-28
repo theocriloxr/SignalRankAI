@@ -374,3 +374,15 @@ def test_analytics_training_has_cross_trigger_cooldown() -> None:
     assert "signalrankai:ml:train:last_completed_epoch" in block
     assert "cooldown_after_wait" in block
     assert 'retrain_reason in {"feature_drift", "prediction_starvation"}' in block
+
+
+def test_engine_recovery_can_use_shared_analytics_starvation_health() -> None:
+    root = Path(__file__).resolve().parents[1]
+    core = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    block = core[
+        core.index("def _ml_starvation_recovery_context") :
+        core.index("def _ml_starvation_recovery_decision")
+    ]
+    assert 'state.get_sync("signalrankai:ml:starvation:summary")' in block
+    assert '"source"]="analytics_shared_redis"' in block
+    assert "int(shared.get(\"samples\") or 0) >= minimum_samples" in block
