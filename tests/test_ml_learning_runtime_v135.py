@@ -286,3 +286,74 @@ def test_startup_restores_primary_and_candidate_artifacts() -> None:
     assert 'model_name="candidate"' in startup
     assert "ML_RESTORE_ACTIVE_ARTIFACT_ON_STARTUP" in startup
     assert "ML_RESTORE_CANDIDATE_ARTIFACT_ON_STARTUP" in startup
+
+
+@pytest.mark.asyncio
+async def test_adaptive_candle_batch_deduplicates_same_database_key(monkeypatch) -> None:
+    from engine.adaptive import candle_store
+
+    while True:
+        try:
+            candle_store._QUEUE.get_nowait()
+        except candle_store.queue.Empty:
+            break
+
+    def snapshot(close: float) -> dict:
+        return {
+            "asset": "BTCUSDT",
+            "timeframe": "1h",
+            "provider": "test",
+            "candles": [
+                {
+                    "open_time_ms": 1_700_000_000_000,
+                    "close_time_ms": 1_700_003_600_000,
+                    "open": 100.0,
+                    "high": 110.0,
+                    "low": 90.0,
+                    "close": close,
+                    "volume": 12.0,
+                    "is_final": True,
+                }
+            ],
+        }
+
+    candle_store._QUEUE.put_nowait(snapshot(101.0))
+    candle_store._QUEUE.put_nowait(snapshot(102.0))
+    statements: list[str] = []
+
+    class FakeSession:
+        async def execute(self, statement):
+            text_value = str(statement)
+            if text_value.lstrip().upper().startswith("INSERT"):
+                statements.append(text_value)
+            return None
+
+        async def commit(self):
+            return None
+
+    @asynccontextmanager
+    async def session(**kwargs):
+        yield FakeSession()
+
+    monkeypatch.setattr(candle_store, "get_session", session)
+    monkeypatch.setenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", "2")
+    monkeypatch.setenv("ADAPTIVE_CANDLE_UPSERT_CHUNK_SIZE", "10")
+
+    result = await candle_store.persist_queued_snapshots(2)
+
+    assert result == {"snapshots": 2, "candles": 1}
+    assert len(statements) == 1
+    assert "), (" not in statements[0]
+    assert candle_store.queue_depth() == 0
+
+
+def test_serving_readiness_prefers_durable_champion_on_cold_load() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine_ml = (root / "engine" / "ml.py").read_text(encoding="utf-8")
+    block = engine_ml[
+        engine_ml.index("def _load_model()") :
+        engine_ml.index("def _apply_probability_calibration")
+    ]
+    assert "sync_due = should_sync_durable or _durable_model_retry_due()" in block
+    assert "_restore_durable_primary_if_enabled(path)" in block
+    assert block.index("_restore_durable_primary_if_enabled(path)") < block.index("if not path.exists()")
