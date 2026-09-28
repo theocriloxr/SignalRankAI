@@ -1,0 +1,3 @@
+SignalRankAI production adaptive candle persistence hotfix.
+Promoted only after staging 392/392 release-gate pass, all four staging roles SUCCESS, all five staging certification services SUCCESS, and five-class scanner coverage verified.
+This release forces bounded adaptive candle persistence transactions READ WRITE before DML. Live execution, copy trading, payouts and public payments remain fail-closed.
