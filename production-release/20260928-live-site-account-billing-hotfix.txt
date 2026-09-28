@@ -1,0 +1,5 @@
+SignalRankAI isolated production site hardening release.
+Base: exact previously deployed production commit ed2661d5bad5e4e6c57bcccdb494cfd9ce441239.
+Scope: web session restoration, outage-vs-logout UX, tier visibility, MetaApi secure-link reconciliation, Paystack completion verification, Crilox email identity, readiness/health fixes.
+Staging proof: main staging e3cb64b4244fd969e867518e4fbbb3f0b01c8fe9 SUCCESS with 357 Docker-gate tests; isolated hotfix canary 32724405a0e64768e670fee1178aabdc74ff82b1 build/runtime/HTTP PASS.
+No database schema change. No execution flag activation. No payment/email provider secret added.
