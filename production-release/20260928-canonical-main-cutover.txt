@@ -1,0 +1,5 @@
+SignalRankAI canonical production cutover marker.
+Canonical source of truth: main.
+Staging proof: exact canonical runtime tree passed 375 Docker-gate tests and quiescent Railway certification on 2026-09-28.
+Compatibility source ref may mirror this exact main commit until Railway dashboard source selectors are switched to main.
+No secret or live-execution activation is encoded here.
