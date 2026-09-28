@@ -632,3 +632,8 @@ tbody tr:last-child td{border-bottom:0}
 @media(max-width:1180px){.operator-control-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.operator-control-grid{grid-template-columns:1fr}.operator-control-card{min-height:0}}
 
+.operator-force-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end}
+.operator-force-form>.switch-row,.operator-force-form>button,.operator-force-form>#operatorOverridePhraseRow{grid-column:1/-1}
+.operator-force-form .switch-row{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-soft)}
+@media(max-width:700px){.operator-force-form{grid-template-columns:1fr}.operator-force-form>*{grid-column:1!important}}
+
