@@ -93,6 +93,68 @@ def _latest_cycle_state() -> dict[str, Any]:
         return {}
 
 
+def _cycle_signal_drought_summary(stats: dict[str, Any]) -> list[str]:
+    """Explain a healthy-but-selective engine window without fabricating a signal."""
+    cycle = stats.get("latest_cycle") if isinstance(stats, dict) else {}
+    if not isinstance(cycle, dict):
+        return []
+    pipeline = cycle.get("pipeline_stats")
+    if not isinstance(pipeline, dict):
+        pipeline = {}
+
+    def _int(key: str) -> int:
+        try:
+            return int(pipeline.get(key) or 0)
+        except Exception:
+            return 0
+
+    def _pct(value: Any) -> str:
+        try:
+            return f"{float(value) * 100.0:.1f}%"
+        except Exception:
+            return "n/a"
+
+    delivered = int(stats.get("delivered") or 0)
+    strategies = _int("strategy_signals")
+    strict = _int("strict_candidates")
+    ml_passed = _int("ml_passed")
+    if delivered > 0 or strategies <= 0:
+        return []
+
+    lines = [
+        "Signal drought diagnostic:",
+        f"- engine activity: {strategies} strategy ideas -> {strict} strict candidates -> {ml_passed} ML passes",
+    ]
+    raw_max = pipeline.get("ml_raw_probability_max")
+    calibrated_max = pipeline.get("ml_calibrated_probability_max")
+    cutoff = pipeline.get("ml_threshold_raw")
+    if raw_max is not None or calibrated_max is not None or cutoff is not None:
+        lines.append(
+            f"- ML gate: raw max {_pct(raw_max)} | calibrated max {_pct(calibrated_max)} | certified cutoff {_pct(cutoff)}"
+        )
+    best_score = cycle.get("max_score_pre_threshold")
+    if best_score is None:
+        best_score = pipeline.get("max_score_pre_threshold")
+    if best_score is not None:
+        try:
+            lines.append(f"- best pre-threshold score: {float(best_score):.2f}")
+        except Exception:
+            pass
+    recovery = str(os.getenv("ML_STARVATION_RECOVERY_ENABLED") or "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if recovery:
+        lines.append(
+            "- starvation recovery: enabled, PAPER-ONLY, broker execution prohibited, max "
+            f"{max(0, int(os.getenv('ML_STARVATION_RECOVERY_MAX_SIGNALS_PER_CYCLE', '1') or 1))}/cycle"
+        )
+    if strict > 0 and ml_passed == 0:
+        lines.append("- bottleneck: ML admission; Telegram is waiting for an admitted signal")
+    elif strict == 0:
+        lines.append("- bottleneck: pre-ML candidate quality/consensus gates")
+    return lines
+
+
 def _cycle_rejection_buckets(cycle: dict[str, Any]) -> dict[str, int]:
     stats = cycle.get("pipeline_stats") if isinstance(cycle, dict) else {}
     if not isinstance(stats, dict):
@@ -689,6 +751,9 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                 txt += f"- max score absent: {cycle.get('max_score_absent_reason')}\n"
             if cycle.get("market_fetch_error"):
                 txt += f"- market fetch error: {cycle.get('market_fetch_error')}\n"
+            drought_lines = _cycle_signal_drought_summary(stats)
+            if drought_lines:
+                txt += "\n" + "\n".join(drought_lines) + "\n"
         quality = stats.get("signal_quality") or {}
         if quality:
             txt += (
