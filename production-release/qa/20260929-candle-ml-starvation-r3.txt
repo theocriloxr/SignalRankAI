@@ -1,0 +1,3 @@
+SignalRankAI production QA rollout r3.
+Repairs the QA test import, release-gates candle same-key deduplication and durable-champion cold-load sync, preserves ML starvation diagnostics and retrain cooldown.
+No certified ML threshold or live-money execution policy changes.
