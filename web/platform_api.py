@@ -113,6 +113,12 @@ class OperatorAdaptiveRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorMarketScanRequest(BaseModel):
+    confirm: bool = False
+    hours: int = Field(default=4, ge=1, le=24)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=1, max_length=256)
@@ -1422,6 +1428,159 @@ async def operator_adaptive(
         ).mappings().all()
         await session.rollback()
     return {"action": action, "paused": paused, "profiles": [dict(row) for row in rows]}
+
+
+@router.get("/operator/business")
+async def operator_business(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from sqlalchemy import func, select
+    from db.models import PaymentEvent, Subscription, User
+
+    async with get_session(label="platform.operator.business", timeout_seconds=15.0) as session:
+        total_users = int((await session.execute(select(func.count(User.id)))).scalar_one() or 0)
+        active_rows = (
+            await session.execute(
+                select(Subscription.tier, func.count(Subscription.id))
+                .where(
+                    Subscription.status == "active",
+                    Subscription.expires_at.is_not(None),
+                    Subscription.expires_at > func.now(),
+                )
+                .group_by(Subscription.tier)
+            )
+        ).all()
+        revenue_rows = (
+            await session.execute(
+                select(
+                    PaymentEvent.kind,
+                    PaymentEvent.tier,
+                    func.coalesce(func.sum(PaymentEvent.amount_ngn), 0),
+                )
+                .group_by(PaymentEvent.kind, PaymentEvent.tier)
+            )
+        ).all()
+        plan_rows = (
+            await session.execute(
+                select(
+                    PaymentEvent.tier,
+                    PaymentEvent.duration_days,
+                    PaymentEvent.plan_code,
+                    func.coalesce(func.sum(PaymentEvent.amount_ngn), 0),
+                )
+                .where(PaymentEvent.kind == "subscription")
+                .group_by(PaymentEvent.tier, PaymentEvent.duration_days, PaymentEvent.plan_code)
+                .order_by(func.coalesce(func.sum(PaymentEvent.amount_ngn), 0).desc())
+                .limit(10)
+            )
+        ).all()
+        await session.rollback()
+
+    active = {str(tier or "unknown").lower(): int(count or 0) for tier, count in active_rows}
+    by_kind: dict[str, int] = {}
+    by_tier: dict[str, int] = {}
+    for kind, tier, amount in revenue_rows:
+        by_kind[str(kind or "unknown")] = by_kind.get(str(kind or "unknown"), 0) + int(amount or 0)
+        by_tier[str(tier or "unknown").lower()] = by_tier.get(str(tier or "unknown").lower(), 0) + int(amount or 0)
+    return {
+        "authority": authority,
+        "users": {"total": total_users, "active_subscriptions_by_tier": active},
+        "revenue_ngn": {
+            "total": sum(by_kind.values()),
+            "by_kind": by_kind,
+            "by_tier": by_tier,
+            "top_plans": [
+                {
+                    "tier": str(tier or "unknown"),
+                    "duration_days": int(days) if days is not None else None,
+                    "plan_code": str(plan_code or "") or None,
+                    "amount_ngn": int(amount or 0),
+                }
+                for tier, days, plan_code, amount in plan_rows
+            ],
+        },
+    }
+
+
+@router.post("/operator/market-scan")
+async def operator_market_scan(
+    payload: OperatorMarketScanRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+
+    from datetime import timedelta
+    from sqlalchemy import select
+    from db.models import AdminEvent, Signal
+    from ml.features import extract_features
+    from ml.inference import MLFilter
+    from utils.timeutils import now_utc_naive
+
+    ml_filter = MLFilter()
+    if not bool(getattr(ml_filter, "active", False)):
+        raise HTTPException(status_code=409, detail="ML model is not loaded")
+    threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
+    threshold = float(threshold_raw) if threshold_raw else None
+    cutoff = now_utc_naive() - timedelta(hours=int(payload.hours))
+
+    async with get_session(label="platform.operator.market_scan", timeout_seconds=20.0) as session:
+        rows = await session.execute(
+            select(Signal)
+            .where(
+                Signal.created_at >= cutoff,
+                Signal.ml_probability.is_(None),
+                Signal.expired.is_(False),
+            )
+            .limit(int(payload.limit))
+        )
+        signals = rows.scalars().all()
+
+        approved = rejected = errors = 0
+        for signal_row in signals:
+            try:
+                signal_dict = {
+                    column.name: getattr(signal_row, column.name)
+                    for column in signal_row.__table__.columns
+                }
+                features = extract_features(signal_dict, {})
+                ok, _prob = ml_filter.ml_filter(features, threshold=threshold)
+                if ok:
+                    approved += 1
+                else:
+                    rejected += 1
+            except Exception:
+                errors += 1
+
+        session.add(
+            AdminEvent(
+                event_type="platform_force_market_scan",
+                actor_telegram_user_id=int(user.get("telegram_user_id") or 0) or None,
+                details={
+                    "canonical_user_id": int(user["id"]),
+                    "total": len(signals),
+                    "approved": approved,
+                    "rejected": rejected,
+                    "errors": errors,
+                    "threshold": threshold,
+                    "hours": int(payload.hours),
+                },
+            )
+        )
+        await session.commit()
+    return {
+        "authority": authority,
+        "total": len(signals),
+        "approved": approved,
+        "rejected": rejected,
+        "errors": errors,
+        "threshold": threshold,
+        "hours": int(payload.hours),
+    }
 
 
 @router.post("/auth/register", status_code=201)
