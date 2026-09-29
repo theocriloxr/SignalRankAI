@@ -1064,6 +1064,8 @@ from .owner_commands import (
     payment_reconcile_command,
     system_health_command,
     release_status_command,
+    ml_candidate_command,
+    ml_candidate_promote_command,
     kill_switch_command,
 )
 
@@ -6564,6 +6566,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("payment_reconcile", _audit_handler("payment_reconcile", payment_reconcile_command)))
     application.add_handler(CommandHandler("system_health", _audit_handler("system_health", system_health_command)))
     application.add_handler(CommandHandler("release_status", _audit_handler("release_status", release_status_command)))
+    application.add_handler(CommandHandler("ml_candidate", _audit_handler("ml_candidate", ml_candidate_command)))
+    application.add_handler(CommandHandler("ml_candidate_promote", _audit_handler("ml_candidate_promote", ml_candidate_promote_command)))
     application.add_handler(CommandHandler("kill_switch", _audit_handler("kill_switch", kill_switch_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))

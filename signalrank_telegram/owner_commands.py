@@ -2052,3 +2052,113 @@ async def kill_switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"enabled={bool(getattr(status, 'enabled', True))}\n"
         f"reason={str(getattr(status, 'reason', '') or 'none')}"
     )
+
+async def ml_candidate_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Owner-only readout of challenger forward-proof evidence."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        return
+    try:
+        from ml.candidate_forward import evaluate_candidate_forward_evidence
+
+        evidence = await evaluate_candidate_forward_evidence()
+        candidate = dict(evidence.get("candidate") or {})
+        stats = dict(candidate.get("decision_stats") or {})
+        reasons = [str(item) for item in (evidence.get("reasons") or [])]
+        artifact = str(candidate.get("artifact_hash_sha256") or "")
+        schema = candidate.get("schema_version")
+        status = str(evidence.get("status") or "unknown").upper()
+        eligible = bool(evidence.get("eligible"))
+        pf = stats.get("profit_factor")
+        expected_r = stats.get("expected_r")
+        win_rate = stats.get("win_rate")
+        text_lines = [
+            "🧪 ML Challenger Forward Proof",
+            f"Status: {status}",
+            f"Eligible: {'YES' if eligible else 'NO'}",
+            f"Artifact: {artifact[:16] or 'none'}",
+            f"Schema: {schema if schema is not None else 'n/a'}",
+            f"Observations: {int(evidence.get('observations') or 0)}",
+            f"Resolved outcomes: {int(evidence.get('resolved') or 0)}",
+            f"Candidate pass rate: {float(evidence.get('candidate_pass_rate') or 0.0):.2%}",
+            f"Forward span: {float(evidence.get('forward_span_hours') or 0.0):.2f}h",
+            f"Asset classes: {int(evidence.get('asset_class_count') or 0)}",
+            (
+                "Passed-candidate results: "
+                f"{int(stats.get('resolved') or 0)} resolved | "
+                f"WR {float(win_rate or 0.0):.2%} | "
+                f"E[R] {float(expected_r or 0.0):+.3f}R | "
+                f"PF {float(pf or 0.0):.3f}"
+            ),
+        ]
+        if reasons:
+            text_lines.append("Pending/failed gates: " + ", ".join(reasons[:8]))
+        if eligible:
+            text_lines.append(
+                "Promotion still requires strict-owner confirmation and all schema gates."
+            )
+        await update.message.reply_text("\n".join(text_lines))
+    except Exception as exc:
+        await update.message.reply_text(
+            safe_command_error("Could not load ML challenger proof.", exc)
+        )
+
+
+async def ml_candidate_promote_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Strict-owner promotion of an already eligible forward-tested challenger."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(update.effective_user.id):
+        return
+    confirmation = (
+        str(context.args[0]).strip().upper()
+        if context.args and len(context.args) == 1
+        else ""
+    )
+    if confirmation != "CONFIRM":
+        await update.message.reply_text(
+            "Usage: /ml_candidate_promote CONFIRM\n"
+            "This never bypasses forward-proof, model-integrity, or schema-certification gates."
+        )
+        return
+
+    try:
+        from ml.candidate_forward import promote_candidate_from_forward_proof
+
+        authorization_id = (
+            f"telegram-owner:{int(update.effective_user.id)}:"
+            f"{now_utc_naive().isoformat()}"
+        )
+        result = await promote_candidate_from_forward_proof(
+            authorization_id=authorization_id,
+        )
+        if not result.get("ok"):
+            evidence = dict(result.get("evidence") or {})
+            reasons = [str(item) for item in (evidence.get("reasons") or [])]
+            details = [
+                "⛔ ML challenger was NOT promoted.",
+                f"Reason: {result.get('reason') or 'blocked'}",
+            ]
+            if reasons:
+                details.append("Evidence gates: " + ", ".join(reasons[:8]))
+            await update.message.reply_text("\n".join(details))
+            return
+
+        promotion = dict(result.get("promotion") or {})
+        await update.message.reply_text(
+            "✅ ML challenger promotion committed.\n"
+            f"Artifact: {str(promotion.get('artifact_hash_sha256') or '')[:16]}\n"
+            "Durable primary was updated atomically; prior primary remains available for rollback."
+        )
+    except Exception as exc:
+        await update.message.reply_text(
+            safe_command_error("Could not promote the ML challenger.", exc)
+        )
+

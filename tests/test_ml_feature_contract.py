@@ -51,6 +51,53 @@ class TestMLFeatureContract(unittest.TestCase):
         self.assertIn("adx_normalized", FEATURE_COLUMNS_V4)
         self.assertEqual(get_feature_columns(), FEATURE_COLUMNS_V4)
 
+    def test_v4_adx_falls_back_to_market_indicators(self):
+        signal = {
+            "asset": "EURUSD",
+            "timeframe": "1h",
+            "direction": "long",
+            "strategy_name": "EMA Trend",
+            "regime": "trending",
+            "entry": 1.10,
+            "stop_loss": 1.09,
+            "take_profit": 1.12,
+            "rr_ratio": 2.0,
+            "strength": 0.7,
+        }
+        market_data = {
+            "1h": {
+                "candles": [],
+                "indicators": {"adx": 32.5},
+            },
+            "_macro": {},
+        }
+        values = build_model_feature_values(signal, market_data)
+        self.assertAlmostEqual(values["adx_normalized"], 0.325)
+
+    def test_v4_adx_prefers_signal_value_over_market_indicator(self):
+        signal = {
+            "asset": "BTCUSDT",
+            "timeframe": "1h",
+            "direction": "long",
+            "strategy_name": "EMA Trend",
+            "regime": "trending",
+            "entry": 100.0,
+            "stop_loss": 95.0,
+            "take_profit": 110.0,
+            "rr_ratio": 2.0,
+            "strength": 0.7,
+            "adx": 41.0,
+        }
+        market_data = {
+            "1h": {
+                "candles": [],
+                "indicators": {"adx": 12.0},
+            },
+            "_macro": {},
+        }
+        values = build_model_feature_values(signal, market_data)
+        self.assertAlmostEqual(values["adx_normalized"], 0.41)
+
     def test_training_uses_same_categorical_contract_as_inference(self):
         row = {
             "direction": "long",
