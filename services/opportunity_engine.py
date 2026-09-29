@@ -61,7 +61,16 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
         ai_conf = _ai_review_component(sig, default=50.0)
         raw_model = _component(sig, "ml_probability_raw", "ml_probability", default=50.0)
         ai_conf = (ai_conf * 0.7) + (min(raw_model, 70.0) * 0.3)
-    historical = _component(sig, "historical_win_rate", "segment_win_rate", "live_win_rate", default=55.0)
+    # Prefer the conservative 95% lower bound when proof-backed history
+    # exists. This prevents a small/high-variance sample from inflating rank.
+    historical = _component(
+        sig,
+        "historical_win_rate_lower_95",
+        "historical_win_rate",
+        "segment_win_rate",
+        "live_win_rate",
+        default=55.0,
+    )
     market = _component(sig, "asset_health_score", "scan_priority", default=60.0)
     rr = _f(sig.get("rr_ratio") or sig.get("rr_estimate") or 0.0)
     rr_score = 70.0

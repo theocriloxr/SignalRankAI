@@ -605,6 +605,9 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
             "historical_evidence_scope",
             "historical_sample_size",
             "historical_win_rate",
+            "historical_win_rate_lower_95",
+            "historical_win_rate_upper_95",
+            "historical_decisive_samples",
             "historical_avg_r",
             "historical_avg_win_r",
             "historical_avg_loss_r",
@@ -4331,6 +4334,17 @@ def main_loop(DRY_RUN: bool = False):
                                                 float(_history["win_rate"]) * 100.0
                                             )
                                             sig["live_win_rate"] = sig["historical_win_rate"]
+                                        if _history.get("win_rate_lower_95") is not None:
+                                            sig["historical_win_rate_lower_95"] = (
+                                                float(_history["win_rate_lower_95"]) * 100.0
+                                            )
+                                        if _history.get("win_rate_upper_95") is not None:
+                                            sig["historical_win_rate_upper_95"] = (
+                                                float(_history["win_rate_upper_95"]) * 100.0
+                                            )
+                                        sig["historical_decisive_samples"] = int(
+                                            _history.get("decisive_samples") or 0
+                                        )
                                         if _history.get("avg_r") is not None:
                                             sig["historical_avg_r"] = float(_history["avg_r"])
                                         if _history.get("avg_win_r") is not None:

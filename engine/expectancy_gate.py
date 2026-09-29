@@ -7,6 +7,7 @@ reported as non-actionable rather than fabricated into a performance claim.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 from datetime import timedelta
@@ -107,6 +108,9 @@ async def get_live_performance_context(
         "losses": 0,
         "breakeven": 0,
         "win_rate": None,
+        "win_rate_lower_95": None,
+        "win_rate_upper_95": None,
+        "decisive_samples": 0,
         "avg_r": None,
         "expectancy_r": None,
         "avg_win_r": None,
@@ -188,6 +192,20 @@ async def get_live_performance_context(
 
     decisive = win_count + loss_count
     win_rate = (win_count / decisive) if decisive > 0 else None
+    wilson_lower = None
+    wilson_upper = None
+    if decisive > 0 and win_rate is not None:
+        # Wilson 95% interval is stable for small samples and gives downstream
+        # ranking/AI reviewers an uncertainty-aware view of historical edge.
+        z = 1.959963984540054
+        n = float(decisive)
+        denominator = 1.0 + (z * z / n)
+        center = win_rate + (z * z / (2.0 * n))
+        margin = z * math.sqrt(
+            (win_rate * (1.0 - win_rate) / n) + (z * z / (4.0 * n * n))
+        )
+        wilson_lower = max(0.0, (center - margin) / denominator)
+        wilson_upper = min(1.0, (center + margin) / denominator)
     try:
         avg_r_f = float(avg_r) if avg_r is not None else None
     except (TypeError, ValueError):
@@ -214,6 +232,9 @@ async def get_live_performance_context(
             "losses": loss_count,
             "breakeven": max(0, sample_size - decisive),
             "win_rate": round(win_rate, 6) if win_rate is not None else None,
+            "win_rate_lower_95": round(wilson_lower, 6) if wilson_lower is not None else None,
+            "win_rate_upper_95": round(wilson_upper, 6) if wilson_upper is not None else None,
+            "decisive_samples": decisive,
             "avg_r": round(avg_r_f, 6) if avg_r_f is not None else None,
             "expectancy_r": round(avg_r_f, 6) if avg_r_f is not None else None,
             "avg_win_r": round(avg_win_f, 6) if avg_win_f is not None else None,
