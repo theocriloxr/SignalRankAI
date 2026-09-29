@@ -186,13 +186,39 @@ async def gather_performance_stats(days: int = 7) -> PerformanceStats:
     return stats
 
 
+def _proposal_bounds(current_threshold: float) -> tuple[float, float]:
+    """Keep advisory threshold experiments near the promoted cutoff."""
+    try:
+        current = float(current_threshold)
+    except Exception:
+        current = 0.50
+    current = max(0.05, min(0.95, current))
+    try:
+        max_delta = float(os.getenv("AI_THRESHOLD_PROPOSAL_MAX_DELTA", "0.05") or 0.05)
+    except Exception:
+        max_delta = 0.05
+    max_delta = max(0.01, min(0.15, max_delta))
+    return max(0.05, current - max_delta), min(0.95, current + max_delta)
+
+
 async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
-    """Return a governed AI threshold proposal; OpenAI first, Gemini/rules fallback."""
+    """Return a governed threshold experiment proposal; OpenAI first."""
+    lower, upper = _proposal_bounds(stats.current_base_threshold)
     stats_payload = {
         "win_rate": float(stats.win_rate),
         "total_trades": int(stats.total_trades),
+        "wins": int(stats.wins),
+        "losses": int(stats.losses),
+        "breakeven": int(stats.breakeven),
+        "gross_win_r": float(stats.gross_win_r),
+        "gross_loss_r": float(stats.gross_loss_r),
+        "expectancy_r": float(stats.expectancy_r),
+        "net_r": float(stats.net_r),
         "profit_factor": float(stats.profit_factor),
         "current_base_threshold": float(stats.current_base_threshold),
+        "threshold_source": str(stats.threshold_source),
+        "proposal_min": float(lower),
+        "proposal_max": float(upper),
         "average_ml_auc": float(stats.average_ml_auc),
         "avg_signal_score": float(stats.avg_score),
         "signals_issued": int(stats.signals_issued),
@@ -207,8 +233,13 @@ async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
             response = await threshold_recommendation(stats_payload)
             if response.get("ok"):
                 data = dict(response.get("data") or {})
+                proposed = max(lower, min(upper, float(data.get("new_threshold"))))
                 return {
-                    "new_threshold": max(0.15, min(0.60, float(data.get("new_threshold")))),
+                    "new_threshold": proposed,
+                    "current_threshold": float(stats.current_base_threshold),
+                    "allowed_min": lower,
+                    "allowed_max": upper,
+                    "threshold_source": stats.threshold_source,
                     "reason": str(data.get("reason") or "OpenAI governed proposal")[:800],
                     "provider": "openai",
                     "model": response.get("model"),
@@ -218,8 +249,6 @@ async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
     except Exception as exc:
         logger.debug("[ai_feedback] OpenAI proposal unavailable: %s", type(exc).__name__)
 
-    # Gemini compatibility fallback. Older deployments may not expose the
-    # historical GeminiValidator class, so failure drops into deterministic rules.
     try:
         from services.gemini_ml import _call_gemini, gemini_available
 
@@ -228,14 +257,17 @@ async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
 You are an AI Trading Systems Architect. Review this aggregate performance data:
 {json.dumps(stats_payload)}
 
-Propose one ML probability threshold between 0.15 and 0.60.
-Do not optimize win rate alone. Consider sample size, expectancy and model quality.
-This is a proposal only and must be forward-tested before any owner-approved change.
+The active promoted-model raw threshold is {stats.current_base_threshold:.4f}.
+Propose one raw-probability threshold between {lower:.4f} and {upper:.4f}.
+Do not optimize win rate alone. Use decisive sample size, expectancy R, gross-R profit factor,
+model AUC, calibration context, issued/rejected balance and downside risk. If evidence is
+insufficient, hold the current threshold. This is a proposal only and must be forward-tested
+before any owner-approved change.
 
 Reply ONLY as JSON:
-{{"new_threshold": 0.35, "reason": "brief evidence-based reason"}}
+{{"new_threshold": {stats.current_base_threshold:.4f}, "reason": "brief evidence-based reason"}}
 """
-            raw = await _call_gemini(prompt, max_tokens=220)
+            raw = await _call_gemini(prompt, max_tokens=260)
             if raw:
                 try:
                     recom = json.loads(raw)
@@ -244,8 +276,13 @@ Reply ONLY as JSON:
                     match = re.search(r'\{[^{}]*\}', raw)
                     recom = json.loads(match.group()) if match else {}
                 if isinstance(recom, dict) and recom.get("new_threshold") is not None:
+                    proposed = max(lower, min(upper, float(recom["new_threshold"])))
                     return {
-                        "new_threshold": max(0.15, min(0.60, float(recom["new_threshold"]))),
+                        "new_threshold": proposed,
+                        "current_threshold": float(stats.current_base_threshold),
+                        "allowed_min": lower,
+                        "allowed_max": upper,
+                        "threshold_source": stats.threshold_source,
                         "reason": str(recom.get("reason") or "Gemini governed proposal")[:800],
                         "provider": "gemini",
                         "requires_forward_test": True,
@@ -253,45 +290,61 @@ Reply ONLY as JSON:
     except Exception as exc:
         logger.debug("[ai_feedback] Gemini proposal unavailable: %s", type(exc).__name__)
 
-    # Deterministic proposal fallback. Never auto-applied.
-    new_threshold = stats.current_base_threshold
-    reason = "rule_based"
-    if stats.total_trades < 30:
-        reason = "insufficient_resolved_sample_hold_threshold"
-    elif stats.win_rate < 0.45:
-        new_threshold = min(0.60, stats.current_base_threshold + 0.05)
-        reason = "win_rate_low_tighten_candidate"
-    elif stats.win_rate > 0.60 and stats.profit_factor > 1.5 and stats.average_ml_auc >= 0.70:
-        new_threshold = max(0.15, stats.current_base_threshold - 0.02)
-        reason = "strong_multi_metric_evidence_loosen_candidate"
+    new_threshold = float(stats.current_base_threshold)
+    reason = "rule_based_hold"
+    decisive = int(stats.wins + stats.losses)
+    if decisive < 30:
+        reason = "insufficient_decisive_sample_hold_threshold"
+    elif stats.expectancy_r < 0 or stats.profit_factor < 1.0:
+        new_threshold = min(upper, stats.current_base_threshold + 0.03)
+        reason = "negative_expectancy_tighten_candidate"
+    elif (
+        stats.win_rate > 0.60
+        and stats.profit_factor > 1.5
+        and stats.expectancy_r > 0
+        and stats.average_ml_auc >= 0.70
+    ):
+        new_threshold = max(lower, stats.current_base_threshold - 0.02)
+        reason = "positive_multi_metric_evidence_loosen_candidate"
     elif stats.average_ml_auc < 0.60:
-        new_threshold = min(0.60, stats.current_base_threshold + 0.03)
+        new_threshold = min(upper, stats.current_base_threshold + 0.03)
         reason = "ml_auc_low_tighten_candidate"
 
     return {
-        "new_threshold": new_threshold,
+        "new_threshold": max(lower, min(upper, new_threshold)),
+        "current_threshold": float(stats.current_base_threshold),
+        "allowed_min": lower,
+        "allowed_max": upper,
+        "threshold_source": stats.threshold_source,
         "reason": reason,
         "provider": "local",
         "requires_forward_test": True,
     }
 
-async def apply_recommendation(recommendation: dict) -> bool:
-    """Record a proposal without changing runtime or production configuration.
 
-    The historical function name is retained for import compatibility. AI
-    recommendations are advisory and must pass experiment and owner approval
-    gates before a normal, audited configuration deployment.
-    """
+async def apply_recommendation(recommendation: dict) -> bool:
+    """Persist an experiment proposal without mutating runtime configuration."""
     try:
-        new_threshold = float(recommendation.get("new_threshold", 0.30))
-        new_threshold = max(0.15, min(0.60, new_threshold))
+        current = float(recommendation.get("current_threshold", 0.50) or 0.50)
+        lower, upper = _proposal_bounds(current)
+        if recommendation.get("allowed_min") is not None:
+            lower = max(lower, float(recommendation["allowed_min"]))
+        if recommendation.get("allowed_max") is not None:
+            upper = min(upper, float(recommendation["allowed_max"]))
+        new_threshold = max(lower, min(upper, float(recommendation.get("new_threshold", current))))
         reason = str(recommendation.get("reason", "unknown"))
         proposal = {
             "kind": "parameter",
             "parameter": "ML_PROB_THRESHOLD",
+            "parameter_space": "raw_model_probability",
+            "current_runtime_threshold": current,
+            "threshold_source": str(recommendation.get("threshold_source") or "unknown"),
+            "allowed_min": lower,
+            "allowed_max": upper,
             "proposed_value": new_threshold,
             "reason": reason,
             "status": "proposed",
+            "requires_forward_test": True,
             "requires_owner_approval": True,
             "auto_apply": False,
             "created_at": now_utc_naive().isoformat(),
@@ -304,15 +357,17 @@ async def apply_recommendation(recommendation: dict) -> bool:
                 ex=2592000,
             )
         except Exception as e:
-            logger.warning(f"[ai_feedback] proposal persistence unavailable: {e}")
+            logger.warning("[ai_feedback] proposal persistence unavailable: %s", e)
         logger.info(
-            "[ai_feedback] parameter proposal recorded value=%s auto_apply=0 owner_approval=required",
+            "[ai_feedback] parameter proposal recorded current=%s proposed=%s range=[%s,%s] auto_apply=0",
+            current,
             new_threshold,
+            lower,
+            upper,
         )
         return True
-        
     except Exception as e:
-        logger.error(f"[ai_feedback] Failed to apply recommendation: {e}")
+        logger.error("[ai_feedback] Failed to record recommendation: %s", e)
         return False
 
 
