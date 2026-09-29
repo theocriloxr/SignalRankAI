@@ -959,6 +959,8 @@ def format_signal_premium_new(signal: dict) -> str:
 	expected_profit = enhanced.get('expected_profit_pct')
 	expected_loss = enhanced.get('expected_loss_pct')
 	rr_calculated = enhanced.get('risk_reward_ratio')
+	rr_tp1 = enhanced.get('rr_tp1')
+	rr_final = enhanced.get('rr_final')
 	signal_age = enhanced.get('signal_age_minutes')
 	price_indicator = enhanced.get('price_status_indicator', 'ℹ️')
 	current_price = signal.get('current_price')
@@ -1039,6 +1041,10 @@ def format_signal_premium_new(signal: dict) -> str:
 			rr_ratio = None
 	if rr_ratio is not None:
 		lines.append(f"┃ R/R: 1:{float(rr_ratio):.1f}")
+		if rr_final is not None and (
+			rr_tp1 is None or abs(float(rr_final) - float(rr_tp1)) > 0.01
+		):
+			lines.append(f"┃ R/R Final: 1:{float(rr_final):.1f}")
 	else:
 		lines.append("┃ R/R: N/A")
 	lines.append(f"┃ Confidence: {confidence}/100")
@@ -1046,8 +1052,11 @@ def format_signal_premium_new(signal: dict) -> str:
 	# Add pips for FX pairs
 	pips_to_tp = enhanced.get('pips_to_tp')
 	pips_to_sl = enhanced.get('pips_to_sl')
-	if pips_to_tp:
-		lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
+	if pips_to_tp is not None:
+		if pips_to_sl is not None:
+			lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
+		else:
+			lines.append(f"┃ Pips to TP: {pips_to_tp:.1f}")
 	
 	lines += [
 		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
@@ -1123,6 +1132,8 @@ def format_signal_vip_new(signal: dict) -> str:
 	expected_profit = enhanced.get('expected_profit_pct')
 	expected_loss = enhanced.get('expected_loss_pct')
 	rr_calculated = enhanced.get('risk_reward_ratio')
+	rr_tp1 = enhanced.get('rr_tp1')
+	rr_final = enhanced.get('rr_final')
 	suggested_position = enhanced.get('suggested_position_size')
 	signal_age = enhanced.get('signal_age_minutes')
 	price_indicator = enhanced.get('price_status_indicator', 'ℹ️')
@@ -1225,6 +1236,10 @@ def format_signal_vip_new(signal: dict) -> str:
 			rr_ratio = None
 	if rr_ratio is not None:
 		lines.append(f"┃ R/R: 1:{float(rr_ratio):.1f}")
+		if rr_final is not None and (
+			rr_tp1 is None or abs(float(rr_final) - float(rr_tp1)) > 0.01
+		):
+			lines.append(f"┃ R/R Final: 1:{float(rr_final):.1f}")
 	else:
 		lines.append("┃ R/R: N/A")
 	lines.append(f"┃ Confidence: {confidence}/100")
@@ -1240,8 +1255,11 @@ def format_signal_vip_new(signal: dict) -> str:
 	# Add pips for FX pairs
 	pips_to_tp = enhanced.get('pips_to_tp')
 	pips_to_sl = enhanced.get('pips_to_sl')
-	if pips_to_tp:
-		lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
+	if pips_to_tp is not None:
+		if pips_to_sl is not None:
+			lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
+		else:
+			lines.append(f"┃ Pips to TP: {pips_to_tp:.1f}")
 	
 	# Add suggested position size
 	if suggested_position:
