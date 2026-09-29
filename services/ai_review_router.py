@@ -353,6 +353,201 @@ async def review_signal(
     }
 
 
+async def _call_direction_provider(
+    provider: str,
+    asset: str,
+    timeframe: str,
+    long_candidates: Sequence[Mapping[str, Any]],
+    short_candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if provider == "openai":
+        from services.openai_ai import choose_direction, openai_available
+        if not openai_available():
+            return {"ok": False, "provider": "openai", "error": "not_available"}
+        return dict(await choose_direction(asset, timeframe, long_candidates, short_candidates))
+    if provider == "gemini":
+        from services.gemini_ml import choose_direction_structured, gemini_available
+        if not gemini_available():
+            return {"ok": False, "provider": "gemini", "error": "not_available"}
+        return dict(
+            await choose_direction_structured(
+                asset,
+                timeframe,
+                long_candidates,
+                short_candidates,
+            )
+        )
+    return {"ok": False, "provider": provider, "error": "unsupported_provider"}
+
+
+def _normalize_direction_result(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    if not bool(result.get("ok")) or not isinstance(result.get("data"), Mapping):
+        return None
+    data = dict(result.get("data") or {})
+    winner = str(data.get("winner") or "none").strip().lower()
+    if winner not in {"long", "short", "none"}:
+        return None
+    try:
+        confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
+    except (TypeError, ValueError):
+        return None
+    return {
+        "provider": str(result.get("provider") or "unknown"),
+        "model": str(result.get("model") or ""),
+        "winner": winner,
+        "confidence": confidence,
+        "reason": " ".join(str(data.get("reason") or "").split())[:500],
+        "latency_ms": float(result.get("latency_ms") or 0.0),
+    }
+
+
+async def choose_direction(
+    asset: str,
+    timeframe: str,
+    long_candidates: Sequence[Mapping[str, Any]],
+    short_candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Provider-neutral conflict arbitration with conservative disagreement handling."""
+    providers = [name for name in _provider_order() if name in {"openai", "gemini"}]
+    mode = str(os.getenv("AI_DIRECTION_MODE") or "failover").strip().lower()
+    min_confidence = _env_float(
+        "AI_INLINE_MIN_CONFIDENCE",
+        0.60,
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+    if mode == "consensus" and len(providers) >= 2:
+        timeout = _env_float("AI_INLINE_TIMEOUT_SECONDS", 5.0, minimum=1.0, maximum=30.0)
+        tasks = [
+            asyncio.create_task(
+                _call_direction_provider(
+                    provider,
+                    asset,
+                    timeframe,
+                    long_candidates,
+                    short_candidates,
+                )
+            )
+            for provider in providers[:2]
+        ]
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            raw = []
+            for task in tasks:
+                task.cancel()
+        rows = [
+            normalized
+            for item in raw
+            if not isinstance(item, Exception)
+            for normalized in [_normalize_direction_result(item)]
+            if normalized is not None
+        ]
+        decisive = [
+            row for row in rows
+            if row["winner"] in {"long", "short"} and row["confidence"] >= min_confidence
+        ]
+        if len(decisive) >= 2:
+            winners = {row["winner"] for row in decisive}
+            if len(winners) == 1:
+                winner = decisive[0]["winner"]
+                confidence = sum(float(row["confidence"]) for row in decisive) / len(decisive)
+                return {
+                    "ok": True,
+                    "provider": "consensus",
+                    "model": "+".join(row["model"] or row["provider"] for row in decisive),
+                    "data": {
+                        "winner": winner,
+                        "confidence": round(confidence, 4),
+                        "reason": "Independent AI providers agree on the conflict direction.",
+                    },
+                    "provider_results": rows,
+                }
+            return {
+                "ok": True,
+                "provider": "consensus",
+                "model": "+".join(row["model"] or row["provider"] for row in decisive),
+                "data": {
+                    "winner": "none",
+                    "confidence": 0.0,
+                    "reason": "AI providers disagree; deterministic ranker must decide.",
+                },
+                "provider_results": rows,
+            }
+        if len(decisive) == 1 and not _env_bool("AI_DIRECTION_REQUIRE_TWO_PROVIDERS", False):
+            row = decisive[0]
+            return {
+                "ok": True,
+                "provider": row["provider"],
+                "model": row["model"],
+                "data": {
+                    "winner": row["winner"],
+                    "confidence": row["confidence"],
+                    "reason": row["reason"],
+                },
+                "provider_results": rows,
+                "fallback_used": True,
+            }
+
+    trace: list[dict[str, Any]] = []
+    for provider in providers:
+        try:
+            result = await _call_direction_provider(
+                provider,
+                asset,
+                timeframe,
+                long_candidates,
+                short_candidates,
+            )
+        except Exception as exc:
+            result = {"ok": False, "provider": provider, "error": type(exc).__name__}
+        row = _normalize_direction_result(result)
+        trace.append(
+            {
+                "provider": provider,
+                "ok": row is not None,
+                "error": None if row is not None else str(result.get("error") or "invalid_response")[:120],
+            }
+        )
+        if row is None:
+            continue
+        if row["winner"] not in {"long", "short"} or row["confidence"] < min_confidence:
+            return {
+                "ok": True,
+                "provider": row["provider"],
+                "model": row["model"],
+                "data": {
+                    "winner": "none",
+                    "confidence": row["confidence"],
+                    "reason": row["reason"] or "AI evidence is ambiguous.",
+                },
+                "provider_results": [row],
+                "provider_trace": trace,
+            }
+        return {
+            "ok": True,
+            "provider": row["provider"],
+            "model": row["model"],
+            "data": {
+                "winner": row["winner"],
+                "confidence": row["confidence"],
+                "reason": row["reason"],
+            },
+            "provider_results": [row],
+            "provider_trace": trace,
+        }
+    return {
+        "ok": False,
+        "provider": "local",
+        "error": "direction_review_unavailable",
+        "provider_trace": trace,
+    }
+
+
 class AIReviewRouter:
     """Compatibility router for call sites that inject custom reviewers."""
 
