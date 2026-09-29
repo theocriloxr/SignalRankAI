@@ -640,7 +640,7 @@ def _persist_candidate_forward_observation(
 
     try:
         from engine.signal_deduplicator import get_ml_rejection_tracker
-        from utils.async_runner import run_sync
+        from utils.async_runner import submit_background_coro
 
         from ml.features import build_model_feature_values
 
@@ -681,26 +681,43 @@ def _persist_candidate_forward_observation(
             "rr_ratio": signal.get("rr_ratio") or signal.get("rr_estimate"),
             "source": "candidate_forward_shadow",
         }
-        run_sync(
-            get_ml_rejection_tracker().persist_rejection(
-                asset=str(signal.get("asset") or ""),
-                timeframe=str(signal.get("timeframe") or "1h"),
-                direction=str(signal.get("direction") or "long"),
-                entry_price=entry,
-                stop_loss=stop,
-                take_profit_levels=take_profit,
-                ml_probability=float(candidate.get("probability") or 0.0),
-                rejection_reason="candidate_shadow_observation",
-                features=features,
-                rejection_type="candidate_shadow",
-                signal_id=(
-                    str(signal.get("signal_id"))
-                    if signal.get("signal_id")
-                    else None
-                ),
+        persist_coro = get_ml_rejection_tracker().persist_rejection(
+            asset=str(signal.get("asset") or ""),
+            timeframe=str(signal.get("timeframe") or "1h"),
+            direction=str(signal.get("direction") or "long"),
+            entry_price=entry,
+            stop_loss=stop,
+            take_profit_levels=take_profit,
+            ml_probability=float(candidate.get("probability") or 0.0),
+            rejection_reason="candidate_shadow_observation",
+            features=features,
+            rejection_type="candidate_shadow",
+            signal_id=(
+                str(signal.get("signal_id"))
+                if signal.get("signal_id")
+                else None
             ),
-            timeout=5.0,
         )
+        try:
+            future = submit_background_coro(
+                persist_coro,
+                label="ml_candidate_forward_observation",
+            )
+        except Exception:
+            try:
+                persist_coro.close()
+            except Exception:
+                pass
+            _CANDIDATE_FORWARD_SEEN.pop(observation_key, None)
+            raise
+
+        def _release_dedup_on_failure(done_future):
+            try:
+                done_future.result()
+            except BaseException:
+                _CANDIDATE_FORWARD_SEEN.pop(observation_key, None)
+
+        future.add_done_callback(_release_dedup_on_failure)
     except Exception as exc:
         logger.warning(
             "[ml-shadow] candidate forward observation persist failed error=%s",
