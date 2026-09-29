@@ -11,7 +11,7 @@ from ml.features import (
     stable_category_to_int,
     strategy_model_to_int,
 )
-from ml.schema_version import FEATURE_COLUMNS_V3
+from ml.schema_version import FEATURE_COLUMNS_V3, FEATURE_COLUMNS_V4, get_feature_columns
 from ml.train_model import engineer_features
 
 
@@ -23,7 +23,7 @@ class TestMLFeatureContract(unittest.TestCase):
         self.assertEqual(strategy_model_to_int("EMA Trend"), strategy_model_to_int("ema trend"))
         self.assertEqual(stable_category_to_int("BTCUSDT"), stable_category_to_int("BTCUSDT"))
 
-    def test_extract_features_emits_complete_v3_contract(self):
+    def test_extract_features_preserves_v3_and_emits_complete_v4_contract(self):
         signal = {
             "asset": "BTCUSDT",
             "timeframe": "1h",
@@ -40,9 +40,16 @@ class TestMLFeatureContract(unittest.TestCase):
         market_data = {"1h": {"candles": [], "indicators": {}}, "_macro": {}}
         values = extract_features(signal, market_data)
         self.assertEqual(set(FEATURE_COLUMNS_V3) - set(values), set())
+        self.assertEqual(set(FEATURE_COLUMNS_V4) - set(values), set())
         canonical = build_model_feature_values(signal, market_data)
-        for key in FEATURE_COLUMNS_V3:
+        for key in set(FEATURE_COLUMNS_V3) | set(FEATURE_COLUMNS_V4):
             self.assertAlmostEqual(float(values[key]), float(canonical[key]))
+
+        self.assertNotIn("score_normalized", FEATURE_COLUMNS_V4)
+        self.assertNotIn("high_score", FEATURE_COLUMNS_V4)
+        self.assertNotIn("medium_score", FEATURE_COLUMNS_V4)
+        self.assertIn("adx_normalized", FEATURE_COLUMNS_V4)
+        self.assertEqual(get_feature_columns(), FEATURE_COLUMNS_V4)
 
     def test_training_uses_same_categorical_contract_as_inference(self):
         row = {
@@ -58,6 +65,7 @@ class TestMLFeatureContract(unittest.TestCase):
             "stop_loss": 95.0,
             "strength": 75.0,
             "asset_class_enc": 0.0,
+            "adx": 30.0,
             "price_velocity_3": 0.01,
             "price_velocity_5": 0.02,
             "price_velocity_10": 0.03,
@@ -87,6 +95,11 @@ class TestMLFeatureContract(unittest.TestCase):
         self.assertEqual(int(values["direction_enc"]), direction_to_int("long"))
         self.assertEqual(int(values["regime_enc"]), regime_model_to_int("trending"))
         self.assertEqual(int(values["strategy_enc"]), strategy_model_to_int("EMA Trend"))
+        self.assertEqual(cols, FEATURE_COLUMNS_V4)
+        self.assertAlmostEqual(float(values["adx_normalized"]), 0.30)
+        self.assertNotIn("score_normalized", cols)
+        self.assertNotIn("high_score", cols)
+        self.assertNotIn("medium_score", cols)
 
 
 if __name__ == "__main__":
