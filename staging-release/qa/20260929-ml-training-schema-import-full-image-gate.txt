@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA for ML training schema-version import fix.
+Runtime base: cacefc10d66e60c44467b8cdba7863680e54d1f3.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 501 targeted tests PASS.
+Regression addressed: scheduled production retrain reached model fitting and then failed with NameError because CURRENT_SCHEMA_VERSION was not in train_model module scope.
+Serving champion was not changed by the failed run. Production training is frozen until this full-image gate and controlled retrain validation complete.
