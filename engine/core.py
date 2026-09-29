@@ -2360,7 +2360,12 @@ def _ml_starvation_recovery_decision(
         return False, details
 
     challenger_payload=dict(challenger or {})
-    if challenger_payload.get("available"):
+    challenger_available=bool(challenger_payload.get("available"))
+    challenger_governance_eligible=bool(
+        challenger_payload.get("recovery_veto_eligible")
+    )
+    details["challenger_governance_eligible"] = challenger_governance_eligible
+    if challenger_available and challenger_governance_eligible:
         challenger_prob=_safe_float(
             challenger_payload.get("probability"),
             0.0,
@@ -2377,6 +2382,11 @@ def _ml_starvation_recovery_decision(
             and challenger_prob < challenger_floor
         ):
             details["reason"]="challenger_disagrees"
+            return False, details
+    elif challenger_available:
+        details["challenger_ignored_reason"]="candidate_not_forward_admitted"
+        if _env_bool("ML_STARVATION_RECOVERY_REQUIRE_CHALLENGER", False):
+            details["reason"]="challenger_not_governance_eligible"
             return False, details
     elif _env_bool("ML_STARVATION_RECOVERY_REQUIRE_CHALLENGER", False):
         details["reason"]="challenger_unavailable"
