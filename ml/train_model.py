@@ -25,6 +25,8 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
+from ml.schema_version import CURRENT_SCHEMA_VERSION
+
 # Add parent dir to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
