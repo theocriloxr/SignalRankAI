@@ -1,0 +1,4 @@
+SignalRankAI production QA retry r2.
+Preserves actionable ML starvation evidence across analytics restarts, publishes fresh non-actionable checks separately, normalizes provider-neutral AI review scores from 0-10 to 0-100, and aligns the release regression contract with that canonical scale.
+The previous attempt was release-gate blocked and did not replace the healthy production runtime.
+Certified ML thresholds and live-money controls remain unchanged.
