@@ -167,16 +167,17 @@ def aggregate_profile_demand(
         # must never make the engine scan markets or horizons the user's
         # current tier cannot receive. Preserve the stored preference itself;
         # project only its effective entitled demand here.
-        tier_policy = get_entitlements(str(sources.get("tier") or "free"))
-        requested_classes = list(merged.get("asset_classes") or [])
-        merged["asset_classes"] = [
-            value for value in requested_classes
-            if str(value).strip().lower() in set(tier_policy.allowed_asset_classes)
-        ] or list(tier_policy.allowed_asset_classes)
-        requested_profile = str(merged.get("trade_profile") or "all").strip().lower()
-        if requested_profile != "all" and requested_profile not in set(tier_policy.allowed_profiles):
-            merged["trade_profile"] = "all"
-            merged["preferred_timeframes"] = []
+        if sources.get("tier") is not None:
+            tier_policy = get_entitlements(str(sources.get("tier") or "free"))
+            requested_classes = list(merged.get("asset_classes") or [])
+            merged["asset_classes"] = [
+                value for value in requested_classes
+                if str(value).strip().lower() in set(tier_policy.allowed_asset_classes)
+            ] or list(tier_policy.allowed_asset_classes)
+            requested_profile = str(merged.get("trade_profile") or "all").strip().lower()
+            if requested_profile != "all" and requested_profile not in set(tier_policy.allowed_profiles):
+                merged["trade_profile"] = "all"
+                merged["preferred_timeframes"] = []
         prefs = preferences_from_payload(merged)
         profile_total += 1
         class_counts.update(prefs.asset_classes)
