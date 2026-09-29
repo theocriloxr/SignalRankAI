@@ -1,8 +1,10 @@
 """Versioned ML feature contracts.
 
-Version 3 mirrors the production signal-quality training pipeline. Legacy
-retraining remains isolated on its smaller version-1 feature set so missing
-advanced features cannot silently become a new production model.
+Version 4 is a challenger-only, leakage-resistant contract. It removes score
+features whose persisted training value is computed after ML inference while
+live inference sees a pre-ML strategy score, and adds pre-decision ADX context.
+Version 3 remains supported for the serving champion during forward proof.
+Legacy retraining remains isolated on its smaller version-1 feature set.
 """
 from __future__ import annotations
 
@@ -10,9 +12,9 @@ import math
 import os
 from typing import Any
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 MODEL_FORMAT_VERSION = 3
-FEATURE_SCHEMA_VERSION = "feature-schema-v3"
+FEATURE_SCHEMA_VERSION = "feature-schema-v4"
 LABEL_SCHEMA_VERSION = "label-schema-v1"
 
 LEGACY_RETRAIN_FEATURE_COLUMNS = [
@@ -42,13 +44,42 @@ CRITICAL_FEATURES_V3 = frozenset({
     "direction_enc", "regime_enc", "strategy_enc", "asset_class_enc",
 })
 
+# V4 deliberately excludes score_normalized/high_score/medium_score. Persisted
+# canonical Signal.score is calculated after ML probability is attached, while
+# live ML inference occurs before that final scoring pass. Keeping those fields
+# would leak prior-model output into training and create train/serve semantics
+# drift. ADX is pre-decision evidence and can be reconstructed from historical
+# candles for delivery-proof rows.
+FEATURE_COLUMNS_V4 = [
+    "risk_reward_ratio", "price_range", "risk_amount", "spread_ratio",
+    "strength_normalized", "direction_enc", "regime_enc", "strategy_enc",
+    "is_long", "asset_class_enc", "adx_normalized",
+    "price_velocity_3", "price_velocity_5", "price_velocity_10",
+    "price_acceleration_3_10", "velocity_abs_3", "velocity_abs_10",
+    "atr_rel", "atr_regime_clamped", "relative_volume_clamped",
+    "mtf_4h_trend", "mtf_1d_trend", "funding_rate", "open_interest_change",
+    "dxy_trend", "vix_trend", "us10y_trend", "yield_spread",
+    "minutes_since_high_impact_news", "minutes_until_high_impact_news",
+    "news_event_impact_score", "spx_trend", "btc_corr",
+]
+
+CRITICAL_FEATURES_V4 = frozenset({
+    "risk_reward_ratio", "price_range", "risk_amount", "direction_enc",
+    "regime_enc", "strategy_enc", "asset_class_enc", "adx_normalized",
+})
+
 
 def get_current_schema_version() -> int:
     return CURRENT_SCHEMA_VERSION
 
 
 def get_feature_columns() -> list[str]:
-    return list(FEATURE_COLUMNS_V3)
+    return list(FEATURE_COLUMNS_V4)
+
+
+def get_critical_features(schema_version: int | None = None) -> frozenset[str]:
+    version = int(schema_version or CURRENT_SCHEMA_VERSION)
+    return CRITICAL_FEATURES_V4 if version >= 4 else CRITICAL_FEATURES_V3
 
 
 def get_legacy_retrain_feature_columns() -> list[str]:
