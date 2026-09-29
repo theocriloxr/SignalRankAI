@@ -128,7 +128,9 @@ class UltraQualityFilter:
             return False, f"R:R {rr:.2f} < {self.min_rr_ratio}", score
 
         regime = str(signal.get("regime") or "unknown").strip().upper()
-        adx = _safe_float(signal.get("adx_trend") or signal.get("adx"), 0.0)
+        adx = _safe_float(signal.get("adx"), 0.0)
+        if adx <= 0:
+            adx = _safe_float(signal.get("adx_trend"), 0.0)
         if not (regime == "TRENDING" and adx >= self.min_adx):
             return False, f"Regime not trending (regime={regime}, ADX {adx:.1f} < {self.min_adx})", score
 
@@ -276,7 +278,9 @@ class UltraQualityFilter:
         
         # 5. Market regime alignment
         regime = str(signal.get("regime") or "unknown").strip().upper()
-        adx_trend = _safe_float(signal.get("adx_trend") or signal.get("adx"), 0.0)
+        adx_trend = _safe_float(signal.get("adx"), 0.0)
+        if adx_trend <= 0:
+            adx_trend = _safe_float(signal.get("adx_trend"), 0.0)
         
         if regime == "TRENDING" and adx_trend >= self.min_adx:
             confirmations += 1
