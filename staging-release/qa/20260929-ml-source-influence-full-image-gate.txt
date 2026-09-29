@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA for ML source-influence governance.
+Runtime base: 684c641c5d092c9ae2ae4e6514d41aad6d8c3e5b.
+Cleanroom certification: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 494 targeted tests PASS.
+Scope: cap rejected-shadow aggregate effective training weight relative to proof-backed outcomes, and make ANALYTICS_ML_TRAIN_ENABLED authoritative for scheduled and drift-triggered retraining.
+Production remains on v42 with training disabled until this image gate passes.
