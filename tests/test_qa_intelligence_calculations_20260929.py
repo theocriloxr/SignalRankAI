@@ -127,3 +127,87 @@ def test_historical_context_is_enriched_before_final_ai_review() -> None:
     assert history < review
     assert 'sig["historical_sample_size"]' in engine[history:review]
     assert 'sig["live_expectancy"]' in engine[history:review]
+
+
+def test_invalid_geometry_does_not_resurrect_cached_rr() -> None:
+    signal = {
+        "direction": "long",
+        "entry": 100,
+        "stop_loss": 95,
+        "take_profit": 90,
+        "rr_ratio": 9.9,
+        "rr_estimate": 9.9,
+    }
+    assert calculate_risk_reward(signal) is None
+
+
+def test_position_sizing_rejects_invalid_geometry_and_direction() -> None:
+    from engine.signal_calculations import calculate_position_size
+
+    assert calculate_position_size(
+        {"direction": "sideways", "entry": 100, "stop_loss": 95},
+        account_balance=10_000,
+        risk_pct=1,
+    ) is None
+    assert calculate_position_size(
+        {"direction": "long", "entry": 100, "stop_loss": 105},
+        account_balance=10_000,
+        risk_pct=1,
+    ) is None
+    assert calculate_position_size(
+        {"direction": "short", "entry": 100, "stop_loss": 105},
+        account_balance=10_000,
+        risk_pct=1,
+    ) == pytest.approx(20.0)
+
+
+def test_signal_age_respects_timezone_offset_and_never_goes_negative(monkeypatch) -> None:
+    import engine.signal_calculations as calculations
+    from datetime import datetime
+
+    monkeypatch.setattr(calculations, "now_utc_naive", lambda: datetime(2026, 9, 29, 1, 0, 0))
+    assert calculations.calculate_signal_age_minutes(
+        {"created_at": "2026-09-29T02:00:00+01:00"}
+    ) == 0
+    assert calculations.calculate_signal_age_minutes(
+        {"created_at": "2026-09-29T03:00:00+01:00"}
+    ) == 0
+
+
+def test_swing_profile_covers_intermediate_higher_timeframes() -> None:
+    from services.trade_profiles import get_trade_profile, infer_trade_profile
+
+    swing = get_trade_profile("swing")
+    for timeframe in ("2h", "4h", "6h", "8h", "12h", "1d"):
+        assert timeframe in swing.timeframes
+        assert infer_trade_profile({"timeframe": timeframe}) == "swing"
+
+
+def test_time_to_target_is_explicitly_heuristic_not_calibrated() -> None:
+    from services.trade_profiles import estimate_time_to_target
+
+    projection = estimate_time_to_target(
+        {
+            "direction": "long",
+            "timeframe": "6h",
+            "entry": 100,
+            "stop_loss": 98,
+            "take_profit": [104],
+            "atr": 2,
+        },
+        "swing",
+    )
+    assert projection["probability_model"] == "heuristic_atr_time"
+    assert projection["probabilities_calibrated"] is False
+
+
+def test_ai_context_includes_current_quality_components() -> None:
+    root = Path(__file__).resolve().parents[1]
+    openai = (root / "services" / "openai_ai.py").read_text(encoding="utf-8")
+    gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
+    for source in (openai, gemini):
+        assert "score_components" in source
+        assert "confidence_breakdown" in source
+        assert "opportunity_components" in source
+        assert "historical_evidence_actionable" in source
+        assert "profile_rr_ok" in source
