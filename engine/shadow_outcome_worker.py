@@ -240,10 +240,30 @@ class ShadowOutcomeWorker:
                     source, outcome = by_id.get(int(record.id), ({}, ""))
                     if not outcome or record.outcome_tracked_at is not None:
                         continue
+                    source_features = dict(source.get("features") or {})
+                    is_candidate_forward = (
+                        str(source_features.get("rejection_type") or "")
+                        .strip()
+                        .lower()
+                        == "candidate_shadow"
+                    )
                     session.add(MLShadowPrediction(
                         signal_id=source.get("signal_id"),
-                        model_name="rejection_outcome_tracker",
-                        model_version=os.getenv("ML_MODEL_VERSION", "v1"),
+                        model_name=(
+                            "candidate_forward_outcome"
+                            if is_candidate_forward
+                            else "rejection_outcome_tracker"
+                        ),
+                        model_version=(
+                            str(
+                                source_features.get(
+                                    "candidate_model_version"
+                                )
+                                or "unknown"
+                            )
+                            if is_candidate_forward
+                            else os.getenv("ML_MODEL_VERSION", "v1")
+                        ),
                         probability=float(source.get("ml_probability") or 0.0),
                         is_shadow=True, feature_schema_ok=True,
                         meta={
@@ -251,7 +271,20 @@ class ShadowOutcomeWorker:
                             "entry": source.get("entry"), "stop_loss": source.get("stop_loss"),
                             "take_profit": str(source.get("take_profit")), "actual_outcome": outcome,
                             "rejection_reason": source.get("rejection_reason"),
-                            "learning_category": (source.get("features") or {}).get("learning_category", "SHADOW_REJECTED"),
+                            "learning_category": source_features.get(
+                                "learning_category",
+                                (
+                                    "CANDIDATE_FORWARD"
+                                    if is_candidate_forward
+                                    else "SHADOW_REJECTED"
+                                ),
+                            ),
+                            "candidate_artifact_hash_sha256": source_features.get(
+                                "candidate_artifact_hash_sha256"
+                            ),
+                            "candidate_observation_key": source_features.get(
+                                "candidate_observation_key"
+                            ),
                             "rejection_id": int(record.id),
                         }, created_at=now,
                     ))
@@ -259,9 +292,26 @@ class ShadowOutcomeWorker:
                     record.outcome_tracked_at = now
                     tracked += 1
                     try:
-                        bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
-                        state.incr_sync(f"shadow:counts:{bucket}", 1)
-                        state.incr_sync("shadow:counts:total_tracked", 1)
+                        if is_candidate_forward:
+                            bucket = (
+                                "win"
+                                if outcome.startswith("tp")
+                                else "loss"
+                                if outcome == "sl"
+                                else "other_outcome"
+                            )
+                            state.incr_sync(
+                                f"candidate_forward:counts:{bucket}",
+                                1,
+                            )
+                            state.incr_sync(
+                                "candidate_forward:counts:total_tracked",
+                                1,
+                            )
+                        else:
+                            bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
+                            state.incr_sync(f"shadow:counts:{bucket}", 1)
+                            state.incr_sync("shadow:counts:total_tracked", 1)
                     except Exception:
                         logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
                 await session.commit()
