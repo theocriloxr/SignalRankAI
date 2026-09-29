@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA for ML candidate lease rollback-expiry fix.
+Runtime base: 87274b50a7d277aa8598adce5c3766459322ab55.
+Cleanroom certification: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 500 targeted tests PASS.
+Regression reproduces ORM attribute expiry after rollback and verifies candidate/champion artifact snapshots are materialized before rollback.
+Production v44 remains fail-closed; the failed training run preserved the serving champion.
