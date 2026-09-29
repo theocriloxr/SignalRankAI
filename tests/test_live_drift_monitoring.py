@@ -336,12 +336,117 @@ def test_starvation_recovery_rejects_weak_deterministic_or_model_evidence(monkey
             "probability": 0.20,
             "threshold": 0.70,
             "passed": False,
+            "recovery_veto_eligible": True,
         },
         pipeline_stats={},
         calibrated_probability=0.52,
     )
     assert challenger_disagrees is False
     assert details["reason"] == "challenger_disagrees"
+
+
+def test_starvation_recovery_ignores_nonadmitted_challenger_disagreement(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_REQUIRE_CHALLENGER", "0")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_SCORE", "85")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_CONFLUENCE", "50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_RAW_FLOOR", "0.40")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 80,
+            "pass_rate": 0.0,
+            "raw_max": 0.50,
+            "threshold_min": 0.84,
+        },
+    )
+    signal = {
+        "score": 92.0,
+        "_preview_score": 92.0,
+        "confluence_score": 65.0,
+        "direction": "long",
+        "entry": 100.0,
+        "stop_loss": 99.0,
+        "take_profit": [102.0],
+    }
+    allowed, details = core._ml_starvation_recovery_decision(
+        signal,
+        raw_probability=0.50,
+        calibrated_probability=0.52,
+        certified_threshold=0.84,
+        challenger={
+            "available": True,
+            "probability": 0.20,
+            "threshold": 0.70,
+            "passed": False,
+            "recovery_veto_eligible": False,
+            "candidate_forward_required": False,
+            "champion_comparison_reason": "material_regression",
+        },
+        pipeline_stats={},
+    )
+
+    assert allowed is True
+    assert details["reason"] == "serving_model_starvation"
+    assert details["challenger_governance_eligible"] is False
+    assert details["challenger_ignored_reason"] == "candidate_not_forward_admitted"
+
+
+def test_starvation_recovery_can_require_a_governed_challenger(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_REQUIRE_CHALLENGER", "1")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 80,
+        },
+    )
+    allowed, details = core._ml_starvation_recovery_decision(
+        {
+            "score": 92.0,
+            "confluence_score": 65.0,
+            "direction": "long",
+            "entry": 100.0,
+            "stop_loss": 99.0,
+            "take_profit": [102.0],
+        },
+        raw_probability=0.50,
+        calibrated_probability=0.52,
+        certified_threshold=0.84,
+        challenger={
+            "available": True,
+            "probability": 0.20,
+            "threshold": 0.70,
+            "passed": False,
+            "recovery_veto_eligible": False,
+        },
+        pipeline_stats={},
+    )
+
+    assert allowed is False
+    assert details["reason"] == "challenger_not_governance_eligible"
+
+
+def test_shadow_candidate_exposes_recovery_governance_from_forward_admission():
+    source = Path("engine/ml.py").read_text(encoding="utf-8")
+    scorer = source[
+        source.index("def score_shadow_signal("):
+        source.index("_CANDIDATE_FORWARD_SEEN")
+    ]
+    assert 'training_meta.get("candidate_forward_gate")' in scorer
+    assert 'recovery_veto_eligible=bool(forward_gate.get("required"))' in scorer
+    assert '"recovery_veto_eligible": recovery_veto_eligible' in scorer
+    assert '"candidate_forward_required": bool(forward_gate.get("required"))' in scorer
 
 
 def test_starvation_recovery_never_rewrites_ml_probability_threshold():
