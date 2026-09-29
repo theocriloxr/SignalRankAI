@@ -276,6 +276,100 @@ def _champion_comparison_gate(
     }
 
 
+def _schema_promotion_gate(
+    candidate_schema_version: int,
+    primary_path: str | Path,
+    *,
+    deployed_runtime: bool | None = None,
+    champion_schema_version: int | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Fail closed on production feature-schema migrations until explicitly certified."""
+    if deployed_runtime is None:
+        deployed_runtime = _is_production_runtime()
+
+    champion_schema = champion_schema_version
+    source = "durable_registry" if champion_schema is not None else "local_primary"
+    if champion_schema is None:
+        path = Path(primary_path)
+        if not path.exists():
+            return True, {
+                "enabled": bool(deployed_runtime),
+                "reason": "no_existing_champion",
+                "candidate_schema_version": int(candidate_schema_version),
+                "champion_schema_version": None,
+                "source": source,
+            }
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            champion_schema = int(payload.get("schema_version") or 1)
+        except Exception as exc:
+            if not deployed_runtime:
+                return True, {
+                    "enabled": False,
+                    "reason": "champion_schema_unreadable_nonproduction",
+                    "candidate_schema_version": int(candidate_schema_version),
+                    "champion_schema_version": None,
+                    "source": source,
+                    "error": type(exc).__name__,
+                }
+            return False, {
+                "enabled": True,
+                "reason": "champion_schema_unreadable",
+                "candidate_schema_version": int(candidate_schema_version),
+                "champion_schema_version": None,
+                "source": source,
+                "error": type(exc).__name__,
+            }
+
+    candidate_schema = int(candidate_schema_version)
+    champion_schema = int(champion_schema)
+    if candidate_schema == champion_schema:
+        return True, {
+            "enabled": bool(deployed_runtime),
+            "reason": "same_schema",
+            "candidate_schema_version": candidate_schema,
+            "champion_schema_version": champion_schema,
+            "source": source,
+        }
+
+    requires_authorization = _env_bool(
+        "ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION",
+        bool(deployed_runtime),
+    )
+    if not requires_authorization:
+        return True, {
+            "enabled": False,
+            "reason": "authorization_not_required",
+            "candidate_schema_version": candidate_schema,
+            "champion_schema_version": champion_schema,
+            "source": source,
+        }
+
+    authorized = _env_bool("ML_ALLOW_SCHEMA_VERSION_PROMOTION", False)
+    certification_id = str(
+        os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or ""
+    ).strip()
+    if authorized and certification_id:
+        return True, {
+            "enabled": True,
+            "reason": "schema_migration_certified",
+            "candidate_schema_version": candidate_schema,
+            "champion_schema_version": champion_schema,
+            "source": source,
+            "certification_id": certification_id,
+        }
+
+    return False, {
+        "enabled": True,
+        "reason": "schema_migration_requires_authorization",
+        "candidate_schema_version": candidate_schema,
+        "champion_schema_version": champion_schema,
+        "source": source,
+        "authorization_enabled": authorized,
+        "certification_present": bool(certification_id),
+    }
+
+
 async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """Load the serving champion evidence from the durable model registry.
 
@@ -318,6 +412,10 @@ async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[
             "artifact_hash_sha256": str(row.get("artifact_hash_sha256") or ""),
             "trained_at": str(row.get("trained_at") or payload.get("trained_at") or ""),
             "metric_count": len(metrics),
+            "schema_version": int(payload.get("schema_version") or 1),
+            "feature_schema_hash_sha256": str(
+                payload.get("feature_schema_hash_sha256") or ""
+            ),
         }
     except Exception as exc:
         logger.warning("[ml_champion_compare] durable lookup unavailable error=%s", type(exc).__name__)
@@ -2157,6 +2255,40 @@ async def main(lookback_days: int | None = None):
             calibration_metrics.get("maximum_ece"),
         )
 
+    durable_champion_metrics: dict[str, Any] | None = None
+    durable_champion_evidence: dict[str, Any] = {
+        "source": "durable_registry",
+        "reason": "not_loaded",
+    }
+    schema_promotion = {
+        "enabled": False,
+        "reason": "not_evaluated",
+        "candidate_schema_version": int(CURRENT_SCHEMA_VERSION),
+    }
+    if promotion_eligible:
+        durable_champion_metrics, durable_champion_evidence = (
+            await _load_durable_champion_metrics()
+        )
+        schema_ok, schema_promotion = _schema_promotion_gate(
+            int(CURRENT_SCHEMA_VERSION),
+            primary_path,
+            deployed_runtime=deployed_runtime,
+            champion_schema_version=(
+                durable_champion_evidence.get("schema_version")
+                if durable_champion_evidence.get("schema_version") is not None
+                else None
+            ),
+        )
+        if not schema_ok:
+            promotion_eligible = False
+            logger.warning(
+                "[ml_training_run] id=%s status=candidate_only "
+                "reason=schema_migration_requires_authorization evidence=%s "
+                "primary_model_preserved=true",
+                run_id,
+                schema_promotion,
+            )
+
     lineage_decision = await asyncio.to_thread(
         evaluate_promotion_lineage,
         dataset_version=dataset_version,
@@ -2177,7 +2309,10 @@ async def main(lookback_days: int | None = None):
 
     champion_comparison = {"enabled": False, "reason": "not_evaluated"}
     if promotion_eligible:
-        durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
+        if durable_champion_evidence.get("reason") == "not_loaded":
+            durable_champion_metrics, durable_champion_evidence = (
+                await _load_durable_champion_metrics()
+            )
         champion_ok, champion_comparison = _champion_comparison_gate(
             metrics,
             primary_path,
@@ -2217,6 +2352,7 @@ async def main(lookback_days: int | None = None):
         "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
         "metrics": metrics,
         "promotion_eligible": bool(promotion_eligible),
+        "schema_promotion": schema_promotion,
         "champion_comparison": champion_comparison,
     }
     candidate_path = Path(

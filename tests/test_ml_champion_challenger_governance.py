@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ml.train_model import _champion_comparison_gate
+from ml.train_model import _champion_comparison_gate, _schema_promotion_gate
 
 
 def _metrics(*, auc=0.75, pr_auc=0.68, balanced_accuracy=0.66, expected_r=0.8, ece=0.08, brier=0.18):
@@ -98,3 +98,83 @@ def test_durable_champion_metrics_override_stale_local_primary(tmp_path, monkeyp
     assert ok is False
     assert evidence["source"] == "durable_registry"
     assert "auc" in evidence["regressions"]
+
+def test_same_schema_can_continue_through_promotion_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
+    primary = tmp_path / "model.json"
+    primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+
+    ok, evidence = _schema_promotion_gate(
+        3,
+        primary,
+        deployed_runtime=True,
+    )
+
+    assert ok is True
+    assert evidence["reason"] == "same_schema"
+
+
+def test_schema_migration_is_candidate_only_without_explicit_certification(tmp_path, monkeypatch):
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
+    monkeypatch.delenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", raising=False)
+    monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
+    primary = tmp_path / "model.json"
+    primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+
+    ok, evidence = _schema_promotion_gate(
+        4,
+        primary,
+        deployed_runtime=True,
+    )
+
+    assert ok is False
+    assert evidence["reason"] == "schema_migration_requires_authorization"
+    assert evidence["candidate_schema_version"] == 4
+    assert evidence["champion_schema_version"] == 3
+
+
+def test_schema_migration_needs_both_authorization_and_certification(tmp_path, monkeypatch):
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
+    monkeypatch.setenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", "1")
+    monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
+    primary = tmp_path / "model.json"
+    primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+
+    blocked, blocked_evidence = _schema_promotion_gate(
+        4,
+        primary,
+        deployed_runtime=True,
+    )
+    assert blocked is False
+    assert blocked_evidence["certification_present"] is False
+
+    monkeypatch.setenv(
+        "ML_SCHEMA_PROMOTION_CERTIFICATION_ID",
+        "schema-v4-forward-proof-001",
+    )
+    allowed, evidence = _schema_promotion_gate(
+        4,
+        primary,
+        deployed_runtime=True,
+    )
+    assert allowed is True
+    assert evidence["reason"] == "schema_migration_certified"
+    assert evidence["certification_id"] == "schema-v4-forward-proof-001"
+
+
+def test_durable_champion_schema_takes_precedence_over_local_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
+    primary = tmp_path / "model.json"
+    primary.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+
+    ok, evidence = _schema_promotion_gate(
+        3,
+        primary,
+        deployed_runtime=True,
+        champion_schema_version=3,
+    )
+
+    assert ok is True
+    assert evidence["reason"] == "same_schema"
+    assert evidence["source"] == "durable_registry"
+
