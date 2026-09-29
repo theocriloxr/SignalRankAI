@@ -571,9 +571,8 @@ async def promote_candidate_from_forward_proof(
 
     champion_comparison = dict(training_meta.get("champion_comparison") or {})
     if champion_comparison.get("enabled") is True and champion_comparison.get("reason") not in {
-        "candidate_noninferior",
-        "no_champion",
-        "not_applicable",
+        "noninferior",
+        "no_existing_champion",
     }:
         return {
             "ok": False,
