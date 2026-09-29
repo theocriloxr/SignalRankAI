@@ -2239,69 +2239,42 @@ async def main(lookback_days: int | None = None):
     run_id = f"ml-{now_utc_naive().strftime('%Y%m%d%H%M%S')}"
     logger.info("[ml_training_run] id=%s status=starting", run_id)
 
-    # Production retraining is challenger-first. Preserve an active challenger
-    # while it is still accumulating live-forward proof instead of replacing it
-    # on every scheduled training run.
+    # Production retraining is challenger-first. Preserve an evidence-bearing
+    # challenger while it is collecting forward proof or awaiting an explicit
+    # promotion decision. Fail closed if the lease cannot be evaluated.
     if (
         _is_production_runtime()
         and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
     ):
         try:
-            from ml.candidate_forward import (
-                evaluate_candidate_forward_evidence,
-                load_active_candidate,
-                load_active_primary,
-            )
+            from ml.candidate_forward import candidate_replacement_lease
 
-            active_candidate = await load_active_candidate()
-            active_primary = await load_active_primary()
-            candidate_is_primary = bool(
-                active_candidate
-                and active_primary
-                and str(
-                    active_candidate.get("artifact_hash_sha256") or ""
-                ).strip().lower()
-                == str(
-                    active_primary.get("artifact_hash_sha256") or ""
-                ).strip().lower()
-            )
-            if (
-                active_candidate
-                and not candidate_is_primary
-                and int(active_candidate.get("schema_version") or 1)
-                == int(CURRENT_SCHEMA_VERSION)
-            ):
-                forward = await evaluate_candidate_forward_evidence(
-                    active_candidate
+            lease = await candidate_replacement_lease()
+            if bool(lease.get("blocked")):
+                logger.info(
+                    "[ml_training_run] id=%s status=skipped "
+                    "reason=%s candidate=%s status_detail=%s "
+                    "observations=%s resolved=%s primary_model_preserved=true",
+                    run_id,
+                    lease.get("reason"),
+                    str(
+                        lease.get("candidate_artifact_hash_sha256")
+                        or ""
+                    )[:12],
+                    lease.get("candidate_status"),
+                    lease.get("observations"),
+                    lease.get("resolved"),
                 )
-                if str(forward.get("status") or "") in {
-                    "collecting",
-                    "eligible",
-                }:
-                    logger.info(
-                        "[ml_training_run] id=%s status=skipped "
-                        "reason=active_candidate_forward_proof_%s "
-                        "candidate=%s observations=%s resolved=%s "
-                        "primary_model_preserved=true",
-                        run_id,
-                        forward.get("status"),
-                        str(
-                            active_candidate.get(
-                                "artifact_hash_sha256"
-                            )
-                            or ""
-                        )[:12],
-                        forward.get("observations"),
-                        forward.get("resolved"),
-                    )
-                    return True
+                return True
         except Exception as candidate_guard_error:
             logger.warning(
-                "[ml_training_run] id=%s candidate forward guard unavailable "
-                "error=%s; continuing with offline candidate training",
+                "[ml_training_run] id=%s status=deferred "
+                "reason=candidate_forward_lease_unavailable error=%s "
+                "primary_model_preserved=true",
                 run_id,
                 type(candidate_guard_error).__name__,
             )
+            return False
 
     if lookback_days is None:
         try:
