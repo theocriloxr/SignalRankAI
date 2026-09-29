@@ -1,0 +1,6 @@
+SignalRankAI staging full-image QA for AI provider-order compatibility fallback hardening.
+Merged runtime base: ccaaf4e1292182af8bed2376c3040d206c798452.
+Certified branch head: 553cbc603c3423fcb0e07024feec07a1adab4d33.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 505 targeted tests PASS; CLEANROOM_PASS.
+Fix: legacy Gemini-named compatibility helpers honor AI_PROVIDER_ORDER and cannot silently call Gemini when production order is openai,local. Explicit provider-routed Gemini support remains available when configured.
+Production remains on v47 during this full-image certification so the controlled durable-parent retrain is not interrupted.
