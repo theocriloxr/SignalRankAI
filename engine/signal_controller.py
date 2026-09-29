@@ -7,8 +7,6 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 import json
 import os
-import urllib.request
-import urllib.error
 import threading
 
 from engine.risk import calculate_dynamic_risk
@@ -177,92 +175,43 @@ class SignalController:
                 risk = 1.0
             return (_conf(sig) * 0.6) + (_roi(sig) * 30.0) - (risk * 10.0)
 
-        def _can_call_gemini() -> tuple[bool, str]:
-            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            if not api_key:
-                return False, "missing_api_key"
-            if len(api_key) < 20:
-                return False, "invalid_api_key"
-            try:
-                self._gemini_daily_limit = max(1, int(os.getenv("GEMINI_DAILY_LIMIT", "10") or 10))
-            except Exception:
-                self._gemini_daily_limit = 10
-            today = now_utc_naive().strftime("%Y-%m-%d")
-            with self._gemini_counter_lock:
-                if self._gemini_call_day != today:
-                    self._gemini_call_day = today
-                    self._gemini_call_count = 0
-                if self._gemini_call_count >= self._gemini_daily_limit:
-                    return False, "daily_limit_reached"
-                return True, "ok"
-
         def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> tuple[str | None, str]:
-            # Backward-compatible inline AI arbitration: OpenAI first, then
-            # Gemini, then the deterministic composite ranker below.
+            # Historical name retained for compatibility. Direction conflicts
+            # now use the same provider-neutral, structured OpenAI/Gemini route
+            # as the final signal reviewer; deterministic composite ranking is
+            # still the fallback whenever AI is unavailable or ambiguous.
             try:
-                from services.openai_ai import choose_direction, openai_available, provider_order
+                from services.ai_review_router import choose_direction as _choose_direction
                 from utils.async_runner import run_sync
 
-                order = provider_order()
-                if openai_available() and "openai" in order and (
-                    "gemini" not in order or order.index("openai") < order.index("gemini")
-                ):
-                    result = run_sync(
-                        choose_direction(asset, tf, longs, shorts),
-                        timeout=max(2.0, float(os.getenv("AI_INLINE_TIMEOUT_SECONDS", "5") or 5)),
-                    )
-                    if isinstance(result, dict) and result.get("ok"):
-                        data = dict(result.get("data") or {})
-                        winner = str(data.get("winner") or "none").strip().lower()
-                        confidence = float(data.get("confidence") or 0.0)
-                        if winner in {"long", "short"} and confidence >= float(
-                            os.getenv("AI_INLINE_MIN_CONFIDENCE", "0.60") or 0.60
-                        ):
-                            return winner, f"openai_ok:{confidence:.2f}"
-                        return None, f"openai_ambiguous:{confidence:.2f}"
+                result = run_sync(
+                    _choose_direction(asset, tf, longs, shorts),
+                    timeout=max(
+                        2.0,
+                        float(os.getenv("AI_INLINE_TIMEOUT_SECONDS", "5") or 5),
+                    ),
+                )
+                if isinstance(result, dict) and result.get("ok"):
+                    data = dict(result.get("data") or {})
+                    winner = str(data.get("winner") or "none").strip().lower()
+                    confidence = float(data.get("confidence") or 0.0)
+                    provider = str(result.get("provider") or "ai").strip().lower()
+                    if winner in {"long", "short"} and confidence >= float(
+                        os.getenv("AI_INLINE_MIN_CONFIDENCE", "0.60") or 0.60
+                    ):
+                        return winner, f"{provider}_ok:{confidence:.2f}"
+                    return None, f"{provider}_ambiguous:{confidence:.2f}"
+                return None, str(
+                    (result or {}).get("error") if isinstance(result, dict) else "ai_unavailable"
+                )
             except Exception as exc:
                 self.audit_logger.debug(
-                    "openai_inline failed asset=%s tf=%s error=%s",
+                    "provider_neutral_inline failed asset=%s tf=%s error=%s",
                     asset,
                     tf,
                     type(exc).__name__,
                 )
-
-            can_call, reason = _can_call_gemini()
-            if not can_call:
-                self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=%s", asset, tf, reason)
-                return None, reason
-            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-3.8-flash").strip()
-            prompt = {
-                "asset": asset,
-                "timeframe": tf,
-                "long_candidates": longs[:5],
-                "short_candidates": shorts[:5],
-                "goal": "Pick direction with highest chance of success, highest ROI, lowest risk. Return JSON {\"winner\":\"long|short\"}",
-            }
-            body = json.dumps({
-                "contents": [{"parts": [{"text": json.dumps(prompt)}]}],
-                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200},
-            }).encode("utf-8")
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            req = urllib.request.Request(url, data=body, method="POST")
-            req.add_header("Content-Type", "application/json")
-            try:
-                timeout_s = max(2, int(os.getenv("GEMINI_API_TIMEOUT_SECONDS", "8") or 8))
-                with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-                    raw = resp.read().decode("utf-8", errors="ignore")
-                with self._gemini_counter_lock:
-                    self._gemini_call_count += 1
-                txt = raw.lower()
-                if '"winner":"short"' in txt or "winner short" in txt:
-                    return "short", "ok"
-                if '"winner":"long"' in txt or "winner long" in txt:
-                    return "long", "ok"
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception) as exc:
-                self.audit_logger.debug("gemini_inline failed asset=%s tf=%s error=%s", asset, tf, exc)
-                return None, "request_failed"
-            return None, "unparseable_response"
+                return None, f"ai_error:{type(exc).__name__}"
 
         try:
             gemini_top_n = max(1, int(os.getenv("GEMINI_INLINE_TOP_N", "3") or 3))
