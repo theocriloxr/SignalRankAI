@@ -42,7 +42,11 @@ def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
         "volume": _f(_first_not_none(signal.get("volume_score"), signal.get("relative_volume")), 55.0),
         "regime": _f(signal.get("asset_health_score"), 60.0),
         "historical": _f(
-            _first_not_none(signal.get("historical_win_rate"), signal.get("segment_win_rate")),
+            _first_not_none(
+                signal.get("historical_win_rate_lower_95"),
+                signal.get("historical_win_rate"),
+                signal.get("segment_win_rate"),
+            ),
             55.0,
         ),
         "ai": ai_component,
