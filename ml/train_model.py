@@ -2325,6 +2325,19 @@ async def main(lookback_days: int | None = None):
     quality_ok, min_accuracy, min_auc = _promotion_quality_gate(
         metrics, deployed_runtime=deployed_runtime
     )
+    offline_quality_gate = {
+        "passed": bool(quality_ok),
+        "minimum_accuracy": float(min_accuracy),
+        "minimum_auc": float(min_auc),
+        "accuracy": float(metrics.get("accuracy") or 0.0),
+        "auc": float(metrics.get("auc") or 0.0),
+        "balanced_accuracy": float(
+            metrics.get("balanced_accuracy") or 0.0
+        ),
+        "positive_recall": float(metrics.get("positive_recall") or 0.0),
+        "pr_auc": float(metrics.get("pr_auc") or 0.0),
+        "expected_r": float(metrics.get("expected_r") or 0.0),
+    }
     if not quality_ok:
         logger.warning(
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
@@ -2480,6 +2493,7 @@ async def main(lookback_days: int | None = None):
         "source_counts": source_counts,
         "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
         "metrics": metrics,
+        "offline_quality_gate": offline_quality_gate,
         "promotion_eligible": bool(promotion_eligible),
         "schema_promotion": schema_promotion,
         "champion_comparison": champion_comparison,
