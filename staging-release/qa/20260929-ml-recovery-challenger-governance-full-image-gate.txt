@@ -1,0 +1,8 @@
+SignalRankAI staging full-image QA for ML starvation-recovery challenger governance.
+Merged runtime base: ecb86e72966432c81a3f5c343298a3a6722d2d92.
+Certified branch head: a6293eabf5ce9f4576472c026d8d1d15a02085b7.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 506 targeted tests PASS; CLEANROOM_PASS.
+Fix 1: only a challenger explicitly admitted to candidate forward proof may veto bounded paper-only starvation recovery. A candidate that failed offline non-inferiority remains observable in shadow mode but has no authority over recovery.
+Fix 2: forward-proof promotion recognizes the trainer's canonical champion-comparison success reasons noninferior and no_existing_champion.
+The serving champion threshold is unchanged. Recovery remains capped, quality/EV gated, paper-only, and broker/live execution prohibited.
+Production remains on v48 during full-image certification.
