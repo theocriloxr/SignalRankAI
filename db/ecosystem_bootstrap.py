@@ -230,12 +230,71 @@ async def persist_instrument_registry(
     *,
     provider_rows: Mapping[str, Iterable[Mapping[str, Any]]] | None = None,
 ) -> dict[str, int]:
+    """Persist discovered instruments with bounded executemany round-trips."""
     rows_by_provider = {str(k).lower(): list(v) for k, v in (provider_rows or {}).items()}
-    created_or_updated = mappings = 0
+    instrument_params: list[dict[str, Any]] = []
+    certification_params: list[dict[str, Any]] = []
+    mapping_params: list[dict[str, Any]] = []
+
     for instrument in registry.all():
         key = instrument.canonical_key
         canonical_symbol = f"{instrument.id.base}{instrument.id.quote or ''}".upper()
         tradable = instrument.status.value == "active"
+        instrument_params.append({
+            "id": key,
+            "symbol": canonical_symbol,
+            "display": f"{instrument.id.base}/{instrument.id.quote}" if instrument.id.quote else instrument.id.base,
+            "asset_class": instrument.id.asset_class.value,
+            "instrument_type": _instrument_type(instrument.id.kind.value),
+            "market_type": "derivative" if instrument.id.kind.value in {"perpetual", "dated_future", "option", "cfd"} else "cash",
+            "base": instrument.id.base,
+            "quote": instrument.id.quote,
+            "settlement": instrument.id.settlement,
+            "underlying": instrument.id.base,
+            "multiplier": float(instrument.contract_multiplier),
+            "tick": float(instrument.tick_size) if instrument.tick_size is not None else None,
+            "step": float(instrument.quantity_step) if instrument.quantity_step is not None else None,
+            "min_qty": float(instrument.minimum_quantity) if instrument.minimum_quantity is not None else None,
+            "min_notional": float(instrument.minimum_notional) if instrument.minimum_notional is not None else None,
+            "inverse": instrument.linear_or_inverse == "inverse",
+            "timezone": instrument.timezone,
+            "active": instrument.status.value == "active",
+            "tradable": tradable,
+        })
+        certification_params.append({
+            "id": key,
+            "evidence": _json({"source": "provider_discovery", "not_public_delivery_certified": True}),
+        })
+
+    for provider, source_rows in rows_by_provider.items():
+        by_symbol = {
+            str(r.get("provider_symbol") or r.get("symbol") or "").upper(): r
+            for r in source_rows
+        }
+        for instrument in registry.by_provider(provider):
+            raw = by_symbol.get(str(instrument.provider_symbol or "").upper(), {})
+            capabilities = set(raw.get("capabilities") or ())
+            provider_instrument_id = str(
+                raw.get("provider_instrument_id") or raw.get("id") or instrument.provider_symbol
+            )
+            mapping_params.append({
+                "provider": provider,
+                "venue": instrument.venue,
+                "symbol": instrument.provider_symbol,
+                "provider_id": provider_instrument_id,
+                "canonical_id": instrument.canonical_key,
+                "status": instrument.status.value,
+                "trading": instrument.status.value == "active",
+                "candles": "historical_ohlc" in capabilities,
+                "quotes": "live_quotes" in capabilities,
+                "book": bool({"order_book_l1", "order_book_l2", "order_book_l3"} & capabilities),
+                "trades": "trades" in capabilities,
+                "funding": "funding" in capabilities,
+                "oi": "open_interest" in capabilities,
+                "metadata": _json(raw.get("metadata") or {}),
+            })
+
+    if instrument_params:
         await session.execute(text("""
             INSERT INTO instruments(
               instrument_id,canonical_symbol,display_symbol,asset_class,instrument_type,
@@ -256,69 +315,39 @@ async def persist_instrument_registry(
               active=EXCLUDED.active, tradable=EXCLUDED.tradable,
               discovery_status=EXCLUDED.discovery_status,
               last_discovered_at=NOW(), last_verified_at=NOW(), updated_at=NOW()
-        """), {
-            "id": key, "symbol": canonical_symbol,
-            "display": f"{instrument.id.base}/{instrument.id.quote}" if instrument.id.quote else instrument.id.base,
-            "asset_class": instrument.id.asset_class.value,
-            "instrument_type": _instrument_type(instrument.id.kind.value),
-            "market_type": "derivative" if instrument.id.kind.value in {"perpetual", "dated_future", "option", "cfd"} else "cash",
-            "base": instrument.id.base, "quote": instrument.id.quote,
-            "settlement": instrument.id.settlement, "underlying": instrument.id.base,
-            "multiplier": float(instrument.contract_multiplier),
-            "tick": float(instrument.tick_size) if instrument.tick_size is not None else None,
-            "step": float(instrument.quantity_step) if instrument.quantity_step is not None else None,
-            "min_qty": float(instrument.minimum_quantity) if instrument.minimum_quantity is not None else None,
-            "min_notional": float(instrument.minimum_notional) if instrument.minimum_notional is not None else None,
-            "inverse": instrument.linear_or_inverse == "inverse",
-            "timezone": instrument.timezone, "active": instrument.status.value == "active", "tradable": tradable,
-        })
+        """), instrument_params)
         await session.execute(text("""
             INSERT INTO instrument_certifications(instrument_id,readiness_state,evidence,certified_at,updated_at)
             VALUES (:id,'metadata_validated',CAST(:evidence AS JSONB),NOW(),NOW())
             ON CONFLICT (instrument_id) DO UPDATE SET
               readiness_state=EXCLUDED.readiness_state,evidence=EXCLUDED.evidence,updated_at=NOW()
-        """), {"id": key, "evidence": _json({"source": "provider_discovery", "not_public_delivery_certified": True})})
-        created_or_updated += 1
+        """), certification_params)
 
-    for provider, source_rows in rows_by_provider.items():
-        by_symbol = {str(r.get("provider_symbol") or r.get("symbol") or "").upper(): r for r in source_rows}
-        for instrument in registry.by_provider(provider):
-            raw = by_symbol.get(instrument.provider_symbol, {})
-            capabilities = set(raw.get("capabilities") or ())
-            provider_instrument_id = str(raw.get("provider_instrument_id") or raw.get("id") or instrument.provider_symbol)
-            await session.execute(text("""
-                INSERT INTO provider_instruments(
-                  provider,venue,provider_symbol,provider_instrument_id,canonical_instrument_id,
-                  market_status,trading_enabled,data_enabled,execution_enabled,
-                  historical_candles_supported,live_quotes_supported,order_book_supported,
-                  trades_supported,funding_supported,open_interest_supported,provider_metadata,
-                  last_seen_at,last_successful_refresh_at
-                ) VALUES (
-                  :provider,:venue,:symbol,:provider_id,:canonical_id,:status,:trading,TRUE,FALSE,
-                  :candles,:quotes,:book,:trades,:funding,:oi,CAST(:metadata AS JSONB),NOW(),NOW()
-                ) ON CONFLICT (provider,venue,provider_instrument_id) DO UPDATE SET
-                  provider_symbol=EXCLUDED.provider_symbol,
-                  canonical_instrument_id=EXCLUDED.canonical_instrument_id,
-                  market_status=EXCLUDED.market_status,
-                  trading_enabled=EXCLUDED.trading_enabled,
-                  data_enabled=TRUE,
-                  provider_metadata=EXCLUDED.provider_metadata,
-                  last_seen_at=NOW(),last_successful_refresh_at=NOW(),delisted_at=NULL
-            """), {
-                "provider": provider, "venue": instrument.venue,
-                "symbol": instrument.provider_symbol, "provider_id": provider_instrument_id,
-                "canonical_id": instrument.canonical_key, "status": instrument.status.value,
-                "trading": instrument.status.value == "active",
-                "candles": "historical_ohlc" in capabilities,
-                "quotes": "live_quotes" in capabilities,
-                "book": bool({"order_book_l1", "order_book_l2", "order_book_l3"} & capabilities),
-                "trades": "trades" in capabilities, "funding": "funding" in capabilities,
-                "oi": "open_interest" in capabilities,
-                "metadata": _json(raw.get("metadata") or {}),
-            })
-            mappings += 1
-    return {"instruments": created_or_updated, "provider_mappings": mappings}
+    if mapping_params:
+        await session.execute(text("""
+            INSERT INTO provider_instruments(
+              provider,venue,provider_symbol,provider_instrument_id,canonical_instrument_id,
+              market_status,trading_enabled,data_enabled,execution_enabled,
+              historical_candles_supported,live_quotes_supported,order_book_supported,
+              trades_supported,funding_supported,open_interest_supported,provider_metadata,
+              last_seen_at,last_successful_refresh_at
+            ) VALUES (
+              :provider,:venue,:symbol,:provider_id,:canonical_id,:status,:trading,TRUE,FALSE,
+              :candles,:quotes,:book,:trades,:funding,:oi,CAST(:metadata AS JSONB),NOW(),NOW()
+            ) ON CONFLICT (provider,venue,provider_instrument_id) DO UPDATE SET
+              provider_symbol=EXCLUDED.provider_symbol,
+              canonical_instrument_id=EXCLUDED.canonical_instrument_id,
+              market_status=EXCLUDED.market_status,
+              trading_enabled=EXCLUDED.trading_enabled,
+              data_enabled=TRUE,
+              provider_metadata=EXCLUDED.provider_metadata,
+              last_seen_at=NOW(),last_successful_refresh_at=NOW(),delisted_at=NULL
+        """), mapping_params)
 
+    return {
+        "instruments": len(instrument_params),
+        "provider_mappings": len(mapping_params),
+    }
 
 async def record_discovery_run(session: AsyncSession, provider: str, result: Mapping[str, Any]) -> None:
     await session.execute(text("""
