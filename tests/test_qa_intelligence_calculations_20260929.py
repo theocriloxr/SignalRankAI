@@ -669,3 +669,34 @@ def test_advanced_filter_logs_strategy_and_regime_evidence() -> None:
     assert '"strategy_group": sig.get("strategy_group")' in block
     assert '"range_friendly_strategy"' in block
     assert '"adx": sig.get("adx")' in block
+
+
+def test_direction_arbitration_receives_uncertainty_and_current_market_evidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    openai = (root / "services" / "openai_ai.py").read_text(encoding="utf-8")
+    gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
+
+    for source, marker in (
+        (openai, "async def choose_direction("),
+        (gemini, "async def choose_direction_structured("),
+    ):
+        block = source[source.index(marker):]
+        for field in (
+            "historical_evidence_scope",
+            "historical_evidence_fallback_depth",
+            "historical_decisive_samples",
+            "historical_win_rate_lower_95",
+            "historical_win_rate_upper_95",
+            "opportunity_components",
+            "candle_evidence_score",
+            "data_quality_score",
+            "provider_health_score",
+            "market_data_quality",
+            "trade_health",
+            "mission_recommendation",
+            "score_components",
+            "confidence_breakdown",
+        ):
+            assert field in block
+        assert "Wilson lower bound" in block
+        assert "historical_evidence_actionable=true" in block
