@@ -18,6 +18,17 @@ def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
         except Exception:
             return float(default)
 
+    ai_review = signal.get("ai_review_score")
+    if ai_review is None:
+        ai_review = signal.get("gemini_review_score")
+    if ai_review is not None:
+        try:
+            ai_component = max(0.0, min(100.0, float(ai_review) * 10.0))
+        except Exception:
+            ai_component = 60.0
+    else:
+        ai_component = _f(signal.get("ml_probability"), 60.0)
+
     return {
         "trend": _f(signal.get("mtf_alignment_score"), 55.0),
         "momentum": _f(signal.get("score"), 60.0),
@@ -25,7 +36,7 @@ def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
         "volume": _f(signal.get("volume_score") or signal.get("relative_volume"), 55.0),
         "regime": _f(signal.get("asset_health_score"), 60.0),
         "historical": _f(signal.get("historical_win_rate") or signal.get("segment_win_rate"), 55.0),
-        "ai": _f(signal.get("ai_review_score") or signal.get("gemini_review_score") or signal.get("ml_probability"), 60.0),
+        "ai": ai_component,
     }
 
 
