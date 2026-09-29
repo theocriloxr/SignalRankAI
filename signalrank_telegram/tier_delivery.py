@@ -153,9 +153,8 @@ class TierDeliveryManager:
         recipients = distributor.sample_users_for_signal(signal, signal_id)
         if bool(signal.get("ml_recovery_mode")):
             recipients = {
-                tier: users
+                tier: (users if recovery_delivery_allowed(signal, tier) else [])
                 for tier, users in recipients.items()
-                if recovery_delivery_allowed(signal, tier)
             }
         return recipients
 
