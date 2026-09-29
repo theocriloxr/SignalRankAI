@@ -4483,6 +4483,37 @@ def main_loop(DRY_RUN: bool = False):
 
                     pipeline_stats["final_signals"] += len(final_signals)
                     if not final_signals:
+                        # ML starvation recovery can intentionally admit a bounded
+                        # paper-only candidate into the post-ML quality pipeline. If
+                        # that candidate is subsequently rejected, make the exact
+                        # downstream gate visible in Railway logs instead of leaving
+                        # operators with ml_passed>0 / final_signals=0 and no reason.
+                        post_ml_reasons = Counter()
+                        recovery_candidates = 0
+                        for _post_ml_sig in risk_passed:
+                            if bool(_post_ml_sig.get("ml_recovery_mode")):
+                                recovery_candidates += 1
+                            _post_ml_reason = str(
+                                _post_ml_sig.get("rejection_reason")
+                                or "post_ml_unclassified"
+                            )[:180]
+                            post_ml_reasons[_post_ml_reason] += 1
+                        logger.warning(
+                            "[engine_post_ml_funnel] asset=%s cycle=%s ml_passed=%s "
+                            "recovery_candidates=%s final_signals=0 reasons=%s",
+                            asset,
+                            cycle_no,
+                            len(risk_passed),
+                            recovery_candidates,
+                            dict(post_ml_reasons.most_common(8)),
+                        )
+                        pipeline_stats["post_ml_rejected"] = int(
+                            pipeline_stats.get("post_ml_rejected") or 0
+                        ) + len(risk_passed)
+                        for _reason, _count in post_ml_reasons.items():
+                            pipeline_stats.setdefault("post_ml_rejection_reasons", Counter())[
+                                _reason
+                            ] += int(_count)
                         # Avoid a critical cooldown query when nothing can be stored.
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
