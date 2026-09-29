@@ -161,6 +161,23 @@ def test_analytics_training_master_switch_blocks_drift_retrain():
     assert "status=disabled_by_master_switch" in trainer
 
 
+def test_schema_migration_candidate_keeps_forward_proof_lease():
+    trainer = Path("ml/train_model.py").read_text(encoding="utf-8")
+    schema_block = trainer[
+        trainer.index("schema_promotion = {"):
+        trainer.index("lineage_decision = await asyncio.to_thread(")
+    ]
+    forward_block = trainer[
+        trainer.index("candidate_forward_gate = {"):
+        trainer.index("feature_baseline = _feature_distribution_baseline(")
+    ]
+    assert "candidate_first_requested" in schema_block
+    assert "if not candidate_first_requested:" in schema_block
+    assert "forward_candidate=%s" in schema_block
+    assert "if promotion_eligible and candidate_first_requested:" in forward_block
+    assert '"required": True' in forward_block
+
+
 def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
     from pathlib import Path
 
