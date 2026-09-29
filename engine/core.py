@@ -1085,7 +1085,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     direction = str(signal.get("direction") or "").strip().lower()
 
     min_score_defaults = {
-        "fx": 94.0,
+        "fx": 90.0,
         "crypto": 90.0,
         "stock": 88.0,
         "index": 90.0,
@@ -1156,7 +1156,23 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     if profile_min_rr is not None and profile_min_rr > 0:
         min_rr_default = max(1.0, float(profile_min_rr))
 
+    recovery_mode = bool(signal.get("ml_recovery_mode"))
     min_score = _env_float_for_class("QUALITY_MIN_SCORE", asset_class, min_score_defaults.get(asset_class, 90.0))
+    if recovery_mode:
+        # Recovery admission already proved starvation, a bounded structural
+        # floor, confluence, raw-model evidence and challenger safety. Reusing
+        # the normal production score/ML floors here made the recovery path
+        # self-contradictory and could reject the exact same candidate twice.
+        # Keep every non-ML quality gate intact and remain PAPER-ONLY.
+        min_score = max(
+            _current_min_score_threshold(),
+            _env_float("ML_STARVATION_RECOVERY_MIN_SCORE", 85.0),
+        )
+        score = max(
+            score,
+            _safe_float(signal.get("ml_recovery_structural_score"), 0.0),
+            _safe_float(signal.get("_preview_score"), 0.0),
+        )
     min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_default)
     min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
     min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
@@ -1186,7 +1202,25 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class}{profile_suffix})"
     if rr_cap_value > max_rr:
         return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
-    if ml_probability > 0 and ml_probability < min_ml:
+    if recovery_mode:
+        recovery_raw = _safe_float(
+            signal.get("ml_probability_raw")
+            or signal.get("ml_recovery_champion_raw_probability"),
+            0.0,
+        )
+        recovery_floor = max(
+            0.05,
+            min(
+                _safe_float(signal.get("ml_recovery_certified_threshold"), 0.95) or 0.95,
+                _env_float("ML_STARVATION_RECOVERY_RAW_FLOOR", 0.40),
+            ),
+        )
+        if recovery_raw <= 0 or recovery_raw < recovery_floor:
+            return False, (
+                f"quality_recovery_ml {recovery_raw:.3f} < "
+                f"{recovery_floor:.3f} ({asset_class})"
+            )
+    elif ml_probability > 0 and ml_probability < min_ml:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
     if confluence_pct is not None and confluence_pct < min_confluence:
         return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
@@ -2171,9 +2205,11 @@ def _ml_starvation_recovery_decision(
 ) -> tuple[bool, dict[str, Any]]:
     """Bounded delivery-only fallback for a demonstrably starving champion."""
     health=_ml_starvation_recovery_context()
+    preview_score=_safe_float(signal.get("_preview_score"), 0.0)
+    structural_score=preview_score if preview_score > 0 else _signal_display_score(signal)
     details={
         "health": health,
-        "score": _signal_display_score(signal),
+        "score": structural_score,
         "confluence": _safe_float(signal.get("confluence_score"), 0.0),
         "raw_probability": raw_probability,
         "certified_threshold": certified_threshold,
@@ -3738,6 +3774,9 @@ def main_loop(DRY_RUN: bool = False):
                                     "serving_model_starvation"
                                 )
                                 sig["ml_recovery_live_execution_allowed"] = False
+                                sig["ml_recovery_structural_score"] = float(
+                                    recovery_details.get("score") or 0.0
+                                )
                                 sig[
                                     "ml_recovery_champion_raw_probability"
                                 ] = raw_prob

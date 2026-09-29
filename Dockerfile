@@ -114,6 +114,7 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py \
       tests/test_expectancy_gate.py \
       tests/test_qa_intelligence_calculations_20260929.py \
+      tests/test_production_quality_guard.py \
     && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
     && python scripts/production_readiness_check.py
 

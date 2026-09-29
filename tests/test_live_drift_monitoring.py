@@ -410,3 +410,45 @@ def test_post_ml_rejection_funnel_is_observable() -> None:
     assert '"post_ml_rejection_reasons"' in core
     assert "recovery_candidates=%s" in core
     assert 'or "post_ml_unclassified"' in core
+
+
+def test_starvation_recovery_prefers_canonical_preview_score(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_SCORE", "82")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_CONFLUENCE", "50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_RAW_FLOOR", "0.50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_CHALLENGER_FLOOR", "0.45")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 100,
+            "pass_rate": 0.0,
+            "raw_max": 0.55,
+            "threshold_min": 0.83,
+        },
+    )
+
+    allowed, details = core._ml_starvation_recovery_decision(
+        {
+            "score": 76.0,
+            "_preview_score": 86.5,
+            "confluence_score": 70.0,
+        },
+        raw_probability=0.55,
+        certified_threshold=0.83,
+        challenger={
+            "available": True,
+            "probability": 0.52,
+            "threshold": 0.84,
+            "passed": False,
+        },
+        pipeline_stats={},
+    )
+
+    assert allowed is True
+    assert details["score"] == 86.5
