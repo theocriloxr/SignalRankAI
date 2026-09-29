@@ -21,19 +21,28 @@ def _base_signal(**overrides):
 
 def test_production_quality_guard_rejects_weak_fx(monkeypatch):
     monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+    monkeypatch.delenv("QUALITY_MIN_SCORE_FX", raising=False)
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
+    monkeypatch.setenv("PREMIUM_SCORE_THRESHOLD", "75")
 
     ok, reason = _production_quality_gate(
         _base_signal(
             asset="EURUSD",
-            score=89.0,
-            ml_probability=0.61,
-            adx=18.0,
-            take_profit=109.0,
+            direction="long",
+            entry=1.1000,
+            stop_loss=1.0956,
+            take_profit=1.11056,
+            score=79.0,
+            ml_probability=0.90,
+            adx=30.0,
+            confluence_score=75.0,
+            mtf_4h_trend=1.0,
+            mtf_1d_trend=1.0,
         )
     )
 
     assert not ok
-    assert "quality_score" in reason
+    assert "quality_score 79.0 < 80.0" in reason
 
 
 def test_production_quality_guard_rejects_fx_mtf_mismatch(monkeypatch):
@@ -247,3 +256,55 @@ def test_normal_fx_signal_still_uses_normal_ml_quality_floor(monkeypatch):
 
     assert ok is False
     assert "quality_ml" in reason
+
+
+def test_production_quality_guard_default_score_floor_matches_canonical_delivery_policy(monkeypatch):
+    monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+    monkeypatch.delenv("QUALITY_MIN_SCORE_FX", raising=False)
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
+    monkeypatch.setenv("PREMIUM_SCORE_THRESHOLD", "75")
+
+    ok, reason = _production_quality_gate(
+        _base_signal(
+            asset="EURUSD",
+            direction="long",
+            entry=1.1000,
+            stop_loss=1.0956,
+            take_profit=1.11056,
+            score=81.9,
+            ml_probability=0.90,
+            adx=30.0,
+            confluence_score=75.0,
+            mtf_4h_trend=1.0,
+            mtf_1d_trend=1.0,
+        )
+    )
+
+    assert ok is True, reason
+    assert reason == ""
+
+
+def test_explicit_class_score_override_remains_authoritative(monkeypatch):
+    monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
+    monkeypatch.setenv("PREMIUM_SCORE_THRESHOLD", "75")
+    monkeypatch.setenv("QUALITY_MIN_SCORE_FX", "90")
+
+    ok, reason = _production_quality_gate(
+        _base_signal(
+            asset="EURUSD",
+            direction="long",
+            entry=1.1000,
+            stop_loss=1.0956,
+            take_profit=1.11056,
+            score=81.9,
+            ml_probability=0.90,
+            adx=30.0,
+            confluence_score=75.0,
+            mtf_4h_trend=1.0,
+            mtf_1d_trend=1.0,
+        )
+    )
+
+    assert ok is False
+    assert "quality_score 81.9 < 90.0" in reason
