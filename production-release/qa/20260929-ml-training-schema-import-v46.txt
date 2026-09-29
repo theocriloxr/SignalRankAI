@@ -1,0 +1,8 @@
+SignalRankAI production QA release v46.
+Runtime base: cacefc10d66e60c44467b8cdba7863680e54d1f3 plus staging certification marker dd08ca7014ec9d90c9dab63fddd81ad0cdfef31a.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 501 targeted tests PASS.
+Full release-image build: 553 tests PASS; release provenance PASS; production readiness overall PASS (12/12); runtime-safe deployment SUCCESS.
+Fix: CURRENT_SCHEMA_VERSION is available to the main ML training governance path, eliminating the scheduled-retrain NameError observed after successful v4 fitting.
+Serving champion remains unchanged. Training remains disabled during cutover; candidate auto-promotion and schema-version promotion remain disabled.
+Post-cutover validation plan: enable one controlled scheduled retrain, verify source-influence cap, offline gates, candidate persistence/lease behavior, and preserve the serving champion.
+No live-money activation, auto execution, copy trading, payouts, or model promotion is enabled by this release.
