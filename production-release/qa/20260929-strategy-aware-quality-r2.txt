@@ -1,0 +1,3 @@
+SignalRankAI production QA rollout r2.
+Repairs final quality gate integration after r1 was blocked by the release test suite. Includes dimensionless chop detection, explicit range-strategy regime handling, trend-only Ultra scoping, uncertainty-aware AI evidence, and OpenAI-primary review while Gemini runtime review remains disabled due HTTP 403 authorization failure.
+No live execution, copy trading or payouts are enabled.
