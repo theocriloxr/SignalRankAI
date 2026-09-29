@@ -3855,7 +3855,16 @@ def main_loop(DRY_RUN: bool = False):
                                 from engine.ml import score_shadow_signal
 
                                 sig["_market_data"] = market_data
-                                challenger = score_shadow_signal(sig)
+                                challenger = score_shadow_signal(
+                                    sig,
+                                    champion_probability=(
+                                        float(raw_prob)
+                                        if raw_prob is not None
+                                        else None
+                                    ),
+                                    champion_threshold=float(threshold),
+                                    champion_passed=bool(approved),
+                                )
                                 challenger_prob = challenger.get("probability")
                                 challenger_threshold = challenger.get("threshold")
                                 if challenger_threshold is not None:
