@@ -315,9 +315,22 @@ async def _resend_unsent_signals_async():
         include_free_in_resend = str(
             os.getenv("RESEND_INCLUDE_FREE", "1") or "1"
         ).strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            from config import OWNER_IDS as _OWNER_IDS, ADMIN_IDS as _ADMIN_IDS
+            _owner_ids = {int(value) for value in (_OWNER_IDS or set())}
+            _admin_ids = {int(value) for value in (_ADMIN_IDS or set())}
+        except Exception:
+            _owner_ids, _admin_ids = set(), set()
         for _uid in user_ids:
-            _tier = str(db_product_tiers.get(int(_uid), "free") or "free").lower()
-            user_tier_map[int(_uid)] = _tier
+            _uid_int = int(_uid)
+            if _uid_int in _owner_ids:
+                _tier = "owner"
+            elif _uid_int in _admin_ids:
+                _tier = "admin"
+            else:
+                _tier = str(db_product_tiers.get(_uid_int, "free") or "free").lower()
+            _tier = _normalized_delivery_tier(_tier)
+            user_tier_map[_uid_int] = _tier
             tier_counts[_tier] = int(tier_counts.get(_tier, 0) or 0) + 1
         try:
             logger.info(f"[resend] audience users={len(user_ids)} tiers={tier_counts}")
