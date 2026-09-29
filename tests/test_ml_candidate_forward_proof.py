@@ -20,6 +20,7 @@ def _eligible_candidate(*, artifact="cand", parent="champ", schema=4):
             "training_meta": {
                 "offline_quality_gate": {"passed": True},
                 "lineage": {"eligible": True},
+                "candidate_forward_gate": {"required": True},
             },
         },
     }
@@ -184,6 +185,112 @@ def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
     assert "champion_probability=(" in core
     assert "champion_threshold=float(threshold)" in core
     assert "champion_passed=bool(approved)" in core
+
+
+@pytest.mark.asyncio
+async def test_candidate_lease_blocks_collecting_forward_candidate(monkeypatch):
+    import ml.candidate_forward as forward
+
+    async def fake_candidate():
+        return _eligible_candidate()
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    async def fake_evidence(_candidate=None):
+        return {
+            "eligible": False,
+            "status": "collecting",
+            "candidate_age_hours": 1.0,
+            "observations": 40,
+            "resolved": 8,
+            "reasons": ["insufficient_observations"],
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+    monkeypatch.setattr(
+        forward,
+        "evaluate_candidate_forward_evidence",
+        fake_evidence,
+    )
+    monkeypatch.delenv("ML_ALLOW_ACTIVE_CANDIDATE_REPLACEMENT", raising=False)
+
+    lease = await forward.candidate_replacement_lease()
+    assert lease["blocked"] is True
+    assert lease["reason"] == "active_candidate_forward_lease"
+    assert lease["candidate_status"] == "collecting"
+
+
+@pytest.mark.asyncio
+async def test_candidate_lease_allows_failed_candidate_replacement(monkeypatch):
+    import ml.candidate_forward as forward
+
+    async def fake_candidate():
+        return _eligible_candidate()
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    async def fake_evidence(_candidate=None):
+        return {
+            "eligible": False,
+            "status": "failed",
+            "candidate_age_hours": 4.0,
+            "observations": 150,
+            "resolved": 80,
+            "reasons": ["candidate_expected_r_below_floor"],
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+    monkeypatch.setattr(
+        forward,
+        "evaluate_candidate_forward_evidence",
+        fake_evidence,
+    )
+
+    lease = await forward.candidate_replacement_lease()
+    assert lease["blocked"] is False
+    assert lease["reason"] == "candidate_forward_status_failed"
+
+
+@pytest.mark.asyncio
+async def test_candidate_lease_allows_stale_parent_replacement(monkeypatch):
+    import ml.candidate_forward as forward
+
+    async def fake_candidate():
+        return _eligible_candidate(parent="old-champ")
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "new-champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    lease = await forward.candidate_replacement_lease()
+    assert lease["blocked"] is False
+    assert lease["reason"] == "candidate_parent_no_longer_current"
+
+
+def test_trainer_fail_closes_when_candidate_lease_is_unavailable():
+    trainer = Path("ml/train_model.py").read_text(encoding="utf-8")
+    guard = trainer[
+        trainer.index("# Production retraining is challenger-first."):
+        trainer.index("if lookback_days is None:")
+    ]
+    assert "candidate_replacement_lease" in guard
+    assert "candidate_forward_lease_unavailable" in guard
+    assert "return False" in guard
 
 
 @pytest.mark.asyncio
