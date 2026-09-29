@@ -1,0 +1,4 @@
+SignalRankAI production QA + intelligence correctness release.
+Fixes ML candidate/champion validation ordering, proof-backed realized-R expectancy, governed OpenAI/Gemini context and direction arbitration, profile geometry preservation, common tier quality floor, canonical target/RR/FX pip calculations, web/Telegram display parity, and heuristic-probability labeling.
+Mandatory release tests cover the new contracts.
+Certified ML threshold, live execution, copy trading, payouts/transfers and broker permissions remain unchanged/fail-closed.
