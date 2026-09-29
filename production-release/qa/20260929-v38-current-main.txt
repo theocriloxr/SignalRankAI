@@ -1,0 +1,4 @@
+SignalRankAI production release from corrected current main.
+Includes AI feedback truth, ML artifact overwrite protection, historical/current-market AI context, profile/tier parity, canonical RR/calculation fixes, web profile selector repair and PWA shell v38.
+This supersedes failed intermediate db0c4f3 build; the previous healthy production containers stayed serving.
+No live execution, copy trading or payout activation.
