@@ -400,3 +400,13 @@ def test_analytics_preserves_actionable_starvation_summary_across_restart() -> N
     assert "prior.get(\"actionable\")" in block
     assert "prediction_actionable or not preserve_prior_actionable" in block
     assert "preserved_prior_actionable_summary" in block
+
+
+def test_post_ml_rejection_funnel_is_observable() -> None:
+    root = Path(__file__).resolve().parents[1]
+    core = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    assert "[engine_post_ml_funnel]" in core
+    assert '"post_ml_rejected"' in core
+    assert '"post_ml_rejection_reasons"' in core
+    assert '"recovery_candidates=%s"' in core
+    assert 'or "post_ml_unclassified"' in core
