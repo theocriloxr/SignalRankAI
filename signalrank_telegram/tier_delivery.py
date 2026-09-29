@@ -54,6 +54,35 @@ def recovery_delivery_allowed(
             pass
     return False
 
+
+def operator_recovery_observation(
+    signal: Dict,
+    user_tier: str | None,
+    telegram_user_id: Optional[int] = None,
+) -> bool:
+    """Return True only for an actual operator receiving a PAPER/QA recovery signal.
+
+    This is intentionally narrower than recovery_delivery_allowed. If an
+    operator later widens ML_RECOVERY_DELIVERY_AUDIENCE=all, normal users still
+    keep their profile/preferences filters. Only OWNER/ADMIN authority or an
+    explicitly configured operator Telegram ID gets the QA-observation bypass.
+    """
+    if not bool((signal or {}).get("ml_recovery_mode")):
+        return False
+    tier = normalize_tier(user_tier).value
+    if tier in {"OWNER", "ADMIN"}:
+        return True
+    if telegram_user_id is not None:
+        try:
+            from config import ADMIN_IDS, OWNER_IDS
+            operators = {int(value) for value in (OWNER_IDS or set())} | {
+                int(value) for value in (ADMIN_IDS or set())
+            }
+            return int(telegram_user_id) in operators
+        except Exception:
+            return False
+    return False
+
 class TierDeliveryManager:
     """
     Manages signal delivery based on user tier.
