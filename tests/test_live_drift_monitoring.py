@@ -408,5 +408,5 @@ def test_post_ml_rejection_funnel_is_observable() -> None:
     assert "[engine_post_ml_funnel]" in core
     assert '"post_ml_rejected"' in core
     assert '"post_ml_rejection_reasons"' in core
-    assert '"recovery_candidates=%s"' in core
+    assert "recovery_candidates=%s" in core
     assert 'or "post_ml_unclassified"' in core
