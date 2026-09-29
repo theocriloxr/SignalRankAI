@@ -233,3 +233,77 @@ def test_ai_review_score_scale_is_consistent_across_breakdown_and_opportunity() 
 
     assert breakdown["ai"] == pytest.approx(85.0)
     assert opportunity.components["ai"] == pytest.approx((85.0 * 0.7) + (60.0 * 0.3))
+
+
+def test_paper_recovery_ultra_failure_is_advisory_but_normal_ultra_failure_stays_hard() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    ultra = engine[
+        engine.index("if _env_bool('ULTRA_QUALITY_ENABLED'"):
+        engine.index("# ML-driven dynamic risk sizing hint")
+    ]
+    assert 'if bool(sig.get("ml_recovery_mode"))' in ultra
+    assert 'sig["ml_recovery_ultra_advisory"] = ultra_reason' in ultra
+    assert "canonical_quality_continues=1" in ultra
+    assert '_post_ml_reject(sig, "ultra_quality", sig[\'rejection_reason\'])' in ultra
+    assert "continue" in ultra
+
+
+def test_post_ml_funnel_records_explicit_stage_and_reason() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    assert "post_ml_rejections = Counter()" in engine
+    assert 'candidate["post_ml_rejection_stage"] = stage_key' in engine
+    assert 'candidate["post_ml_rejection_reason"] = reason_key' in engine
+    assert '_post_ml_reject(sig, "production_quality", quality_reason)' in engine
+    assert '_post_ml_reject(sig, "canonical_quality", sig["rejection_reason"])' in engine
+    assert "post_ml_reasons = Counter(post_ml_rejections)" in engine
+
+
+def test_ml_recovery_delivery_defaults_to_operator_only(monkeypatch) -> None:
+    from signalrank_telegram.tier_delivery import recovery_delivery_allowed
+
+    signal = {"ml_recovery_mode": True, "score": 90}
+    monkeypatch.delenv("ML_RECOVERY_DELIVERY_AUDIENCE", raising=False)
+    assert recovery_delivery_allowed(signal, "free") is False
+    assert recovery_delivery_allowed(signal, "premium") is False
+    assert recovery_delivery_allowed(signal, "professional") is False
+    assert recovery_delivery_allowed(signal, "institutional") is False
+    assert recovery_delivery_allowed(signal, "admin") is True
+    assert recovery_delivery_allowed(signal, "owner") is True
+    assert recovery_delivery_allowed({"ml_recovery_mode": False}, "free") is True
+
+    monkeypatch.setenv("ML_RECOVERY_DELIVERY_AUDIENCE", "all")
+    assert recovery_delivery_allowed(signal, "free") is True
+
+
+def test_automatic_distribution_includes_every_canonical_tier() -> None:
+    root = Path(__file__).resolve().parents[1]
+    distribution = (root / "signalrank_telegram" / "signal_distribution.py").read_text(encoding="utf-8")
+    bot = (root / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    assert "from core.tier_policy import TIER_ORDER" in distribution
+    assert "result = {tier.value.lower(): [] for tier in TIER_ORDER}" in distribution
+    assert "'professional': 4" in distribution
+    assert "'institutional': 6" in distribution
+    assert "return normalize_tier(tier).value.lower()" in bot
+    assert "'professional': 100" in bot
+    assert "'institutional': 100" in bot
+    assert "('premium', 'vip', 'professional', 'institutional', 'admin', 'owner')" in bot
+
+
+def test_score_breakdown_preserves_real_zero_values() -> None:
+    from services.trading_intelligence import _score_breakdown
+
+    breakdown = _score_breakdown(
+        {
+            "score": 80,
+            "volume_score": 0.0,
+            "relative_volume": 1.9,
+            "historical_win_rate": 0.0,
+            "segment_win_rate": 72.0,
+            "ai_review_score": 8.0,
+        }
+    )
+    assert breakdown["volume"] == 0.0
+    assert breakdown["historical"] == 0.0
+    assert breakdown["ai"] == 80.0

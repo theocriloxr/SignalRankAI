@@ -315,9 +315,22 @@ async def _resend_unsent_signals_async():
         include_free_in_resend = str(
             os.getenv("RESEND_INCLUDE_FREE", "1") or "1"
         ).strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            from config import OWNER_IDS as _OWNER_IDS, ADMIN_IDS as _ADMIN_IDS
+            _owner_ids = {int(value) for value in (_OWNER_IDS or set())}
+            _admin_ids = {int(value) for value in (_ADMIN_IDS or set())}
+        except Exception:
+            _owner_ids, _admin_ids = set(), set()
         for _uid in user_ids:
-            _tier = str(db_product_tiers.get(int(_uid), "free") or "free").lower()
-            user_tier_map[int(_uid)] = _tier
+            _uid_int = int(_uid)
+            if _uid_int in _owner_ids:
+                _tier = "owner"
+            elif _uid_int in _admin_ids:
+                _tier = "admin"
+            else:
+                _tier = str(db_product_tiers.get(_uid_int, "free") or "free").lower()
+            _tier = _normalized_delivery_tier(_tier)
+            user_tier_map[_uid_int] = _tier
             tier_counts[_tier] = int(tier_counts.get(_tier, 0) or 0) + 1
         try:
             logger.info(f"[resend] audience users={len(user_ids)} tiers={tier_counts}")
@@ -1084,6 +1097,8 @@ TIER_LIMITS = {
     'free': 3,
     'premium': 20,
     'vip': 50,
+    'professional': 100,
+    'institutional': 100,
     'admin': 100,
     'owner': 100,
 }
@@ -1123,16 +1138,14 @@ def _mask_db_url_host(url: str) -> str:
 
 
 def _normalized_delivery_tier(tier: str | None) -> str:
-    t = str(tier or "free").strip().lower()
-    if t in ("owner", "admin", "vip", "premium", "free"):
-        return t
-    return "free"
+    from core.tier_policy import normalize_tier
+    return normalize_tier(tier).value.lower()
 
 
 def _display_tier_for_delivery(tier: str | None) -> str:
-    """Owner/admin use VIP formatting while keeping owner/admin delivery gates."""
-    t = str(tier or "free").strip().lower()
-    return "vip" if t in {"owner", "admin"} else _normalized_delivery_tier(t)
+    """Advanced/operator tiers use the richest signal card without losing routing identity."""
+    t = _normalized_delivery_tier(tier)
+    return "vip" if t in {"professional", "institutional", "admin", "owner"} else t
 
 
 def _delivery_score(signal: dict | None) -> float:
@@ -4487,10 +4500,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     tier = (tier_raw or 'FREE').strip().lower()
     routing_tier = _normalized_delivery_tier(tier)
     try:
-        from signalrank_telegram.tier_delivery import TierDeliveryManager
+        from signalrank_telegram.tier_delivery import TierDeliveryManager, recovery_delivery_allowed
         delivery_mgr = TierDeliveryManager()
     except Exception:
         delivery_mgr = None
+        recovery_delivery_allowed = None
 
     # Free users with paid extra-signal quota receive highest scoring signal
     extra_left = 0
@@ -4525,6 +4539,18 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         gated_signals: list[dict] = []
         for _sig in (signals_list or []):
             try:
+                if recovery_delivery_allowed is not None and not recovery_delivery_allowed(
+                    _sig,
+                    routing_tier,
+                    telegram_user_id=int(user_id),
+                ):
+                    logger.info(
+                        "[dispatch] recovery audience skip user=%s tier=%s signal=%s",
+                        user_id,
+                        routing_tier,
+                        _sig.get("signal_id") or _sig.get("id") or "pending",
+                    )
+                    continue
                 _score = _delivery_score(_sig)
                 if delivery_mgr.should_send_signal(routing_tier, _score, user_id=None):
                     gated_signals.append(_sig)
@@ -4804,7 +4830,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                 display_tier = 'premium'
 
 
-            if effective_tier in ('premium', 'vip', 'admin', 'owner'):
+            if effective_tier in ('premium', 'vip', 'professional', 'institutional', 'admin', 'owner'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(routing_tier, 0)
                 if tier == 'free' and extra_left > 0:

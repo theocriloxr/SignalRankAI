@@ -9,6 +9,12 @@ from services.opportunity_engine import score_opportunity
 
 
 def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
+    def _first_not_none(*values: Any) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
     def _f(value: Any, default: float = 0.0) -> float:
         try:
             value = float(value)
@@ -33,9 +39,12 @@ def _score_breakdown(signal: dict[str, Any]) -> dict[str, float]:
         "trend": _f(signal.get("mtf_alignment_score"), 55.0),
         "momentum": _f(signal.get("score"), 60.0),
         "liquidity": _f(signal.get("liquidity_score"), 60.0),
-        "volume": _f(signal.get("volume_score") or signal.get("relative_volume"), 55.0),
+        "volume": _f(_first_not_none(signal.get("volume_score"), signal.get("relative_volume")), 55.0),
         "regime": _f(signal.get("asset_health_score"), 60.0),
-        "historical": _f(signal.get("historical_win_rate") or signal.get("segment_win_rate"), 55.0),
+        "historical": _f(
+            _first_not_none(signal.get("historical_win_rate"), signal.get("segment_win_rate")),
+            55.0,
+        ),
         "ai": ai_component,
     }
 
