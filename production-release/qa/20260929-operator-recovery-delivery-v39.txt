@@ -1,0 +1,4 @@
+SignalRankAI production QA release v39.
+Promotes merged PR #153 on top of the healthy v38 runtime: canonical OWNER tier routing, PAPER/QA-only ML starvation recovery profile bypass for actual OWNER/ADMIN recipients, and a bounded recovery queue-age floor while preserving final quote, market-hours, geometry, R:R, opportunity-decay, drift and execution-safety checks.
+Certified ML thresholds remain unchanged. Live execution, auto execution, copy trading and real payouts remain fail-closed.
+Promotion relies on the existing Railway Docker release gate; previous healthy production containers must remain serving if the new build fails.
