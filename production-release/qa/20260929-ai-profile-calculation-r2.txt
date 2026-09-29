@@ -1,0 +1,4 @@
+SignalRankAI production QA promotion r2.
+Includes tier/profile policy parity, web shell v38, canonical calculation/display parity, promoted-model artifact integrity, uncertainty-aware AI context, and corrected AI-feedback performance/threshold mathematics.
+The prior candidate failed its Docker gate on frontend selector/test regressions and never replaced the healthy production release.
+No live execution, copy trading, payouts, or automatic AI parameter mutation are enabled.
