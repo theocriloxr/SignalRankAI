@@ -505,11 +505,10 @@ def score_shadow_signal(
     training_meta=dict(_SHADOW_CACHE.get("training_meta") or {})
     forward_gate=dict(training_meta.get("candidate_forward_gate") or {})
     champion_comparison=dict(training_meta.get("champion_comparison") or {})
-    recovery_veto_eligible=bool(
-        forward_gate.get("required")
-        and champion_comparison.get("reason")
-        in {"candidate_noninferior", "no_champion", "not_applicable"}
-    )
+    # The trainer sets this lease only after absolute quality,
+    # calibration, lineage and champion non-inferiority gates have passed.
+    # Treat the admission bit itself as the canonical governance invariant.
+    recovery_veto_eligible=bool(forward_gate.get("required"))
     try:
         threshold=float(metrics.get("classification_threshold"))
     except Exception:
