@@ -1,0 +1,2 @@
+SignalRankAI production QA release.
+Aligns PAPER-ONLY ML starvation recovery with the canonical pre-ML structural score and prevents the downstream production-quality gate from contradicting the bounded recovery admission contract. Corrects the unreachable FX default quality score floor from 94 to 90. Normal certified ML gating, live execution, copy trading and payouts remain unchanged/fail-closed. Production quality tests are now part of the locked Docker release gate.
