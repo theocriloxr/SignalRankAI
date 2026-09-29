@@ -247,7 +247,9 @@ def test_ai_review_is_provider_neutral_and_legacy_fields_remain_compatible():
     assert '"QUALITY_MIN_AI_SCORE"' in engine
     assert '"OpenAI"' in formatter
     assert 'signal.get("ai_review_score") or signal.get("gemini_review_score")' in formatter
-    assert 'signal.get("ai_review_score") or signal.get("gemini_review_score")' in intelligence
+    assert 'ai_review = signal.get("ai_review_score")' in intelligence
+    assert 'ai_review = signal.get("gemini_review_score")' in intelligence
+    assert 'float(ai_review) * 10.0' in intelligence
 
 
 def test_ai_feedback_remains_proposal_only():
