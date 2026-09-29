@@ -754,7 +754,12 @@ async def choose_direction(
         },
         "required": ["winner", "confidence", "reason"],
     }
-    keys = ("strategy_name", "strategy_group", "direction", "confidence", "strength", "score", "rr_ratio", "ml_probability", "risk")
+    keys = (
+        "strategy_name", "strategy_group", "direction", "confidence", "strength",
+        "score", "rr_ratio", "rr_final", "ml_probability", "ml_probability_raw",
+        "historical_sample_size", "historical_win_rate", "historical_avg_r",
+        "historical_profit_factor", "risk",
+    )
     def _safe(items):
         return [
             {k: item.get(k) for k in keys if item.get(k) is not None}
