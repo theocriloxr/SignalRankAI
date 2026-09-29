@@ -259,6 +259,10 @@ def test_starvation_recovery_is_bounded_and_preserves_certified_cutoff(monkeypat
     signal = {
         "score": 91.0,
         "confluence_score": 62.0,
+        "direction": "long",
+        "entry": 100.0,
+        "stop_loss": 99.0,
+        "take_profit": [102.0, 103.0],
     }
     challenger = {
         "available": True,
@@ -274,6 +278,7 @@ def test_starvation_recovery_is_bounded_and_preserves_certified_cutoff(monkeypat
         certified_threshold=0.629,
         challenger=challenger,
         pipeline_stats={},
+        calibrated_probability=0.50,
     )
     assert allowed is True
     assert details["reason"] == "serving_model_starvation"
@@ -285,6 +290,7 @@ def test_starvation_recovery_is_bounded_and_preserves_certified_cutoff(monkeypat
         certified_threshold=0.629,
         challenger=challenger,
         pipeline_stats={"ml_recovery_passed": 1},
+        calibrated_probability=0.50,
     )
     assert capped is False
     assert capped_details["reason"] == "cycle_cap"
@@ -315,7 +321,14 @@ def test_starvation_recovery_rejects_weak_deterministic_or_model_evidence(monkey
     assert details["reason"] == "score_below_recovery_floor"
 
     challenger_disagrees, details = core._ml_starvation_recovery_decision(
-        {"score": 92.0, "confluence_score": 65.0},
+        {
+            "score": 92.0,
+            "confluence_score": 65.0,
+            "direction": "long",
+            "entry": 100.0,
+            "stop_loss": 99.0,
+            "take_profit": [102.0],
+        },
         raw_probability=0.50,
         certified_threshold=0.629,
         challenger={
@@ -325,6 +338,7 @@ def test_starvation_recovery_rejects_weak_deterministic_or_model_evidence(monkey
             "passed": False,
         },
         pipeline_stats={},
+        calibrated_probability=0.52,
     )
     assert challenger_disagrees is False
     assert details["reason"] == "challenger_disagrees"
@@ -438,6 +452,10 @@ def test_starvation_recovery_prefers_canonical_preview_score(monkeypatch):
             "score": 76.0,
             "_preview_score": 86.5,
             "confluence_score": 70.0,
+            "direction": "long",
+            "entry": 100.0,
+            "stop_loss": 99.0,
+            "take_profit": [102.0],
         },
         raw_probability=0.55,
         certified_threshold=0.83,
@@ -448,7 +466,75 @@ def test_starvation_recovery_prefers_canonical_preview_score(monkeypatch):
             "passed": False,
         },
         pipeline_stats={},
+        calibrated_probability=0.56,
     )
 
     assert allowed is True
     assert details["score"] == 86.5
+
+
+def test_starvation_recovery_requires_positive_expected_r_and_real_rr(monkeypatch):
+    import engine.core as core
+
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_ENABLED", "1")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_SCORE", "82")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_CONFLUENCE", "50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_RAW_FLOOR", "0.45")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_RR", "1.50")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_EXPECTED_R", "0.10")
+    monkeypatch.setattr(
+        core,
+        "_ml_starvation_recovery_context",
+        lambda: {
+            "actionable": True,
+            "starvation_detected": True,
+            "samples": 100,
+            "pass_rate": 0.0,
+            "raw_max": 0.48,
+            "threshold_min": 0.84,
+        },
+    )
+    base = {
+        "score": 86.0,
+        "_preview_score": 86.0,
+        "confluence_score": 65.0,
+        "direction": "long",
+        "entry": 100.0,
+        "stop_loss": 99.0,
+    }
+
+    low_rr, details = core._ml_starvation_recovery_decision(
+        {**base, "take_profit": [101.2]},
+        raw_probability=0.47,
+        calibrated_probability=0.49,
+        certified_threshold=0.84,
+        challenger={"available": False},
+        pipeline_stats={},
+    )
+    assert low_rr is False
+    assert details["reason"] == "rr_below_recovery_floor"
+
+    positive_ev, details = core._ml_starvation_recovery_decision(
+        {**base, "take_profit": [102.0]},
+        raw_probability=0.47,
+        calibrated_probability=0.49,
+        certified_threshold=0.84,
+        challenger={"available": False},
+        pipeline_stats={},
+    )
+    assert positive_ev is True
+    assert details["recovery_rr_tp1"] == 2.0
+    assert details["expected_r"] > 0.10
+
+
+def test_starvation_recovery_expected_r_guard_is_not_a_certified_threshold_override() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    block = source[
+        source.index("def _ml_starvation_recovery_decision") :
+        source.index("def _diagnostic_ml_threshold")
+    ]
+    assert "ML_STARVATION_RECOVERY_MIN_RR" in block
+    assert "ML_STARVATION_RECOVERY_MIN_EXPECTED_R" in block
+    assert "calculate_rr_ladder" in block
+    assert "ML_PROB_THRESHOLD" not in block
