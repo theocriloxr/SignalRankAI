@@ -1,0 +1,4 @@
+SignalRankAI production QA/intelligence rollout.
+Scope: hierarchical proof-backed outcome context for AI/ranking; OpenAI/Gemini evidence-scope parity; batched instrument-catalogue persistence; canonical numeric ADX; OHLC-derived ATR fallback; release-gated regression coverage.
+Runtime AI policy: OpenAI primary, deterministic local fallback while Gemini remains externally degraded by HTTP 403.
+No certified ML threshold reduction, live execution, copy trading, payout, transfer, or broker-permission change.
