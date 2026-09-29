@@ -386,3 +386,17 @@ def test_engine_recovery_can_use_shared_analytics_starvation_health() -> None:
     assert 'state.get_sync("signalrankai:ml:starvation:summary")' in block
     assert '"source"]="analytics_shared_redis"' in block
     assert "int(shared.get(\"samples\") or 0) >= minimum_samples" in block
+
+
+def test_analytics_preserves_actionable_starvation_summary_across_restart() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "runtime" / "analytics.py").read_text(encoding="utf-8")
+    block = source[
+        source.index('starvation_mode_key="signalrankai:ml:starvation:mode"') :
+        source.index("if starvation:", source.index('starvation_mode_key="signalrankai:ml:starvation:mode"'))
+    ]
+    assert 'starvation_check_key="signalrankai:ml:starvation:last_check"' in block
+    assert "preserve_prior_actionable" in block
+    assert "prior.get(\"actionable\")" in block
+    assert "prediction_actionable or not preserve_prior_actionable" in block
+    assert "preserved_prior_actionable_summary" in block

@@ -35,6 +35,17 @@ def _component(signal: dict[str, Any], *keys: str, default: float = 50.0) -> flo
     return default
 
 
+def _ai_review_component(signal: dict[str, Any], default: float = 50.0) -> float:
+    """Normalize provider-neutral AI review scores, whose contract is 0..10."""
+    for key in ("ai_review_score", "gemini_review_score"):
+        value = signal.get(key)
+        if value is None:
+            continue
+        number = _f(value, default / 10.0)
+        return max(0.0, min(100.0, number * 10.0))
+    return default
+
+
 def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | None = None) -> OpportunityScore:
     sig = dict(signal or {})
     prefs = prefs or UserTradingPreferences()
@@ -47,7 +58,7 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
     if calibrated is not None:
         ai_conf = _component(sig, "ml_probability_calibrated", default=50.0)
     else:
-        ai_conf = _component(sig, "gemini_review_score", "ai_review_score", default=50.0)
+        ai_conf = _ai_review_component(sig, default=50.0)
         raw_model = _component(sig, "ml_probability_raw", "ml_probability", default=50.0)
         ai_conf = (ai_conf * 0.7) + (min(raw_model, 70.0) * 0.3)
     historical = _component(sig, "historical_win_rate", "segment_win_rate", "live_win_rate", default=55.0)
