@@ -1,0 +1,9 @@
+SignalRankAI production QA rollout.
+Scope:
+- lightweight OHLCV ML-history reads to prevent analytics training timeouts
+- canonical production score-floor alignment without weakening ML/RR/confluence/regime/AI/freshness/risk gates
+- coherent PAPER-ONLY starvation-recovery local AI fallback
+- tier-entitled profile/market/score/quota enforcement across web and engine demand
+- legacy/canonical tier score variable compatibility
+- PWA shell v37 for tier-aware profile UX
+Live execution, copy trading and real payouts remain disabled/fail-closed.
