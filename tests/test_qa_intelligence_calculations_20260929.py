@@ -411,3 +411,51 @@ def test_instrument_catalogue_persistence_batches_database_round_trips() -> None
     first_execute = block.index("await session.execute(")
     instrument_loop = block.index("for instrument in registry.all():")
     assert first_execute > instrument_loop
+
+
+def test_ultra_quality_prefers_numeric_adx_over_strength_label(monkeypatch) -> None:
+    from engine.ultra_quality_filter import UltraQualityFilter
+
+    filt = UltraQualityFilter()
+    signal = {
+        "asset": "EURUSD",
+        "direction": "long",
+        "score": 90.0,
+        "confidence": 0.9,
+        "entry": 100.0,
+        "close_price": 100.0,
+        "stop_loss": 98.0,
+        "take_profit": [106.0],
+        "regime": "TRENDING",
+        "adx": 30.0,
+        "adx_trend": "weak",
+        "session": "LONDON",
+        "trend_ema": 1.0,
+        "trend_sma": 1.0,
+        "rsi": 60.0,
+        "macd_trend": 1.0,
+        "volume_ratio": 2.0,
+        "nearest_support": 99.0,
+        "nearest_resistance": 108.0,
+        "volatility": 0.05,
+        "atr": 2.0,
+        "ema_50": 100.0,
+        "htf_bias_aligned": True,
+    }
+    approved, reason, _ = filt.apply_ultra_filter(signal)
+    assert approved is True, reason
+    assert "ADX 0.0" not in reason
+
+
+def test_engine_repairs_missing_atr_before_quality_filters() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    marker = source.index("# Repair a missing ATR from the same point-in-time OHLC")
+    filters = source.index("advanced_filters.run_all_filters", marker)
+    ultra = source.index("ultra_quality.apply_ultra_filter", filters)
+    block = source[marker:filters]
+    assert "_canonical_atr = sum(_trs) / len(_trs)" in block
+    assert "sig['atr'] = _canonical_atr" in block
+    assert "sig['atr_rel'] = _canonical_atr / _close_for_atr" in block
+    assert "'adx': _safe_float(sig.get('adx'), 30.0)" in block
+    assert marker < filters < ultra
