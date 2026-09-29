@@ -262,20 +262,55 @@ async def _ml_drift_loop(stop: asyncio.Event) -> None:
                 f"{severity:.6f}",
                 ex=ttl,
             )
-            state.set_sync(
-                "signalrankai:ml:starvation:mode",
-                "detected" if starvation else "normal",
-                ex=ttl,
+            starvation_mode_key="signalrankai:ml:starvation:mode"
+            starvation_summary_key="signalrankai:ml:starvation:summary"
+            starvation_check_key="signalrankai:ml:starvation:last_check"
+            prediction_json=__import__("json").dumps(
+                prediction_result,
+                separators=(",", ":"),
+                default=str,
             )
-            state.set_sync(
-                "signalrankai:ml:starvation:summary",
-                __import__("json").dumps(
-                    prediction_result,
-                    separators=(",", ":"),
-                    default=str,
-                ),
-                ex=ttl,
-            )
+            # Always publish the newest diagnostic check separately, but never
+            # erase a still-valid actionable starvation verdict merely because
+            # this fresh analytics process has not rebuilt its local prediction
+            # sample window yet. The actionable summary keeps its original TTL
+            # and therefore expires naturally if no later evidence confirms it.
+            state.set_sync(starvation_check_key, prediction_json, ex=ttl)
+            prediction_actionable=bool(prediction_result.get("actionable"))
+            preserve_prior_actionable=False
+            if not prediction_actionable:
+                try:
+                    prior_raw=state.get_sync(starvation_summary_key)
+                    prior=(
+                        __import__("json").loads(prior_raw)
+                        if isinstance(prior_raw, str) and prior_raw.strip()
+                        else {}
+                    )
+                    preserve_prior_actionable=bool(
+                        isinstance(prior, dict)
+                        and prior.get("actionable")
+                    )
+                except Exception:
+                    preserve_prior_actionable=False
+
+            if prediction_actionable or not preserve_prior_actionable:
+                state.set_sync(
+                    starvation_mode_key,
+                    "detected" if starvation else "normal",
+                    ex=ttl,
+                )
+                state.set_sync(
+                    starvation_summary_key,
+                    prediction_json,
+                    ex=ttl,
+                )
+            else:
+                logger.info(
+                    "[analytics_ml_prediction_health] status=preserved_prior_actionable_summary "
+                    "current_samples=%s current_reason=%s",
+                    prediction_result.get("samples"),
+                    prediction_result.get("reason"),
+                )
             if starvation:
                 logger.warning(
                     "[analytics_ml_prediction_starvation] %s",
