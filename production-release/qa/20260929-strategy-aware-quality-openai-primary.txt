@@ -1,0 +1,4 @@
+SignalRankAI production QA rollout.
+Adds asset-relative chop detection, strategy-aware trend/range regime quality, scopes trend-only Ultra quality away from explicit range/reversion strategies, and preserves canonical score/RR/confluence/ML/AI/freshness/segment gates.
+OpenAI is the active external reviewer; Gemini runtime review is temporarily disabled because production evidence shows HTTP 403 authorization failure. Gemini code/config remains available for re-enable after credential/project repair.
+No live execution, copy trading or payouts are enabled.
