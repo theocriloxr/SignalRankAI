@@ -599,6 +599,29 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         ):
             if sig.get(_ai_key) is not None:
                 _meta.setdefault(_ai_key, sig.get(_ai_key))
+        for _evidence_key in (
+            "live_expectancy",
+            "historical_evidence_actionable",
+            "historical_evidence_scope",
+            "historical_sample_size",
+            "historical_win_rate",
+            "historical_avg_r",
+            "historical_avg_win_r",
+            "historical_avg_loss_r",
+            "historical_profit_factor",
+            "trade_profile",
+            "profile_min_rr",
+            "profile_rr_ok",
+            "time_to_target_score",
+            "rr_tp1",
+            "rr_final",
+            "quality_tp1_rr",
+            "quality_final_rr",
+            "opportunity_score",
+            "asset_health_score",
+        ):
+            if sig.get(_evidence_key) is not None:
+                _meta.setdefault(_evidence_key, sig.get(_evidence_key))
         try:
             from services.decision_intelligence import build_decision_record, validate_decision_record
 
