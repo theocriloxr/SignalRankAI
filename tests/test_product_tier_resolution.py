@@ -57,3 +57,21 @@ async def test_blocked_or_suspended_user_has_no_product_access(field: str) -> No
 
     assert await resolve_product_tier(session, SimpleNamespace(**values)) == "none"
     session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_configured_owner_identity_wins_over_stale_free_product_tier(monkeypatch) -> None:
+    import db.access as access
+
+    monkeypatch.setattr(access, "is_owner", lambda telegram_user_id: int(telegram_user_id) == 99)
+    session = SimpleNamespace(execute=AsyncMock())
+    user = SimpleNamespace(
+        id=9,
+        telegram_user_id=99,
+        tier="free",
+        is_blocked=False,
+        is_suspended=False,
+    )
+
+    assert await access.resolve_product_tier(session, user) == "owner"
+    session.execute.assert_not_awaited()
