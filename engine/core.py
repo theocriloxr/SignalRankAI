@@ -4247,17 +4247,17 @@ def main_loop(DRY_RUN: bool = False):
                             # explicitly non-actionable rather than fabricated.
                             try:
                                 if _env_bool("HISTORICAL_PERFORMANCE_CONTEXT_ENABLED", True):
-                                    from engine.expectancy_gate import get_live_performance_context
+                                    from engine.expectancy_gate import get_best_live_performance_context
 
                                     _history = run_sync(
-                                        get_live_performance_context(
+                                        get_best_live_performance_context(
                                             str(sig.get("asset") or asset),
-                                            # Asset-level evidence is intentionally
-                                            # broader here; strategy-specific edge is
-                                            # already represented by live strategy
-                                            # weights and may be too sparse per cycle.
-                                            strategy=None,
-                                            timeframe=None,
+                                            strategy=str(
+                                                sig.get("strategy_name")
+                                                or sig.get("strategy")
+                                                or ""
+                                            ) or None,
+                                            timeframe=str(sig.get("timeframe") or "") or None,
                                             lookback_hours=max(
                                                 24,
                                                 _env_int(
@@ -4281,7 +4281,12 @@ def main_loop(DRY_RUN: bool = False):
                                         sig["historical_sample_size"] = int(
                                             _history.get("sample_size") or 0
                                         )
-                                        sig["historical_evidence_scope"] = "asset"
+                                        sig["historical_evidence_scope"] = str(
+                                            _history.get("scope") or "asset"
+                                        )
+                                        sig["historical_evidence_fallback_depth"] = int(
+                                            _history.get("fallback_depth") or 0
+                                        )
                                         if _history.get("win_rate") is not None:
                                             sig["historical_win_rate"] = (
                                                 float(_history["win_rate"]) * 100.0
