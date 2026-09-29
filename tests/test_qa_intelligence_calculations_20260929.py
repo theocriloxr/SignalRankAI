@@ -307,3 +307,155 @@ def test_score_breakdown_preserves_real_zero_values() -> None:
     assert breakdown["volume"] == 0.0
     assert breakdown["historical"] == 0.0
     assert breakdown["ai"] == 80.0
+
+
+@pytest.mark.asyncio
+async def test_historical_context_prefers_specific_actionable_segment(monkeypatch) -> None:
+    import engine.expectancy_gate as expectancy
+
+    calls: list[tuple[str | None, str | None]] = []
+
+    async def fake_context(asset, strategy=None, timeframe=None, lookback_hours=0):
+        calls.append((strategy, timeframe))
+        if strategy == "breakout" and timeframe == "15m":
+            return {"actionable": False, "sample_size": 3, "reason": "insufficient_sample"}
+        if strategy == "breakout" and timeframe is None:
+            return {
+                "actionable": True,
+                "sample_size": 18,
+                "win_rate": 0.61,
+                "avg_r": 0.42,
+                "expectancy_r": 0.42,
+                "reason": "ok",
+            }
+        return {"actionable": True, "sample_size": 40, "expectancy_r": 0.20, "reason": "ok"}
+
+    monkeypatch.setattr(expectancy, "get_live_performance_context", fake_context)
+    result = await expectancy.get_best_live_performance_context(
+        "EURUSD",
+        strategy="breakout",
+        timeframe="15m",
+        lookback_hours=720,
+    )
+
+    assert result["actionable"] is True
+    assert result["scope"] == "asset_strategy"
+    assert result["fallback_depth"] == 1
+    assert result["sample_size"] == 18
+    assert calls == [("breakout", "15m"), ("breakout", None)]
+
+
+@pytest.mark.asyncio
+async def test_historical_context_returns_largest_nonactionable_sample(monkeypatch) -> None:
+    import engine.expectancy_gate as expectancy
+
+    async def fake_context(asset, strategy=None, timeframe=None, lookback_hours=0):
+        samples = {
+            ("breakout", "15m"): 2,
+            ("breakout", None): 5,
+            (None, "15m"): 8,
+            (None, None): 7,
+        }
+        return {
+            "actionable": False,
+            "sample_size": samples[(strategy, timeframe)],
+            "reason": "insufficient_sample",
+        }
+
+    monkeypatch.setattr(expectancy, "get_live_performance_context", fake_context)
+    result = await expectancy.get_best_live_performance_context(
+        "EURUSD",
+        strategy="breakout",
+        timeframe="15m",
+    )
+
+    assert result["actionable"] is False
+    assert result["scope"] == "asset_timeframe"
+    assert result["sample_size"] == 8
+
+
+def test_engine_uses_hierarchical_history_before_ai_review() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    history = engine.index("get_best_live_performance_context")
+    review = engine.index("gemini_ok, gemini_score, gemini_reason", history)
+    block = engine[history:review]
+    assert "strategy_name" in block
+    assert "timeframe" in block
+    assert 'sig["historical_evidence_scope"]' in block
+    assert 'sig["historical_evidence_fallback_depth"]' in block
+
+
+def test_ai_context_exposes_historical_fallback_depth() -> None:
+    root = Path(__file__).resolve().parents[1]
+    openai = (root / "services" / "openai_ai.py").read_text(encoding="utf-8")
+    gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
+    assert '"historical_evidence_fallback_depth"' in openai
+    assert '"historical_evidence_fallback_depth"' in gemini
+
+
+def test_instrument_catalogue_persistence_batches_database_round_trips() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "db" / "ecosystem_bootstrap.py").read_text(encoding="utf-8")
+    block = source[
+        source.index("async def persist_instrument_registry") :
+        source.index("async def record_discovery_run")
+    ]
+    assert "instrument_params: list[dict[str, Any]] = []" in block
+    assert "certification_params: list[dict[str, Any]] = []" in block
+    assert "mapping_params: list[dict[str, Any]] = []" in block
+    assert '), instrument_params)' in block
+    assert '), certification_params)' in block
+    assert '), mapping_params)' in block
+    assert block.count("await session.execute(") == 3
+    first_execute = block.index("await session.execute(")
+    instrument_loop = block.index("for instrument in registry.all():")
+    assert first_execute > instrument_loop
+
+
+def test_ultra_quality_prefers_numeric_adx_over_strength_label(monkeypatch) -> None:
+    from engine.ultra_quality_filter import UltraQualityFilter
+
+    filt = UltraQualityFilter()
+    signal = {
+        "asset": "EURUSD",
+        "direction": "long",
+        "score": 90.0,
+        "confidence": 0.9,
+        "entry": 100.0,
+        "close_price": 100.0,
+        "stop_loss": 98.0,
+        "take_profit": [106.0],
+        "regime": "TRENDING",
+        "adx": 30.0,
+        "adx_trend": "weak",
+        "session": "LONDON",
+        "trend_ema": 1.0,
+        "trend_sma": 1.0,
+        "rsi": 60.0,
+        "macd_trend": 1.0,
+        "volume_ratio": 2.0,
+        "nearest_support": 99.0,
+        "nearest_resistance": 108.0,
+        "volatility": 0.05,
+        "atr": 2.0,
+        "ema_50": 100.0,
+        "htf_bias_aligned": True,
+    }
+    approved, reason, _ = filt.apply_ultra_filter(signal)
+    assert approved is True, reason
+    assert "ADX 0.0" not in reason
+
+
+def test_engine_repairs_missing_atr_before_quality_filters() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    marker = source.index("# Repair a missing ATR from the same point-in-time OHLC")
+    filters = source.index("advanced_filters.run_all_filters", marker)
+    ultra = source.index("ultra_quality.apply_ultra_filter", filters)
+    block = source[marker:filters]
+    assert "_canonical_atr = sum(_trs) / len(_trs)" in block
+    assert "sig['atr'] = _canonical_atr" in block
+    assert "sig['atr_rel'] = _canonical_atr / _close_for_atr" in block
+    assert "'adx': _safe_float(sig.get('adx'), 30.0)" in block
+    assert marker < filters < ultra

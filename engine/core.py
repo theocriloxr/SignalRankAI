@@ -4018,7 +4018,46 @@ def main_loop(DRY_RUN: bool = False):
                             sig['data_age_seconds'] = tf_data.get('data_age_seconds', None)
 
                             sig.setdefault('close_price', ind.get('close_price', last_close or 0))
-                            sig.setdefault('atr', ind.get('atr', sig.get('atr', 0)))
+
+                            # Keep the canonical numeric ADX separate from descriptive
+                            # strength labels such as weak/moderate/strong.
+                            _numeric_adx = _safe_float(
+                                sig.get('adx') if sig.get('adx') is not None else ind.get('adx'),
+                                0.0,
+                            )
+                            if _numeric_adx > 0:
+                                sig['adx'] = _numeric_adx
+
+                            # Repair a missing ATR from the same point-in-time OHLC
+                            # already used by this candidate. Existing positive ATR is
+                            # never overwritten.
+                            _canonical_atr = _safe_float(
+                                sig.get('atr') if sig.get('atr') is not None else ind.get('atr'),
+                                0.0,
+                            )
+                            if _canonical_atr <= 0 and isinstance(candles, list) and len(candles) >= 15:
+                                try:
+                                    _trs: list[float] = []
+                                    for _idx in range(max(1, len(candles) - 14), len(candles)):
+                                        _row = candles[_idx]
+                                        _prev = candles[_idx - 1]
+                                        _high = float(_row.get('high'))
+                                        _low = float(_row.get('low'))
+                                        _prev_close = float(_prev.get('close'))
+                                        _trs.append(max(
+                                            _high - _low,
+                                            abs(_high - _prev_close),
+                                            abs(_low - _prev_close),
+                                        ))
+                                    if _trs:
+                                        _canonical_atr = sum(_trs) / len(_trs)
+                                except Exception:
+                                    _canonical_atr = 0.0
+                            if _canonical_atr > 0:
+                                sig['atr'] = _canonical_atr
+                                _close_for_atr = _safe_float(sig.get('close_price'), 0.0)
+                                if _close_for_atr > 0 and _safe_float(sig.get('atr_rel'), 0.0) <= 0:
+                                    sig['atr_rel'] = _canonical_atr / _close_for_atr
 
                             # score
                             score = 0
@@ -4066,7 +4105,7 @@ def main_loop(DRY_RUN: bool = False):
                                 'ema_20': _safe_float(ind.get('ema_20') or ind.get('ema20'), 0.0),
                                 'ema_50': _safe_float(ind.get('ema_50') or ind.get('ema50'), 0.0),
                                 'candles': candles,
-                                'adx': _safe_float(ind.get('adx'), 30.0),
+                                'adx': _safe_float(sig.get('adx'), 30.0),
                             }
                             passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, _filter_session)
                             if not passed_filters:
@@ -4247,17 +4286,17 @@ def main_loop(DRY_RUN: bool = False):
                             # explicitly non-actionable rather than fabricated.
                             try:
                                 if _env_bool("HISTORICAL_PERFORMANCE_CONTEXT_ENABLED", True):
-                                    from engine.expectancy_gate import get_live_performance_context
+                                    from engine.expectancy_gate import get_best_live_performance_context
 
                                     _history = run_sync(
-                                        get_live_performance_context(
+                                        get_best_live_performance_context(
                                             str(sig.get("asset") or asset),
-                                            # Asset-level evidence is intentionally
-                                            # broader here; strategy-specific edge is
-                                            # already represented by live strategy
-                                            # weights and may be too sparse per cycle.
-                                            strategy=None,
-                                            timeframe=None,
+                                            strategy=str(
+                                                sig.get("strategy_name")
+                                                or sig.get("strategy")
+                                                or ""
+                                            ) or None,
+                                            timeframe=str(sig.get("timeframe") or "") or None,
                                             lookback_hours=max(
                                                 24,
                                                 _env_int(
@@ -4281,7 +4320,12 @@ def main_loop(DRY_RUN: bool = False):
                                         sig["historical_sample_size"] = int(
                                             _history.get("sample_size") or 0
                                         )
-                                        sig["historical_evidence_scope"] = "asset"
+                                        sig["historical_evidence_scope"] = str(
+                                            _history.get("scope") or "asset"
+                                        )
+                                        sig["historical_evidence_fallback_depth"] = int(
+                                            _history.get("fallback_depth") or 0
+                                        )
                                         if _history.get("win_rate") is not None:
                                             sig["historical_win_rate"] = (
                                                 float(_history["win_rate"]) * 100.0
@@ -4323,7 +4367,9 @@ def main_loop(DRY_RUN: bool = False):
                             sig.setdefault('stop', sl)
                             sig.setdefault('targets', tp)
                             sig['regime'] = str(regime or "UNKNOWN")
-                            sig.setdefault('adx_trend', ind.get('adx', market_filter_data.get('adx', 0)))
+                            if sig.get('adx') is None:
+                                sig['adx'] = _safe_float(ind.get('adx'), market_filter_data.get('adx', 0.0))
+                            sig.setdefault('adx_trend', ind.get('adx_trend'))
                             sig.setdefault('volume_ratio', sig.get('relative_volume') or ind.get('volume_ratio') or 0.0)
                             sig.setdefault('volatility', abs(_safe_float(sig.get('atr_rel'), 0.0)))
                             try:

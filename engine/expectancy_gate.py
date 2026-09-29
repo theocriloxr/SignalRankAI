@@ -239,6 +239,72 @@ async def get_live_performance_context(
     return context
 
 
+async def get_best_live_performance_context(
+    asset: str,
+    *,
+    strategy: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    lookback_hours: int = 24 * 30,
+) -> dict[str, Any]:
+    """Prefer the most specific proof-backed segment with enough observations.
+
+    This avoids treating all history for an asset as equally relevant while
+    also refusing to overfit tiny strategy/timeframe samples. Every level uses
+    the same realized-R, delivery-proof and minimum-sample rules.
+    """
+    asset_key = str(asset or "").upper().strip()
+    strategy_key = str(strategy or "").strip()
+    timeframe_key = str(timeframe or "").lower().strip()
+    levels: list[tuple[str, Optional[str], Optional[str]]] = []
+    if strategy_key and timeframe_key:
+        levels.append(("asset_strategy_timeframe", strategy_key, timeframe_key))
+    if strategy_key:
+        levels.append(("asset_strategy", strategy_key, None))
+    if timeframe_key:
+        levels.append(("asset_timeframe", None, timeframe_key))
+    levels.append(("asset", None, None))
+
+    seen: set[tuple[str, str]] = set()
+    candidates: list[dict[str, Any]] = []
+    for scope, scope_strategy, scope_timeframe in levels:
+        key = (str(scope_strategy or "").lower(), str(scope_timeframe or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        context = await get_live_performance_context(
+            asset_key,
+            strategy=scope_strategy,
+            timeframe=scope_timeframe,
+            lookback_hours=lookback_hours,
+        )
+        context = dict(context)
+        context["scope"] = scope
+        candidates.append(context)
+        if bool(context.get("actionable")):
+            context["fallback_depth"] = len(candidates) - 1
+            return context
+
+    if candidates:
+        best_index = max(
+            range(len(candidates)),
+            key=lambda idx: int(candidates[idx].get("sample_size") or 0),
+        )
+        best = dict(candidates[best_index])
+        best["actionable"] = False
+        best["fallback_depth"] = best_index
+        best["reason"] = str(best.get("reason") or "insufficient_sample")
+        return best
+    return {
+        "actionable": False,
+        "asset": asset_key,
+        "strategy": strategy_key or None,
+        "timeframe": timeframe_key or None,
+        "scope": "none",
+        "sample_size": 0,
+        "reason": "no_evidence",
+        "fallback_depth": 0,
+    }
+
 async def get_live_expectancy(
     asset: str,
     strategy: Optional[str] = None,
@@ -313,6 +379,7 @@ async def validate_expectancy_pipeline(signal: Dict[str, Any]) -> Dict[str, Any]
 __all__ = [
     "clear_expectancy_cache",
     "get_live_performance_context",
+    "get_best_live_performance_context",
     "get_live_expectancy",
     "expectancy_gate",
     "global_expectancy_check",

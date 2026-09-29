@@ -373,7 +373,7 @@ async def review_signal_structured(
             "mtf_4h_trend", "mtf_1d_trend", "mtf_alignment_score",
             "mtf_confidence_modifier", "opportunity_score", "asset_health_score",
             "live_expectancy", "historical_evidence_actionable",
-            "historical_evidence_scope", "historical_sample_size",
+            "historical_evidence_scope", "historical_evidence_fallback_depth", "historical_sample_size",
             "historical_win_rate", "historical_avg_r", "historical_avg_win_r",
             "historical_avg_loss_r", "historical_profit_factor",
             "profile_min_rr", "profile_rr_ok", "time_to_target_score",
