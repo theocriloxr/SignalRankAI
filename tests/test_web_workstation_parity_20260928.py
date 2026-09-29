@@ -104,7 +104,7 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "--brand-gradient:linear-gradient" in css
     assert ':root[data-theme="light"]' in css
     assert "#00a96e" in manifest
-    assert "signalrank-shell-v36" in worker
+    assert "signalrank-shell-v37" in worker
     assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
@@ -174,7 +174,7 @@ def test_pwa_brand_shell_updates_existing_clients_immediately() -> None:
     html = source("web/platform_app/index.html")
     assert "self.skipWaiting()" in worker
     assert "self.clients.claim()" in worker
-    assert "styles.css?v=36" in html
-    assert "app.js?v=36" in html
-    assert "icon.svg?v=36" in html
-    assert "logo.svg?v=36" in html
+    assert "styles.css?v=37" in html
+    assert "app.js?v=37" in html
+    assert "icon.svg?v=37" in html
+    assert "logo.svg?v=37" in html
