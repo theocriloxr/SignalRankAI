@@ -322,11 +322,6 @@ async def evaluate_candidate_forward_evidence(
         "eligible": eligible,
         "status": status,
         "reasons": reasons,
-        "candidate": {
-            key: value
-            for key, value in candidate.items()
-            if key != "payload"
-        },
         "observations": len(all_rows),
         "resolved": len(resolved_rows),
         "candidate_pass_rate": candidate_pass_rate,
