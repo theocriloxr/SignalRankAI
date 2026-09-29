@@ -1,0 +1,3 @@
+SignalRankAI production QA release.
+Fixes PAPER-ONLY ML starvation recovery being blocked twice by the Ultra score floor, preserves exact post-ML rejection stages/reasons, keeps recovery delivery owner/admin-only by default, restores Professional/Institutional canonical routing, preserves operator identity during resend, and fixes zero-valued intelligence metrics.
+Normal Ultra Quality, certified ML thresholds, risk controls, live execution, copy trading and payouts remain unchanged/fail-closed.
