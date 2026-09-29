@@ -33,10 +33,10 @@ EXPECTED_MATRIX = {
     "FREE": (0, False, 3, 80.0, 10, 1, 7),
     "PREMIUM": (1, True, 15, 80.0, 0, 2, 30),
     "VIP": (2, True, 30, 80.0, 0, 3, 365),
-    "PROFESSIONAL": (3, True, 100, 75.0, 0, 3, 1825),
-    "INSTITUTIONAL": (4, True, 1000, 0.0, 0, 3, 3650),
-    "ADMIN": (5, False, 100, 0.0, 0, 3, 3650),
-    "OWNER": (6, False, 100, 0.0, 0, 3, 3650),
+    "PROFESSIONAL": (3, True, 100, 80.0, 0, 3, 1825),
+    "INSTITUTIONAL": (4, True, 1000, 80.0, 0, 3, 3650),
+    "ADMIN": (5, False, 100, 80.0, 0, 3, 3650),
+    "OWNER": (6, False, 100, 80.0, 0, 3, 3650),
 }
 
 
@@ -182,3 +182,12 @@ def test_delivery_projection_and_outcomes_follow_canonical_depth() -> None:
     assert manager.format_outcome_for_tier("signal-1", "tp2", 2, "PREMIUM")
     assert manager.format_outcome_for_tier("signal-1", "tp3", 3, "PREMIUM") is None
     assert manager.format_outcome_for_tier("signal-1", "tp3", 3, "VIP")
+
+
+def test_normal_delivery_quality_floor_cannot_be_lowered_by_tier(monkeypatch) -> None:
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "82")
+    monkeypatch.setenv("OWNER_SIGNAL_MIN_SCORE", "0")
+    monkeypatch.setenv("INSTITUTIONAL_SIGNAL_MIN_SCORE", "1")
+    assert get_entitlements("OWNER").minimum_signal_score == 82.0
+    assert get_entitlements("INSTITUTIONAL").minimum_signal_score == 82.0
+    assert get_entitlements("PROFESSIONAL").minimum_signal_score == 82.0
