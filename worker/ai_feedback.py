@@ -33,11 +33,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PerformanceStats:
-    """Trading performance statistics for review period."""
+    """Trading performance statistics for one evidence window."""
     win_rate: float = 0.0
     total_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    breakeven: int = 0
+    gross_win_r: float = 0.0
+    gross_loss_r: float = 0.0
+    expectancy_r: float = 0.0
+    net_r: float = 0.0
     profit_factor: float = 0.0
-    current_base_threshold: float = 0.30
+    current_base_threshold: float = 0.50
+    threshold_source: str = "fallback"
     average_ml_auc: float = 0.0
     avg_score: float = 0.0
     signals_issued: int = 0
@@ -45,96 +53,136 @@ class PerformanceStats:
 
 
 async def gather_performance_stats(days: int = 7) -> PerformanceStats:
-    """Gather performance statistics from the database."""
+    """Gather proof-backed performance and the active model threshold."""
     stats = PerformanceStats()
-    
+
     try:
         from db.session import get_session
         from sqlalchemy import text
-        
+
         since = now_utc_naive() - timedelta(days=days)
-        
+
         async with get_session() as session:
-            # Get outcome statistics
+            # Profit factor is gross positive R divided by absolute gross
+            # negative R. The previous implementation derived it from net R,
+            # average R and the loss count, which is not profit factor and could
+            # materially mislead the AI parameter reviewer.
             row = await session.execute(
                 text("""
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) as wins,
-                        AVG(r_multiple) as avg_r,
-                        SUM(r_multiple) as net_r
-                    FROM outcomes 
+                    SELECT
+                        COUNT(*) FILTER (WHERE r_multiple IS NOT NULL) AS total,
+                        COUNT(*) FILTER (WHERE r_multiple > 0) AS wins,
+                        COUNT(*) FILTER (WHERE r_multiple < 0) AS losses,
+                        COUNT(*) FILTER (WHERE r_multiple = 0) AS breakeven,
+                        COALESCE(SUM(CASE WHEN r_multiple > 0 THEN r_multiple ELSE 0 END), 0) AS gross_win_r,
+                        ABS(COALESCE(SUM(CASE WHEN r_multiple < 0 THEN r_multiple ELSE 0 END), 0)) AS gross_loss_r,
+                        COALESCE(AVG(r_multiple) FILTER (WHERE r_multiple IS NOT NULL), 0) AS expectancy_r,
+                        COALESCE(SUM(r_multiple), 0) AS net_r
+                    FROM outcomes
                     WHERE closed_at >= :since
+                      AND r_multiple IS NOT NULL
                 """),
-                {"since": since}
+                {"since": since},
             )
             result = row.first()
-            
+
             if result:
-                total = int(result[0] or 0)
-                wins = int(result[1] or 0)
-                stats.total_trades = total
-                stats.win_rate = wins / max(1, total)
-                stats.profit_factor = abs(float(result[3] or 0.0) / max(0.01, float(result[2] or 0.0) * (total - wins))) if total > 0 else 0.0
-            
-            # Get ML threshold from Redis or env
+                stats.total_trades = int(result[0] or 0)
+                stats.wins = int(result[1] or 0)
+                stats.losses = int(result[2] or 0)
+                stats.breakeven = int(result[3] or 0)
+                stats.gross_win_r = float(result[4] or 0.0)
+                stats.gross_loss_r = float(result[5] or 0.0)
+                stats.expectancy_r = float(result[6] or 0.0)
+                stats.net_r = float(result[7] or 0.0)
+                decisive = stats.wins + stats.losses
+                stats.win_rate = stats.wins / decisive if decisive > 0 else 0.0
+                if stats.gross_loss_r > 0:
+                    stats.profit_factor = stats.gross_win_r / stats.gross_loss_r
+                elif stats.gross_win_r > 0:
+                    # Keep JSON finite while representing a no-loss sample.
+                    stats.profit_factor = 10.0
+                else:
+                    stats.profit_factor = 0.0
+
+            # The promoted model's calibration-window classification threshold
+            # is the production decision cutoff. Prefer it over historical env
+            # and Redis base-threshold values when available.
+            threshold_found = False
             try:
-                from core.redis_state import state
-                if state.has_redis_sync():
-                    redis = state.get_redis_sync()
-                    if redis:
-                        threshold = redis.get("ENGINE_BASE_THRESHOLD")
-                        if threshold:
-                            stats.current_base_threshold = float(threshold)
-            except Exception:
-                pass
-            
-            stats.current_base_threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.30"))
-            
-            # Get average ML AUC
-            try:
-                from core.redis_state import state
-                if state.has_redis_sync():
-                    redis = state.get_redis_sync()
-                    if redis:
-                        auc = redis.get("ml:model:auc")
-                        if auc:
-                            stats.average_ml_auc = float(auc)
-            except Exception:
-                pass
-            
-            # Get signal counts
+                from ml.inference import MLFilter
+
+                ml_filter = MLFilter()
+                certified = (
+                    ml_filter.recommended_raw_threshold()
+                    if bool(getattr(ml_filter, "active", False))
+                    else None
+                )
+                if certified is not None:
+                    stats.current_base_threshold = float(certified)
+                    stats.threshold_source = "promoted_model"
+                    threshold_found = True
+                    metrics = dict(getattr(ml_filter, "metrics", {}) or {})
+                    for auc_key in ("auc", "roc_auc", "test_auc"):
+                        if metrics.get(auc_key) is not None:
+                            stats.average_ml_auc = float(metrics[auc_key])
+                            break
+            except Exception as exc:
+                logger.debug("[ai_feedback] promoted model metadata unavailable: %s", type(exc).__name__)
+
+            if not threshold_found:
+                try:
+                    from core.redis_state import state
+
+                    if state.has_redis_sync():
+                        redis = state.get_redis_sync()
+                        if redis:
+                            threshold = redis.get("ENGINE_BASE_THRESHOLD")
+                            if threshold is not None:
+                                stats.current_base_threshold = float(threshold)
+                                stats.threshold_source = "redis_base"
+                                threshold_found = True
+                            if stats.average_ml_auc <= 0:
+                                auc = redis.get("ml:model:auc")
+                                if auc is not None:
+                                    stats.average_ml_auc = float(auc)
+                except Exception:
+                    pass
+
+            if not threshold_found:
+                stats.current_base_threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.50") or 0.50)
+                stats.threshold_source = "env_fallback"
+
             issued_row = await session.execute(
                 text("""
-                    SELECT COUNT(*) FROM signals 
+                    SELECT COUNT(*) FROM signals
                     WHERE created_at >= :since AND status = 'issued'
                 """),
-                {"since": since}
+                {"since": since},
             )
             stats.signals_issued = int(issued_row.scalar() or 0)
-            
+
             rejected_row = await session.execute(
                 text("""
-                    SELECT COUNT(*) FROM ml_rejected_signals 
+                    SELECT COUNT(*) FROM ml_rejected_signals
                     WHERE created_at >= :since
                 """),
-                {"since": since}
+                {"since": since},
             )
             stats.signals_rejected = int(rejected_row.scalar() or 0)
-            
-            # Get average score
+
             score_row = await session.execute(
                 text("""
-                    SELECT AVG(score) FROM signals 
+                    SELECT AVG(score) FROM signals
                     WHERE created_at >= :since AND score IS NOT NULL
                 """),
-                {"since": since}
+                {"since": since},
             )
             stats.avg_score = float(score_row.scalar() or 0.0)
-                
+
     except Exception as e:
-        logger.warning(f"[ai_feedback] Failed to gather stats: {e}")
-    
+        logger.warning("[ai_feedback] Failed to gather stats: %s", e)
+
     return stats
 
 
