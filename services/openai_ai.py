@@ -843,11 +843,34 @@ async def evolution_proposal(context: Mapping[str, Any]) -> dict[str, Any]:
 
 
 async def threshold_recommendation(stats: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(stats or {})
+    try:
+        current = float(
+            payload.get("current_base_threshold")
+            or payload.get("current_runtime_threshold")
+            or 0.50
+        )
+    except Exception:
+        current = 0.50
+    current = max(0.05, min(0.95, current))
+    try:
+        lower = float(payload.get("proposal_min"))
+    except Exception:
+        lower = max(0.05, current - 0.05)
+    try:
+        upper = float(payload.get("proposal_max"))
+    except Exception:
+        upper = min(0.95, current + 0.05)
+    lower = max(0.05, min(current, lower))
+    upper = min(0.95, max(current, upper))
+    if upper < lower:
+        lower, upper = upper, lower
+
     schema = {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "new_threshold": {"type": "number", "minimum": 0.15, "maximum": 0.60},
+            "new_threshold": {"type": "number", "minimum": lower, "maximum": upper},
             "reason": {"type": "string"},
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "requires_forward_test": {"type": "boolean"},
@@ -857,12 +880,14 @@ async def threshold_recommendation(stats: Mapping[str, Any]) -> dict[str, Any]:
     return await _structured_response(
         task="signalrank_threshold_recommendation",
         system=(
-            "Review aggregate model/trading statistics and propose, but never apply, one ML probability threshold. "
-            "Do not optimize for win rate alone; consider sample size, calibrated probability quality, realized "
-            "expectancy R, profit factor, drawdown, R:R distribution and segment/regime stability. "
-            "The result is an experiment proposal and must require forward testing and owner approval."
+            f"Review aggregate model/trading statistics and propose, but never apply, one raw-model probability "
+            f"threshold between {lower:.4f} and {upper:.4f}. The current promoted-model cutoff is {current:.4f}. "
+            "Do not optimize for win rate alone; consider decisive sample size, calibration quality, model AUC, "
+            "realized expectancy R, gross-R profit factor, drawdown, R:R distribution, rejected-shadow evidence, "
+            "and segment/regime stability. Hold the current threshold when evidence is weak or contradictory. "
+            "The result is an experiment proposal only and must require forward testing and owner approval."
         ),
-        payload=dict(stats or {}),
+        payload=payload,
         schema=schema,
         deep=True,
         max_output_tokens=500,

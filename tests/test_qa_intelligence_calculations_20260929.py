@@ -815,3 +815,53 @@ def test_profile_demand_projects_live_preferences_through_user_tier() -> None:
     assert snapshot.asset_class_counts.get("index", 0) == 1
     assert snapshot.trade_profile_counts.get("scalp", 0) == 0
     assert snapshot.trade_profile_counts.get("position", 0) == 1
+
+
+def test_ai_feedback_profit_factor_and_threshold_use_production_truth() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "worker" / "ai_feedback.py").read_text(encoding="utf-8")
+    assert "SUM(CASE WHEN r_multiple > 0 THEN r_multiple ELSE 0 END)" in source
+    assert "SUM(CASE WHEN r_multiple < 0 THEN r_multiple ELSE 0 END)" in source
+    assert "stats.gross_win_r / stats.gross_loss_r" in source
+    assert "ml_filter.recommended_raw_threshold()" in source
+    assert 'stats.threshold_source = "promoted_model"' in source
+    assert 'stats.current_base_threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.50")' in source
+    assert "float(result[3] or 0.0) / max(0.01, float(result[2] or 0.0) * (total - wins))" not in source
+
+
+def test_ai_threshold_proposals_are_bounded_around_promoted_cutoff(monkeypatch) -> None:
+    from worker import ai_feedback
+
+    monkeypatch.setenv("AI_THRESHOLD_PROPOSAL_MAX_DELTA", "0.05")
+    lower, upper = ai_feedback._proposal_bounds(0.83)
+    assert lower == pytest.approx(0.78)
+    assert upper == pytest.approx(0.88)
+
+
+@pytest.mark.asyncio
+async def test_openai_threshold_schema_uses_runtime_bounds(monkeypatch) -> None:
+    from services import openai_ai
+
+    captured = {}
+
+    async def fake_response(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "data": {"new_threshold": 0.83}}
+
+    monkeypatch.setattr(openai_ai, "_structured_response", fake_response)
+    await openai_ai.threshold_recommendation(
+        {
+            "current_base_threshold": 0.83,
+            "proposal_min": 0.78,
+            "proposal_max": 0.88,
+            "expectancy_r": 0.25,
+            "profit_factor": 1.6,
+            "total_trades": 120,
+        }
+    )
+
+    spec = captured["schema"]["properties"]["new_threshold"]
+    assert spec["minimum"] == pytest.approx(0.78)
+    assert spec["maximum"] == pytest.approx(0.88)
+    assert "gross-R profit factor" in captured["system"]
+    assert "current promoted-model cutoff is 0.8300" in captured["system"]

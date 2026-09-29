@@ -56,7 +56,8 @@ def test_web_profile_and_multi_asset_signal_filters_are_exposed():
     assert 'asset_class: str | None = Query' in source
     assert 'timeframe: str | None = Query' in source
     assert 'strategy: str | None = Query' in source
-    assert '"asset_classes": ["crypto", "fx", "stock", "index", "commodity"]' in source
+    assert 'allowed_classes = {"crypto", "fx", "stock", "index", "commodity"}' in source
+    assert '"asset_classes": list(policy.allowed_asset_classes)' in source
 
 
 def test_web_trading_profile_ui_is_cross_channel_and_responsive():
