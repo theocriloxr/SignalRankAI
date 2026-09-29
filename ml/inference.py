@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover
     psycopg2 = None
 
 from ml.schema_version import (
-    CRITICAL_FEATURES_V3,
+    get_critical_features,
     migrate_feature_payload,
     normalize_model_payload,
     strict_feature_schema_enabled,
@@ -315,7 +315,9 @@ class MLFilter:
                 features if isinstance(features, dict) else {},
                 list(self.feature_cols or []),
                 strict=strict_feature_schema_enabled() and int(self.schema_version or 1) >= 3,
-                critical_features=CRITICAL_FEATURES_V3,
+                critical_features=get_critical_features(
+                    int(self.schema_version or 1)
+                ),
             )
             try:
                 from ml.live_drift import record_live_feature_vector
