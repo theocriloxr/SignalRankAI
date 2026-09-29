@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core.tier_policy import get_entitlements
+from core.tier_policy import TIER_ORDER, get_entitlements
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +23,8 @@ class TierCapabilities:
 
 
 TIER_ALLOWED_ASSETS = {
-    tier: get_entitlements(tier).allowed_asset_classes
-    for tier in ("free", "premium", "vip", "admin", "owner")
+    tier.value.lower(): get_entitlements(tier).allowed_asset_classes
+    for tier in TIER_ORDER
 }
 
 
