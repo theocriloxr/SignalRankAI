@@ -14,6 +14,22 @@ from typing import Any
 from utils.timeutils import now_utc_naive
 
 
+def _candidate_db_priority():
+    from db.priority import DBPriority
+
+    role = str(
+        os.getenv("DB_ROLE")
+        or os.getenv("RUN_MODE")
+        or os.getenv("SERVICE_ROLE")
+        or ""
+    ).strip().lower()
+    return (
+        DBPriority.ANALYTICS
+        if role == "analytics" or role.startswith("analytics-")
+        else DBPriority.BACKGROUND
+    )
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -125,7 +141,7 @@ async def load_active_candidate() -> dict[str, Any] | None:
     from sqlalchemy import desc, select
 
     async with get_session(
-        priority=DBPriority.ANALYTICS,
+        priority=_candidate_db_priority(),
         label="ml_candidate_forward_active_artifact",
         timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
         drop_if_busy=False,
@@ -167,7 +183,7 @@ async def load_active_primary() -> dict[str, Any] | None:
     from sqlalchemy import desc, select
 
     async with get_session(
-        priority=DBPriority.ANALYTICS,
+        priority=_candidate_db_priority(),
         label="ml_candidate_forward_active_primary",
         timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
         drop_if_busy=False,
@@ -226,7 +242,7 @@ async def evaluate_candidate_forward_evidence(
     max_rows = max(100, min(20000, _env_int("ML_CANDIDATE_FORWARD_MAX_ROWS", 5000)))
 
     async with get_session(
-        priority=DBPriority.ANALYTICS,
+        priority=_candidate_db_priority(),
         label="ml_candidate_forward_evidence",
         timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
         drop_if_busy=False,
