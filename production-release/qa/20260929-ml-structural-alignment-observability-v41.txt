@@ -1,0 +1,5 @@
+SignalRankAI production QA release v41.
+Telemetry-only follow-up to v40.
+Adds non-invasive observability comparing the serving ML strategy-score feature with the precomputed structural preview score and records compact post-ML rejection alignment samples.
+Does not alter ML feature vectors, model probabilities, thresholds, approval decisions, Ultra Quality gates, risk rules, delivery policy, live execution, copy trading, payouts, or broker permissions.
+Staging cleanroom certification for the underlying code commit 49997d468a2db91c86f09df1fe76a4a0e8a59a44 passed release provenance and 471 targeted tests.
