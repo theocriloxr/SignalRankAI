@@ -425,6 +425,13 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
     if ml > 1.0:
         ml = ml / 100.0
     score = _f(signal.get("score") or signal.get("score_calibrated") or signal.get("score_final"))
+    recovery_mode = bool(signal.get("ml_recovery_mode"))
+    if recovery_mode:
+        score = max(
+            score,
+            _f(signal.get("ml_recovery_structural_score")),
+            _f(signal.get("_preview_score")),
+        )
     confluence = resolve_confluence_percent(signal)
     tf = str(signal.get("timeframe") or "").lower().strip()
 
@@ -433,10 +440,17 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
     if score >= 94:
         review += 0.35
         reasons.append("strong score")
-    elif score and score < 90:
+    elif score and score < (80.0 if recovery_mode else 90.0):
         review -= 0.45
-        reasons.append("score below elite band")
-    if ml >= 0.72:
+        reasons.append("score below quality band")
+    if recovery_mode:
+        # Recovery is PAPER-ONLY and is already bounded by the certified
+        # champion threshold, raw/calibrated floors, challenger evidence, RR,
+        # expected-R and execution hard blocks. Penalising it again merely
+        # because its ML probability is below the certified threshold makes
+        # the fallback self-contradictory.
+        reasons.append("paper recovery observation")
+    elif ml >= 0.72:
         review += 0.35
         reasons.append("ML confirms")
     elif ml and ml < 0.62:
@@ -470,7 +484,13 @@ def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]
 
     review = max(1.0, min(10.0, review))
     reason = "local_ai:" + ", ".join(reasons[:4] or ["quality checks passed"])
-    return review >= _env_float("QUALITY_MIN_LOCAL_AI_SCORE", 8.0), review, reason
+    min_local_review = _env_float("QUALITY_MIN_LOCAL_AI_SCORE", 8.0)
+    if recovery_mode:
+        min_local_review = min(
+            min_local_review,
+            _env_float("ML_STARVATION_RECOVERY_MIN_LOCAL_AI_SCORE", 7.5),
+        )
+    return review >= min_local_review, review, reason
 
 
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
@@ -1087,13 +1107,23 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     timeframe = str(signal.get("timeframe") or "").strip().lower()
     direction = str(signal.get("direction") or "").strip().lower()
 
+    # Score is one component of quality, not a second ML gate. The prior
+    # 88-90 defaults contradicted the canonical delivery policy (80 by
+    # default) and routinely rejected candidates that had already cleared the
+    # certified ML threshold plus independent RR/confluence/regime/AI gates.
+    # Keep explicit QUALITY_MIN_SCORE_<CLASS> overrides authoritative, but
+    # otherwise inherit the single canonical objective quality floor.
+    canonical_delivery_score_floor = max(
+        _current_min_score_threshold(),
+        _env_float("SIGNAL_DELIVERY_QUALITY_FLOOR", 80.0),
+    )
     min_score_defaults = {
-        "fx": 90.0,
-        "crypto": 90.0,
-        "stock": 88.0,
-        "index": 90.0,
-        "commodity": 90.0,
-        "other": 90.0,
+        "fx": canonical_delivery_score_floor,
+        "crypto": canonical_delivery_score_floor,
+        "stock": canonical_delivery_score_floor,
+        "index": canonical_delivery_score_floor,
+        "commodity": canonical_delivery_score_floor,
+        "other": canonical_delivery_score_floor,
     }
     min_rr_defaults = {
         "fx": 2.20,
