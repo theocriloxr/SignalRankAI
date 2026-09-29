@@ -2114,6 +2114,57 @@ async def main(lookback_days: int | None = None):
     run_id = f"ml-{now_utc_naive().strftime('%Y%m%d%H%M%S')}"
     logger.info("[ml_training_run] id=%s status=starting", run_id)
 
+    # Production retraining is challenger-first. Preserve an active challenger
+    # while it is still accumulating live-forward proof instead of replacing it
+    # on every scheduled training run.
+    if (
+        _is_production_runtime()
+        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
+    ):
+        try:
+            from ml.candidate_forward import (
+                evaluate_candidate_forward_evidence,
+                load_active_candidate,
+            )
+
+            active_candidate = await load_active_candidate()
+            if (
+                active_candidate
+                and int(active_candidate.get("schema_version") or 1)
+                == int(CURRENT_SCHEMA_VERSION)
+            ):
+                forward = await evaluate_candidate_forward_evidence(
+                    active_candidate
+                )
+                if str(forward.get("status") or "") in {
+                    "collecting",
+                    "eligible",
+                }:
+                    logger.info(
+                        "[ml_training_run] id=%s status=skipped "
+                        "reason=active_candidate_forward_proof_%s "
+                        "candidate=%s observations=%s resolved=%s "
+                        "primary_model_preserved=true",
+                        run_id,
+                        forward.get("status"),
+                        str(
+                            active_candidate.get(
+                                "artifact_hash_sha256"
+                            )
+                            or ""
+                        )[:12],
+                        forward.get("observations"),
+                        forward.get("resolved"),
+                    )
+                    return True
+        except Exception as candidate_guard_error:
+            logger.warning(
+                "[ml_training_run] id=%s candidate forward guard unavailable "
+                "error=%s; continuing with offline candidate training",
+                run_id,
+                type(candidate_guard_error).__name__,
+            )
+
     if lookback_days is None:
         try:
             lookback_days = int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90)
@@ -2369,6 +2420,30 @@ async def main(lookback_days: int | None = None):
                 champion_comparison,
             )
 
+    candidate_forward_gate = {
+        "required": False,
+        "reason": "not_required",
+    }
+    if (
+        promotion_eligible
+        and deployed_runtime
+        and bool(parent_model_hash_sha256)
+        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
+    ):
+        promotion_eligible = False
+        candidate_forward_gate = {
+            "required": True,
+            "reason": "production_candidate_first",
+            "parent_model_hash_sha256": parent_model_hash_sha256,
+        }
+        logger.warning(
+            "[ml_training_run] id=%s status=candidate_only "
+            "reason=production_candidate_first parent=%s "
+            "primary_model_preserved=true",
+            run_id,
+            parent_model_hash_sha256[:12],
+        )
+
     feature_baseline = _feature_distribution_baseline(
         X_train,
         feature_cols,
@@ -2395,6 +2470,7 @@ async def main(lookback_days: int | None = None):
         "promotion_eligible": bool(promotion_eligible),
         "schema_promotion": schema_promotion,
         "champion_comparison": champion_comparison,
+        "candidate_forward_gate": candidate_forward_gate,
     }
     candidate_path = Path(
         str(
