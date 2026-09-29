@@ -136,11 +136,27 @@ def calculate_rr_ladder(signal: Dict) -> Dict[str, Any]:
 
 
 def calculate_risk_reward(signal: Dict) -> Optional[float]:
-    """Compatibility R:R value: TP1 R:R from canonical geometry."""
+    """Compatibility R:R value, preferring executable geometry over cached metadata."""
     ladder = calculate_rr_ladder(signal)
     tp1 = ladder.get("tp1_rr")
     if tp1 is not None:
         return float(tp1)
+
+    # When executable geometry is present but invalid, never resurrect a stale
+    # precomputed rr_ratio/rr_estimate. That would make web/Telegram disagree
+    # with the actual entry/stop/target shown to the user.
+    geometry_present = bool(
+        signal.get("entry") is not None
+        and (signal.get("stop_loss") is not None or signal.get("stop") is not None)
+        and (
+            signal.get("take_profit") is not None
+            or signal.get("targets") is not None
+            or signal.get("tp_levels") is not None
+        )
+    )
+    if geometry_present:
+        return None
+
     for key in ("rr_ratio", "rr_estimate"):
         try:
             value = float(signal.get(key))
@@ -164,25 +180,28 @@ def calculate_position_size(signal: Dict, account_balance: float = 10000, risk_p
         Position size in asset units
     """
     try:
-        entry = float(signal.get('entry', 0))
-        stop_loss = float(signal.get('stop_loss', 0))
-        
-        if entry <= 0 or stop_loss <= 0:
+        entry = float(signal.get("entry", 0) or 0)
+        stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
+        balance = float(account_balance)
+        risk_percent = float(risk_pct)
+        direction = _normalize_direction(signal.get("direction"))
+
+        if entry <= 0 or stop_loss <= 0 or balance <= 0 or risk_percent <= 0 or direction is None:
             return None
-        
-        # Calculate risk per unit
+        if direction == "long" and stop_loss >= entry:
+            return None
+        if direction == "short" and stop_loss <= entry:
+            return None
+
         risk_per_unit = abs(entry - stop_loss)
-        
         if risk_per_unit <= 0:
             return None
-        
-        # Total risk amount
-        risk_amount = account_balance * (risk_pct / 100)
-        
-        # Position size
+
+        # This is deliberately asset-units, not lots/contracts. Broker-specific
+        # sizing must convert this through its own contract-size/tick-value rules.
+        risk_amount = balance * (risk_percent / 100.0)
         position_size = risk_amount / risk_per_unit
-        
-        return position_size
+        return position_size if position_size > 0 else None
     
     except Exception as e:
         logger.debug(f"Failed to calculate position size: {e}")
@@ -212,20 +231,20 @@ def calculate_pips(asset: str, entry: float, exit_price: float) -> Optional[floa
 def calculate_signal_age_minutes(signal: Dict) -> Optional[int]:
     """Calculate signal age in minutes from created_at timestamp."""
     try:
-        from datetime import datetime
-        
-        created_at = signal.get('created_at')
+        from datetime import datetime, timezone
+
+        created_at = signal.get("created_at")
         if not created_at:
             return None
         
         # Handle both datetime objects and string timestamps
         if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            if created_at.tzinfo is not None:
-                created_at = created_at.replace(tzinfo=None)
-        
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if created_at.tzinfo is not None:
+            created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+
         age = now_utc_naive() - created_at
-        return int(age.total_seconds() / 60)
+        return max(0, int(age.total_seconds() / 60))
     
     except Exception as e:
         logger.debug(f"Failed to calculate signal age: {e}")
@@ -248,12 +267,12 @@ def get_price_status_indicator(signal: Dict) -> str:
             return "ℹ️"
         
         current_price = float(current_price)
-        
-        # Calculate drift
-        drift_pct = abs(current_price - entry) / entry
-        
-        # Check if price is moving in favor
-        if direction == 'long':
+        normalized = _normalize_direction(direction)
+        if normalized is None:
+            return "ℹ️"
+
+        # Entry-drift indicator only; this is not a prediction of market quality.
+        if normalized == "long":
             if current_price < entry * 0.995:  # More than 0.5% below entry
                 return "✅"  # Good entry opportunity
             elif current_price > entry * 1.005:  # More than 0.5% above entry
