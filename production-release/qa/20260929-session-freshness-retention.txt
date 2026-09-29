@@ -1,0 +1,4 @@
+SignalRankAI production QA release.
+Staggers learning-history retention away from startup, preserves postgres_cache provenance, and makes stock/index candle freshness cash-session-reopen-aware only until the first requested timeframe bar can complete. Strict freshness resumes after that bounded window.
+Includes prior starvation-summary persistence and AI score normalization.
+No certified ML, score, confluence, live execution, payout or copy-trade threshold is weakened.
