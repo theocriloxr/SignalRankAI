@@ -3128,6 +3128,10 @@ def main_loop(DRY_RUN: bool = False):
                 "ml_raw_probability_max": None,
                 "ml_calibrated_probability_max": None,
                 "ml_threshold_raw": None,
+                "ml_alignment_samples": 0,
+                "ml_alignment_abs_gap_max": 0.0,
+                "ml_alignment_approved": 0,
+                "ml_alignment_approved_preview_below_85": 0,
                 "final_signals": 0,
                 "stored": 0,
                 "no_candles": 0,
@@ -3733,6 +3737,67 @@ def main_loop(DRY_RUN: bool = False):
                                     "last_raw_probability",
                                     None,
                                 )
+
+                                # Observe train/serve score semantics without changing
+                                # the serving feature vector or any approval decision.
+                                # Historical training rows use canonical persisted
+                                # score, while live pre-ML candidates may still expose
+                                # a strategy-local score plus the engine's structural
+                                # composite in _preview_score. Keep both values so the
+                                # overlap with downstream Ultra Quality can be measured
+                                # before any feature-contract migration is attempted.
+                                try:
+                                    _ml_strategy_score = float(
+                                        features.get("score_normalized", 0.0)
+                                    ) * 100.0
+                                    _ml_preview_score = float(
+                                        sig.get("_preview_score")
+                                        if sig.get("_preview_score") is not None
+                                        else 0.0
+                                    )
+                                    _ml_score_gap = _ml_preview_score - _ml_strategy_score
+                                    sig["ml_feature_strategy_score"] = round(
+                                        _ml_strategy_score, 4
+                                    )
+                                    sig["ml_feature_preview_score"] = round(
+                                        _ml_preview_score, 4
+                                    )
+                                    sig["ml_feature_score_gap"] = round(
+                                        _ml_score_gap, 4
+                                    )
+                                    sig["ml_feature_score_semantics_version"] = (
+                                        "strategy-vs-structural-observe-v1"
+                                    )
+                                    pipeline_stats["ml_alignment_samples"] = int(
+                                        pipeline_stats.get("ml_alignment_samples") or 0
+                                    ) + 1
+                                    pipeline_stats["ml_alignment_abs_gap_max"] = max(
+                                        float(
+                                            pipeline_stats.get(
+                                                "ml_alignment_abs_gap_max"
+                                            )
+                                            or 0.0
+                                        ),
+                                        abs(float(_ml_score_gap)),
+                                    )
+                                    if approved:
+                                        pipeline_stats["ml_alignment_approved"] = int(
+                                            pipeline_stats.get(
+                                                "ml_alignment_approved"
+                                            )
+                                            or 0
+                                        ) + 1
+                                        if _ml_preview_score < 85.0:
+                                            pipeline_stats[
+                                                "ml_alignment_approved_preview_below_85"
+                                            ] = int(
+                                                pipeline_stats.get(
+                                                    "ml_alignment_approved_preview_below_85"
+                                                )
+                                                or 0
+                                            ) + 1
+                                except Exception:
+                                    pass
                                 if raw_prob is not None:
                                     try:
                                         current_raw_max = pipeline_stats.get(
@@ -4797,14 +4862,33 @@ def main_loop(DRY_RUN: bool = False):
                                     or "post_ml_unclassified"
                                 )[:180]
                                 post_ml_reasons[f"{_post_ml_stage}:{_post_ml_reason}"] += 1
+                        alignment_samples = [
+                            {
+                                "strategy_score": _post_ml_sig.get(
+                                    "ml_feature_strategy_score"
+                                ),
+                                "preview_score": _post_ml_sig.get(
+                                    "ml_feature_preview_score"
+                                ),
+                                "gap": _post_ml_sig.get("ml_feature_score_gap"),
+                                "raw": _post_ml_sig.get("ml_probability_raw"),
+                                "calibrated": _post_ml_sig.get("ml_probability"),
+                                "stage": _post_ml_sig.get(
+                                    "post_ml_rejection_stage"
+                                ),
+                            }
+                            for _post_ml_sig in risk_passed[:3]
+                        ]
                         logger.warning(
                             "[engine_post_ml_funnel] asset=%s cycle=%s ml_passed=%s "
-                            "recovery_candidates=%s final_signals=0 reasons=%s",
+                            "recovery_candidates=%s final_signals=0 reasons=%s "
+                            "alignment=%s",
                             asset,
                             cycle_no,
                             len(risk_passed),
                             recovery_candidates,
                             dict(post_ml_reasons.most_common(8)),
+                            alignment_samples,
                         )
                         pipeline_stats["post_ml_rejected"] = int(
                             pipeline_stats.get("post_ml_rejected") or 0

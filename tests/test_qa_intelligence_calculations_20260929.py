@@ -893,3 +893,21 @@ def test_operator_recovery_profile_bypass_is_wired_in_engine_and_resend() -> Non
     assert "if user_trade_prefs is not None and not _operator_recovery:" in engine
     assert "operator_recovery_observation(" in bot
     assert "[resend] operator recovery profile bypass" in bot
+
+def test_ml_score_alignment_observability_is_non_invasive() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    section = engine[
+        engine.index("# ML advisory (non-blocking)"):
+        engine.index("# Scoring and advanced filters")
+    ]
+
+    assert section.count(".ml_filter(") == 1
+    assert 'features.get("score_normalized", 0.0)' in section
+    assert 'sig.get("_preview_score")' in section
+    assert '"strategy-vs-structural-observe-v1"' in section
+    assert 'pipeline_stats["ml_alignment_samples"]' in section
+    assert 'pipeline_stats["ml_alignment_approved"]' in section
+    assert 'features["score_normalized"] =' not in section
+    assert "alignment=%s" in engine
+
