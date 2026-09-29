@@ -1,0 +1,7 @@
+SignalRankAI production QA release v42.
+Runtime base: 20fb1c67155a8f7ff8cc4eb706106e49aaa23c24 plus staging certification marker 45253ffa0bf03ceebf9a0277ef7f7fd28897f014.
+Cleanroom: compile PASS; Alembic 0045 release chain PASS; schema audit PASS; release provenance PASS; 491 targeted tests PASS including v4 feature-contract and candidate-forward-proof governance.
+Full release-image build: 543 tests PASS; release provenance PASS; production readiness overall PASS (12/12).
+Production behavior guard: serving champion remains existing v3 artifact; v4 is challenger-only; schema auto-promotion disabled; candidate auto-promotion disabled; scheduled ML training remains frozen for initial cutover.
+This release introduces challenger-first retraining, outcome-trackable nonblocking shadow observations, forward-proof promotion gates, owner-confirmed promotion, stale-parent/lineage/calibration/offline-quality checks, and aligned ADX train/serve semantics.
+No live-money activation, execution, payout, or copy-trading permissions are enabled by this release.
