@@ -1,0 +1,8 @@
+SignalRankAI production QA release v44.
+Runtime base: 163b11d2f1c26e28cb1a4156252c2b875c9c6b0f plus staging certification marker 9e7078a1c26b8ab1c547f989fd0c03b4e272d255.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 499 targeted tests PASS.
+Full release-image build: 551 tests PASS; release provenance PASS; production readiness 12/12 PASS; runtime-safe marker PASS.
+Candidate governance: evidence-bearing challengers are leased while collecting forward proof or awaiting owner promotion; failed/expired/stale-parent candidates remain replaceable; lease evaluation fails closed.
+Schema governance: schema-v4 challengers collect forward evidence under the same lease while schema promotion remains separately authorization/certification gated.
+Production cutover keeps the current champion unchanged and ML training disabled until post-deploy verification completes.
+No live-money activation, auto execution, copy trading, payouts, or automatic model promotion is enabled.
