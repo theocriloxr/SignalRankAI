@@ -131,7 +131,7 @@ async def _resend_unsent_signals_async():
             record_signal_delivery,
             mark_signal_delivery_result,
         )
-        from signalrank_telegram.tier_delivery import TierDeliveryManager
+        from signalrank_telegram.tier_delivery import TierDeliveryManager, operator_recovery_observation
         from db.access import resolve_product_tier
         from .formatter import format_signal, signal_format_diagnostics
         from services.trade_profiles import infer_trade_profile
@@ -657,39 +657,54 @@ async def _resend_unsent_signals_async():
                             continue
 
                         delivery_sig_dict = dict(sig_dict or {})
-                        try:
-                            prefs = user_prefs_cache.get(int(user_id))
-                            if prefs is None:
-                                async with get_session(
-                                    priority="background", label="resend.user_preferences", timeout_seconds=2.0
-                                ) as _pref_session:
-                                    prefs = await get_user_trading_preferences(
-                                        _pref_session,
-                                        int(user_id),
-                                    )
-                                user_prefs_cache[int(user_id)] = prefs
-                            pref_ok, pref_reason = signal_matches_preferences(sig_dict, prefs)
-                            if not pref_ok:
-                                skipped_profile_count += 1
-                                logger.info(
-                                    "[resend] profile skip user=%s profile=%s signal=%s asset=%s tf=%s signal_profile=%s reason=%s",
-                                    user_id,
-                                    getattr(prefs, "trade_profile", "all"),
-                                    signal_id,
-                                    sig_dict.get("asset"),
-                                    sig_dict.get("timeframe"),
-                                    infer_trade_profile(sig_dict),
-                                    pref_reason,
-                                )
-                                continue
-                            delivery_sig_dict = personalize_signal_for_preferences(sig_dict, prefs)
-                        except Exception as _profile_err:
-                            logger.debug(
-                                "[resend] profile filter failed user=%s signal=%s err=%s",
+                        _operator_recovery = operator_recovery_observation(
+                            sig_dict,
+                            gate_tier,
+                            telegram_user_id=int(user_id),
+                        )
+                        if _operator_recovery:
+                            logger.info(
+                                "[resend] operator recovery profile bypass user=%s tier=%s signal=%s asset=%s tf=%s",
                                 user_id,
+                                gate_tier,
                                 signal_id,
-                                _profile_err,
+                                sig_dict.get("asset"),
+                                sig_dict.get("timeframe"),
                             )
+                        else:
+                            try:
+                                prefs = user_prefs_cache.get(int(user_id))
+                                if prefs is None:
+                                    async with get_session(
+                                        priority="background", label="resend.user_preferences", timeout_seconds=2.0
+                                    ) as _pref_session:
+                                        prefs = await get_user_trading_preferences(
+                                            _pref_session,
+                                            int(user_id),
+                                        )
+                                    user_prefs_cache[int(user_id)] = prefs
+                                pref_ok, pref_reason = signal_matches_preferences(sig_dict, prefs)
+                                if not pref_ok:
+                                    skipped_profile_count += 1
+                                    logger.info(
+                                        "[resend] profile skip user=%s profile=%s signal=%s asset=%s tf=%s signal_profile=%s reason=%s",
+                                        user_id,
+                                        getattr(prefs, "trade_profile", "all"),
+                                        signal_id,
+                                        sig_dict.get("asset"),
+                                        sig_dict.get("timeframe"),
+                                        infer_trade_profile(sig_dict),
+                                        pref_reason,
+                                    )
+                                    continue
+                                delivery_sig_dict = personalize_signal_for_preferences(sig_dict, prefs)
+                            except Exception as _profile_err:
+                                logger.debug(
+                                    "[resend] profile filter failed user=%s signal=%s err=%s",
+                                    user_id,
+                                    signal_id,
+                                    _profile_err,
+                                )
 
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
@@ -4500,11 +4515,16 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     tier = (tier_raw or 'FREE').strip().lower()
     routing_tier = _normalized_delivery_tier(tier)
     try:
-        from signalrank_telegram.tier_delivery import TierDeliveryManager, recovery_delivery_allowed
+        from signalrank_telegram.tier_delivery import (
+            TierDeliveryManager,
+            operator_recovery_observation,
+            recovery_delivery_allowed,
+        )
         delivery_mgr = TierDeliveryManager()
     except Exception:
         delivery_mgr = None
         recovery_delivery_allowed = None
+        operator_recovery_observation = None
 
     # Free users with paid extra-signal quota receive highest scoring signal
     extra_left = 0
@@ -4568,6 +4588,16 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         if assets or timeframes or strategies:
             filtered = []
             for sig in signals_list:
+                if (
+                    operator_recovery_observation is not None
+                    and operator_recovery_observation(
+                        sig,
+                        routing_tier,
+                        telegram_user_id=int(user_id),
+                    )
+                ):
+                    filtered.append(sig)
+                    continue
                 asset_ok = True
                 tf_ok = True
                 strat_ok = True
@@ -4646,6 +4676,16 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             before_profile_count = len(signals_list)
             _filtered_signals = []
             for sig in signals_list:
+                if (
+                    operator_recovery_observation is not None
+                    and operator_recovery_observation(
+                        sig,
+                        routing_tier,
+                        telegram_user_id=int(user_id),
+                    )
+                ):
+                    _filtered_signals.append(sig)
+                    continue
                 ok, reason = signal_matches_preferences(sig, _prefs)
                 if ok:
                     _filtered_signals.append(sig)

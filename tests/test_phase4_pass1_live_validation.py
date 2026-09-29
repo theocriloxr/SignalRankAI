@@ -81,3 +81,36 @@ def test_rich_message_builder_uses_table_and_details():
     assert "<table>" in html
     assert "<details>" in html
     assert "TP1" in html
+
+
+def test_operator_recovery_uses_bounded_queue_floor(monkeypatch):
+    from engine.delivery_freshness import evaluate_time_to_telegraph
+
+    monkeypatch.setenv("DELIVERY_TIME_TO_TELEGRAPH_ENABLED", "1")
+    monkeypatch.setenv("DELIVERY_QUEUE_MAX_AGE_1M_SECONDS", "20")
+    monkeypatch.delenv("ML_RECOVERY_QUEUE_MIN_AGE_SECONDS", raising=False)
+    old = datetime.now(timezone.utc) - timedelta(seconds=45)
+
+    normal = evaluate_time_to_telegraph(
+        _signal(
+            asset="AMZN",
+            timeframe="1m",
+            trade_profile="scalp",
+            created_at=old.isoformat(),
+            generated_at=old.isoformat(),
+        )
+    )
+    recovery = evaluate_time_to_telegraph(
+        _signal(
+            asset="AMZN",
+            timeframe="1m",
+            trade_profile="scalp",
+            ml_recovery_mode=True,
+            created_at=old.isoformat(),
+            generated_at=old.isoformat(),
+        )
+    )
+
+    assert normal.ok is False
+    assert recovery.ok is True
+    assert recovery.max_queue_age_seconds == 60.0

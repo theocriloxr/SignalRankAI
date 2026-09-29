@@ -865,3 +865,29 @@ async def test_openai_threshold_schema_uses_runtime_bounds(monkeypatch) -> None:
     assert spec["maximum"] == pytest.approx(0.88)
     assert "gross-R profit factor" in captured["system"]
     assert "current promoted-model cutoff is 0.8300" in captured["system"]
+
+
+def test_operator_recovery_observation_bypasses_personal_profile_only_for_operators(monkeypatch) -> None:
+    import signalrank_telegram.tier_delivery as delivery
+
+    signal = {"ml_recovery_mode": True, "asset": "AMZN", "timeframe": "1m"}
+    monkeypatch.setattr("config.OWNER_IDS", {12345}, raising=False)
+    monkeypatch.setattr("config.ADMIN_IDS", {54321}, raising=False)
+
+    assert delivery.operator_recovery_observation(signal, "owner", 999) is True
+    assert delivery.operator_recovery_observation(signal, "admin", 999) is True
+    assert delivery.operator_recovery_observation(signal, "free", 12345) is True
+    assert delivery.operator_recovery_observation(signal, "free", 54321) is True
+    assert delivery.operator_recovery_observation(signal, "free", 11111) is False
+    assert delivery.operator_recovery_observation({"ml_recovery_mode": False}, "owner", 999) is False
+
+
+def test_operator_recovery_profile_bypass_is_wired_in_engine_and_resend() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    bot = (root / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+
+    assert "operator_recovery_observation as _operator_recovery_observation" in engine
+    assert "[engine] operator recovery profile bypass" in engine
+    assert "operator_recovery_observation(" in bot
+    assert "[resend] operator recovery profile bypass" in bot

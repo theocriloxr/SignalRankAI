@@ -259,6 +259,18 @@ def _time_to_telegraph_budget_seconds(signal: dict[str, Any], symbol: str) -> fl
     if tf in tf_env:
         default_by_tf = {"1m": 20.0, "3m": 45.0, "5m": 90.0, "15m": 180.0}.get(tf, budget)
         budget = min(budget, _env_float(tf_env[tf], default_by_tf))
+
+    # PAPER/QA recovery signals exist so operators can observe near-threshold
+    # model behaviour. They still pass final live-quote, market-hours, geometry,
+    # RR, opportunity-decay and drift validation before Telegram send.
+    if bool(signal.get("ml_recovery_mode")):
+        recovery_floor = _env_float(
+            "ML_RECOVERY_QUEUE_MIN_AGE_SECONDS",
+            60.0,
+            minimum=20.0,
+            maximum=300.0,
+        )
+        budget = max(float(budget), float(recovery_floor))
     return max(1.0, float(budget))
 
 

@@ -5929,9 +5929,22 @@ def main_loop(DRY_RUN: bool = False):
                                 # delivery even when live price validation is unavailable.
 
                             # Match the candidate to the user's trader profile before calling
-                            # Telegram dispatch. Dispatch applies the same filter again as a
-                            # final guard, but doing it here keeps delivery counters truthful.
-                            if user_trade_prefs is not None:
+                            # Telegram dispatch. PAPER/QA ML-recovery observations are an
+                            # operator diagnostic stream, so an actual OWNER/ADMIN recipient
+                            # must not lose that evidence merely because their personal
+                            # day/swing/scalp profile excludes the candidate timeframe.
+                            _operator_recovery = False
+                            try:
+                                from signalrank_telegram.tier_delivery import operator_recovery_observation as _operator_recovery_observation
+                                _operator_recovery = _operator_recovery_observation(
+                                    sig,
+                                    user_tier,
+                                    telegram_user_id=int(user_id),
+                                )
+                            except Exception:
+                                _operator_recovery = False
+
+                            if user_trade_prefs is not None and not _operator_recovery:
                                 try:
                                     from services.trade_profiles import infer_trade_profile as _infer_trade_profile
                                     from services.user_intelligence import signal_matches_preferences as _signal_matches_preferences
@@ -5965,6 +5978,22 @@ def main_loop(DRY_RUN: bool = False):
                                     ):
                                         _delivery_skip("profile_filter_error")
                                         continue
+
+                            if _operator_recovery:
+                                sig["delivery_profile_verified"] = True
+                                sig["delivery_user_profile"] = "operator_recovery"
+                                sig["delivery_risk_profile"] = str(
+                                    getattr(user_trade_prefs, "risk_profile", "balanced")
+                                    if user_trade_prefs is not None else "balanced"
+                                )
+                                sig["delivery_execution_mode"] = "paper"
+                                logger.info(
+                                    "[engine] operator recovery profile bypass user=%s tier=%s asset=%s tf=%s",
+                                    user_id,
+                                    user_tier,
+                                    sig.get("asset"),
+                                    sig.get("timeframe"),
+                                )
 
                             # Robust eligibility check with logging
                             try:
