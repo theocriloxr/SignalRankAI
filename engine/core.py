@@ -1230,8 +1230,34 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
     if gemini_score > 0 and gemini_score < min_ai_score:
         return False, f"quality_ai {gemini_score:.1f} < {min_ai_score:.1f} ({asset_class})"
-    if adx > 0 and adx < min_adx:
-        return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
+    try:
+        range_friendly = bool(advanced_filters.is_range_friendly_signal(signal))
+    except Exception:
+        range_friendly = False
+    signal["quality_regime_mode"] = "range" if range_friendly else "trend"
+
+    if adx > 0:
+        if range_friendly:
+            range_max_adx_defaults = {
+                "fx": 28.0,
+                "crypto": 30.0,
+                "stock": 30.0,
+                "index": 28.0,
+                "commodity": 28.0,
+                "other": 30.0,
+            }
+            max_range_adx = _env_float_for_class(
+                "QUALITY_RANGE_MAX_ADX",
+                asset_class,
+                range_max_adx_defaults.get(asset_class, 30.0),
+            )
+            if adx > max_range_adx:
+                return False, (
+                    f"quality_range_adx {adx:.1f} > {max_range_adx:.1f} "
+                    f"({asset_class})"
+                )
+        elif adx < min_adx:
+            return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
 
     if asset_class == "fx":
         allowed_fx_tfs = {
@@ -4122,7 +4148,23 @@ def main_loop(DRY_RUN: bool = False):
                                 else:
                                     _increment_engine_veto("microstructure")
                                     _post_ml_reject(sig, "advanced_filters", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
+                                    _log_decision(
+                                        "skipped",
+                                        sig,
+                                        reason=sig['rejection_reason'],
+                                        meta={
+                                            "advanced_filter_rejections": list(rejections or []),
+                                            "strategy_name": sig.get("strategy_name"),
+                                            "strategy_group": sig.get("strategy_group"),
+                                            "range_friendly_strategy": bool(
+                                                advanced_filters.is_range_friendly_signal(sig)
+                                            ),
+                                            "regime": sig.get("regime"),
+                                            "adx": sig.get("adx"),
+                                            "atr": sig.get("atr"),
+                                            "atr_rel": sig.get("atr_rel"),
+                                        },
+                                    )
                                     continue
 
                             # calculate stops / tps if missing (ATR-based fallback)
@@ -4394,7 +4436,26 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 sig.setdefault('session', 'UNKNOWN')
 
-                            if _env_bool('ULTRA_QUALITY_ENABLED', False):
+                            _range_friendly_strategy = False
+                            try:
+                                _range_friendly_strategy = bool(
+                                    advanced_filters.is_range_friendly_signal(sig)
+                                )
+                            except Exception:
+                                _range_friendly_strategy = False
+
+                            if _env_bool('ULTRA_QUALITY_ENABLED', False) and _range_friendly_strategy:
+                                # UltraQualityFilter is intentionally trend-only
+                                # (TRENDING + ADX floor). Applying it to explicit
+                                # range/reversion/stat-arb strategies is a regime
+                                # contradiction, not added safety. Those setups
+                                # remain subject to canonical score, geometry,
+                                # R:R, confluence, ML, AI, freshness, segment and
+                                # range-ADX quality gates below.
+                                sig["ultra_quality_scope"] = "not_applicable_range_strategy"
+                                sig["ultra_quality_score"] = None
+                            elif _env_bool('ULTRA_QUALITY_ENABLED', False):
+                                sig["ultra_quality_scope"] = "trend_quality"
                                 should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
                                 sig["ultra_quality_score"] = float(qscore or 0.0)
                                 if not should_trade:
