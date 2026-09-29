@@ -264,13 +264,9 @@ def _time_to_telegraph_budget_seconds(signal: dict[str, Any], symbol: str) -> fl
     # model behaviour. They still pass final live-quote, market-hours, geometry,
     # RR, opportunity-decay and drift validation before Telegram send.
     if bool(signal.get("ml_recovery_mode")):
-        recovery_floor = _env_float(
-            "ML_RECOVERY_QUEUE_MIN_AGE_SECONDS",
-            60.0,
-            minimum=20.0,
-            maximum=300.0,
-        )
-        budget = max(float(budget), float(recovery_floor))
+        recovery_floor = _env_float("ML_RECOVERY_QUEUE_MIN_AGE_SECONDS", 60.0)
+        recovery_floor = max(20.0, min(300.0, float(recovery_floor)))
+        budget = max(float(budget), recovery_floor)
     return max(1.0, float(budget))
 
 
