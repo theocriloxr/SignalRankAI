@@ -484,3 +484,74 @@ def test_catalogue_symbols_do_not_invent_usd_suffixes() -> None:
     assert _catalogue_symbols(instrument("commodity", "XAU", "USD", "XAUUSD")) == ("XAUUSD", "XAU/USD")
     assert _catalogue_symbols(instrument("forex", "EUR", "USD", "EURUSD")) == ("EURUSD", "EUR/USD")
     assert _catalogue_symbols(instrument("crypto", "BTC", "USDT", "BTCUSDT")) == ("BTCUSDT", "BTC/USDT")
+
+
+@pytest.mark.asyncio
+async def test_historical_context_exposes_wilson_uncertainty(monkeypatch) -> None:
+    import engine.expectancy_gate as expectancy
+
+    class Result:
+        def first(self):
+            return (100, 70, 30, 0.55, 1.4, -0.85, 98.0, -25.5)
+
+    class Session:
+        async def execute(self, query):
+            return Result()
+        async def rollback(self):
+            return None
+
+    class Ctx:
+        async def __aenter__(self):
+            return Session()
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(expectancy, "get_session", lambda **kwargs: Ctx())
+    expectancy.clear_expectancy_cache()
+    result = await expectancy.get_live_performance_context(
+        "EURUSD",
+        strategy="breakout",
+        timeframe="15m",
+        lookback_hours=720,
+    )
+
+    assert result["decisive_samples"] == 100
+    assert result["win_rate"] == pytest.approx(0.70)
+    assert result["win_rate_lower_95"] == pytest.approx(0.60415, rel=1e-3)
+    assert result["win_rate_upper_95"] == pytest.approx(0.78105, rel=1e-3)
+    assert result["win_rate_lower_95"] < result["win_rate"] < result["win_rate_upper_95"]
+
+
+def test_opportunity_and_breakdown_prefer_historical_lower_bound() -> None:
+    from services.opportunity_engine import score_opportunity
+    from services.trading_intelligence import _score_breakdown
+
+    signal = {
+        "asset": "EURUSD",
+        "score": 90,
+        "ml_probability": 0.9,
+        "historical_win_rate": 82.0,
+        "historical_win_rate_lower_95": 61.0,
+        "asset_health_score": 80,
+        "rr_ratio": 2.0,
+        "time_to_target_score": 80,
+        "mtf_alignment_score": 80,
+    }
+    opportunity = score_opportunity(signal)
+    breakdown = _score_breakdown(signal)
+    assert opportunity.components["historical"] == pytest.approx(61.0)
+    assert breakdown["historical"] == pytest.approx(61.0)
+
+
+def test_ai_context_includes_historical_uncertainty_bounds() -> None:
+    root = Path(__file__).resolve().parents[1]
+    openai = (root / "services" / "openai_ai.py").read_text(encoding="utf-8")
+    gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    for source in (openai, gemini):
+        assert "historical_win_rate_lower_95" in source
+        assert "historical_win_rate_upper_95" in source
+        assert "historical_decisive_samples" in source
+    assert 'sig["historical_win_rate_lower_95"]' in engine
+    assert 'sig["historical_win_rate_upper_95"]' in engine
+    assert 'sig["historical_decisive_samples"]' in engine
