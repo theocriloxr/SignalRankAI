@@ -402,7 +402,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "feature_cols": [],
                 "metrics": {},
                 "training_meta": {},
-                "artifact_hash_sha256": ""
+                "artifact_hash_sha256": "",
                 "feature_schema_hash_sha256": "",
                 "schema_version": 1,
                 "training_run_id": "",
@@ -423,7 +423,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "feature_cols": [],
                 "metrics": {},
                 "training_meta": {},
-                "artifact_hash_sha256": ""
+                "artifact_hash_sha256": "",
                 "feature_schema_hash_sha256": "",
                 "schema_version": 1,
                 "training_run_id": "",
@@ -436,6 +436,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         "booster": None,
         "feature_cols": [],
         "metrics": {},
+        "training_meta": {},
         "artifact_hash_sha256": "",
         "feature_schema_hash_sha256": "",
         "schema_version": 1,
