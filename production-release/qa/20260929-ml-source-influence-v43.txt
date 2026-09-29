@@ -1,0 +1,8 @@
+SignalRankAI production QA release v43.
+Runtime base: 684c641c5d092c9ae2ae4e6514d41aad6d8c3e5b plus staging certification marker ef0711c4a59cc902a1228d41d413bc84f3cb85a9.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 494 targeted tests PASS.
+Full release-image build: 546 tests PASS; release provenance PASS; production readiness overall PASS (12/12); runtime-safe marker PASS.
+Production behavior: serving champion remains unchanged; training remains disabled during cutover; candidate auto-promotion remains disabled; schema-version promotion remains disabled.
+Trainer governance: all rejected-shadow rows are retained, but their aggregate effective sample weight is capped relative to proof-backed live_delivery + archive_proof outcomes.
+Master freeze: ANALYTICS_ML_TRAIN_ENABLED now blocks scheduled and drift-triggered training alike.
+No live-money activation, auto execution, copy trading, payouts, or model promotion is enabled by this release.
