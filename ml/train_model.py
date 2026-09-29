@@ -2049,7 +2049,7 @@ def save_model(
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
     from ml.model_registry import compute_feature_schema_hash
     from ml.features import FEATURE_ENCODING_VERSION
-    from ml.schema_version import CURRENT_SCHEMA_VERSION, MODEL_FORMAT_VERSION
+    from ml.schema_version import CURRENT_SCHEMA_VERSION, FEATURE_SCHEMA_VERSION, MODEL_FORMAT_VERSION
     ordered_feature_cols = [str(col).strip() for col in feature_cols]
     feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
@@ -2062,6 +2062,7 @@ def save_model(
         "artifact_hash_sha256": artifact_hash_sha256,
         "feature_schema_hash_sha256": feature_schema_hash_sha256,
         "schema_version": int(CURRENT_SCHEMA_VERSION),
+        "feature_schema_version": str(FEATURE_SCHEMA_VERSION),
         "model_format_version": int(MODEL_FORMAT_VERSION),
         "feature_encoding_version": FEATURE_ENCODING_VERSION,
         "training_run_id": str((training_meta or {}).get("run_id") or ""),
