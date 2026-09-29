@@ -773,6 +773,25 @@ async def load_training_data(lookback_days: int = 90):
                 return -1.0
             return 0.0
 
+        def _adx_from_ohlc(highs, lows, closes):
+            try:
+                from engine.regime_filter import calculate_adx_from_candles
+
+                size = min(len(highs), len(lows), len(closes))
+                if size < 14:
+                    return 0.0
+                candles = [
+                    {
+                        "high": float(highs[idx]),
+                        "low": float(lows[idx]),
+                        "close": float(closes[idx]),
+                    }
+                    for idx in range(size)
+                ]
+                return _safe_float(calculate_adx_from_candles(candles), 0.0)
+            except Exception:
+                return 0.0
+
         async with get_session(**_training_session_kwargs("ml_training_live_outcomes_read")) as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
@@ -852,6 +871,7 @@ async def load_training_data(lookback_days: int = 90):
             if len(vols) >= 21:
                 ma20v = sum(vols[-21:-1]) / 20.0
                 rel_vol = (vols[-1] / ma20v) if ma20v > 0 else 0.0
+            adx_value = _adx_from_ohlc(highs, lows, closes)
 
             candles_4h = await _load_candles(str(getattr(sig, 'asset', '') or ''), '4h', created_at, limit=60)
             closes_4h = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_4h]
@@ -938,6 +958,7 @@ async def load_training_data(lookback_days: int = 90):
                 'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
                 'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
                 'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
+                'adx': float(adx_value),
                 'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
                 'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
                 'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
@@ -1093,6 +1114,9 @@ async def load_training_data(lookback_days: int = 90):
                     'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
                     'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
                     'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
+                    'adx': _safe_float(
+                        meta.get('adx', meta.get('adx_value', meta.get('trend_adx', 0.0)))
+                    ),
                     'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
                     'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
                     'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
@@ -1205,6 +1229,9 @@ async def load_training_data(lookback_days: int = 90):
                         "funding_rate": _safe_float(feat.get("funding_rate", 0.0)),
                         "open_interest_change": _safe_float(feat.get("open_interest_change", 0.0)),
                         "asset_class_enc": _safe_float(feat.get("asset_class_enc", 0.0)),
+                        "adx": _safe_float(
+                            feat.get("adx", feat.get("adx_value", feat.get("trend_adx", 0.0)))
+                        ),
                         "dxy_trend": _safe_float(macro.get("dxy_trend", feat.get("dxy_trend", 0.0))),
                         "vix_trend": _safe_float(macro.get("vix_trend", feat.get("vix_trend", 0.0))),
                         "us10y_trend": _safe_float(macro.get("us10y_trend", feat.get("us10y_trend", 0.0))),
@@ -1301,6 +1328,9 @@ async def load_training_data(lookback_days: int = 90):
                     "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
                     "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
                     "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
+                    "adx": _safe_float(
+                        meta.get("adx", meta.get("adx_value", meta.get("trend_adx", 0.0)))
+                    ),
                     "dxy_trend": _safe_float(meta.get("dxy_trend", 0.0)),
                     "vix_trend": _safe_float(meta.get("vix_trend", 0.0)),
                     "us10y_trend": _safe_float(meta.get("us10y_trend", 0.0)),
@@ -1369,6 +1399,7 @@ def engineer_features(df):
         stable_category_to_int,
         strategy_model_to_int,
     )
+    from ml.schema_version import get_feature_columns
     X['direction_enc'] = X['direction'].fillna('long').map(direction_to_int)
     X['regime_enc'] = X['regime'].fillna('neutral').map(regime_model_to_int)
     X['strategy_enc'] = X['strategy_name'].fillna('unknown').map(strategy_model_to_int)
@@ -1382,6 +1413,17 @@ def engineer_features(df):
     X['risk_amount'] = (X['entry'] - X['stop_loss']).abs() / (X['entry'] + 1e-6)
     X['spread_ratio'] = X['risk_amount'] / (X['price_range'] + 1e-6)
     X['strength_normalized'] = X['strength'] / 100.0 if X['strength'].max() > 1 else X['strength']
+    adx_series = (
+        X['adx']
+        if 'adx' in X.columns
+        else pd.Series(0.0, index=X.index, dtype=float)
+    )
+    X['adx_normalized'] = (
+        pd.to_numeric(adx_series, errors='coerce')
+        .fillna(0.0)
+        .clip(lower=0.0, upper=100.0)
+        / 100.0
+    )
     # FIX: Removed partial_tp_progress_norm - this feature leaks the trade outcome (whether TP was hit)
     # into training data, causing data leakage/lookahead bias and fake 100% accuracy
     # X['partial_tp_progress_norm'] = X['partial_tp_progress'].fillna(0.0) / 3.0
@@ -1398,19 +1440,11 @@ def engineer_features(df):
     X['is_long'] = (X['direction'].str.lower() == 'long').astype(int)
 
 # Feature selection for model
-    # BUG FIX: Removed partial_tp_progress_norm to prevent data leakage (lookahead bias)
-    # This feature tracks whether a trade hit TP, which leaks the outcome into training data
-    feature_cols = [
-        'score_normalized', 'risk_reward_ratio', 'price_range', 'risk_amount',
-        'spread_ratio', 'strength_normalized', 'direction_enc', 'regime_enc',
-        'strategy_enc', 'high_score', 'medium_score', 'is_long', 'asset_class_enc',
-        # 'partial_tp_progress_norm',  # REMOVED - causes data leakage/lookahead bias
-        'price_velocity_3', 'price_velocity_5', 'price_velocity_10',
-        'price_acceleration_3_10', 'velocity_abs_3', 'velocity_abs_10',
-        'atr_rel', 'atr_regime_clamped', 'relative_volume_clamped',
-        'mtf_4h_trend', 'mtf_1d_trend',
-        'funding_rate', 'open_interest_change', 'dxy_trend', 'vix_trend', 'us10y_trend', 'yield_spread', 'minutes_since_high_impact_news', 'minutes_until_high_impact_news', 'news_event_impact_score', 'spx_trend', 'btc_corr',
-    ]
+    # The versioned schema owns feature selection. V4 intentionally excludes
+    # score_normalized/high_score/medium_score because persisted canonical
+    # scores are computed after ML inference and are not semantically available
+    # at the same point during live inference.
+    feature_cols = get_feature_columns()
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
     y_train = X['target'].astype(np.int32)
@@ -2015,7 +2049,7 @@ def save_model(
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
     from ml.model_registry import compute_feature_schema_hash
     from ml.features import FEATURE_ENCODING_VERSION
-    from ml.schema_version import CURRENT_SCHEMA_VERSION, MODEL_FORMAT_VERSION
+    from ml.schema_version import CURRENT_SCHEMA_VERSION, FEATURE_SCHEMA_VERSION, MODEL_FORMAT_VERSION
     ordered_feature_cols = [str(col).strip() for col in feature_cols]
     feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
@@ -2028,6 +2062,7 @@ def save_model(
         "artifact_hash_sha256": artifact_hash_sha256,
         "feature_schema_hash_sha256": feature_schema_hash_sha256,
         "schema_version": int(CURRENT_SCHEMA_VERSION),
+        "feature_schema_version": str(FEATURE_SCHEMA_VERSION),
         "model_format_version": int(MODEL_FORMAT_VERSION),
         "feature_encoding_version": FEATURE_ENCODING_VERSION,
         "training_run_id": str((training_meta or {}).get("run_id") or ""),

@@ -20,10 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.asset_registry import canonicalize_asset
 from core.tier_policy import TIER_ORDER, Tier, get_entitlements
 from data.instrument_discovery import DynamicInstrumentRegistry
-from ml.schema_version import get_feature_columns
+from ml.schema_version import FEATURE_SCHEMA_VERSION as ML_FEATURE_SCHEMA_VERSION, get_feature_columns
 
 CATALOGUE_VERSION = "unified-platform-v1.5.1"
-FEATURE_SCHEMA_VERSION = "feature-schema-v3"
+FEATURE_SCHEMA_VERSION = ML_FEATURE_SCHEMA_VERSION
 LABEL_SCHEMA_VERSION = "label-schema-v1"
 DATASET_VERSION = "dataset-v1-point-in-time"
 
