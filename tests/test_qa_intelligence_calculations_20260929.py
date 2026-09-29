@@ -700,3 +700,118 @@ def test_direction_arbitration_receives_uncertainty_and_current_market_evidence(
             assert field in block
         assert "Wilson lower bound" in block
         assert "historical_evidence_actionable=true" in block
+
+
+def test_ml_training_candle_reads_use_compact_ohlcv_projection() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
+    block = source[
+        source.index("async def _load_candles("):
+        source.index("def _atr(", source.index("async def _load_candles("))
+    ]
+    assert "select(MarketCandle)" not in block
+    for field in (
+        "MarketCandle.open_time_ms",
+        "MarketCandle.close_time_ms",
+        "MarketCandle.open",
+        "MarketCandle.high",
+        "MarketCandle.low",
+        "MarketCandle.close",
+        "MarketCandle.volume",
+    ):
+        assert field in block
+    assert "all_rows = list(res.all())" in block
+
+
+def test_paper_recovery_local_ai_does_not_double_penalize_subthreshold_ml(monkeypatch) -> None:
+    from engine.core import _local_ai_review_signal
+
+    monkeypatch.setenv("QUALITY_MIN_LOCAL_AI_SCORE", "8.0")
+    monkeypatch.setenv("ML_STARVATION_RECOVERY_MIN_LOCAL_AI_SCORE", "7.5")
+    base = {
+        "asset": "USDJPY",
+        "direction": "long",
+        "timeframe": "1h",
+        "entry": 150.0,
+        "stop_loss": 149.5,
+        "take_profit": 151.1,
+        "score": 84.0,
+        "_preview_score": 84.0,
+        "ml_recovery_structural_score": 84.0,
+        "ml_probability": 0.55,
+        "confluence_score": 75.0,
+    }
+    normal_ok, normal_score, normal_reason = _local_ai_review_signal(dict(base), candles=[{"close": 150.0}] * 120)
+    recovery = dict(base)
+    recovery["ml_recovery_mode"] = True
+    recovery_ok, recovery_score, recovery_reason = _local_ai_review_signal(recovery, candles=[{"close": 150.0}] * 120)
+
+    assert normal_ok is False
+    assert "ML weak" in normal_reason
+    assert recovery_ok is True
+    assert recovery_score > normal_score
+    assert "paper recovery observation" in recovery_reason
+    assert "ML weak" not in recovery_reason
+
+
+def test_trading_profile_api_enforces_canonical_tier_constraints() -> None:
+    root = Path(__file__).resolve().parents[1]
+    api = (root / "web" / "platform_api.py").read_text(encoding="utf-8")
+    get_block = api[
+        api.index('@router.get("/trading-profile")'):
+        api.index('@router.post("/simulation")')
+    ]
+    assert 'policy = get_entitlements(str(user.get("tier") or "free"))' in get_block
+    assert '"trade_profiles": ["all", *list(policy.allowed_profiles)]' in get_block
+    assert '"asset_classes": list(policy.allowed_asset_classes)' in get_block
+    assert 'float(policy.minimum_signal_score)' in get_block
+    assert 'int(policy.daily_signal_limit)' in get_block
+    assert "disallowed = sorted(set(normalized_classes) - set(policy.allowed_asset_classes))" in get_block
+    assert 'profile not in set(policy.allowed_profiles)' in get_block
+    assert "status_code=403" in get_block
+
+
+def test_web_profile_ui_disables_non_entitled_markets_and_profiles() -> None:
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "web" / "platform_app" / "app.js").read_text(encoding="utf-8")
+    block = app[
+        app.index("function renderTradingProfile"):
+        app.index("$('#tradingProfileForm').onsubmit")
+    ]
+    assert "const allowedProfiles=new Set(options.trade_profiles" in block
+    assert "const allowedClasses=new Set(options.asset_classes" in block
+    assert "option.disabled=!allowedProfiles.has" in block
+    assert "input.disabled=!entitled" in block
+    assert "quality floor" in block
+
+
+def test_profile_demand_projects_live_preferences_through_user_tier() -> None:
+    from services.profile_demand import aggregate_profile_demand
+
+    snapshot = aggregate_profile_demand(
+        {
+            1: {
+                "tier": "free",
+                "modern": {
+                    "asset_classes": ["crypto", "stock", "commodity"],
+                    "trade_profile": "scalp",
+                    "preferred_timeframes": ["1m", "5m"],
+                },
+            },
+            2: {
+                "tier": "professional",
+                "modern": {
+                    "asset_classes": ["stock", "index"],
+                    "trade_profile": "position",
+                    "preferred_timeframes": ["1d", "1w"],
+                },
+            },
+        },
+        active_user_ids={1, 2},
+    )
+    assert snapshot.active_profiles == 2
+    assert snapshot.asset_class_counts.get("commodity", 0) == 0
+    assert snapshot.asset_class_counts.get("stock", 0) == 1
+    assert snapshot.asset_class_counts.get("index", 0) == 1
+    assert snapshot.trade_profile_counts.get("scalp", 0) == 0
+    assert snapshot.trade_profile_counts.get("position", 0) == 1
