@@ -122,11 +122,14 @@ def test_direction_arbitration_uses_provider_neutral_router_only() -> None:
 def test_historical_context_is_enriched_before_final_ai_review() -> None:
     root = Path(__file__).resolve().parents[1]
     engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
-    history = engine.index("get_live_performance_context")
+    history = engine.index("get_best_live_performance_context")
     review = engine.index("gemini_ok, gemini_score, gemini_reason", history)
     assert history < review
-    assert 'sig["historical_sample_size"]' in engine[history:review]
-    assert 'sig["live_expectancy"]' in engine[history:review]
+    block = engine[history:review]
+    assert 'sig["historical_sample_size"]' in block
+    assert 'sig["historical_evidence_scope"]' in block
+    assert 'sig["historical_evidence_fallback_depth"]' in block
+    assert 'sig["live_expectancy"]' in block
 
 
 def test_invalid_geometry_does_not_resurrect_cached_rr() -> None:
