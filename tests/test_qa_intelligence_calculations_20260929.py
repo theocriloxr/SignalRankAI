@@ -211,3 +211,25 @@ def test_ai_context_includes_current_quality_components() -> None:
         assert "opportunity_components" in source
         assert "historical_evidence_actionable" in source
         assert "profile_rr_ok" in source
+
+
+def test_ai_review_score_scale_is_consistent_across_breakdown_and_opportunity() -> None:
+    from services.opportunity_engine import score_opportunity
+    from services.trading_intelligence import _score_breakdown
+
+    signal = {
+        "asset": "EURUSD",
+        "score": 85.0,
+        "ai_review_score": 8.5,
+        "ml_probability": 0.60,
+        "historical_win_rate": 60.0,
+        "asset_health_score": 70.0,
+        "rr_ratio": 2.0,
+        "time_to_target_score": 75.0,
+        "mtf_alignment_score": 80.0,
+    }
+    breakdown = _score_breakdown(signal)
+    opportunity = score_opportunity(signal)
+
+    assert breakdown["ai"] == pytest.approx(85.0)
+    assert opportunity.components["ai"] == pytest.approx((85.0 * 0.7) + (60.0 * 0.3))
