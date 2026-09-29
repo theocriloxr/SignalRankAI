@@ -172,3 +172,13 @@ def test_web_fanout_retries_background_admission_pressure_without_warning_loop()
     assert "deferred reason=db_capacity" in section
     assert "deferred reason=db_wait_timeout" in section
     assert "sleep_for = min(" in section
+
+
+def test_retention_is_staggered_away_from_startup_and_cache_has_provenance():
+    retention = text("db/storage_maintenance.py")
+    market_data = text("data/market_data.py")
+    assert "LEARNING_HISTORY_RETENTION_STARTUP_DELAY_SECONDS" in retention
+    assert '"startup_delay_seconds"' in retention
+    assert "await asyncio.sleep(startup_delay)" in retention
+    assert '"source": "postgres_cache"' in market_data
+    assert "_cash_session_reopen_threshold" in market_data

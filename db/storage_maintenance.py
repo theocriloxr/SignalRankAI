@@ -42,6 +42,7 @@ def retention_config() -> dict[str, int | bool]:
     return {
         "enabled": _env_bool("LEARNING_HISTORY_RETENTION_ENABLED", False),
         "interval_seconds": _env_int("LEARNING_HISTORY_RETENTION_INTERVAL_SECONDS", 3600, 300, 86400),
+        "startup_delay_seconds": _env_int("LEARNING_HISTORY_RETENTION_STARTUP_DELAY_SECONDS", 300, 0, 3600),
         "batch_size": _env_int("LEARNING_HISTORY_RETENTION_BATCH_SIZE", 5000, 100, 25000),
         "max_batches": _env_int("LEARNING_HISTORY_RETENTION_MAX_BATCHES", 4, 1, 20),
         "decision_days": _env_int("DECISION_LOG_RETENTION_DAYS", 30, 1, 3650),
@@ -161,13 +162,17 @@ async def learning_history_maintenance_loop() -> None:
         return
 
     interval = int(cfg["interval_seconds"])
+    startup_delay = int(cfg["startup_delay_seconds"])
     logger.info(
-        "[storage_maintenance] enabled interval=%ss decision_days=%s tracked_rejection_days=%s untracked_rejection_days=%s",
+        "[storage_maintenance] enabled interval=%ss startup_delay=%ss decision_days=%s tracked_rejection_days=%s untracked_rejection_days=%s",
         interval,
+        startup_delay,
         cfg["decision_days"],
         cfg["rejection_tracked_days"],
         cfg["rejection_untracked_days"],
     )
+    if startup_delay > 0:
+        await asyncio.sleep(startup_delay)
     while True:
         try:
             await run_learning_history_retention_once()

@@ -897,7 +897,73 @@ def _sanitize_ohlcv(candles: list) -> list:
     return out
 
 
-def _check_staleness(candles: list, timeframe: str, *, log_stale: bool = False) -> tuple[bool, float]:
+def _cash_session_reopen_threshold(asset: str | None, timeframe: str, *, now_epoch: float, base_threshold: float) -> float:
+    """Extend candle freshness only before the first cash-session bar can complete.
+
+    Cash equities/indices legitimately carry the prior session's last completed
+    candle across the overnight/weekend closure. During the first bar after
+    reopen, absolute-age checks alone incorrectly classify that candle as stale.
+    The grace ends as soon as one bar of the requested timeframe could have
+    completed, so an open market cannot keep consuming genuinely stale history.
+    """
+    symbol = str(asset or "").upper().strip()
+    if not symbol:
+        return float(base_threshold)
+    try:
+        from datetime import datetime, time as dt_time, timedelta, timezone
+        from zoneinfo import ZoneInfo
+        from core.asset_registry import resolve_asset_spec
+        from data.market_hours import get_market_session_status, is_stock_holiday
+
+        asset_class = str(get_asset_type(symbol) or "").lower().strip()
+        if asset_class not in {"stock", "index", "volatility"}:
+            return float(base_threshold)
+        now_utc = datetime.fromtimestamp(float(now_epoch), tz=timezone.utc)
+        status = get_market_session_status(symbol, now_utc)
+        if not status.is_open or status.session != "cash":
+            return float(base_threshold)
+        spec = resolve_asset_spec(symbol)
+        calendar = str(status.calendar or spec.session_calendar or "")
+        sessions = {
+            "us_equity": ("America/New_York", dt_time(9, 30), dt_time(16, 0)),
+            "europe_equity": (str(spec.timezone or "Europe/Paris"), dt_time(9, 0), dt_time(17, 30)),
+            "uk_equity": ("Europe/London", dt_time(8, 0), dt_time(16, 30)),
+            "japan_equity": ("Asia/Tokyo", dt_time(9, 0), dt_time(15, 0)),
+            "australia_equity": ("Australia/Sydney", dt_time(10, 0), dt_time(16, 0)),
+            "hong_kong_equity": ("Asia/Hong_Kong", dt_time(9, 30), dt_time(16, 0)),
+        }
+        if calendar not in sessions:
+            return float(base_threshold)
+        tz_name, open_time, close_time = sessions[calendar]
+        zone = ZoneInfo(tz_name)
+        local_now = now_utc.astimezone(zone)
+        open_dt = datetime.combine(local_now.date(), open_time, tzinfo=zone)
+        tf_seconds = float(_timeframe_to_seconds(timeframe))
+        elapsed = (local_now - open_dt).total_seconds()
+        if elapsed < 0 or elapsed >= tf_seconds:
+            return float(base_threshold)
+
+        previous_day = local_now.date() - timedelta(days=1)
+        while previous_day.weekday() >= 5:
+            previous_day -= timedelta(days=1)
+        if calendar == "us_equity":
+            while True:
+                candidate_noon = datetime.combine(previous_day, dt_time(12, 0), tzinfo=zone).astimezone(timezone.utc)
+                if not is_stock_holiday(candidate_noon):
+                    break
+                previous_day -= timedelta(days=1)
+                while previous_day.weekday() >= 5:
+                    previous_day -= timedelta(days=1)
+
+        previous_close = datetime.combine(previous_day, close_time, tzinfo=zone).astimezone(timezone.utc)
+        closed_gap = max(0.0, (now_utc - previous_close).total_seconds())
+        provider_slack = min(900.0, max(60.0, tf_seconds * 0.25))
+        return max(float(base_threshold), closed_gap + tf_seconds + provider_slack)
+    except Exception:
+        return float(base_threshold)
+
+
+def _check_staleness(candles: list, timeframe: str, *, asset: str | None = None, log_stale: bool = False) -> tuple[bool, float]:
     """Check if cached candles are stale.
     
     Returns (is_fresh, data_age_seconds).
@@ -944,16 +1010,24 @@ def _check_staleness(candles: list, timeframe: str, *, log_stale: bool = False) 
         current_time = time.time()
         data_age = current_time - ts_val
         
-        # Calculate staleness threshold (2× timeframe interval)
+        # Calculate the strict base threshold (2× timeframe interval). Cash
+        # equities/indices get a bounded reopen grace only until the first bar
+        # of this timeframe could have completed.
         tf_seconds = _timeframe_to_seconds(timeframe)
-        threshold = 2 * tf_seconds
-        
+        base_threshold = 2 * tf_seconds
+        threshold = _cash_session_reopen_threshold(
+            asset,
+            timeframe,
+            now_epoch=current_time,
+            base_threshold=base_threshold,
+        )
         is_fresh = data_age <= threshold
         
         if not is_fresh and log_stale:
             logger.warning(
                 f"Staleness check failed for {timeframe}: "
-                f"data age={data_age:.0f}s exceeds threshold={threshold}s (2×{tf_seconds}s)"
+                f"data age={data_age:.0f}s exceeds threshold={threshold:.0f}s "
+                f"(base={base_threshold}s, timeframe={tf_seconds}s, asset={asset or 'n/a'})"
             )
         
         return is_fresh, data_age
@@ -1002,7 +1076,7 @@ async def fetch_market_data_cached(
                 yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
                     yf_candles = _sanitize_ohlcv(yf_candles)
-                    is_fresh, data_age = _check_staleness(yf_candles, tf, log_stale=True)
+                    is_fresh, data_age = _check_staleness(yf_candles, tf, asset=asset, log_stale=True)
                     if not is_fresh and _env_bool("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", True):
                         logger.warning(
                             "[market_data] rejecting stale yfinance payload asset=%s tf=%s age_seconds=%.0f",
@@ -1060,7 +1134,7 @@ async def fetch_market_data_cached(
                             continue
                         
                         # Check staleness
-                        is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
+                        is_fresh, data_age = _check_staleness(candles, tf, asset=asset, log_stale=True)
                         if not is_fresh:
                             logger.warning(f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache")
                             continue
@@ -1068,7 +1142,9 @@ async def fetch_market_data_cached(
                         # Cache is valid
                         out[tf] = {
                             "candles": candles,
-                            "data_age_seconds": data_age
+                            "source": "postgres_cache",
+                            "data_age_seconds": data_age,
+                            "stale": False,
                         }
                 await session.commit()
         except Exception:
@@ -1122,7 +1198,7 @@ async def fetch_market_data_cached(
             # A provider request can succeed while returning an old historical
             # tail. Never equate HTTP freshness with candle freshness.
             if candles:
-                is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
+                is_fresh, data_age = _check_staleness(candles, tf, asset=asset, log_stale=True)
                 if "data_age_seconds" not in payload:
                     payload["data_age_seconds"] = data_age
                 payload["stale"] = not is_fresh
@@ -1314,7 +1390,7 @@ async def fetch_market_data_cached(
                     candles = _sanitize_ohlcv(candles)
                     if not _validate_ohlcv(candles):
                         continue
-                    is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
+                    is_fresh, data_age = _check_staleness(candles, tf, asset=asset, log_stale=True)
                     if not is_fresh:
                         logger.warning(
                             "Cached candles for %s %s are stale (age=%.0fs), skipping cache",
