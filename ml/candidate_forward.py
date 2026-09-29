@@ -424,6 +424,85 @@ async def evaluate_candidate_forward_evidence(
         },
     }
 
+async def candidate_replacement_lease() -> dict[str, Any]:
+    """Decide whether production retraining may replace the active challenger.
+
+    A candidate created by the forward-proof workflow owns a bounded lease while
+    it is collecting evidence or awaiting an explicit promotion decision. This
+    prevents scheduled/drift retraining from continually resetting the
+    candidate identity and its live-forward evidence window.
+    """
+    if not _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True):
+        return {
+            "blocked": False,
+            "reason": "candidate_first_disabled",
+        }
+    if _env_bool("ML_ALLOW_ACTIVE_CANDIDATE_REPLACEMENT", False):
+        return {
+            "blocked": False,
+            "reason": "explicit_replacement_override",
+        }
+
+    candidate = await load_active_candidate()
+    if not candidate:
+        return {
+            "blocked": False,
+            "reason": "active_candidate_missing",
+        }
+
+    payload = dict(candidate.get("payload") or {})
+    training_meta = dict(payload.get("training_meta") or {})
+    forward_gate = dict(training_meta.get("candidate_forward_gate") or {})
+    if not _boolish(forward_gate.get("required")):
+        return {
+            "blocked": False,
+            "reason": "legacy_candidate_without_forward_lease",
+            "candidate_artifact_hash_sha256": str(
+                candidate.get("artifact_hash_sha256") or ""
+            ),
+        }
+
+    parent_hash = str(
+        payload.get("parent_model_hash_sha256")
+        or training_meta.get("parent_model_hash_sha256")
+        or ""
+    ).strip().lower()
+    primary = await load_active_primary()
+    primary_hash = str(
+        (primary or {}).get("artifact_hash_sha256") or ""
+    ).strip().lower()
+    if primary_hash and parent_hash != primary_hash:
+        return {
+            "blocked": False,
+            "reason": "candidate_parent_no_longer_current",
+            "candidate_artifact_hash_sha256": str(
+                candidate.get("artifact_hash_sha256") or ""
+            ),
+            "candidate_parent_hash_sha256": parent_hash,
+            "current_primary_hash_sha256": primary_hash,
+        }
+
+    evidence = await evaluate_candidate_forward_evidence(candidate)
+    status = str(evidence.get("status") or "collecting").strip().lower()
+    blocked = status in {"collecting", "eligible"}
+    return {
+        "blocked": blocked,
+        "reason": (
+            "active_candidate_forward_lease"
+            if blocked
+            else f"candidate_forward_status_{status or 'unknown'}"
+        ),
+        "candidate_artifact_hash_sha256": str(
+            candidate.get("artifact_hash_sha256") or ""
+        ),
+        "candidate_status": status,
+        "candidate_age_hours": evidence.get("candidate_age_hours"),
+        "observations": evidence.get("observations"),
+        "resolved": evidence.get("resolved"),
+        "reasons": list(evidence.get("reasons") or []),
+    }
+
+
 async def promote_candidate_from_forward_proof(
     *,
     authorization_id: str | None = None,
