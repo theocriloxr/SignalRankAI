@@ -384,6 +384,8 @@ COMMAND_HELP = {
             ("db_health",              "Database pool health"),
             ("engine_debug",           "Latest engine cycle diagnostics"),
             ("provider_status",        "Data provider status"),
+            ("ml_candidate",           "ML challenger forward-proof status"),
+            ("ml_candidate_promote",   "Promote eligible challenger (CONFIRM required)"),
         ],
         "footer": (
             "👑 Full System Access:\n"
@@ -407,6 +409,8 @@ COMMAND_DESCRIPTIONS = {
     "profile": "Choose scalp/day/swing/position signal style",
     "mission": "Signal Mission Control for active delivered trades",
     "qa_report": "QA report by tier and asset class",
+    "ml_candidate": "ML challenger forward-proof status",
+    "ml_candidate_promote": "Promote eligible challenger (CONFIRM required)",
 }
 
 
