@@ -45,6 +45,7 @@ _SHADOW_CACHE: dict[str, Any] = {
     "version": None,
     "metrics": {},
     "error": None,
+    "file_mtime_ns": None,
 }
 _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
 _MODEL_RELOAD_LOCK = threading.Lock()
@@ -336,6 +337,7 @@ def reload_shadow_model(*, sync_durable: bool = True) -> dict[str, Any]:
             "version": None,
             "error": None,
             "metrics": {},
+            "file_mtime_ns": None,
         })
         _load_shadow_model(sync_durable=sync_durable)
         status = {
@@ -361,19 +363,48 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
     p = Path(shadow_path)
     if _SHADOW_CACHE.get("loaded"):
         if _SHADOW_CACHE.get("booster") is not None:
-            return
-        # A candidate may be persisted by analytics after the engine starts.
-        # Retry bounded durable synchronization instead of caching unavailable
-        # challenger state forever.
-        if not sync_durable or not _restore_durable_candidate_if_enabled(p):
-            return
-        _SHADOW_CACHE.update({
-            "loaded": False,
-            "booster": None,
-            "feature_cols": [],
-            "metrics": {},
-            "error": None,
-        })
+            if not sync_durable:
+                return
+            # Analytics may persist a fresh challenger while this long-running
+            # engine process is still serving the previous one. The durable
+            # restore helper is rate-limited, so this check is cheap between
+            # sync intervals. Reload only when the candidate file actually
+            # changes.
+            previous_mtime = _SHADOW_CACHE.get("file_mtime_ns")
+            _restore_durable_candidate_if_enabled(p)
+            try:
+                current_mtime = int(p.stat().st_mtime_ns) if p.exists() else None
+            except Exception:
+                current_mtime = None
+            if previous_mtime is not None and current_mtime == previous_mtime:
+                return
+            logger.info(
+                "[ml-shadow] candidate artifact changed; hot reloading previous_mtime=%s current_mtime=%s",
+                previous_mtime,
+                current_mtime,
+            )
+            _SHADOW_CACHE.update({
+                "loaded": False,
+                "booster": None,
+                "feature_cols": [],
+                "metrics": {},
+                "error": None,
+                "file_mtime_ns": None,
+            })
+        else:
+            # A candidate may be persisted by analytics after the engine starts.
+            # Retry bounded durable synchronization instead of caching unavailable
+            # challenger state forever.
+            if not sync_durable or not _restore_durable_candidate_if_enabled(p):
+                return
+            _SHADOW_CACHE.update({
+                "loaded": False,
+                "booster": None,
+                "feature_cols": [],
+                "metrics": {},
+                "error": None,
+                "file_mtime_ns": None,
+            })
     _SHADOW_CACHE.update({
         "loaded": True,
         "booster": None,
@@ -404,6 +435,10 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["feature_cols"] = list(feature_cols)
         _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
         _SHADOW_CACHE["metrics"] = dict(metadata.get("metrics") or {})
+        try:
+            _SHADOW_CACHE["file_mtime_ns"] = int(p.stat().st_mtime_ns)
+        except Exception:
+            _SHADOW_CACHE["file_mtime_ns"] = None
     except Exception as exc:
         _SHADOW_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
