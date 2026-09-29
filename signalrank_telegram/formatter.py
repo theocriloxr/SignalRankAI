@@ -1004,7 +1004,9 @@ def format_signal_premium_new(signal: dict) -> str:
 	if signal.get("trade_health") is not None:
 		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
 	if signal.get("probability_tp_today") is not None:
-		lines.append(f"Expected TP Today: {float(signal.get('probability_tp_today') or 0):.1f}%")
+		_method = str(signal.get("probability_tp_today_method") or "").lower()
+		_label = "TP1 by 24h estimate" if _method.startswith("heuristic_") else "TP1 by 24h probability"
+		lines.append(f"{_label}: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -1195,7 +1197,9 @@ def format_signal_vip_new(signal: dict) -> str:
 	if signal.get("trade_health") is not None:
 		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
 	if signal.get("probability_tp_today") is not None:
-		lines.append(f"Expected TP Today: {float(signal.get('probability_tp_today') or 0):.1f}%")
+		_method = str(signal.get("probability_tp_today_method") or "").lower()
+		_label = "TP1 by 24h estimate" if _method.startswith("heuristic_") else "TP1 by 24h probability"
+		lines.append(f"{_label}: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
