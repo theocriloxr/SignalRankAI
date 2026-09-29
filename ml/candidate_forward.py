@@ -561,6 +561,26 @@ async def promote_candidate_from_forward_proof(
             "offline_quality_gate": offline_quality,
         }
 
+    forward_gate = dict(training_meta.get("candidate_forward_gate") or {})
+    if not _boolish(forward_gate.get("required")):
+        return {
+            "ok": False,
+            "reason": "candidate_not_admitted_to_forward_proof",
+            "candidate_forward_gate": forward_gate,
+        }
+
+    champion_comparison = dict(training_meta.get("champion_comparison") or {})
+    if champion_comparison.get("enabled") is True and champion_comparison.get("reason") not in {
+        "candidate_noninferior",
+        "no_champion",
+        "not_applicable",
+    }:
+        return {
+            "ok": False,
+            "reason": "candidate_offline_noninferiority_failed",
+            "champion_comparison": champion_comparison,
+        }
+
     calibration = dict(candidate_metrics.get("calibration") or {})
     if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and not bool(
         calibration.get("validated")
