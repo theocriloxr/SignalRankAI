@@ -44,6 +44,7 @@ _SHADOW_CACHE: dict[str, Any] = {
     "name": "xgb_candidate",
     "version": None,
     "metrics": {},
+    "training_meta": {},
     "artifact_hash_sha256": "",
     "feature_schema_hash_sha256": "",
     "schema_version": 1,
@@ -400,7 +401,8 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "booster": None,
                 "feature_cols": [],
                 "metrics": {},
-                "artifact_hash_sha256": "",
+                "training_meta": {},
+                "artifact_hash_sha256": ""
                 "feature_schema_hash_sha256": "",
                 "schema_version": 1,
                 "training_run_id": "",
@@ -420,7 +422,8 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "booster": None,
                 "feature_cols": [],
                 "metrics": {},
-                "artifact_hash_sha256": "",
+                "training_meta": {},
+                "artifact_hash_sha256": ""
                 "feature_schema_hash_sha256": "",
                 "schema_version": 1,
                 "training_run_id": "",
@@ -463,6 +466,9 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["feature_cols"] = list(feature_cols)
         _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
         _SHADOW_CACHE["metrics"] = dict(metadata.get("metrics") or {})
+        _SHADOW_CACHE["training_meta"] = dict(
+            metadata.get("training_meta") or {}
+        )
         _SHADOW_CACHE["artifact_hash_sha256"] = str(
             metadata.get("artifact_hash_sha256") or ""
         )
@@ -495,6 +501,14 @@ def score_shadow_signal(
     booster=_SHADOW_CACHE.get("booster")
     feature_cols: List[str]=_SHADOW_CACHE.get("feature_cols") or []
     metrics=dict(_SHADOW_CACHE.get("metrics") or {})
+    training_meta=dict(_SHADOW_CACHE.get("training_meta") or {})
+    forward_gate=dict(training_meta.get("candidate_forward_gate") or {})
+    champion_comparison=dict(training_meta.get("champion_comparison") or {})
+    recovery_veto_eligible=bool(
+        forward_gate.get("required")
+        and champion_comparison.get("reason")
+        in {"candidate_noninferior", "no_champion", "not_applicable"}
+    )
     try:
         threshold=float(metrics.get("classification_threshold"))
     except Exception:
@@ -544,6 +558,11 @@ def score_shadow_signal(
             "schema_version": _SHADOW_CACHE.get("schema_version"),
             "training_run_id": _SHADOW_CACHE.get("training_run_id"),
             "trained_at": _SHADOW_CACHE.get("trained_at"),
+            "candidate_forward_required": bool(forward_gate.get("required")),
+            "champion_comparison_reason": str(
+                champion_comparison.get("reason") or ""
+            ),
+            "recovery_veto_eligible": recovery_veto_eligible,
             "error": None,
         }
         result["champion_probability"] = champion_probability
