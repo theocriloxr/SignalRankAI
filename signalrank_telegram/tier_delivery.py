@@ -8,6 +8,7 @@ Implements the GOLDEN RULE:
 """
 
 import logging
+import os
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func
@@ -18,6 +19,40 @@ from signalrank_telegram.formatter import (
 from core.tier_policy import evaluate_feature_access, get_entitlements, normalize_tier
 
 logger = logging.getLogger(__name__)
+
+
+
+def recovery_delivery_allowed(
+    signal: Dict,
+    user_tier: str | None,
+    telegram_user_id: Optional[int] = None,
+) -> bool:
+    """Fail closed for uncertified ML-recovery delivery audiences.
+
+    Recovery signals are paper/observation evidence, not certified normal
+    signals. By default they may be shown only to configured owner/admin users.
+    Operators may explicitly widen this to all tiers after forward evidence with
+    ML_RECOVERY_DELIVERY_AUDIENCE=all.
+    """
+    if not bool((signal or {}).get("ml_recovery_mode")):
+        return True
+    mode = str(os.getenv("ML_RECOVERY_DELIVERY_AUDIENCE") or "owner_admin").strip().lower()
+    if mode in {"all", "public"}:
+        return True
+    tier = normalize_tier(user_tier).value
+    if tier in {"OWNER", "ADMIN"}:
+        return True
+    if telegram_user_id is not None:
+        try:
+            from config import ADMIN_IDS, OWNER_IDS
+            operators = {int(value) for value in (OWNER_IDS or set())} | {
+                int(value) for value in (ADMIN_IDS or set())
+            }
+            if int(telegram_user_id) in operators:
+                return True
+        except Exception:
+            pass
+    return False
 
 class TierDeliveryManager:
     """
@@ -77,7 +112,9 @@ class TierDeliveryManager:
         Returns:
             Formatted message string or None if filtered
         """
-        # Check if signal passes quality gate
+        # Check paper-recovery audience before normal quality/tier formatting.
+        if not recovery_delivery_allowed(signal, user_tier):
+            return None
         score = float(signal.get('score', 0) or 0)
         if not self.should_send_signal(user_tier, score):
             return None
@@ -114,7 +151,12 @@ class TierDeliveryManager:
         
         distributor = SignalDistributor(session)
         recipients = distributor.sample_users_for_signal(signal, signal_id)
-        
+        if bool(signal.get("ml_recovery_mode")):
+            recipients = {
+                tier: users
+                for tier, users in recipients.items()
+                if recovery_delivery_allowed(signal, tier)
+            }
         return recipients
 
     async def get_users_for_signal_managed(self, signal: Dict, signal_id: str) -> Dict[str, List[int]]:
