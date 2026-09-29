@@ -1172,6 +1172,12 @@ async def load_training_data(lookback_days: int = 90):
                 feat = getattr(rj, "features", None) or {}
                 if not isinstance(feat, dict):
                     feat = {}
+                # Candidate forward observations are evaluation evidence, not
+                # training examples. Including them here would duplicate the
+                # same market candidate and let a challenger train on its own
+                # forward-proof ledger.
+                if str(feat.get("rejection_type") or "").strip().lower() == "candidate_shadow":
+                    continue
                 macro = dict(feat.get("macro") or {})
 
                 tp_progress = 0
