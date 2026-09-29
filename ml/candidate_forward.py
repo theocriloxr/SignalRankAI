@@ -14,6 +14,13 @@ from typing import Any
 from utils.timeutils import now_utc_naive
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(float(os.getenv(name, str(default)) or default))
@@ -150,6 +157,48 @@ async def load_active_candidate() -> dict[str, Any] | None:
         "created_at": getattr(row, "created_at", None),
         "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
         "payload": payload,
+    }
+
+
+async def load_active_primary() -> dict[str, Any] | None:
+    from db.models import MLModelArtifact
+    from db.priority import DBPriority
+    from db.session import get_session
+    from sqlalchemy import desc, select
+
+    async with get_session(
+        priority=DBPriority.ANALYTICS,
+        label="ml_candidate_forward_active_primary",
+        timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
+        drop_if_busy=False,
+    ) as session:
+        row = (
+            await session.execute(
+                select(MLModelArtifact)
+                .where(
+                    MLModelArtifact.model_name == "primary",
+                    MLModelArtifact.is_active.is_(True),
+                )
+                .order_by(desc(MLModelArtifact.created_at), desc(MLModelArtifact.id))
+                .limit(1)
+            )
+        ).scalars().first()
+        await session.rollback()
+    if row is None:
+        return None
+    payload = dict(getattr(row, "payload", {}) or {})
+    return {
+        "id": int(getattr(row, "id", 0) or 0),
+        "artifact_hash_sha256": str(
+            getattr(row, "artifact_hash_sha256", "") or ""
+        ),
+        "model_version": str(getattr(row, "model_version", "") or ""),
+        "feature_schema_version": str(
+            getattr(row, "feature_schema_version", "") or ""
+        ),
+        "schema_version": int(payload.get("schema_version") or 1),
+        "trained_at": getattr(row, "trained_at", None),
+        "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
     }
 
 
@@ -358,3 +407,134 @@ async def evaluate_candidate_forward_evidence(
             "max_age_hours": max_age_hours,
         },
     }
+
+async def promote_candidate_from_forward_proof(
+    *,
+    authorization_id: str | None = None,
+) -> dict[str, Any]:
+    """Promote only an eligible forward-tested candidate.
+
+    Automatic promotion is disabled by default. A caller can provide an
+    explicit authorization ID (for example from an owner approval workflow).
+    Feature-schema changes additionally retain the dedicated schema migration
+    authorization and certification gate.
+    """
+    candidate = await load_active_candidate()
+    if not candidate:
+        return {"ok": False, "reason": "active_candidate_missing"}
+
+    primary = await load_active_primary()
+    candidate_hash = str(candidate.get("artifact_hash_sha256") or "").strip()
+    primary_hash = str((primary or {}).get("artifact_hash_sha256") or "").strip()
+    if candidate_hash and candidate_hash == primary_hash:
+        return {
+            "ok": True,
+            "reason": "candidate_already_primary",
+            "artifact_hash_sha256": candidate_hash,
+        }
+
+    evidence = await evaluate_candidate_forward_evidence(candidate)
+    if not bool(evidence.get("eligible")):
+        return {
+            "ok": False,
+            "reason": "forward_proof_not_eligible",
+            "evidence": evidence,
+        }
+
+    explicit_authorization = str(authorization_id or "").strip()
+    auto_enabled = _env_bool(
+        "ML_CANDIDATE_FORWARD_AUTO_PROMOTION_ENABLED",
+        False,
+    )
+    if not auto_enabled and not explicit_authorization:
+        return {
+            "ok": False,
+            "reason": "promotion_authorization_required",
+            "evidence": evidence,
+        }
+
+    candidate_schema = int(candidate.get("schema_version") or 1)
+    primary_schema = int((primary or {}).get("schema_version") or 1)
+    if primary and candidate_schema != primary_schema:
+        schema_allowed = _env_bool(
+            "ML_ALLOW_SCHEMA_VERSION_PROMOTION",
+            False,
+        )
+        schema_certification = str(
+            os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or ""
+        ).strip()
+        if not (schema_allowed and schema_certification):
+            return {
+                "ok": False,
+                "reason": "schema_migration_requires_authorization",
+                "candidate_schema_version": candidate_schema,
+                "primary_schema_version": primary_schema,
+                "schema_authorized": schema_allowed,
+                "schema_certification_present": bool(schema_certification),
+                "evidence": evidence,
+            }
+
+    from ml.artifact_store import (
+        promote_active_candidate_artifact,
+        restore_active_model_artifact_from_database_sync,
+    )
+
+    promoted = await promote_active_candidate_artifact(
+        expected_artifact_hash_sha256=candidate_hash,
+    )
+    if not promoted.get("ok"):
+        return {
+            "ok": False,
+            "reason": "durable_promotion_failed",
+            "promotion": promoted,
+            "evidence": evidence,
+        }
+
+    # Refresh the local primary artifact in the promoting role. Other serving
+    # roles consume the durable primary through their bounded hot-sync path.
+    try:
+        from pathlib import Path
+        import asyncio
+        from engine import ml as engine_ml
+
+        primary_path = Path(
+            os.getenv("ML_MODEL_PATH")
+            or (Path(__file__).parent / "model.json")
+        )
+        restored = await asyncio.to_thread(
+            restore_active_model_artifact_from_database_sync,
+            primary_path,
+            model_name="primary",
+            connect_timeout_seconds=int(
+                os.getenv(
+                    "ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS",
+                    "5",
+                )
+                or 5
+            ),
+        )
+        reload_status = (
+            await asyncio.to_thread(
+                engine_ml.reload_model,
+                sync_durable=False,
+            )
+            if restored
+            else {"loaded": False, "error": "primary_restore_failed"}
+        )
+    except Exception as exc:
+        reload_status = {
+            "loaded": False,
+            "error": type(exc).__name__,
+        }
+
+    return {
+        "ok": True,
+        "reason": "candidate_promoted",
+        "authorization_id": (
+            explicit_authorization or "automatic_forward_proof"
+        ),
+        "promotion": promoted,
+        "reload": reload_status,
+        "evidence": evidence,
+    }
+
