@@ -44,6 +44,11 @@ _SHADOW_CACHE: dict[str, Any] = {
     "name": "xgb_candidate",
     "version": None,
     "metrics": {},
+    "artifact_hash_sha256": "",
+    "feature_schema_hash_sha256": "",
+    "schema_version": 1,
+    "training_run_id": "",
+    "trained_at": "",
     "error": None,
     "file_mtime_ns": None,
 }
@@ -337,6 +342,11 @@ def reload_shadow_model(*, sync_durable: bool = True) -> dict[str, Any]:
             "version": None,
             "error": None,
             "metrics": {},
+            "artifact_hash_sha256": "",
+            "feature_schema_hash_sha256": "",
+            "schema_version": 1,
+            "training_run_id": "",
+            "trained_at": "",
             "file_mtime_ns": None,
         })
         _load_shadow_model(sync_durable=sync_durable)
@@ -390,6 +400,11 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "booster": None,
                 "feature_cols": [],
                 "metrics": {},
+                "artifact_hash_sha256": "",
+                "feature_schema_hash_sha256": "",
+                "schema_version": 1,
+                "training_run_id": "",
+                "trained_at": "",
                 "error": None,
                 "file_mtime_ns": None,
             })
@@ -405,6 +420,11 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 "booster": None,
                 "feature_cols": [],
                 "metrics": {},
+                "artifact_hash_sha256": "",
+                "feature_schema_hash_sha256": "",
+                "schema_version": 1,
+                "training_run_id": "",
+                "trained_at": "",
                 "error": None,
                 "file_mtime_ns": None,
             })
@@ -413,6 +433,11 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         "booster": None,
         "feature_cols": [],
         "metrics": {},
+        "artifact_hash_sha256": "",
+        "feature_schema_hash_sha256": "",
+        "schema_version": 1,
+        "training_run_id": "",
+        "trained_at": "",
         "error": None,
     })
     if xgb is None:
@@ -438,6 +463,17 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["feature_cols"] = list(feature_cols)
         _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
         _SHADOW_CACHE["metrics"] = dict(metadata.get("metrics") or {})
+        _SHADOW_CACHE["artifact_hash_sha256"] = str(
+            metadata.get("artifact_hash_sha256") or ""
+        )
+        _SHADOW_CACHE["feature_schema_hash_sha256"] = str(
+            metadata.get("feature_schema_hash_sha256") or ""
+        )
+        _SHADOW_CACHE["schema_version"] = int(metadata.get("schema_version") or 1)
+        _SHADOW_CACHE["training_run_id"] = str(
+            metadata.get("training_run_id") or ""
+        )
+        _SHADOW_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
         try:
             _SHADOW_CACHE["file_mtime_ns"] = int(p.stat().st_mtime_ns)
         except Exception:
@@ -487,14 +523,25 @@ def score_shadow_signal(signal: Dict[str, Any]) -> dict[str, Any]:
         probability=float(preds[0])
         if not 0.0 <= probability <= 1.0:
             raise ValueError("candidate_probability_out_of_range")
-        return {
+        result = {
             "available": True,
             "probability": probability,
             "threshold": threshold,
             "passed": probability >= threshold,
             "version": _SHADOW_CACHE.get("version"),
+            "artifact_hash_sha256": _SHADOW_CACHE.get(
+                "artifact_hash_sha256"
+            ),
+            "feature_schema_hash_sha256": _SHADOW_CACHE.get(
+                "feature_schema_hash_sha256"
+            ),
+            "schema_version": _SHADOW_CACHE.get("schema_version"),
+            "training_run_id": _SHADOW_CACHE.get("training_run_id"),
+            "trained_at": _SHADOW_CACHE.get("trained_at"),
             "error": None,
         }
+        _persist_candidate_forward_observation(signal, result)
+        return result
     except Exception as exc:
         return {
             "available": False,
@@ -504,6 +551,144 @@ def score_shadow_signal(signal: Dict[str, Any]) -> dict[str, Any]:
             "version": _SHADOW_CACHE.get("version"),
             "error": type(exc).__name__,
         }
+
+
+_CANDIDATE_FORWARD_SEEN: dict[str, float] = {}
+
+
+def _candidate_forward_observation_key(
+    signal: Dict[str, Any],
+    candidate: dict[str, Any],
+) -> str:
+    import hashlib
+
+    artifact = str(candidate.get("artifact_hash_sha256") or "").strip().lower()
+    fingerprint = str(signal.get("fingerprint") or "").strip().lower()
+    candle_timestamp = str(signal.get("candle_timestamp") or "").strip()
+    if not fingerprint:
+        raw = "|".join(
+            [
+                str(signal.get("asset") or "").upper(),
+                str(signal.get("timeframe") or "").lower(),
+                str(signal.get("direction") or "").lower(),
+                str(signal.get("entry") or ""),
+                str(signal.get("stop_loss") or signal.get("stop") or ""),
+                str(signal.get("take_profit") or signal.get("targets") or ""),
+                candle_timestamp,
+            ]
+        )
+        fingerprint = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        f"{artifact}|{fingerprint}|{candle_timestamp}".encode("utf-8")
+    ).hexdigest()
+
+
+def _persist_candidate_forward_observation(
+    signal: Dict[str, Any],
+    candidate: dict[str, Any],
+) -> None:
+    """Queue one outcome-trackable challenger observation without affecting serving."""
+    if not candidate.get("available"):
+        return
+    artifact_hash = str(candidate.get("artifact_hash_sha256") or "").strip()
+    if not artifact_hash:
+        logger.warning(
+            "[ml-shadow] candidate forward observation skipped: artifact hash missing"
+        )
+        return
+
+    entry = _num(signal.get("entry") or signal.get("close_price"), 0.0)
+    stop = _num(signal.get("stop_loss") or signal.get("stop"), 0.0)
+    take_profit = (
+        signal.get("take_profit")
+        or signal.get("targets")
+        or signal.get("tp_levels")
+    )
+    if entry <= 0 or stop <= 0 or not take_profit:
+        return
+
+    observation_key = _candidate_forward_observation_key(signal, candidate)
+    now_mono = time.monotonic()
+    dedup_ttl = max(
+        60.0,
+        float(
+            os.getenv(
+                "ML_CANDIDATE_FORWARD_DEDUP_SECONDS",
+                "21600",
+            )
+            or 21600
+        ),
+    )
+    last_seen = float(_CANDIDATE_FORWARD_SEEN.get(observation_key) or 0.0)
+    if last_seen and now_mono - last_seen < dedup_ttl:
+        return
+    _CANDIDATE_FORWARD_SEEN[observation_key] = now_mono
+    if len(_CANDIDATE_FORWARD_SEEN) > 4096:
+        cutoff = now_mono - dedup_ttl
+        for key, stamp in list(_CANDIDATE_FORWARD_SEEN.items()):
+            if float(stamp or 0.0) < cutoff:
+                _CANDIDATE_FORWARD_SEEN.pop(key, None)
+
+    try:
+        from engine.signal_deduplicator import get_ml_rejection_tracker
+        from utils.async_runner import run_sync
+
+        features = {
+            "rejection_type": "candidate_shadow",
+            "candidate_observation_key": observation_key,
+            "candidate_artifact_hash_sha256": artifact_hash,
+            "candidate_feature_schema_hash_sha256": str(
+                candidate.get("feature_schema_hash_sha256") or ""
+            ),
+            "candidate_schema_version": int(
+                candidate.get("schema_version") or 1
+            ),
+            "candidate_training_run_id": str(
+                candidate.get("training_run_id") or ""
+            ),
+            "candidate_trained_at": str(candidate.get("trained_at") or ""),
+            "candidate_model_version": str(candidate.get("version") or ""),
+            "candidate_probability": float(
+                candidate.get("probability") or 0.0
+            ),
+            "candidate_threshold": float(candidate.get("threshold") or 0.0),
+            "candidate_passed": bool(candidate.get("passed")),
+            "champion_probability": signal.get("ml_probability_raw"),
+            "champion_calibrated_probability": signal.get("ml_probability"),
+            "asset_class_enc": signal.get("asset_class_enc"),
+            "adx": signal.get("adx"),
+            "confluence_score": signal.get("confluence_score"),
+            "preview_score": signal.get("_preview_score"),
+            "strategy_name": signal.get("strategy_name"),
+            "regime": signal.get("regime"),
+            "rr_ratio": signal.get("rr_ratio") or signal.get("rr_estimate"),
+            "source": "candidate_forward_shadow",
+        }
+        run_sync(
+            get_ml_rejection_tracker().persist_rejection(
+                asset=str(signal.get("asset") or ""),
+                timeframe=str(signal.get("timeframe") or "1h"),
+                direction=str(signal.get("direction") or "long"),
+                entry_price=entry,
+                stop_loss=stop,
+                take_profit_levels=take_profit,
+                ml_probability=float(candidate.get("probability") or 0.0),
+                rejection_reason="candidate_shadow_observation",
+                features=features,
+                rejection_type="candidate_shadow",
+                signal_id=(
+                    str(signal.get("signal_id"))
+                    if signal.get("signal_id")
+                    else None
+                ),
+            ),
+            timeout=5.0,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[ml-shadow] candidate forward observation persist failed error=%s",
+            type(exc).__name__,
+        )
 
 
 def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool, prob_source: str = "model") -> None:
