@@ -24,6 +24,7 @@ from sqlalchemy import and_, func
 
 from db.models import SignalDelivery, User
 from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
+from core.tier_policy import TIER_ORDER
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,11 @@ logger = logging.getLogger(__name__)
 SIGNALS_PER_USER_PER_CYCLE = {
     'free': 1,      # 1 signal per 30-sec cycle max
     'premium': 1,   # 2 signals per 30-sec cycle max
-    'vip': 2,       # 3 signals per 30-sec cycle max
-    'admin': 5,     # Admins get more in one cycle
-    'owner': 10,    # Owners get many in one cycle
+    'vip': 2,
+    'professional': 4,
+    'institutional': 6,
+    'admin': 5,
+    'owner': 10,
 }
 
 
@@ -188,13 +191,7 @@ class SignalDistributor:
         """
         score = float(signal.get('score', 0) or 0)
         
-        result = {
-            'free': [],
-            'premium': [],
-            'vip': [],
-            'admin': [],
-            'owner': [],
-        }
+        result = {tier.value.lower(): [] for tier in TIER_ORDER}
         
         # Determine eligible tiers by score threshold
         for tier in result.keys():
