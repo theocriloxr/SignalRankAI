@@ -1,0 +1,3 @@
+SignalRankAI production QA promotion.
+Scope: fresh-model artifact integrity, uncertainty-aware historical AI evidence, OpenAI/Gemini direction-evidence parity, strategy/regime-aware quality gates, positive-EV paper recovery, canonical R:R/calculation fixes, profile/tier enforcement, web/Telegram projection parity, and canonical/legacy tier score env compatibility.
+No live broker execution, copy-trading or payout activation. Certified risk/data/freshness/kill-switch gates remain authoritative.
