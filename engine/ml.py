@@ -483,7 +483,13 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
 
 
-def score_shadow_signal(signal: Dict[str, Any]) -> dict[str, Any]:
+def score_shadow_signal(
+    signal: Dict[str, Any],
+    *,
+    champion_probability: float | None = None,
+    champion_threshold: float | None = None,
+    champion_passed: bool | None = None,
+) -> dict[str, Any]:
     """Score one signal with the durable candidate without promoting it."""
     _load_shadow_model()
     booster=_SHADOW_CACHE.get("booster")
@@ -540,6 +546,9 @@ def score_shadow_signal(signal: Dict[str, Any]) -> dict[str, Any]:
             "trained_at": _SHADOW_CACHE.get("trained_at"),
             "error": None,
         }
+        result["champion_probability"] = champion_probability
+        result["champion_threshold"] = champion_threshold
+        result["champion_passed"] = champion_passed
         _persist_candidate_forward_observation(signal, result)
         return result
     except Exception as exc:
@@ -653,8 +662,9 @@ def _persist_candidate_forward_observation(
             ),
             "candidate_threshold": float(candidate.get("threshold") or 0.0),
             "candidate_passed": bool(candidate.get("passed")),
-            "champion_probability": signal.get("ml_probability_raw"),
-            "champion_calibrated_probability": signal.get("ml_probability"),
+            "champion_probability": candidate.get("champion_probability"),
+            "champion_threshold": candidate.get("champion_threshold"),
+            "champion_passed": candidate.get("champion_passed"),
             "asset_class_enc": signal.get("asset_class_enc"),
             "adx": signal.get("adx"),
             "confluence_score": signal.get("confluence_score"),
