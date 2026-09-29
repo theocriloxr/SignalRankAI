@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA gate for ML feature schema v4.
+Base implementation: c87222f739ee140b0daf4101164c0848e2a12ab4.
+V4 is challenger-only: it removes circular score-derived ML features, adds pre-decision ADX, preserves v3 champion serving compatibility, and is protected by explicit schema-promotion authorization.
+Targeted cleanroom certification: Alembic/schema/provenance PASS; 475 targeted tests PASS.
+This marker is staging-only and must not move the production-watched branch.
