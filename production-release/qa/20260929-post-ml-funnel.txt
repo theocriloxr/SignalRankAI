@@ -1,0 +1,3 @@
+SignalRankAI production QA observability release.
+Adds exact post-ML rejection funnel logging so bounded paper-recovery candidates can be traced through advanced filters, target geometry, profile/R:R quality, expectancy, AI review and the canonical quality gate.
+No signal threshold, execution, payout, copy-trade or live-money activation change.
