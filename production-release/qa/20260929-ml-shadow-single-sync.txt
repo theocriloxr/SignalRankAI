@@ -1,0 +1,3 @@
+SignalRankAI production release.
+Repairs duplicate durable challenger synchronization that blocked the release gate. Includes the already-merged AI learning, tier/profile, RR/calculation correctness, challenger persistence and hot-reload improvements.
+No certified ML threshold, live execution, payout or copy-trade controls are weakened.
