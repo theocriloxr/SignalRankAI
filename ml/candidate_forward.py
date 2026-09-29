@@ -280,9 +280,9 @@ async def evaluate_candidate_forward_evidence(
     for row in all_rows:
         features = dict(getattr(row, "features", {}) or {})
         outcome = _outcome_class(getattr(row, "actual_outcome", None))
-        asset_class = str(features.get("asset_class_enc") or "").strip()
-        if asset_class:
-            asset_classes.add(asset_class)
+        asset_class_raw = features.get("asset_class_enc")
+        if asset_class_raw is not None and str(asset_class_raw).strip() != "":
+            asset_classes.add(str(asset_class_raw).strip())
         if outcome is not None:
             resolved_rows.append((row, features, outcome))
 
@@ -447,6 +447,53 @@ async def promote_candidate_from_forward_proof(
             "ok": True,
             "reason": "candidate_already_primary",
             "artifact_hash_sha256": candidate_hash,
+        }
+
+    payload = dict(candidate.get("payload") or {})
+    training_meta = dict(payload.get("training_meta") or {})
+    candidate_metrics = dict(
+        candidate.get("metrics")
+        or payload.get("metrics")
+        or training_meta.get("metrics")
+        or {}
+    )
+    offline_quality = dict(training_meta.get("offline_quality_gate") or {})
+    if not bool(offline_quality.get("passed")):
+        return {
+            "ok": False,
+            "reason": "offline_quality_evidence_missing_or_failed",
+            "offline_quality_gate": offline_quality,
+        }
+
+    calibration = dict(candidate_metrics.get("calibration") or {})
+    if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and not bool(
+        calibration.get("validated")
+    ):
+        return {
+            "ok": False,
+            "reason": "candidate_calibration_unvalidated",
+            "calibration": calibration,
+        }
+
+    lineage = dict(training_meta.get("lineage") or {})
+    if not bool(lineage.get("eligible")):
+        return {
+            "ok": False,
+            "reason": "candidate_lineage_invalid",
+            "lineage": lineage,
+        }
+
+    parent_hash = str(
+        payload.get("parent_model_hash_sha256")
+        or training_meta.get("parent_model_hash_sha256")
+        or ""
+    ).strip().lower()
+    if primary_hash and parent_hash != primary_hash.lower():
+        return {
+            "ok": False,
+            "reason": "candidate_parent_champion_changed",
+            "candidate_parent_hash_sha256": parent_hash,
+            "current_primary_hash_sha256": primary_hash.lower(),
         }
 
     evidence = await evaluate_candidate_forward_evidence(candidate)
