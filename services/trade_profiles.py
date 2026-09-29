@@ -66,7 +66,7 @@ TRADE_PROFILES: dict[str, TradeProfile] = {
     "swing": TradeProfile(
         name="swing",
         label="Swing Trader",
-        timeframes=("4h", "1d"),
+        timeframes=("2h", "4h", "6h", "8h", "12h", "1d"),
         target_atr_multipliers=(2.0, 3.0, 5.0),
         stop_atr_multiplier=1.1,
         expiry_minutes=10 * 24 * 60,
@@ -105,10 +105,10 @@ def infer_trade_profile(signal: dict[str, Any] | None = None, timeframe: str | N
         return "scalp"
     if tf in {"5m", "15m", "30m", "1h"}:
         return "day"
+    if tf in {"2h", "4h", "6h", "8h", "12h", "1d", "24h"}:
+        return "swing"
     if tf in {"1w", "1mo"}:
         return "position"
-    if tf == "1d":
-        return "swing"
     return "swing"
 
 
@@ -183,12 +183,19 @@ def estimate_time_to_target(signal: dict[str, Any], profile_name: str | None = N
             "expected_duration": profile.expected_duration,
             "tp1_hours": None,
             "score": 50.0,
+            "score_model": "heuristic_atr_time",
             "probabilities": {},
+            "probability_model": "heuristic_atr_time",
+            "probabilities_calibrated": False,
         }
     tp1_distance_atr = abs(float(tp_levels[0]) - entry) / max(atr, 1e-9)
     # Practical approximation until replay-calibrated empirical distributions exist.
     tf = str(signal.get("timeframe") or "").lower()
-    tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440, "1w": 10080}.get(tf, 60)
+    tf_minutes = {
+        "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+        "1h": 60, "2h": 120, "4h": 240, "6h": 360, "8h": 480,
+        "12h": 720, "1d": 1440, "24h": 1440, "1w": 10080,
+    }.get(tf, 60)
     tp1_hours = max(0.05, (tp1_distance_atr * tf_minutes * 4.0) / 60.0)
     score = max(0.0, min(100.0, (profile.max_tp1_hours / max(tp1_hours, 0.05)) * 100.0))
     horizons = (1, 4, 12, 24, 72, 168)
@@ -201,7 +208,10 @@ def estimate_time_to_target(signal: dict[str, Any], profile_name: str | None = N
         "expected_duration": profile.expected_duration,
         "tp1_hours": round(tp1_hours, 2),
         "score": round(score, 1),
+        "score_model": "heuristic_atr_time",
         "probabilities": probabilities,
+        "probability_model": "heuristic_atr_time",
+        "probabilities_calibrated": False,
     }
 
 
