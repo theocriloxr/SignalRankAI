@@ -1,0 +1,6 @@
+SignalRankAI staging full-image QA for durable ML parent lineage and forward-promotion hardening.
+Merged runtime base: db70ce3aec5687e950bcfc108fb4702b2fbbf54e.
+Certified branch head: 5175badae9baf69f8eb41024a7bd5e87a4b7159b.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 505 targeted tests PASS; CLEANROOM_PASS.
+Fixes: production training uses durable active champion artifact hash as canonical parent identity; local artifact identity is retained only as diagnostic/local fallback; forward promotion requires explicit forward-proof admission; candidates with recorded champion non-inferiority failure cannot later promote through forward proof.
+Production v46 remains unchanged during full-image certification. Live execution, auto-trading, copy-trading, payouts, and model promotion remain disabled.
