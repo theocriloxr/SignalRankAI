@@ -642,6 +642,12 @@ def _persist_candidate_forward_observation(
         from engine.signal_deduplicator import get_ml_rejection_tracker
         from utils.async_runner import run_sync
 
+        from ml.features import build_model_feature_values
+
+        aligned_features = build_model_feature_values(
+            signal,
+            signal.get("_market_data") or {},
+        )
         features = {
             "rejection_type": "candidate_shadow",
             "candidate_observation_key": observation_key,
@@ -665,8 +671,9 @@ def _persist_candidate_forward_observation(
             "champion_probability": candidate.get("champion_probability"),
             "champion_threshold": candidate.get("champion_threshold"),
             "champion_passed": candidate.get("champion_passed"),
-            "asset_class_enc": signal.get("asset_class_enc"),
+            "asset_class_enc": aligned_features.get("asset_class_enc"),
             "adx": signal.get("adx"),
+            "adx_normalized": aligned_features.get("adx_normalized"),
             "confluence_score": signal.get("confluence_score"),
             "preview_score": signal.get("_preview_score"),
             "strategy_name": signal.get("strategy_name"),
