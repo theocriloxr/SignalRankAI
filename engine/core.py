@@ -1197,10 +1197,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
     if stop_loss_pct > max_stop_loss_pct:
         return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
-    if rr < min_rr:
+    rr_epsilon = max(1e-9, _env_float("QUALITY_RR_COMPARISON_EPSILON", 1e-6))
+    if rr + rr_epsilon < min_rr:
         profile_suffix = f", {profile_name}" if profile_name else ""
         return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class}{profile_suffix})"
-    if rr_cap_value > max_rr:
+    if rr_cap_value - rr_epsilon > max_rr:
         return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
     if recovery_mode:
         recovery_raw = _safe_float(
