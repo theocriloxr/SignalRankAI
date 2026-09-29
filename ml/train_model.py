@@ -2125,11 +2125,24 @@ async def main(lookback_days: int | None = None):
             from ml.candidate_forward import (
                 evaluate_candidate_forward_evidence,
                 load_active_candidate,
+                load_active_primary,
             )
 
             active_candidate = await load_active_candidate()
+            active_primary = await load_active_primary()
+            candidate_is_primary = bool(
+                active_candidate
+                and active_primary
+                and str(
+                    active_candidate.get("artifact_hash_sha256") or ""
+                ).strip().lower()
+                == str(
+                    active_primary.get("artifact_hash_sha256") or ""
+                ).strip().lower()
+            )
             if (
                 active_candidate
+                and not candidate_is_primary
                 and int(active_candidate.get("schema_version") or 1)
                 == int(CURRENT_SCHEMA_VERSION)
             ):
