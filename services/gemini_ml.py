@@ -253,6 +253,20 @@ def _openai_preferred_available() -> bool:
         return False
 
 
+def _gemini_compat_fallback_allowed() -> bool:
+    """Honor the provider router for legacy Gemini-named compatibility paths."""
+    try:
+        from services.openai_ai import provider_order
+        return "gemini" in tuple(provider_order())
+    except Exception:
+        raw = str(os.getenv("AI_PROVIDER_ORDER") or "openai,gemini,local")
+        return "gemini" in {
+            item.strip().lower()
+            for item in raw.split(",")
+            if item.strip()
+        }
+
+
 async def _call_gemini_result(
     prompt: str,
     max_tokens: int = 512,
@@ -590,7 +604,7 @@ async def quantize_news_sentiment(asset: str, headlines: List[str]) -> float:
                 return max(-3.0, min(3.0, float((result.get("data") or {}).get("score") or 0.0)))
         except Exception as exc:
             logger.debug("[AIReview] OpenAI sentiment fallback error=%s", type(exc).__name__)
-    if not gemini_available():
+    if not _gemini_compat_fallback_allowed() or not gemini_available():
         return 0.0
     headlines_text = "\n".join(f"- {h}" for h in headlines[:8])
     response = await _call_gemini(
@@ -626,7 +640,7 @@ async def ask_gemini_signal_explanation(signal: dict) -> Optional[str]:
                 return str((result.get("data") or {}).get("explanation") or "").strip() or None
         except Exception as exc:
             logger.debug("[AIReview] OpenAI explanation fallback error=%s", type(exc).__name__)
-    if not gemini_available():
+    if not _gemini_compat_fallback_allowed() or not gemini_available():
         return None
     prompt, version = render_prompt("signal_explanation", signal=signal)
     try:
@@ -647,7 +661,7 @@ async def ask_gemini_custom_question(question: str, context: Optional[dict] = No
                 return str((result.get("data") or {}).get("answer") or "").strip() or None
         except Exception as exc:
             logger.debug("[AIReview] OpenAI operator question fallback error=%s", type(exc).__name__)
-    if not gemini_available():
+    if not _gemini_compat_fallback_allowed() or not gemini_available():
         return None
     prompt, _version = render_prompt("custom_question", question=question, context=context or {})
     return await _call_gemini(prompt, max_tokens=500)
@@ -672,7 +686,7 @@ async def analyze_market_regime(asset: str, market_data: dict) -> dict:
                 }
         except Exception as exc:
             logger.debug("[AIReview] OpenAI regime fallback error=%s", type(exc).__name__)
-    if not gemini_available():
+    if not _gemini_compat_fallback_allowed() or not gemini_available():
         return fallback
     prompt, version = render_prompt("market_regime", asset=asset, market_data=market_data)
     response = await _call_gemini(prompt, max_tokens=250)
@@ -703,7 +717,7 @@ async def get_news_sentiment(asset: str, headlines: list) -> str:
                 return direction if direction in {"BULLISH", "BEARISH", "NEUTRAL"} else "NEUTRAL"
         except Exception as exc:
             logger.debug("[AIReview] OpenAI news fallback error=%s", type(exc).__name__)
-    if not GEMINI_API_KEY or client is None:
+    if not _gemini_compat_fallback_allowed() or not GEMINI_API_KEY or client is None:
         return "NEUTRAL"
     
     try:
@@ -762,7 +776,7 @@ async def gemini_confluence_check_with_tech_context(
                 return bool((result.get("data") or {}).get("approved"))
         except Exception as exc:
             logger.debug("[AIReview] OpenAI technical CRO fallback error=%s", type(exc).__name__)
-    if not GEMINI_API_KEY or client is None:
+    if not _gemini_compat_fallback_allowed() or not GEMINI_API_KEY or client is None:
         return True
     
     try:
@@ -860,8 +874,8 @@ async def gemini_confluence_check(
         except Exception as exc:
             logger.debug("[AIReview] OpenAI confluence fallback error=%s", type(exc).__name__)
     # Gemini compatibility fallback.
-    if not GEMINI_API_KEY or client is None:
-        logger.debug("[AIReview] no external provider - deterministic engine remains authoritative")
+    if not _gemini_compat_fallback_allowed() or not GEMINI_API_KEY or client is None:
+        logger.debug("[AIReview] no configured compatibility fallback - deterministic engine remains authoritative")
         return True
     
     try:
@@ -982,8 +996,8 @@ async def gemini_risk_review(
                 )
         except Exception as exc:
             logger.debug("[AIReview] OpenAI risk fallback error=%s", type(exc).__name__)
-    if not GEMINI_API_KEY or client is None:
-        return True, 5.0, "No external AI provider - deterministic risk controls only"
+    if not _gemini_compat_fallback_allowed() or not GEMINI_API_KEY or client is None:
+        return True, 5.0, "No configured compatibility fallback - deterministic risk controls only"
     
     try:
         asset = signal.get('asset', 'UNKNOWN')
@@ -1110,7 +1124,8 @@ async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dic
         Dict with analysis results including ok status and insights
     """
     openai_ready = _openai_preferred_available()
-    if not openai_ready and not gemini_available():
+    gemini_ready = _gemini_compat_fallback_allowed() and gemini_available()
+    if not openai_ready and not gemini_ready:
         return {"ok": False, "error": "no external AI provider configured"}
     
     from db.session import get_session
@@ -1273,7 +1288,7 @@ RECOMMENDATIONS: [Specific suggestions]
                         ).strip()
                         feature_suggestions = recommendations[:8]
                 if not analysis:
-                    if not gemini_available():
+                    if not gemini_ready:
                         raise RuntimeError("all_external_ai_providers_unavailable")
                     response = await asyncio.to_thread(
                         client.models.generate_content,
@@ -1374,8 +1389,8 @@ async def gemini_final_veto(signal_data: dict, market_context: str) -> bool:
                 return bool((result.get("data") or {}).get("approved"))
         except Exception as exc:
             logger.debug("[AIReview] OpenAI final veto fallback error=%s", type(exc).__name__)
-    if not GEMINI_API_KEY or client is None:
-        logger.debug("[AIReview] no external provider - deterministic gates remain authoritative")
+    if not _gemini_compat_fallback_allowed() or not GEMINI_API_KEY or client is None:
+        logger.debug("[AIReview] no configured compatibility fallback - deterministic gates remain authoritative")
         return True
     
     try:

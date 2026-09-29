@@ -235,6 +235,61 @@ def test_ai_compatibility_surface_routes_openai_but_keeps_gemini_fallback():
     assert "gemini_available()" in source
 
 
+@pytest.mark.asyncio
+async def test_legacy_gemini_compatibility_does_not_bypass_provider_order(monkeypatch):
+    import services.gemini_ml as gemini
+    import services.openai_ai as ai
+
+    monkeypatch.setenv("AI_PROVIDER_ORDER", "openai,local")
+    monkeypatch.setattr(gemini, "gemini_available", lambda: True)
+
+    async def degraded_openai(*args, **kwargs):
+        return {"ok": False, "provider": "openai", "error": "timeout"}
+
+    calls = {"gemini": 0}
+
+    async def forbidden_gemini(*args, **kwargs):
+        calls["gemini"] += 1
+        return "3"
+
+    monkeypatch.setattr(ai, "news_sentiment", degraded_openai)
+    monkeypatch.setattr(gemini, "_call_gemini", forbidden_gemini)
+
+    score = await gemini.quantize_news_sentiment(
+        "BTCUSDT",
+        ["Example headline"],
+    )
+
+    assert score == 0.0
+    assert calls["gemini"] == 0
+    assert gemini._gemini_compat_fallback_allowed() is False
+
+    monkeypatch.setenv("AI_PROVIDER_ORDER", "openai,gemini,local")
+    assert gemini._gemini_compat_fallback_allowed() is True
+
+
+def test_ai_compatibility_surface_honors_provider_order_for_gemini_fallback():
+    source = Path("services/gemini_ml.py").read_text(encoding="utf-8")
+    assert "def _gemini_compat_fallback_allowed()" in source
+    assert 'return "gemini" in tuple(provider_order())' in source
+    for function_name in (
+        "quantize_news_sentiment",
+        "ask_gemini_signal_explanation",
+        "ask_gemini_custom_question",
+        "analyze_market_regime",
+        "get_news_sentiment",
+        "gemini_confluence_check_with_tech_context",
+        "gemini_confluence_check",
+        "gemini_risk_review",
+        "run_gemini_review_pipeline",
+        "gemini_final_veto",
+    ):
+        block_start = source.index(f"async def {function_name}")
+        next_def = source.find("\nasync def ", block_start + 10)
+        block = source[block_start : next_def if next_def > 0 else len(source)]
+        assert "_gemini_compat_fallback_allowed" in block or "gemini_ready" in block
+
+
 def test_ai_review_is_provider_neutral_and_legacy_fields_remain_compatible():
     engine = Path("engine/core.py").read_text(encoding="utf-8")
     formatter = Path("signalrank_telegram/tier_signal_formatter.py").read_text(encoding="utf-8")
