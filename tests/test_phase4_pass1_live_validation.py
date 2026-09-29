@@ -114,3 +114,39 @@ def test_operator_recovery_uses_bounded_queue_floor(monkeypatch):
     assert normal.ok is False
     assert recovery.ok is True
     assert recovery.max_queue_age_seconds == 60.0
+
+def test_operator_recovery_queue_floor_clamps_env_bounds(monkeypatch):
+    from engine.delivery_freshness import evaluate_time_to_telegraph
+
+    monkeypatch.setenv("DELIVERY_TIME_TO_TELEGRAPH_ENABLED", "1")
+    monkeypatch.setenv("DELIVERY_QUEUE_MAX_AGE_1M_SECONDS", "5")
+    now = datetime.now(timezone.utc)
+
+    monkeypatch.setenv("ML_RECOVERY_QUEUE_MIN_AGE_SECONDS", "1")
+    low = evaluate_time_to_telegraph(
+        _signal(
+            asset="AMZN",
+            timeframe="1m",
+            trade_profile="scalp",
+            ml_recovery_mode=True,
+            created_at=(now - timedelta(seconds=10)).isoformat(),
+            generated_at=(now - timedelta(seconds=10)).isoformat(),
+        ),
+        now=now,
+    )
+    assert low.max_queue_age_seconds == 20.0
+
+    monkeypatch.setenv("ML_RECOVERY_QUEUE_MIN_AGE_SECONDS", "999")
+    high = evaluate_time_to_telegraph(
+        _signal(
+            asset="AMZN",
+            timeframe="1m",
+            trade_profile="scalp",
+            ml_recovery_mode=True,
+            created_at=(now - timedelta(seconds=10)).isoformat(),
+            generated_at=(now - timedelta(seconds=10)).isoformat(),
+        ),
+        now=now,
+    )
+    assert high.max_queue_age_seconds == 300.0
+
