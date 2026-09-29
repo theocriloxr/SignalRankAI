@@ -106,7 +106,7 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
     profit_factor = (
         gross_profit / gross_loss
         if gross_loss > 0.0
-        else (float("inf") if gross_profit > 0.0 else 0.0)
+        else (999.0 if gross_profit > 0.0 else 0.0)
     )
     return {
         "resolved": resolved,
