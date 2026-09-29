@@ -178,7 +178,7 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v36" in sw
+    assert "signalrank-shell-v37" in sw
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
@@ -269,7 +269,7 @@ def test_runtime_actively_probes_metaapi_token_instead_of_presence_only() -> Non
     assert "[metaapi_startup_probe] status=FAIL" in runtime
     assert "provider_permissions_missing" in api
     assert "integration problem, not an error in your broker login/server" in app
-    assert "signalrank-shell-v36" in sw
+    assert "signalrank-shell-v37" in sw
 
 
 def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
@@ -288,7 +288,7 @@ def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
     assert "Your MT4/MT5 login, password and server are not the cause" in app
     assert "control.disabled=!metaapiReady" in app
     assert "provider-health-error" in css
-    assert "signalrank-shell-v36" in sw
+    assert "signalrank-shell-v37" in sw
 
 
 def test_metaapi_token_alias_candidates_are_ordered_and_deduplicated(monkeypatch) -> None:

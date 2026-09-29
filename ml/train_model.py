@@ -597,8 +597,22 @@ async def load_training_data(lookback_days: int = 90):
             if cached is None:
                 floor_ms, max_rows = _candle_cache_bounds(key[1])
                 async with get_session(**_training_session_kwargs("ml_training_candle_read")) as candle_session:
+                    # Training only needs compact OHLCV evidence. Pulling full
+                    # ORM entities (including provider/finality/update metadata)
+                    # for tens of thousands of bars inflated DB hold time and
+                    # repeatedly hit the analytics query timeout. The unique
+                    # (symbol,timeframe,open_time_ms) index can serve this range
+                    # efficiently; keep the result as lightweight SQLAlchemy rows.
                     q = (
-                        select(MarketCandle)
+                        select(
+                            MarketCandle.open_time_ms,
+                            MarketCandle.close_time_ms,
+                            MarketCandle.open,
+                            MarketCandle.high,
+                            MarketCandle.low,
+                            MarketCandle.close,
+                            MarketCandle.volume,
+                        )
                         .where(
                             MarketCandle.symbol == key[0],
                             MarketCandle.timeframe == key[1],
@@ -611,7 +625,7 @@ async def load_training_data(lookback_days: int = 90):
                         candle_session.execute(q),
                         timeout=_training_query_timeout(),
                     )
-                    all_rows = list(res.scalars().all())
+                    all_rows = list(res.all())
                 all_rows.reverse()
                 open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
                 cached = (open_times, all_rows)

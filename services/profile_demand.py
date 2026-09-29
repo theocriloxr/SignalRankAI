@@ -16,6 +16,7 @@ from typing import Any, Iterable, Mapping
 
 from sqlalchemy import text
 
+from core.tier_policy import get_entitlements
 from services.asset_registry import classify_asset, normalize_symbol
 from services.trade_profiles import TRADE_PROFILES
 from services.user_intelligence import (
@@ -162,6 +163,21 @@ def aggregate_profile_demand(
             _payload(sources.get("legacy")),
             sources.get("profile"),
         )
+        # Profile demand drives the shared scan universe, so stale preferences
+        # must never make the engine scan markets or horizons the user's
+        # current tier cannot receive. Preserve the stored preference itself;
+        # project only its effective entitled demand here.
+        if sources.get("tier") is not None:
+            tier_policy = get_entitlements(str(sources.get("tier") or "free"))
+            requested_classes = list(merged.get("asset_classes") or [])
+            merged["asset_classes"] = [
+                value for value in requested_classes
+                if str(value).strip().lower() in set(tier_policy.allowed_asset_classes)
+            ] or list(tier_policy.allowed_asset_classes)
+            requested_profile = str(merged.get("trade_profile") or "all").strip().lower()
+            if requested_profile != "all" and requested_profile not in set(tier_policy.allowed_profiles):
+                merged["trade_profile"] = "all"
+                merged["preferred_timeframes"] = []
         prefs = preferences_from_payload(merged)
         profile_total += 1
         class_counts.update(prefs.asset_classes)
@@ -205,7 +221,7 @@ async def load_profile_demand(session) -> ProfileDemandSnapshot:
         active_result = await session.execute(
             text(
                 """
-                SELECT id, telegram_user_id
+                SELECT id, telegram_user_id, tier
                 FROM users
                 WHERE COALESCE(is_blocked, FALSE) IS FALSE
                   AND COALESCE(is_suspended, FALSE) IS FALSE
@@ -219,8 +235,10 @@ async def load_profile_demand(session) -> ProfileDemandSnapshot:
             for row in active_rows
             if row[0] is not None and row[1] is not None
         }
-        for active_user_id in active_user_ids:
-            records.setdefault(active_user_id, {})
+        for row in active_rows:
+            if row[0] is None:
+                continue
+            records.setdefault(int(row[0]), {})["tier"] = str(row[2] or "free").lower()
     except Exception:
         active_user_ids = None
 

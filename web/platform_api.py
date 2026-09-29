@@ -2171,7 +2171,10 @@ async def entitlements(user: dict[str, Any] = Depends(current_user)) -> dict[str
             "history_days": policy.history_days,
             "max_tp_levels": policy.max_tp_levels,
             "delivery_delay_minutes": policy.delivery_delay_minutes,
+            "minimum_signal_score": float(policy.minimum_signal_score),
         },
+        "allowed_asset_classes": list(policy.allowed_asset_classes),
+        "allowed_profiles": ["all", *list(policy.allowed_profiles)],
         "policy_version": policy_snapshot()["version"],
     }
 
@@ -3983,17 +3986,47 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
 
 @router.get("/trading-profile")
 async def trading_profile(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    policy = get_entitlements(str(user.get("tier") or "free"))
     async with get_session() as session:
         prefs = await get_platform_user_trading_preferences(session, int(user["id"]))
         await session.rollback()
+    projected = preferences_to_payload(prefs)
+    allowed_classes = set(policy.allowed_asset_classes)
+    projected_classes = [
+        value for value in list(projected.get("asset_classes") or [])
+        if str(value).strip().lower() in allowed_classes
+    ]
+    projected["asset_classes"] = projected_classes or list(policy.allowed_asset_classes)
+    profile = str(projected.get("trade_profile") or "all").strip().lower()
+    if profile != "all" and profile not in set(policy.allowed_profiles):
+        projected["trade_profile"] = "all"
+    try:
+        projected["min_signal_score"] = max(
+            float(projected.get("min_signal_score") or 0.0),
+            float(policy.minimum_signal_score),
+        )
+    except (TypeError, ValueError):
+        projected["min_signal_score"] = float(policy.minimum_signal_score)
+    try:
+        requested_daily = int(projected.get("max_signals_per_day") or policy.daily_signal_limit)
+        projected["max_signals_per_day"] = max(1, min(requested_daily, int(policy.daily_signal_limit)))
+    except (TypeError, ValueError):
+        projected["max_signals_per_day"] = int(policy.daily_signal_limit)
     return {
-        "preferences": preferences_to_payload(prefs),
+        "preferences": projected,
         "options": {
-            "trade_profiles": ["all", "scalp", "day", "swing", "position"],
+            "trade_profiles": ["all", *list(policy.allowed_profiles)],
             "risk_profiles": ["ultra_conservative", "conservative", "balanced", "aggressive"],
-            "asset_classes": ["crypto", "fx", "stock", "index", "commodity"],
+            "asset_classes": list(policy.allowed_asset_classes),
             "timeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"],
             "sessions": ["auto", "asia", "london", "new_york", "overlap", "weekend"],
+        },
+        "tier_policy": {
+            "tier": policy.tier.value,
+            "minimum_signal_score": float(policy.minimum_signal_score),
+            "daily_signal_limit": int(policy.daily_signal_limit),
+            "allowed_asset_classes": list(policy.allowed_asset_classes),
+            "allowed_profiles": ["all", *list(policy.allowed_profiles)],
         },
     }
 
@@ -4004,6 +4037,7 @@ async def update_trading_profile(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     values = payload.model_dump(exclude_unset=True)
+    policy = get_entitlements(str(user.get("tier") or "free"))
     aliases = {
         "forex": "fx",
         "equity": "stock",
@@ -4023,6 +4057,15 @@ async def update_trading_profile(
                 normalized_classes.append(item)
         if not normalized_classes:
             raise HTTPException(status_code=422, detail="Choose at least one asset class")
+        disallowed = sorted(set(normalized_classes) - set(policy.allowed_asset_classes))
+        if disallowed:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"{policy.tier.value} does not include: {', '.join(disallowed)}. "
+                    "Choose an entitled market or upgrade your plan."
+                ),
+            )
         values["asset_classes"] = normalized_classes
 
     allowed_profiles = {"all", "scalp", "day", "swing", "position"}
@@ -4030,6 +4073,14 @@ async def update_trading_profile(
         profile = str(values["trade_profile"]).strip().lower()
         if profile not in allowed_profiles:
             raise HTTPException(status_code=422, detail="Unsupported trading profile")
+        if profile != "all" and profile not in set(policy.allowed_profiles):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"{profile} profile is not included in {policy.tier.value}. "
+                    "Choose an entitled profile or upgrade your plan."
+                ),
+            )
         values["trade_profile"] = profile
 
     allowed_risk_profiles = {"ultra_conservative", "conservative", "balanced", "aggressive"}
@@ -4038,6 +4089,23 @@ async def update_trading_profile(
         if risk_profile not in allowed_risk_profiles:
             raise HTTPException(status_code=422, detail="Unsupported risk profile")
         values["risk_profile"] = risk_profile
+
+    if values.get("min_signal_score") is not None:
+        try:
+            values["min_signal_score"] = max(
+                float(values["min_signal_score"]),
+                float(policy.minimum_signal_score),
+            )
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Invalid minimum signal score")
+    if values.get("max_signals_per_day") is not None:
+        try:
+            values["max_signals_per_day"] = max(
+                1,
+                min(int(values["max_signals_per_day"]), int(policy.daily_signal_limit)),
+            )
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Invalid daily signal limit")
 
     allowed_timeframes = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"}
     if "preferred_timeframes" in values and values["preferred_timeframes"] is not None:
@@ -4062,7 +4130,23 @@ async def update_trading_profile(
         updated = preferences_from_payload(merged)
         await set_platform_user_trading_preferences(session, int(user["id"]), updated)
         await session.commit()
-    return {"preferences": preferences_to_payload(updated)}
+    return {
+        "preferences": preferences_to_payload(updated),
+        "options": {
+            "trade_profiles": ["all", *list(policy.allowed_profiles)],
+            "risk_profiles": ["ultra_conservative", "conservative", "balanced", "aggressive"],
+            "asset_classes": list(policy.allowed_asset_classes),
+            "timeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"],
+            "sessions": ["auto", "asia", "london", "new_york", "overlap", "weekend"],
+        },
+        "tier_policy": {
+            "tier": policy.tier.value,
+            "minimum_signal_score": float(policy.minimum_signal_score),
+            "daily_signal_limit": int(policy.daily_signal_limit),
+            "allowed_asset_classes": list(policy.allowed_asset_classes),
+            "allowed_profiles": ["all", *list(policy.allowed_profiles)],
+        },
+    }
 
 
 @router.post("/simulation")
