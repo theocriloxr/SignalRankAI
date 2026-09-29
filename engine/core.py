@@ -2234,6 +2234,7 @@ def _ml_starvation_recovery_decision(
     certified_threshold: float,
     challenger: dict[str, Any] | None,
     pipeline_stats: dict[str, Any],
+    calibrated_probability: float | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Bounded delivery-only fallback for a demonstrably starving champion."""
     health=_ml_starvation_recovery_context()
@@ -2244,9 +2245,33 @@ def _ml_starvation_recovery_decision(
         "score": structural_score,
         "confluence": _safe_float(signal.get("confluence_score"), 0.0),
         "raw_probability": raw_probability,
+        "calibrated_probability": calibrated_probability,
         "certified_threshold": certified_threshold,
         "challenger": dict(challenger or {}),
     }
+    try:
+        from engine.signal_calculations import calculate_rr_ladder
+
+        rr_ladder = calculate_rr_ladder(signal)
+        recovery_rr = _safe_float(rr_ladder.get("tp1_rr"), 0.0)
+    except Exception:
+        recovery_rr = 0.0
+    conservative_probability = min(
+        value
+        for value in (
+            _safe_float(raw_probability, 0.0),
+            _safe_float(calibrated_probability, _safe_float(raw_probability, 0.0)),
+        )
+        if value >= 0.0
+    )
+    expected_r = (
+        (conservative_probability * recovery_rr) - (1.0 - conservative_probability)
+        if recovery_rr > 0.0
+        else None
+    )
+    details["recovery_rr_tp1"] = recovery_rr if recovery_rr > 0.0 else None
+    details["conservative_probability"] = conservative_probability
+    details["expected_r"] = expected_r
     if not bool(health.get("starvation_detected")):
         return False, details
     if raw_probability is None:
@@ -2287,6 +2312,23 @@ def _ml_starvation_recovery_decision(
         details["reason"]="raw_probability_below_recovery_floor"
         return False, details
 
+    min_recovery_rr=max(
+        1.0,
+        _env_float("ML_STARVATION_RECOVERY_MIN_RR", 1.50),
+    )
+    min_expected_r=_env_float("ML_STARVATION_RECOVERY_MIN_EXPECTED_R", 0.10)
+    details["min_recovery_rr"] = min_recovery_rr
+    details["min_expected_r"] = min_expected_r
+    if recovery_rr <= 0.0:
+        details["reason"]="recovery_rr_unavailable"
+        return False, details
+    if recovery_rr < min_recovery_rr:
+        details["reason"]="rr_below_recovery_floor"
+        return False, details
+    if expected_r is None or expected_r < min_expected_r:
+        details["reason"]="expected_r_below_recovery_floor"
+        return False, details
+
     challenger_payload=dict(challenger or {})
     if challenger_payload.get("available"):
         challenger_prob=_safe_float(
@@ -2315,6 +2357,8 @@ def _ml_starvation_recovery_decision(
         "min_score": min_score,
         "min_confluence": min_confluence,
         "raw_floor": raw_floor,
+        "min_recovery_rr": min_recovery_rr,
+        "min_expected_r": min_expected_r,
     })
     return True, details
 
@@ -3798,6 +3842,11 @@ def main_loop(DRY_RUN: bool = False):
                                     certified_threshold=float(threshold),
                                     challenger=challenger,
                                     pipeline_stats=pipeline_stats,
+                                    calibrated_probability=(
+                                        float(prob)
+                                        if prob is not None
+                                        else None
+                                    ),
                                 )
                             )
                             if recovery_ok:
