@@ -1,5 +1,5 @@
-const CACHE='signalrank-shell-v36';
-const ASSETS=['/app','/app-assets/styles.css?v=36','/app-assets/app.js?v=36','/app-assets/icon.svg?v=36','/app-assets/logo.svg?v=36','/app/manifest.webmanifest?v=36'];
+const CACHE='signalrank-shell-v37';
+const ASSETS=['/app','/app-assets/styles.css?v=37','/app-assets/app.js?v=37','/app-assets/icon.svg?v=37','/app-assets/logo.svg?v=37','/app/manifest.webmanifest?v=37'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{const cache=await caches.open(CACHE);await cache.addAll(ASSETS);await self.skipWaiting()})()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{const keys=await caches.keys();await Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)));await self.clients.claim()})()));
 self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.pathname.startsWith('/api/'))return;event.respondWith(fetch(event.request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}).catch(()=>caches.match(event.request).then(r=>r||caches.match('/app'))))});
