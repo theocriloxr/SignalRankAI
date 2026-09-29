@@ -136,6 +136,175 @@ async def persist_active_model_artifact(
         return False
 
 
+
+async def promote_active_candidate_artifact(
+    *,
+    expected_artifact_hash_sha256: str,
+) -> dict[str, Any]:
+    """Atomically copy the validated active candidate into the primary slot."""
+    from sqlalchemy import desc, select, update
+    from db.models import MLModelArtifact
+    from db.session import get_session
+    from ml.model_registry import (
+        validate_payload,
+        verify_artifact_integrity,
+        verify_feature_schema_integrity,
+    )
+    from utils.timeutils import now_utc_naive
+
+    expected = str(expected_artifact_hash_sha256 or "").strip().lower()
+    if not expected:
+        return {"ok": False, "reason": "expected_candidate_hash_missing"}
+
+    try:
+        async with get_session(
+            priority=_artifact_db_priority(),
+            label="ml_candidate_promote",
+            timeout_seconds=float(
+                os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30
+            ),
+            drop_if_busy=False,
+        ) as session:
+            candidate = (
+                await asyncio.wait_for(
+                    session.execute(
+                        select(MLModelArtifact)
+                        .where(
+                            MLModelArtifact.model_name == "candidate",
+                            MLModelArtifact.is_active.is_(True),
+                        )
+                        .order_by(
+                            desc(MLModelArtifact.created_at),
+                            desc(MLModelArtifact.id),
+                        )
+                        .limit(1)
+                        .with_for_update()
+                    ),
+                    timeout=_artifact_query_timeout(),
+                )
+            ).scalars().first()
+            if candidate is None:
+                await session.rollback()
+                return {"ok": False, "reason": "active_candidate_missing"}
+
+            candidate_hash = str(
+                getattr(candidate, "artifact_hash_sha256", "") or ""
+            ).strip().lower()
+            if candidate_hash != expected:
+                await session.rollback()
+                return {
+                    "ok": False,
+                    "reason": "candidate_hash_changed",
+                    "expected": expected,
+                    "actual": candidate_hash,
+                }
+
+            payload = dict(getattr(candidate, "payload", {}) or {})
+            valid, validation_error = validate_payload(payload)
+            integrity_ok, integrity_error = verify_artifact_integrity(payload)
+            schema_ok, schema_error = verify_feature_schema_integrity(payload)
+            if not (valid and integrity_ok and schema_ok):
+                await session.rollback()
+                return {
+                    "ok": False,
+                    "reason": "candidate_integrity_failed",
+                    "validation_error": validation_error,
+                    "integrity_error": integrity_error,
+                    "schema_error": schema_error,
+                }
+
+            current_primary = (
+                await asyncio.wait_for(
+                    session.execute(
+                        select(MLModelArtifact)
+                        .where(
+                            MLModelArtifact.model_name == "primary",
+                            MLModelArtifact.is_active.is_(True),
+                        )
+                        .order_by(
+                            desc(MLModelArtifact.created_at),
+                            desc(MLModelArtifact.id),
+                        )
+                        .limit(1)
+                        .with_for_update()
+                    ),
+                    timeout=_artifact_query_timeout(),
+                )
+            ).scalars().first()
+            previous_hash = str(
+                getattr(current_primary, "artifact_hash_sha256", "") or ""
+            ).strip().lower()
+
+            if previous_hash == candidate_hash:
+                await session.rollback()
+                return {
+                    "ok": True,
+                    "reason": "candidate_already_primary",
+                    "artifact_hash_sha256": candidate_hash,
+                    "previous_primary_hash_sha256": previous_hash,
+                }
+
+            await asyncio.wait_for(
+                session.execute(
+                    update(MLModelArtifact)
+                    .where(
+                        MLModelArtifact.model_name == "primary",
+                        MLModelArtifact.is_active.is_(True),
+                    )
+                    .values(is_active=False)
+                ),
+                timeout=_artifact_query_timeout(),
+            )
+            session.add(
+                MLModelArtifact(
+                    model_name="primary",
+                    model_version=str(
+                        getattr(candidate, "model_version", "") or "unknown"
+                    ),
+                    feature_schema_version=str(
+                        getattr(candidate, "feature_schema_version", "") or "1"
+                    ),
+                    artifact_hash_sha256=candidate_hash,
+                    payload=payload,
+                    metrics=dict(getattr(candidate, "metrics", {}) or {}),
+                    source_counts=dict(
+                        getattr(candidate, "source_counts", {}) or {}
+                    ),
+                    is_active=True,
+                    trained_at=(
+                        getattr(candidate, "trained_at", None)
+                        or now_utc_naive()
+                    ),
+                )
+            )
+            await asyncio.wait_for(
+                session.commit(),
+                timeout=_artifact_query_timeout(),
+            )
+
+        logger.warning(
+            "[ml_artifact] candidate promoted hash=%s previous_primary=%s",
+            candidate_hash[:12],
+            previous_hash[:12] if previous_hash else "none",
+        )
+        return {
+            "ok": True,
+            "reason": "candidate_promoted",
+            "artifact_hash_sha256": candidate_hash,
+            "previous_primary_hash_sha256": previous_hash,
+        }
+    except Exception as exc:
+        logger.exception(
+            "[ml_artifact] candidate promotion failed error=%s",
+            type(exc).__name__,
+        )
+        return {
+            "ok": False,
+            "reason": "candidate_promotion_exception",
+            "error": type(exc).__name__,
+        }
+
+
 def restore_active_model_artifact_sync(
     connection: Any,
     target_path: str | Path,
