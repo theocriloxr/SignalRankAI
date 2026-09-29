@@ -1,0 +1,2 @@
+SignalRankAI production QA release r2.
+Includes canonical PAPER-ONLY starvation-recovery score semantics, non-contradictory recovery ML quality checks, reachable FX score default, and numerically stable reward-risk boundary comparisons. The r1 rollout was blocked by the expanded quality tests before runtime. Normal certified ML/live-execution/copy/payout controls remain unchanged and fail-closed.
