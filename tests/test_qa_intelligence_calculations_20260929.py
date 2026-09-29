@@ -307,3 +307,80 @@ def test_score_breakdown_preserves_real_zero_values() -> None:
     assert breakdown["volume"] == 0.0
     assert breakdown["historical"] == 0.0
     assert breakdown["ai"] == 80.0
+
+
+@pytest.mark.asyncio
+async def test_historical_context_prefers_specific_actionable_segment(monkeypatch) -> None:
+    import engine.expectancy_gate as expectancy
+
+    calls: list[tuple[str | None, str | None]] = []
+
+    async def fake_context(asset, strategy=None, timeframe=None, lookback_hours=0):
+        calls.append((strategy, timeframe))
+        if strategy == "breakout" and timeframe == "15m":
+            return {"actionable": False, "sample_size": 3, "reason": "insufficient_sample"}
+        if strategy == "breakout" and timeframe is None:
+            return {
+                "actionable": True,
+                "sample_size": 18,
+                "win_rate": 0.61,
+                "avg_r": 0.42,
+                "expectancy_r": 0.42,
+                "reason": "ok",
+            }
+        return {"actionable": True, "sample_size": 40, "expectancy_r": 0.20, "reason": "ok"}
+
+    monkeypatch.setattr(expectancy, "get_live_performance_context", fake_context)
+    result = await expectancy.get_best_live_performance_context(
+        "EURUSD",
+        strategy="breakout",
+        timeframe="15m",
+        lookback_hours=720,
+    )
+
+    assert result["actionable"] is True
+    assert result["scope"] == "asset_strategy"
+    assert result["fallback_depth"] == 1
+    assert result["sample_size"] == 18
+    assert calls == [("breakout", "15m"), ("breakout", None)]
+
+
+@pytest.mark.asyncio
+async def test_historical_context_returns_largest_nonactionable_sample(monkeypatch) -> None:
+    import engine.expectancy_gate as expectancy
+
+    async def fake_context(asset, strategy=None, timeframe=None, lookback_hours=0):
+        samples = {
+            ("breakout", "15m"): 2,
+            ("breakout", None): 5,
+            (None, "15m"): 8,
+            (None, None): 7,
+        }
+        return {
+            "actionable": False,
+            "sample_size": samples[(strategy, timeframe)],
+            "reason": "insufficient_sample",
+        }
+
+    monkeypatch.setattr(expectancy, "get_live_performance_context", fake_context)
+    result = await expectancy.get_best_live_performance_context(
+        "EURUSD",
+        strategy="breakout",
+        timeframe="15m",
+    )
+
+    assert result["actionable"] is False
+    assert result["scope"] == "asset_timeframe"
+    assert result["sample_size"] == 8
+
+
+def test_engine_uses_hierarchical_history_before_ai_review() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    history = engine.index("get_best_live_performance_context")
+    review = engine.index("gemini_ok, gemini_score, gemini_reason", history)
+    block = engine[history:review]
+    assert "strategy_name" in block
+    assert "timeframe" in block
+    assert 'sig["historical_evidence_scope"]' in block
+    assert 'sig["historical_evidence_fallback_depth"]' in block
