@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA for ML challenger forward-proof governance.
+Base runtime commit: 20fb1c67155a8f7ff8cc4eb706106e49aaa23c24.
+Cleanroom certification: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 491 targeted tests PASS.
+This marker changes no runtime behavior. It exists only to force the release-image Docker gate for the candidate-first/forward-proof ML changes.
+Production remains pinned to v41 until the full-image gate and production release review complete.
