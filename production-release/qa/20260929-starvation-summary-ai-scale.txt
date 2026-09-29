@@ -1,0 +1,4 @@
+SignalRankAI production QA release.
+Preserves the last actionable ML starvation verdict across analytics restarts until its existing Redis TTL expires, publishes fresh non-actionable checks separately, and normalizes provider-neutral AI review scores from 0-10 to 0-100 in confidence breakdown and opportunity ranking.
+Includes all prior AI learning, profile/tier, RR/calculation and ML artifact fixes already merged on main.
+Certified ML thresholds and all live-money execution, payout and copy-trade controls remain unchanged.
