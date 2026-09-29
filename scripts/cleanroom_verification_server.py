@@ -45,6 +45,8 @@ _TESTS = [
     "tests/test_observability_operations_contract.py",
     "tests/test_premium_ux_contract.py",
     "tests/test_ml_champion_challenger_governance.py",
+    "tests/test_ml_feature_contract.py",
+    "tests/test_ml_candidate_forward_proof.py",
     "tests/test_ml_registry.py",
     "tests/test_adaptive_dataset_and_wfo.py",
     "tests/test_delivery_fanout_planner.py",
