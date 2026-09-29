@@ -3,10 +3,8 @@ from pathlib import Path
 
 def test_openai_defaults_use_current_cost_tiered_models_and_local_fallback() -> None:
     source = Path("services/openai_ai.py").read_text(encoding="utf-8")
-    assert '"gpt-5.6-luna"' in source
-    assert '"gpt-5.6-terra"' in source
-    assert '"gpt-6-luna"' not in source
-    assert '"gpt-6-sol"' not in source
+    assert '"gpt-6-luna"' in source
+    assert '"gpt-6-sol"' in source
     assert 'AI_PROVIDER_ORDER") or "openai,gemini,local"' in source
     assert '"store": False' in source
     assert '"prompt_cache_key"' in source
