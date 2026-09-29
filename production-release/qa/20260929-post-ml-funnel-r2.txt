@@ -1,0 +1,2 @@
+SignalRankAI production QA observability release r2.
+Repairs the test assertion from r1 and deploys exact post-ML rejection funnel logging. No trading thresholds or financial-execution controls change.
