@@ -18,6 +18,37 @@ import statistics
 logger = logging.getLogger(__name__)
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+_RANGE_STRATEGY_TOKENS = (
+    "mean_reversion",
+    "meanreversion",
+    "range",
+    "pairs",
+    "pair_trade",
+    "pairstrade",
+    "stat_arb",
+    "statarb",
+    "statistical_arbitrage",
+    "grid",
+)
+
+
+def is_range_friendly_signal(signal: Dict) -> bool:
+    """True only for strategies whose edge is explicitly non-trending/range based."""
+    raw = " ".join(
+        str(signal.get(key) or "")
+        for key in ("strategy_name", "strategy_group", "setup", "trigger")
+    ).lower()
+    normalized = raw.replace("-", "_").replace(" ", "_")
+    return any(token in normalized for token in _RANGE_STRATEGY_TOKENS)
+
+
 class NewsFilter:
     """Filter signals during high-impact news events."""
     
@@ -107,50 +138,85 @@ class OverextendedFilter:
 
 
 class ChopFilter:
-    """Detect choppy/consolidating markets."""
-    
+    """Detect trend-hostile chop using dimensionless, asset-relative evidence."""
+
     def is_choppy(
         self,
         candles: List[Dict],
         adx: float,
         atr_pct: float,
-        lookback: int = 20
+        lookback: int = 20,
+        *,
+        range_friendly: bool = False,
     ) -> Tuple[bool, str]:
+        """Return a hard chop veto only when several self-relative tests agree.
+
+        Absolute ATR/range percentages are not portable across FX, crypto,
+        equities, indices and commodities. The old 1% ATR / 2% range test
+        systematically classified ordinary FX as low-volatility chop.
+
+        Range/mean-reversion/stat-arb/grid strategies intentionally operate in
+        non-trending regimes, so chop is not a contradiction for those setups;
+        their canonical quality, R:R, confluence, evidence and range-ADX gates
+        remain authoritative downstream.
         """
-        Detect consolidation.
-        
-        Choppy if:
-        1. ADX < 20 (weak trend)
-        2. ATR% < 3% (low volatility)
-        3. Price in tight range
-        """
-        reasons = []
-        
-        # Check ADX
-        if adx < 20:
-            reasons.append(f"Weak trend (ADX {adx:.0f})")
-        
-        # Check ATR (relax for crypto/FX which are naturally lower volatility)
-        if atr_pct < 1.0:
-            reasons.append(f"Low volatility (ATR {atr_pct:.1f}%)")
-        
-        # Check price range (allow tighter ranges for crypto/FX)
-        if len(candles) >= lookback:
-            recent = candles[-lookback:]
-            highs = [c['high'] for c in recent]
-            lows = [c['low'] for c in recent]
-            
-            range_high = max(highs)
-            range_low = min(lows)
-            range_pct = ((range_high - range_low) / range_low) * 100
-            
-            if range_pct < 2.0:
-                reasons.append(f"Tight range ({range_pct:.1f}%)")
-        
-        # Only reject if multiple strong reasons; single chop indicator is not enough
-        if len(reasons) >= 3:
+        if range_friendly:
+            return False, ""
+        if not isinstance(candles, list) or len(candles) < max(8, lookback):
+            return False, ""
+
+        recent = candles[-lookback:]
+        closes: list[float] = []
+        highs: list[float] = []
+        lows: list[float] = []
+        for row in recent:
+            try:
+                closes.append(float(row["close"]))
+                highs.append(float(row["high"]))
+                lows.append(float(row["low"]))
+            except (KeyError, TypeError, ValueError):
+                return False, ""
+        if len(closes) < 8 or min(closes) <= 0:
+            return False, ""
+
+        true_ranges: list[float] = []
+        for idx in range(1, len(closes)):
+            true_ranges.append(
+                max(
+                    highs[idx] - lows[idx],
+                    abs(highs[idx] - closes[idx - 1]),
+                    abs(lows[idx] - closes[idx - 1]),
+                )
+            )
+        if len(true_ranges) < 6:
+            return False, ""
+
+        recent_width = min(5, max(2, len(true_ranges) // 3))
+        current_atr = statistics.mean(true_ranges[-recent_width:])
+        baseline_values = true_ranges[:-recent_width] or true_ranges
+        baseline_atr = statistics.mean(baseline_values)
+        volatility_ratio = current_atr / baseline_atr if baseline_atr > 0 else 1.0
+
+        path = sum(abs(closes[idx] - closes[idx - 1]) for idx in range(1, len(closes)))
+        efficiency = abs(closes[-1] - closes[0]) / path if path > 0 else 0.0
+        range_span = max(highs) - min(lows)
+        range_to_atr = range_span / max(baseline_atr, 1e-12)
+
+        weak_adx = float(adx or 0.0) < _env_float("CHOP_MAX_ADX", 18.0)
+        inefficient = efficiency < _env_float("CHOP_MAX_EFFICIENCY", 0.25)
+        compressed = volatility_ratio < _env_float("CHOP_MAX_VOLATILITY_RATIO", 0.75)
+        tight_range = range_to_atr < _env_float("CHOP_MAX_RANGE_TO_ATR", 4.0)
+
+        if weak_adx and inefficient and (compressed or tight_range):
+            reasons = [
+                f"Weak trend (ADX {float(adx or 0.0):.0f})",
+                f"Low directional efficiency ({efficiency:.2f})",
+            ]
+            if compressed:
+                reasons.append(f"Volatility contraction ({volatility_ratio:.2f}x baseline)")
+            if tight_range:
+                reasons.append(f"Tight range ({range_to_atr:.1f} ATR)")
             return True, " | ".join(reasons)
-        
         return False, ""
 
 
@@ -387,6 +453,10 @@ class SmartFilterSuite:
         self.liquidity_sweep = LiquiditySweepDetector()
         self.session_filter = SessionVolatilityFilter()
     
+    @staticmethod
+    def is_range_friendly_signal(signal: Dict) -> bool:
+        return is_range_friendly_signal(signal)
+
     def run_all_filters(
         self,
         signal: Dict,
@@ -423,7 +493,8 @@ class SmartFilterSuite:
         is_choppy, reason = self.chop_filter.is_choppy(
             market_data.get('candles', []),
             market_data.get('adx', 30),
-            market_data.get('atr_pct', 0)
+            market_data.get('atr_pct', 0),
+            range_friendly=is_range_friendly_signal(signal),
         )
         if is_choppy:
             rejections.append(reason)
