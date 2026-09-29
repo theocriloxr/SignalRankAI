@@ -1,0 +1,11 @@
+SignalRankAI production QA/intelligence rollout.
+
+Includes:
+- ML trainer artifact-overwrite fix and exact candidate/champion validation.
+- Proof-backed historical expectancy context for ranking and AI review.
+- Current OpenAI model defaults plus governed OpenAI/Gemini decision context.
+- Profile/tier delivery hardening and 2h/6h/8h/12h swing coverage.
+- Canonical RR ladder, geometry, position-size, timezone-age and display corrections.
+- Candle upsert dedupe, durable model loading, starvation observability/recovery health, and retrain cooldown from the prior QA sequence.
+
+Live execution, copy trading, payouts and financial activation remain fail-closed.
