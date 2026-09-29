@@ -1,0 +1,9 @@
+SignalRankAI production QA release v48.
+Runtime base: ccaaf4e1292182af8bed2376c3040d206c798452.
+Staging certification marker: 239eccc57376d506c2088128d4d53dcd62c5ff67.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 505 targeted tests PASS; CLEANROOM_PASS.
+Full release-image build: 559 tests PASS; release provenance PASS; production readiness overall PASS (12/12); RELEASE_IMAGE_RUNTIME_SAFE; deployment SUCCESS.
+v47 controlled retrain certification: production lineage parent=48bce7fbf314... parent_source=durable_registry, local_parent=7a0b4d2c510a; source influence cap applied; weaker schema-v4 candidate saved candidate-only; durable schema-v3 champion preserved.
+Fix: legacy Gemini-named compatibility helpers honor AI_PROVIDER_ORDER. With production order openai,local, an OpenAI degradation cannot silently invoke Gemini. Explicit provider-routed Gemini remains available only when configured in provider order.
+Automatic model promotion, schema promotion, active-candidate replacement, drift-triggered retraining, live execution, copy trading, automatic trading, and payouts remain disabled.
+Analytics training is frozen during cutover and resumes afterward on the daily schedule with 900-second startup delay.
