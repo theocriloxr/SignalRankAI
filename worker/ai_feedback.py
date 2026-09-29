@@ -5,10 +5,10 @@ AI Feedback Loop Worker (Macro-Adjustments)
 This worker runs periodically (daily/weekly) to review performance data
 and use Gemini to recommend engine parameter adjustments.
 
-This creates a "Chief Investment Officer" layer that:
-- Monitors win rate, profit factor, and signal quality
-- Uses Gemini to analyze trading performance
-- Dynamically adjusts base thresholds via Redis
+This creates a governed "Chief Investment Officer" research layer that:
+- Monitors proof-backed win rate, expectancy R, profit factor, model quality, and signal quality
+- Uses OpenAI first, Gemini second, then deterministic rules to propose experiments
+- Records bounded threshold proposals only; it never mutates live production thresholds
 
 Run with: python -m worker.ai_feedback
 Schedule: Daily at midnight or via cron
@@ -430,7 +430,16 @@ async def run_ai_feedback(force: bool = False) -> dict:
         "stats": {
             "win_rate": stats.win_rate,
             "total_trades": stats.total_trades,
+            "wins": stats.wins,
+            "losses": stats.losses,
+            "breakeven": stats.breakeven,
+            "expectancy_r": stats.expectancy_r,
+            "net_r": stats.net_r,
+            "gross_win_r": stats.gross_win_r,
+            "gross_loss_r": stats.gross_loss_r,
             "profit_factor": stats.profit_factor,
+            "current_runtime_threshold": stats.current_base_threshold,
+            "threshold_source": stats.threshold_source,
             "ml_auc": stats.average_ml_auc,
             "avg_score": stats.avg_score,
         },
