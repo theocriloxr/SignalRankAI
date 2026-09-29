@@ -146,3 +146,53 @@ async def test_candidate_schema_change_keeps_separate_schema_gate(monkeypatch):
     )
     assert result["ok"] is False
     assert result["reason"] == "schema_migration_requires_authorization"
+
+
+def test_owner_candidate_commands_are_registered_and_strictly_guarded():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    owner = (root / "signalrank_telegram" / "owner_commands.py").read_text(
+        encoding="utf-8"
+    )
+    bot = (root / "signalrank_telegram" / "bot.py").read_text(
+        encoding="utf-8"
+    )
+    policy = (root / "core" / "tier_policy.py").read_text(
+        encoding="utf-8"
+    )
+    access = (root / "signalrank_telegram" / "command_access.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "async def ml_candidate_command(" in owner
+    assert "async def ml_candidate_promote_command(" in owner
+    promote = owner[
+        owner.index("async def ml_candidate_promote_command("):
+    ]
+    assert "await _is_strict_owner(update.effective_user.id)" in promote
+    assert 'confirmation != "CONFIRM"' in promote
+    assert "promote_candidate_from_forward_proof" in promote
+
+    assert "ml_candidate_command," in bot
+    assert "ml_candidate_promote_command," in bot
+    assert 'CommandHandler("ml_candidate"' in bot
+    assert 'CommandHandler("ml_candidate_promote"' in bot
+
+    assert '"ml_candidate": Tier.OWNER' in policy
+    assert '"ml_candidate_promote": Tier.OWNER' in policy
+    assert '("ml_candidate",' in access
+    assert '("ml_candidate_promote",' in access
+
+
+def test_candidate_forward_outcomes_do_not_pollute_rejection_false_negative_metrics():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    worker = (root / "engine" / "shadow_outcome_worker.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"candidate_forward_outcome"' in worker
+    assert '"CANDIDATE_FORWARD"' in worker
+    assert 'candidate_forward:counts:{bucket}' in worker
+    assert 'if is_candidate_forward:' in worker
