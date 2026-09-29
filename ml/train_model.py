@@ -2227,13 +2227,13 @@ async def main(lookback_days: int | None = None):
     # changing live decisions until sufficient delivery-proof evidence exists.
     if not promotion_eligible:
         from engine import ml as engine_ml
-        candidate_reload = await asyncio.to_thread(engine_ml.reload_shadow_model)
+        candidate_reload = await asyncio.to_thread(engine_ml.reload_shadow_model, sync_durable=False)
         if not candidate_reload.get("loaded"):
             if previous_model_bytes is not None:
                 target_path.write_bytes(previous_model_bytes)
             elif target_path.exists():
                 target_path.unlink()
-            await asyncio.to_thread(engine_ml.reload_shadow_model)
+            await asyncio.to_thread(engine_ml.reload_shadow_model, sync_durable=False)
             logger.error(
                 "[ml_training_run] id=%s status=rejected reason=candidate_reload_failed error=%s",
                 run_id, candidate_reload.get("error"),
@@ -2252,7 +2252,7 @@ async def main(lookback_days: int | None = None):
                 target_path.write_bytes(previous_model_bytes)
             elif target_path.exists():
                 target_path.unlink()
-            await asyncio.to_thread(engine_ml.reload_shadow_model)
+            await asyncio.to_thread(engine_ml.reload_shadow_model, sync_durable=False)
             logger.error(
                 "[ml_training_run] id=%s status=rejected reason=candidate_artifact_persistence_failed",
                 run_id,
@@ -2271,13 +2271,13 @@ async def main(lookback_days: int | None = None):
     # promotion until the new artifact can be loaded by the live inference path.
     from engine import ml as engine_ml
 
-    reload_status = await asyncio.to_thread(engine_ml.reload_model)
+    reload_status = await asyncio.to_thread(engine_ml.reload_model, sync_durable=False)
     if not reload_status.get("loaded"):
         if previous_model_bytes is not None:
             primary_path.write_bytes(previous_model_bytes)
         elif primary_path.exists():
             primary_path.unlink()
-        await asyncio.to_thread(engine_ml.reload_model)
+        await asyncio.to_thread(engine_ml.reload_model, sync_durable=False)
         logger.error(
             "[ml_training_run] id=%s status=rejected reason=live_reload_failed error=%s",
             run_id, reload_status.get("error"),
@@ -2299,7 +2299,7 @@ async def main(lookback_days: int | None = None):
             primary_path.write_bytes(previous_model_bytes)
         elif primary_path.exists():
             primary_path.unlink()
-        await asyncio.to_thread(engine_ml.reload_model)
+        await asyncio.to_thread(engine_ml.reload_model, sync_durable=False)
         logger.error(
             "[ml_training_run] id=%s status=rejected reason=artifact_persistence_failed "
             "current_model_restored=true",
