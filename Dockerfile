@@ -113,6 +113,8 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_trader_profiles_and_platform_reliability.py \
       tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py \
       tests/test_expectancy_gate.py \
+      tests/test_product_tier_resolution.py::test_configured_owner_identity_wins_over_stale_free_product_tier \
+      tests/test_phase4_pass1_live_validation.py::test_operator_recovery_uses_bounded_queue_floor \
       tests/test_qa_intelligence_calculations_20260929.py \
       tests/test_production_quality_guard.py \
     && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
