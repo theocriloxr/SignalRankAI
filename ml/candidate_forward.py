@@ -157,23 +157,36 @@ async def load_active_candidate() -> dict[str, Any] | None:
                 .limit(1)
             )
         ).scalars().first()
+        if row is None:
+            await session.rollback()
+            return None
+        payload = dict(getattr(row, "payload", {}) or {})
+        snapshot = {
+            "id": int(getattr(row, "id", 0) or 0),
+            "artifact_hash_sha256": str(
+                getattr(row, "artifact_hash_sha256", "") or ""
+            ),
+            "model_version": str(getattr(row, "model_version", "") or ""),
+            "feature_schema_version": str(
+                getattr(row, "feature_schema_version", "") or ""
+            ),
+            "schema_version": int(payload.get("schema_version") or 1),
+            "feature_schema_hash_sha256": str(
+                payload.get("feature_schema_hash_sha256") or ""
+            ),
+            "training_run_id": str(payload.get("training_run_id") or ""),
+            "trained_at": (
+                getattr(row, "trained_at", None)
+                or _parse_dt(payload.get("trained_at"))
+            ),
+            "created_at": getattr(row, "created_at", None),
+            "metrics": dict(
+                getattr(row, "metrics", {}) or payload.get("metrics") or {}
+            ),
+            "payload": payload,
+        }
         await session.rollback()
-    if row is None:
-        return None
-    payload = dict(getattr(row, "payload", {}) or {})
-    return {
-        "id": int(getattr(row, "id", 0) or 0),
-        "artifact_hash_sha256": str(getattr(row, "artifact_hash_sha256", "") or ""),
-        "model_version": str(getattr(row, "model_version", "") or ""),
-        "feature_schema_version": str(getattr(row, "feature_schema_version", "") or ""),
-        "schema_version": int(payload.get("schema_version") or 1),
-        "feature_schema_hash_sha256": str(payload.get("feature_schema_hash_sha256") or ""),
-        "training_run_id": str(payload.get("training_run_id") or ""),
-        "trained_at": getattr(row, "trained_at", None) or _parse_dt(payload.get("trained_at")),
-        "created_at": getattr(row, "created_at", None),
-        "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
-        "payload": payload,
-    }
+        return snapshot
 
 
 async def load_active_primary() -> dict[str, Any] | None:
@@ -199,23 +212,27 @@ async def load_active_primary() -> dict[str, Any] | None:
                 .limit(1)
             )
         ).scalars().first()
+        if row is None:
+            await session.rollback()
+            return None
+        payload = dict(getattr(row, "payload", {}) or {})
+        snapshot = {
+            "id": int(getattr(row, "id", 0) or 0),
+            "artifact_hash_sha256": str(
+                getattr(row, "artifact_hash_sha256", "") or ""
+            ),
+            "model_version": str(getattr(row, "model_version", "") or ""),
+            "feature_schema_version": str(
+                getattr(row, "feature_schema_version", "") or ""
+            ),
+            "schema_version": int(payload.get("schema_version") or 1),
+            "trained_at": getattr(row, "trained_at", None),
+            "metrics": dict(
+                getattr(row, "metrics", {}) or payload.get("metrics") or {}
+            ),
+        }
         await session.rollback()
-    if row is None:
-        return None
-    payload = dict(getattr(row, "payload", {}) or {})
-    return {
-        "id": int(getattr(row, "id", 0) or 0),
-        "artifact_hash_sha256": str(
-            getattr(row, "artifact_hash_sha256", "") or ""
-        ),
-        "model_version": str(getattr(row, "model_version", "") or ""),
-        "feature_schema_version": str(
-            getattr(row, "feature_schema_version", "") or ""
-        ),
-        "schema_version": int(payload.get("schema_version") or 1),
-        "trained_at": getattr(row, "trained_at", None),
-        "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
-    }
+        return snapshot
 
 
 async def evaluate_candidate_forward_evidence(

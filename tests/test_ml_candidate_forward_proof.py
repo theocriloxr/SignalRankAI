@@ -205,6 +205,82 @@ def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
 
 
 @pytest.mark.asyncio
+async def test_artifact_loaders_snapshot_before_rollback(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    import ml.candidate_forward as forward
+
+    class ExpiringRow:
+        def __init__(self, session, model_name):
+            self._session = session
+            self._values = {
+                "id": 7 if model_name == "candidate" else 8,
+                "artifact_hash_sha256": (
+                    "candidate-hash" if model_name == "candidate" else "primary-hash"
+                ),
+                "model_version": "1.0.0",
+                "feature_schema_version": "feature-schema-v4",
+                "trained_at": None,
+                "created_at": None,
+                "metrics": {"auc": 0.8},
+                "payload": {
+                    "schema_version": 4,
+                    "feature_schema_hash_sha256": "feature-hash",
+                    "training_run_id": "run-1",
+                    "trained_at": "2026-09-29T21:00:00",
+                },
+            }
+
+        def __getattr__(self, name):
+            if name in self._values:
+                if self._session.expired:
+                    raise RuntimeError("detached row accessed after rollback")
+                return self._values[name]
+            raise AttributeError(name)
+
+    class ScalarResult:
+        def __init__(self, row):
+            self._row = row
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return self._row
+
+    class FakeSession:
+        def __init__(self):
+            self.expired = False
+            self.calls = 0
+
+        async def execute(self, _query):
+            self.calls += 1
+            model_name = "candidate" if self.calls == 1 else "primary"
+            return ScalarResult(ExpiringRow(self, model_name))
+
+        async def rollback(self):
+            self.expired = True
+
+    session = FakeSession()
+
+    @asynccontextmanager
+    async def fake_get_session(**_kwargs):
+        session.expired = False
+        yield session
+
+    monkeypatch.setattr("db.session.get_session", fake_get_session)
+
+    candidate = await forward.load_active_candidate()
+    primary = await forward.load_active_primary()
+
+    assert candidate["artifact_hash_sha256"] == "candidate-hash"
+    assert candidate["schema_version"] == 4
+    assert candidate["training_run_id"] == "run-1"
+    assert primary["artifact_hash_sha256"] == "primary-hash"
+    assert primary["schema_version"] == 4
+
+
+@pytest.mark.asyncio
 async def test_candidate_lease_blocks_collecting_forward_candidate(monkeypatch):
     import ml.candidate_forward as forward
 
