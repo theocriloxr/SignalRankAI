@@ -96,6 +96,13 @@ def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
     assert '"rejection_type": "candidate_shadow"' in engine_ml
     assert "candidate_observation_key" in engine_ml
     assert "candidate_artifact_hash_sha256" in engine_ml
+    assert "submit_background_coro(" in engine_ml
+    candidate_persist = engine_ml[
+        engine_ml.index("def _persist_candidate_forward_observation("):
+        engine_ml.index("def _persist_shadow_prediction(")
+    ]
+    assert "run_sync(" not in candidate_persist
+    assert "aligned_features = build_model_feature_values(" in candidate_persist
     assert "champion_probability=(" in core
     assert "champion_threshold=float(threshold)" in core
     assert "champion_passed=bool(approved)" in core
