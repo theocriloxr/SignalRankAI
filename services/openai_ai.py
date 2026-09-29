@@ -427,7 +427,7 @@ def _signal_context(
         "adx", "adx_trend", "volume_ratio", "relative_volume", "atr", "atr_rel", "atr_regime",
         "mtf_4h_trend", "mtf_1d_trend", "mtf_alignment_score", "mtf_confidence_modifier",
         "live_expectancy", "historical_evidence_actionable", "historical_evidence_scope",
-        "historical_sample_size", "historical_win_rate", "historical_avg_r",
+        "historical_evidence_fallback_depth", "historical_sample_size", "historical_win_rate", "historical_avg_r",
         "historical_avg_win_r", "historical_avg_loss_r", "historical_profit_factor",
         "opportunity_score", "asset_health_score", "market_session", "trade_type",
         "trade_profile", "profile_min_rr", "profile_rr_ok", "time_to_target_score",
