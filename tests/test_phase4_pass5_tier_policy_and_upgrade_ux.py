@@ -191,3 +191,8 @@ def test_normal_delivery_quality_floor_cannot_be_lowered_by_tier(monkeypatch) ->
     assert get_entitlements("OWNER").minimum_signal_score == 82.0
     assert get_entitlements("INSTITUTIONAL").minimum_signal_score == 82.0
     assert get_entitlements("PROFESSIONAL").minimum_signal_score == 82.0
+
+
+def test_legacy_tier_asset_projection_includes_every_canonical_tier() -> None:
+    from services.tier_policy import TIER_ALLOWED_ASSETS
+    assert set(TIER_ALLOWED_ASSETS) == {tier.value.lower() for tier in TIER_ORDER}
