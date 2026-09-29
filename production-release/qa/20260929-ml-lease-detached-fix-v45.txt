@@ -1,0 +1,9 @@
+SignalRankAI production QA release v45.
+Runtime base: 87274b50a7d277aa8598adce5c3766459322ab55 plus staging certification marker bbb0ec6fb7f6ebe027d1b05dc4dcba1bf477c33b.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 500 targeted tests PASS.
+Full release-image build: 552 tests PASS; release provenance PASS; production readiness 12/12 PASS; runtime-safe marker PASS.
+Fix: materialize candidate/champion artifact fields before session rollback so candidate lease evaluation cannot access detached ORM state.
+Regression explicitly simulates rollback-expired artifact rows.
+Analytics training remains enabled at a daily cadence with candidate-first, active-candidate lease, source-influence caps, schema promotion lock, and automatic candidate promotion disabled.
+Serving champion remains unchanged unless a separately authorized forward-proof promotion later succeeds.
+No live-money activation, auto execution, copy trading, payouts, or automatic model promotion is enabled.
