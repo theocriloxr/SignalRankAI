@@ -38,6 +38,15 @@ def build_model_feature_values(signal, market_data=None):
     macro = dict(market_data.get("_macro") or signal.get("_macro") or {})
 
     score = _safe_float(signal.get("score"), 0.0)
+    adx = _safe_float(
+        signal.get("adx")
+        if signal.get("adx") is not None
+        else signal.get("adx_value")
+        if signal.get("adx_value") is not None
+        else signal.get("trend_adx"),
+        0.0,
+    )
+    adx_normalized = max(0.0, min(100.0, adx)) / 100.0
     entry = _safe_float(signal.get("entry"), 0.0)
     stop = _safe_float(signal.get("stop_loss") or signal.get("stop"), 0.0)
     target = signal.get("take_profit") or signal.get("tp") or 0.0
@@ -88,6 +97,7 @@ def build_model_feature_values(signal, market_data=None):
         "medium_score": 1.0 if 60 <= score < 75 else 0.0,
         "is_long": 1.0 if direction == "long" else 0.0,
         "asset_class_enc": _safe_float(signal.get("asset_class_enc"), _asset_class_to_int(asset)),
+        "adx_normalized": adx_normalized,
         "price_velocity_3": vel3,
         "price_velocity_5": vel5,
         "price_velocity_10": vel10,
