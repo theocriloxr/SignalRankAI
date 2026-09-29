@@ -367,9 +367,20 @@ async def review_signal_structured(
         for key in (
             "asset", "asset_class", "timeframe", "direction", "strategy_name",
             "strategy_group", "entry", "stop_loss", "take_profit", "targets",
-            "score", "confidence", "rr_ratio", "regime", "session", "rsi",
-            "adx", "atr", "volume_ratio", "relative_volume", "ml_probability",
-            "ml_probability_calibrated", "mtf_4h_trend", "mtf_1d_trend",
+            "score", "confidence", "rr_ratio", "rr_tp1", "rr_final",
+            "regime", "session", "market_session", "trade_type", "trade_profile",
+            "rsi", "adx", "atr", "volume_ratio", "relative_volume",
+            "mtf_4h_trend", "mtf_1d_trend", "mtf_alignment_score",
+            "mtf_confidence_modifier", "opportunity_score", "asset_health_score",
+            "live_expectancy", "historical_evidence_actionable",
+            "historical_evidence_scope", "historical_sample_size",
+            "historical_win_rate", "historical_avg_r", "historical_avg_win_r",
+            "historical_avg_loss_r", "historical_profit_factor",
+            "profile_min_rr", "profile_rr_ok", "time_to_target_score",
+            "candle_evidence_score", "data_quality_score",
+            "ml_probability", "ml_probability_raw", "ml_probability_calibrated",
+            "ml_calibration_validated", "ml_recovery_mode",
+            "ml_recovery_challenger_probability", "ml_recovery_challenger_threshold",
         )
         if signal.get(key) is not None
     }
@@ -392,7 +403,9 @@ async def review_signal_structured(
         "veto_reasons(array of strings), retail_trap_risk(boolean), "
         "late_entry_risk(boolean), macro_conflict(boolean), volatility_risk(boolean), "
         "data_quality_risk(boolean). A score above 8 means strong contextual support, "
-        "not a guarantee of profit. Veto stale, contradictory, late, crowded or structurally weak setups.\n\n"
+        "not a guarantee of profit. When proof-backed historical evidence is supplied, use sample size, "
+        "realized average R and profit factor as context without overfitting small samples. Veto stale, "
+        "contradictory, late, crowded or structurally weak setups.\n\n"
         + json.dumps(
             {
                 "signal": safe_signal,
