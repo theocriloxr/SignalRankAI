@@ -66,9 +66,23 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _delivery_min_score(tier_name: str, default: float) -> float:
-    """Tier presentation/quota can differ; objective quality may not get weaker."""
+    """Resolve one tier score threshold across canonical and legacy env names.
+
+    New deployments use <TIER>_SIGNAL_MIN_SCORE. Existing production services
+    historically used SIGNAL_MIN_SCORE_<TIER>; honor that value when the
+    canonical name is absent so web, Telegram, worker and engine do not diverge.
+    The global quality floor remains non-bypassable by either spelling.
+    """
     floor = _env_float("SIGNAL_DELIVERY_QUALITY_FLOOR", 80.0)
-    configured = _env_float(f"{tier_name.upper()}_SIGNAL_MIN_SCORE", default)
+    tier_key = str(tier_name or "").strip().upper()
+    canonical_name = f"{tier_key}_SIGNAL_MIN_SCORE"
+    legacy_name = f"SIGNAL_MIN_SCORE_{tier_key}"
+    if os.getenv(canonical_name) not in (None, ""):
+        configured = _env_float(canonical_name, default)
+    elif os.getenv(legacy_name) not in (None, ""):
+        configured = _env_float(legacy_name, default)
+    else:
+        configured = float(default)
     return max(floor, configured)
 
 
