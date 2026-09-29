@@ -1,0 +1,2 @@
+SignalRankAI production QA/intelligence rollout r2.
+Repairs the final GPT-6 provider test contract after r1 was blocked by the release gate. Includes PR #129/#130 intelligence, profile/tier, calculation and ML artifact correctness changes. No live execution, copy-trade, payout, or hard-risk control changes.
