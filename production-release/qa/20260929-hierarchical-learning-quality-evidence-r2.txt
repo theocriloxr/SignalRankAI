@@ -1,0 +1,4 @@
+SignalRankAI production QA/intelligence rollout r2.
+The r1 rollout was blocked by a stale release-test function-name assertion and did not replace healthy production containers.
+r2 carries the same bounded runtime changes plus the corrected hierarchy contract test.
+No certified ML threshold reduction or live-money execution-policy change.
