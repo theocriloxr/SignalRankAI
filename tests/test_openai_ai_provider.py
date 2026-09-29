@@ -103,7 +103,7 @@ async def test_openai_signal_review_uses_responses_structured_output_and_no_stor
 
     assert result["ok"] is True
     assert result["provider"] == "openai"
-    assert result["model"] == "gpt-5.6-luna"
+    assert result["model"] == "gpt-6-luna"
     assert result["data"]["score"] == pytest.approx(8.8)
     call = _FakeAsyncClient.captured[-1]
     body = call["json"]
