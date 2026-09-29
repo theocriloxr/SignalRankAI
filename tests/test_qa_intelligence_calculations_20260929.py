@@ -462,3 +462,25 @@ def test_engine_repairs_missing_atr_before_quality_filters() -> None:
     assert "sig['atr_rel'] = _canonical_atr / _close_for_atr" in block
     assert "'adx': _safe_float(sig.get('adx'), 30.0)" in block
     assert marker < filters < ultra
+
+
+def test_catalogue_symbols_do_not_invent_usd_suffixes() -> None:
+    from types import SimpleNamespace
+    from db.ecosystem_bootstrap import _catalogue_symbols
+
+    def instrument(asset_class: str, base: str, quote: str, provider_symbol: str):
+        return SimpleNamespace(
+            id=SimpleNamespace(
+                asset_class=SimpleNamespace(value=asset_class),
+                base=base,
+                quote=quote,
+            ),
+            provider_symbol=provider_symbol,
+        )
+
+    assert _catalogue_symbols(instrument("equity", "GOOGL", "USD", "GOOGL")) == ("GOOGL", "GOOGL")
+    assert _catalogue_symbols(instrument("index", "SPX500", "USD", "SPX500")) == ("US500", "US500")
+    assert _catalogue_symbols(instrument("commodity", "BRENT", "USD", "BRENT")) == ("BRENT", "BRENT")
+    assert _catalogue_symbols(instrument("commodity", "XAU", "USD", "XAUUSD")) == ("XAUUSD", "XAU/USD")
+    assert _catalogue_symbols(instrument("forex", "EUR", "USD", "EURUSD")) == ("EURUSD", "EUR/USD")
+    assert _catalogue_symbols(instrument("crypto", "BTC", "USDT", "BTCUSDT")) == ("BTCUSDT", "BTC/USDT")

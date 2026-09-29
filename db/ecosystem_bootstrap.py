@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 from sqlalchemy import BigInteger, String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.asset_registry import canonicalize_asset
 from core.tier_policy import TIER_ORDER, Tier, get_entitlements
 from data.instrument_discovery import DynamicInstrumentRegistry
 from ml.schema_version import get_feature_columns
@@ -224,6 +225,37 @@ def _instrument_type(kind: str) -> str:
     return {"cash_equity": "equity", "dated_future": "future"}.get(kind, kind)
 
 
+def _catalogue_symbols(instrument) -> tuple[str, str]:
+    """Return canonical and display symbols without inventing USD suffixes.
+
+    Pair markets keep BASE+QUOTE. Equities, indices and commodity aliases use
+    the canonical asset registry so GOOGL stays GOOGL, SPX500 becomes US500 and
+    BRENT stays BRENT, while metals such as XAUUSD remain paired.
+    """
+    asset_class = str(instrument.id.asset_class.value or "").lower()
+    base = str(instrument.id.base or "").upper()
+    quote = str(instrument.id.quote or "").upper()
+    pair_symbol = f"{base}{quote}".upper()
+    provider_symbol = str(instrument.provider_symbol or pair_symbol).upper().strip()
+
+    if asset_class in {"equity", "index", "commodity"}:
+        canonical = str(canonicalize_asset(provider_symbol) or "").upper().strip()
+        if not canonical:
+            canonical = pair_symbol
+    else:
+        canonical = pair_symbol
+
+    if asset_class in {"equity", "index"}:
+        display = canonical
+    elif asset_class == "commodity" and canonical in {"WTI", "BRENT", "NATGAS"}:
+        display = canonical
+    elif base and quote:
+        display = f"{base}/{quote}"
+    else:
+        display = canonical or base
+    return canonical, display
+
+
 async def persist_instrument_registry(
     session: AsyncSession,
     registry: DynamicInstrumentRegistry,
@@ -238,12 +270,12 @@ async def persist_instrument_registry(
 
     for instrument in registry.all():
         key = instrument.canonical_key
-        canonical_symbol = f"{instrument.id.base}{instrument.id.quote or ''}".upper()
+        canonical_symbol, display_symbol = _catalogue_symbols(instrument)
         tradable = instrument.status.value == "active"
         instrument_params.append({
             "id": key,
             "symbol": canonical_symbol,
-            "display": f"{instrument.id.base}/{instrument.id.quote}" if instrument.id.quote else instrument.id.base,
+            "display": display_symbol,
             "asset_class": instrument.id.asset_class.value,
             "instrument_type": _instrument_type(instrument.id.kind.value),
             "market_type": "derivative" if instrument.id.kind.value in {"perpetual", "dated_future", "option", "cfd"} else "cash",
