@@ -542,9 +542,23 @@ def _present_signal_for_tier(
     payload = dict(row or {})
     policy = get_entitlements(tier)
     targets = _signal_targets_for_presentation(payload.get("take_profit"))
+    # Compute canonical geometry from the complete stored trade before tier
+    # projection truncates target depth. This keeps web and Telegram R:R/pip
+    # values consistent.
+    try:
+        from engine.signal_calculations import format_enhanced_signal_data
+        enhanced = format_enhanced_signal_data(payload)
+    except Exception:
+        enhanced = {}
     payload["take_profit"] = targets[: int(policy.max_tp_levels)]
     payload["max_tp_levels"] = int(policy.max_tp_levels)
     payload["exact_levels_locked"] = not bool(policy.has("exact_levels"))
+    payload["rr_tp1"] = enhanced.get("rr_tp1")
+    payload["rr_final"] = enhanced.get("rr_final")
+    payload["expected_profit_pct"] = enhanced.get("expected_profit_pct")
+    payload["expected_loss_pct"] = enhanced.get("expected_loss_pct")
+    payload["pips_to_tp"] = enhanced.get("pips_to_tp")
+    payload["pips_to_sl"] = enhanced.get("pips_to_sl")
 
     if not policy.has("exact_levels"):
         # Match the Telegram Free preview: TP1 may be illustrative, but the
@@ -556,6 +570,12 @@ def _present_signal_for_tier(
         payload["ml_probability"] = None
         payload["ml_probability_calibrated"] = None
         payload["expires_at"] = None
+        payload["rr_tp1"] = None
+        payload["rr_final"] = None
+        payload["expected_profit_pct"] = None
+        payload["expected_loss_pct"] = None
+        payload["pips_to_tp"] = None
+        payload["pips_to_sl"] = None
 
     for index in range(int(policy.max_tp_levels) + 1, 4):
         payload[f"tp{index}_hit_at"] = None
