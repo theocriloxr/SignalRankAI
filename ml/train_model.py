@@ -2421,6 +2421,11 @@ async def main(lookback_days: int | None = None):
     )
 
     deployed_runtime = _is_production_runtime()
+    candidate_first_requested = bool(
+        deployed_runtime
+        and parent_model_hash_sha256
+        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
+    )
     quality_ok, min_accuracy, min_auc = _promotion_quality_gate(
         metrics, deployed_runtime=deployed_runtime
     )
@@ -2497,12 +2502,19 @@ async def main(lookback_days: int | None = None):
             ),
         )
         if not schema_ok:
-            promotion_eligible = False
+            # In production candidate-first mode, a feature-schema migration
+            # must still collect the same forward evidence as any other
+            # challenger. The schema gate blocks promotion later; it must not
+            # prevent the candidate from receiving its forward-proof lease.
+            if not candidate_first_requested:
+                promotion_eligible = False
             logger.warning(
                 "[ml_training_run] id=%s status=candidate_only "
-                "reason=schema_migration_requires_authorization evidence=%s "
+                "reason=schema_migration_requires_authorization "
+                "forward_candidate=%s evidence=%s "
                 "primary_model_preserved=true",
                 run_id,
+                candidate_first_requested,
                 schema_promotion,
             )
 
@@ -2549,12 +2561,7 @@ async def main(lookback_days: int | None = None):
         "required": False,
         "reason": "not_required",
     }
-    if (
-        promotion_eligible
-        and deployed_runtime
-        and bool(parent_model_hash_sha256)
-        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
-    ):
+    if promotion_eligible and candidate_first_requested:
         promotion_eligible = False
         candidate_forward_gate = {
             "required": True,
