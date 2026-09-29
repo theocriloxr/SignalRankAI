@@ -361,6 +361,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         str(Path(__file__).parent.parent / "ml" / "model_candidate.json"),
     )
     p = Path(shadow_path)
+    durable_sync_done = False
     if _SHADOW_CACHE.get("loaded"):
         if _SHADOW_CACHE.get("booster") is not None:
             if not sync_durable:
@@ -372,6 +373,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
             # changes.
             previous_mtime = _SHADOW_CACHE.get("file_mtime_ns")
             _restore_durable_candidate_if_enabled(p)
+            durable_sync_done = True
             try:
                 current_mtime = int(p.stat().st_mtime_ns) if p.exists() else None
             except Exception:
@@ -397,6 +399,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
             # challenger state forever.
             if not sync_durable or not _restore_durable_candidate_if_enabled(p):
                 return
+            durable_sync_done = True
             _SHADOW_CACHE.update({
                 "loaded": False,
                 "booster": None,
@@ -420,7 +423,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
     # local file. Training validation can explicitly disable this so the
     # just-written local candidate cannot be overwritten by the older durable
     # candidate before it is persisted.
-    if sync_durable:
+    if sync_durable and not durable_sync_done:
         _restore_durable_candidate_if_enabled(p)
     if not p.exists():
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
