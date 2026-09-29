@@ -87,6 +87,7 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_ml_retrain_governance.py \
       tests/test_ml_fail_closed_availability.py \
       tests/test_ml_feature_contract.py \
+      tests/test_ml_candidate_forward_proof.py \
       tests/test_ml_training_query_timeout.py \
       tests/test_ml_training_dataset_timeout.py \
       tests/test_ml_durable_artifact_sync.py \
