@@ -384,3 +384,30 @@ def test_engine_uses_hierarchical_history_before_ai_review() -> None:
     assert "timeframe" in block
     assert 'sig["historical_evidence_scope"]' in block
     assert 'sig["historical_evidence_fallback_depth"]' in block
+
+
+def test_ai_context_exposes_historical_fallback_depth() -> None:
+    root = Path(__file__).resolve().parents[1]
+    openai = (root / "services" / "openai_ai.py").read_text(encoding="utf-8")
+    gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
+    assert '"historical_evidence_fallback_depth"' in openai
+    assert '"historical_evidence_fallback_depth"' in gemini
+
+
+def test_instrument_catalogue_persistence_batches_database_round_trips() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "db" / "ecosystem_bootstrap.py").read_text(encoding="utf-8")
+    block = source[
+        source.index("async def persist_instrument_registry") :
+        source.index("async def record_discovery_run")
+    ]
+    assert "instrument_params: list[dict[str, Any]] = []" in block
+    assert "certification_params: list[dict[str, Any]] = []" in block
+    assert "mapping_params: list[dict[str, Any]] = []" in block
+    assert '), instrument_params)' in block
+    assert '), certification_params)' in block
+    assert '), mapping_params)' in block
+    assert block.count("await session.execute(") == 3
+    first_execute = block.index("await session.execute(")
+    instrument_loop = block.index("for instrument in registry.all():")
+    assert first_execute > instrument_loop
