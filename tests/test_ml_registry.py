@@ -197,6 +197,25 @@ def test_promotion_lineage_requires_exact_current_champion_parent(tmp_path):
     assert "parent_model_hash_changed" in stale.reasons
 
 
+def test_promotion_lineage_prefers_explicit_durable_champion_hash(tmp_path):
+    from ml.model_registry import evaluate_promotion_lineage
+
+    champion = tmp_path / "model.json"
+    local_hash = _write_lineage_champion(champion, raw=b"locally-restored-bytes")
+    durable_hash = "d" * 64
+    assert local_hash != durable_hash
+
+    decision = evaluate_promotion_lineage(
+        dataset_version="sha256:" + "c" * 64,
+        training_run_id="ml-run-durable-parent",
+        parent_model_hash_sha256=durable_hash,
+        current_champion_path=champion,
+        current_champion_hash_sha256=durable_hash,
+    )
+    assert decision.eligible is True
+    assert decision.current_champion_hash_sha256 == durable_hash
+
+
 def test_promotion_lineage_rejects_missing_run_or_dataset(tmp_path):
     from ml.model_registry import evaluate_promotion_lineage
 
