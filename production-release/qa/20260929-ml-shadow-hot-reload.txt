@@ -1,0 +1,2 @@
+SignalRankAI production QA follow-up.
+Hot-reloads the latest durable challenger after analytics persists a fresh candidate, without waiting for an engine restart. Includes regression coverage. No champion threshold, live execution, copy trade, payout, or risk-control changes.
