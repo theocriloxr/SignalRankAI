@@ -1,0 +1,9 @@
+SignalRankAI production QA release v47.
+Merged runtime base: db70ce3aec5687e950bcfc108fb4702b2fbbf54e.
+Staging certification marker: 7d4ece619284a532b19dd7994b74200adab9d714.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 505 targeted tests PASS; CLEANROOM_PASS.
+Full release-image build: 557 tests PASS; release provenance PASS; production readiness overall PASS (12/12); RELEASE_IMAGE_RUNTIME_SAFE; deployment SUCCESS.
+Fix: production ML training now uses the durable active primary artifact hash as canonical parent lineage identity, avoiding false lineage mismatches caused by container-local restored/re-serialized model bytes.
+Promotion hardening: forward-proof promotion requires explicit candidate_forward_gate admission and rejects recorded offline champion non-inferiority failure.
+Automatic candidate promotion and schema-version promotion remain disabled. Live financial execution, copy trading, payouts, and automatic trading remain disabled.
+Post-cutover validation: verify exact release identity, then run one controlled retrain to confirm parent_source=durable_registry and primary champion remains unchanged.
