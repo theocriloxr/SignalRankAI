@@ -1,0 +1,4 @@
+SignalRankAI production QA release v40.
+Supersedes v39 after the Docker release gate correctly caught an unsupported _env_float keyword call in the recovery queue-age floor.
+Includes explicit bounded ML recovery queue floor clamping (20-300 seconds), regression coverage for both bounds, canonical OWNER tier routing, operator-only profile bypass for PAPER/QA recovery observations, and preserved paper/operator_recovery delivery metadata.
+Normal certified ML thresholds, final quote/market-hours/geometry/R:R/opportunity-decay/drift gates, live execution, auto execution, copy trading, real payouts and broker permissions remain unchanged and fail-closed.
