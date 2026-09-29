@@ -351,9 +351,17 @@ def test_serving_readiness_prefers_durable_champion_on_cold_load() -> None:
     root = Path(__file__).resolve().parents[1]
     engine_ml = (root / "engine" / "ml.py").read_text(encoding="utf-8")
     block = engine_ml[
-        engine_ml.index("def _load_model()") :
+        engine_ml.index("def _load_model(") :
         engine_ml.index("def _apply_probability_calibration")
     ]
-    assert "sync_due = should_sync_durable or _durable_model_retry_due()" in block
+    assert "sync_durable: bool = True" in block
+    assert "sync_due = bool(sync_durable and" in block
     assert "_restore_durable_primary_if_enabled(path)" in block
     assert block.index("_restore_durable_primary_if_enabled(path)") < block.index("if not path.exists()")
+
+
+def test_trainer_validates_fresh_files_without_registry_overwrite() -> None:
+    root = Path(__file__).resolve().parents[1]
+    trainer = (root / "ml" / "train_model.py").read_text(encoding="utf-8")
+    assert trainer.count("reload_shadow_model, sync_durable=False") >= 2
+    assert trainer.count("reload_model, sync_durable=False") >= 2
