@@ -31,14 +31,24 @@ def is_owner(telegram_user_id: int) -> bool:
 
 
 async def resolve_product_tier(session: AsyncSession, user: User) -> str:
-    """Resolve delivery entitlements from the persisted account and upgrades.
+    """Resolve delivery entitlements from canonical identity and upgrades.
 
-    Operator allowlists control privileged commands; they do not silently
-    upgrade a recipient's product plan. Persisted owner/admin markings win,
-    followed by an active paid subscription, then free.
+    The configured OWNER Telegram identity is canonical account authority, not
+    a paid-plan shortcut. It must resolve consistently across commands, web,
+    delivery authorization and product routing even if a stale persisted tier
+    still says FREE. Persisted owner/admin markings then win, followed by an
+    active paid subscription, then free.
     """
     if bool(getattr(user, "is_blocked", False)) or bool(getattr(user, "is_suspended", False)):
         return "none"
+
+    telegram_user_id = getattr(user, "telegram_user_id", None)
+    if telegram_user_id is not None:
+        try:
+            if is_owner(int(telegram_user_id)):
+                return "owner"
+        except Exception:
+            pass
 
     stored = str(getattr(user, "tier", "free") or "free").strip().lower()
     if stored in {"owner", "admin"}:
