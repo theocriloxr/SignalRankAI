@@ -25,7 +25,7 @@ def strategy_model_to_int(value):
 
 
 def build_model_feature_values(signal, market_data=None):
-    """Build the exact v3 model feature contract for one inference candidate."""
+    """Build the versioned model feature contract for one inference candidate."""
     signal = dict(signal or {})
     market_data = market_data or {}
     tf = str(signal.get("timeframe") or "1h").lower()
@@ -38,14 +38,24 @@ def build_model_feature_values(signal, market_data=None):
     macro = dict(market_data.get("_macro") or signal.get("_macro") or {})
 
     score = _safe_float(signal.get("score"), 0.0)
-    adx = _safe_float(
+    indicator_map = dict(tf_data.get("indicators") or {})
+    raw_adx = (
         signal.get("adx")
         if signal.get("adx") is not None
         else signal.get("adx_value")
         if signal.get("adx_value") is not None
-        else signal.get("trend_adx"),
-        0.0,
+        else signal.get("trend_adx")
+        if signal.get("trend_adx") is not None
+        else indicator_map.get("adx")
     )
+    if raw_adx is None:
+        try:
+            from engine.regime_filter import calculate_adx_from_candles
+
+            raw_adx = calculate_adx_from_candles(candles)
+        except Exception:
+            raw_adx = None
+    adx = _safe_float(raw_adx, 0.0)
     adx_normalized = max(0.0, min(100.0, adx)) / 100.0
     entry = _safe_float(signal.get("entry"), 0.0)
     stop = _safe_float(signal.get("stop_loss") or signal.get("stop"), 0.0)
