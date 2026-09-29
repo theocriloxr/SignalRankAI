@@ -3922,7 +3922,17 @@ def main_loop(DRY_RUN: bool = False):
 
                     # Scoring and advanced filters
                     final_signals = []
+                    post_ml_rejections = Counter()
+
+                    def _post_ml_reject(candidate: Dict[str, Any], stage: str, reason: Any) -> None:
+                        stage_key = _compact_reason(stage, 48)
+                        reason_key = _compact_reason(reason, 160)
+                        candidate["post_ml_rejection_stage"] = stage_key
+                        candidate["post_ml_rejection_reason"] = reason_key
+                        post_ml_rejections[f"{stage_key}:{reason_key}"] += 1
+
                     for sig in risk_passed:
+                        sig["post_ml_stage"] = "scoring"
                         try:
                             # enrich signal context from indicators
                             tf = sig.get('timeframe') or list(market_data.keys())[0]
@@ -4069,6 +4079,7 @@ def main_loop(DRY_RUN: bool = False):
                                     _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", f"advanced:{sig['rejection_reason']}")
                                 else:
                                     _increment_engine_veto("microstructure")
+                                    _post_ml_reject(sig, "advanced_filters", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
                                     continue
 
@@ -4184,6 +4195,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _bump_cycle_reason(pipeline_stats, "invalid_tp_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("other")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
+                                _post_ml_reject(sig, "trade_geometry", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
 
@@ -4219,6 +4231,7 @@ def main_loop(DRY_RUN: bool = False):
                                     _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
                                     _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
                                     _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
+                                    _post_ml_reject(sig, "market_intelligence", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
                                         "asset_health_score": sig.get("asset_health_score"),
                                         "market_session": sig.get("market_session"),
@@ -4323,18 +4336,43 @@ def main_loop(DRY_RUN: bool = False):
 
                             if _env_bool('ULTRA_QUALITY_ENABLED', False):
                                 should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
+                                sig["ultra_quality_score"] = float(qscore or 0.0)
                                 if not should_trade:
-                                    sig['rejection_reason'] = f'ultra:{rejection}'
-                                    pipeline_stats["quality_rejected"] += 1
-                                    _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
-                                    _record_gate_failure(asset, "ultra", sig['rejection_reason'])
-                                    if _staging_quality_advisory_enabled():
-                                        _append_staging_advisory(sig, "ultra", sig['rejection_reason'])
-                                        _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
+                                    ultra_reason = f'ultra:{rejection}'
+                                    if bool(sig.get("ml_recovery_mode")):
+                                        # Starvation recovery is explicitly PAPER ONLY. It already
+                                        # passed a bounded structural score, confluence, raw-model
+                                        # and challenger contract. Ultra remains useful evidence, but
+                                        # must not make that recovery contract self-contradictory.
+                                        # The canonical production quality gate below still enforces
+                                        # executable geometry, R:R, stop width, confluence, ADX,
+                                        # current-market/MTF and AI review constraints.
+                                        sig["ml_recovery_ultra_advisory"] = ultra_reason
+                                        advisories = sig.setdefault("post_ml_advisories", [])
+                                        if isinstance(advisories, list):
+                                            advisories.append({"gate": "ultra", "reason": ultra_reason})
+                                        pipeline_stats["ml_recovery_ultra_advisory"] = int(
+                                            pipeline_stats.get("ml_recovery_ultra_advisory") or 0
+                                        ) + 1
+                                        logger.warning(
+                                            "[engine_ml_recovery] ultra_advisory asset=%s reason=%s "
+                                            "paper_only=1 canonical_quality_continues=1",
+                                            sig.get("asset"),
+                                            ultra_reason,
+                                        )
                                     else:
-                                        _increment_engine_veto("other")
-                                        _log_decision("skipped", sig, reason=sig['rejection_reason'])
-                                        continue
+                                        sig['rejection_reason'] = ultra_reason
+                                        pipeline_stats["quality_rejected"] += 1
+                                        _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
+                                        _record_gate_failure(asset, "ultra", sig['rejection_reason'])
+                                        if _staging_quality_advisory_enabled():
+                                            _append_staging_advisory(sig, "ultra", sig['rejection_reason'])
+                                            _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
+                                        else:
+                                            _increment_engine_veto("other")
+                                            _post_ml_reject(sig, "ultra_quality", sig['rejection_reason'])
+                                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                                            continue
 
                             # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
@@ -4372,6 +4410,7 @@ def main_loop(DRY_RUN: bool = False):
                                     _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", f"quality:{quality_reason}")
                                 else:
                                     _rejection_bucket = _increment_quality_rejection_stat(quality_reason)
+                                    _post_ml_reject(sig, "production_quality", quality_reason)
                                     _log_decision("skipped", sig, reason=quality_reason, meta={
                                         "score": _signal_display_score(sig),
                                         "rr": _signal_roi_score(sig),
@@ -4403,6 +4442,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
                                 _increment_engine_veto("score")
+                                _post_ml_reject(sig, "score", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                                 continue
 
@@ -4412,6 +4452,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("score")
                                 _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
+                                _post_ml_reject(sig, "expectancy", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
 
@@ -4482,6 +4523,7 @@ def main_loop(DRY_RUN: bool = False):
                                         _bump_cycle_reason(pipeline_stats, "staging_advisory_reasons", sig['rejection_reason'])
                                     else:
                                         _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
+                                        _post_ml_reject(sig, "ai_review", sig['rejection_reason'])
                                         _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
                                             "gemini_score": gemini_score,
                                             "rejection_bucket": _rejection_bucket,
@@ -4502,6 +4544,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not _quality_decision.ok:
                                 sig["rejection_reason"] = "quality_gate:" + ",".join(_quality_decision.reasons)
                                 _record_gate_failure(asset, "production_quality", sig["rejection_reason"])
+                                _post_ml_reject(sig, "canonical_quality", sig["rejection_reason"])
                                 _log_decision("skipped", sig, reason=sig["rejection_reason"], meta={
                                     "quality_gate_version": _quality_decision.version,
                                     "tp1_rr": _quality_decision.tp1_rr,
@@ -4509,8 +4552,13 @@ def main_loop(DRY_RUN: bool = False):
                                     "thesis_fingerprint": _quality_decision.thesis_fingerprint,
                                 })
                                 continue
+                            sig["post_ml_stage"] = "accepted"
                             final_signals.append(sig)
-                        except Exception:
+                        except Exception as _post_ml_exc:
+                            try:
+                                _post_ml_reject(sig, "exception", type(_post_ml_exc).__name__)
+                            except Exception:
+                                pass
                             logger.exception("scoring/filtering failed for signal")
                             pipeline_stats["scoring_exception"] += 1
                             _increment_engine_veto("other")
@@ -4528,16 +4576,25 @@ def main_loop(DRY_RUN: bool = False):
                         # that candidate is subsequently rejected, make the exact
                         # downstream gate visible in Railway logs instead of leaving
                         # operators with ml_passed>0 / final_signals=0 and no reason.
-                        post_ml_reasons = Counter()
-                        recovery_candidates = 0
-                        for _post_ml_sig in risk_passed:
-                            if bool(_post_ml_sig.get("ml_recovery_mode")):
-                                recovery_candidates += 1
-                            _post_ml_reason = str(
-                                _post_ml_sig.get("rejection_reason")
-                                or "post_ml_unclassified"
-                            )[:180]
-                            post_ml_reasons[_post_ml_reason] += 1
+                        post_ml_reasons = Counter(post_ml_rejections)
+                        recovery_candidates = sum(
+                            1 for _post_ml_sig in risk_passed
+                            if bool(_post_ml_sig.get("ml_recovery_mode"))
+                        )
+                        if not post_ml_reasons:
+                            for _post_ml_sig in risk_passed:
+                                _post_ml_stage = str(
+                                    _post_ml_sig.get("post_ml_rejection_stage")
+                                    or _post_ml_sig.get("post_ml_stage")
+                                    or "post_ml"
+                                )[:48]
+                                _post_ml_reason = str(
+                                    _post_ml_sig.get("post_ml_rejection_reason")
+                                    or _post_ml_sig.get("final_rejection_reason")
+                                    or _post_ml_sig.get("rejection_reason")
+                                    or "post_ml_unclassified"
+                                )[:180]
+                                post_ml_reasons[f"{_post_ml_stage}:{_post_ml_reason}"] += 1
                         logger.warning(
                             "[engine_post_ml_funnel] asset=%s cycle=%s ml_passed=%s "
                             "recovery_candidates=%s final_signals=0 reasons=%s",
