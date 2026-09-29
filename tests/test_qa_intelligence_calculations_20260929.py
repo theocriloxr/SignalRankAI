@@ -555,3 +555,117 @@ def test_ai_context_includes_historical_uncertainty_bounds() -> None:
     assert 'sig["historical_win_rate_lower_95"]' in engine
     assert 'sig["historical_win_rate_upper_95"]' in engine
     assert 'sig["historical_decisive_samples"]' in engine
+
+
+def test_chop_filter_is_asset_relative_not_absolute_fx_percentages() -> None:
+    from engine.advanced_filters import ChopFilter
+
+    filt = ChopFilter()
+    # Smooth FX-scale trend: ATR/range are far below the old 1%/2% absolute
+    # cutoffs, but directional efficiency is high, so this must not be called chop.
+    candles = []
+    price = 1.1000
+    for idx in range(24):
+        close = price + (idx * 0.0002)
+        candles.append({
+            "open": close - 0.00005,
+            "high": close + 0.00012,
+            "low": close - 0.00012,
+            "close": close,
+        })
+    blocked, reason = filt.is_choppy(candles, adx=15.0, atr_pct=0.03)
+    assert blocked is False
+    assert reason == ""
+
+
+def test_chop_filter_blocks_dimensionless_chop_but_not_range_strategy() -> None:
+    from engine.advanced_filters import ChopFilter
+
+    filt = ChopFilter()
+    candles = []
+    for idx in range(24):
+        center = 1.1000 + (0.00008 if idx % 2 else -0.00008)
+        candles.append({
+            "open": center,
+            "high": center + 0.00012,
+            "low": center - 0.00012,
+            "close": center,
+        })
+    blocked, reason = filt.is_choppy(candles, adx=12.0, atr_pct=0.02)
+    assert blocked is True
+    assert "Low directional efficiency" in reason
+
+    blocked_range, range_reason = filt.is_choppy(
+        candles,
+        adx=12.0,
+        atr_pct=0.02,
+        range_friendly=True,
+    )
+    assert blocked_range is False
+    assert range_reason == ""
+
+
+def test_range_strategy_uses_opposite_adx_guard_in_final_quality(monkeypatch) -> None:
+    from engine.core import _production_quality_gate
+
+    monkeypatch.setenv("PRODUCTION_QUALITY_GUARD_ENABLED", "1")
+    monkeypatch.setenv("QUALITY_MIN_SCORE_FX", "90")
+    monkeypatch.setenv("QUALITY_MIN_RR_FX", "2.2")
+    monkeypatch.setenv("QUALITY_MIN_ML_PROB_FX", "0.68")
+    monkeypatch.setenv("QUALITY_MIN_CONFLUENCE_FX", "50")
+    monkeypatch.setenv("QUALITY_MIN_AI_SCORE_FX", "8")
+    monkeypatch.setenv("QUALITY_MIN_ADX_FX", "25")
+    monkeypatch.setenv("QUALITY_RANGE_MAX_ADX_FX", "28")
+    monkeypatch.setenv("QUALITY_FX_REQUIRE_MTF_ALIGNMENT", "0")
+
+    base = {
+        "asset": "EURUSD",
+        "asset_class": "fx",
+        "timeframe": "15m",
+        "direction": "long",
+        "entry": 1.1000,
+        "stop_loss": 1.0950,
+        "take_profit": [1.1125],
+        "score": 95.0,
+        "ml_probability": 0.90,
+        "confluence_score": 80.0,
+        "ai_review_score": 9.0,
+        "strategy_group": "mean_reversion",
+        "adx": 14.0,
+    }
+    ok, reason = _production_quality_gate(dict(base))
+    assert ok is True, reason
+
+    trend = dict(base, strategy_group="trend", adx=14.0)
+    ok, reason = _production_quality_gate(trend)
+    assert ok is False
+    assert "quality_adx" in reason
+
+    overtrending_range = dict(base, adx=35.0)
+    ok, reason = _production_quality_gate(overtrending_range)
+    assert ok is False
+    assert "quality_range_adx" in reason
+
+
+def test_ultra_trend_filter_is_not_globally_applied_to_range_strategies() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    block = engine[
+        engine.index("_range_friendly_strategy = False") :
+        engine.index("# ML-driven dynamic risk sizing hint")
+    ]
+    assert 'advanced_filters.is_range_friendly_signal(sig)' in block
+    assert '"not_applicable_range_strategy"' in block
+    assert "ultra_quality.apply_ultra_filter(sig)" in block
+    assert "elif _env_bool('ULTRA_QUALITY_ENABLED', False)" in block
+
+
+def test_advanced_filter_logs_strategy_and_regime_evidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
+    marker = engine.index("advanced_filters.run_all_filters")
+    block = engine[marker:marker + 5000]
+    assert '"strategy_name": sig.get("strategy_name")' in block
+    assert '"strategy_group": sig.get("strategy_group")' in block
+    assert '"range_friendly_strategy"' in block
+    assert '"adx": sig.get("adx")' in block
