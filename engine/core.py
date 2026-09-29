@@ -1231,7 +1231,9 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     if gemini_score > 0 and gemini_score < min_ai_score:
         return False, f"quality_ai {gemini_score:.1f} < {min_ai_score:.1f} ({asset_class})"
     try:
-        range_friendly = bool(advanced_filters.is_range_friendly_signal(signal))
+        from engine.advanced_filters import is_range_friendly_signal as _is_range_friendly_signal
+
+        range_friendly = bool(_is_range_friendly_signal(signal))
     except Exception:
         range_friendly = False
     signal["quality_regime_mode"] = "range" if range_friendly else "trend"
