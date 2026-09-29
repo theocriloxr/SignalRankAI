@@ -1,0 +1,3 @@
+SignalRankAI production AI evidence-parity rollout.
+OpenAI and Gemini direction arbitration now consume the same proof-backed, uncertainty-aware historical and current-market evidence as final review: Wilson bounds, decisive samples, fallback depth, opportunity/candle/data/provider quality, mission health, profile fit and canonical R:R context.
+No certified ML threshold, live execution, payout, copy-trade or broker-permission changes.
