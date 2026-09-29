@@ -1,0 +1,2 @@
+SignalRankAI production paper-recovery hardening.
+Requires canonical TP1 R:R and conservative positive expected-R for starvation-recovery observations. Certified champion threshold remains authoritative; recovery stays bounded, operator-only and non-executable.
