@@ -11,6 +11,7 @@ def test_trade_profile_shapes_intraday_targets_and_expiry(monkeypatch):
     from services.trade_profiles import apply_trade_profile_to_signal, infer_trade_profile
 
     monkeypatch.setenv("TRADE_PROFILE_ENGINE_ENABLED", "1")
+    monkeypatch.setenv("TRADE_PROFILE_RESHAPE_EXISTING_LEVELS", "1")
     signal = {
         "asset": "XAUUSD",
         "timeframe": "15m",
@@ -30,6 +31,32 @@ def test_trade_profile_shapes_intraday_targets_and_expiry(monkeypatch):
     assert shaped["time_to_target_score"] > 0
     assert shaped["expires_at"] is not None
 
+
+
+def test_trade_profile_preserves_valid_strategy_geometry_by_default(monkeypatch):
+    from services.trade_profiles import apply_trade_profile_to_signal
+
+    monkeypatch.delenv("TRADE_PROFILE_RESHAPE_EXISTING_LEVELS", raising=False)
+    monkeypatch.delenv("TRADE_PROFILE_SCORE_BLEND_ENABLED", raising=False)
+    signal = {
+        "asset": "EURUSD",
+        "timeframe": "15m",
+        "direction": "long",
+        "entry": 1.1000,
+        "stop_loss": 1.0950,
+        "take_profit": [1.1050, 1.1100, 1.1150],
+        "atr": 0.0020,
+        "score": 88.0,
+    }
+    shaped = apply_trade_profile_to_signal(signal)
+
+    assert shaped["stop_loss"] == pytest.approx(1.0950)
+    assert shaped["take_profit"] == pytest.approx([1.1050, 1.1100, 1.1150])
+    assert shaped["target_model"] == "strategy_preserved"
+    assert shaped["rr_tp1"] == pytest.approx(1.0)
+    assert shaped["rr_final"] == pytest.approx(3.0)
+    assert shaped["score"] == pytest.approx(88.0)
+    assert shaped["profile_score_blended"] is False
 
 def test_signal_profile_filter_matches_user_intent():
     from services.trade_profiles import signal_matches_user_profile

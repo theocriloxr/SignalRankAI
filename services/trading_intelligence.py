@@ -74,7 +74,9 @@ def enrich_signal_intelligence(
         sig["mission_recommendation"] = mission.recommendation
         sig["mission_recommendation_reason"] = mission.recommendation_reason
         sig["probability_tp_today"] = mission.probability_tp_today
+        sig["probability_tp_today_method"] = "heuristic_time_to_target_v1"
         sig["probability_recovery"] = mission.probability_recovery
+        sig["probability_recovery_method"] = "heuristic_health_v1"
     except Exception:
         pass
     return sig

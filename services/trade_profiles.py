@@ -126,6 +126,13 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return float(default)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 def _parse_tp_levels(raw: Any) -> list[float]:
     if raw is None:
         return []
@@ -199,39 +206,93 @@ def estimate_time_to_target(signal: dict[str, Any], profile_name: str | None = N
 
 
 def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str | None = None) -> dict[str, Any]:
+    """Attach horizon/profile metadata without silently rewriting a valid thesis.
+
+    Strategy-authored entry/stop/targets remain canonical by default. ATR profile
+    geometry is synthesized only when the original geometry is missing/invalid,
+    or when TRADE_PROFILE_RESHAPE_EXISTING_LEVELS=1 is explicitly enabled.
+    """
     sig = dict(signal or {})
     profile_name = normalize_trade_profile(preferred_profile) if preferred_profile else infer_trade_profile(sig)
     if profile_name == "all":
         profile_name = infer_trade_profile(sig)
     profile = get_trade_profile(profile_name)
     entry = _as_float(sig.get("entry"), 0.0)
-    direction = str(sig.get("direction") or "long").lower()
+    direction = str(sig.get("direction") or "").strip().lower()
+    is_long = direction in {"long", "buy"}
+    is_short = direction in {"short", "sell"}
+    stop = _as_float(sig.get("stop_loss") or sig.get("stop"), 0.0)
+    original_levels = _parse_tp_levels(
+        sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels")
+    )
+
+    geometry_valid = bool(
+        entry > 0
+        and stop > 0
+        and (is_long or is_short)
+        and ((is_long and stop < entry) or (is_short and stop > entry))
+        and original_levels
+        and all((level > entry if is_long else level < entry) for level in original_levels)
+    )
+    reshape_existing = _env_bool("TRADE_PROFILE_RESHAPE_EXISTING_LEVELS", False)
     atr = _resolve_atr(sig, entry)
-    if entry > 0 and atr > 0:
-        sign = 1.0 if direction in {"long", "buy"} else -1.0
+    if entry > 0 and atr > 0 and (reshape_existing or not geometry_valid) and (is_long or is_short):
+        sign = 1.0 if is_long else -1.0
         sl = entry - (sign * atr * profile.stop_atr_multiplier)
         levels = [entry + (sign * atr * m) for m in profile.target_atr_multipliers]
+        levels = [round(float(x), 8) for x in levels if x > 0]
         sig["stop_loss"] = round(float(sl), 8)
-        sig["take_profit"] = [round(float(x), 8) for x in levels if x > 0]
-        risk = abs(entry - float(sig["stop_loss"]))
-        if risk > 0 and sig["take_profit"]:
-            sig["rr_ratio"] = round(abs(float(sig["take_profit"][0]) - entry) / risk, 2)
-            sig["rr_estimate"] = sig["rr_ratio"]
+        sig["take_profit"] = levels
+        sig["target_model"] = "atr_profile"
+    else:
+        # Keep the original executable thesis intact; profile metadata describes
+        # user horizon and fit rather than manufacturing a different trade.
+        if geometry_valid:
+            sig["stop_loss"] = stop
+            sig["take_profit"] = list(original_levels)
+        sig["target_model"] = str(sig.get("target_model") or "strategy_preserved")
+
+    # Canonical R:R is always recalculated from the geometry that will actually
+    # be displayed/persisted.
+    final_stop = _as_float(sig.get("stop_loss") or sig.get("stop"), 0.0)
+    final_levels = _parse_tp_levels(
+        sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels")
+    )
+    risk = abs(entry - final_stop) if entry > 0 and final_stop > 0 else 0.0
+    target_rrs = [
+        abs(float(level) - entry) / risk
+        for level in final_levels
+        if risk > 0 and ((is_long and level > entry) or (is_short and level < entry))
+    ]
+    if target_rrs:
+        sig["rr_ratio"] = round(float(target_rrs[0]), 4)
+        sig["rr_estimate"] = sig["rr_ratio"]
+        sig["rr_tp1"] = sig["rr_ratio"]
+        sig["rr_final"] = round(float(target_rrs[-1]), 4)
+
     sig["trade_profile"] = profile.name
     sig["trade_profile_label"] = profile.label
     sig["expected_duration"] = profile.expected_duration
-    sig["target_model"] = "atr_profile"
-    sig["expires_at"] = now_utc_naive() + timedelta(minutes=int(profile.expiry_minutes))
+    sig["profile_min_rr"] = float(profile.min_rr)
+    sig["profile_rr_ok"] = bool(target_rrs and float(target_rrs[0]) >= float(profile.min_rr))
+    if not sig.get("expires_at"):
+        sig["expires_at"] = now_utc_naive() + timedelta(minutes=int(profile.expiry_minutes))
     ettt = estimate_time_to_target(sig, profile.name)
     sig["time_to_target"] = ettt
     sig["time_to_target_score"] = float(ettt.get("score") or 0.0)
-    try:
-        base_score = _as_float(sig.get("score"), 0.0)
-        sig["score"] = round((base_score * 0.90) + (float(sig["time_to_target_score"]) * 0.10), 2)
-    except Exception:
-        pass
-    return sig
 
+    # Horizon fit may be experimented with in scoring, but profile selection must
+    # not silently alter the canonical signal score in production by default.
+    if _env_bool("TRADE_PROFILE_SCORE_BLEND_ENABLED", False):
+        base_score = _as_float(sig.get("score"), 0.0)
+        sig["score"] = round(
+            (base_score * 0.90) + (float(sig["time_to_target_score"]) * 0.10),
+            2,
+        )
+        sig["profile_score_blended"] = True
+    else:
+        sig["profile_score_blended"] = False
+    return sig
 
 def signal_matches_user_profile(signal: dict[str, Any], user_profile: str | None) -> bool:
     normalized = normalize_trade_profile(user_profile or "all", default="all")

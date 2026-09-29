@@ -58,6 +58,20 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default)) or default))
+    except Exception:
+        return float(default)
+
+
+def _delivery_min_score(tier_name: str, default: float) -> float:
+    """Tier presentation/quota can differ; objective quality may not get weaker."""
+    floor = _env_float("SIGNAL_DELIVERY_QUALITY_FLOOR", 80.0)
+    configured = _env_float(f"{tier_name.upper()}_SIGNAL_MIN_SCORE", default)
+    return max(floor, configured)
+
+
 def is_valid_tier(value: Tier | str | None) -> bool:
     raw = str(value or "").strip().upper()
     return raw in {tier.value for tier in Tier}
@@ -173,7 +187,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.FREE,
             purchasable=False,
             daily_signal_limit=_env_int("FREE_SIGNAL_DAILY_LIMIT", 3),
-            minimum_signal_score=80.0,
+            minimum_signal_score=_delivery_min_score("FREE", 80.0),
             delivery_delay_minutes=_env_int("FREE_SIGNAL_DELAY_MINUTES", 10),
             delivery_priority="normal",
             max_tp_levels=1,
@@ -188,7 +202,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.PREMIUM,
             purchasable=True,
             daily_signal_limit=_env_int("PREMIUM_SIGNAL_DAILY_LIMIT", 15),
-            minimum_signal_score=80.0,
+            minimum_signal_score=_delivery_min_score("PREMIUM", 80.0),
             delivery_delay_minutes=_env_int("PREMIUM_SIGNAL_DELAY_MINUTES", 0),
             delivery_priority="high",
             max_tp_levels=2,
@@ -203,7 +217,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.VIP,
             purchasable=True,
             daily_signal_limit=_env_int("VIP_SIGNAL_DAILY_LIMIT", 30),
-            minimum_signal_score=80.0,
+            minimum_signal_score=_delivery_min_score("VIP", 80.0),
             delivery_delay_minutes=_env_int("VIP_SIGNAL_DELAY_MINUTES", 0),
             delivery_priority="priority",
             max_tp_levels=3,
@@ -218,7 +232,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.PROFESSIONAL,
             purchasable=True,
             daily_signal_limit=_env_int("PROFESSIONAL_SIGNAL_DAILY_LIMIT", 100),
-            minimum_signal_score=75.0,
+            minimum_signal_score=_delivery_min_score("PROFESSIONAL", 75.0),
             delivery_delay_minutes=0,
             delivery_priority="professional",
             max_tp_levels=3,
@@ -233,7 +247,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.INSTITUTIONAL,
             purchasable=True,
             daily_signal_limit=_env_int("INSTITUTIONAL_SIGNAL_DAILY_LIMIT", 1000),
-            minimum_signal_score=0.0,
+            minimum_signal_score=_delivery_min_score("INSTITUTIONAL", 0.0),
             delivery_delay_minutes=0,
             delivery_priority="institutional",
             max_tp_levels=3,
@@ -248,7 +262,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.ADMIN,
             purchasable=False,
             daily_signal_limit=_env_int("ADMIN_SIGNAL_DAILY_LIMIT", 100),
-            minimum_signal_score=0.0,
+            minimum_signal_score=_delivery_min_score("ADMIN", 0.0),
             delivery_delay_minutes=0,
             delivery_priority="critical",
             max_tp_levels=3,
@@ -263,7 +277,7 @@ def _policies() -> Mapping[Tier, TierEntitlements]:
             tier=Tier.OWNER,
             purchasable=False,
             daily_signal_limit=_env_int("OWNER_SIGNAL_DAILY_LIMIT", 100),
-            minimum_signal_score=0.0,
+            minimum_signal_score=_delivery_min_score("OWNER", 0.0),
             delivery_delay_minutes=0,
             delivery_priority="critical",
             max_tp_levels=3,

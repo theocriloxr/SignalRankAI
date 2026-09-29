@@ -45,6 +45,7 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_ml_learning_runtime_v135.py::test_adaptive_candle_pressure_requeues_full_batch \
       tests/test_ml_learning_runtime_v135.py::test_adaptive_candle_batch_deduplicates_same_database_key \
       tests/test_ml_learning_runtime_v135.py::test_serving_readiness_prefers_durable_champion_on_cold_load \
+      tests/test_ml_learning_runtime_v135.py::test_trainer_validates_fresh_files_without_registry_overwrite \
       tests/test_railway_runtime_incident_fixes.py::test_signal_insert_reuses_the_exact_active_unique_index_bucket \
       tests/test_railway_runtime_incident_fixes.py::test_both_signal_persistence_paths_serialize_database_unique_bucket \
       tests/test_runtime_hardening_contract.py::test_paystack_recovery_never_occupies_the_critical_db_lane \
@@ -109,6 +110,10 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_canonical_consolidation_20260928.py \
       tests/test_web_workstation_parity_20260928.py \
       tests/test_web_command_parity_redesign_20260928.py \
+      tests/test_trader_profiles_and_platform_reliability.py \
+      tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py \
+      tests/test_expectancy_gate.py \
+      tests/test_qa_intelligence_calculations_20260929.py \
     && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
     && python scripts/production_readiness_check.py
 

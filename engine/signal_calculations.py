@@ -2,103 +2,153 @@
 Enhanced signal calculations: profit/loss, risk-reward, position sizing, pips.
 """
 from utils.timeutils import now_utc_naive
+import json
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
+def _normalize_direction(direction: Any) -> str | None:
+    raw = str(direction or "").strip().lower()
+    if raw in {"long", "buy"}:
+        return "long"
+    if raw in {"short", "sell"}:
+        return "short"
+    return None
+
+
+def _parse_target_levels(raw: Any) -> list[float]:
+    """Normalize numeric, JSON, mapping, and list target formats."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        text_value = raw.strip()
+        if not text_value:
+            return []
+        try:
+            raw = json.loads(text_value)
+        except Exception:
+            raw = [part.strip() for part in text_value.strip("[]").split(",") if part.strip()]
+    if isinstance(raw, dict):
+        # Preserve explicit TP ordering before falling back to mapping values.
+        ordered: list[Any] = []
+        for key in ("tp1", "target1", "1", "first", "tp2", "target2", "2", "second", "tp3", "target3", "3", "third"):
+            if key in raw:
+                ordered.append(raw[key])
+        raw = ordered or list(raw.values())
+    if not isinstance(raw, (list, tuple, set)):
+        raw = [raw]
+    levels: list[float] = []
+    for item in raw:
+        if isinstance(item, dict):
+            item = item.get("price") or item.get("tp") or item.get("target") or item.get("value")
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            levels.append(value)
+    return levels
+
+
+def _valid_target_for_direction(entry: float, target: float, direction: str) -> bool:
+    return (direction == "long" and target > entry) or (direction == "short" and target < entry)
+
+
 def calculate_profit_loss_pct(entry: float, exit_price: float, direction: str) -> float:
-    """
-    Calculate profit/loss percentage.
-    
-    Args:
-        entry: Entry price
-        exit_price: Exit price (TP or current price)
-        direction: 'long' or 'short'
-    
-    Returns:
-        Profit/loss as percentage (positive = profit, negative = loss)
-    """
-    if entry <= 0:
+    """Calculate signed price return percentage for a valid trade direction."""
+    try:
+        entry_f = float(entry)
+        exit_f = float(exit_price)
+    except (TypeError, ValueError):
         return 0.0
-    
-    direction = direction.lower()
-    if direction == 'long':
-        return ((exit_price - entry) / entry) * 100
-    else:  # short
-        return ((entry - exit_price) / entry) * 100
+    normalized = _normalize_direction(direction)
+    if entry_f <= 0 or exit_f <= 0 or normalized is None:
+        return 0.0
+    if normalized == "long":
+        return ((exit_f - entry_f) / entry_f) * 100.0
+    return ((entry_f - exit_f) / entry_f) * 100.0
 
 
 def calculate_expected_profit(signal: Dict) -> Optional[float]:
-    """Calculate expected profit % based on entry and TP."""
+    """Calculate TP1 return only when target geometry matches the direction."""
     try:
-        entry = float(signal.get('entry', 0))
-        direction = signal.get('direction', 'long').lower()
-        
-        # Get TP - handle both list and single value
-        tp_raw = signal.get('take_profit')
-        if not tp_raw:
-            return None
-        
-        import json
-        if isinstance(tp_raw, str):
-            try:
-                tp_values = json.loads(tp_raw)
-            except:
-                tp_values = [float(tp_raw)]
-        elif isinstance(tp_raw, list):
-            tp_values = tp_raw
-        else:
-            tp_values = [float(tp_raw)]
-        
-        if not tp_values:
-            return None
-        
-        tp = float(tp_values[0])
-        return calculate_profit_loss_pct(entry, tp, direction)
-    
-    except Exception as e:
-        logger.debug(f"Failed to calculate expected profit: {e}")
+        entry = float(signal.get("entry", 0) or 0)
+    except (TypeError, ValueError):
         return None
+    direction = _normalize_direction(signal.get("direction"))
+    targets = _parse_target_levels(
+        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    )
+    if entry <= 0 or direction is None or not targets:
+        return None
+    tp1 = float(targets[0])
+    if not _valid_target_for_direction(entry, tp1, direction):
+        return None
+    value = calculate_profit_loss_pct(entry, tp1, direction)
+    return value if value > 0 else None
 
 
 def calculate_expected_loss(signal: Dict) -> Optional[float]:
-    """Calculate expected loss % based on entry and SL."""
+    """Calculate signed stop-loss return when stop geometry is valid."""
     try:
-        entry = float(signal.get('entry', 0))
-        stop_loss = float(signal.get('stop_loss', 0))
-        direction = signal.get('direction', 'long').lower()
-        
-        if stop_loss <= 0:
-            return None
-        
-        return calculate_profit_loss_pct(entry, stop_loss, direction)
-    
-    except Exception as e:
-        logger.debug(f"Failed to calculate expected loss: {e}")
+        entry = float(signal.get("entry", 0) or 0)
+        stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
+    except (TypeError, ValueError):
         return None
+    direction = _normalize_direction(signal.get("direction"))
+    if entry <= 0 or stop_loss <= 0 or direction is None:
+        return None
+    if direction == "long" and stop_loss >= entry:
+        return None
+    if direction == "short" and stop_loss <= entry:
+        return None
+    value = calculate_profit_loss_pct(entry, stop_loss, direction)
+    return value if value < 0 else None
+
+
+def calculate_rr_ladder(signal: Dict) -> Dict[str, Any]:
+    """Return canonical TP1/final/per-target R:R from executable geometry."""
+    try:
+        entry = float(signal.get("entry", 0) or 0)
+        stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
+    except (TypeError, ValueError):
+        return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
+    direction = _normalize_direction(signal.get("direction"))
+    targets = _parse_target_levels(
+        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    )
+    risk = abs(entry - stop)
+    if entry <= 0 or stop <= 0 or risk <= 0 or direction is None:
+        return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
+    if direction == "long" and stop >= entry:
+        return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
+    if direction == "short" and stop <= entry:
+        return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
+    valid = [tp for tp in targets if _valid_target_for_direction(entry, tp, direction)]
+    target_rrs = [abs(float(tp) - entry) / risk for tp in valid]
+    return {
+        "target_rrs": [round(value, 6) for value in target_rrs],
+        "tp1_rr": round(target_rrs[0], 6) if target_rrs else None,
+        "final_rr": round(target_rrs[-1], 6) if target_rrs else None,
+    }
 
 
 def calculate_risk_reward(signal: Dict) -> Optional[float]:
-    """Calculate risk-reward ratio."""
-    try:
-        expected_profit = calculate_expected_profit(signal)
-        expected_loss = calculate_expected_loss(signal)
-        
-        if expected_profit is None or expected_loss is None:
-            return signal.get('rr_ratio') or signal.get('rr_estimate')
-        
-        # Ensure loss is positive for RR calculation
-        loss_amount = abs(expected_loss)
-        if loss_amount <= 0:
-            return None
-        
-        return abs(expected_profit) / loss_amount
-    
-    except Exception as e:
-        logger.debug(f"Failed to calculate RR ratio: {e}")
-        return None
+    """Compatibility R:R value: TP1 R:R from canonical geometry."""
+    ladder = calculate_rr_ladder(signal)
+    tp1 = ladder.get("tp1_rr")
+    if tp1 is not None:
+        return float(tp1)
+    for key in ("rr_ratio", "rr_estimate"):
+        try:
+            value = float(signal.get(key))
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def calculate_position_size(signal: Dict, account_balance: float = 10000, risk_pct: float = 1.0) -> Optional[float]:
@@ -140,32 +190,22 @@ def calculate_position_size(signal: Dict, account_balance: float = 10000, risk_p
 
 
 def calculate_pips(asset: str, entry: float, exit_price: float) -> Optional[float]:
-    """
-    Calculate pip value for FX pairs.
-    For most FX pairs: 1 pip = 0.0001
-    For JPY pairs: 1 pip = 0.01
-    """
+    """Calculate pips for canonical FX symbols with or without separators."""
     try:
-        asset_upper = asset.upper()
-        
-        # Only calculate for FX pairs
-        if '/' not in asset or len(asset) != 7:
+        symbol = str(asset or "").upper().replace("/", "").replace("-", "").replace("_", "")
+        fiat = {
+            "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD",
+            "SGD", "HKD", "NOK", "SEK", "DKK", "ZAR", "MXN", "TRY", "PLN",
+        }
+        if len(symbol) != 6 or symbol[:3] not in fiat or symbol[3:] not in fiat:
             return None
-        
-        # Determine pip size
-        if 'JPY' in asset_upper:
-            pip_size = 0.01
-        else:
-            pip_size = 0.0001
-        
-        # Calculate pip difference
-        price_diff = abs(exit_price - entry)
-        pips = price_diff / pip_size
-        
-        return pips
-    
-    except Exception as e:
-        logger.debug(f"Failed to calculate pips: {e}")
+        entry_f = float(entry)
+        exit_f = float(exit_price)
+        if entry_f <= 0 or exit_f <= 0:
+            return None
+        pip_size = 0.01 if symbol[3:] == "JPY" else 0.0001
+        return abs(exit_f - entry_f) / pip_size
+    except (TypeError, ValueError):
         return None
 
 
@@ -234,45 +274,40 @@ def get_price_status_indicator(signal: Dict) -> str:
 
 
 def format_enhanced_signal_data(signal: Dict) -> Dict:
-    """
-    Calculate and format all enhanced signal data.
-    
-    Returns:
-        Dict with calculated fields ready for display
-    """
-    enhanced = {
-        'expected_profit_pct': calculate_expected_profit(signal),
-        'expected_loss_pct': calculate_expected_loss(signal),
-        'risk_reward_ratio': calculate_risk_reward(signal),
-        'suggested_position_size': calculate_position_size(signal),
-        'signal_age_minutes': calculate_signal_age_minutes(signal),
-        'price_status_indicator': get_price_status_indicator(signal),
+    """Calculate one canonical display/calculation projection for a signal."""
+    rr_ladder = calculate_rr_ladder(signal)
+    enhanced: Dict[str, Any] = {
+        "expected_profit_pct": calculate_expected_profit(signal),
+        "expected_loss_pct": calculate_expected_loss(signal),
+        "risk_reward_ratio": calculate_risk_reward(signal),
+        "rr_tp1": rr_ladder.get("tp1_rr"),
+        "rr_final": rr_ladder.get("final_rr"),
+        "rr_targets": rr_ladder.get("target_rrs") or [],
+        "suggested_position_size": calculate_position_size(
+            signal,
+            account_balance=float(signal.get("account_balance") or 10000),
+            risk_pct=float(signal.get("risk_pct") or 1.0),
+        ),
+        "position_size_unit": "asset_units",
+        "signal_age_minutes": calculate_signal_age_minutes(signal),
+        "price_status_indicator": get_price_status_indicator(signal),
     }
-    
-    # Calculate pips for FX
-    asset = signal.get('asset', '')
-    entry = signal.get('entry', 0)
-    
-    # Pips for FX TP
-    tp_raw = signal.get('take_profit')
-    if tp_raw and entry:
-        try:
-            import json
-            if isinstance(tp_raw, str):
-                tp_values = json.loads(tp_raw)
-            elif isinstance(tp_raw, list):
-                tp_values = tp_raw
-            else:
-                tp_values = [float(tp_raw)]
-            
-            if tp_values:
-                enhanced['pips_to_tp'] = calculate_pips(asset, float(entry), float(tp_values[0]))
-        except:
-            pass
-    
-    # Pips for FX SL
-    stop_loss = signal.get('stop_loss', 0)
-    if stop_loss and entry:
-        enhanced['pips_to_sl'] = calculate_pips(asset, float(entry), float(stop_loss))
-    
+
+    asset = str(signal.get("asset") or signal.get("symbol") or "")
+    try:
+        entry = float(signal.get("entry") or 0)
+    except (TypeError, ValueError):
+        entry = 0.0
+    targets = _parse_target_levels(
+        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    )
+    if entry > 0 and targets:
+        enhanced["pips_to_tp"] = calculate_pips(asset, entry, targets[0])
+    try:
+        stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
+    except (TypeError, ValueError):
+        stop_loss = 0.0
+    if entry > 0 and stop_loss > 0:
+        enhanced["pips_to_sl"] = calculate_pips(asset, entry, stop_loss)
     return enhanced
+

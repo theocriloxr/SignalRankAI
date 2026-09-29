@@ -166,7 +166,7 @@ def _model_path() -> Path:
     return Path(__file__).parent.parent / "ml" / "model.json"
 
 
-def _load_model() -> None:
+def _load_model(*, sync_durable: bool = True) -> None:
     should_sync_durable = False
     if _MODEL_CACHE["loaded"]:
         if _MODEL_CACHE.get("booster") is not None:
@@ -174,7 +174,7 @@ def _load_model() -> None:
         # A dedicated serving role may have started before analytics persisted
         # a fresh compatible champion. Retry durable recovery at a bounded
         # cadence instead of caching "no model" forever.
-        if not _durable_model_retry_due():
+        if not sync_durable or not _durable_model_retry_due():
             return
         should_sync_durable = True
         _MODEL_CACHE.update({
@@ -199,7 +199,7 @@ def _load_model() -> None:
     # which allowed a stale image artifact (including an obsolete categorical
     # encoding contract) to make readiness disagree with the actively trained
     # production model.
-    sync_due = should_sync_durable or _durable_model_retry_due()
+    sync_due = bool(sync_durable and (should_sync_durable or _durable_model_retry_due()))
     if sync_due:
         _restore_durable_primary_if_enabled(path)
     if not path.exists():
@@ -252,7 +252,7 @@ def _apply_probability_calibration(raw_probability: float) -> tuple[float, bool,
     return raw, False, "uncalibrated"
 
 
-def reload_model() -> dict[str, Any]:
+def reload_model(*, sync_durable: bool = True) -> dict[str, Any]:
     """Atomically clear and reload the active model after training or restore."""
     with _MODEL_RELOAD_LOCK:
         _MODEL_CACHE.update({
@@ -269,7 +269,7 @@ def reload_model() -> dict[str, Any]:
             "metrics": {},
             "calibration_metrics": {},
         })
-        _load_model()
+        _load_model(sync_durable=sync_durable)
         status = {
             "loaded": bool(_MODEL_CACHE.get("booster") is not None),
             "version": str(_MODEL_CACHE.get("version") or ""),
@@ -325,7 +325,7 @@ def get_model_integrity_status(*, ensure_loaded: bool = True) -> dict[str, Any]:
     }
 
 
-def reload_shadow_model() -> dict[str, Any]:
+def reload_shadow_model(*, sync_durable: bool = True) -> dict[str, Any]:
     """Clear and reload the candidate model used for shadow inference."""
     with _MODEL_RELOAD_LOCK:
         _SHADOW_CACHE.update({
@@ -337,7 +337,7 @@ def reload_shadow_model() -> dict[str, Any]:
             "error": None,
             "metrics": {},
         })
-        _load_shadow_model()
+        _load_shadow_model(sync_durable=sync_durable)
         status = {
             "loaded": bool(_SHADOW_CACHE.get("booster") is not None),
             "version": _SHADOW_CACHE.get("version"),
@@ -353,7 +353,7 @@ def reload_shadow_model() -> dict[str, Any]:
         return status
 
 
-def _load_shadow_model() -> None:
+def _load_shadow_model(*, sync_durable: bool = True) -> None:
     shadow_path = os.getenv(
         "ML_CANDIDATE_MODEL_PATH",
         str(Path(__file__).parent.parent / "ml" / "model_candidate.json"),
@@ -365,7 +365,7 @@ def _load_shadow_model() -> None:
         # A candidate may be persisted by analytics after the engine starts.
         # Retry bounded durable synchronization instead of caching unavailable
         # challenger state forever.
-        if not _restore_durable_candidate_if_enabled(p):
+        if not sync_durable or not _restore_durable_candidate_if_enabled(p):
             return
         _SHADOW_CACHE.update({
             "loaded": False,
@@ -386,8 +386,11 @@ def _load_shadow_model() -> None:
         return
     assert xgb is not None
     # Synchronize the latest durable candidate before trusting an image-baked
-    # local file. Candidate artifacts never become champion implicitly.
-    _restore_durable_candidate_if_enabled(p)
+    # local file. Training validation can explicitly disable this so the
+    # just-written local candidate cannot be overwritten by the older durable
+    # candidate before it is persisted.
+    if sync_durable:
+        _restore_durable_candidate_if_enabled(p)
     if not p.exists():
         _SHADOW_CACHE["error"] = f"model_missing:{p}"
         return
