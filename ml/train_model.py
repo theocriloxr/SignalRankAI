@@ -1392,6 +1392,131 @@ async def load_training_data(lookback_days: int = 90):
         return failed
 
 
+
+def _govern_training_source_influence(df):
+    """Bound shadow-rejected aggregate influence without discarding evidence.
+
+    Counterfactual rejected outcomes are valuable, but their row volume can be
+    orders of magnitude larger than proof-backed delivered outcomes. Preserve
+    every row while scaling only the aggregate shadow-rejected sample weight so
+    it cannot dominate the proof-backed evidence by an unbounded factor.
+    """
+    evidence = {
+        "enabled": True,
+        "applied": False,
+        "proof_sources": ["live_delivery", "archive_proof"],
+        "shadow_source": "shadow_rejected",
+    }
+    if df is None or len(df) == 0 or "source_type" not in df.columns:
+        evidence["reason"] = "source_type_unavailable"
+        return df, evidence
+
+    governed = df.copy()
+    try:
+        governed.attrs.update(dict(getattr(df, "attrs", {}) or {}))
+    except Exception:
+        pass
+
+    weights = pd.to_numeric(
+        governed.get(
+            "sample_weight",
+            pd.Series(1.0, index=governed.index, dtype=float),
+        ),
+        errors="coerce",
+    ).fillna(1.0).clip(lower=0.0)
+    source = governed["source_type"].fillna("").astype(str)
+    proof_mask = source.isin(("live_delivery", "archive_proof"))
+    shadow_mask = source.eq("shadow_rejected")
+
+    proof_effective = float(weights.loc[proof_mask].sum())
+    shadow_effective_before = float(weights.loc[shadow_mask].sum())
+    proof_rows = int(proof_mask.sum())
+    shadow_rows = int(shadow_mask.sum())
+
+    try:
+        max_ratio = max(
+            0.0,
+            float(
+                os.getenv(
+                    "ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO",
+                    "4.0",
+                )
+                or 4.0
+            ),
+        )
+    except Exception:
+        max_ratio = 4.0
+    try:
+        minimum_anchor = max(
+            0.0,
+            float(
+                os.getenv(
+                    "ML_SHADOW_INFLUENCE_MIN_PROOF_ANCHOR",
+                    "25",
+                )
+                or 25
+            ),
+        )
+    except Exception:
+        minimum_anchor = 25.0
+
+    proof_anchor = max(proof_effective, minimum_anchor)
+    shadow_cap = proof_anchor * max_ratio
+    scale = 1.0
+    if shadow_effective_before > shadow_cap and shadow_effective_before > 0.0:
+        scale = max(0.0, min(1.0, shadow_cap / shadow_effective_before))
+        governed.loc[shadow_mask, "sample_weight"] = (
+            weights.loc[shadow_mask] * scale
+        )
+        evidence["applied"] = True
+
+    governed_weights = pd.to_numeric(
+        governed.get(
+            "sample_weight",
+            pd.Series(1.0, index=governed.index, dtype=float),
+        ),
+        errors="coerce",
+    ).fillna(1.0).clip(lower=0.0)
+    shadow_effective_after = float(governed_weights.loc[shadow_mask].sum())
+    total_effective_after = float(governed_weights.sum())
+
+    evidence.update(
+        {
+            "reason": "bounded" if evidence["applied"] else "within_limit",
+            "proof_rows": proof_rows,
+            "shadow_rows": shadow_rows,
+            "proof_effective_weight": round(proof_effective, 6),
+            "proof_anchor": round(proof_anchor, 6),
+            "maximum_shadow_ratio": round(max_ratio, 6),
+            "shadow_effective_weight_before": round(
+                shadow_effective_before, 6
+            ),
+            "shadow_effective_weight_after": round(
+                shadow_effective_after, 6
+            ),
+            "shadow_weight_scale": round(scale, 8),
+            "total_effective_weight_after": round(
+                total_effective_after, 6
+            ),
+        }
+    )
+    governed.attrs["source_influence"] = dict(evidence)
+    logger.info(
+        "[ml_source_influence] proof_rows=%s proof_effective=%.2f "
+        "shadow_rows=%s shadow_before=%.2f shadow_after=%.2f "
+        "max_ratio=%.2f scale=%.6f applied=%s",
+        proof_rows,
+        proof_effective,
+        shadow_rows,
+        shadow_effective_before,
+        shadow_effective_after,
+        max_ratio,
+        scale,
+        evidence["applied"],
+    )
+    return governed, evidence
+
+
 def engineer_features(df):
     """Build feature matrix with domain-specific features."""
     X = df.copy()
@@ -2263,6 +2388,7 @@ async def main(lookback_days: int | None = None):
         logger.error("Refusing to save a bootstrap-trained model in production")
         return False
 
+    df, source_influence = _govern_training_source_influence(df)
     effective_rows = float(df.get("sample_weight", pd.Series([1.0] * len(df))).fillna(1.0).sum())
     min_effective_rows = float(os.getenv("ML_MIN_EFFECTIVE_ROWS", str(max(25, min_rows // 2))) or max(25, min_rows // 2))
     if effective_rows < min_effective_rows:
@@ -2491,6 +2617,7 @@ async def main(lookback_days: int | None = None):
         "effective_rows": float(effective_rows),
         "live_proof_rows": int(live_proof_rows),
         "source_counts": source_counts,
+        "source_influence": dict(source_influence or {}),
         "candle_series_loaded": int(df.attrs.get("candle_series_loaded", 0)),
         "metrics": metrics,
         "offline_quality_gate": offline_quality_gate,

@@ -4,6 +4,7 @@ import pytest
 
 from ml.candidate_forward import _decision_stats, _outcome_class
 from engine.ml import _candidate_forward_observation_key
+from ml.train_model import _govern_training_source_influence
 
 
 def _eligible_candidate(*, artifact="cand", parent="champ", schema=4):
@@ -80,6 +81,82 @@ def test_candidate_observation_key_is_stable_and_artifact_scoped():
     )
     assert first == again
     assert first != other
+
+
+def test_shadow_rejected_effective_weight_is_bounded_by_proof(monkeypatch):
+    import pandas as pd
+
+    monkeypatch.setenv("ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO", "2")
+    monkeypatch.setenv("ML_SHADOW_INFLUENCE_MIN_PROOF_ANCHOR", "1")
+    frame = pd.DataFrame(
+        [
+            *[
+                {
+                    "source_type": "live_delivery",
+                    "sample_weight": 1.0,
+                }
+                for _ in range(10)
+            ],
+            *[
+                {
+                    "source_type": "shadow_rejected",
+                    "sample_weight": 0.6,
+                }
+                for _ in range(100)
+            ],
+        ]
+    )
+
+    governed, evidence = _govern_training_source_influence(frame)
+
+    shadow_after = governed.loc[
+        governed["source_type"] == "shadow_rejected",
+        "sample_weight",
+    ].sum()
+    assert evidence["applied"] is True
+    assert evidence["proof_effective_weight"] == 10.0
+    assert abs(float(shadow_after) - 20.0) < 1e-6
+    assert evidence["shadow_effective_weight_after"] == 20.0
+    assert evidence["shadow_weight_scale"] < 1.0
+
+
+def test_shadow_influence_governance_preserves_all_rows(monkeypatch):
+    import pandas as pd
+
+    monkeypatch.setenv("ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO", "1")
+    monkeypatch.setenv("ML_SHADOW_INFLUENCE_MIN_PROOF_ANCHOR", "5")
+    frame = pd.DataFrame(
+        [
+            {"source_type": "archive_legacy", "sample_weight": 0.4},
+            *[
+                {
+                    "source_type": "shadow_rejected",
+                    "sample_weight": 1.0,
+                }
+                for _ in range(20)
+            ],
+        ]
+    )
+
+    governed, evidence = _govern_training_source_influence(frame)
+
+    assert len(governed) == len(frame)
+    assert evidence["proof_rows"] == 0
+    assert evidence["shadow_effective_weight_after"] == 5.0
+    assert governed.loc[
+        governed["source_type"] == "archive_legacy",
+        "sample_weight",
+    ].iloc[0] == 0.4
+
+
+def test_analytics_training_master_switch_blocks_drift_retrain():
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    trainer = source[
+        source.index("async def _run_ml_training_serialized"):
+        source.index("async def _openai_startup_probe")
+    ]
+    assert 'if not _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):' in trainer
+    assert "status=disabled_by_master_switch" in trainer
 
 
 def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():

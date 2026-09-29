@@ -19,8 +19,14 @@ _ML_TRAIN_LOCK=asyncio.Lock()
 
 async def _run_ml_training_serialized(*, reason: str, lookback_days: int | None=None) -> bool:
     """Serialize analytics-owned training and suppress redundant drift retrains."""
-    from core.redis_state import state
     retrain_reason=str(reason or "").strip().lower()
+    if not _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
+        logger.info(
+            "[analytics_ml_train] reason=%s status=disabled_by_master_switch",
+            reason,
+        )
+        return False
+    from core.redis_state import state
     min_gap_seconds=max(
         300,
         int(os.getenv("ML_RETRAIN_MIN_GAP_SECONDS", "3600") or 3600),
