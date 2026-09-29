@@ -397,6 +397,78 @@ def test_trainer_fail_closes_when_candidate_lease_is_unavailable():
 
 
 @pytest.mark.asyncio
+async def test_candidate_promotion_requires_forward_proof_admission(monkeypatch):
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    candidate["payload"]["training_meta"]["candidate_forward_gate"] = {
+        "required": False,
+        "reason": "not_required",
+    }
+
+    async def fake_candidate():
+        return candidate
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "candidate_not_admitted_to_forward_proof"
+
+
+@pytest.mark.asyncio
+async def test_candidate_promotion_rejects_recorded_noninferiority_failure(monkeypatch):
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    candidate["payload"]["training_meta"]["champion_comparison"] = {
+        "enabled": True,
+        "reason": "material_regression",
+        "regressions": {"auc": {"candidate": 0.80, "champion": 0.84}},
+    }
+
+    async def fake_candidate():
+        return candidate
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "candidate_offline_noninferiority_failed"
+
+
+def test_training_uses_durable_champion_identity_as_production_parent():
+    trainer = Path("ml/train_model.py").read_text(encoding="utf-8")
+    block = trainer[
+        trainer.index("deployed_runtime = _is_production_runtime()"):
+        trainer.index("quality_ok, min_accuracy, min_auc = _promotion_quality_gate(")
+    ]
+    assert "await _load_durable_champion_metrics()" in block
+    assert "durable_parent_model_hash_sha256" in block
+    assert '"durable_registry"' in block
+    assert "durable_champion_identity_unavailable" in block
+    assert "parent_identity_source" in block
+
+
+@pytest.mark.asyncio
 async def test_candidate_promotion_requires_explicit_authorization_by_default(monkeypatch):
     import ml.candidate_forward as forward
 

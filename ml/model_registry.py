@@ -166,6 +166,7 @@ def evaluate_promotion_lineage(
     training_run_id: str,
     parent_model_hash_sha256: str,
     current_champion_path: str | Path,
+    current_champion_hash_sha256: str | None = None,
 ) -> ModelLineageDecision:
     """Fail closed when a promotable model cannot prove dataset/run/parent lineage."""
     dataset = str(dataset_version or "").strip()
@@ -178,11 +179,22 @@ def evaluate_promotion_lineage(
     if not run_id:
         reasons.append("training_run_id_missing")
 
-    try:
-        champion_hash = active_artifact_hash(current_champion_path).lower()
-    except RuntimeError as exc:
-        champion_hash = ""
-        reasons.append(str(exc))
+    canonical_champion_hash = str(
+        current_champion_hash_sha256 or ""
+    ).strip().lower()
+    if canonical_champion_hash:
+        # Production may restore/re-serialize the same booster into a local
+        # artifact whose byte hash differs from the durable registry identity.
+        # Lineage must use the durable champion identity when supplied.
+        champion_hash = canonical_champion_hash
+    else:
+        try:
+            champion_hash = active_artifact_hash(
+                current_champion_path
+            ).lower()
+        except RuntimeError as exc:
+            champion_hash = ""
+            reasons.append(str(exc))
 
     if champion_hash:
         if not parent:

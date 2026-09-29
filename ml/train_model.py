@@ -2393,18 +2393,61 @@ async def main(lookback_days: int | None = None):
         y_train,
         timestamps,
     )
+    deployed_runtime = _is_production_runtime()
+    durable_champion_metrics: dict[str, Any] | None = None
+    durable_champion_evidence: dict[str, Any] = {
+        "source": "durable_registry",
+        "reason": "not_loaded",
+    }
+    if deployed_runtime:
+        durable_champion_metrics, durable_champion_evidence = (
+            await _load_durable_champion_metrics()
+        )
+
     lineage_capture_error = ""
+    local_parent_model_hash_sha256 = ""
     try:
-        parent_model_hash_sha256 = await asyncio.to_thread(
+        local_parent_model_hash_sha256 = await asyncio.to_thread(
             active_artifact_hash,
             primary_path,
         )
     except RuntimeError as exc:
-        parent_model_hash_sha256 = ""
         lineage_capture_error = str(exc)
 
+    durable_parent_model_hash_sha256 = str(
+        durable_champion_evidence.get("artifact_hash_sha256") or ""
+    ).strip().lower()
+    if (
+        deployed_runtime
+        and local_parent_model_hash_sha256
+        and not durable_parent_model_hash_sha256
+    ):
+        logger.warning(
+            "[ml_training_run] id=%s status=deferred "
+            "reason=durable_champion_identity_unavailable "
+            "local_parent=%s durable_evidence=%s "
+            "primary_model_preserved=true",
+            run_id,
+            local_parent_model_hash_sha256[:12],
+            durable_champion_evidence,
+        )
+        return False
+
+    parent_model_hash_sha256 = (
+        durable_parent_model_hash_sha256
+        if deployed_runtime and durable_parent_model_hash_sha256
+        else local_parent_model_hash_sha256
+    )
+    parent_identity_source = (
+        "durable_registry"
+        if deployed_runtime and durable_parent_model_hash_sha256
+        else "local_artifact"
+        if parent_model_hash_sha256
+        else "none"
+    )
+
     logger.info(
-        "[ml_training_run] id=%s status=fitting rows=%s effective_rows=%.2f features=%s sources=%s dataset=%s parent=%s",
+        "[ml_training_run] id=%s status=fitting rows=%s effective_rows=%.2f features=%s sources=%s dataset=%s parent=%s parent_source=%s local_parent=%s",
         run_id,
         len(df),
         effective_rows,
@@ -2412,6 +2455,10 @@ async def main(lookback_days: int | None = None):
         source_counts,
         dataset_version,
         parent_model_hash_sha256[:12] if parent_model_hash_sha256 else "none",
+        parent_identity_source,
+        local_parent_model_hash_sha256[:12]
+        if local_parent_model_hash_sha256
+        else "none",
     )
     model, feature_cols, calibration_x, calibration_y, metrics = await asyncio.to_thread(
         train_model,
@@ -2422,7 +2469,6 @@ async def main(lookback_days: int | None = None):
         timestamps,
     )
 
-    deployed_runtime = _is_production_runtime()
     candidate_first_requested = bool(
         deployed_runtime
         and parent_model_hash_sha256
@@ -2479,20 +2525,16 @@ async def main(lookback_days: int | None = None):
             calibration_metrics.get("maximum_ece"),
         )
 
-    durable_champion_metrics: dict[str, Any] | None = None
-    durable_champion_evidence: dict[str, Any] = {
-        "source": "durable_registry",
-        "reason": "not_loaded",
-    }
     schema_promotion = {
         "enabled": False,
         "reason": "not_evaluated",
         "candidate_schema_version": int(CURRENT_SCHEMA_VERSION),
     }
     if promotion_eligible:
-        durable_champion_metrics, durable_champion_evidence = (
-            await _load_durable_champion_metrics()
-        )
+        if durable_champion_evidence.get("reason") == "not_loaded":
+            durable_champion_metrics, durable_champion_evidence = (
+                await _load_durable_champion_metrics()
+            )
         schema_ok, schema_promotion = _schema_promotion_gate(
             int(CURRENT_SCHEMA_VERSION),
             primary_path,
@@ -2526,6 +2568,11 @@ async def main(lookback_days: int | None = None):
         training_run_id=run_id,
         parent_model_hash_sha256=parent_model_hash_sha256,
         current_champion_path=primary_path,
+        current_champion_hash_sha256=(
+            durable_parent_model_hash_sha256
+            if deployed_runtime
+            else None
+        ),
     )
     lineage_reasons = list(lineage_decision.reasons)
     if lineage_capture_error and lineage_capture_error not in lineage_reasons:
@@ -2587,6 +2634,8 @@ async def main(lookback_days: int | None = None):
         "run_id": run_id,
         "dataset_version": dataset_version,
         "parent_model_hash_sha256": parent_model_hash_sha256,
+        "parent_identity_source": parent_identity_source,
+        "local_parent_model_hash_sha256": local_parent_model_hash_sha256,
         "lineage": {
             "eligible": bool(lineage_decision.eligible and not lineage_reasons),
             "reasons": lineage_reasons,
