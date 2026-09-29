@@ -98,3 +98,44 @@ def test_training_primary_reload_can_skip_durable_restore(monkeypatch, tmp_path)
     finally:
         engine_ml._MODEL_CACHE.clear()
         engine_ml._MODEL_CACHE.update(original)
+
+
+def test_loaded_shadow_model_hot_reloads_when_durable_file_changes(monkeypatch, tmp_path):
+    path = tmp_path / "model_candidate.json"
+    path.write_text('{"fresh": true}', encoding="utf-8")
+    current_mtime = path.stat().st_mtime_ns
+    original = dict(engine_ml._SHADOW_CACHE)
+    try:
+        monkeypatch.setenv("ML_CANDIDATE_MODEL_PATH", str(path))
+        engine_ml._SHADOW_CACHE.update({
+            "loaded": True,
+            "booster": _FakeBooster(),
+            "feature_cols": ["old_feature"],
+            "version": "old-candidate",
+            "metrics": {},
+            "error": None,
+            "file_mtime_ns": current_mtime - 1,
+        })
+        with patch.object(
+            engine_ml,
+            "_restore_durable_candidate_if_enabled",
+            return_value=True,
+        ) as restore, patch.object(
+            engine_ml,
+            "load_model_with_metadata",
+            return_value=(
+                _FakeBooster(),
+                ["score_normalized"],
+                {"version": "fresh-candidate", "metrics": {"classification_threshold": 0.5}},
+                None,
+            ),
+        ):
+            engine_ml._load_shadow_model(sync_durable=True)
+
+        restore.assert_called_once_with(path)
+        assert engine_ml._SHADOW_CACHE["booster"] is not None
+        assert engine_ml._SHADOW_CACHE["version"] == "fresh-candidate"
+        assert engine_ml._SHADOW_CACHE["file_mtime_ns"] == current_mtime
+    finally:
+        engine_ml._SHADOW_CACHE.clear()
+        engine_ml._SHADOW_CACHE.update(original)
