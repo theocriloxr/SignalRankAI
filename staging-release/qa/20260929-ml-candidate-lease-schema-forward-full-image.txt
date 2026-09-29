@@ -1,0 +1,5 @@
+SignalRankAI staging full-image QA for active challenger lease and schema-v4 forward proof.
+Runtime base: 163b11d2f1c26e28cb1a4156252c2b875c9c6b0f.
+Cleanroom certification: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 499 targeted tests PASS.
+Scope: preserve evidence-bearing active challengers during forward proof; fail closed if lease state is unavailable; allow schema-changing challengers to collect forward evidence while retaining the separate schema-promotion authorization/certification gate.
+Production remains on v43 with ML training disabled until this full-image gate passes.
