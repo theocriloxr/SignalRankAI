@@ -1,0 +1,3 @@
+SignalRankAI production QA/intelligence rollout.
+Includes uncertainty-aware proof-backed historical evidence, conservative historical ranking, current main tier/profile/RR/catalogue fixes, and runtime OpenAI-first multi-provider review configuration.
+AI remains advisory to deterministic freshness, quality, risk, entitlement and execution gates. Live execution, copy trading and payouts remain fail-closed.
