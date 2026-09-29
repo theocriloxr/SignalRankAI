@@ -149,6 +149,16 @@ def test_shadow_influence_governance_preserves_all_rows(monkeypatch):
     ].iloc[0] == 0.4
 
 
+def test_analytics_training_master_switch_blocks_drift_retrain():
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    trainer = source[
+        source.index("async def _run_ml_training_serialized"):
+        source.index("async def _openai_startup_probe")
+    ]
+    assert 'if not _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):' in trainer
+    assert "status=disabled_by_master_switch" in trainer
+
+
 def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
     from pathlib import Path
 
