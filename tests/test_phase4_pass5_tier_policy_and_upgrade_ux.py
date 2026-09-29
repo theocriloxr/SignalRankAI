@@ -196,3 +196,24 @@ def test_normal_delivery_quality_floor_cannot_be_lowered_by_tier(monkeypatch) ->
 def test_legacy_tier_asset_projection_includes_every_canonical_tier() -> None:
     from services.tier_policy import TIER_ALLOWED_ASSETS
     assert set(TIER_ALLOWED_ASSETS) == {tier.value.lower() for tier in TIER_ORDER}
+
+
+def test_delivery_score_policy_honors_legacy_env_alias_with_global_floor(monkeypatch) -> None:
+    from core.tier_policy import get_entitlements
+
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
+    monkeypatch.delenv("PREMIUM_SIGNAL_MIN_SCORE", raising=False)
+    monkeypatch.setenv("SIGNAL_MIN_SCORE_PREMIUM", "86")
+    assert get_entitlements("premium").minimum_signal_score == 86.0
+
+    monkeypatch.setenv("SIGNAL_MIN_SCORE_PREMIUM", "72")
+    assert get_entitlements("premium").minimum_signal_score == 80.0
+
+
+def test_canonical_tier_score_env_overrides_legacy_alias(monkeypatch) -> None:
+    from core.tier_policy import get_entitlements
+
+    monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
+    monkeypatch.setenv("SIGNAL_MIN_SCORE_VIP", "91")
+    monkeypatch.setenv("VIP_SIGNAL_MIN_SCORE", "84")
+    assert get_entitlements("vip").minimum_signal_score == 84.0
