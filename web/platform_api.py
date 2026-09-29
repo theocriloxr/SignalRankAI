@@ -4130,7 +4130,23 @@ async def update_trading_profile(
         updated = preferences_from_payload(merged)
         await set_platform_user_trading_preferences(session, int(user["id"]), updated)
         await session.commit()
-    return {"preferences": preferences_to_payload(updated)}
+    return {
+        "preferences": preferences_to_payload(updated),
+        "options": {
+            "trade_profiles": ["all", *list(policy.allowed_profiles)],
+            "risk_profiles": ["ultra_conservative", "conservative", "balanced", "aggressive"],
+            "asset_classes": list(policy.allowed_asset_classes),
+            "timeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"],
+            "sessions": ["auto", "asia", "london", "new_york", "overlap", "weekend"],
+        },
+        "tier_policy": {
+            "tier": policy.tier.value,
+            "minimum_signal_score": float(policy.minimum_signal_score),
+            "daily_signal_limit": int(policy.daily_signal_limit),
+            "allowed_asset_classes": list(policy.allowed_asset_classes),
+            "allowed_profiles": ["all", *list(policy.allowed_profiles)],
+        },
+    }
 
 
 @router.post("/simulation")
