@@ -889,5 +889,7 @@ def test_operator_recovery_profile_bypass_is_wired_in_engine_and_resend() -> Non
 
     assert "operator_recovery_observation as _operator_recovery_observation" in engine
     assert "[engine] operator recovery profile bypass" in engine
+    assert 'sig["delivery_execution_mode"] = "paper"' in engine
+    assert "if user_trade_prefs is not None and not _operator_recovery:" in engine
     assert "operator_recovery_observation(" in bot
     assert "[resend] operator recovery profile bypass" in bot

@@ -6010,7 +6010,7 @@ def main_loop(DRY_RUN: bool = False):
                                     sig.get("timeframe"),
                                 )
                                 if eligible:
-                                    if user_trade_prefs is not None:
+                                    if user_trade_prefs is not None and not _operator_recovery:
                                         try:
                                             sig["delivery_user_profile"] = str(getattr(user_trade_prefs, "trade_profile", "all") or "all")
                                             sig["delivery_risk_profile"] = str(getattr(user_trade_prefs, "risk_profile", "balanced") or "balanced")
