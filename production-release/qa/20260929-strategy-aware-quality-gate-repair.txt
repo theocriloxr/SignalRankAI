@@ -1,0 +1,2 @@
+SignalRankAI production release repair.
+Deploys PR #147 so final quality correctly uses the module-level range-strategy classifier instead of the runtime SmartFilterSuite instance. Range/mean-reversion setups use a maximum-ADX guard; trend setups retain minimum-ADX protection. No live execution, payout, copy-trade or certified ML threshold changes.
