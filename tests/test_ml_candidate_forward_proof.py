@@ -151,6 +151,16 @@ def test_shadow_influence_governance_preserves_all_rows(monkeypatch):
     ].iloc[0] == 0.4
 
 
+def test_training_governance_has_schema_version_in_module_scope():
+    import ml.train_model as trainer
+    from ml.schema_version import get_current_schema_version
+
+    assert hasattr(trainer, "CURRENT_SCHEMA_VERSION")
+    assert int(trainer.CURRENT_SCHEMA_VERSION) == int(
+        get_current_schema_version()
+    )
+
+
 def test_analytics_training_master_switch_blocks_drift_retrain():
     source = Path("runtime/analytics.py").read_text(encoding="utf-8")
     trainer = source[
