@@ -6,6 +6,23 @@ from ml.candidate_forward import _decision_stats, _outcome_class
 from engine.ml import _candidate_forward_observation_key
 
 
+def _eligible_candidate(*, artifact="cand", parent="champ", schema=4):
+    return {
+        "artifact_hash_sha256": artifact,
+        "schema_version": schema,
+        "metrics": {
+            "calibration": {"validated": True},
+        },
+        "payload": {
+            "parent_model_hash_sha256": parent,
+            "training_meta": {
+                "offline_quality_gate": {"passed": True},
+                "lineage": {"eligible": True},
+            },
+        },
+    }
+
+
 def test_candidate_outcome_normalization_excludes_ambiguous_results():
     assert _outcome_class("tp3") == "win"
     assert _outcome_class("tp1") == "win"
@@ -88,10 +105,7 @@ def test_candidate_forward_proof_is_evaluation_only_and_candidate_first():
 async def test_candidate_promotion_requires_explicit_authorization_by_default(monkeypatch):
     import ml.candidate_forward as forward
 
-    candidate = {
-        "artifact_hash_sha256": "cand",
-        "schema_version": 4,
-    }
+    candidate = _eligible_candidate()
     primary = {
         "artifact_hash_sha256": "champ",
         "schema_version": 4,
@@ -121,10 +135,11 @@ async def test_candidate_schema_change_keeps_separate_schema_gate(monkeypatch):
     import ml.candidate_forward as forward
 
     async def fake_candidate():
-        return {
-            "artifact_hash_sha256": "cand-v4",
-            "schema_version": 4,
-        }
+        return _eligible_candidate(
+            artifact="cand-v4",
+            parent="champ-v3",
+            schema=4,
+        )
 
     async def fake_primary():
         return {
@@ -146,6 +161,87 @@ async def test_candidate_schema_change_keeps_separate_schema_gate(monkeypatch):
     )
     assert result["ok"] is False
     assert result["reason"] == "schema_migration_requires_authorization"
+
+
+@pytest.mark.asyncio
+async def test_candidate_promotion_rejects_stale_parent_champion(monkeypatch):
+    import ml.candidate_forward as forward
+
+    async def fake_candidate():
+        return _eligible_candidate(
+            artifact="cand",
+            parent="old-champ",
+            schema=4,
+        )
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "new-champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "candidate_parent_champion_changed"
+
+
+@pytest.mark.asyncio
+async def test_candidate_promotion_requires_valid_calibration(monkeypatch):
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    candidate["metrics"]["calibration"]["validated"] = False
+
+    async def fake_candidate():
+        return candidate
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "candidate_calibration_unvalidated"
+
+
+@pytest.mark.asyncio
+async def test_candidate_promotion_requires_recorded_offline_quality(monkeypatch):
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    candidate["payload"]["training_meta"]["offline_quality_gate"] = {
+        "passed": False
+    }
+
+    async def fake_candidate():
+        return candidate
+
+    async def fake_primary():
+        return {
+            "artifact_hash_sha256": "champ",
+            "schema_version": 4,
+        }
+
+    monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
+    monkeypatch.setattr(forward, "load_active_primary", fake_primary)
+
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result["ok"] is False
+    assert result["reason"] == "offline_quality_evidence_missing_or_failed"
 
 
 def test_owner_candidate_commands_are_registered_and_strictly_guarded():
