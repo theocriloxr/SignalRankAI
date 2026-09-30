@@ -400,3 +400,52 @@ def test_engine_required_metadata_uses_protected_lane_and_outer_timeout_exceeds_
     assert 'ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "12"' in source
     assert 'ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS", "12"' in source
     assert '_env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0' in source
+
+
+def test_qa24h_canonical_asset_and_session_regressions():
+    from services.asset_registry import classify_asset, normalize_symbol
+    from engine.advanced_filters import SessionVolatilityFilter
+
+    assert normalize_symbol("JPN225") == "JP225"
+    assert classify_asset("JP225") == "index"
+    assert SessionVolatilityFilter().is_good_session("ASIA", "JP225") == (True, "")
+
+
+def test_qa24h_production_event_retrain_is_fail_closed(monkeypatch):
+    import runtime.analytics as analytics
+
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    monkeypatch.setenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")
+    monkeypatch.delenv("ML_PRODUCTION_DRIFT_RETRAIN_ENABLED", raising=False)
+    assert analytics._automatic_retrain_enabled("feature_drift") is False
+
+
+def test_qa24h_reconciliation_and_candle_contracts_are_bounded():
+    from pathlib import Path
+
+    worker = Path("worker/worker.py").read_text(encoding="utf-8")
+    assert "OUTCOME_PERFORMANCE_RECONCILIATION_USER_LIMIT" in worker
+    assert "limit_users=performance_user_limit" in worker
+
+    quality = Path("market/data_quality_certification.py").read_text(encoding="utf-8")
+    assert "asset_class is AssetClass.FOREX and elapsed_hours <= 3.0" in quality
+    assert '"japan_equity": ((11, 20), (12, 40))' in quality
+    assert "_is_expected_closure(previous, timestamp, canonical, symbol=symbol)" in quality
+
+
+def test_qa24h_metaapi_stock_cfd_suffixes_are_normalized(monkeypatch):
+    import data.pair_discovery as discovery
+
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("STOCK_TICKERS", raising=False)
+    monkeypatch.setenv("ASSET_DISCOVERY_MODE", "auto")
+    monkeypatch.setenv("ALLOW_STATIC_ASSET_FALLBACK", "0")
+    monkeypatch.setattr(
+        discovery,
+        "_metaapi_symbols",
+        lambda: ["BACUSD", "JPMUSD", "BTCUSD", "EURUSD", "JP225"],
+    )
+    stocks = discovery.get_trending_stock_tickers(top_n=10)
+    assert "BAC" in stocks
+    assert "JPM" in stocks
+    assert all(x not in stocks for x in ("BACUSD", "JPMUSD", "BTCUSD", "EURUSD", "JP225"))
