@@ -483,6 +483,29 @@ async def validate_signal_freshness(
                 symbol, entry, live, drift_pct, threshold
             )
         else:
+            # Check market calendar before rejecting as stale
+            try:
+                from services.asset_mapper import map_symbol
+                import yfinance as yf
+                import datetime
+                yf_sym = map_symbol(symbol, "yfinance") or symbol
+                
+                is_closed = False
+                if yf_sym.endswith("=X"):
+                    is_closed = datetime.datetime.utcnow().weekday() >= 5
+                else:
+                    ticker = yf.Ticker(yf_sym)
+                    state = ticker.info.get("marketState", "")
+                    if state.upper() == "CLOSED":
+                        is_closed = True
+                        
+                if is_closed:
+                    reason = f"market_closed: entry={entry:.5f} live={live:.5f}"
+                    logger.info("[stale_validator] Signal deferred to market_closed for %s: %s", symbol, reason)
+                    return False, reason, live
+            except Exception as e:
+                logger.debug("[stale_validator] Failed to verify market calendar for %s: %s", symbol, e)
+                
             reason = (
                 f"stale: entry={entry:.5f} live={live:.5f} "
                 f"drift={drift_pct:.2f}% > threshold={threshold:.1f}%"

@@ -5802,11 +5802,18 @@ def main_loop(DRY_RUN: bool = False):
                                     _sig_id = _sig.get('signal_id') or _sig.get('id')
                                     if _sig_id and get_session is not None:
                                         from db.pg_features import expire_signal
+                                        from sqlalchemy import text
                                         async with get_session() as _es:
-                                            await expire_signal(_es, str(_sig_id))
+                                            if "market_closed" in str(_reason):
+                                                await _es.execute(
+                                                    text("UPDATE signals SET status = 'market_closed' WHERE signal_id = :id"),
+                                                    {"id": str(_sig_id)}
+                                                )
+                                            else:
+                                                await expire_signal(_es, str(_sig_id))
                                             await _es.commit()
                                 except Exception as _exp_err:
-                                    logger.debug(f"[engine] Could not expire stale signal in DB: {_exp_err}")
+                                    logger.debug(f"[engine] Could not update DB for dropped signal: {_exp_err}")
                         except Exception:
                             _fresh_scored_signals.append(_sig)
                 except Exception:
