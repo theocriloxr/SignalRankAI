@@ -294,3 +294,48 @@ def test_expired_signal_lifecycle_status_is_consistent_and_backfillable():
     assert '.values(status="expired")' in script
     assert 'parser.add_argument("--apply", action="store_true")' in script
     assert "await session.rollback()" in script
+
+
+def test_legacy_registry_delegates_jp225_to_canonical_index():
+    from services.asset_registry import classify_asset, normalize_symbol
+
+    assert normalize_symbol("JPN225") == "JP225"
+    assert classify_asset("JP225") == "index"
+    assert classify_asset("JPN225") == "index"
+
+
+def test_non_fx_assets_do_not_receive_fx_session_liquidity_veto():
+    from engine.advanced_filters import SessionVolatilityFilter
+
+    filt = SessionVolatilityFilter()
+    assert filt.is_good_session("ASIA", "JP225") == (True, "")
+    assert filt.is_good_session("ASIA", "XAUUSD") == (True, "")
+    ok, reason = filt.is_good_session("ASIA", "EURUSD")
+    assert ok is False
+    assert "Low liquidity" in reason
+
+
+def test_market_data_certifier_accepts_known_rollover_and_tokyo_lunch():
+    from datetime import datetime, timezone
+    from market.data_quality_certification import _is_expected_closure
+    from core.asset_classes import AssetClass
+
+    fx_before = int(datetime(2026, 9, 29, 20, 55, tzinfo=timezone.utc).timestamp() * 1000)
+    fx_after = int(datetime(2026, 9, 29, 22, 5, tzinfo=timezone.utc).timestamp() * 1000)
+    assert _is_expected_closure(
+        fx_before, fx_after, AssetClass.FOREX, symbol="EURUSD"
+    )
+
+    # 02:25-03:35 UTC == 11:25-12:35 JST, spanning the Tokyo lunch recess.
+    jp_before = int(datetime(2026, 9, 29, 2, 25, tzinfo=timezone.utc).timestamp() * 1000)
+    jp_after = int(datetime(2026, 9, 29, 3, 35, tzinfo=timezone.utc).timestamp() * 1000)
+    assert _is_expected_closure(
+        jp_before, jp_after, AssetClass.INDEX, symbol="JP225"
+    )
+
+    # An arbitrary same-session index hole must still fail closed.
+    bad_before = int(datetime(2026, 9, 29, 0, 15, tzinfo=timezone.utc).timestamp() * 1000)
+    bad_after = int(datetime(2026, 9, 29, 1, 45, tzinfo=timezone.utc).timestamp() * 1000)
+    assert not _is_expected_closure(
+        bad_before, bad_after, AssetClass.INDEX, symbol="JP225"
+    )
