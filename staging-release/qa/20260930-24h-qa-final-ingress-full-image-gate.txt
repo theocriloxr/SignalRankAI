@@ -1,0 +1,7 @@
+SignalRankAI final staging full-image certification for September 30 24-hour QA.
+Merged runtime base: 2df218c5ea063cbf3ad407f6fcb51d1778272391.
+Certified ingress-fix head: ad00e1758430e7b2374b676907405cccc53b175a.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 511 targeted tests PASS; CLEANROOM_PASS.
+Final fix: engine-universe ingress canonicalizes stale broker/database stock-CFD aliases (BACUSD/JPMUSD/MSFTUSD/etc.) before dedupe/routing, while legitimate EURUSD/BTCUSD/XAUUSD/JP225 remain unchanged.
+Prior v50 runtime proved JP225 index classification/session fix, restored valid indices, bounded outcome reconciliation, FX rollover handling and production event-retrain fail-closed behavior.
+Production stays on v50 until this final full-image gate succeeds.
