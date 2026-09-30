@@ -1,0 +1,9 @@
+SignalRankAI production QA release v50: 24-hour QA consolidation.
+Merged runtime base: 9217963dc2419f681c6aa9c1d394045ecad35a8b.
+Staging R2 certification marker: 679fa8a921435f6fa68b8b46ff23e8a9f49877aa.
+Cleanroom R2: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 510 targeted tests PASS; CLEANROOM_PASS.
+Full release image R2: 569 tests PASS; release provenance PASS; production readiness PASS (12/12); RELEASE_IMAGE_RUNTIME_SAFE; deployment SUCCESS.
+Fixes: canonical JP225/index classification; MetaApi stock-CFD suffix cleanup/non-equity exclusion; FX-only session liquidity heuristic; FX rollover and regional index lunch calendar handling; production drift/starvation retraining double opt-in; bounded performance reconciliation DB session occupancy.
+Production configuration: OpenAI/local provider order retained; event-triggered ML retraining disabled; daily scheduled training retained; valid trading indices NAS100/US30/US500 removed from ASSET_BLACKLIST; macro/analysis-only and known invalid crypto quote pairs remain excluded.
+Safety unchanged: certified serving threshold is not lowered; model/schema auto-promotion, active candidate replacement, drift-triggered retraining, live broker execution, copy trading, automatic trading and payouts remain disabled.
+The first staging full-image attempt intentionally remains recorded as FAILED; R2 corrected both regressions and fully recertified.
