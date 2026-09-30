@@ -60,6 +60,7 @@ def _certified_strategy_market_data(asset, asset_class, market_data):
                 asset_class=asset_class,
                 timeframe=timeframe,
                 provider=str(data.get("source") or data.get("provider") or "unknown"),
+                symbol=str(asset or ""),
                 data_age_seconds=data.get("data_age_seconds"),
                 metadata=data.get("metadata") or {},
             )
