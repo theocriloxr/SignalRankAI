@@ -87,8 +87,8 @@ Baseline SHA: 8f8583933a853a54ba1b3585610ee466903c08fc
 
 ## WORK PACKAGE E — PAPER / BROKER / RISK
 - [x] Replace legacy RuntimeState paper accounting with typed transactional paper
-  - Status: ARCHITECTURE PLANNED
-  - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`
+  - Status: IMPLEMENTED and VERIFIED
+  - Evidence: Refactored `core/paper_ledger.py` completely to replace `RuntimeState` and Redis with direct SQLAlchemy calls to `PaperAccount`, `PaperPosition`, and `PaperLedgerEntry`. Added full double-entry logging for `TRADE_OPEN` and `TRADE_CLOSE`.
 
 ## WORK PACKAGE F — ARCHITECTURE CLEANUP
 - [x] Split oversized modules by domain responsibility
