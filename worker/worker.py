@@ -475,22 +475,50 @@ class Worker:
                 logger.info("[worker] task stopped: %s", name)
 
     async def _ecosystem_bootstrap_once(self) -> None:
-        """Seed catalogue/model/strategy metadata after migrations are current."""
+        """Seed catalogue/model/strategy metadata without one long DB session hold."""
         if not is_db_configured():
             logger.info("[ecosystem_bootstrap] skipped database_not_configured")
             return
-        from db.ecosystem_bootstrap import seed_all
-        async with get_session(
-            priority="background",
-            label="worker.ecosystem_bootstrap",
-            timeout_seconds=max(
-                15.0,
-                _env_float("WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS", 60.0, minimum=15.0),
-            ),
-            drop_if_busy=False,
-        ) as session:
-            result = await seed_all(session)
-            await session.commit()
+        from db.ecosystem_bootstrap import (
+            CATALOGUE_VERSION,
+            seed_ml_governance,
+            seed_strategy_registry,
+            seed_subscription_catalogue,
+        )
+
+        phase_timeout = max(
+            8.0,
+            _env_float("WORKER_BOOTSTRAP_PHASE_TIMEOUT_SECONDS", 20.0, minimum=8.0),
+        )
+        result = {"catalogue_version": CATALOGUE_VERSION}
+        phases = (
+            ("subscriptions", seed_subscription_catalogue),
+            ("ml", seed_ml_governance),
+            ("strategies", seed_strategy_registry),
+        )
+        for phase_name, operation in phases:
+            async with get_session(
+                priority="background",
+                label=f"worker.ecosystem_bootstrap.{phase_name}",
+                timeout_seconds=min(
+                    12.0,
+                    max(
+                        3.0,
+                        _env_float(
+                            "WORKER_BOOTSTRAP_DB_ADMISSION_TIMEOUT_SECONDS",
+                            8.0,
+                            minimum=3.0,
+                        ),
+                    ),
+                ),
+                drop_if_busy=False,
+            ) as session:
+                phase_result = await asyncio.wait_for(
+                    operation(session),
+                    timeout=phase_timeout,
+                )
+                await session.commit()
+                result[phase_name] = phase_result
         logger.info("[ecosystem_bootstrap] completed result=%s", result)
 
     async def _instrument_discovery_loop(self) -> None:

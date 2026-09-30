@@ -193,3 +193,20 @@ def test_outcome_performance_reconciliation_uses_bounded_user_batch():
     assert "OUTCOME_PERFORMANCE_RECONCILIATION_USER_LIMIT" in block
     assert '"2"' in block
     assert "limit_users=performance_user_limit" in block
+
+def test_ecosystem_bootstrap_releases_db_between_seed_phases():
+    source = text("worker/worker.py")
+    block = source[
+        source.index("async def _ecosystem_bootstrap_once"):
+        source.index("async def _instrument_discovery_loop")
+    ]
+    assert "WORKER_BOOTSTRAP_PHASE_TIMEOUT_SECONDS" in block
+    assert "WORKER_BOOTSTRAP_DB_ADMISSION_TIMEOUT_SECONDS" in block
+    assert '("subscriptions", seed_subscription_catalogue)' in block
+    assert '("ml", seed_ml_governance)' in block
+    assert '("strategies", seed_strategy_registry)' in block
+    assert 'label=f"worker.ecosystem_bootstrap.{phase_name}"' in block
+    assert "await asyncio.wait_for(" in block
+    assert "await session.commit()" in block
+    assert 'label="worker.ecosystem_bootstrap"' not in block
+

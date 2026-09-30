@@ -1,0 +1,7 @@
+SignalRankAI staging R2 full-image certification for the final September 30 24-hour QA bootstrap-session repair.
+Parent production v51: b7e1c4a4366ab90db8590151a8669149379d3209.
+Fix branch head before marker: 0d06e072c52c6be7bdbaf4092143febfbaf561ab.
+R2 adds the ecosystem-bootstrap session-bound regression directly to the mandatory Docker release gate.
+Expected image gate: compile PASS, existing release suite plus the new bootstrap regression, release provenance PASS, production readiness PASS (12/12).
+Safety unchanged: daily scheduled training only; event-triggered retraining, automatic model/schema promotion, live broker execution, copy trading, automatic trading and payouts remain disabled.
+Production remains on v51 until R2 passes.

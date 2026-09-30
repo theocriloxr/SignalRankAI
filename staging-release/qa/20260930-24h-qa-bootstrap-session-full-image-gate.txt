@@ -1,0 +1,7 @@
+SignalRankAI staging full-image certification for the final September 30 24-hour QA bootstrap-session repair.
+Parent production v51: b7e1c4a4366ab90db8590151a8669149379d3209.
+Fix head before marker: 81d972d3242dbc56b0c190958e5116180777caef.
+Fix: ecosystem catalogue, ML-governance and strategy bootstrap phases now use separate bounded background DB sessions instead of one long startup session hold.
+Regression: release-gate test requires phase-specific session labels, bounded admission/operation timeouts, per-phase commits, and forbids the old monolithic worker.ecosystem_bootstrap session.
+Safety unchanged: daily scheduled training only; event-triggered retraining, automatic model/schema promotion, live broker execution, copy trading, automatic trading and payouts remain disabled.
+Production remains on v51 until this full-image gate passes.
