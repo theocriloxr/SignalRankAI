@@ -1,0 +1,110 @@
+# Ruff configuration — excludes legacy root-level scripts that predate the governance model
+# Blueprint Module 117: Repository and Documentation Hygiene
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long — formatter handles this
+    "E741",  # ambiguous variable names — too noisy in legacy code
+    "F841",  # local variable assigned but never used — catch blocks
+    "W291",  # trailing whitespace — auto-fixable
+    "W293",  # whitespace on blank lines — auto-fixable
+]
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "node_modules",
+    "frontend",
+    "mobile",
+    "legacy_telegram",
+    "deployment_package",
+    "deployment_evidence",
+    "staging-migration-manual",
+    "staging-release",
+    "staging-rollout",
+    "production-release",
+    "production-ml-certifier-disabled",
+]
+
+[lint.per-file-ignores]
+# Legacy root-level scripts
+"FIX_*.py" = ["ALL"]
+"RESTORE_*.py" = ["ALL"]
+"SET_*.py" = ["ALL"]
+"IMPLEMENTATION_*.py" = ["ALL"]
+"SIGNAL_SPAM*.py" = ["ALL"]
+"STRATEGY_DEBUG_FIX.py" = ["ALL"]
+"SIGNALRANKAI_*.py" = ["ALL"]
+"tmp_*.py" = ["ALL"]
+"fix2.py" = ["ALL"]
+"fix3.py" = ["ALL"]
+"fix_bot_resend.py" = ["ALL"]
+"fix_commands.py" = ["ALL"]
+"fix_created_at.py" = ["ALL"]
+"fix_ml_column.py" = ["ALL"]
+"fix_ml_drift.py" = ["ALL"]
+"fix_require_tier.py" = ["ALL"]
+"fix_require_tier2.py" = ["ALL"]
+"fix_threshold.py" = ["ALL"]
+"find_*.py" = ["ALL"]
+"read_*.py" = ["ALL"]
+"search_*.py" = ["ALL"]
+"parse_diagnostics.py" = ["ALL"]
+"scratch_test.py" = ["ALL"]
+"run_diag.py" = ["ALL"]
+"run_ml_shadow_diagnostic.py" = ["ALL"]
+"validate_adaptive_learning.py" = ["ALL"]
+"verify_system.py" = ["ALL"]
+"apply_fix.py" = ["ALL"]
+"check_command_access.py" = ["ALL"]
+"diagnostic_check.py" = ["ALL"]
+"strategy_live_smoke.py" = ["ALL"]
+"run_server.py" = ["ALL"]
+# Root-level legacy test files (not in tests/ package)
+"test_all_features.py" = ["ALL"]
+"test_all_functions.py" = ["ALL"]
+"test_asset_routing.py" = ["ALL"]
+"test_batch_engine.py" = ["ALL"]
+"test_batch_v2.py" = ["ALL"]
+"test_cache.py" = ["ALL"]
+"test_commands_quick.py" = ["ALL"]
+"test_core.py" = ["ALL"]
+"test_data_fetch.py" = ["ALL"]
+"test_dedup_import.py" = ["ALL"]
+"test_diag.py" = ["ALL"]
+"test_engine_diag.py" = ["ALL"]
+"test_exact_healthz.py" = ["ALL"]
+"test_fast.py" = ["ALL"]
+"test_final.py" = ["ALL"]
+"test_freshness_manual.py" = ["ALL"]
+"test_health_http.py" = ["ALL"]
+"test_import_check.py" = ["ALL"]
+"test_imports.py" = ["ALL"]
+"test_market_data_manual.py" = ["ALL"]
+"test_mount_debug.py" = ["ALL"]
+"test_mounted.py" = ["ALL"]
+"test_near_zero_loss.py" = ["ALL"]
+"test_news_feature.py" = ["ALL"]
+"test_prod_sim.py" = ["ALL"]
+"test_scoring_validation.py" = ["ALL"]
+"test_signal_chain.py" = ["ALL"]
+"test_signal_gen.py" = ["ALL"]
+"test_signals_diag.py" = ["ALL"]
+"test_startup.py" = ["ALL"]
+"test_strategy_debug.py" = ["ALL"]
+"test_tier_formatter.py" = ["ALL"]
+"test_tier_gated.py" = ["ALL"]
+"test_tradingview_integration.py" = ["ALL"]
+"test_uvicorn.py" = ["ALL"]
+"test_zero_signals.py" = ["ALL"]
+# Alembic — generated migration files
+"alembic/versions/*.py" = ["ALL"]
+"alembic/env.py" = ["E402", "F401"]
+# Admin operational scripts — standalone
+"admin/*.py" = ["F401", "F811", "E402"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

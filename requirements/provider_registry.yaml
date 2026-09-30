@@ -509,7 +509,7 @@
         "fx",
         "analysis"
       ],
-      "notes": "",
+      "notes": "Explicit opt-in only; enable after the configured plan passes live candle certification.",
       "public_endpoint": false,
       "realtime_capable": true,
       "regional_caveat": null,
@@ -556,7 +556,7 @@
         "spot",
         "analysis"
       ],
-      "notes": "",
+      "notes": "Explicit opt-in only; keep off when the subscribed plan cannot serve the certified timeframe.",
       "public_endpoint": false,
       "realtime_capable": true,
       "regional_caveat": null,
@@ -599,7 +599,7 @@
         "fx",
         "cfd"
       ],
-      "notes": "",
+      "notes": "Explicit opt-in practice/broker-validation source; dormant without operator enablement.",
       "public_endpoint": false,
       "realtime_capable": true,
       "regional_caveat": null,
@@ -1138,7 +1138,7 @@
         "rate_series",
         "analysis"
       ],
-      "notes": "Vintage-aware macro context; dormant without FRED_API_KEY.",
+      "notes": "Vintage-aware macro context; explicit opt-in and dormant without FRED_API_KEY.",
       "public_endpoint": false,
       "realtime_capable": false,
       "regional_caveat": null,
