@@ -786,9 +786,25 @@ class Worker:
                                 repair_partial_exit_outcomes,
                                 budget_seconds=phase_budget,
                             )
+                            performance_user_limit = max(
+                                1,
+                                min(
+                                    50,
+                                    int(
+                                        os.getenv(
+                                            "OUTCOME_PERFORMANCE_RECONCILIATION_USER_LIMIT",
+                                            "2",
+                                        )
+                                        or 2
+                                    ),
+                                ),
+                            )
                             performance_result = await _run_phase(
                                 "outcome_reconciliation.performance",
-                                reconcile_all_performance_ledgers,
+                                lambda session: reconcile_all_performance_ledgers(
+                                    session,
+                                    limit_users=performance_user_limit,
+                                ),
                                 budget_seconds=phase_budget,
                             )
                             await persist_performance_reconciliation_result(
