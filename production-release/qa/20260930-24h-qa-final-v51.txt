@@ -1,0 +1,9 @@
+SignalRankAI production QA release v51: final 24-hour QA ingress consolidation.
+Runtime base: 2df218c5ea063cbf3ad407f6fcb51d1778272391.
+Final staging certification marker: 21f9cbdba989864caf593335daf7d4903fb49eb2.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; provenance PASS; 511 targeted tests PASS; CLEANROOM_PASS.
+Full release image: 569 tests PASS; release provenance PASS; production readiness PASS (12/12); RELEASE_IMAGE_RUNTIME_SAFE; deployment SUCCESS.
+Final fix: all engine-universe ingress sources normalize known stock-CFD USD aliases before dedupe and market routing, preventing stale database/managed aliases like BACUSD/JPMUSD/MSFTUSD from re-entering runtime.
+v50 live proof already confirmed JP225 class=index, valid NAS100/US30/US500 restored, FX-only session filtering, bounded outcome reconciliation, OpenAI/local routing, and event-triggered production retraining disabled.
+Safety unchanged: serving ML threshold is not lowered; automatic model/schema promotion, live broker execution, copy trading, automatic trading and payouts remain disabled.
+Analytics remains frozen during cutover and resumes afterward on the daily 86400-second cadence with 900-second startup delay.
