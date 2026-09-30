@@ -2121,6 +2121,32 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
             and calibrated_ece <= max_ece
         ),
     }
+
+    segments = {}
+    if hasattr(X_te, "iloc"):
+        try:
+            masks = {
+                "crypto": X_te["asset_class_enc"] == 0.0 if "asset_class_enc" in X_te else None,
+                "fx": X_te["asset_class_enc"] == 1.0 if "asset_class_enc" in X_te else None,
+                "1h": X_te["timeframe_enc"] == 60.0 if "timeframe_enc" in X_te else None,
+                "4h": X_te["timeframe_enc"] == 240.0 if "timeframe_enc" in X_te else None,
+            }
+            for seg_name, mask in masks.items():
+                if mask is not None and mask.sum() > 0:
+                    sy = np.asarray(y_te, dtype=float)[mask]
+                    sp = np.asarray(y_proba, dtype=float)[mask]
+                    sc = calibrated_proba[mask]
+                    segments[seg_name] = {
+                        "validation_rows": int(mask.sum()),
+                        "raw_brier": float(np.mean((sp - sy) ** 2)),
+                        "calibrated_brier": float(np.mean((sc - sy) ** 2)),
+                        "raw_ece": _expected_calibration_error(sp, sy),
+                        "calibrated_ece": _expected_calibration_error(sc, sy),
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to compute segment calibration: {e}")
+    calibration_metrics["segments"] = segments
+
     metrics = {
         "accuracy": float(acc),
         "auc": float(auc),
