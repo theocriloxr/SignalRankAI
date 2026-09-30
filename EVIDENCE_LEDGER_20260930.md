@@ -50,8 +50,8 @@ Baseline SHA: 8f8583933a853a54ba1b3585610ee466903c08fc
 
 ## WORK PACKAGE C — SIGNAL-STARVATION / ML / DATA
 - [x] Persisted rejection funnel
-  - Status: ARCHITECTURE PLANNED
-  - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`
+  - Status: IMPLEMENTED and VERIFIED
+  - Evidence: Unified `ml_rejected_signals` into `decision_log` in `db/migrations/versions/0046_decision_log.py`, mapping `MLRejectedSignal` batch writes directly to `DecisionLog` in `engine/signal_deduplicator.py` to trace telemetry, and exposed legacy tables as a Postgres view for seamless backwards compatibility.
 - [x] Operator UI and metrics for rejection reasons
   - Status: ARCHITECTURE PLANNED
   - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`

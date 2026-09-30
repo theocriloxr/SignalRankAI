@@ -369,31 +369,8 @@ def run_startup_ops(run_mode: str) -> None:
                     "ON signals(expired, archived, expires_at, asset, direction)"
                 )
 
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS ml_rejected_signals (
-                        id SERIAL PRIMARY KEY,
-                        signal_id VARCHAR(36),
-                        asset VARCHAR(32) NOT NULL,
-                        timeframe VARCHAR(8) NOT NULL,
-                        direction VARCHAR(8) NOT NULL,
-                        entry DOUBLE PRECISION NOT NULL,
-                        stop_loss DOUBLE PRECISION NOT NULL,
-                        take_profit TEXT NOT NULL,
-                        ml_probability DOUBLE PRECISION NOT NULL,
-                        rejection_reason VARCHAR(128) NOT NULL,
-                        features JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        actual_outcome VARCHAR(32),
-                        outcome_tracked_at TIMESTAMP,
-                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                    )
-                    """
-                )
-                cur.execute("ALTER TABLE ml_rejected_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)")
-                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_signal_id ON ml_rejected_signals(signal_id)")
-                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)")
-                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)")
-                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)")
+                # Legacy ml_rejected_signals table creation removed in Work Package C.
+                # It is now unified into decision_log and mapped backward as a view.
 
                 # managed_assets — failsafe for asset-universe pinning (migration 0015/0016)
                 cur.execute(

@@ -642,13 +642,37 @@ class MLRejectionTracker:
         try:
             from db.priority import DBPriority
             from db.session import DatabaseWorkDeferred
+            from db.models import DecisionLog
+            from utils.timeutils import now_utc_naive
+
+            logs = []
+            for p in batch:
+                logs.append(DecisionLog(
+                    signal_id=p.get("signal_id"),
+                    asset=p.get("asset"),
+                    timeframe=p.get("timeframe"),
+                    decision="rejected",
+                    reason=p.get("rejection_reason"),
+                    meta={
+                        "layer": "ml",
+                        "direction": p.get("direction"),
+                        "entry": p.get("entry"),
+                        "stop_loss": p.get("stop_loss"),
+                        "take_profit": p.get("take_profit"),
+                        "ml_probability": p.get("ml_probability"),
+                        "features": p.get("features"),
+                        "actual_outcome": p.get("actual_outcome"),
+                        "outcome_tracked_at": p.get("outcome_tracked_at").isoformat() if p.get("outcome_tracked_at") else None,
+                    },
+                    created_at=p.get("created_at") or now_utc_naive()
+                ))
 
             async with get_session(
                 priority=DBPriority.BACKGROUND,
                 label="rejection_batch_write",
                 timeout_seconds=float(os.getenv("REJECTION_DB_TIMEOUT_SECONDS", "0.5") or 0.5),
             ) as session:
-                session.add_all([MLRejectedSignal(**payload) for payload in batch])
+                session.add_all(logs)
                 await session.commit()
             logger.info("Rejection batch stored: count=%s pending=%s", len(batch), self.pending_rejection_count())
             return len(batch)
@@ -774,96 +798,7 @@ class MLRejectionTracker:
         except Exception:
             return
 
-    async def _ingest_non_ml_rejections_from_decision_log(self) -> int:
-        """Backfill skipped/rejected decision logs into MLRejectedSignal for outcome tracking."""
-        tracked = 0
-        try:
-            from db.models import DecisionLog
 
-            last_id = await self._load_runtime_int("rejections_backfill_last_decision_id", 0)
-            cutoff = now_utc_naive() - timedelta(days=self._decision_backfill_lookback_days)
-            async with get_session() as session:
-                rows = (
-                    await session.execute(
-                        select(DecisionLog)
-                        .where(DecisionLog.id > int(last_id))
-                        .where(DecisionLog.created_at >= cutoff)
-                        .where(DecisionLog.decision.in_(["rejected", "skipped"]))
-                        .order_by(DecisionLog.id.asc())
-                        .limit(500)
-                    )
-                ).scalars().all()
-
-                max_seen_id = int(last_id)
-                for dl in rows:
-                    max_seen_id = max(max_seen_id, int(getattr(dl, "id", 0) or 0))
-                    meta = dict(getattr(dl, "meta", {}) or {})
-                    asset = str(getattr(dl, "asset", "") or "").upper().strip()
-                    timeframe = self._normalize_timeframe(str(getattr(dl, "timeframe", "") or "").strip())
-                    direction = str(meta.get("direction") or "").lower().strip()
-                    try:
-                        entry = float(meta.get("entry") or 0.0)
-                        stop_loss = float(meta.get("stop_loss") or 0.0)
-                    except Exception:
-                        entry = 0.0
-                        stop_loss = 0.0
-                    take_profit = meta.get("take_profit")
-                    ml_prob_raw = meta.get("ml_probability")
-                    try:
-                        ml_prob = float(ml_prob_raw) if ml_prob_raw is not None else 0.0
-                    except Exception:
-                        ml_prob = 0.0
-
-                    if not asset or not timeframe or direction not in {"long", "short"}:
-                        continue
-                    if entry <= 0 or stop_loss <= 0:
-                        continue
-
-                    decision_log_id = int(getattr(dl, "id", 0) or 0)
-                    already_tracked = (
-                        await session.execute(
-                            select(MLRejectedSignal.id)
-                            .where(MLRejectedSignal.features["decision_log_id"].as_string() == str(decision_log_id))
-                            .limit(1)
-                        )
-                    ).first()
-                    if already_tracked:
-                        continue
-
-                    feature_blob = {
-                        "source": "decision_log",
-                        "decision_log_id": decision_log_id,
-                        "decision": str(getattr(dl, "decision", "") or ""),
-                        "reason": str(getattr(dl, "reason", "") or "")[:256],
-                    }
-                    feature_blob.update(meta)
-
-                    rejection = MLRejectedSignal(
-                        asset=asset,
-                        timeframe=timeframe,
-                        direction=direction,
-                        entry=entry,
-                        stop_loss=stop_loss,
-                        take_profit=str(self._parse_tp_value(take_profit) or 0.0),
-                        ml_probability=ml_prob,
-                        rejection_reason=str(getattr(dl, "reason", "") or getattr(dl, "decision", "rejected"))[:128],
-                        features=feature_blob,
-                        actual_outcome=None,
-                        outcome_tracked_at=None,
-                        created_at=getattr(dl, "created_at", None) or now_utc_naive(),
-                    )
-                    session.add(rejection)
-                    tracked += 1
-
-                if tracked > 0:
-                    await session.flush()
-                await session.commit()
-
-            if rows:
-                await self._save_runtime_int("rejections_backfill_last_decision_id", max_seen_id)
-        except Exception as e:
-            logger.debug("Decision-log rejection backfill skipped: %s", e)
-        return tracked
 
     @staticmethod
     def _label_target_window(
@@ -1202,7 +1137,6 @@ class MLRejectionTracker:
         """Track all non-issued outcomes across configured windows and trigger adaptive learning."""
         try:
             await self.flush_pending_rejections(force=True)
-            backfilled = await self._ingest_non_ml_rejections_from_decision_log()
             async with get_session() as session:
                 # Get rejections still awaiting full window labels
                 stmt = select(MLRejectedSignal).where(
