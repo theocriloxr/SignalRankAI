@@ -971,16 +971,37 @@ def get_trending_stock_tickers(top_n=20):
     # native symbol and let services.asset_mapper normalize provider-specific names.
     broker_equities = []
     fx_ccy = {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
+    try:
+        from data.fetcher import KNOWN_STOCK_TICKERS
+        known_stock_tickers = {str(x).upper() for x in KNOWN_STOCK_TICKERS}
+    except Exception:
+        known_stock_tickers = set()
     for symbol in broker_symbols:
-        compact = str(symbol or "").upper().replace(".", "").replace("_", "")
+        native = str(symbol or "").upper().strip()
+        compact = native.replace(".", "").replace("_", "").replace("-", "")
         if not compact or any(x in compact for x in ("US500","NAS100","US30","XAU","XAG","WTI","BRENT")):
             continue
+        try:
+            from core.asset_registry import resolve_asset_spec
+            if resolve_asset_spec(native).asset_class != "stock":
+                continue
+        except Exception:
+            pass
         if len(compact) == 6 and compact[:3] in fx_ccy and compact[3:] in fx_ccy:
             continue
-        if compact.endswith(("USD","USDT")) and len(compact) > 6:
+        if compact.endswith("USDT"):
             continue
-        if 1 <= len(str(symbol)) <= 16 and any(ch.isalpha() for ch in str(symbol)):
-            broker_equities.append(str(symbol).upper().strip())
+        # MetaApi stock-CFD catalogues commonly append the quote currency
+        # (BACUSD, JPMUSD, MSFTUSD). Normalize only when the base is a known
+        # equity ticker; never strip USD generically because real FX/crypto/
+        # commodity pairs also use that suffix.
+        if compact.endswith("USD") and compact[:-3] in known_stock_tickers:
+            native = compact[:-3]
+            compact = native
+        elif compact.endswith("USD") and len(compact) > 6:
+            continue
+        if 1 <= len(native) <= 16 and any(ch.isalpha() for ch in native):
+            broker_equities.append(native)
 
     def _polygon_provider() -> list[str]:
         polygon_key = os.getenv("POLYGON_API_KEY", "").strip()

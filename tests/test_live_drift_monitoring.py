@@ -643,3 +643,29 @@ def test_starvation_recovery_expected_r_guard_is_not_a_certified_threshold_overr
     assert "ML_STARVATION_RECOVERY_MIN_EXPECTED_R" in block
     assert "calculate_rr_ladder" in block
     assert "ML_PROB_THRESHOLD" not in block
+
+
+def test_production_event_retraining_requires_double_opt_in(monkeypatch):
+    import runtime.analytics as analytics
+
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    monkeypatch.setenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")
+    monkeypatch.delenv("ML_PRODUCTION_DRIFT_RETRAIN_ENABLED", raising=False)
+    assert analytics._automatic_retrain_enabled("feature_drift") is False
+
+    monkeypatch.setenv("ML_PRODUCTION_DRIFT_RETRAIN_ENABLED", "1")
+    assert analytics._automatic_retrain_enabled("feature_drift") is True
+
+    monkeypatch.setenv("ML_STARVATION_RETRAIN_ON_DETECT", "1")
+    monkeypatch.delenv("ML_PRODUCTION_STARVATION_RETRAIN_ENABLED", raising=False)
+    assert analytics._automatic_retrain_enabled("prediction_starvation") is False
+
+
+def test_event_retraining_defaults_fail_closed():
+    from pathlib import Path
+
+    source = Path("runtime/analytics.py").read_text(encoding="utf-8")
+    assert '_enabled("ML_DRIFT_RETRAIN_ON_DETECT", False)' in source
+    assert 'ML_PRODUCTION_DRIFT_RETRAIN_ENABLED' in source
+    assert 'ML_PRODUCTION_STARVATION_RETRAIN_ENABLED' in source
+    assert '[analytics_ml_auto_retrain]' in source

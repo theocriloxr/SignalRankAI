@@ -412,10 +412,18 @@ class SessionVolatilityFilter:
         Crypto: 24/7 ok
         FX: Prefer overlap sessions
         """
-        # Crypto is always ok
-        if 'USDT' in symbol or 'USD' in symbol and len(symbol) <= 6:
+        # Session-preference heuristics below are FX-specific. Other
+        # asset classes already pass through the authoritative market-hours
+        # registry and must never be rejected merely because their symbol lacks
+        # a JPY/AUD/NZD currency code (e.g. JP225 during Tokyo hours).
+        try:
+            from core.asset_registry import resolve_asset_spec
+            asset_class = str(resolve_asset_spec(symbol).asset_class or "unknown")
+        except Exception:
+            asset_class = "unknown"
+        if asset_class != "forex":
             return True, ""
-        
+
         # FX preferences
         if session == "ASIA":
             # Good for JPY, AUD, NZD pairs

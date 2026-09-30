@@ -213,3 +213,35 @@ def test_current_yahoo_index_mappings() -> None:
     assert map_symbol("US30", "yfinance") == "^DJI"
     assert map_symbol("GER40", "yfinance") == "^GDAXI"
 
+
+
+def test_metaapi_equity_discovery_normalizes_cfd_quote_suffixes(monkeypatch):
+    import data.pair_discovery as discovery
+
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("STOCK_TICKERS", raising=False)
+    monkeypatch.setenv("ASSET_DISCOVERY_MODE", "auto")
+    monkeypatch.setenv("ALLOW_STATIC_ASSET_FALLBACK", "0")
+    monkeypatch.setattr(
+        discovery,
+        "_metaapi_symbols",
+        lambda: [
+            "BACUSD",
+            "JPMUSD",
+            "MSFTUSD",
+            "BTCUSD",
+            "EURUSD",
+            "JP225",
+        ],
+    )
+
+    stocks = discovery.get_trending_stock_tickers(top_n=10)
+    assert "BAC" in stocks
+    assert "JPM" in stocks
+    assert "MSFT" in stocks
+    assert "BACUSD" not in stocks
+    assert "JPMUSD" not in stocks
+    assert "MSFTUSD" not in stocks
+    assert "BTCUSD" not in stocks
+    assert "EURUSD" not in stocks
+    assert "JP225" not in stocks

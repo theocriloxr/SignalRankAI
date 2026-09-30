@@ -31,7 +31,13 @@ class MarketDataCertification:
 _SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
 
 
-def _is_expected_closure(previous_ms: int, current_ms: int, asset_class: AssetClass) -> bool:
+def _is_expected_closure(
+    previous_ms: int,
+    current_ms: int,
+    asset_class: AssetClass,
+    *,
+    symbol: str | None = None,
+) -> bool:
     if asset_class is AssetClass.CRYPTO:
         return False
     previous = datetime.fromtimestamp(previous_ms / 1000, tz=timezone.utc)
@@ -65,13 +71,54 @@ def _is_expected_closure(previous_ms: int, current_ms: int, asset_class: AssetCl
             pass
 
     # Many FX and futures feeds omit a short rollover/maintenance window. A
-    # bounded overnight gap is expected; an equivalent intraday hole is not.
+    # bounded overnight gap is expected; an equivalent arbitrary intraday hole
+    # is not. FX rollovers can occur before UTC midnight, so explicitly accept
+    # a tightly bounded gap overlapping the common 21:00-22:00 UTC rollover.
     if (
         asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}
         and previous.date() != current.date()
         and elapsed_hours <= 8.0
     ):
         return True
+    if asset_class is AssetClass.FOREX and elapsed_hours <= 3.0:
+        cursor = previous.date()
+        while cursor <= current.date():
+            rollover_start = datetime.combine(
+                cursor, datetime.min.time(), tzinfo=timezone.utc
+            ).replace(hour=20, minute=30)
+            rollover_end = datetime.combine(
+                cursor, datetime.min.time(), tzinfo=timezone.utc
+            ).replace(hour=22, minute=30)
+            if previous <= rollover_end and current >= rollover_start:
+                return True
+            cursor += timedelta(days=1)
+
+    # Regional cash-index feeds can contain scheduled lunch recesses. Only
+    # known registry calendars receive this exemption; all other intraday gaps
+    # remain fail-closed.
+    if asset_class is AssetClass.INDEX and symbol and elapsed_hours <= 2.5:
+        try:
+            from core.asset_registry import resolve_asset_spec
+            spec = resolve_asset_spec(symbol)
+            local_previous = previous.astimezone(__import__("zoneinfo").ZoneInfo(spec.timezone))
+            local_current = current.astimezone(__import__("zoneinfo").ZoneInfo(spec.timezone))
+            lunch_windows = {
+                "japan_equity": ((11, 20), (12, 40)),
+                "hong_kong_equity": ((11, 50), (13, 10)),
+            }
+            window = lunch_windows.get(spec.session_calendar)
+            if window and local_previous.date() == local_current.date():
+                start_hm, end_hm = window
+                lunch_start = local_previous.replace(
+                    hour=start_hm[0], minute=start_hm[1], second=0, microsecond=0
+                )
+                lunch_end = local_previous.replace(
+                    hour=end_hm[0], minute=end_hm[1], second=0, microsecond=0
+                )
+                if local_previous <= lunch_end and local_current >= lunch_start:
+                    return True
+        except Exception:
+            pass
 
     # CME-style commodity feeds commonly omit the daily 21:00-22:00 UTC
     # maintenance window. Treat only a tightly bounded gap that overlaps that
@@ -93,6 +140,7 @@ def certify_market_candles(
     asset_class: object,
     timeframe: str,
     provider: str = "unknown",
+    symbol: str | None = None,
     data_age_seconds: float | None = None,
     metadata: Mapping[str, Any] | None = None,
     minimum_candles: int = 30,
@@ -119,7 +167,7 @@ def certify_market_candles(
             continue
         if timestamp > int(datetime.now(timezone.utc).timestamp() * 1000) + expected_ms:
             timezone_errors += 1
-        if previous and timestamp - previous > expected_ms * 1.8 and not _is_expected_closure(previous, timestamp, canonical):
+        if previous and timestamp - previous > expected_ms * 1.8 and not _is_expected_closure(previous, timestamp, canonical, symbol=symbol):
             session_gap_count += max(1, round((timestamp - previous) / expected_ms) - 1)
         previous = timestamp
     if session_gap_count:
