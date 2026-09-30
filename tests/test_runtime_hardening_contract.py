@@ -182,3 +182,14 @@ def test_retention_is_staggered_away_from_startup_and_cache_has_provenance():
     assert "await asyncio.sleep(startup_delay)" in retention
     assert '"source": "postgres_cache"' in market_data
     assert "_cash_session_reopen_threshold" in market_data
+
+
+def test_outcome_performance_reconciliation_uses_bounded_user_batch():
+    source = text("worker/worker.py")
+    block = source[
+        source.index("async def _outcome_reconciliation_loop"):
+        source.index("async def _adaptive_learning_loop")
+    ]
+    assert "OUTCOME_PERFORMANCE_RECONCILIATION_USER_LIMIT" in block
+    assert '"2"' in block
+    assert "limit_users=performance_user_limit" in block
