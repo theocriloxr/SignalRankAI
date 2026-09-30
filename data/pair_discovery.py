@@ -981,6 +981,13 @@ def get_trending_stock_tickers(top_n=20):
         compact = native.replace(".", "").replace("_", "").replace("-", "")
         if not compact or any(x in compact for x in ("US500","NAS100","US30","XAU","XAG","WTI","BRENT")):
             continue
+        # MetaApi stock-CFD catalogues commonly append the quote currency
+        # (BACUSD, JPMUSD, MSFTUSD). Normalize a verified equity base before
+        # canonical classification so 4-6 character tickers plus USD do not
+        # fail closed as unknown merely because the broker added a quote suffix.
+        if compact.endswith("USD") and compact[:-3] in known_stock_tickers:
+            native = compact[:-3]
+            compact = native
         try:
             from core.asset_registry import resolve_asset_spec
             if resolve_asset_spec(native).asset_class != "stock":
@@ -991,14 +998,7 @@ def get_trending_stock_tickers(top_n=20):
             continue
         if compact.endswith("USDT"):
             continue
-        # MetaApi stock-CFD catalogues commonly append the quote currency
-        # (BACUSD, JPMUSD, MSFTUSD). Normalize only when the base is a known
-        # equity ticker; never strip USD generically because real FX/crypto/
-        # commodity pairs also use that suffix.
-        if compact.endswith("USD") and compact[:-3] in known_stock_tickers:
-            native = compact[:-3]
-            compact = native
-        elif compact.endswith("USD") and len(compact) > 6:
+        if compact.endswith("USD") and len(compact) > 6:
             continue
         if 1 <= len(native) <= 16 and any(ch.isalpha() for ch in native):
             broker_equities.append(native)

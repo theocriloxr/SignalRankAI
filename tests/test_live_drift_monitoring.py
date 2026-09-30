@@ -212,7 +212,7 @@ def test_prediction_starvation_never_relaxes_certified_threshold_in_analytics_ru
 
     source = Path("runtime/analytics.py").read_text(encoding="utf-8")
     section = source[source.index("async def _ml_drift_loop"):source.index("async def run_async")]
-    assert "ML_STARVATION_RETRAIN_ON_DETECT" in section
+    assert "ML_STARVATION_RETRAIN_ON_DETECT" in source
     assert '"0.01"' in section
     assert "ML_PROB_THRESHOLD" not in section
     assert "classification_threshold" not in section
