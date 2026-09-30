@@ -1,0 +1,7 @@
+SignalRankAI staging full-image certification for the September 30 24-hour QA consolidation.
+Merged runtime base: c571cceb8b7593412c3420a959d8c9c503c7a8b3.
+Certified branch head: fa6f8bf7feca77481be86dccffb0f58fd5596e17.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 510 targeted tests PASS; CLEANROOM_PASS.
+QA fixes: canonical JP225/index classification; MetaApi equity-CFD USD suffix normalization and non-equity exclusion; FX-only session-liquidity heuristics; calendar-aware FX rollover and regional cash-index lunch closures; production event-triggered ML retraining double opt-in; bounded performance-ledger reconciliation batches.
+Safety unchanged: certified ML threshold, model promotion/schema promotion, broker/live execution, copy trading, automatic trading, and payouts remain fail-closed unless separately authorized.
+Production remains on v49 during full-image certification.
