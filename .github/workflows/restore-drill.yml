@@ -1,0 +1,64 @@
+name: Weekly Restore Certification Drill
+
+on:
+  schedule:
+    - cron: '0 3 * * 0' # Every Sunday at 3 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: signalrank_restore_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d signalrank_restore_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install awscli # Used for R2 S3-compatible download
+
+      - name: Download Latest Backup
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          # Download the latest backup dump from R2
+          aws s3 --endpoint-url $ENDPOINT_URL ls s3://signalrank-artifacts/backups/ | sort | tail -n 1 | awk '{print $4}' > latest_backup.txt
+          aws s3 --endpoint-url $ENDPOINT_URL cp s3://signalrank-artifacts/backups/$(cat latest_backup.txt) latest.dump
+
+      - name: Restore Database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          pg_restore -h 127.0.0.1 -U postgres -d signalrank_restore_test -1 latest.dump
+
+      - name: Validate Integrity
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/signalrank_restore_test
+        run: |
+          # Verify schema matches Alembic head and perform data consistency checks
+          python -m alembic upgrade head
+          python scripts/schema_audit.py
+          python scripts/production_readiness_check.py

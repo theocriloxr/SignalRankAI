@@ -9,9 +9,36 @@ permissions:
   contents: read
 
 jobs:
+  static-quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.lock
+      - run: pip install ruff pyright bandit pip-audit vulture coverage mutmut semgrep
+      - run: ruff check .
+      - run: pyright .
+      - run: bandit -r -ll . || true
+      - run: pip-audit -r requirements.lock || true
+      - run: vulture . || true
+      - run: coverage run -m pytest -q tests/test_production_quality_guard.py || true
+      - run: coverage report || true
+      - run: mutmut run --paths-to-mutate=core,engine --tests-dir=tests/test_engine_critical_fallbacks_fail_closed.py || true
+      - run: semgrep scan --config auto . || true
+      - run: shellcheck start.sh || true
+      - run: docker run --rm -i hadolint/hadolint < Dockerfile || true
+      - run: docker run --rm -i hadolint/hadolint < Dockerfile.prod || true
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     services:
       postgres:
         image: postgres:16
@@ -47,21 +74,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          if [ "${{ matrix.python-version }}" = "3.11" ]; then
+            pip install -r requirements.lock
+          else
+            pip install -r requirements.txt
+          fi
       - run: python -m compileall -q .
       - run: python -m alembic upgrade head
       - run: python -m alembic heads
       - run: python scripts/build_v7_governance.py --check
       - run: python scripts/secret_scan.py
-      - run: python scripts/run_complete_system_test.py --full --pytest-batches 20 --output-dir artifacts/ci-certification
+      - run: python scripts/run_complete_system_test.py --full --pytest-batches 20 --output-dir artifacts/ci-certification-${{ matrix.python-version }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: backend-certification
-          path: artifacts/ci-certification
+          name: backend-certification-${{ matrix.python-version }}
+          path: artifacts/ci-certification-${{ matrix.python-version }}
 
   mobile:
     runs-on: ubuntu-latest
@@ -74,6 +107,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
+      - run: npm ci
       - run: npm run typecheck
       - run: npx expo export --platform web --output-dir dist-web
