@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "requirements.lock"
 DOCKERFILE = ROOT / "Dockerfile"
 CURRENT_RELEASE = ROOT / "CURRENT_RELEASE.md"
+MANIFEST = ROOT / "release_certification_manifest.txt"
+
 ALEMBIC_RE = re.compile(r"Repository Alembic head:\s*([A-Za-z0-9_\-]+)")
 REQ_RE = re.compile(r"^([A-Za-z0-9_.\-]+)==([^\s#]+)$")
 
@@ -118,6 +120,8 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
     current_release_hash = sha256_file(CURRENT_RELEASE)
     head = alembic_head()
 
+    import datetime
+    
     sbom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -142,14 +146,18 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
         "schema_version": 1,
         "project": "SignalRankAI",
         "release": {
+            "semver": "2026.09.30",
             "git_commit": commit,
             "git_branch": branch,
             "alembic_head": head,
+            "build_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "certification_manifest_version": "1.0",
         },
         "inputs": {
             "requirements.lock": {"sha256": lock_hash, "component_count": len(components)},
             "Dockerfile": {"sha256": docker_hash},
             "CURRENT_RELEASE.md": {"sha256": current_release_hash},
+            "release_certification_manifest.txt": {"sha256": sha256_file(MANIFEST)},
         },
         "artifacts": {
             "sbom.cdx.json": {"sha256": sbom_hash, "format": "CycloneDX-1.5"},

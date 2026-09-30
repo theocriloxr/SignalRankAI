@@ -61,6 +61,10 @@ from utils.timeutils import now_utc_naive
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SignalRankAI API", version=CODE_VERSION)
+
+from utils.middleware import CorrelationIdMiddleware
+app.add_middleware(CorrelationIdMiddleware)
+
 _tracer = init_tracer("signalrankai-web")
 
 # The versioned API router is mounted on the canonical FastAPI application so

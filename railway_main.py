@@ -2204,6 +2204,9 @@ from web.app import app as _web_app
 
 app = FastAPI(lifespan=lifespan)
 
+from utils.middleware import CorrelationIdMiddleware
+app.add_middleware(CorrelationIdMiddleware)
+
 
 @app.get("/diagnostics/deployment")
 async def _deployment_diagnostics_endpoint(
