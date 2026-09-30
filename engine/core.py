@@ -1775,9 +1775,25 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
 
 
 def _normalize_asset_symbol(symbol: str) -> str:
+    """Normalize every engine-universe ingress before dedupe and routing."""
     s = str(symbol or "").upper().strip()
     if s == "MATICUSDT":
         return "POLUSDT"
+
+    # Broker/database equity catalogues can persist stock CFDs with an explicit
+    # USD quote suffix (BACUSD, JPMUSD, MSFTUSD). Normalize only when the base
+    # is a known equity ticker; never strip USD generically because FX,
+    # commodities and crypto legitimately use it.
+    compact = s.replace(".", "").replace("_", "").replace("-", "")
+    if compact.endswith("USD") and len(compact) > 3:
+        try:
+            from data.fetcher import KNOWN_STOCK_TICKERS
+
+            base = compact[:-3]
+            if base in {str(x).upper() for x in KNOWN_STOCK_TICKERS}:
+                return base
+        except Exception:
+            pass
     return s
 
 

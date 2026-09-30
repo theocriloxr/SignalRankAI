@@ -449,3 +449,24 @@ def test_qa24h_metaapi_stock_cfd_suffixes_are_normalized(monkeypatch):
     assert "BAC" in stocks
     assert "JPM" in stocks
     assert all(x not in stocks for x in ("BACUSD", "JPMUSD", "BTCUSD", "EURUSD", "JP225"))
+
+
+def test_qa24h_engine_ingress_normalizes_stale_stock_cfd_aliases():
+    from engine.core import _normalize_asset_symbol
+
+    expected = {
+        "BACUSD": "BAC",
+        "JPMUSD": "JPM",
+        "MSFTUSD": "MSFT",
+        "HDUSD": "HD",
+        "JNJUSD": "JNJ",
+        "PFEUSD": "PFE",
+        "UNHUSD": "UNH",
+        "MSUSD": "MS",
+    }
+    for raw, canonical in expected.items():
+        assert _normalize_asset_symbol(raw) == canonical
+
+    # Legitimate non-equity USD pairs must remain untouched.
+    for symbol in ("EURUSD", "BTCUSD", "XAUUSD", "JP225"):
+        assert _normalize_asset_symbol(symbol) == symbol
