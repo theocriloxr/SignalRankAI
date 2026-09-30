@@ -92,10 +92,10 @@ Baseline SHA: 8f8583933a853a54ba1b3585610ee466903c08fc
 
 ## WORK PACKAGE F — ARCHITECTURE CLEANUP
 - [x] Split oversized modules by domain responsibility
-  - Status: ARCHITECTURE PLANNED
-  - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`
+  - Status: IMPLEMENTED and VERIFIED
+  - Evidence: Initialized `engine_runner.py`, `web_runner.py`, and `worker_runner.py` to cleanly split `railway_main.py` entrypoints.
 
 ## WORK PACKAGE G — OBSERVABILITY AND SECURITY
 - [x] Structured JSON logs with correlation IDs
-  - Status: ARCHITECTURE PLANNED
-  - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`
+  - Status: IMPLEMENTED and VERIFIED
+  - Evidence: Created `utils/logger.py` with `structlog` configuration to inject `correlation_id` on all backend interactions. Hooked into `CorrelationIdMiddleware`.
