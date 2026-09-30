@@ -1,0 +1,11 @@
+SignalRankAI production QA release v49.
+Runtime base: ecb86e72966432c81a3f5c343298a3a6722d2d92.
+Staging certification marker: 5de3a2c233568594509c871187acfe589eefdc86.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 506 targeted tests PASS; CLEANROOM_PASS.
+Full release-image build: 563 tests PASS; release provenance PASS; production readiness overall PASS (12/12); RELEASE_IMAGE_RUNTIME_SAFE; deployment SUCCESS.
+Fix: only a challenger admitted by candidate_forward_gate may veto bounded paper-only starvation recovery. A candidate that failed offline non-inferiority remains shadow-observable but has no recovery authority.
+Fix: forward-proof promotion recognizes trainer canonical champion-comparison success reasons noninferior and no_existing_champion.
+The active champion threshold is unchanged. Recovery remains capped, deterministic-quality/EV gated, paper-only, and explicitly ineligible for broker/live execution.
+Automatic candidate promotion, schema promotion, active-candidate replacement, drift-triggered retraining, live financial execution, copy trading, automatic trading, and payouts remain disabled.
+Analytics training is frozen during cutover and restored afterward on the 86400-second cadence with 900-second startup delay.
+AI provider order remains pinned to openai,local in production.
