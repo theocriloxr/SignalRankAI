@@ -1,0 +1,8 @@
+SignalRankAI production QA release v52: final bootstrap-session follow-up from the September 30 24-hour QA.
+Merged runtime base: 15ea3442307d32804608da7dc1e48e9d88b639c2.
+Certified staging head: c9b4b95ba0e5daba07f7bd49c7b370b6735d2437.
+Staging full image: 570 mandatory release tests PASS; release provenance PASS; production readiness PASS (12/12); deployment SUCCESS.
+Fix: ecosystem subscription, ML-governance and strategy seeding use separate bounded background DB sessions with per-phase operation/admission timeouts and commits, replacing the monolithic worker.ecosystem_bootstrap session that held the DB lane for ~47.6 seconds.
+All v51 24-hour-QA fixes remain included: stock-CFD alias normalization, canonical index/session routing, FX-only session heuristic, FX rollover/regional index calendar handling, bounded outcome reconciliation, restored valid indices, OpenAI/local routing, and event-triggered retraining fail-closed behavior.
+Safety unchanged: serving ML threshold is not lowered; automatic model/schema promotion, active candidate replacement, drift/starvation-triggered retraining, live broker execution, copy trading, automatic trading and payouts remain disabled.
+Analytics is frozen during cutover and resumes afterward on the daily 86400-second cadence with 900-second startup delay.
