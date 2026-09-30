@@ -1,0 +1,9 @@
+SignalRankAI staging R3 full-image certification for the final September 30 24-hour QA bootstrap repair.
+Production baseline remains v52: 3ef8651df88cfca911ac0815d59cb6760335fecd.
+Fix branch head before marker: 2af542fc0c4f92673b51cc8cb321b7170d029a97.
+Root cause: subscription catalogue bootstrap still issued hundreds of sequential DB round-trips inside one phase, producing a ~21.6s background session hold and phase timeout.
+Fix: product, price and entitlement upserts are batched/executemany-style while retaining typed asyncpg bind parameters and existing catalogue semantics.
+The batching regression and phase-session regression are both mandatory Docker release-gate tests.
+Expected full-image gate: 571 tests PASS; release provenance PASS; production readiness PASS (12/12); deployment SUCCESS.
+Safety unchanged: daily scheduled training only; event-triggered retraining, automatic model/schema promotion, live broker execution, copy trading, automatic trading and payouts remain disabled.
+Production remains on v52 until R3 certification passes.
