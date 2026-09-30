@@ -1,0 +1,7 @@
+SignalRankAI staging full-image certification R2 for the September 30 24-hour QA consolidation.
+Merged runtime base: 9217963dc2419f681c6aa9c1d394045ecad35a8b.
+Certified R2 branch head: fd2d2eb1bde44fda76c6454ef3a10c3125d66803.
+Cleanroom: compile PASS; Alembic 0045 chain PASS; schema audit PASS; release provenance PASS; 510 targeted tests PASS; CLEANROOM_PASS.
+R2 corrections: verified stock-CFD USD suffixes normalize before classification; legacy drift test follows extracted fail-closed retrain policy.
+Original full-image marker a918d1fcc6c1122e88a5c54d5dd53e4fb35c95bf intentionally failed with two regressions and remains audit evidence.
+Production remains on v49 during this R2 full-image certification.
