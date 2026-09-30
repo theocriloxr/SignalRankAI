@@ -50,35 +50,18 @@ class AssetProfile:
 
 
 def normalize_symbol(symbol: Any) -> str:
-    raw = str(symbol or "").upper().strip()
-    raw = raw.replace("/", "").replace("-", "").replace("_", "")
-    alias_map = {
-        "BTCUSD": "BTCUSDT",
-        "ETHUSD": "ETHUSDT",
-        "XAU": "XAUUSD",
-        "GOLD": "XAUUSD",
-        "SILVER": "XAGUSD",
-        "US500": "SPX500",
-        "US100": "NAS100",
-    }
-    return alias_map.get(raw, raw)
+    """Normalize through the one canonical registry used by runtime routing."""
+    from core.asset_registry import canonicalize_asset
+
+    return canonicalize_asset(str(symbol or ""))
 
 
 def classify_asset(symbol: Any) -> str:
-    sym = normalize_symbol(symbol)
-    if not sym:
-        return "unknown"
-    if sym in INDEX_SYMBOLS:
-        return "index"
-    if sym in COMMODITY_SYMBOLS:
-        return "commodity"
-    if sym.endswith(("USDT", "USDC", "BUSD")) or sym in {"BTC", "ETH", "SOL", "BNB", "XRP", "ADA"}:
-        return "crypto"
-    if len(sym) == 6 and sym[:3] in FX_CODES and sym[3:] in FX_CODES:
-        return "fx"
-    if sym.startswith(("EQUITY:", "STOCK:")):
-        return "stock"
-    return "stock"
+    """Return the canonical registry class; unknown symbols stay fail-closed."""
+    from core.asset_registry import resolve_asset_spec
+
+    asset_class = str(resolve_asset_spec(str(symbol or "")).asset_class or "unknown")
+    return "fx" if asset_class == "forex" else asset_class
 
 
 def _subclass(symbol: str, asset_class: str) -> str:
