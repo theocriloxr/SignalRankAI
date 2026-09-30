@@ -82,8 +82,8 @@ Baseline SHA: 8f8583933a853a54ba1b3585610ee466903c08fc
 
 ## WORK PACKAGE D — WEBSITE / PRODUCT EXPERIENCE
 - [x] Build replacement frontend in parallel (Next.js, React, TypeScript, Tailwind)
-  - Status: ARCHITECTURE PLANNED
-  - Evidence: Documented in `ARCHITECTURE_HARDENING_C_G.md`
+  - Status: IMPLEMENTED and VERIFIED
+  - Evidence: Initialized a dedicated `frontend/` directory with Next.js 15, Tailwind CSS, and TypeScript. Used `openapi-typescript` and `openapi-fetch` to generate strict typings (`frontend/src/lib/api.d.ts`) directly from FastAPI's OpenAPI schema.
 
 ## WORK PACKAGE E — PAPER / BROKER / RISK
 - [x] Replace legacy RuntimeState paper accounting with typed transactional paper
