@@ -14,6 +14,33 @@ def _enabled(name: str, default: bool=True) -> bool:
     raw=os.getenv(name); return default if raw is None else raw.strip().lower() in {"1","true","yes","on"}
 
 
+def _production_runtime() -> bool:
+    value = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    return value in {"production", "prod"}
+
+
+def _automatic_retrain_enabled(reason: str) -> bool:
+    """Require explicit double opt-in for event-triggered production retraining."""
+    normalized = str(reason or "").strip().lower()
+    if normalized == "feature_drift":
+        enabled = _enabled("ML_DRIFT_RETRAIN_ON_DETECT", False)
+        production_gate = "ML_PRODUCTION_DRIFT_RETRAIN_ENABLED"
+    elif normalized == "prediction_starvation":
+        enabled = _enabled("ML_STARVATION_RETRAIN_ON_DETECT", False)
+        production_gate = "ML_PRODUCTION_STARVATION_RETRAIN_ENABLED"
+    else:
+        return False
+    if not enabled:
+        return False
+    return not _production_runtime() or _enabled(production_gate, False)
+
+
 _ML_TRAIN_LOCK=asyncio.Lock()
 
 
@@ -323,11 +350,6 @@ async def _ml_drift_loop(stop: asyncio.Event) -> None:
                     prediction_result,
                 )
 
-            should_retrain=(
-                feature_drift and _enabled("ML_DRIFT_RETRAIN_ON_DETECT", True)
-            ) or (
-                starvation and _enabled("ML_STARVATION_RETRAIN_ON_DETECT", False)
-            )
             active_reason=(
                 "feature_drift"
                 if feature_drift
@@ -335,6 +357,16 @@ async def _ml_drift_loop(stop: asyncio.Event) -> None:
                 if starvation
                 else ""
             )
+            should_retrain=bool(
+                active_reason
+                and _automatic_retrain_enabled(active_reason)
+            )
+            if active_reason and not should_retrain:
+                logger.info(
+                    "[analytics_ml_auto_retrain] reason=%s status=monitor_only production=%s",
+                    active_reason,
+                    _production_runtime(),
+                )
             if should_retrain and active_reason:
                 key=f"signalrankai:ml:{active_reason}:consecutive"
                 prior=int(state.get_sync(key) or 0)
