@@ -981,6 +981,12 @@ def get_trending_stock_tickers(top_n=20):
         compact = native.replace(".", "").replace("_", "").replace("-", "")
         if not compact or any(x in compact for x in ("US500","NAS100","US30","XAU","XAG","WTI","BRENT")):
             continue
+        try:
+            from core.asset_registry import resolve_asset_spec
+            if resolve_asset_spec(native).asset_class != "stock":
+                continue
+        except Exception:
+            pass
         if len(compact) == 6 and compact[:3] in fx_ccy and compact[3:] in fx_ccy:
             continue
         if compact.endswith("USDT"):
