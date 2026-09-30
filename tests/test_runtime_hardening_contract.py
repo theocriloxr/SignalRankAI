@@ -210,3 +210,19 @@ def test_ecosystem_bootstrap_releases_db_between_seed_phases():
     assert "await session.commit()" in block
     assert 'label="worker.ecosystem_bootstrap"' not in block
 
+def test_subscription_catalogue_bootstrap_batches_db_round_trips():
+    source = text("db/ecosystem_bootstrap.py")
+    block = source[
+        source.index("async def seed_subscription_catalogue"):
+        source.index("async def seed_ml_governance")
+    ]
+    assert "product_params = [" in block
+    assert "price_params = [" in block
+    assert "entitlement_params: list[dict[str, Any]] = []" in block
+    assert "await session.execute(close_previous_price, price_params)" in block
+    assert "await session.execute(upsert_release_price, price_params)" in block
+    assert "await session.execute(entitlement_upsert, entitlement_params)" in block
+    assert "entitlement_rows = len(entitlement_params)" in block
+    assert 'bindparam("product_id", type_=String(64))' in block
+    assert 'bindparam("price_kobo", type_=BigInteger())' in block
+

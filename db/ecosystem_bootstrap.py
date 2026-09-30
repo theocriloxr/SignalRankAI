@@ -40,6 +40,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
+    """Seed the product/price/entitlement catalogue with bounded DB round-trips."""
     products = [
         ("premium_monthly", "PREMIUM", "Premium Monthly", 30, _env_int("PREMIUM_MONTHLY_PRICE_NGN", 24000)),
         ("premium_quarterly", "PREMIUM", "Premium Quarterly", 90, _env_int("PREMIUM_QUARTERLY_PRICE_NGN", 56000)),
@@ -48,41 +49,60 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
         ("professional_monthly", "PROFESSIONAL", "Professional", 30, _env_int("PROFESSIONAL_MONTHLY_PRICE_NGN", 0)),
         ("institutional_contract", "INSTITUTIONAL", "Institutional", 365, _env_int("INSTITUTIONAL_CONTRACT_PRICE_NGN", 0)),
     ]
-    for product_id, tier, name, days, price_ngn in products:
-        await session.execute(text("""
-            INSERT INTO subscription_products(product_id,tier,display_name,duration_days,active)
-            VALUES (:product_id,:tier,:display_name,:duration_days,TRUE)
-            ON CONFLICT (product_id) DO UPDATE SET
-              tier=EXCLUDED.tier, display_name=EXCLUDED.display_name,
-              duration_days=EXCLUDED.duration_days, active=TRUE
-        """), {"product_id": product_id, "tier": tier, "display_name": name, "duration_days": days})
-        # Contract/contact-sales prices remain zero and are not public checkout products.
-        # Keep one active release price per product.  Explicit SQLAlchemy bind
-        # types avoid asyncpg/PostgreSQL parameter ambiguity, and the two-step
-        # history-preserving upsert is safely rerunnable.
-        price_params = {"product_id": product_id, "price_kobo": max(0, price_ngn) * 100}
-        close_previous_price = text("""
-            UPDATE subscription_prices
-            SET effective_until=NOW()
-            WHERE product_id=:product_id
-              AND currency='NGN'
-              AND effective_until IS NULL
-              AND effective_from<>TIMESTAMP '2026-08-06 00:00:00'
-        """).bindparams(bindparam("product_id", type_=String(64)))
-        upsert_release_price = text("""
-            INSERT INTO subscription_prices(product_id,currency,price_kobo,effective_from,effective_until)
-            VALUES (:product_id,'NGN',:price_kobo,TIMESTAMP '2026-08-06 00:00:00',NULL)
-            ON CONFLICT (product_id,currency,effective_from) DO UPDATE SET
-              price_kobo=EXCLUDED.price_kobo,
-              effective_until=NULL
-        """).bindparams(
-            bindparam("product_id", type_=String(64)),
-            bindparam("price_kobo", type_=BigInteger()),
+
+    product_params = [
+        {
+            "product_id": product_id,
+            "tier": tier,
+            "display_name": name,
+            "duration_days": days,
+        }
+        for product_id, tier, name, days, _price_ngn in products
+    ]
+    if product_params:
+        await session.execute(
+            text("""
+                INSERT INTO subscription_products(product_id,tier,display_name,duration_days,active)
+                VALUES (:product_id,:tier,:display_name,:duration_days,TRUE)
+                ON CONFLICT (product_id) DO UPDATE SET
+                  tier=EXCLUDED.tier, display_name=EXCLUDED.display_name,
+                  duration_days=EXCLUDED.duration_days, active=TRUE
+            """),
+            product_params,
         )
+
+    # Contract/contact-sales prices remain zero and are not public checkout products.
+    # Keep one active release price per product. Explicit SQLAlchemy bind types
+    # avoid asyncpg/PostgreSQL parameter ambiguity while executemany keeps the
+    # bootstrap phase bounded instead of holding one DB session over hundreds of
+    # sequential network round-trips.
+    price_params = [
+        {"product_id": product_id, "price_kobo": max(0, price_ngn) * 100}
+        for product_id, _tier, _name, _days, price_ngn in products
+    ]
+    close_previous_price = text("""
+        UPDATE subscription_prices
+        SET effective_until=NOW()
+        WHERE product_id=:product_id
+          AND currency='NGN'
+          AND effective_until IS NULL
+          AND effective_from<>TIMESTAMP '2026-08-06 00:00:00'
+    """).bindparams(bindparam("product_id", type_=String(64)))
+    upsert_release_price = text("""
+        INSERT INTO subscription_prices(product_id,currency,price_kobo,effective_from,effective_until)
+        VALUES (:product_id,'NGN',:price_kobo,TIMESTAMP '2026-08-06 00:00:00',NULL)
+        ON CONFLICT (product_id,currency,effective_from) DO UPDATE SET
+          price_kobo=EXCLUDED.price_kobo,
+          effective_until=NULL
+    """).bindparams(
+        bindparam("product_id", type_=String(64)),
+        bindparam("price_kobo", type_=BigInteger()),
+    )
+    if price_params:
         await session.execute(close_previous_price, price_params)
         await session.execute(upsert_release_price, price_params)
 
-    entitlement_rows = 0
+    entitlement_params: list[dict[str, Any]] = []
     for tier in TIER_ORDER:
         if tier in {Tier.ADMIN, Tier.OWNER}:
             continue
@@ -105,9 +125,6 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
             "organization.enabled": (policy.has("organization_tenancy"), None, None, 40),
             "white_label.enabled": (policy.has("white_label"), None, None, 40),
         }
-        # Persist every canonical tier feature as an auditable entitlement row
-        # in addition to the operational control keys above.  This keeps the DB
-        # catalogue aligned with the 146 feature grants declared by tier_policy.
         for feature_name in sorted(policy.features):
             base[f"feature.{feature_name}"] = (True, None, None, 20)
 
@@ -121,26 +138,40 @@ async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
             "analytics_level": policy.analytics_level,
             "support_level": policy.support_level,
         }
+        configuration_json = _json(configuration)
         for key, (enabled, limit_value, period, priority) in base.items():
-            await session.execute(text("""
-                INSERT INTO subscription_entitlements(
-                  entitlement_key,tier,enabled,limit_value,period,priority,
-                  configuration,effective_from,version
-                ) VALUES (
-                  :key,:tier,:enabled,:limit_value,:period,:priority,
-                  CAST(:configuration AS JSONB),TIMESTAMP '2026-08-06 00:00:00',1
-                )
-                ON CONFLICT (entitlement_key,tier,version) DO UPDATE SET
-                  enabled=EXCLUDED.enabled, limit_value=EXCLUDED.limit_value,
-                  period=EXCLUDED.period, priority=EXCLUDED.priority,
-                  configuration=EXCLUDED.configuration
-            """), {
-                "key": key, "tier": tier.value, "enabled": enabled,
-                "limit_value": limit_value, "period": period, "priority": priority,
-                "configuration": _json(configuration),
+            entitlement_params.append({
+                "key": key,
+                "tier": tier.value,
+                "enabled": enabled,
+                "limit_value": limit_value,
+                "period": period,
+                "priority": priority,
+                "configuration": configuration_json,
             })
-            entitlement_rows += 1
-    feature_entitlements = sum(len(get_entitlements(tier).features) for tier in TIER_ORDER if tier not in {Tier.ADMIN, Tier.OWNER})
+
+    if entitlement_params:
+        entitlement_upsert = text("""
+            INSERT INTO subscription_entitlements(
+              entitlement_key,tier,enabled,limit_value,period,priority,
+              configuration,effective_from,version
+            ) VALUES (
+              :key,:tier,:enabled,:limit_value,:period,:priority,
+              CAST(:configuration AS JSONB),TIMESTAMP '2026-08-06 00:00:00',1
+            )
+            ON CONFLICT (entitlement_key,tier,version) DO UPDATE SET
+              enabled=EXCLUDED.enabled, limit_value=EXCLUDED.limit_value,
+              period=EXCLUDED.period, priority=EXCLUDED.priority,
+              configuration=EXCLUDED.configuration
+        """)
+        await session.execute(entitlement_upsert, entitlement_params)
+
+    feature_entitlements = sum(
+        len(get_entitlements(tier).features)
+        for tier in TIER_ORDER
+        if tier not in {Tier.ADMIN, Tier.OWNER}
+    )
+    entitlement_rows = len(entitlement_params)
     return {
         "products": len(products),
         "prices": len(products),

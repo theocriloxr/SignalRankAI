@@ -53,6 +53,7 @@ RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
       tests/test_runtime_hardening_contract.py::test_web_fanout_retries_background_admission_pressure_without_warning_loop \
       tests/test_runtime_hardening_contract.py::test_outcome_tracker_skips_reprocessing_already_recorded_tp \
       tests/test_runtime_hardening_contract.py::test_ecosystem_bootstrap_releases_db_between_seed_phases \
+      tests/test_runtime_hardening_contract.py::test_subscription_catalogue_bootstrap_batches_db_round_trips \
       tests/test_outcome_tracking_monotonic_repair.py \
       tests/test_market_data_quality_firewall.py \
       tests/test_free_provider_microstructure.py \
