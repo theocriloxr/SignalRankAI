@@ -289,7 +289,7 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO notification_preferences(user_id, telegram_enabled, timezone)
         SELECT id, CASE WHEN telegram_user_id IS NULL THEN FALSE ELSE TRUE END,
-               COALESCE(timezone, 'UTC')
+               'UTC'
         FROM users
         ON CONFLICT(user_id) DO NOTHING
     """)
