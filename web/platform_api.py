@@ -854,8 +854,7 @@ async def current_user(
             active_session = (
                 await session.execute(
                     text(
-                        "SELECT EXTRACT(EPOCH FROM (NOW()-created_at)) AS auth_age_seconds "
-                        "FROM user_sessions "
+                        "SELECT created_at FROM user_sessions "
                         "WHERE session_id=:sid AND user_id=:uid AND revoked_at IS NULL AND expires_at>NOW()"
                     ),
                     {"sid": session_id, "uid": int(claims["user_id"])},
@@ -869,8 +868,13 @@ async def current_user(
         raise HTTPException(status_code=401, detail="Account unavailable")
     user["session_id"] = claims.get("sid")
     try:
-        user["auth_age_seconds"] = float(active_session._mapping["auth_age_seconds"])
+        authenticated_at = active_session._mapping["created_at"]
+        if not isinstance(authenticated_at, datetime):
+            raise TypeError("invalid_session_created_at")
+        now = datetime.now(authenticated_at.tzinfo) if authenticated_at.tzinfo else datetime.utcnow()
+        user["auth_age_seconds"] = max(0.0, (now - authenticated_at).total_seconds())
     except Exception:
+        # Missing/invalid age is intentionally fail-closed by _require_recent_auth.
         user["auth_age_seconds"] = None
     return user
 
