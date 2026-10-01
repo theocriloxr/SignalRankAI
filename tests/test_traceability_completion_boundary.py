@@ -55,14 +55,14 @@ def test_provider_completion_boundary_separates_enabled_from_optional_external()
     assert provider_008[2] == "BLOCKED_EXTERNAL"
 
 
-def test_current_release_points_to_current_0045_boundary() -> None:
+def test_current_release_points_to_current_release_candidate_boundary() -> None:
     text = CURRENT_RELEASE.read_text(encoding="utf-8")
-    assert "Repository Alembic head: 0045_mt5_credential_retirement" in text
+    assert "Repository Alembic head: 0047_event_outbox" in text
     assert "FINAL_COMPLETION_REPORT_20260926.md" in text
     assert "BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md" in text
     assert "docs/security/THREAT_MODEL.md" in text
-    assert "docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md" in text
-    assert "Older R4/v1.5.1 reports remain historical evidence" in text
+    assert "docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md" in text\n    assert "NOT YET LIVE-CERTIFIED" in text\n    assert "24–72 hour immutable-SHA staging soak" in text
+    assert "Historical evidence retained" in text
     assert "See `STAGING_COMPLETION_R4.md`" not in text
 
 
