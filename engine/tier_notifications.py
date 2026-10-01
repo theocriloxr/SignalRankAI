@@ -225,8 +225,24 @@ class TierNotificationManager:
                 lines.append(f"{marker} TP{index}: {format_price_level(target)}")
 
         lines.append("")
+        hit_target = targets[level - 1] if targets and len(targets) >= level else None
+        if hit_target is not None:
+            lines.append(f"TP{level} hit level: {format_price_level(hit_target)}")
         if current_market_price is not None:
-            lines.append(f"Current price: {format_price_level(current_market_price)}")
+            latest = float(current_market_price)
+            target_consistent = True
+            if hit_target is not None:
+                if direction in {"SHORT", "SELL"}:
+                    target_consistent = latest <= float(hit_target)
+                elif direction in {"LONG", "BUY"}:
+                    target_consistent = latest >= float(hit_target)
+            if target_consistent:
+                lines.append(f"Observed hit price: {format_price_level(latest)}")
+            else:
+                lines.append(
+                    f"Latest stored price: {format_price_level(latest)} "
+                    "(post-hit mark; not TP evidence)"
+                )
         lines.append(f"Signal P/L: {profit_text}")
 
         if is_premium:
