@@ -70,9 +70,14 @@ def test_self_verification_detects_tampering(tmp_path: Path):
         provenance.verify_bundle(tmp_path, commit=COMMIT, branch=BRANCH)
 
 
-def test_docker_builder_has_git_for_governance_but_runtime_stays_minimal():
+def test_docker_image_governance_does_not_require_git_metadata():
     dockerfile = provenance.DOCKERFILE.read_text(encoding="utf-8")
     builder, runtime = dockerfile.split(" AS runtime", 1)
-    assert "apt-get install -y --no-install-recommends gcc git libpq-dev" in builder
+    governance = (provenance.ROOT / "scripts" / "build_v7_governance.py").read_text(encoding="utf-8")
+    assert "apt-get install -y --no-install-recommends gcc libpq-dev" in builder
+    assert " gcc git libpq-dev" not in builder
     assert " git " not in runtime.replace("\n", " ")
     assert "python scripts/run_release_manifest.py --environment image --group image" in builder
+    assert "def _packaged_legacy_disposition()" in governance
+    assert "except (FileNotFoundError, subprocess.CalledProcessError)" in governance
+    assert "packaged_governance_missing_legacy_disposition" in governance
