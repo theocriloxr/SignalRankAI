@@ -3559,8 +3559,8 @@ async def _send_signal_with_engagement_async(
     and save message_id to ActiveSignalMessage for live-edit support."""
     counts = await _load_signal_engagement_counts(str(signal_id))
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
+    _dispatch_started = time.perf_counter()
     try:
-        _dispatch_started = time.perf_counter()
         rich_html = None
         try:
             if signal:
@@ -3580,9 +3580,12 @@ async def _send_signal_with_engagement_async(
             disable_notification=False,
         )
         try:
-            from web.app import telegram_dispatch_latency_seconds
-            telegram_dispatch_latency_seconds.labels(status="ok").observe(
-                max(0.0, time.perf_counter() - _dispatch_started)
+            from core.telemetry import observe_signal_dispatch
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - _dispatch_started),
+                tier="unknown",
+                regime=str((signal or {}).get("regime") or "unknown"),
+                status="ok",
             )
         except Exception:
             pass
@@ -3610,9 +3613,12 @@ async def _send_signal_with_engagement_async(
             send_exc,
         )
         try:
-            from web.app import telegram_dispatch_latency_seconds
-            telegram_dispatch_latency_seconds.labels(status="fallback").observe(
-                max(0.0, time.perf_counter() - _dispatch_started)
+            from core.telemetry import observe_signal_dispatch
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - _dispatch_started),
+                tier="unknown",
+                regime=str((signal or {}).get("regime") or "unknown"),
+                status="fallback",
             )
         except Exception:
             pass
