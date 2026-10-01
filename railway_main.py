@@ -442,6 +442,12 @@ def _production_webhook_contract_errors() -> list[str]:
     if not (_is_running_on_railway() or _production_readiness_required()):
         return []
 
+    # If Telegram is intentionally not configured there is no webhook to
+    # accept or overwrite, so webhook dependencies are not an HTTP readiness
+    # blocker. Telegram certification remains a separate explicit gate.
+    if not str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
+        return []
+
     errors: list[str] = []
     database_url = str(os.getenv("DATABASE_URL") or "").strip()
     state_url = str(
@@ -550,13 +556,9 @@ def _is_db_ready() -> bool:
 
 def _validate_production_runtime_contract() -> None:
     """Fail fast when a production Railway service carries test-only controls."""
-    environment = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    from core.env import runtime_environment_name
+
+    environment = runtime_environment_name("")
     public_testing = str(os.getenv("PUBLIC_TESTING_MODE") or "0").strip().lower() in {
         "1", "true", "yes", "on", "y"
     }
