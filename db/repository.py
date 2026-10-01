@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from collections import deque
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -425,7 +425,13 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     raise RuntimeError("signal_thesis_lock_unavailable") from lock_error
                 # Non-production SQLite/test environments still receive the
                 # deterministic recent-thesis query below.
-            thesis_cutoff = now_utc_naive() - timedelta(hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4)))
+            now = now_utc_naive()
+            thesis_cutoff = now - timedelta(hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4)))
+            raw_expires = signal_data.get("expires_at")
+            if isinstance(raw_expires, datetime):
+                signal_expires_at = raw_expires.replace(tzinfo=None) if raw_expires.tzinfo else raw_expires
+            else:
+                signal_expires_at = now + timedelta(hours=12)
             recent_thesis = (
                 await session.execute(
                     select(Signal.signal_id)
@@ -434,6 +440,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                         Signal.created_at >= thesis_cutoff,
                         Signal.archived.is_(False),
                         Signal.expired.is_(False),
+                        or_(Signal.expires_at.is_(None), Signal.expires_at > now),
                     )
                     .limit(1)
                 )
@@ -460,6 +467,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                             Signal.created_at >= thesis_cutoff,
                             Signal.archived.is_(False),
                             Signal.expired.is_(False),
+                            or_(Signal.expires_at.is_(None), Signal.expires_at > now),
                         )
                         .order_by(Signal.created_at.desc())
                     )
@@ -493,8 +501,17 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 .first()
             )
             if exact_active is not None:
-                if bool(exact_active.expired) or bool(exact_active.archived):
+                exact_expiry = getattr(exact_active, "expires_at", None)
+                exact_created = getattr(exact_active, "created_at", None)
+                stale_by_time = bool(exact_expiry is not None and exact_expiry <= now)
+                stale_null_expiry = bool(
+                    exact_expiry is None
+                    and exact_created is not None
+                    and exact_created < thesis_cutoff
+                )
+                if bool(exact_active.expired) or bool(exact_active.archived) or stale_by_time or stale_null_expiry:
                     exact_active.status = "superseded"
+                    exact_active.expired = True
                     await session.flush()
                 else:
                     return None
@@ -585,7 +602,8 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 asset_discovery_provider=(str(signal_data.get("asset_discovery_provider") or "").strip()[:128] or None),
                 quality_gate_version=str(signal_data.get("quality_gate_version") or "production-integrity-v1"),
                 quality_gate_passed=bool(signal_data.get("quality_gate_passed", False)),
-                created_at=now_utc_naive(),
+                created_at=now,
+                expires_at=signal_expires_at,
             )
 
             session.add(signal)
