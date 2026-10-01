@@ -23,7 +23,7 @@ from sqlalchemy import text
 from db.session import get_session
 
 
-EXPECTED_HEAD = "0045_mt5_credential_retirement"
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0047_event_outbox")
 _READY_CONNECTION_STATUSES = {"verified", "ready", "linked"}
 _CREDENTIAL_READY_FORMATS = {"envelope_v1", "provider_managed"}
 
