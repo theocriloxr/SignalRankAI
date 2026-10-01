@@ -854,7 +854,8 @@ async def current_user(
             active_session = (
                 await session.execute(
                     text(
-                        "SELECT 1 FROM user_sessions "
+                        "SELECT EXTRACT(EPOCH FROM (NOW()-created_at)) AS auth_age_seconds "
+                        "FROM user_sessions "
                         "WHERE session_id=:sid AND user_id=:uid AND revoked_at IS NULL AND expires_at>NOW()"
                     ),
                     {"sid": session_id, "uid": int(claims["user_id"])},
@@ -867,7 +868,31 @@ async def current_user(
     if not user or user.get("account_status") != "active":
         raise HTTPException(status_code=401, detail="Account unavailable")
     user["session_id"] = claims.get("sid")
+    try:
+        user["auth_age_seconds"] = float(active_session._mapping["auth_age_seconds"])
+    except Exception:
+        user["auth_age_seconds"] = None
     return user
+
+
+def _require_recent_auth(user: dict[str, Any]) -> None:
+    """Require a freshly issued authenticated session for credential creation."""
+    max_age = max(
+        60.0,
+        min(
+            3600.0,
+            float(os.getenv("SENSITIVE_ACTION_RECENT_AUTH_SECONDS", "900") or 900),
+        ),
+    )
+    try:
+        age = float(user.get("auth_age_seconds"))
+    except (TypeError, ValueError):
+        age = max_age + 1.0
+    if age < 0 or age > max_age:
+        raise HTTPException(
+            status_code=403,
+            detail="Recent authentication is required for this security-sensitive action",
+        )
 
 
 async def _create_login_response(
@@ -3574,6 +3599,7 @@ async def create_api_key(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     _assert_feature(user, "rest_api")
+    _require_recent_auth(user)
     scopes = _normalized_scopes(payload.scopes)
     key_id = str(uuid4())
     prefix = "srk_" + key_id.replace("-", "")[:12]
