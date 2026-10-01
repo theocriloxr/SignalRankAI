@@ -17,6 +17,29 @@ def to_naive_utc(dt: datetime) -> datetime:
     return dt
 
 
+def _delivery_snapshot_from_proof(proof: Any) -> dict[str, Any]:
+    payload = dict(proof or {}) if isinstance(proof, dict) else {}
+    snapshot = payload.get("signal_snapshot")
+    if not isinstance(snapshot, dict):
+        receipt = payload.get("delivery_receipt")
+        if isinstance(receipt, dict):
+            snapshot = receipt.get("signal_snapshot")
+    return dict(snapshot or {}) if isinstance(snapshot, dict) else {}
+
+
+def _delivery_snapshot_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return to_naive_utc(value)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return to_naive_utc(parsed)
+
+
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import (
@@ -2320,7 +2343,11 @@ async def mark_signal_delivery_result(
         signal_row = (
             await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)).limit(1))
         ).scalar_one_or_none()
-        generated_at = getattr(signal_row, "created_at", None)
+        proof_snapshot = _delivery_snapshot_from_proof(telegram_api_result)
+        generated_at = (
+            _delivery_snapshot_datetime(proof_snapshot.get("generated_at"))
+            or getattr(signal_row, "created_at", None)
+        )
         try:
             from signalrank_telegram.timezones import (
                 age_seconds,
