@@ -85,11 +85,9 @@ def _stage(name: str, **details: object) -> None:
 
 
 def _safe_environment() -> None:
-    environment = (
-        str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("APP_ENV") or "")
-        .strip()
-        .lower()
-    )
+    from core.env import runtime_environment_name
+
+    environment = runtime_environment_name("")
     profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
     if environment != "staging":
         raise RuntimeError(f"restore_drill_requires_staging environment={environment or 'unknown'}")
