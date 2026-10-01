@@ -1352,6 +1352,17 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         except Exception:
             pass
 
+        # A missed entry is an observation, not a realized trade. Preserve the
+        # hypothetical market excursion for learning, but never book it as P/L
+        # or an R-multiple loss/win because no position was opened.
+        missed_entry_observed_r = None
+        missed_entry_observed_pct = None
+        if status_l == "missed_entry":
+            missed_entry_observed_r = r_mult
+            missed_entry_observed_pct = pct
+            r_mult = 0.0
+            pct = 0.0
+
         # Canonical protected-exit accounting. A breakeven_stop after TP1/TP2
         # realizes the planned partial closes and a zero-R remainder; it must not
         # be persisted as -1R merely because the original SL price is supplied to
@@ -1426,6 +1437,17 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 "observation_range_time": lifecycle_terminal_evidence.get("observation_range_time"),
                 "mfe_pct": float(excursion.get("mfe_pct", existing_outcome_meta.get("mfe_pct", 0.0)) or 0.0),
                 "mae_pct": float(excursion.get("mae_pct", existing_outcome_meta.get("mae_pct", 0.0)) or 0.0),
+                "missed_entry_observed_r": (
+                    float(missed_entry_observed_r)
+                    if missed_entry_observed_r is not None
+                    else existing_outcome_meta.get("missed_entry_observed_r")
+                ),
+                "missed_entry_observed_pct": (
+                    float(missed_entry_observed_pct)
+                    if missed_entry_observed_pct is not None
+                    else existing_outcome_meta.get("missed_entry_observed_pct")
+                ),
+                "realized_position_opened": bool(status_l != "missed_entry"),
             }
             _outcome = await upsert_outcome(
                 session,
