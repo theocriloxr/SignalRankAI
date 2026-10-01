@@ -37,8 +37,8 @@ def test_web_api_key_creation_requires_recent_server_derived_auth() -> None:
     create = source[source.index("async def create_api_key("):source.index('@router.delete("/api-keys/{key_id}")')]
     helper = source[source.index("def _require_recent_auth("):source.index("async def _create_login_response")]
 
-    assert "SELECT created_at FROM user_sessions" in current
-    assert "(now - authenticated_at).total_seconds()" in current
+    assert '"iat"' in current
+    assert "datetime.utcnow().timestamp()" in current
     assert 'user["auth_age_seconds"]' in current
     assert "SENSITIVE_ACTION_RECENT_AUTH_SECONDS" in helper
     assert "status_code=403" in helper
