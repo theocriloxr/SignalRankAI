@@ -349,6 +349,14 @@ class RedisState:
         self._flush_thread = threading.Thread(target=self._flush_loop, name="state-flush-worker", daemon=True)
         self._flush_thread.start()
 
+    def get_redis_sync(self):
+        """Return the synchronous Redis client for legacy maintenance workers.
+
+        New code should prefer typed state APIs; this public compatibility
+        wrapper avoids reaching through a private attribute.
+        """
+        return self._get_redis_sync()
+
     def _get_redis_sync(self):
         if self._redis_sync is not None:
             return self._redis_sync
