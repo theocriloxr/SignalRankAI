@@ -16,7 +16,19 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # The active Railway migration chain historically omitted the outcome-truth
+    # columns that exist in the ORM and in the legacy alternate Alembic tree.
+    # Migration 0031 is the first active-chain revision that consumes
+    # canonical_outcome, so establish the complete truth contract here before
+    # any UPDATE/trigger references it.  IF NOT EXISTS keeps upgraded databases
+    # and installations previously repaired by startup auto-ops idempotent.
     for statement in (
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_canonical_outcome ON outcomes(canonical_outcome)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_vip_fill_outcome ON outcomes(vip_fill_outcome)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_sentiment_outcome ON outcomes(sentiment_outcome)",
         "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS terminal_version INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS provenance VARCHAR(32) NOT NULL DEFAULT 'canonical_live'",
         "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS calculation_policy_version VARCHAR(64) NOT NULL DEFAULT 'legacy'",
