@@ -1,4 +1,5 @@
 from utils.timeutils import now_utc_naive
+import logging
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,8 +8,10 @@ from db.session import get_session, get_engine_for_event_loop
 from db.models import User, SignalDelivery, Outcome, MT5Execution
 from engine.tiered_executor import PREMIUM_DAILY_LIMIT, reset_daily_counter_if_needed
 from engine.risk_analytics import sharpe_ratio, sortino_ratio
-from signalrank_telegram.utils import tier_rank, _effective_tier, _build_dynamic_menu
+from signalrank_telegram.utils import tier_rank, _effective_tier, _public_guard, _build_dynamic_menu
 from signalrank_telegram.command_resilience import safe_command_error
+
+_audit_logger = logging.getLogger("audit")
 
 async def performance_command(update, context):
     """30-day performance summary."""
@@ -180,8 +183,6 @@ async def apikey_command(update, context) -> None:
         generate_api_key = lambda: "demo-key"
     
     async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
-        from datetime import datetime, timedelta
-        from db.session import get_session
         from db.repository import create_api_token
         token = generate_api_key()
         expires = now_utc_naive() + timedelta(days=max(1, min(int(ttl_days), 365)))
