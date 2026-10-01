@@ -276,9 +276,13 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
                     "per_cycle_limit": _cycle_limit(tier),
                 }
             )
+        # Materialize ORM rows while the session is active. Rollback/close can
+        # expire SQLAlchemy state; returning ORM instances from this scope caused
+        # production DetachedInstanceError failures in web signal fan-out.
+        signal_payloads = [_signal_payload(signal) for signal in signal_rows]
         await session.rollback()
 
-    return [_signal_payload(signal) for signal in signal_rows], users
+    return signal_payloads, users
 
 
 async def deliver_recent_web_signals() -> dict[str, int]:
