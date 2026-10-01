@@ -4418,7 +4418,6 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			return
 
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
