@@ -1953,6 +1953,25 @@ router = MT5SignalRouter()
 
 
 # Convenience functions
+async def route_signal_to_metatrader(
+    signal: Dict[str, Any],
+    user_id: int,
+    *,
+    platform: str = "mt5",
+    execution_mode: str = "manual_confirmed",
+    connection_id: str | None = None,
+) -> ExecutionResult:
+    """Route a Telegram-originated MT4/MT5 signal through the canonical gate."""
+    return await router.route_signal(
+        signal,
+        int(user_id),
+        execution_mode,
+        user_identity="telegram",
+        broker_platform=str(platform or "mt5").lower(),
+        connection_id=connection_id,
+    )
+
+
 async def route_signal_to_mt5(
     signal: Dict[str, Any],
     user_id: int,
