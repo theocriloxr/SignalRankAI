@@ -19,10 +19,17 @@ def test_webhook_latency_metrics_separate_queue_and_handler_time() -> None:
 
 def test_webhook_http_ingress_does_not_wait_for_handler_completion() -> None:
     source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
-    route = source[
-        source.index('@app.post("/telegram/webhook")'):
-        source.index('@app.get("/telegram/webhook_status")')
+    ingress = source[
+        source.index("async def _telegram_webhook_route("):
+        source.index("def _webhook_queue_diagnostics")
     ]
-    assert "_bot_application.process_update" not in route
-    assert "timeout=0.35" in route
-    assert '"status": "queued"' in route
+    http_route = source[
+        source.index('@app.post("/telegram/webhook")'):
+        source.index("async def _enqueue_webhook_update_async(")
+    ]
+    assert "_bot_application.process_update" not in ingress
+    assert "_bot_application.process_update" not in http_route
+    assert "timeout=0.35" in ingress
+    assert '"status": "queued"' in ingress
+    assert "result = await _telegram_webhook_route(req)" in http_route
+    assert "return JSONResponse(status_code=200, content=result)" in http_route
