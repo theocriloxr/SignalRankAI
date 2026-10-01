@@ -90,9 +90,11 @@ def test_runtime_outcome_role_starts_the_canonical_realtime_tracker():
 
 def test_worker_runs_live_writer_and_projection_repair_as_separate_tasks():
     source = _source("worker/worker.py")
-    assert '_register_task("outcome_tracker"' in source
-    assert '_register_task(\n                "outcome_reconciliation"' in source
-    assert "from engine.realtime_outcome_tracker import outcome_tracker" in source
+    run_block = source[source.index("async def run(self)"):source.index("async def _web_signal_fanout_loop")]
+    assert '"outcome_tracker"' in run_block
+    assert '"outcome_reconciliation"' in run_block
+    assert run_block.count("_register_task(") >= 2
+    assert "from engine.realtime_outcome_tracker import outcome_tracker" in run_block
     assert "from services.outcome_reconciliation import (" in source
 
 
