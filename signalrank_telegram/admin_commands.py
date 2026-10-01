@@ -8,7 +8,7 @@ from sqlalchemy import select, func, desc, text
 from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_engine_for_event_loop, get_session
-from db.models import Signal, AdminEvent
+from db.models import Signal, AdminEvent, MT5Credentials
 from db.repository import count_active_vip_users
 from core.redis_state import state
 from ml.inference import MLFilter
@@ -193,10 +193,6 @@ async def admin_top_strategies_command(update, context) -> None:
     if not _is_admin(user_id):
         await update.message.reply_text("Admin only.")
         return
-    from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select, func, desc
-    from db.session import get_session, get_engine_for_event_loop
-    from db.models import Signal
     engine = get_engine_for_event_loop()
     if engine is None:
         await update.message.reply_text("Database unavailable.")
