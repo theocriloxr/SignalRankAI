@@ -72,7 +72,7 @@
       "id": "security-semgrep",
       "group": "static",
       "description": "Semgrep SAST across runtime code; migrations are certified by schema/release-chain gates",
-      "command": "semgrep scan --config auto --error --exclude db/migrations --exclude alembic --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py",
+      "command": "semgrep scan --config auto --error --exclude='db/migrations/**' --exclude='alembic/**' --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py",
       "severity": "high",
       "required": true,
       "environments": [
