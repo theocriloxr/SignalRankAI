@@ -499,16 +499,27 @@ async def fetch_candles_with_circuit_breaker(
         except (asyncio.TimeoutError, Exception) as exc:
             logger.warning(f"[circuit_breaker] Binance failed for {symbol}: {exc}; trying yfinance")
 
-    # 2 — yfinance
+    # 2 — canonical async provider waterfall.
     try:
-        candles = await _try_yfinance()
+        candles = await asyncio.wait_for(async_get_candles(symbol, timeframe), timeout=timeout)
         if candles:
-            logger.debug(f"[circuit_breaker] yfinance OK for {symbol} {timeframe}")
+            logger.debug("[circuit_breaker] certified provider waterfall OK for %s %s", symbol, timeframe)
             return candles
     except (asyncio.TimeoutError, Exception) as exc:
-        logger.warning(f"[circuit_breaker] yfinance failed for {symbol}: {exc}")
+        logger.warning("[circuit_breaker] certified provider waterfall failed for %s: %s", symbol, exc)
 
-    logger.error(f"[circuit_breaker] All providers failed for {symbol} {timeframe}")
+    # 3 — yfinance is analysis/development fallback only. Never allow it to
+    # become staging/production execution-sensitive truth.
+    if not _execution_sensitive_runtime():
+        try:
+            candles = await _try_yfinance()
+            if candles:
+                logger.debug(f"[circuit_breaker] analysis-only yfinance OK for {symbol} {timeframe}")
+                return candles
+        except (asyncio.TimeoutError, Exception) as exc:
+            logger.warning(f"[circuit_breaker] yfinance failed for {symbol}: {exc}")
+
+    logger.error(f"[circuit_breaker] All certified providers failed for {symbol} {timeframe}")
     return []
 
 
@@ -751,6 +762,18 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _execution_sensitive_runtime() -> bool:
+    """Return True when market data may influence staging/production decisions."""
+    names = (
+        os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE"),
+        os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("APP_ENV"),
+        os.getenv("ENVIRONMENT"),
+    )
+    return any(str(value or "").strip().lower() in {"staging", "production", "prod"} for value in names)
 
 
 def _timeframe_to_seconds(tf: str) -> int:
@@ -1052,12 +1075,16 @@ async def fetch_market_data_cached(
     *,
     diagnostic_scope: str = "full",
 ) -> dict:
-    """Fetch market data from yfinance first, then Postgres cache, then fallback to REST.
+    """Fetch market data through the certified data path.
 
-    Priority order:
-    1. yfinance (primary source for all assets)
-    2. Postgres cache (from WS ingestor)
-    3. REST providers (Binance/Bybit/etc)
+    In staging/production decision scope, yfinance is deliberately excluded
+    because it is an unofficial/best-effort source and is not execution truth.
+    Research/learning scope may still use it as analysis-only context.
+
+    Decision-path priority:
+    1. fresh Postgres cache where applicable
+    2. certified provider waterfall
+    3. no data / no trade when those sources cannot satisfy freshness
 
     FIX: Lowered default minimum candles from 80 to 20 to prevent signal starvation
     when providers return limited data. In degraded mode, accepts 5+ candles.
@@ -1073,6 +1100,10 @@ async def fetch_market_data_cached(
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
     use_yfinance = _env_bool("YFINANCE_ENABLED", True)
     is_crypto_asset = str(get_asset_type(asset) or "").lower() == "crypto"
+    analysis_scope = str(diagnostic_scope or "full").strip().lower() == "analysis"
+    execution_sensitive = _execution_sensitive_runtime() and not analysis_scope
+    if execution_sensitive:
+        use_yfinance = False
     if is_crypto_asset and not _env_bool("YFINANCE_CRYPTO_PRIMARY_ENABLED", False):
         use_yfinance = False
 
@@ -1099,6 +1130,8 @@ async def fetch_market_data_cached(
                     return tf, {
                         "candles": yf_candles,
                         "source": "yfinance",
+                        "source_category": "analysis_only",
+                        "execution_eligible": False,
                         "data_age_seconds": int(data_age) if data_age > 0 else None,
                         "stale": not is_fresh,
                     }
