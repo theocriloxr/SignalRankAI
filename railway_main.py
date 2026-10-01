@@ -586,7 +586,7 @@ def _log_railway_env_readiness() -> None:
     has_domain = bool((os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_URL") or "").strip())
 
     logger.info(
-        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s ai_provider=%s openai=%s gemini=%s mt5_token=%s encryption=%s",
+        "[railway] env readiness: telegram_configured=%s webhook_domain=%s owner=%s ai_provider=%s openai_configured=%s gemini_configured=%s metaapi_configured=%s encryption_configured=%s",
         has_telegram_token,
         has_domain,
         has_owner,
@@ -625,9 +625,8 @@ async def _probe_metaapi_startup_authorization() -> None:
         result = await probe_metaapi_authorization()
         if result.get("ok"):
             logger.info(
-                "[metaapi_startup_probe] status=PASS provider_status=%s token_source=%s",
+                "[metaapi_startup_probe] status=PASS provider_status=%s",
                 result.get("provider_status"),
-                result.get("token_source"),
             )
             return
         logger.error(
