@@ -87,6 +87,38 @@ def env_bool(name: str, default: bool = False) -> bool:
     return bool(default)
 
 
+def env_bool_alias(
+    canonical: str,
+    *aliases: str,
+    default: bool = False,
+    strict_conflict: bool | None = None,
+) -> bool:
+    """Resolve compatibility aliases while rejecting contradictory values.
+
+    In staging/production contradictory aliases are a configuration error by
+    default. Local/test environments remain permissive so migration tests can
+    explicitly exercise legacy names.
+    """
+    configured: list[tuple[str, bool]] = []
+    for name in (canonical, *aliases):
+        if os.getenv(name) is None:
+            continue
+        configured.append((name, env_bool(name, default)))
+    if not configured:
+        return bool(default)
+
+    distinct = {value for _, value in configured}
+    strict = (
+        runtime_environment_name("dev") in {"staging", "production"}
+        if strict_conflict is None
+        else bool(strict_conflict)
+    )
+    if strict and len(distinct) > 1:
+        names = ",".join(name for name, _ in configured)
+        raise RuntimeError(f"conflicting_boolean_aliases:{canonical}:{names}")
+    return configured[0][1]
+
+
 def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
     try:
         value = int(str(os.getenv(name, default)).strip())
@@ -161,7 +193,7 @@ class SafetyFlags:
 
     @classmethod
     def from_env(cls) -> "SafetyFlags":
-        return cls(
+        flags = cls(
             real_execution_enabled=env_bool("REAL_EXECUTION_ENABLED", False),
             auto_execution_enabled=env_bool("AUTO_EXECUTION_ENABLED", False),
             auto_trade_enabled=env_bool("AUTO_TRADE_ENABLED", False),
@@ -174,6 +206,28 @@ class SafetyFlags:
             vip_webhook_dispatch_enabled=env_bool("VIP_WEBHOOK_DISPATCH_ENABLED", False),
             chat_mt5_credentials_enabled=env_bool("CHAT_MT5_CREDENTIALS_ENABLED", False),
         )
+        flags.validate_invariants()
+        return flags
+
+    def validate_invariants(self) -> None:
+        """Fail closed on contradictory live-execution safety configuration."""
+        violations: list[str] = []
+        if self.auto_trade_enabled and not self.auto_execution_enabled:
+            violations.append("AUTO_TRADE_ENABLED_requires_AUTO_EXECUTION_ENABLED")
+        if self.copy_trade_enabled and not self.auto_execution_enabled:
+            violations.append("COPY_TRADE_ENABLED_requires_AUTO_EXECUTION_ENABLED")
+        if (
+            self.auto_execution_enabled
+            or self.auto_trade_enabled
+            or self.copy_trade_enabled
+            or self.mt5_live_accounts_enabled
+            or self.bybit_execution_enabled
+        ) and not self.real_execution_enabled:
+            violations.append("broker_execution_requires_REAL_EXECUTION_ENABLED")
+        if self.real_payouts_enabled and not self.payments_enabled:
+            violations.append("REAL_PAYOUTS_ENABLED_requires_PAYMENTS_ENABLED")
+        if violations:
+            raise RuntimeError("unsafe_safety_flag_configuration:" + ",".join(violations))
 
     def enabled_names(self) -> tuple[str, ...]:
         return tuple(
@@ -203,6 +257,7 @@ __all__ = [
     "Environment",
     "SafetyFlags",
     "env_bool",
+    "env_bool_alias",
     "env_int",
     "environment",
     "redact_value",
