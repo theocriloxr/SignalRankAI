@@ -193,7 +193,6 @@ def _build_signal_action_keyboard(signal: Optional[Dict[str, Any]] = None) -> Op
 
 def _chart_symbol_for_broker(signal: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
     """Map asset → TradingView symbol + broker prefix."""
-    import os
     asset = str((signal or {}).get("asset") or "").upper().strip()
     broker_hint = str((signal or {}).get("broker") or "").upper().strip()
     
