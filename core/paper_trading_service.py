@@ -936,6 +936,7 @@ class PaperTradingService:
                 out.append(
                     {
                         "delivery_id": int(delivery.id),
+                        "delivery_proven": True,
                         "receipt_channel": "telegram",
                         "receipt_reference": str(delivery.id),
                         "telegram_user_id": (int(user.telegram_user_id) if user.telegram_user_id is not None else None),
@@ -1123,6 +1124,7 @@ class PaperTradingService:
             out.append(
                 {
                     "delivery_id": None,
+                    "delivery_proven": True,
                     "receipt_channel": "web",
                     "receipt_reference": str(row["notification_id"]),
                     "telegram_user_id": (
@@ -1672,16 +1674,24 @@ class PaperTradingService:
                     "yes",
                     "on",
                 }
-                if profile_prefs is None and require_profile:
-                    skip_reason = "profile_unavailable"
-                elif profile_prefs is not None:
-                    trading_mode = str(getattr(profile_prefs, "trading_mode", "paper") or "paper").lower()
-                    if trading_mode not in {"paper", "both"}:
-                        skip_reason = "profile_trading_mode_excludes_paper"
-                    else:
-                        pref_ok, profile_reason = signal_matches_preferences(candidate, profile_prefs)
-                        if not pref_ok:
-                            skip_reason = "profile_preference_mismatch"
+                delivery_proven = bool(candidate.get("delivery_proven"))
+                # Confirmed delivery is the canonical proof that the user was
+                # eligible to receive this signal, including explicit owner/admin
+                # recovery cohorts. Re-running the ordinary profile matcher here
+                # caused delivered recovery signals to be rejected by paper as
+                # profile_preference_mismatch. Paper still enforces its own
+                # account/risk/direction/class/exposure/freshness controls below.
+                if not delivery_proven:
+                    if profile_prefs is None and require_profile:
+                        skip_reason = "profile_unavailable"
+                    elif profile_prefs is not None:
+                        trading_mode = str(getattr(profile_prefs, "trading_mode", "paper") or "paper").lower()
+                        if trading_mode not in {"paper", "both"}:
+                            skip_reason = "profile_trading_mode_excludes_paper"
+                        else:
+                            pref_ok, profile_reason = signal_matches_preferences(candidate, profile_prefs)
+                            if not pref_ok:
+                                skip_reason = "profile_preference_mismatch"
                 freshness = evaluate_signal_freshness(
                     timeframe=candidate.get("timeframe"),
                     generated_at=candidate.get("generated_at"),
