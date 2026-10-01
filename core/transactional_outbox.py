@@ -21,8 +21,10 @@ and by contract tests; a SQL adapter must satisfy the same protocol.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
@@ -207,6 +209,236 @@ class MemoryTransactionalOutbox:
         return sum(1 for entry in self._entries.values() if entry.status in ("pending", "claimed", "failed"))
 
 
+class PostgresTransactionalOutbox:
+    """PostgreSQL-backed outbox used by production/staging event recovery.
+
+    Claims are short database transactions using FOR UPDATE SKIP LOCKED.
+    Network publication happens only after claim returns, so Redis/network
+    latency never extends the database transaction.
+    """
+
+    def __init__(self, *, lease_seconds: int = 60) -> None:
+        self.lease_seconds = max(5, min(3600, int(lease_seconds)))
+
+    @staticmethod
+    def _entry(row: Mapping[str, Any]) -> OutboxEntry:
+        payload = row.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {"raw": payload}
+        occurred = row.get("occurred_at")
+        if isinstance(occurred, datetime):
+            occurred_at = occurred.astimezone(timezone.utc).isoformat() if occurred.tzinfo else occurred.replace(tzinfo=timezone.utc).isoformat()
+        else:
+            occurred_at = str(occurred or "")
+        return OutboxEntry(
+            entry_id=str(row.get("entry_id") or ""),
+            event_type=str(row.get("event_type") or ""),
+            partition_key=str(row.get("partition_key") or ""),
+            payload=dict(payload),
+            idempotency_key=str(row.get("idempotency_key") or ""),
+            occurred_at=occurred_at,
+            status=str(row.get("status") or "pending"),
+            attempts=int(row.get("attempts") or 0),
+            last_error=str(row.get("last_error")) if row.get("last_error") is not None else None,
+        )
+
+    async def enqueue(
+        self,
+        *,
+        entry_id: str,
+        event_type: str,
+        partition_key: str,
+        payload: Mapping[str, Any],
+        idempotency_key: str,
+        occurred_at: str,
+    ) -> OutboxEntry:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        encoded = json.dumps(dict(payload), separators=(",", ":"), default=str)
+        async with get_session(
+            priority="critical",
+            label="event_outbox.enqueue",
+            timeout_seconds=3.0,
+            drop_if_busy=False,
+        ) as session:
+            result = await session.execute(
+                text(
+                    """
+                    INSERT INTO event_outbox(
+                        entry_id,event_type,partition_key,payload,idempotency_key,
+                        occurred_at,status,attempts,available_at,created_at,updated_at
+                    )
+                    VALUES(
+                        :entry_id,:event_type,:partition_key,CAST(:payload AS JSONB),
+                        :idempotency_key,CAST(:occurred_at AS TIMESTAMPTZ),
+                        'pending',0,NOW(),NOW(),NOW()
+                    )
+                    ON CONFLICT(idempotency_key) DO UPDATE
+                    SET updated_at=event_outbox.updated_at
+                    RETURNING *
+                    """
+                ),
+                {
+                    "entry_id": str(entry_id),
+                    "event_type": str(event_type),
+                    "partition_key": str(partition_key),
+                    "payload": encoded,
+                    "idempotency_key": str(idempotency_key),
+                    "occurred_at": str(occurred_at),
+                },
+            )
+            row = result.mappings().one()
+            await session.commit()
+        return self._entry(row)
+
+    async def claim(self, *, batch: int = 10) -> list[OutboxEntry]:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(
+            priority="background",
+            label="event_outbox.claim",
+            timeout_seconds=2.0,
+            drop_if_busy=True,
+        ) as session:
+            result = await session.execute(
+                text(
+                    """
+                    WITH candidate AS (
+                        SELECT entry_id
+                        FROM event_outbox
+                        WHERE (
+                            status IN ('pending','failed') AND available_at <= NOW()
+                        ) OR (
+                            status='claimed'
+                            AND claimed_at < NOW() - (:lease_seconds * INTERVAL '1 second')
+                        )
+                        ORDER BY created_at, entry_id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT :batch
+                    )
+                    UPDATE event_outbox AS e
+                    SET status='claimed', claimed_at=NOW(), updated_at=NOW()
+                    FROM candidate c
+                    WHERE e.entry_id=c.entry_id
+                    RETURNING e.*
+                    """
+                ),
+                {"lease_seconds": self.lease_seconds, "batch": max(1, min(100, int(batch)))},
+            )
+            rows = list(result.mappings().all())
+            await session.commit()
+        return [self._entry(row) for row in rows]
+
+    async def mark_done(self, entry_id: str) -> None:
+        await self._update_status(entry_id, "done")
+
+    async def mark_failed(self, entry_id: str, error: str, *, attempts: int) -> None:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        attempts = max(1, int(attempts))
+        async with get_session(
+            priority="background",
+            label="event_outbox.failed",
+            timeout_seconds=2.0,
+            drop_if_busy=False,
+        ) as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE event_outbox
+                    SET status='failed',
+                        attempts=:attempts,
+                        last_error=:error,
+                        claimed_at=NULL,
+                        available_at=NOW() + (
+                            LEAST(300, POWER(2, GREATEST(:attempts - 1, 0))) * INTERVAL '1 second'
+                        ),
+                        updated_at=NOW()
+                    WHERE entry_id=:entry_id
+                    """
+                ),
+                {"entry_id": str(entry_id), "attempts": attempts, "error": str(error)[:512]},
+            )
+            await session.commit()
+
+    async def dead_letter(self, entry_id: str, reason: str) -> None:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(
+            priority="background",
+            label="event_outbox.dead_letter",
+            timeout_seconds=2.0,
+            drop_if_busy=False,
+        ) as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE event_outbox
+                    SET status='dead_lettered', last_error=:reason,
+                        claimed_at=NULL, updated_at=NOW()
+                    WHERE entry_id=:entry_id
+                    """
+                ),
+                {"entry_id": str(entry_id), "reason": str(reason)[:512]},
+            )
+            await session.commit()
+
+    async def release_claim(self, entry_id: str) -> None:
+        await self._update_status(entry_id, "pending", clear_claim=True)
+
+    async def _update_status(self, entry_id: str, status: str, *, clear_claim: bool = True) -> None:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(
+            priority="background",
+            label="event_outbox.status",
+            timeout_seconds=2.0,
+            drop_if_busy=False,
+        ) as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE event_outbox
+                    SET status=:status,
+                        claimed_at=CASE WHEN :clear_claim THEN NULL ELSE claimed_at END,
+                        updated_at=NOW()
+                    WHERE entry_id=:entry_id
+                    """
+                ),
+                {"entry_id": str(entry_id), "status": str(status), "clear_claim": bool(clear_claim)},
+            )
+            await session.commit()
+
+    async def depth(self) -> int:
+        from sqlalchemy import text
+        from db.session import get_session
+
+        async with get_session(
+            priority="background",
+            label="event_outbox.depth",
+            timeout_seconds=1.0,
+            drop_if_busy=True,
+        ) as session:
+            value = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM event_outbox "
+                        "WHERE status IN ('pending','claimed','failed')"
+                    )
+                )
+            ).scalar_one()
+            await session.rollback()
+        return int(value or 0)
+
+
 class IdempotentInbox:
     """Consumer-side deduplication store for exactly-once logical processing.
 
@@ -338,6 +570,7 @@ class OutboxRelay:
 __all__ = [
     "IdempotentInbox",
     "MemoryTransactionalOutbox",
+    "PostgresTransactionalOutbox",
     "OutboxClaim",
     "OutboxEntry",
     "OutboxRelay",
