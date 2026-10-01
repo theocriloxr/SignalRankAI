@@ -113,6 +113,10 @@ _STEPS: list[tuple[str, list[str]]] = [
         [sys.executable, "scripts/schema_audit.py"],
     ),
     (
+        "governance_packaged_check",
+        [sys.executable, "scripts/build_v7_governance.py", "--check"],
+    ),
+    (
         "release_provenance",
         [
             sys.executable,
