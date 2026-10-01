@@ -15,6 +15,7 @@ import os
 import json
 import asyncio
 import logging
+from collections import deque
 import time
 from typing import Any, Dict, List, Optional, Callable, Awaitable
 
@@ -57,8 +58,17 @@ class EventBus:
         self._subscriptions: Dict[str, Callable] = {}
         self._running = False
 
-        # In-memory fallback for local testing
-        self._fallback_queue: List[Dict[str, Any]] = []
+        # Memory fallback is bounded and restricted to local/test environments.
+        # Production/staging must fail closed if the durable Redis transport is
+        # unavailable rather than silently accepting lossy critical events.
+        env_name = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+        explicit_fallback = str(os.getenv("EVENT_BUS_MEMORY_FALLBACK_ENABLED") or "").strip().lower()
+        self._memory_fallback_allowed = (
+            explicit_fallback in {"1", "true", "yes", "on"}
+            or env_name in {"", "local", "dev", "development", "test", "testing"}
+        )
+        fallback_limit = max(1, min(10000, int(os.getenv("EVENT_BUS_MEMORY_FALLBACK_MAXLEN", "1000") or 1000)))
+        self._fallback_queue = deque(maxlen=fallback_limit)
 
         self._init_redis()
 
@@ -142,9 +152,18 @@ class EventBus:
                 logger.debug(f"[event_bus] Redis publish failed: {e}")
                 # Fall through to in-memory
 
-        # In-memory fallback
+        # In-memory fallback is test/development only. In staging/production,
+        # return failure so callers can retry/defer instead of losing an event
+        # while the system incorrectly reports successful publication.
+        if not self._memory_fallback_allowed:
+            logger.error(
+                "[event_bus] durable transport unavailable; event rejected type=%s channel=%s",
+                event_type,
+                channel,
+            )
+            return False
         self._fallback_queue.append(event)
-        logger.debug(f"[event_bus] Published to fallback queue: {event_type}")
+        logger.warning("[event_bus] using bounded non-durable fallback type=%s", event_type)
         return True
 
     async def subscribe(
@@ -202,7 +221,7 @@ class EventBus:
                 logger.debug(f"[event_bus] Failed to read stream: {e}")
 
         # Also check in-memory fallback
-        for event in self._fallback_queue[-limit:]:
+        for event in list(self._fallback_queue)[-limit:]:
             if event_type is None or event.get("type") == event_type:
                 events.append(event)
 
@@ -236,7 +255,7 @@ class EventBus:
 
     def is_healthy(self) -> bool:
         """Check if event bus is operational."""
-        return self._has_redis or True  # Always healthy with fallback
+        return bool(self._has_redis or self._memory_fallback_allowed)
 
 
 class EventSubscriber:
@@ -278,7 +297,7 @@ class EventSubscriber:
 
         # Fallback to in-memory queue
         if self.event_bus._fallback_queue:
-            event = self.event_bus._fallback_queue.pop(0)
+            event = self.event_bus._fallback_queue.popleft()
             if self.callback:
                 await self.callback(event)
             return event
