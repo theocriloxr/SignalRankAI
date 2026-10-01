@@ -318,8 +318,11 @@ def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[di
                 raise ValueError(f"invalid_prop_hard_rule_values:{rule_id}")
             rule["values"] = list(values)
         elif rule_type == "max_open_positions":
+            raw_value = rule.get("value")
+            if raw_value is None:
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}")
             try:
-                value = int(rule.get("value"))
+                value = int(raw_value)
             except (TypeError, ValueError):
                 raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}") from None
             if value < 0:
@@ -667,7 +670,9 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             field_name="max_total_drawdown_pct",
             default="0.06",
         ),
-        max_open_positions=int(value.get("max_open_positions") if value.get("max_open_positions") is not None else 3),
+        max_open_positions=int(
+            value["max_open_positions"] if value.get("max_open_positions") is not None else 3
+        ),
         max_leverage=_decimal(
             value.get("max_leverage"),
             field_name="max_leverage",
