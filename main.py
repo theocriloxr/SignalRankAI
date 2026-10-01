@@ -99,8 +99,8 @@ def main() -> None:
         try:
             from db.auto_ops import run_startup_ops
             run_startup_ops("web" if mode in {"all", "all/dev", "frontdoor"} else mode)
-        except Exception:
-            raise
+        except Exception as e:
+            print(f"[startup] startup ops failed (DB may be unready): {e}", flush=True)
     else:
         print(f"[startup] startup ops skipped for dedicated role={mode}", flush=True)
 

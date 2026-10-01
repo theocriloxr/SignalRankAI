@@ -58,6 +58,15 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SignalRankAI API", version=CODE_VERSION)
 
+logger.info(
+    "[STARTUP] SignalRankAI API starting. Version: %s, SHA: %s, Branch: %s, Build ID: %s",
+    CODE_VERSION,
+    os.getenv("RAILWAY_GIT_COMMIT_SHA", os.getenv("GIT_COMMIT_SHA", "unknown")),
+    os.getenv("RAILWAY_GIT_BRANCH", os.getenv("GIT_BRANCH", "unknown")),
+    os.getenv("RAILWAY_DEPLOYMENT_ID", os.getenv("BUILD_ID", "unknown")),
+)
+
+
 from utils.middleware import CorrelationIdMiddleware
 
 app.add_middleware(CorrelationIdMiddleware)
@@ -158,6 +167,15 @@ class HealthResponse(BaseModel):
     uptime: float
     signals_active: int
     cache_hit_rate: float
+
+
+class VersionResponse(BaseModel):
+    version: str
+    git_sha: str
+    git_branch: str
+    build_id: str
+    build_timestamp: str
+    image_digest: str
 
 
 class MetricsResponse(BaseModel):
@@ -365,7 +383,7 @@ async def platform_csrf_middleware(request: Request, call_next):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Global rate limiting middleware."""
-    if request.url.path in ["/health", "/healthz", "/metrics", "/metrics/prometheus"]:
+    if request.url.path in ["/health", "/healthz", "/metrics", "/metrics/prometheus", "/version"]:
         started = time.perf_counter()
         response = await call_next(request)
         route_obj = request.scope.get("route")
@@ -385,6 +403,19 @@ async def rate_limit_middleware(request: Request, call_next):
     route = getattr(route_obj, "path", None) or request.url.path
     observe_http_request(request.method, route, getattr(response, "status_code", 200), time.perf_counter() - started)
     return response
+
+
+@app.get("/version", response_model=VersionResponse)
+async def version():
+    """Build and version information."""
+    return VersionResponse(
+        version=CODE_VERSION,
+        git_sha=os.getenv("RAILWAY_GIT_COMMIT_SHA", os.getenv("GIT_COMMIT_SHA", "unknown")),
+        git_branch=os.getenv("RAILWAY_GIT_BRANCH", os.getenv("GIT_BRANCH", "unknown")),
+        build_id=os.getenv("RAILWAY_DEPLOYMENT_ID", os.getenv("BUILD_ID", "unknown")),
+        build_timestamp=os.getenv("START_TS", str(time.time())),
+        image_digest=os.getenv("IMAGE_DIGEST", "unknown")
+    )
 
 
 @app.get("/health", response_model=HealthResponse)

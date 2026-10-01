@@ -20,16 +20,23 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.lock
       - run: pip install ruff pyright bandit pip-audit vulture coverage mutmut semgrep
+      # Enforced Security & Static Analysis Gates
       - run: ruff check .
       - run: pyright .
-      - run: bandit -r -ll . || true
-      - run: pip-audit -r requirements.lock || true
-      - run: vulture . || true
+      # Bandit: Fail only on High severity (-lll) and High confidence (-iii) or Medium severity (-ll) 
+      - run: bandit -r -ll -ii core engine web worker db strategies services
+      # PIP-Audit: Fail on any known vulnerability
+      - run: pip-audit -r requirements.lock
+      # Vulture: High confidence dead code
+      - run: vulture core engine web --min-confidence 100 || true
+      # Coverage & Mutation
       - run: coverage run -m pytest -q tests/test_production_quality_guard.py || true
       - run: coverage report || true
       - run: mutmut run --paths-to-mutate=core,engine --tests-dir=tests/test_engine_critical_fallbacks_fail_closed.py || true
-      - run: semgrep scan --config auto . || true
-      - run: shellcheck start.sh || true
+      # Semgrep: Enforce SAST
+      - run: semgrep scan --config auto --error .
+      # ShellCheck & Hadolint
+      - run: shellcheck start.sh
       - run: docker run --rm -i hadolint/hadolint < Dockerfile || true
       - run: docker run --rm -i hadolint/hadolint < Dockerfile.prod || true
 

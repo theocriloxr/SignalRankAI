@@ -17,8 +17,8 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    # Required
-    DATABASE_URL: str
+    # Required for full operation, optional for startup/health checks
+    DATABASE_URL: Optional[str] = None
     REDIS_URL: Optional[str] = None
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     SENTRY_DSN: Optional[str] = None
@@ -82,9 +82,9 @@ def validate_required_settings() -> None:
     _log = _logging.getLogger(__name__)
     fatal: list[str] = []
     warnings: list[str] = []
-    # DATABASE_URL is always required
+    # DATABASE_URL should not crash the app, just warn so health checks can run
     if not s.DATABASE_URL:
-        fatal.append("DATABASE_URL")
+        warnings.append("DATABASE_URL (App will start but DB features will be degraded)")
     # TELEGRAM_BOT_TOKEN: fatal only for pure bot service, warning for everything else
     if not s.TELEGRAM_BOT_TOKEN:
         if s.RUN_MODE == "bot":

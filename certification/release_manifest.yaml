@@ -1,0 +1,106 @@
+# SignalRankAI - Canonical Release Manifest
+# Version: 1.0.0
+# This file is the single source of truth for release certification.
+# No deployment should proceed to production unless the required gates pass here.
+
+schema_version: "1.0"
+target_runtime:
+  python: "3.11"
+  dependency_lock: "requirements.lock"
+
+certification_gates:
+  - id: GATE-STATIC-LINT
+    description: "Fatal structural correctness checks using Ruff"
+    command: "python -m ruff check ."
+    severity: "critical"
+    status: "required"
+    environments: ["ci", "cleanroom", "local"]
+    evidence_type: "exit_code"
+
+  - id: GATE-STATIC-TYPES
+    description: "Type checking using Pyright for critical modules"
+    command: "pyright ."
+    severity: "critical"
+    status: "required"
+    environments: ["ci", "cleanroom", "local"]
+    evidence_type: "exit_code"
+
+  - id: GATE-SECURITY-BANDIT
+    description: "Security scanning for exploitable findings"
+    command: "bandit -r -ll -ii core engine web worker db strategies services"
+    severity: "high"
+    status: "required"
+    environments: ["ci", "cleanroom"]
+    evidence_type: "report"
+
+  - id: GATE-SECURITY-DEPENDENCIES
+    description: "Audit pip dependencies for known vulnerabilities"
+    command: "pip-audit -r requirements.lock"
+    severity: "high"
+    status: "required"
+    environments: ["ci"]
+    evidence_type: "report"
+
+  - id: GATE-MIGRATIONS-HEAD
+    description: "Verify Alembic migrations apply cleanly to head"
+    command: "python -m alembic upgrade head"
+    severity: "critical"
+    status: "required"
+    environments: ["ci", "staging", "cleanroom"]
+    evidence_type: "exit_code"
+
+  - id: GATE-GOVERNANCE-ARTIFACTS
+    description: "Verify V7 governance artifacts are not stale"
+    command: "python scripts/build_v7_governance.py --check"
+    severity: "high"
+    status: "required"
+    environments: ["ci", "local"]
+    evidence_type: "exit_code"
+
+  - id: GATE-SYSTEM-E2E
+    description: "Run complete system tests across critical paths"
+    command: "python scripts/run_complete_system_test.py --full"
+    severity: "critical"
+    status: "required"
+    environments: ["ci", "cleanroom"]
+    evidence_type: "test_results"
+
+  - id: GATE-FRONTEND-BUILD
+    description: "Next.js frontend compiles successfully"
+    command: "cd frontend && npm ci && npm run build"
+    severity: "high"
+    status: "required"
+    environments: ["ci"]
+    evidence_type: "build_artifact"
+
+  - id: GATE-MOBILE-FOUNDATION
+    description: "Mobile foundation passes typecheck and web export"
+    command: "cd mobile && npm ci && npm run typecheck && npx expo export --platform web"
+    severity: "medium"
+    status: "required"
+    environments: ["ci"]
+    evidence_type: "build_artifact"
+
+  - id: GATE-SECRETS-SCAN
+    description: "Scan for hardcoded secrets in the codebase"
+    command: "python scripts/secret_scan.py"
+    severity: "critical"
+    status: "required"
+    environments: ["ci"]
+    evidence_type: "exit_code"
+
+  - id: GATE-STAGING-SOAK
+    description: "Persistent staging environment run without critical failure"
+    command: "manual_verification"
+    severity: "critical"
+    status: "required"
+    environments: ["staging"]
+    evidence_type: "soak_report"
+
+  - id: GATE-BROKER-DEMO
+    description: "Demo certification passes for configured brokers"
+    command: "python scripts/verify_broker_demo.py"
+    severity: "high"
+    status: "optional"  # Optional until live execution is fully enabled
+    environments: ["staging", "cleanroom"]
+    evidence_type: "certification_log"

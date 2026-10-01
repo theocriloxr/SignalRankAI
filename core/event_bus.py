@@ -306,6 +306,15 @@ async def publish_signal_ready(signal: Dict[str, Any], priority: int = 90) -> bo
     This is the main entry point for the event-driven architecture.
     The broadcaster service listens for these events and delivers to users.
     """
+    # Materialize SQLAlchemy instances before crossing boundaries to prevent DetachedInstanceError
+    if hasattr(signal, "__table__"):
+        if hasattr(signal, "to_dict"):
+            signal = signal.to_dict()
+        else:
+            signal = {c.name: getattr(signal, c.name) for c in signal.__table__.columns}
+    elif not isinstance(signal, dict) and hasattr(signal, "__dict__"):
+        signal = signal.__dict__
+        
     return await event_bus.publish(SIGNAL_READY, signal, priority=priority)
 
 
