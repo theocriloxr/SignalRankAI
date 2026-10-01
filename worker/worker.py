@@ -178,6 +178,8 @@ class Worker:
             logger.info("[worker] DynamicInstrumentDiscovery disabled for decomposed worker")
         if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
             _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
+        if _env_bool("EVENT_OUTBOX_RELAY_ENABLED", True):
+            _register_task("event_outbox_relay", lambda: self._event_outbox_relay_loop(), restart_on_failure=True)
         if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
             _register_task("webhook_delivery", lambda: self._webhook_delivery_loop(), restart_on_failure=True)
 
@@ -742,6 +744,53 @@ class Worker:
                     logger.info("[worker] decision log retry flushed=%s", flushed)
             except Exception as exc:
                 logger.debug("[worker] decision log retry deferred: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _event_outbox_relay_loop(self) -> None:
+        """Replay PostgreSQL-fallback events after the Redis transport recovers."""
+        from core.event_bus import publish_outbox_entry
+        from core.transactional_outbox import (
+            IdempotentInbox,
+            OutboxRelay,
+            PostgresTransactionalOutbox,
+        )
+
+        interval = max(1.0, _env_float("EVENT_OUTBOX_RELAY_INTERVAL_SECONDS", 2.0, minimum=1.0))
+        batch_size = max(1, min(100, int(os.getenv("EVENT_OUTBOX_RELAY_BATCH_SIZE", "20") or 20)))
+        max_attempts = max(1, min(20, int(os.getenv("EVENT_OUTBOX_MAX_ATTEMPTS", "8") or 8)))
+        outbox = PostgresTransactionalOutbox(
+            lease_seconds=max(15, int(os.getenv("EVENT_OUTBOX_CLAIM_LEASE_SECONDS", "60") or 60))
+        )
+        inbox = IdempotentInbox(ttl_seconds=30 * 24 * 3600)
+        relay = OutboxRelay(
+            outbox=outbox,
+            inbox=inbox,
+            processor=publish_outbox_entry,
+            batch_size=batch_size,
+            budget=max(batch_size, batch_size * 5),
+            max_attempts=max_attempts,
+        )
+        while not self._stop.is_set():
+            try:
+                processed = await relay.run_once()
+                if processed:
+                    logger.info(
+                        "[event_outbox_relay] examined=%s processed=%s failed=%s dead_lettered=%s depth=%s",
+                        processed,
+                        relay.metrics["processed"],
+                        relay.metrics["failed"],
+                        relay.metrics["dead_lettered"],
+                        await outbox.depth(),
+                    )
+            except Exception as exc:
+                logger.info(
+                    "[event_outbox_relay] deferred error_type=%s detail=%s",
+                    type(exc).__name__,
+                    str(exc)[:240],
+                )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
