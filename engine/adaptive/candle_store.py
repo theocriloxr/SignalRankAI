@@ -397,8 +397,14 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
                             # bounded candle transaction READ WRITE before any SET LOCAL or
                             # DML so idempotent learning evidence cannot be stranded.
                             await session.execute(sql_text("SET TRANSACTION READ WRITE"))
-                            await session.execute(sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'"))
-                            await session.execute(sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'"))
+                            await session.execute(
+                                sql_text("SELECT set_config('lock_timeout', :value, true)"),
+                                {"value": f"{lock_timeout_ms}ms"},
+                            )
+                            await session.execute(
+                                sql_text("SELECT set_config('statement_timeout', :value, true)"),
+                                {"value": f"{statement_timeout_ms}ms"},
+                            )
                             stmt = pg_insert(MarketCandle).values(chunk)
                             stmt = stmt.on_conflict_do_update(
                                 constraint="uq_market_candles_symbol_tf_open",
