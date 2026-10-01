@@ -318,6 +318,83 @@
       "environments": [
         "staging"
       ]
+    },
+    {
+      "id": "image-compile",
+      "group": "image",
+      "description": "Compile production runtime modules",
+      "command": "python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution railway_main.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-release-chain",
+      "group": "image",
+      "description": "Validate current Alembic chain offline",
+      "command": "python scripts/verify_release_chain.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-governance",
+      "group": "image",
+      "description": "Validate generated governance artifacts",
+      "command": "python scripts/build_v7_governance.py --check",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-secret-scan",
+      "group": "image",
+      "description": "Reject committed secrets",
+      "command": "python scripts/secret_scan.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-regressions",
+      "group": "image",
+      "description": "Production image regression selection",
+      "command": "xargs -a release_certification_manifest.txt python -m pytest -q",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-provenance",
+      "group": "image",
+      "description": "Generate and self-verify deterministic release provenance",
+      "command": "python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-readiness",
+      "group": "image",
+      "description": "Offline production readiness contract",
+      "command": "python scripts/production_readiness_check.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
     }
   ]
 }
