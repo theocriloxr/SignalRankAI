@@ -24,9 +24,9 @@ def _env() -> dict[str, str]:
 
 
 def environment_name() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("APP_ENV") or "local"
-    ).lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("local")
 
 
 REGISTRIES = (
