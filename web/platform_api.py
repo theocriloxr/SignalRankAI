@@ -2313,32 +2313,28 @@ async def signal_feed(
     status: str | None = Query(default=None, max_length=32),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    filters = ["d.rn=1"]
-    params: dict[str, Any] = {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)}
-    if asset:
-        filters.append("s.asset=:asset")
-        params["asset"] = asset.upper()
+    class_aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    normalized_class = None
     if asset_class:
-        class_aliases = {
-            "forex": "fx",
-            "equity": "stock",
-            "equities": "stock",
-            "indices": "index",
-            "commodities": "commodity",
-        }
-        normalized_class = class_aliases.get(asset_class.strip().lower(), asset_class.strip().lower())
-        filters.append("lower(COALESCE(s.asset_class,''))=:asset_class")
-        params["asset_class"] = normalized_class
-    if timeframe:
-        filters.append("lower(COALESCE(s.timeframe,''))=:timeframe")
-        params["timeframe"] = timeframe.strip().lower()
-    if strategy:
-        filters.append("lower(COALESCE(s.strategy_name,'')) LIKE :strategy")
-        params["strategy"] = f"%{strategy.strip().lower()}%"
-    if status:
-        filters.append("COALESCE(o.status,s.status)=:status")
-        params["status"] = status.lower()
-    sql = (
+        requested_class = asset_class.strip().lower()
+        normalized_class = class_aliases.get(requested_class, requested_class)
+    params: dict[str, Any] = {
+        "uid": int(user["id"]),
+        "limit": int(limit),
+        "offset": int(offset),
+        "asset": asset.upper() if asset else None,
+        "asset_class": normalized_class,
+        "timeframe": timeframe.strip().lower() if timeframe else None,
+        "strategy": f"%{strategy.strip().lower()}%" if strategy else None,
+        "status": status.lower() if status else None,
+    }
+    statement = text(
         "WITH receipt_rows AS ("
         " SELECT d.signal_id::text AS signal_id,d.delivered_at,"
         " d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,"
@@ -2364,12 +2360,17 @@ async def signal_feed(
         " d.delivered_at,d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,d.delivery_channel,"
         " o.status AS outcome_status,o.r_multiple,o.pnl_pct"
         " FROM receipts d JOIN signals s ON s.signal_id=d.signal_id"
-        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id WHERE "
-        + " AND ".join(filters)
-        + " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
+        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " WHERE d.rn=1"
+        " AND (:asset IS NULL OR s.asset=:asset)"
+        " AND (:asset_class IS NULL OR lower(COALESCE(s.asset_class,''))=:asset_class)"
+        " AND (:timeframe IS NULL OR lower(COALESCE(s.timeframe,''))=:timeframe)"
+        " AND (:strategy IS NULL OR lower(COALESCE(s.strategy_name,'')) LIKE :strategy)"
+        " AND (:status IS NULL OR COALESCE(o.status,s.status)=:status)"
+        " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
     )
     async with get_session() as session:
-        rows = (await session.execute(text(sql), params)).mappings().all()
+        rows = (await session.execute(statement, params)).mappings().all()
         await session.rollback()
     return {
         "signals": [_present_signal_for_tier(row, str(user.get("tier") or "free")) for row in rows],
@@ -2736,7 +2737,7 @@ async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str
                     text(
                         "SELECT COUNT(DISTINCT d.signal_id) FROM signal_deliveries d "
                         "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-                        f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
                         "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
                     ),
                     {"uid": uid},
@@ -2751,7 +2752,7 @@ async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str
                         "SELECT s.asset,COUNT(DISTINCT d.signal_id) AS n FROM signal_deliveries d "
                         "JOIN signals s ON s.signal_id=d.signal_id "
                         "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-                        f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
                         "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
                         "GROUP BY s.asset ORDER BY n DESC,s.asset LIMIT 5"
                     ),
@@ -2768,7 +2769,7 @@ async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str
                         "SELECT COALESCE(s.strategy_name,'Unknown') AS strategy,COUNT(DISTINCT d.signal_id) AS n "
                         "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
                         "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-                        f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
                         "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
                         "GROUP BY COALESCE(s.strategy_name,'Unknown') ORDER BY n DESC,strategy LIMIT 5"
                     ),
@@ -2788,7 +2789,7 @@ async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str
                         "COALESCE(AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL),0) AS average_r "
                         "FROM signal_deliveries d LEFT JOIN outcomes o ON o.signal_id=d.signal_id "
                         "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-                        f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
                         "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
                     ),
                     {"uid": uid},
@@ -3126,31 +3127,30 @@ async def instrument_search(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     del user
-    filters = ["i.active=TRUE"]
-    params: dict[str, Any] = {"q": f"%{q.strip()}%", "limit": int(limit)}
-    if q.strip():
-        filters.append(
-            "(i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q OR pi.provider_symbol ILIKE :q OR i.underlying ILIKE :q)"
-        )
-    if asset_class:
-        filters.append("i.asset_class=:asset_class")
-        params["asset_class"] = asset_class.lower()
-    if instrument_type:
-        filters.append("i.instrument_type=:instrument_type")
-        params["instrument_type"] = instrument_type.lower()
-    if venue:
-        filters.append("pi.venue=:venue")
-        params["venue"] = venue.lower()
-    sql = (
-        "SELECT i.instrument_id,i.canonical_symbol,i.display_symbol,i.asset_class,i.instrument_type,i.market_type,i.base_currency,i.quote_currency,i.settlement_currency,i.underlying,i.tick_size,i.quantity_step,i.minimum_notional,i.tradable,i.discovery_status,"
-        "COUNT(pi.id) AS provider_count,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.provider),NULL) AS providers,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.venue),NULL) AS venues "
+    params: dict[str, Any] = {
+        "q": f"%{q.strip()}%" if q.strip() else None,
+        "asset_class": asset_class.lower() if asset_class else None,
+        "instrument_type": instrument_type.lower() if instrument_type else None,
+        "venue": venue.lower() if venue else None,
+        "limit": int(limit),
+    }
+    statement = text(
+        "SELECT i.instrument_id,i.canonical_symbol,i.display_symbol,i.asset_class,i.instrument_type,i.market_type,"
+        "i.base_currency,i.quote_currency,i.settlement_currency,i.underlying,i.tick_size,i.quantity_step,"
+        "i.minimum_notional,i.tradable,i.discovery_status,"
+        "COUNT(pi.id) AS provider_count,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.provider),NULL) AS providers,"
+        "ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.venue),NULL) AS venues "
         "FROM instruments i LEFT JOIN provider_instruments pi ON pi.canonical_instrument_id=i.instrument_id "
-        "WHERE "
-        + " AND ".join(filters)
-        + " GROUP BY i.instrument_id ORDER BY i.tradable DESC,provider_count DESC,i.canonical_symbol LIMIT :limit"
+        "WHERE i.active=TRUE "
+        "AND (:q IS NULL OR i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q "
+        "OR pi.provider_symbol ILIKE :q OR i.underlying ILIKE :q) "
+        "AND (:asset_class IS NULL OR i.asset_class=:asset_class) "
+        "AND (:instrument_type IS NULL OR i.instrument_type=:instrument_type) "
+        "AND (:venue IS NULL OR pi.venue=:venue) "
+        "GROUP BY i.instrument_id ORDER BY i.tradable DESC,provider_count DESC,i.canonical_symbol LIMIT :limit"
     )
     async with get_session() as session:
-        rows = (await session.execute(text(sql), params)).mappings().all()
+        rows = (await session.execute(statement, params)).mappings().all()
         await session.rollback()
     return {"instruments": [dict(row) for row in rows]}
 
@@ -3476,11 +3476,25 @@ async def update_notification_preferences(
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
         return await get_notification_preferences(user)
-    assignments = []
+
+    allowed = {
+        "telegram_enabled",
+        "web_enabled",
+        "email_enabled",
+        "push_enabled",
+        "webhook_enabled",
+        "quiet_hours_start",
+        "quiet_hours_end",
+        "timezone",
+    }
+    if not set(fields).issubset(allowed):
+        raise HTTPException(status_code=422, detail="Unsupported notification preference field")
+
     params: dict[str, Any] = {"uid": int(user["id"])}
-    for key, value in fields.items():
-        assignments.append(f"{key}=:{key}")
-        params[key] = value
+    for field in allowed:
+        params[f"has_{field}"] = field in fields
+        params[field] = fields.get(field)
+
     async with get_session() as session:
         await session.execute(
             text("INSERT INTO notification_preferences(user_id) VALUES(:uid) ON CONFLICT(user_id) DO NOTHING"),
@@ -3488,7 +3502,16 @@ async def update_notification_preferences(
         )
         await session.execute(
             text(
-                "UPDATE notification_preferences SET " + ",".join(assignments) + ",updated_at=NOW() WHERE user_id=:uid"
+                "UPDATE notification_preferences SET "
+                "telegram_enabled=CASE WHEN :has_telegram_enabled THEN :telegram_enabled ELSE telegram_enabled END,"
+                "web_enabled=CASE WHEN :has_web_enabled THEN :web_enabled ELSE web_enabled END,"
+                "email_enabled=CASE WHEN :has_email_enabled THEN :email_enabled ELSE email_enabled END,"
+                "push_enabled=CASE WHEN :has_push_enabled THEN :push_enabled ELSE push_enabled END,"
+                "webhook_enabled=CASE WHEN :has_webhook_enabled THEN :webhook_enabled ELSE webhook_enabled END,"
+                "quiet_hours_start=CASE WHEN :has_quiet_hours_start THEN :quiet_hours_start ELSE quiet_hours_start END,"
+                "quiet_hours_end=CASE WHEN :has_quiet_hours_end THEN :quiet_hours_end ELSE quiet_hours_end END,"
+                "timezone=CASE WHEN :has_timezone THEN COALESCE(:timezone,timezone) ELSE timezone END,"
+                "updated_at=NOW() WHERE user_id=:uid"
             ),
             params,
         )
