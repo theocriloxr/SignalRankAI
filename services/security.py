@@ -42,7 +42,7 @@ def _get_fernet() -> Optional["Fernet"]:
     try:
         return Fernet(key.encode("utf-8"))
     except Exception as exc:
-        logger.error("[security] Invalid ENCRYPTION_KEY: %s", exc)
+        logger.error("[security] encryption key configuration invalid error_type=%s", type(exc).__name__)
         return None
 
 
@@ -59,7 +59,7 @@ def encrypt_secret(plaintext: str) -> Optional[str]:
         token = fernet.encrypt(plaintext.encode("utf-8"))
         return token.decode("utf-8")
     except Exception as exc:
-        logger.error("[security] encrypt_secret failed: %s", exc)
+        logger.error("[security] encryption operation failed error_type=%s", type(exc).__name__)
         return None
 
 
@@ -75,10 +75,10 @@ def decrypt_secret(ciphertext: str) -> Optional[str]:
         plain = fernet.decrypt(ciphertext.encode("utf-8"))
         return plain.decode("utf-8")
     except InvalidToken:
-        logger.warning("[security] decrypt_secret: invalid or tampered token")
+        logger.warning("[security] decryption rejected invalid ciphertext")
         return None
     except Exception as exc:
-        logger.error("[security] decrypt_secret failed: %s", exc)
+        logger.error("[security] decryption operation failed error_type=%s", type(exc).__name__)
         return None
 
 
