@@ -1371,35 +1371,37 @@ def generate() -> None:
 
 
 def _semantic_check_bytes(name: str, raw: bytes) -> bytes:
-    """Normalize volatile source locations for deterministic governance checks.
+    """Normalize volatile source line numbers for deterministic governance checks.
 
-    Environment-variable ownership is semantic at the file level; source line
-    numbers move whenever unrelated imports/comments are added and should not
-    force a registry rewrite. Variable presence, defaults, sensitivity and
-    required-by-code classification remain release-blocking.
+    Governance ownership is semantic at the file/handler/variable level. Source
+    line numbers move whenever unrelated code is inserted and must not force a
+    registry rewrite. Presence, defaults, sensitivity, roles, handlers,
+    registrations, callback patterns and other classifications remain
+    release-blocking.
     """
-    if name != "environment_registry.yaml":
+    if name not in {
+        "environment_registry.yaml",
+        "command_registry.yaml",
+        "callback_registry.yaml",
+    }:
         return raw
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception:
         return raw
-    variables = payload.get("variables")
-    if isinstance(variables, list):
-        for item in variables:
-            if not isinstance(item, dict):
-                continue
-            locations = item.get("read_locations")
-            if not isinstance(locations, list):
-                continue
-            item["read_locations"] = sorted(
-                {
-                    re.sub(r":\\d+$", "", str(location))
-                    for location in locations
-                    if str(location).strip()
-                }
-            )
-    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if isinstance(value, str):
+            return re.sub(r"(?<=\.py):\d+$", "", value)
+        return value
+
+    normalized = normalize(payload)
+    return (json.dumps(normalized, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
 
 
 def main() -> int:
