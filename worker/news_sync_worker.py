@@ -16,40 +16,13 @@ from sqlalchemy import select
 
 logger = logging.getLogger("news_sync_worker")
 
-# Import from existing services
-try:
-    from services.economic_calendar import fetch_economic_events
-except ImportError:
-
-    async def fetch_economic_calendar(days_ahead: int = 7) -> List[Dict[str, Any]]:
-        """Fallback when economic_calendar not available."""
-        return []
-
-    async def get_upcoming_high_impact_events(hours: int = 24) -> List[Dict[str, Any]]:
-        """Fallback when economic_calendar not available."""
-        return []
-
-
-# Import for database operations
-try:
-    from db.session import get_session, is_db_configured
-    from db.models import EconomicEvent
-    from sqlalchemy import select, delete
-    from utils.timeutils import now_utc_naive
-except ImportError:
-
-    async def get_session():
-        """Fallback - yield None session."""
-        yield None
-
-    def is_db_configured() -> bool:
-        return False
-
-    class EconomicEvent:
-        pass
-
-    def now_utc_naive():
-        return datetime.now(timezone.utc)
+# Internal dependencies are part of the production image. Failing import at
+# process start is safer than entering a latent fallback that raises later.
+from services.economic_calendar import fetch_economic_events
+from db.session import get_session, is_db_configured
+from db.models import EconomicEvent
+from sqlalchemy import delete
+from utils.timeutils import now_utc_naive
 
 
 # Configuration
