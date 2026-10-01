@@ -122,3 +122,30 @@ def test_missed_entry_is_observation_not_realized_loss() -> None:
     assert "pct = 0.0" in block
     assert '"missed_entry_observed_r"' in block
     assert '"realized_position_opened": bool(status_l != "missed_entry")' in block
+
+
+def test_outcome_messages_have_one_notification_owner() -> None:
+    source = _source("engine/signal_lifecycle.py")
+    helper = source[
+        source.index("def _should_queue_event_notification"):
+        source.index("def entry_was_touched"),
+    ]
+    for event in (
+        "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop",
+        "missed_entry", "expired",
+    ):
+        assert f'"{event}"' in helper
+    assert "LIFECYCLE_OUTCOME_NOTIFICATIONS_ENABLED" in helper
+
+
+def test_transient_lifecycle_observations_are_merged_for_retry() -> None:
+    source = _source("engine/signal_lifecycle.py")
+    block = source[
+        source.index("async def update_lifecycle_observation"):
+        source.index("async def record_lifecycle_event"),
+    ]
+    assert "_DEFERRED_LIFECYCLE_OBSERVATIONS.pop(signal_id, None)" in block
+    assert "observation_high = max(" in block
+    assert "observation_low = min(" in block
+    assert "_DEFERRED_LIFECYCLE_OBSERVATIONS[signal_id] = merged" in block
+    assert "_DEFERRED_LIFECYCLE_OBSERVATION_LIMIT" in block
