@@ -83,7 +83,7 @@ class ShadowOutcomeWorker:
         self._publish_health("stopped")
 
     async def _load_rows(self) -> list[dict[str, Any]]:
-        from db.models import MLRejectedSignal
+        from db.models import DecisionLog
         from db.session import NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
@@ -98,10 +98,12 @@ class ShadowOutcomeWorker:
                 rows = list(
                     (
                         await session.execute(
-                            select(MLRejectedSignal)
-                            .where(MLRejectedSignal.outcome_tracked_at.is_(None))
-                            .where(MLRejectedSignal.created_at <= cutoff)
-                            .order_by(MLRejectedSignal.created_at.asc())
+                            select(DecisionLog)
+                            .where(DecisionLog.decision == "rejected")
+                            .where(DecisionLog.meta["layer"].as_string() == "ml")
+                            .where(DecisionLog.meta["outcome_tracked_at"].as_string().is_(None))
+                            .where(DecisionLog.created_at <= cutoff)
+                            .order_by(DecisionLog.created_at.asc())
                             .limit(self._batch_size)
                         )
                     )
@@ -109,23 +111,26 @@ class ShadowOutcomeWorker:
                     .all()
                 )
                 # Copy only primitive values before closing the session.
-                return [
-                    {
-                        "id": int(r.id),
-                        "signal_id": r.signal_id,
-                        "asset": r.asset,
-                        "timeframe": r.timeframe,
-                        "direction": r.direction,
-                        "entry": float(r.entry or 0.0),
-                        "stop_loss": float(r.stop_loss or 0.0),
-                        "take_profit": r.take_profit,
-                        "ml_probability": float(r.ml_probability or 0.0),
-                        "rejection_reason": r.rejection_reason,
-                        "features": dict(r.features or {}),
-                        "created_at": r.created_at,
-                    }
-                    for r in rows
-                ]
+                snapshots: list[dict[str, Any]] = []
+                for record in rows:
+                    meta = dict(record.meta or {})
+                    snapshots.append(
+                        {
+                            "id": int(record.id),
+                            "signal_id": record.signal_id,
+                            "asset": record.asset,
+                            "timeframe": record.timeframe,
+                            "direction": str(meta.get("direction") or ""),
+                            "entry": float(meta.get("entry") or 0.0),
+                            "stop_loss": float(meta.get("stop_loss") or 0.0),
+                            "take_profit": meta.get("take_profit"),
+                            "ml_probability": float(meta.get("ml_probability") or 0.0),
+                            "rejection_reason": record.reason,
+                            "features": dict(meta.get("features") or {}),
+                            "created_at": record.created_at,
+                        }
+                    )
+                return snapshots
         except NoncriticalWriteDropped:
             logger.info("[shadow_tracker] deferred reason=db_background_capacity")
             return []
@@ -237,7 +242,7 @@ class ShadowOutcomeWorker:
         if not evaluated:
             return 0
         from core.redis_state import state
-        from db.models import MLRejectedSignal, MLShadowPrediction
+        from db.models import DecisionLog, MLShadowPrediction
         from db.session import NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
@@ -254,8 +259,10 @@ class ShadowOutcomeWorker:
                 db_rows = list(
                     (
                         await session.execute(
-                            select(MLRejectedSignal)
-                            .where(MLRejectedSignal.id.in_(ids))
+                            select(DecisionLog)
+                            .where(DecisionLog.id.in_(ids))
+                            .where(DecisionLog.decision == "rejected")
+                            .where(DecisionLog.meta["layer"].as_string() == "ml")
                             .with_for_update(skip_locked=True)
                         )
                     )
@@ -265,7 +272,8 @@ class ShadowOutcomeWorker:
                 tracked = 0
                 for record in db_rows:
                     source, outcome = by_id.get(int(record.id), ({}, ""))
-                    if not outcome or record.outcome_tracked_at is not None:
+                    record_meta = dict(record.meta or {})
+                    if not outcome or record_meta.get("outcome_tracked_at"):
                         continue
                     source_features = dict(source.get("features") or {})
                     is_candidate_forward = (
@@ -304,8 +312,11 @@ class ShadowOutcomeWorker:
                             created_at=now,
                         )
                     )
-                    record.actual_outcome = outcome[:32]
-                    record.outcome_tracked_at = now
+                    record.meta = {
+                        **record_meta,
+                        "actual_outcome": outcome[:32],
+                        "outcome_tracked_at": now.isoformat(),
+                    }
                     tracked += 1
                     try:
                         if is_candidate_forward:
