@@ -170,7 +170,7 @@
       "id": "backend-critical-regressions",
       "group": "backend",
       "description": "Release-critical regression contracts",
-      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py",
       "severity": "critical",
       "required": true,
       "environments": [
