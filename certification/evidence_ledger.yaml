@@ -1,0 +1,203 @@
+{
+  "schema_version": "2.0",
+  "release_branch": "implementation-of-master-blueprint",
+  "statuses": [
+    "IMPLEMENTED_VERIFIED",
+    "IMPLEMENTED_UNVERIFIED",
+    "PARTIAL",
+    "BLOCKED_EXTERNAL",
+    "DEFERRED",
+    "NOT_APPLICABLE",
+    "FAILED"
+  ],
+  "entries": [
+    {
+      "id": "SR-REPO-001",
+      "description": "Reconcile implementation branch with current main ancestry",
+      "status": "IMPLEMENTED_VERIFIED",
+      "evidence": [
+        "merge commit e55e103f3ce86ed5b23b1185ce5be3cdadeb5429"
+      ]
+    },
+    {
+      "id": "SR-CI-001",
+      "description": "CI triggers exact implementation and feat branches",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "SR-CERT-001",
+      "description": "Canonical executable release manifest",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "certification/release_manifest.yaml",
+        "scripts/run_release_manifest.py"
+      ]
+    },
+    {
+      "id": "SR-DB-001",
+      "description": "Single Alembic head gate",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "scripts/assert_single_alembic_head.py"
+      ]
+    },
+    {
+      "id": "SR-WEB-DELIVERY-001",
+      "description": "Materialize signal ORM payloads before session rollback/close",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "services/platform/signal_delivery.py",
+        "tests/test_web_platform_runtime_contract.py"
+      ]
+    },
+    {
+      "id": "SR-EVENT-001",
+      "description": "No false-positive event bus health in production/staging",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "core/event_bus.py"
+      ]
+    },
+    {
+      "id": "SR-EVENT-002",
+      "description": "Durable database outbox fallback and automatic replay if Redis fails",
+      "status": "PARTIAL",
+      "blocker": "Current patch fails closed in production/staging; persistent DB fallback relay still required."
+    },
+    {
+      "id": "SR-WEB-001",
+      "description": "Replace default Next.js starter and localhost API default",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "frontend/src/app/page.tsx",
+        "frontend/src/lib/client.ts",
+        "frontend/src/app/app",
+        "frontend/src/components/AppShell.tsx"
+      ]
+    },
+    {
+      "id": "SR-WEB-002",
+      "description": "Full authenticated product workflows backed by canonical APIs",
+      "status": "PARTIAL",
+      "blocker": "Navigation/product shell exists; route-specific live data/forms/E2E still required."
+    },
+    {
+      "id": "SR-RUNTIME-001",
+      "description": "Separate process liveness from dependency readiness",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "web/app.py",
+        "tests/test_web_platform_runtime_contract.py"
+      ]
+    },
+    {
+      "id": "SR-RUNTIME-002",
+      "description": "Expose immutable build/version provenance",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "web/app.py"
+      ]
+    },
+    {
+      "id": "SR-GITHUB-001",
+      "description": "Protect main and staging branches",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "GitHub admin branch-protection action is not exposed by the connected GitHub tool."
+    },
+    {
+      "id": "SR-RAILWAY-001",
+      "description": "Persistent isolated Railway staging topology",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "Current Railway connector can create a separate project but cannot clone all production service source/settings atomically without selecting credentials and secrets."
+    },
+    {
+      "id": "SR-RAILWAY-002",
+      "description": "Canonical production service source branch and required check suites",
+      "status": "PARTIAL",
+      "blocker": "Production still points at legacy fix/provider-discovery-readiness-20260923 and checkSuites=false; must not change until staging certifies exact release candidate."
+    },
+    {
+      "id": "SR-STORAGE-001",
+      "description": "Production PostgreSQL capacity headroom and alerts",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "Volume resize control is not available in connected Railway tool; current production volume is near 90% used."
+    },
+    {
+      "id": "SR-DATA-001",
+      "description": "Fresh certified multi-asset market data",
+      "status": "PARTIAL",
+      "blocker": "Production still logs stale data for several instruments; provider-by-class remediation and forward certification remain."
+    },
+    {
+      "id": "SR-DBPERF-001",
+      "description": "Bound DB session hold times",
+      "status": "PARTIAL",
+      "blocker": "Production adaptive candle capture still exceeds target hold duration."
+    },
+    {
+      "id": "SR-TELEGRAM-001",
+      "description": "Webhook dispatch latency within SLO",
+      "status": "PARTIAL",
+      "blocker": "Current production p99 remains above SLO; requires runtime queue/ack path refactor and staging proof."
+    },
+    {
+      "id": "SR-ML-001",
+      "description": "Champion/challenger fail-closed governance",
+      "status": "IMPLEMENTED_VERIFIED",
+      "evidence": [
+        "Current production analytics kept regressing challenger candidate-only; no forced promotion observed."
+      ]
+    },
+    {
+      "id": "SR-ML-002",
+      "description": "Segmented drift/calibration and sufficient forward proof",
+      "status": "PARTIAL",
+      "blocker": "Feature drift remains active and forward delivered sample remains limited."
+    },
+    {
+      "id": "SR-EXEC-001",
+      "description": "Real/auto/copy/prop execution disabled during certification",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "CI environment forces switches off; production values must be runtime-verified before any pilot."
+      ]
+    },
+    {
+      "id": "SR-BROKER-001",
+      "description": "Demo broker certification",
+      "status": "PARTIAL",
+      "blocker": "Framework exists but exact release candidate has not completed full sandbox/demo certification."
+    },
+    {
+      "id": "SR-PAPER-001",
+      "description": "Durable transactional paper accounting",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "evidence": [
+        "core/paper_trading_service.py",
+        "core/paper_ledger.py"
+      ],
+      "blocker": "Exact-SHA CI/staging reconciliation still required."
+    },
+    {
+      "id": "SR-BACKUP-001",
+      "description": "Backup restore drill on exact release schema",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "Must execute against isolated staging resources after staging is provisioned."
+    },
+    {
+      "id": "SR-SOAK-001",
+      "description": "24-72 hour immutable release-candidate staging soak",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "Cannot begin until CI is green and isolated staging is provisioned."
+    },
+    {
+      "id": "SR-LIVE-001",
+      "description": "Controlled live-money readiness",
+      "status": "FAILED",
+      "blocker": "Not eligible until every required release, staging, provider, broker, storage, data and runtime gate is green."
+    }
+  ]
+}
