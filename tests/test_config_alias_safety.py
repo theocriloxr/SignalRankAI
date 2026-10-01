@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.env import sanitized_config_fingerprint, validate_alias_conflicts
+from core.env import runtime_environment_name, sanitized_config_fingerprint, validate_alias_conflicts
 
 
 def test_conflicting_boolean_aliases_fail_closed(monkeypatch) -> None:
@@ -34,3 +34,9 @@ def test_sanitized_fingerprint_does_not_embed_secret_value(monkeypatch) -> None:
     fingerprint = sanitized_config_fingerprint(["TELEGRAM_BOT_TOKEN", "REAL_EXECUTION_ENABLED"])
     assert len(fingerprint) == 64
     assert "very-secret-token" not in fingerprint
+
+
+def test_explicit_environment_override_wins_over_railway_default_name(monkeypatch) -> None:
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "staging")
+    assert runtime_environment_name() == "staging"
