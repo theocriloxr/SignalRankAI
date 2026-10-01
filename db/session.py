@@ -817,7 +817,7 @@ def get_pool_diagnostics() -> dict[str, Any]:
             try:
                 value: Any = getattr(pool, attr)
                 resolved = value() if callable(value) else value
-                info[attr] = int(resolved or 0)
+                info[attr] = int(str(resolved or 0))
             except Exception:
                 pass
         try:
