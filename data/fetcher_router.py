@@ -8,7 +8,7 @@ Provider Priority (from config.py or defaults):
 - Crypto:     Bybit -> CryptoCompare -> CoinGecko (bypasses geo-blocks)
 - Forex:      Polygon.io -> Twelve Data -> OANDA (high precision for pips)
 - Stocks:     Polygon.io -> Twelve Data -> Finnhub (official SIP data)
-- Commodities: Twelve Data -> Yahoo Finance (best Gold/Oil coverage)
+- Commodities: Twelve Data -> Yahoo Finance (analysis/development fallback only)
 
 Usage:
     from data.fetcher_router import DataRouter
@@ -22,6 +22,17 @@ import logging
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
+
+
+def _execution_sensitive_runtime() -> bool:
+    names = (
+        os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE"),
+        os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("APP_ENV"),
+        os.getenv("ENVIRONMENT"),
+    )
+    return any(str(value or "").strip().lower() in {"staging", "production", "prod"} for value in names)
 
 
 # Provider health tracking for automatic fallback
@@ -98,14 +109,14 @@ class DataRouter:
             ("oanda", self._get_oanda_candles),
         ]
 
-        # Stocks: Polygon -> Twelve Data -> Yahoo
+        # Stocks: Polygon -> Twelve Data -> Yahoo (analysis/dev fallback only)
         self._stock_providers = [
             ("polygon", self._get_polygon_candles),
             ("twelvedata", self._get_twelvedata_candles),
             ("yahoo", self._get_yahoo_candles),
         ]
 
-        # Commodities: Twelve Data -> Yahoo
+        # Commodities: Twelve Data -> Yahoo (analysis/dev fallback only)
         self._commodity_providers = [
             ("twelvedata", self._get_twelvedata_candles),
             ("yahoo", self._get_yahoo_candles),
@@ -218,6 +229,14 @@ class DataRouter:
         unhealthy = [p for p in providers if not _is_provider_healthy(p[0])]
 
         for provider_name, fetch_func in healthy + unhealthy:
+            if _execution_sensitive_runtime() and provider_name in {"yahoo", "yfinance"}:
+                logger.warning(
+                    "[router] analysis-only provider skipped in execution-sensitive runtime provider=%s symbol=%s class=%s",
+                    provider_name,
+                    symbol,
+                    asset_class,
+                )
+                continue
             try:
                 candles = fetch_func(symbol, timeframe)
                 if candles and len(candles) >= 20:
