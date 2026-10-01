@@ -293,7 +293,7 @@ class PostgresTransactionalOutbox:
             )
             row = result.mappings().one()
             await session.commit()
-        return self._entry(row)
+        return self._entry(dict(row))
 
     async def claim(self, *, batch: int = 10) -> list[OutboxEntry]:
         from sqlalchemy import text
@@ -332,7 +332,7 @@ class PostgresTransactionalOutbox:
             )
             rows = list(result.mappings().all())
             await session.commit()
-        return [self._entry(row) for row in rows]
+        return [self._entry(dict(row)) for row in rows]
 
     async def mark_done(self, entry_id: str) -> None:
         await self._update_status(entry_id, "done")
