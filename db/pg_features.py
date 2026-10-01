@@ -980,6 +980,7 @@ async def get_or_create_signal_impl(
             Signal.created_at >= thesis_cutoff,
             Signal.expired.is_(False),
             Signal.archived.is_(False),
+            or_(Signal.expires_at.is_(None), Signal.expires_at > now),
         )
         .order_by(Signal.created_at.desc())
     )
@@ -1022,6 +1023,7 @@ async def get_or_create_signal_impl(
                         Signal.created_at >= thesis_cutoff,
                         Signal.expired.is_(False),
                         Signal.archived.is_(False),
+                        or_(Signal.expires_at.is_(None), Signal.expires_at > now),
                     )
                     .order_by(Signal.created_at.desc())
                 )
@@ -1087,19 +1089,29 @@ async def get_or_create_signal_impl(
             ).scalar_one()
             or 0
         )
-        # Never rewrite entry/SL/TP after a user received the signal. Repricing a
-        # delivered row corrupts outcome truth and makes Telegram cards disagree
-        # with the canonical ledger. Before first delivery, the row may absorb a
-        # fresher version of the same thesis.
+        # A delivery-proven signal is immutable and may not be recycled as the
+        # identity for a newly generated candidate. Returning its old signal_id
+        # while downstream code still holds the new candidate levels creates a
+        # split-brain signal card/outcome ledger. Block the new candidate instead.
+        if confirmed_delivery_count > 0:
+            logger.info(
+                "[dedup] delivered thesis blocks new candidate asset=%s tf=%s dir=%s signal_id=%s",
+                asset,
+                timeframe,
+                direction,
+                existing.signal_id,
+            )
+            raise SignalDedupBlocked("delivered_active_thesis", str(existing.signal_id))
+
+        # Before first delivery, the canonical row may absorb the fresher version
+        # of the same semantic thesis. Its original validity window is not reused
+        # after any confirmed delivery.
         existing.score = max(float(existing.score or 0), score)
         existing.strength = max(float(existing.strength or 0), strength)
-        if confirmed_delivery_count == 0:
-            existing.entry = entry
-            existing.stop_loss = stop_loss
-            existing.take_profit = tp_str
-            existing.expires_at = signal_expires_at
-        elif existing.expires_at is None or (signal_expires_at and signal_expires_at > existing.expires_at):
-            existing.expires_at = signal_expires_at
+        existing.entry = entry
+        existing.stop_loss = stop_loss
+        existing.take_profit = tp_str
+        existing.expires_at = signal_expires_at
         existing.status = "active"
         existing.trade_profile = trade_profile
         existing.asset_class = asset_class
@@ -1151,12 +1163,19 @@ async def get_or_create_signal_impl(
         .first()
     )
     if exact_active is not None:
-        # The partial unique index is WHERE status='active'. A legacy/inconsistent
-        # row may therefore block INSERT even when expired/archived flags already
-        # say it is inactive. Clear that stale index membership under the same
-        # exact-bucket advisory lock; otherwise reuse the canonical active row.
-        if bool(exact_active.expired) or bool(exact_active.archived):
+        # The partial unique index is WHERE status='active'. Reconcile rows whose
+        # logical validity already ended even if legacy flags were never updated.
+        exact_expiry = getattr(exact_active, "expires_at", None)
+        exact_created = getattr(exact_active, "created_at", None)
+        stale_by_time = bool(exact_expiry is not None and exact_expiry <= now)
+        stale_null_expiry = bool(
+            exact_expiry is None
+            and exact_created is not None
+            and exact_created < thesis_cutoff
+        )
+        if bool(exact_active.expired) or bool(exact_active.archived) or stale_by_time or stale_null_expiry:
             exact_active.status = "superseded"
+            exact_active.expired = True
             await session.flush()
             logger.info(
                 "[dedup] reconciled stale active-index row asset=%s tf=%s dir=%s signal_id=%s",
@@ -1166,14 +1185,16 @@ async def get_or_create_signal_impl(
                 exact_active.signal_id,
             )
         else:
+            # Never return an unrelated active-bucket row as the identity of the
+            # new candidate. Blocking preserves one immutable set of levels per ID.
             logger.info(
-                "[dedup] exact active bucket reused asset=%s tf=%s dir=%s signal_id=%s",
+                "[dedup] exact active bucket blocks new candidate asset=%s tf=%s dir=%s signal_id=%s",
                 asset,
                 timeframe,
                 direction,
                 exact_active.signal_id,
             )
-            return exact_active
+            raise SignalDedupBlocked("active_bucket_conflict", str(exact_active.signal_id))
 
     logger.info(
         "[dedup] creating canonical signal asset=%s tf=%s dir=%s thesis=%s exact=%s",
