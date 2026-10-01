@@ -622,11 +622,11 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
     )
     db_rejected_total = sum(int(v or 0) for v in (db_rejected_by or {}).values())
-    db_scanned_evidence = max(
-        int(db_scanned or 0), int(db_issued or 0), int(db_delivered or 0), int(db_rejected_total or 0)
-    )
-    if db_scanned_evidence > 0:
-        scanned = db_scanned_evidence
+    # Decision accounting and recipient delivery are different units. Prefer
+    # the decision_log row count whenever available; signal rows/deliveries are
+    # separate evidence and must never inflate the number of decisions evaluated.
+    if int(db_scanned or 0) > 0:
+        scanned = int(db_scanned or 0)
     elif cycle_attempted > 0:
         scanned = cycle_attempted
     else:
@@ -667,8 +667,29 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     else:
         rejected_by = {}
 
-    accounted = int(delivered or 0) + sum(int(v or 0) for v in (rejected_by or {}).values())
-    unaccounted = max(0, int(scanned or 0) - int(accounted or 0))
+    # Account decision rows by decision classification, not by recipient fanout.
+    # A generated/accepted/observed decision is still accounted even when zero
+    # recipients were delivered in the window. Conversely one signal may have
+    # many recipient deliveries, which must not over-count decision rows.
+    if int(db_scanned or 0) > 0:
+        accounted = sum(int(v or 0) for v in (db_rejected_by or {}).values())
+        accounting_source = "decision_log"
+    elif cycle_attempted > 0:
+        cycle_generated = int(
+            (latest_cycle or {}).get("generated_signals")
+            or (cycle_pipeline or {}).get("generated_signals")
+            or 0
+        )
+        accounted = cycle_generated + sum(int(v or 0) for v in (cycle_rejected_by or {}).values())
+        accounting_source = "engine_cycle"
+    else:
+        # GlobalStats historically exposes scan attempts and veto counters but
+        # not a complete per-decision classification. Do not manufacture a
+        # missing-row alert from incomplete units.
+        accounted = int(scanned or 0)
+        accounting_source = "global_stats_fallback"
+    accounting_delta = int(scanned or 0) - int(accounted or 0)
+    unaccounted = abs(accounting_delta)
 
     try:
         from data.fetcher import get_provider_health_snapshot
@@ -704,6 +725,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "db_deliveries": int(db_delivered or 0),
             "cycle_attempted": int(cycle_attempted or 0),
             "cycle_status": str(latest_cycle.get("status") or "") if isinstance(latest_cycle, dict) else "",
+            "accounting_source": accounting_source,
+            "accounting_delta": int(accounting_delta),
         },
         "shadow": {
             "total_tracked": total_tracked,
