@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "requirements.lock"
 DOCKERFILE = ROOT / "Dockerfile"
 CURRENT_RELEASE = ROOT / "CURRENT_RELEASE.md"
-MANIFEST = ROOT / "release_certification_manifest.txt"
+MANIFEST = ROOT / "certification" / "release_manifest.yaml"
+TEST_SELECTION_MANIFEST = ROOT / "release_certification_manifest.txt"
 
 ALEMBIC_RE = re.compile(r"Repository Alembic head:\s*([A-Za-z0-9_\-]+)")
 REQ_RE = re.compile(r"^([A-Za-z0-9_.\-]+)==([^\s#]+)$")
@@ -181,7 +182,8 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
             "requirements.lock": {"sha256": lock_hash, "component_count": len(components)},
             "Dockerfile": {"sha256": docker_hash},
             "CURRENT_RELEASE.md": {"sha256": current_release_hash},
-            "release_certification_manifest.txt": {"sha256": sha256_file(MANIFEST)},
+            "certification/release_manifest.yaml": {"sha256": sha256_file(MANIFEST)},
+            "release_certification_manifest.txt": {"sha256": sha256_file(TEST_SELECTION_MANIFEST)},
         },
         "artifacts": {
             "sbom.cdx.json": {"sha256": sbom_hash, "format": "CycloneDX-1.5"},
