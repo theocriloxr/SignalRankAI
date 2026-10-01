@@ -65,7 +65,8 @@ def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "db" / "session.py").read_text(encoding="utf-8")
     role_block = source[source.index("_dedicated_noninteractive_db_roles"):source.index("_default_foreground_reserve")]
-    assert '"analytics", "scheduler"' in role_block
+    assert '"analytics"' in role_block
+    assert '"scheduler"' in role_block
     assert "minimum=0" in source
     assert '"worker"' not in role_block
     assert '"delivery"' not in role_block
