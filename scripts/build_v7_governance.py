@@ -1267,13 +1267,41 @@ def _classify(path: Path) -> tuple[str, str]:
     return "PRESERVE_BEHAVIOUR", "repository asset explicitly retained; no generated-state signature detected"
 
 
+def _packaged_legacy_disposition() -> dict[str, Any]:
+    """Use the committed disposition when a packaged source tree has no Git metadata.
+
+    Production Docker build contexts intentionally exclude Git metadata. The full
+    tracked-file disposition is generated in source-control certification; the
+    packaged image gate validates the committed artifact while independent image
+    provenance hashes the current Dockerfile, dependency lock, and release inputs.
+    """
+    path = OUT / "legacy_disposition.json"
+    if not path.is_file():
+        raise RuntimeError("packaged_governance_missing_legacy_disposition")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError("packaged_governance_invalid_legacy_disposition") from exc
+    if not isinstance(payload, dict) or payload.get("kind") != "legacy_disposition":
+        raise RuntimeError("packaged_governance_invalid_legacy_disposition_kind")
+    files = payload.get("files")
+    if not isinstance(files, list) or not files:
+        raise RuntimeError("packaged_governance_empty_legacy_disposition")
+    summary = payload.get("summary") or {}
+    if int(summary.get("UNKNOWN_REQUIRES_REVIEW") or 0) > 0:
+        raise RuntimeError("packaged_governance_unknown_legacy_disposition")
+    return payload
+
 def build_legacy_disposition() -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
-    tracked = (
-        subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, stderr=subprocess.DEVNULL)
-        .decode("utf-8", errors="surrogateescape")
-        .split("\0")
-    )
+    try:
+        tracked = (
+            subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, stderr=subprocess.DEVNULL)
+            .decode("utf-8", errors="surrogateescape")
+            .split("\0")
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return _packaged_legacy_disposition()
     for relative in sorted(item for item in tracked if item):
         path = ROOT / relative
         if not path.is_file() or any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
