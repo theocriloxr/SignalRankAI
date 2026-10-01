@@ -68,3 +68,11 @@ def test_self_verification_detects_tampering(tmp_path: Path):
     (tmp_path / "sbom.cdx.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="release_provenance_mismatch:sbom.cdx.json"):
         provenance.verify_bundle(tmp_path, commit=COMMIT, branch=BRANCH)
+
+
+def test_docker_builder_has_git_for_governance_but_runtime_stays_minimal():
+    dockerfile = provenance.DOCKERFILE.read_text(encoding="utf-8")
+    builder, runtime = dockerfile.split(" AS runtime", 1)
+    assert "apt-get install -y --no-install-recommends gcc git libpq-dev" in builder
+    assert " git " not in runtime.replace("\n", " ")
+    assert "python scripts/run_release_manifest.py --environment image --group image" in builder
