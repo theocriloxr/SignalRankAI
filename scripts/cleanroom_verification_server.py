@@ -87,6 +87,7 @@ _TESTS = [
     "tests/test_stale_learning_multiservice.py",
     "tests/test_20261001_signal_paper_integrity.py",
     "tests/test_missed_entry_nontrade_semantics.py",
+    "tests/test_release_certification_manifest_contract.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
