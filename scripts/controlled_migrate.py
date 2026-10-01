@@ -36,7 +36,9 @@ def _truthy(name: str) -> bool:
 
 
 def _environment() -> str:
-    return (_value("RAILWAY_ENVIRONMENT_NAME") or _value("RAILWAY_ENVIRONMENT") or _value("APP_ENV") or "dev").lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("dev")
 
 
 def _parse_utc(value: str) -> datetime | None:
