@@ -123,8 +123,8 @@ def test_missed_entry_is_observation_not_realized_loss() -> None:
     assert 'if status_l == "missed_entry":' in block
     assert "missed_entry_observed_r = r_mult" in block
     assert "missed_entry_observed_pct = pct" in block
-    assert "r_mult = 0.0" in block
-    assert "pct = 0.0" in block
+    assert "r_mult = None" in block
+    assert "pct = None" in block
     assert '"missed_entry_observed_r"' in block
     assert '"realized_position_opened": bool(status_l != "missed_entry")' in block
 
