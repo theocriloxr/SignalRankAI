@@ -1377,7 +1377,12 @@ def main() -> int:
     if args.check:
         after = {path.name: path.read_bytes() for path in OUT.glob("*") if path.is_file()}
         if before != after:
+            changed = sorted(
+                name for name in set(before) | set(after)
+                if before.get(name) != after.get(name)
+            )
             print("V7 governance artefacts were stale; regenerate and commit them.")
+            print("V7_GOVERNANCE_STALE_FILES " + json.dumps(changed, separators=(",", ":")))
             return 1
     return 0
 
