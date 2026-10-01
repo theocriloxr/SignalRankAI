@@ -93,6 +93,18 @@
       ]
     },
     {
+      "id": "backend-release-chain",
+      "group": "backend",
+      "description": "Offline render and validate complete current Alembic release chain",
+      "command": "python scripts/verify_release_chain.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
       "id": "backend-migrate",
       "group": "backend",
       "description": "Apply migrations to head",
