@@ -540,7 +540,13 @@ def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
             "runtime_state",
         ]
 
-        cur.execute("TRUNCATE " + ",".join(tables) + " RESTART IDENTITY CASCADE")
+        from psycopg2 import sql as pg_sql
+
+        cur.execute(
+            pg_sql.SQL("TRUNCATE {} RESTART IDENTITY CASCADE").format(
+                pg_sql.SQL(",").join(pg_sql.Identifier(name) for name in tables)
+            )
+        )
 
         # Re-create the fresh-start flag in runtime_state
         now = now_utc_naive().isoformat() + "Z"
