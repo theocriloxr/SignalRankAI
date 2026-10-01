@@ -290,7 +290,7 @@ async def verify_api_key(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("[auth] token verification unavailable: %s", type(exc).__name__)
+        logger.warning("[auth] credential verification unavailable error_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
 
 
