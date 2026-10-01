@@ -61,7 +61,9 @@ def test_current_release_points_to_current_release_candidate_boundary() -> None:
     assert "FINAL_COMPLETION_REPORT_20260926.md" in text
     assert "BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md" in text
     assert "docs/security/THREAT_MODEL.md" in text
-    assert "docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md" in text\n    assert "NOT YET LIVE-CERTIFIED" in text\n    assert "24–72 hour immutable-SHA staging soak" in text
+    assert "docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md" in text
+    assert "NOT YET LIVE-CERTIFIED" in text
+    assert "24–72 hour immutable-SHA staging soak" in text
     assert "Historical evidence retained" in text
     assert "See `STAGING_COMPLETION_R4.md`" not in text
 
