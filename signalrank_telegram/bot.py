@@ -8099,7 +8099,12 @@ def run_bot() -> None:
                             + timing
                         )
 
-                    def _format_non_price_terminal_message(label: str, explanation: str) -> str:
+                    def _format_non_price_terminal_message(
+                        label: str,
+                        explanation: str,
+                        *,
+                        no_trade: bool = False,
+                    ) -> str:
                         outcome_meta = dict(getattr(oc, "meta", {}) or {})
                         closed_at = getattr(oc, "closed_at", None)
                         event_time = outcome_meta.get("outcome_event_time") or (
@@ -8119,10 +8124,16 @@ def run_bot() -> None:
                             else f"Provider: <b>{provider}</b>\n"
                         )
                         realized_r = getattr(oc, "r_multiple", None)
-                        result_line = (
-                            f"Recorded result: <b>{float(realized_r):+.2f}R</b>\n"
-                            if realized_r is not None else ""
-                        )
+                        if no_trade:
+                            result_line = (
+                                "Trade result: <b>No trade — entry never triggered</b>\n"
+                                "Realized R: <b>N/A</b>\n"
+                            )
+                        else:
+                            result_line = (
+                                f"Recorded result: <b>{float(realized_r):+.2f}R</b>\n"
+                                if realized_r is not None else ""
+                            )
                         highest_tp_text = f"TP{tp_level_num}" if tp_level_num else "None"
                         return (
                             f"{label}\n"
@@ -8157,6 +8168,7 @@ def run_bot() -> None:
                         msg = _format_non_price_terminal_message(
                             "⚪ <b>Entry Not Triggered</b>",
                             "The verified entry zone was not reached before the signal expired.",
+                            no_trade=True,
                         )
                     elif status in {"invalid", "invalidated", "cancel", "cancelled", "canceled"}:
                         notify = True
