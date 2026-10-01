@@ -256,3 +256,82 @@ def test_staging_oct1_incident_replay_is_fail_closed_and_behavior_complete() -> 
     assert '"retained_evidence": True' in replay
     assert '"external_notifications_sent": False' in replay
     assert '"broker_orders_submitted": False' in replay
+
+
+def test_outcome_tracker_uses_exact_delivery_snapshot_levels_for_us30() -> None:
+    from types import SimpleNamespace
+    from engine.realtime_outcome_tracker import _tracked_signal_payload
+
+    mutable_row = SimpleNamespace(
+        signal_id="ed8d33a2-be1",
+        asset="US30",
+        direction="short",
+        entry=51321.24,
+        stop_loss=51484.80,
+        take_profit=[50850.19],
+        created_at=None,
+        expires_at=None,
+        timeframe="15m",
+        score=78.3,
+        ml_probability=0.477,
+    )
+    snapshot = {
+        "signal_id": "ed8d33a2-be1",
+        "asset": "US30",
+        "timeframe": "15m",
+        "direction": "SELL",
+        "entry": 50686.17,
+        "stop_loss": 50877.72,
+        "take_profits": [50134.51, 49582.84, 49031.18],
+        "generated_at": "2026-10-01T14:14:00+00:00",
+        "expires_at": "2026-10-02T14:14:00+00:00",
+        "score": 85.2,
+    }
+    payload = _tracked_signal_payload(
+        mutable_row,
+        None,
+        None,
+        snapshot,
+        reason="verified_delivery_snapshot",
+    )
+    assert payload["entry"] == 50686.17
+    assert payload["stop_loss"] == 50877.72
+    assert payload["take_profit"] == [50134.51, 49582.84, 49031.18]
+    assert payload["score"] == 85.2
+    assert payload["delivery_snapshot_authoritative"] is True
+
+
+def test_outcome_tracker_detects_conflicting_recipient_trade_terms() -> None:
+    from engine.realtime_outcome_tracker import _delivery_snapshot_signature
+
+    first = {
+        "asset": "US30",
+        "direction": "SELL",
+        "timeframe": "15m",
+        "entry": 50686.17,
+        "stop_loss": 50877.72,
+        "take_profits": [50134.51, 49582.84, 49031.18],
+    }
+    same = dict(first)
+    conflicting = {
+        **first,
+        "entry": 51321.24,
+        "stop_loss": 51484.80,
+        "take_profits": [50850.19],
+    }
+    assert _delivery_snapshot_signature(first) == _delivery_snapshot_signature(same)
+    assert _delivery_snapshot_signature(first) != _delivery_snapshot_signature(conflicting)
+
+
+def test_outcome_tracker_quarantines_conflicting_delivery_snapshots_before_tracking() -> None:
+    source = _source("engine/realtime_outcome_tracker.py")
+    helper = _function_block(source, "_confirmed_delivery_snapshot_map")
+    assert "previous != signature" in helper
+    assert "conflicts.add(sid)" in helper
+    assert "snapshots.pop(sid, None)" in helper
+    assert "[outcome_snapshot_conflict]" in helper
+
+    active = _function_block(source, "_fetch_active_signals")
+    assert "_confirmed_delivery_snapshot_map" in active
+    assert "if str(signal_row.signal_id) not in conflicts" in active
+    assert "_tracked_signal_payload(" in active
