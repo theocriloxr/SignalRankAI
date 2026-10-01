@@ -161,8 +161,8 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     assert "dispose_engine_for_event_loop" in candle
     assert '"read-only transaction" in _error_text(exc).lower()' in candle
     assert "for read_write_attempt in range(2)" in candle
-    assert "SET LOCAL lock_timeout" in candle
-    assert "SET LOCAL statement_timeout" in candle
+    assert "set_config('lock_timeout', :value, true)" in candle
+    assert "set_config('statement_timeout', :value, true)" in candle
     assert "for item in batch:" in candle
     # Shadow outcome writes remain durable background work because their rows are
     # lifecycle evidence rather than an idempotent candle cache.
