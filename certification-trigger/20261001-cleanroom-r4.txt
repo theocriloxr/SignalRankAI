@@ -1,6 +1,6 @@
-SignalRankAI synchronized certification trigger r4
+SignalRankAI synchronized certification trigger r4b
 branch=implementation-of-master-blueprint
-head_before_trigger=bdcd1dc45902533a55e794ed7845414381236aac
+head_before_trigger=aacb247f524c72a4128d0cc8eba783898af16e04
 backend_cleanroom=required
 frontend_cleanroom=required
 mobile_native_cleanroom=required
