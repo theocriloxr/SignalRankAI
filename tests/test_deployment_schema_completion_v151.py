@@ -174,6 +174,16 @@ def test_r4_soak_certification_contract():
     assert '"--filter", $blockerFilter' in text
 
 
+def test_controlled_migrate_supports_brand_new_empty_database():
+    source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
+    helper = source[source.index("def _current_revision"):source.index("def migrate()")]
+    migrate = source[source.index("def migrate()"):source.index("def main()")]
+    assert "to_regclass('public.alembic_version')" in helper
+    assert 'SELECT version_num FROM alembic_version LIMIT 1' in helper
+    assert "before = _current_revision(connection)" in migrate
+    assert "after = _current_revision(connection)" in migrate
+
+
 def test_production_migration_fast_path_skips_backup_and_lock_at_head():
     source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
     migrate = source[source.index("def migrate()"):source.index("def main()")]
