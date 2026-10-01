@@ -30,6 +30,7 @@ class DeliveryReceipt:
     mode: str
     accepted_at: str
     replaces_signal_id: str | None = None
+    signal_snapshot: dict[str, Any] | None = None
 
     @classmethod
     def accepted(
@@ -39,6 +40,7 @@ class DeliveryReceipt:
         message_id: int,
         mode: str,
         replaces_signal_id: str | None = None,
+        signal_snapshot: dict[str, Any] | None = None,
     ) -> "DeliveryReceipt":
         return cls(
             operation=operation,
@@ -46,6 +48,7 @@ class DeliveryReceipt:
             mode=str(mode or "sent"),
             accepted_at=datetime.now(timezone.utc).isoformat(),
             replaces_signal_id=(str(replaces_signal_id).strip() if replaces_signal_id else None),
+            signal_snapshot=(dict(signal_snapshot) if signal_snapshot else None),
         )
 
     @property
@@ -63,6 +66,7 @@ class DeliveryReceipt:
             "mode": self.mode,
             "accepted_at": self.accepted_at,
             "replaces_signal_id": self.replaces_signal_id,
+            "signal_snapshot": dict(self.signal_snapshot or {}),
         }
 
     @classmethod
@@ -85,6 +89,11 @@ class DeliveryReceipt:
             accepted_at=str(value.get("accepted_at") or ""),
             replaces_signal_id=(
                 str(value.get("replaces_signal_id")).strip() if value.get("replaces_signal_id") else None
+            ),
+            signal_snapshot=(
+                dict(value.get("signal_snapshot") or {})
+                if isinstance(value.get("signal_snapshot"), dict)
+                else None
             ),
         )
 
