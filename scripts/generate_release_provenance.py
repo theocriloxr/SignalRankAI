@@ -118,14 +118,33 @@ def locked_components() -> list[dict[str, Any]]:
     return sorted(components, key=lambda item: (item["name"].lower(), item["version"]))
 
 
+def _deterministic_build_time(commit: str) -> str:
+    """Return a stable provenance timestamp for the same source commit."""
+    source_date_epoch = str(os.getenv("SOURCE_DATE_EPOCH") or "").strip()
+    if source_date_epoch:
+        try:
+            import datetime
+            return datetime.datetime.fromtimestamp(
+                int(source_date_epoch), tz=datetime.timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("invalid_SOURCE_DATE_EPOCH")
+
+    git_timestamp = git_value("show", "-s", "--format=%cI", commit)
+    if git_timestamp:
+        return git_timestamp
+    # Unit tests may use a synthetic 40-char SHA that is not a real Git object.
+    # A fixed sentinel keeps the artifact deterministic without pretending the
+    # current wall clock is part of source identity.
+    return "1970-01-01T00:00:00+00:00"
+
+
 def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, Any]]:
     components = locked_components()
     lock_hash = sha256_file(LOCK)
     docker_hash = sha256_file(DOCKERFILE)
     current_release_hash = sha256_file(CURRENT_RELEASE)
     head = alembic_head()
-
-    import datetime
 
     sbom = {
         "bomFormat": "CycloneDX",
@@ -155,7 +174,7 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
             "git_commit": commit,
             "git_branch": branch,
             "alembic_head": head,
-            "build_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "build_time": _deterministic_build_time(commit),
             "certification_manifest_version": "1.0",
         },
         "inputs": {
