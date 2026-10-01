@@ -1205,6 +1205,7 @@ async def _send_message_async(
     telemetry_started_at: float | None = None,
     telemetry_tier: str | None = None,
     telemetry_regime: str | None = None,
+    reply_markup: Any = None,
 ) -> object:
     # Global fix: escape text for Markdown/MarkdownV2 parse modes
     try:
@@ -1212,7 +1213,13 @@ async def _send_message_async(
             from telegram.helpers import escape_markdown
             version = 2 if "v2" in parse_mode.lower() else 1
             text = escape_markdown(str(text), version=version)
-        msg = await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
+        msg = await _telegram_send_message_guarded(
+            bot,
+            chat_id=chat_id,
+            text=text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
         if telemetry_started_at is not None:
             observe_signal_dispatch(
                 max(0.0, time.perf_counter() - float(telemetry_started_at)),
@@ -3721,7 +3728,13 @@ def _send_signal_with_engagement_sync(
     return None
 
 
-def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+def _send_message_sync(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    reply_markup: Any = None,
+) -> None:
     """Send a Telegram message from sync code.
 
     python-telegram-bot v20+ uses async methods. The engine and APScheduler jobs
@@ -3731,12 +3744,26 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        run_sync(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
+        run_sync(
+            _send_message_async(
+                bot,
+                int(chat_id),
+                str(text),
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+        )
         return
     # If we're already in an event loop, schedule it.
     try:
         task = loop.create_task(
-            _send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode)
+            _send_message_async(
+                bot,
+                int(chat_id),
+                str(text),
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
         )
         task.add_done_callback(_consume_telegram_task_result)
     except Exception as e:
