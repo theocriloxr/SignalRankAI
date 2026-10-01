@@ -981,33 +981,6 @@
     },
     {
       "declared_defaults": {
-        "RAILWAY_ENV_UPDATED.env.example": "1",
-        "configs/env/railway-hobby-full-advisory.env.example": "1",
-        "configs/env/railway-hobby-owner-beta.env.example": "0",
-        "configs/env/railway-hobby-paper-demo.env.example": "1",
-        "configs/env/railway-hobby-real-execution-gated.env.example": "1",
-        "configs/env/railway-staging.env.example": "1",
-        "deploy/railway_roles/monolith_safe.env": "0"
-      },
-      "name": "ALL_ASSET_MODE",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        "RAILWAY_ENV_UPDATED.env.example": "1",
-        "configs/env/railway-staging.env.example": "1"
-      },
-      "name": "ALL_ASSET_TESTING_MODE",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
         ".env.example": "0"
       },
       "name": "ALLOW_ASSET_COOLDOWN_REDUCTION",
@@ -1063,6 +1036,33 @@
         ".env.example": "0"
       },
       "name": "ALLOW_TIER_ASSET_COOLDOWN_OVERRIDES",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "RAILWAY_ENV_UPDATED.env.example": "1",
+        "configs/env/railway-hobby-full-advisory.env.example": "1",
+        "configs/env/railway-hobby-owner-beta.env.example": "0",
+        "configs/env/railway-hobby-paper-demo.env.example": "1",
+        "configs/env/railway-hobby-real-execution-gated.env.example": "1",
+        "configs/env/railway-staging.env.example": "1",
+        "deploy/railway_roles/monolith_safe.env": "0"
+      },
+      "name": "ALL_ASSET_MODE",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "RAILWAY_ENV_UPDATED.env.example": "1",
+        "configs/env/railway-staging.env.example": "1"
+      },
+      "name": "ALL_ASSET_TESTING_MODE",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -1782,6 +1782,36 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "SIMULATION",
+        "RAILWAY_ENV_UPDATED.env.example": "SIMULATION",
+        "configs/env/hermetic-test.env.example": "SIMULATION",
+        "configs/env/production.env.example": "SIMULATION",
+        "configs/env/railway-hobby-full-advisory.env.example": "SIMULATION",
+        "configs/env/railway-hobby-owner-beta.env.example": "SIMULATION",
+        "configs/env/railway-hobby-paper-demo.env.example": "SIMULATION",
+        "configs/env/railway-hobby-real-execution-gated.env.example": "SIMULATION",
+        "configs/env/railway-staging.env.example": "SIMULATION"
+      },
+      "name": "AUTOMATON_MODE",
+      "production_example_default": "SIMULATION",
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "5000"
+      },
+      "name": "AUTOMATON_STARTING_BALANCE_USD",
+      "production_example_default": null,
+      "read_locations": [
+        "core/automaton.py:63"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
@@ -1857,6 +1887,16 @@
     },
     {
       "declared_defaults": {},
+      "name": "AUTO_OPTIMIZER_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/auto_optimizer.py:30"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "AUTO_OPT_INTERVAL_HOURS",
       "production_example_default": null,
       "read_locations": [
@@ -1886,16 +1926,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "AUTO_OPTIMIZER_ENABLED",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/auto_optimizer.py:30"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         ".env.example": "0",
         "RAILWAY_ENV_UPDATED.env.example": "0",
@@ -1912,36 +1942,6 @@
       "production_example_default": "0",
       "read_locations": [],
       "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "SIMULATION",
-        "RAILWAY_ENV_UPDATED.env.example": "SIMULATION",
-        "configs/env/hermetic-test.env.example": "SIMULATION",
-        "configs/env/production.env.example": "SIMULATION",
-        "configs/env/railway-hobby-full-advisory.env.example": "SIMULATION",
-        "configs/env/railway-hobby-owner-beta.env.example": "SIMULATION",
-        "configs/env/railway-hobby-paper-demo.env.example": "SIMULATION",
-        "configs/env/railway-hobby-real-execution-gated.env.example": "SIMULATION",
-        "configs/env/railway-staging.env.example": "SIMULATION"
-      },
-      "name": "AUTOMATON_MODE",
-      "production_example_default": "SIMULATION",
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "5000"
-      },
-      "name": "AUTOMATON_STARTING_BALANCE_USD",
-      "production_example_default": null,
-      "read_locations": [
-        "core/automaton.py:63"
-      ],
-      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -2613,22 +2613,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "CODEX_OPENAI_API_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/admin_pulse.py:904",
-        "railway_main.py:581",
-        "services/automated_analyst.py:19",
-        "services/codex_governance.py:122",
-        "services/continuous_improvement/refactor_agent.py:181",
-        "services/openai_ai.py:66",
-        "signalrank_telegram/commands.py:6226"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
       "declared_defaults": {
         ".env.example": "READ_ONLY_AUDIT",
         "RAILWAY_ENV_UPDATED.env.example": "READ_ONLY_AUDIT",
@@ -2647,6 +2631,22 @@
       ],
       "required_by_code": true,
       "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "CODEX_OPENAI_API_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/admin_pulse.py:904",
+        "railway_main.py:581",
+        "services/automated_analyst.py:19",
+        "services/codex_governance.py:122",
+        "services/continuous_improvement/refactor_agent.py:181",
+        "services/openai_ai.py:66",
+        "signalrank_telegram/commands.py:6226"
+      ],
+      "required_by_code": true,
+      "sensitive": true
     },
     {
       "declared_defaults": {
@@ -3090,6 +3090,35 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "CRYPTOCOMPARE_API_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/cryptocompare_adapter.py:106",
+        "data/connectors/cryptocompare_adapter.py:32",
+        "data/cryptocompare_ws.py:69",
+        "data/fetcher.py:2253",
+        "data/get_live_price.py:255",
+        "data/get_live_price.py:588",
+        "data/pair_discovery.py:384",
+        "engine/price_fetcher.py:303"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {},
+      "name": "CRYPTOPANIC_API_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "data/providers.py:332"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
       "declared_defaults": {},
       "name": "CRYPTO_BLACKLIST",
       "production_example_default": null,
@@ -3264,35 +3293,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": ""
-      },
-      "name": "CRYPTOCOMPARE_API_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "data/connectors/cryptocompare_adapter.py:106",
-        "data/connectors/cryptocompare_adapter.py:32",
-        "data/cryptocompare_ws.py:69",
-        "data/fetcher.py:2253",
-        "data/get_live_price.py:255",
-        "data/get_live_price.py:588",
-        "data/pair_discovery.py:384",
-        "engine/price_fetcher.py:303"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
-      "declared_defaults": {},
-      "name": "CRYPTOPANIC_API_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "data/providers.py:332"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
       "declared_defaults": {},
       "name": "CTRADER_CLIENT_ID",
       "production_example_default": null,
@@ -3355,26 +3355,6 @@
       "read_locations": [
         "signalrank_telegram/command_access.py:491",
         "signalrank_telegram/commands.py:3376"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "DATA_INTEGRITY_BACKFILL_INTERVAL_MINUTES",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/bot.py:10276"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "DATA_INTEGRITY_BACKFILL_RUN_AT_STARTUP",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/bot.py:10283"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3484,6 +3464,26 @@
       "read_locations": [
         "config.py:254",
         "db/session.py:1319"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "DATA_INTEGRITY_BACKFILL_INTERVAL_MINUTES",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/bot.py:10276"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "DATA_INTEGRITY_BACKFILL_RUN_AT_STARTUP",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/bot.py:10283"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4173,18 +4173,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": "12",
-        "configs/env/railway-hobby-owner-beta.env.example": "12",
-        "configs/env/railway-staging.env.example": "12"
-      },
-      "name": "DELIVERY_DEDUP_TIMEOUT_SECONDS",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {},
       "name": "DELIVERY_DEDUPE_HOURS",
       "production_example_default": null,
@@ -4202,6 +4190,18 @@
         "db/pg_features.py:1324"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "12",
+        "configs/env/railway-hobby-owner-beta.env.example": "12",
+        "configs/env/railway-staging.env.example": "12"
+      },
+      "name": "DELIVERY_DEDUP_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -5032,6 +5032,16 @@
     },
     {
       "declared_defaults": {},
+      "name": "ENABLED_ASSET_CLASSES",
+      "production_example_default": null,
+      "read_locations": [
+        "railway_main.py:2885"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "ENABLE_CORRELATION_CHECK",
       "production_example_default": null,
       "read_locations": [
@@ -5080,16 +5090,6 @@
       "production_example_default": null,
       "read_locations": [
         "worker/news_sync_worker.py:31"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "ENABLED_ASSET_CLASSES",
-      "production_example_default": null,
-      "read_locations": [
-        "railway_main.py:2885"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6320,7 +6320,7 @@
     },
     {
       "declared_defaults": {},
-      "name": "HTTP_PROXY",
+      "name": "HTTPS_PROXY",
       "production_example_default": null,
       "read_locations": [
         "data/providers.py:210",
@@ -6331,7 +6331,7 @@
     },
     {
       "declared_defaults": {},
-      "name": "HTTPS_PROXY",
+      "name": "HTTP_PROXY",
       "production_example_default": null,
       "read_locations": [
         "data/providers.py:210",
@@ -6791,6 +6791,25 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "",
+        "configs/env/hermetic-test.env.example": "",
+        "configs/env/production.env.example": "",
+        "configs/env/railway-hobby-full-advisory.env.example": "",
+        "configs/env/railway-hobby-owner-beta.env.example": "",
+        "configs/env/railway-hobby-paper-demo.env.example": "",
+        "configs/env/railway-hobby-real-execution-gated.env.example": "",
+        "configs/env/railway-staging.env.example": ""
+      },
+      "name": "MARKETSTACK_API_KEY",
+      "production_example_default": "",
+      "read_locations": [
+        "data/connectors/marketstack_adapter.py:34"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {
         ".env.example": "1"
       },
       "name": "MARKET_ALTERNATIVE_SIGNALS_ENABLED",
@@ -6923,25 +6942,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": "",
-        "configs/env/hermetic-test.env.example": "",
-        "configs/env/production.env.example": "",
-        "configs/env/railway-hobby-full-advisory.env.example": "",
-        "configs/env/railway-hobby-owner-beta.env.example": "",
-        "configs/env/railway-hobby-paper-demo.env.example": "",
-        "configs/env/railway-hobby-real-execution-gated.env.example": "",
-        "configs/env/railway-staging.env.example": ""
-      },
-      "name": "MARKETSTACK_API_KEY",
-      "production_example_default": "",
-      "read_locations": [
-        "data/connectors/marketstack_adapter.py:34"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
       "declared_defaults": {},
       "name": "MASSIVE_API_BASE_URL",
       "production_example_default": null,
@@ -7053,6 +7053,54 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        "configs/env/railway-hobby-paper-demo.env.example": "",
+        "configs/env/railway-hobby-real-execution-gated.env.example": ""
+      },
+      "name": "METAAPI_ACCOUNT_ID",
+      "production_example_default": null,
+      "read_locations": [
+        "data/get_live_price.py:119",
+        "data/get_live_price.py:632",
+        "data/pair_discovery.py:575"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "METAAPI_SYMBOL_CACHE_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "data/pair_discovery.py:582"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "configs/env/railway-hobby-paper-demo.env.example": "",
+        "configs/env/railway-hobby-real-execution-gated.env.example": ""
+      },
+      "name": "METAAPI_TOKEN",
+      "production_example_default": null,
+      "read_locations": [
+        "data/get_live_price.py:115",
+        "data/pair_discovery.py:571",
+        "railway_main.py:2818",
+        "railway_main.py:584",
+        "railway_main.py:621",
+        "services/broker_connections.py:194",
+        "web/platform_api.py:4856",
+        "web/platform_api.py:4892",
+        "web/platform_api.py:4961",
+        "web/platform_api.py:5871",
+        "worker/worker.py:321"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
       "declared_defaults": {},
       "name": "META_API_ACCOUNT_ID",
       "production_example_default": null,
@@ -7157,54 +7205,6 @@
         "services/broker_connections.py:194",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2738",
-        "web/platform_api.py:4856",
-        "web/platform_api.py:4892",
-        "web/platform_api.py:4961",
-        "web/platform_api.py:5871",
-        "worker/worker.py:321"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
-      "declared_defaults": {
-        "configs/env/railway-hobby-paper-demo.env.example": "",
-        "configs/env/railway-hobby-real-execution-gated.env.example": ""
-      },
-      "name": "METAAPI_ACCOUNT_ID",
-      "production_example_default": null,
-      "read_locations": [
-        "data/get_live_price.py:119",
-        "data/get_live_price.py:632",
-        "data/pair_discovery.py:575"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "METAAPI_SYMBOL_CACHE_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "data/pair_discovery.py:582"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        "configs/env/railway-hobby-paper-demo.env.example": "",
-        "configs/env/railway-hobby-real-execution-gated.env.example": ""
-      },
-      "name": "METAAPI_TOKEN",
-      "production_example_default": null,
-      "read_locations": [
-        "data/get_live_price.py:115",
-        "data/pair_discovery.py:571",
-        "railway_main.py:2818",
-        "railway_main.py:584",
-        "railway_main.py:621",
-        "services/broker_connections.py:194",
         "web/platform_api.py:4856",
         "web/platform_api.py:4892",
         "web/platform_api.py:4961",
@@ -7473,9 +7473,9 @@
     },
     {
       "declared_defaults": {
-        ".env.example": "0.01"
+        ".env.example": "20"
       },
-      "name": "ML_CANDIDATE_FORWARD_MIN_PASS_RATE",
+      "name": "ML_CANDIDATE_FORWARD_MIN_PASSED_RESOLVED",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -7483,9 +7483,9 @@
     },
     {
       "declared_defaults": {
-        ".env.example": "20"
+        ".env.example": "0.01"
       },
-      "name": "ML_CANDIDATE_FORWARD_MIN_PASSED_RESOLVED",
+      "name": "ML_CANDIDATE_FORWARD_MIN_PASS_RATE",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -7939,6 +7939,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "ML_PROB_THRESHOLD",
       "production_example_default": null,
@@ -7953,16 +7963,6 @@
         "worker/ai_feedback.py:151"
       ],
       "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "1"
-      },
-      "name": "ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -8237,6 +8237,26 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "background"
+      },
+      "name": "ML_TRAINING_DB_PRIORITY",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "30"
+      },
+      "name": "ML_TRAINING_DB_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         "configs/env/production.env.example": "0",
         "configs/env/railway-hobby-full-advisory.env.example": "0",
         "configs/env/railway-hobby-owner-beta.env.example": "0",
@@ -8259,26 +8279,6 @@
         ".env.example": "180"
       },
       "name": "ML_TRAIN_LOOKBACK_DAYS",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "background"
-      },
-      "name": "ML_TRAINING_DB_PRIORITY",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "30"
-      },
-      "name": "ML_TRAINING_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -8617,6 +8617,18 @@
     },
     {
       "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "NEWSAPI_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "data/news.py:48"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {
         ".env.example": "",
         "RAILWAY_ENV_UPDATED.env.example": "",
         "configs/env/hermetic-test.env.example": "",
@@ -8661,16 +8673,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "NEWS_VOL_ADJ",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/risk.py:644"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         ".env.example": "1.0"
       },
@@ -8684,6 +8686,16 @@
     },
     {
       "declared_defaults": {},
+      "name": "NEWS_VOL_ADJ",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/risk.py:644"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "NEWS_WINDOW_MINUTES",
       "production_example_default": null,
       "read_locations": [
@@ -8691,18 +8703,6 @@
       ],
       "required_by_code": true,
       "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": ""
-      },
-      "name": "NEWSAPI_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "data/news.py:48"
-      ],
-      "required_by_code": true,
-      "sensitive": true
     },
     {
       "declared_defaults": {},
@@ -8792,16 +8792,6 @@
       "sensitive": true
     },
     {
-      "declared_defaults": {},
-      "name": "OBS_VALUE",
-      "production_example_default": null,
-      "read_locations": [
-        "data/connectors/ecb_adapter.py:47"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         ".env.example": "1",
         "RAILWAY_ENV_UPDATED.env.example": "1",
@@ -8818,6 +8808,16 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "OBS_VALUE",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/ecb_adapter.py:47"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -8987,30 +8987,6 @@
       "production_example_default": null,
       "read_locations": [
         "engine/onchain_alpha.py:31"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "20"
-      },
-      "name": "OPEN_SIGNALS_MAX_PER_ASSET",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/commands.py:3435"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": "20"
-      },
-      "name": "OPEN_SIGNALS_MAX_PER_CLASS",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/commands.py:3436"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9321,6 +9297,30 @@
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "20"
+      },
+      "name": "OPEN_SIGNALS_MAX_PER_ASSET",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/commands.py:3435"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "20"
+      },
+      "name": "OPEN_SIGNALS_MAX_PER_CLASS",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/commands.py:3436"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -9638,21 +9638,21 @@
     },
     {
       "declared_defaults": {},
-      "name": "OUTCOME_NOTIFICATION_INTER_SEND_DELAY_SECONDS",
+      "name": "OUTCOME_NOTIFICATION_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:4220"
+        "railway_main.py:2776",
+        "signalrank_telegram/bot.py:10129"
       ],
       "required_by_code": true,
       "sensitive": false
     },
     {
       "declared_defaults": {},
-      "name": "OUTCOME_NOTIFICATION_INTERVAL_SECONDS",
+      "name": "OUTCOME_NOTIFICATION_INTER_SEND_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:2776",
-        "signalrank_telegram/bot.py:10129"
+        "signalrank_telegram/bot.py:4220"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9703,10 +9703,8 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": "60"
-      },
-      "name": "OUTCOME_NOTIFICATION_START_DELAY_SECONDS",
+      "declared_defaults": {},
+      "name": "OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
         "signalrank_telegram/bot.py:10125"
@@ -9715,8 +9713,10 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS",
+      "declared_defaults": {
+        ".env.example": "60"
+      },
+      "name": "OUTCOME_NOTIFICATION_START_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
         "signalrank_telegram/bot.py:10125"
@@ -9868,24 +9868,6 @@
     },
     {
       "declared_defaults": {
-        "RAILWAY_ENV_UPDATED.env.example": "1",
-        "configs/env/hermetic-test.env.example": "1",
-        "configs/env/production.env.example": "1",
-        "configs/env/railway-hobby-full-advisory.env.example": "1",
-        "configs/env/railway-hobby-owner-beta.env.example": "1",
-        "configs/env/railway-hobby-paper-demo.env.example": "1",
-        "configs/env/railway-hobby-real-execution-gated.env.example": "1",
-        "configs/env/railway-staging.env.example": "1",
-        "deploy/railway_roles/monolith_safe.env": "1"
-      },
-      "name": "OUTCOME_TRACK_DELIVERED_ONLY",
-      "production_example_default": "1",
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
         ".env.example": ""
       },
       "name": "OUTCOME_TRACKER_CERTIFICATION_ID",
@@ -9932,6 +9914,24 @@
         "engine/realtime_outcome_tracker.py:2213"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "RAILWAY_ENV_UPDATED.env.example": "1",
+        "configs/env/hermetic-test.env.example": "1",
+        "configs/env/production.env.example": "1",
+        "configs/env/railway-hobby-full-advisory.env.example": "1",
+        "configs/env/railway-hobby-owner-beta.env.example": "1",
+        "configs/env/railway-hobby-paper-demo.env.example": "1",
+        "configs/env/railway-hobby-real-execution-gated.env.example": "1",
+        "configs/env/railway-staging.env.example": "1",
+        "deploy/railway_roles/monolith_safe.env": "1"
+      },
+      "name": "OUTCOME_TRACK_DELIVERED_ONLY",
+      "production_example_default": "1",
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -11880,6 +11880,23 @@
     },
     {
       "declared_defaults": {
+        "RAILWAY_ENV_UPDATED.env.example": "1",
+        "configs/env/hermetic-test.env.example": "1",
+        "configs/env/production.env.example": "1",
+        "configs/env/railway-staging.env.example": "1",
+        "deploy/railway_roles/analytics.env": "0",
+        "deploy/railway_roles/delivery.env": "0",
+        "deploy/railway_roles/monolith_safe.env": "1",
+        "deploy/railway_roles/outcome.env": "1"
+      },
+      "name": "REALTIME_OUTCOME_TRACKER_ENABLED",
+      "production_example_default": "1",
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         "configs/env/railway-hobby-real-execution-gated.env.example": "1"
       },
       "name": "REAL_EXECUTION_APPROVAL_REQUIRED",
@@ -11987,23 +12004,6 @@
     },
     {
       "declared_defaults": {
-        "RAILWAY_ENV_UPDATED.env.example": "1",
-        "configs/env/hermetic-test.env.example": "1",
-        "configs/env/production.env.example": "1",
-        "configs/env/railway-staging.env.example": "1",
-        "deploy/railway_roles/analytics.env": "0",
-        "deploy/railway_roles/delivery.env": "0",
-        "deploy/railway_roles/monolith_safe.env": "1",
-        "deploy/railway_roles/outcome.env": "1"
-      },
-      "name": "REALTIME_OUTCOME_TRACKER_ENABLED",
-      "production_example_default": "1",
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
         ".env.example": "1"
       },
       "name": "RECEIPTS_ENABLED",
@@ -12093,6 +12093,19 @@
     },
     {
       "declared_defaults": {},
+      "name": "REFERRALS_PER_REWARD",
+      "production_example_default": null,
+      "read_locations": [
+        "db/pg_features.py:3191",
+        "db/pg_features.py:3325",
+        "db/pg_features.py:3530",
+        "web/platform_api.py:3279"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
@@ -12111,19 +12124,6 @@
       "read_locations": [
         "db/pg_features.py:3345",
         "db/pg_features.py:3563"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "REFERRALS_PER_REWARD",
-      "production_example_default": null,
-      "read_locations": [
-        "db/pg_features.py:3191",
-        "db/pg_features.py:3325",
-        "db/pg_features.py:3530",
-        "web/platform_api.py:3279"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12229,47 +12229,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/shadow_outcome_worker.py:32",
-        "engine/signal_deduplicator.py:483"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "REJECT_OUTCOME_MOVE_PCT",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/signal_deduplicator.py:488"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "REJECT_OUTCOME_WINDOWS",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/signal_deduplicator.py:478"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "REJECT_OUTCOME_WINDOWS_HOURS",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/signal_deduplicator.py:478"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         "configs/env/production.env.example": "50",
         "deploy/railway_roles/analytics.env": "100",
@@ -12344,6 +12303,47 @@
       "production_example_default": "5000",
       "read_locations": [
         "engine/signal_deduplicator.py:601"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/shadow_outcome_worker.py:32",
+        "engine/signal_deduplicator.py:483"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "REJECT_OUTCOME_MOVE_PCT",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/signal_deduplicator.py:488"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "REJECT_OUTCOME_WINDOWS",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/signal_deduplicator.py:478"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "REJECT_OUTCOME_WINDOWS_HOURS",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/signal_deduplicator.py:478"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12429,20 +12429,20 @@
     },
     {
       "declared_defaults": {},
-      "name": "RESEND_INTER_SEND_DELAY_SECONDS",
+      "name": "RESEND_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:813"
+        "signalrank_telegram/bot.py:296"
       ],
       "required_by_code": true,
       "sensitive": false
     },
     {
       "declared_defaults": {},
-      "name": "RESEND_INTERVAL_SECONDS",
+      "name": "RESEND_INTER_SEND_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:296"
+        "signalrank_telegram/bot.py:813"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13517,6 +13517,82 @@
     },
     {
       "declared_defaults": {},
+      "name": "SIGNALRANK_DISABLE_BACKGROUND_THREADS",
+      "production_example_default": null,
+      "read_locations": [
+        "core/redis_state.py:220",
+        "data/pair_discovery.py:1283"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALRANK_ENVIRONMENT_OVERRIDE",
+      "production_example_default": null,
+      "read_locations": [
+        "core/env.py:146",
+        "data/fetcher_router.py:29",
+        "data/market_data.py:770"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALRANK_ENV_PROFILE",
+      "production_example_default": null,
+      "read_locations": [
+        "core/env.py:154",
+        "railway_main.py:1553",
+        "web/platform_api.py:1079"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALRANK_METAAPI_MAGIC",
+      "production_example_default": null,
+      "read_locations": [
+        "services/mt5_client.py:533"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALRANK_RESOURCE_PRESSURE",
+      "production_example_default": null,
+      "read_locations": [
+        "services/mt5_signal_router.py:286"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALRANK_STATE_REDIS_URL",
+      "production_example_default": null,
+      "read_locations": [
+        "railway_main.py:2982",
+        "railway_main.py:455"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "SIGNALS_COMMAND_DB_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/commands.py:3780"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "SIGNAL_DEDUP_BLOCK_ORPHAN_ACTIVE_TRADE",
       "production_example_default": null,
       "read_locations": [
@@ -13760,82 +13836,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_DISABLE_BACKGROUND_THREADS",
-      "production_example_default": null,
-      "read_locations": [
-        "core/redis_state.py:220",
-        "data/pair_discovery.py:1283"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_ENV_PROFILE",
-      "production_example_default": null,
-      "read_locations": [
-        "core/env.py:154",
-        "railway_main.py:1553",
-        "web/platform_api.py:1079"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_ENVIRONMENT_OVERRIDE",
-      "production_example_default": null,
-      "read_locations": [
-        "core/env.py:146",
-        "data/fetcher_router.py:29",
-        "data/market_data.py:770"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_METAAPI_MAGIC",
-      "production_example_default": null,
-      "read_locations": [
-        "services/mt5_client.py:533"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_RESOURCE_PRESSURE",
-      "production_example_default": null,
-      "read_locations": [
-        "services/mt5_signal_router.py:286"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALRANK_STATE_REDIS_URL",
-      "production_example_default": null,
-      "read_locations": [
-        "railway_main.py:2982",
-        "railway_main.py:455"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "SIGNALS_COMMAND_DB_TIMEOUT_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/commands.py:3780"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         ".env.example": "10",
         "RAILWAY_ENV_UPDATED.env.example": "10",
@@ -13987,6 +13987,18 @@
     },
     {
       "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "SMTP_USERNAME",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/email_delivery.py:126"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "0"
       },
       "name": "SMTP_USE_SSL",
@@ -14005,18 +14017,6 @@
       "production_example_default": null,
       "read_locations": [
         "services/platform/email_delivery.py:129"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
-        ".env.example": ""
-      },
-      "name": "SMTP_USERNAME",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/email_delivery.py:126"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14101,9 +14101,9 @@
     },
     {
       "declared_defaults": {
-        ".env.example": "1"
+        ".env.example": ""
       },
-      "name": "STAGING_TEST_DELIVERY_LIVE_EXECUTION_BLOCK",
+      "name": "STAGING_TESTER_TELEGRAM_IDS",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -14111,9 +14111,9 @@
     },
     {
       "declared_defaults": {
-        ".env.example": ""
+        ".env.example": "1"
       },
-      "name": "STAGING_TESTER_TELEGRAM_IDS",
+      "name": "STAGING_TEST_DELIVERY_LIVE_EXECUTION_BLOCK",
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
@@ -14137,16 +14137,6 @@
         "engine/stale_signal_validator.py:192",
         "engine/stale_signal_validator.py:57",
         "engine/stale_signal_validator.py:586"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "START_TS",
-      "production_example_default": null,
-      "read_locations": [
-        "web/app.py:407"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14195,6 +14185,16 @@
     },
     {
       "declared_defaults": {},
+      "name": "START_TS",
+      "production_example_default": null,
+      "read_locations": [
+        "web/app.py:407"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "STATE_CACHE_MAX_KEYS",
       "production_example_default": null,
       "read_locations": [
@@ -14233,6 +14233,16 @@
         "signalrank_telegram/commands.py:2808"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "deploy/railway_roles/monolith_safe.env": "0"
+      },
+      "name": "STOCKS_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -14298,26 +14308,6 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        "deploy/railway_roles/monolith_safe.env": "0"
-      },
-      "name": "STOCKS_ENABLED",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "STOP_LOSS_PCT",
-      "production_example_default": null,
-      "read_locations": [
-        "engine/auto_optimizer.py:173"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {},
       "name": "STOPPED_AT_TP1",
       "production_example_default": null,
@@ -14337,6 +14327,16 @@
         "services/performance_ledger.py:1325",
         "services/performance_ledger.py:1336",
         "signalrank_telegram/commands.py:5988"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "STOP_LOSS_PCT",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/auto_optimizer.py:173"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14413,19 +14413,6 @@
     },
     {
       "declared_defaults": {
-        "RAILWAY_ENV_UPDATED.env.example": "0",
-        "configs/env/production.env.example": "0",
-        "configs/env/railway-staging.env.example": "0",
-        "deploy/railway_roles/monolith_safe.env": "0"
-      },
-      "name": "TELEGRAM_ALLOW_PAID_BROADCAST",
-      "production_example_default": "0",
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {
         "configs/env/production.env.example": "message,edited_message,callback_query,my_chat_member,chat_member,pre_checkout_query,shipping_query",
         "configs/env/railway-hobby-owner-beta.env.example": "message,edited_message,callback_query,my_chat_member,chat_member,pre_checkout_query,shipping_query",
         "configs/env/railway-staging.env.example": "message,edited_message,callback_query,my_chat_member,chat_member,pre_checkout_query,shipping_query"
@@ -14436,6 +14423,19 @@
         "core/telegram_webhook_config.py:21"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        "RAILWAY_ENV_UPDATED.env.example": "0",
+        "configs/env/production.env.example": "0",
+        "configs/env/railway-staging.env.example": "0",
+        "deploy/railway_roles/monolith_safe.env": "0"
+      },
+      "name": "TELEGRAM_ALLOW_PAID_BROADCAST",
+      "production_example_default": "0",
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -14892,6 +14892,18 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "TIMEZONE_STORE_LOCATION_COORDINATES",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/timezones.py:137"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "TIME_PERIOD",
       "production_example_default": null,
@@ -14912,24 +14924,23 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": "0"
-      },
-      "name": "TIMEZONE_STORE_LOCATION_COORDINATES",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/timezones.py:137"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {},
       "name": "TOSYMBOL",
       "production_example_default": null,
       "read_locations": [
         "data/cryptocompare_ws.py:106",
         "data/cryptocompare_ws.py:125"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "TP3",
+      "production_example_default": null,
+      "read_locations": [
+        "services/performance_ledger.py:1265",
+        "signalrank_telegram/commands.py:5987"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14956,11 +14967,12 @@
     },
     {
       "declared_defaults": {},
-      "name": "TP3",
+      "name": "TRACKING_FAILED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1265",
-        "signalrank_telegram/commands.py:5987"
+        "services/performance_ledger.py:1332",
+        "services/performance_ledger.py:1362",
+        "signalrank_telegram/commands.py:5992"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14971,18 +14983,6 @@
       "production_example_default": null,
       "read_locations": [
         "engine/public_track_record.py:85"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "TRACKING_FAILED",
-      "production_example_default": null,
-      "read_locations": [
-        "services/performance_ledger.py:1332",
-        "services/performance_ledger.py:1362",
-        "signalrank_telegram/commands.py:5992"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15078,16 +15078,6 @@
       "sensitive": true
     },
     {
-      "declared_defaults": {
-        ".env.example": "1"
-      },
-      "name": "TRADING_LEDGER_ENABLED",
-      "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {},
       "name": "TRADINGVIEW_BROKER",
       "production_example_default": null,
@@ -15177,6 +15167,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {},
+      "name": "TRADINGVIEW_OHLCV_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "data/providers.py:845"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         "RAILWAY_ENV_UPDATED.env.example": "1",
         "configs/env/hermetic-test.env.example": "1",
@@ -15187,16 +15187,6 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "TRADINGVIEW_OHLCV_ENABLED",
-      "production_example_default": null,
-      "read_locations": [
-        "data/providers.py:845"
-      ],
-      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -15220,6 +15210,16 @@
         "signalrank_telegram/commands.py:121"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "TRADING_LEDGER_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -15304,18 +15304,6 @@
       "sensitive": true
     },
     {
-      "declared_defaults": {},
-      "name": "TWELVE_DATA_API_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "data/get_live_price.py:129",
-        "data/get_live_price.py:935",
-        "data/pair_discovery.py:607"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
       "declared_defaults": {
         ".env.example": "",
         "RAILWAY_ENV_UPDATED.env.example": "",
@@ -15361,6 +15349,18 @@
     },
     {
       "declared_defaults": {},
+      "name": "TWELVE_DATA_API_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "data/get_live_price.py:129",
+        "data/get_live_price.py:935",
+        "data/pair_discovery.py:607"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {},
       "name": "TWITTER_BEARER_TOKEN",
       "production_example_default": null,
       "read_locations": [
@@ -15402,6 +15402,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {},
+      "name": "USER_TIER_CACHE_TTL_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/access.py:21"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         ".env.example": "1"
       },
@@ -15418,16 +15428,6 @@
       "read_locations": [
         "data/fetcher.py:1120",
         "data/fetcher.py:2817"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "USER_TIER_CACHE_TTL_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/access.py:21"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15594,77 +15594,6 @@
       "read_locations": [
         "services/waitlist_jobs.py:108",
         "services/waitlist_jobs.py:52"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_APP_URL",
-      "production_example_default": null,
-      "read_locations": [
-        "signalrank_telegram/account_commands.py:185",
-        "signalrank_telegram/commands.py:1041"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SECRET_KEY",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/identity.py:102"
-      ],
-      "required_by_code": true,
-      "sensitive": true
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/signal_delivery.py:191"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SIGNAL_FANOUT_LOOKBACK_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/signal_delivery.py:176"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SIGNAL_FANOUT_SIGNAL_LIMIT",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/signal_delivery.py:181"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SIGNAL_FANOUT_USER_LIMIT",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/signal_delivery.py:231"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "WEB_SIGNAL_FINAL_QUOTE_TIMEOUT_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "services/platform/signal_delivery.py:329"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15918,6 +15847,77 @@
     },
     {
       "declared_defaults": {},
+      "name": "WEB_APP_URL",
+      "production_example_default": null,
+      "read_locations": [
+        "signalrank_telegram/account_commands.py:185",
+        "signalrank_telegram/commands.py:1041"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SECRET_KEY",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/identity.py:102"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/signal_delivery.py:191"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SIGNAL_FANOUT_LOOKBACK_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/signal_delivery.py:176"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SIGNAL_FANOUT_SIGNAL_LIMIT",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/signal_delivery.py:181"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SIGNAL_FANOUT_USER_LIMIT",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/signal_delivery.py:231"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "WEB_SIGNAL_FINAL_QUOTE_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/signal_delivery.py:329"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "WEEKLY_PLAN_PRICE_NGN",
       "production_example_default": null,
       "read_locations": [
@@ -16000,14 +16000,14 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "X_BEARER_TOKEN",
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "XGBOOST_MODEL_PATH",
       "production_example_default": null,
-      "read_locations": [
-        "data/news.py:77"
-      ],
-      "required_by_code": true,
-      "sensitive": true
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
     },
     {
       "declared_defaults": {},
@@ -16021,14 +16021,14 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {
-        ".env.example": ""
-      },
-      "name": "XGBOOST_MODEL_PATH",
+      "declared_defaults": {},
+      "name": "X_BEARER_TOKEN",
       "production_example_default": null,
-      "read_locations": [],
-      "required_by_code": false,
-      "sensitive": false
+      "read_locations": [
+        "data/news.py:77"
+      ],
+      "required_by_code": true,
+      "sensitive": true
     },
     {
       "declared_defaults": {},
