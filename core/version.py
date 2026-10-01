@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 
+from core.env import runtime_environment_name
+
 
 def _first(*names: str, default: str = "") -> str:
     for name in names:
@@ -30,7 +32,7 @@ GIT_COMMIT_SHA = _first(
     default="dev",
 )
 DEPLOYMENT_ID = _first("RAILWAY_DEPLOYMENT_ID", default="unknown")
-ENVIRONMENT = _first("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT", "APP_ENV", default="unknown")
+ENVIRONMENT = runtime_environment_name("unknown")
 GIT_BRANCH = _first("RAILWAY_GIT_BRANCH", "GIT_BRANCH", "SOURCE_BRANCH", default="unknown")
 BUILD_IDENTIFIER = _first("RAILWAY_BUILD_ID", "BUILD_ID", "SOURCE_BUILD_ID", default=BUILD_TIME_UTC)
 RAILWAY_PROJECT = _first("RAILWAY_PROJECT_NAME", "RAILWAY_PROJECT_ID", default="unknown")
