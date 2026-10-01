@@ -32,16 +32,21 @@ def test_reconciliation_keeps_missed_entry_excursion_only_as_metadata() -> None:
 
 def test_missed_entry_notification_explicitly_says_no_trade_and_na_r() -> None:
     source = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    formatter_start = source.index("def _format_non_price_terminal_message")
     formatter = source[
-        source.index("def _format_non_price_terminal_message"):
-        source.index("if status in {\"partial_win_be\", \"partial_win\"}")
+        formatter_start:
+        source.index('if status in {"partial_win_be", "partial_win"}', formatter_start)
     ]
     assert "no_trade: bool = False" in formatter
     assert "Trade result: <b>No trade — entry never triggered</b>" in formatter
     assert "Realized R: <b>N/A</b>" in formatter
 
+    missed_start = source.index('elif status in {"missed", "missed_entry"}:')
     missed = source[
-        source.index('elif status in {"missed", "missed_entry"}:'):
-        source.index('elif status in {"invalid", "invalidated", "cancel", "cancelled", "canceled"}:')
+        missed_start:
+        source.index(
+            'elif status in {"invalid", "invalidated", "cancel", "cancelled", "canceled"}:',
+            missed_start,
+        )
     ]
     assert "no_trade=True" in missed
