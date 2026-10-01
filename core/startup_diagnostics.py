@@ -15,7 +15,6 @@ registry modules so the diagnostics themselves prove the code is present.
 
 from __future__ import annotations
 
-import importlib
 import logging
 from typing import Any
 
@@ -23,10 +22,24 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_import(name: str):
+    """Import only the fixed diagnostic modules; never import caller input."""
     try:
-        return importlib.import_module(name)
+        if name == "data.provider_catalog":
+            import data.provider_catalog as module
+            return module
+        if name == "data.provider_activation":
+            import data.provider_activation as module
+            return module
+        if name == "data.instrument_discovery":
+            import data.instrument_discovery as module
+            return module
+        raise ValueError("unsupported_startup_diagnostic_module")
     except Exception as exc:  # noqa: BLE001 - registry may be absent in old build
-        logger.debug("startup_diagnostics: %s unavailable: %s", name, exc)
+        logger.debug(
+            "startup_diagnostics module unavailable name=%s error_type=%s",
+            name,
+            type(exc).__name__,
+        )
         return None
 
 
