@@ -1,0 +1,8 @@
+SignalRankAI unified certification trigger r14
+branch=implementation-of-master-blueprint
+head_before_trigger=e086efc3e37f74acbd66ad381409f3563b7e9972
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+live_execution_authorized=false
