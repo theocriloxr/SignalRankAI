@@ -1,3 +1,4 @@
+from typing import Any
 from utils.async_runner import run_sync
 import threading
 from core.redis_state import state, mark_signal_delivered_sync
