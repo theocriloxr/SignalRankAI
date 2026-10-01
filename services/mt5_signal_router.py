@@ -1648,16 +1648,16 @@ class MT5SignalRouter:
             if any(value is None for value in required_values):
                 return 0.0
 
-            equity = float(raw_equity)
-            free_margin = float(raw_free_margin)
+            equity = float(str(raw_equity))
+            free_margin = float(str(raw_free_margin))
             entry_f = float(entry)
             stop_f = float(stop_loss)
-            tick_size = float(raw_tick_size)
-            tick_value = float(raw_tick_value)
-            contract_size = float(raw_contract_size)
-            min_volume = float(raw_min_volume)
-            max_volume = float(raw_max_volume)
-            volume_step = float(raw_volume_step)
+            tick_size = float(str(raw_tick_size))
+            tick_value = float(str(raw_tick_value))
+            contract_size = float(str(raw_contract_size))
+            min_volume = float(str(raw_min_volume))
+            max_volume = float(str(raw_max_volume))
+            volume_step = float(str(raw_volume_step))
             values = (
                 equity,
                 free_margin,
