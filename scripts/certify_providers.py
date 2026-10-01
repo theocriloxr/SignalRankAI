@@ -356,6 +356,58 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"Markdown: {md_path}")
 
     hard_fail = any(item.certification_status == CertificationStatus.FAILED.value and item.enabled for item in results)
+
+    required_classes = {
+        item.strip().lower()
+        for item in str(args.require_asset_classes or "").split(",")
+        if item.strip()
+    }
+    if required_classes:
+        class_coverage: dict[str, list[str]] = {
+            asset_class: [] for asset_class in sorted(required_classes)
+        }
+        specs_by_key = {spec.key: spec for spec in specs}
+        passing_statuses = {
+            CertificationStatus.IMPLEMENTED_AND_PUBLIC_ENDPOINT_VERIFIED.value,
+            CertificationStatus.IMPLEMENTED_AND_SANDBOX_VERIFIED.value,
+            CertificationStatus.IMPLEMENTED_AND_LIVE_VERIFIED.value,
+        }
+        for item in results:
+            spec = specs_by_key.get(item.provider)
+            if spec is None or not item.execution_eligible:
+                continue
+            if item.certification_status not in passing_statuses:
+                continue
+            spec_classes = {str(value).lower() for value in spec.asset_classes}
+            for asset_class in required_classes.intersection(spec_classes):
+                class_coverage[asset_class].append(item.provider)
+
+        missing_classes = sorted(
+            asset_class
+            for asset_class, providers in class_coverage.items()
+            if not providers
+        )
+        coverage_path = output_dir / "provider_class_coverage.json"
+        coverage_path.write_text(
+            json.dumps(
+                {
+                    "required_asset_classes": sorted(required_classes),
+                    "coverage": class_coverage,
+                    "missing_asset_classes": missing_classes,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        print(f"Class coverage: {coverage_path}")
+        if missing_classes:
+            print(
+                "BLOCKED missing execution-eligible provider coverage: "
+                + ",".join(missing_classes)
+            )
+            hard_fail = True
+
     return 1 if hard_fail else 0
 
 
@@ -366,6 +418,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output-dir", default="artifacts/provider-certification")
+    parser.add_argument(
+        "--require-asset-classes",
+        default="",
+        help=(
+            "comma-separated asset classes that must each have an "
+            "execution-eligible live-certified provider"
+        ),
+    )
     return parser
 
 
