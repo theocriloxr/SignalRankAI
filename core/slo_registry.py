@@ -5,12 +5,12 @@ degradation response. The ``SloBudget`` tracker converts observed latency and
 outcome samples into an error-rate and a typed degradation decision so a
 budget-exhausted capability is degraded instead of left to fail unsafely.
 """
+
 from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
-from typing import Sequence
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,43 +28,83 @@ class SloDefinition:
 #: V2.0 section 26 SLO table.
 SLO_REGISTRY: tuple[SloDefinition, ...] = (
     SloDefinition(
-        "webhook_ack_p95", "frontdoor", "p95 < 500ms", 5.0, 0.95,
-        0.03, "degrade_telegram_webhook_to_queue_only",
+        "webhook_ack_p95",
+        "frontdoor",
+        "p95 < 500ms",
+        5.0,
+        0.95,
+        0.03,
+        "degrade_telegram_webhook_to_queue_only",
         "Telegram webhook acknowledgement latency p95 below 500ms.",
     ),
     SloDefinition(
-        "webhook_ack_p99", "frontdoor", "p99 < 1s", 5.0, 0.99,
-        0.03, "degrade_telegram_webhook_to_queue_only",
+        "webhook_ack_p99",
+        "frontdoor",
+        "p99 < 1s",
+        5.0,
+        0.99,
+        0.03,
+        "degrade_telegram_webhook_to_queue_only",
         "Telegram webhook acknowledgement latency p99 below 1 second.",
     ),
     SloDefinition(
-        "signal_persistence_p99", "engine", "p99 < 2s", 5.0, 0.99,
-        0.03, "pause_engine_scan_cycles",
+        "signal_persistence_p99",
+        "engine",
+        "p99 < 2s",
+        5.0,
+        0.99,
+        0.03,
+        "pause_engine_scan_cycles",
         "Canonical signal persistence p99 below 2 seconds.",
     ),
     SloDefinition(
-        "qualified_signal_delivery_p95", "delivery", "p95 < 5s", 5.0, 0.95,
-        0.03, "disable_public_one_minute_delivery",
+        "qualified_signal_delivery_p95",
+        "delivery",
+        "p95 < 5s",
+        5.0,
+        0.95,
+        0.03,
+        "disable_public_one_minute_delivery",
         "Qualified signal delivery p95 below 5 seconds.",
     ),
     SloDefinition(
-        "outcome_detection_p95", "worker", "p95 < one tracker interval", 5.0, 0.95,
-        0.03, "increase_tracker_interval_and_alert",
+        "outcome_detection_p95",
+        "worker",
+        "p95 < one tracker interval",
+        5.0,
+        0.95,
+        0.03,
+        "increase_tracker_interval_and_alert",
         "Outcome detection within one tracker interval.",
     ),
     SloDefinition(
-        "notification_queue_age_p99", "notifications", "p99 < 60s", 5.0, 0.99,
-        0.03, "throttle_fanout_and_backoff",
+        "notification_queue_age_p99",
+        "notifications",
+        "p99 < 60s",
+        5.0,
+        0.99,
+        0.03,
+        "throttle_fanout_and_backoff",
         "Notification queue age p99 below 60 seconds.",
     ),
     SloDefinition(
-        "performance_projection_coverage", "ledger", ">= 99.9%", 0.1, 0.999,
-        0.001, "pause_reconciliation_rebuilds",
+        "performance_projection_coverage",
+        "ledger",
+        ">= 99.9%",
+        0.1,
+        0.999,
+        0.001,
+        "pause_reconciliation_rebuilds",
         "Performance projection coverage at or above 99.9%.",
     ),
     SloDefinition(
-        "outcome_projection_coverage", "outcomes", ">= 99.9%", 0.1, 0.999,
-        0.001, "queue_outcome_outbox_repair",
+        "outcome_projection_coverage",
+        "outcomes",
+        ">= 99.9%",
+        0.1,
+        0.999,
+        0.001,
+        "queue_outcome_outbox_repair",
         "Outcome projection coverage at or above 99.9%.",
     ),
 )
@@ -103,7 +143,7 @@ class SloBudget:
         if latency_ms is not None:
             self._latencies.append(max(0.0, float(latency_ms)))
             if len(self._latencies) > self.window:
-                self._latencies = self._latencies[-self.window:]
+                self._latencies = self._latencies[-self.window :]
         self._publish()
 
     def record_failure(self, *, latency_ms: float | None = None) -> None:
@@ -112,12 +152,12 @@ class SloBudget:
         if latency_ms is not None:
             self._latencies.append(max(0.0, float(latency_ms)))
             if len(self._latencies) > self.window:
-                self._latencies = self._latencies[-self.window:]
+                self._latencies = self._latencies[-self.window :]
         self._publish()
 
     def _trim(self) -> None:
         if len(self._outcomes) > self.window:
-            self._outcomes = self._outcomes[-self.window:]
+            self._outcomes = self._outcomes[-self.window :]
 
     def _publish(self) -> None:
         try:

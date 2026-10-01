@@ -4,6 +4,7 @@ Because Nasdaq Data Link is dataset-oriented rather than a universal symbol
 feed, the deployment must provide ``NASDAQ_DATA_LINK_DATASETS_JSON`` mapping
 canonical symbols to dataset codes, for example ``{"GC": "CHRIS/CME_GC1"}``.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,9 @@ def _dataset_map() -> dict[str, str]:
     return {str(key).upper(): str(value) for key, value in payload.items()} if isinstance(payload, dict) else {}
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     if str(timeframe or "").lower() not in {"1d", "d", "day", "daily"}:
         return []
     api_key = str(os.getenv("NASDAQ_DATA_LINK_API_KEY") or "").strip()
@@ -66,12 +69,14 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
                         "high": float(item[index["high"]]),
                         "low": float(item[index["low"]]),
                         "close": float(item[index["close"]]),
-                        "volume": float(item[index["volume"]]) if "volume" in index and item[index["volume"]] is not None else 0.0,
+                        "volume": float(item[index["volume"]])
+                        if "volume" in index and item[index["volume"]] is not None
+                        else 0.0,
                     }
                 )
             except (IndexError, TypeError, ValueError):
                 continue
-        return rows[-max(2, int(limit or 200)):]
+        return rows[-max(2, int(limit or 200)) :]
     except Exception as exc:
         logger.debug("Nasdaq Data Link request failed: %s", exc)
         return []

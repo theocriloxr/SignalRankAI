@@ -7,6 +7,7 @@ GraphQL/REST surface so no heavy SDK is required at import time.
 Dormant-by-default: without ``DUNE_API_KEY`` returns ``None`` and reports
 ``missing_credentials``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,7 +40,9 @@ async def _async_query_result(query_id: str) -> Optional[Dict[str, Any]]:
         return None
     data = await async_http_get_json(
         f"{API_URL}/query/{query_id}/results",
-        name="dune", headers=_headers(), timeout=15.0,
+        name="dune",
+        headers=_headers(),
+        timeout=15.0,
     )
     if not isinstance(data, dict):
         return None
@@ -61,10 +64,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "dune",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("DUNE_API_KEY",),
         "api_url": API_URL,
     }

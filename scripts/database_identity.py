@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Print a non-secret database identity and schema fingerprint as JSON."""
+
 from __future__ import annotations
 
 import argparse

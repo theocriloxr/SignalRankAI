@@ -2,7 +2,6 @@ from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
 import os
-from datetime import datetime
 from typing import Any
 
 
@@ -83,8 +82,8 @@ def _rsi_series(closes: list[float], period: int = 14) -> list[float]:
         gains.append(max(0.0, delta))
         losses.append(max(0.0, -delta))
         if i >= period:
-            window_g = gains[i - period:i]
-            window_l = losses[i - period:i]
+            window_g = gains[i - period : i]
+            window_l = losses[i - period : i]
             avg_g = sum(window_g) / float(period)
             avg_l = sum(window_l) / float(period)
             if avg_l <= 0:
@@ -220,7 +219,7 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     - H1 must pull back to 50 EMA.
     - Trigger requires engulfing/pin bar + RSI cross around 50.
     - Uses ATR stop model and asset-class-specific RR.
-    
+
     PHASE 1 FIX #4: Includes stale data consistency check (24-hour freshness).
     """
     if not isinstance(market_data, dict):
@@ -235,20 +234,22 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     h1_candles = list(h1.get("candles") or [])
     h4_ind = dict(h4.get("indicators") or {})
     h1_ind = dict(h1.get("indicators") or {})
-    
+
     # PHASE 1 FIX #4: Stale Data Consistency - Check both H4 and H1 data freshness
     for tf_name, candles in [("4h", h4_candles), ("1h", h1_candles)]:
         if candles and len(candles) > 0:
             try:
                 from datetime import datetime, timedelta, timezone
-                last_ts = candles[-1].get('timestamp', 0)
+
+                last_ts = candles[-1].get("timestamp", 0)
                 if last_ts > 0:
                     last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
                     age = datetime.now(timezone.utc) - last_time
                     if age > timedelta(hours=24):
                         import logging
+
                         logging.getLogger(__name__).debug(
-                            f"[imp] Stale data for {asset} {tf_name}: {age.total_seconds()/3600:.1f} hours old"
+                            f"[imp] Stale data for {asset} {tf_name}: {age.total_seconds() / 3600:.1f} hours old"
                         )
                         return []  # Stale data, skip signal
             except Exception:
@@ -259,23 +260,24 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     # Also allow fallback to 1d/4h if 4h/1h not available
     _min_h4_candles = 50
     _min_h1_candles = 30
-    
+
     if len(h4_candles) < _min_h4_candles:
         # Try fallback to 1d for H4 data
         d1 = market_data.get("1d") or {}
         if isinstance(d1, dict) and d1.get("candles"):
             h4_candles = list(d1.get("candles") or [])
             h4_ind = dict(d1.get("indicators") or {})
-    
+
     if len(h1_candles) < _min_h1_candles:
         # Try fallback to 4h for H1 data
         f4h = market_data.get("4h") or {}
         if isinstance(f4h, dict) and f4h.get("candles"):
             h1_candles = list(f4h.get("candles") or [])
             h1_ind = dict(f4h.get("indicators") or {})
-    
+
     if len(h4_candles) < _min_h4_candles or len(h1_candles) < _min_h1_candles:
         import logging
+
         logging.getLogger(__name__).debug(
             f"[imp] Insufficient candles: h4={len(h4_candles)} (need {_min_h4_candles}), h1={len(h1_candles)} (need {_min_h1_candles})"
         )

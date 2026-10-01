@@ -66,14 +66,22 @@ def build_segment_learning_recommendations(
     for raw in segments:
         result = classify_segment(raw, minimum_outcomes=minimum_outcomes)
         if result["state"] not in {
-            "shadow_quarantine_candidate", "controlled_expansion_candidate",
-            "gate_recall_review_candidate", "gate_precision_supported",
+            "shadow_quarantine_candidate",
+            "controlled_expansion_candidate",
+            "gate_recall_review_candidate",
+            "gate_precision_supported",
         }:
             continue
-        identity = "/".join((
-            result["source"], result["decision"], result["asset_class"], result["timeframe"],
-            result["strategy_name"], result["regime"],
-        ))
+        identity = "/".join(
+            (
+                result["source"],
+                result["decision"],
+                result["asset_class"],
+                result["timeframe"],
+                result["strategy_name"],
+                result["regime"],
+            )
+        )
         action = result["state"]
         recommendation_id = "segment-" + hashlib.sha256(f"{identity}:{action}".encode()).hexdigest()[:16]
         evidence = (

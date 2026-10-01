@@ -43,7 +43,7 @@ def _extract_target_price(signal: dict) -> float | None:
         val = signal.get(key)
         if val is None:
             continue
-        
+
         # 1. Handle string representations (JSON lists/dicts or comma-separated strings)
         if isinstance(val, str):
             val_clean = val.strip()
@@ -162,14 +162,14 @@ def ml_probability_score(signal: dict) -> float | None:
 
 def score_signal(signal):
     """Score a signal based on multiple factors with confluence validation.
-    
+
     Requirements for confluence:
     1. Trend alignment (EMA/SMA golden cross or aligned)
     2. Momentum confirmation (RSI + MACD alignment)
     3. Volume confirmation (spike or average volume)
     4. Support/Resistance respect
     5. Market regime fit (trending/ranging)
-    
+
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
@@ -192,14 +192,14 @@ def score_signal(signal):
         confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "")
         if alignment == "conflicting" or confirmation == "invalidated" or candle_component < candle_min:
             return 0.0
-    
+
     # Target: 0..100 score
     confidence = resolve_confidence_ratio(signal)
     ml_val = resolve_ml_probability(signal)
     # A missing strategy confidence may fall back to ML for the hard gate, but
     # the same probability must never be inserted twice into the weighted score.
     confidence_for_gate = confidence if confidence is not None else ml_val
-    
+
     confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
     if confidence_for_gate is not None and confidence_for_gate < confidence_min:
         return 0.0
@@ -207,7 +207,11 @@ def score_signal(signal):
     # Safely convert and normalize entry, stop, and target fields
     try:
         entry = float(signal.get("entry")) if signal.get("entry") is not None else None
-        stop = float(signal.get("stop") or signal.get("stop_loss")) if (signal.get("stop") or signal.get("stop_loss")) is not None else None
+        stop = (
+            float(signal.get("stop") or signal.get("stop_loss"))
+            if (signal.get("stop") or signal.get("stop_loss")) is not None
+            else None
+        )
         target_parsed = _extract_target_price(signal)
         target = float(target_parsed) if target_parsed is not None else entry
     except Exception:
@@ -222,7 +226,7 @@ def score_signal(signal):
 
     rr_component = rr_score(rr)
     vol_component = volatility_quality_score(signal)
-    
+
     # Base score: weighted components
     weight_conf = max(0.0, _env_float("SCORE_WEIGHT_CONFIDENCE", 0.20))
     weight_ml = max(0.0, _env_float("SCORE_WEIGHT_ML", 0.20))
@@ -258,13 +262,15 @@ def score_signal(signal):
     if total_weight <= 0:
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
-    
+
     min_rr = _env_float("MIN_RR", 1.0)
     # Hard rejection for poor R/R
     if rr < min_rr:
-        print(f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | Reason: Poor R/R ({rr:.2f} < {min_rr:.2f}) | Entry: {entry}, Stop: {stop}, Target: {target}")
+        print(
+            f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | Reason: Poor R/R ({rr:.2f} < {min_rr:.2f}) | Entry: {entry}, Stop: {stop}, Target: {target}"
+        )
         return 0.0
-    
+
     raw_score = float(score)
     heuristic_score, soft_capped = _apply_score_soft_cap(raw_score)
     calibrated_score = heuristic_score
@@ -317,7 +323,7 @@ def calculate_confluence(signal: dict) -> float | None:
     """Calculate confluence score (0-100) based on multiple signal confirmations."""
     confirmations = 0
     total_checks = 0
-    
+
     # 1. Trend alignment
     trend_ema = signal.get("trend_ema")
     trend_sma = signal.get("trend_sma")
@@ -325,10 +331,9 @@ def calculate_confluence(signal: dict) -> float | None:
 
     if trend_ema is not None and trend_sma is not None:
         total_checks += 1
-        if (direction > 0 and trend_ema > 0 and trend_sma > 0) or \
-           (direction < 0 and trend_ema < 0 and trend_sma < 0):
+        if (direction > 0 and trend_ema > 0 and trend_sma > 0) or (direction < 0 and trend_ema < 0 and trend_sma < 0):
             confirmations += 1
-    
+
     # 2. Momentum confirmation
     rsi = signal.get("rsi")
     macd_trend = signal.get("macd_trend")
@@ -341,14 +346,14 @@ def calculate_confluence(signal: dict) -> float | None:
         elif direction < 0:
             if rsi < 50 and macd_trend < 0:
                 confirmations += 1
-    
+
     # 3. Volume confirmation
     volume_ratio = signal.get("volume_ratio")
     if volume_ratio is not None:
         total_checks += 1
         if volume_ratio > _env_float("VOLUME_RATIO_MIN", 1.2):
             confirmations += 1
-    
+
     # 4. Support/Resistance respect
     nearest_support = signal.get("nearest_support")
     nearest_resistance = signal.get("nearest_resistance")
@@ -360,7 +365,7 @@ def calculate_confluence(signal: dict) -> float | None:
             confirmations += 1
         elif nearest_resistance is not None and direction < 0 and current_price < nearest_resistance:
             confirmations += 1
-    
+
     # 5. Market regime alignment
     regime = signal.get("regime")
     adx_strength = signal.get("adx_trend")
@@ -371,7 +376,7 @@ def calculate_confluence(signal: dict) -> float | None:
             confirmations += 1
         elif regime == "ranging" and adx_strength == "weak":
             confirmations += 1
-    
+
     if total_checks <= 0:
         return None
     confluence_pct = (confirmations / total_checks) * 100
@@ -388,11 +393,11 @@ def rr_score(rr):
         rr = float(rr)
     except Exception:
         rr = 0.0
-    
+
     min_rr = _env_float("MIN_RR", 1.0)
     if rr < min_rr:
         return 0.0
-    
+
     base = max(min_rr, 1.0)
     scale = max(0.5, 3.0 - base)
     return float(min(max((rr - base) / scale, 0.0), 1.0))
@@ -413,7 +418,7 @@ def volatility_quality_score(signal):
         vol = float(vol)
     except Exception:
         vol = 0.0
-    
+
     max_vol = _env_float("MAX_VOLATILITY", 0.20)
     ideal_vol = _env_float("IDEAL_VOLATILITY", 0.12)
     if vol <= ideal_vol:

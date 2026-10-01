@@ -3,11 +3,10 @@
 Revision ID: 0046_decision_log
 Revises: 0045_mt5_credential_retirement
 """
+
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "0046_decision_log"
 down_revision = "0045_mt5_credential_retirement"
@@ -31,7 +30,7 @@ def upgrade() -> None:
         )
         """
     )
-    
+
     # 2. Add any missing indexes
     op.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")

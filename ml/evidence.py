@@ -69,7 +69,9 @@ def build_manifest(
     provenance: str = "backtest",
 ) -> EvidenceManifest:
     normalized_rows = list(rows or [])
-    dataset_hash = hashlib.sha256(_canonical({"dataset_id": dataset_id, "rows": normalized_rows}).encode("utf-8")).hexdigest()
+    dataset_hash = hashlib.sha256(
+        _canonical({"dataset_id": dataset_id, "rows": normalized_rows}).encode("utf-8")
+    ).hexdigest()
     return EvidenceManifest(
         dataset_id=str(dataset_id),
         dataset_hash=dataset_hash,
@@ -211,7 +213,16 @@ def evaluate_public_win_rate_claim(
     """Certify a public win-rate claim from unique, delivered OOS theses only."""
     delivered = [row for row in outcomes if bool(row.get("delivered")) and bool(row.get("out_of_sample"))]
     thesis_ids = {str(row.get("thesis_fingerprint") or "") for row in delivered if row.get("thesis_fingerprint")}
-    terminal_states = {"tp3", "stop_loss", "sl", "partial_profit", "breakeven", "expired", "cancelled", "data_unavailable"}
+    terminal_states = {
+        "tp3",
+        "stop_loss",
+        "sl",
+        "partial_profit",
+        "breakeven",
+        "expired",
+        "cancelled",
+        "data_unavailable",
+    }
     seen: set[str] = set()
     terminal: list[Mapping[str, Any]] = []
     for row in delivered:
@@ -222,11 +233,7 @@ def evaluate_public_win_rate_claim(
         seen.add(thesis)
         terminal.append(row)
     metrics = compute_metrics(terminal)
-    strict_wins = sum(
-        1
-        for row in terminal
-        if str(row.get("state") or row.get("outcome") or "").lower() == "tp3"
-    )
+    strict_wins = sum(1 for row in terminal if str(row.get("state") or row.get("outcome") or "").lower() == "tp3")
     strict_rate = strict_wins / len(terminal) if terminal else 0.0
     strict_confidence_low = _wilson_interval(strict_wins, len(terminal))[0]
     coverage = len(terminal) / len(delivered) if delivered else 0.0
@@ -285,7 +292,9 @@ def evaluate_promotion(
     if require_human_approval and not human_approved:
         reasons.append("human_approval_required")
     eligible = not reasons
-    return PromotionDecision(eligible, "ELIGIBLE" if eligible else "QUARANTINED", tuple(reasons), metrics, manifest.manifest_hash)
+    return PromotionDecision(
+        eligible, "ELIGIBLE" if eligible else "QUARANTINED", tuple(reasons), metrics, manifest.manifest_hash
+    )
 
 
 def register_candidate(manifest: EvidenceManifest, decision: PromotionDecision) -> dict[str, Any]:

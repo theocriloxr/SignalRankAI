@@ -23,25 +23,37 @@ from utils.timeutils import now_utc_naive
 async def run(*, stale_hours: int, apply: bool) -> int:
     cutoff = now_utc_naive() - timedelta(hours=max(1, int(stale_hours)))
     async with get_session(priority="background", label="free_queue_diagnostic") as session:
-        stale_count = int((await session.execute(
-            select(func.count(FreeSignalQueue.id)).where(
-                FreeSignalQueue.status == "queued",
-                FreeSignalQueue.sent_at.is_(None),
-                FreeSignalQueue.deliver_after < cutoff,
-            )
-        )).scalar() or 0)
-        total_queued = int((await session.execute(
-            select(func.count(FreeSignalQueue.id)).where(
-                FreeSignalQueue.status == "queued",
-                FreeSignalQueue.sent_at.is_(None),
-            )
-        )).scalar() or 0)
-        print({
-            "mode": "apply" if apply else "dry_run",
-            "queued_unsent": total_queued,
-            "stale_queued": stale_count,
-            "stale_hours": int(stale_hours),
-        })
+        stale_count = int(
+            (
+                await session.execute(
+                    select(func.count(FreeSignalQueue.id)).where(
+                        FreeSignalQueue.status == "queued",
+                        FreeSignalQueue.sent_at.is_(None),
+                        FreeSignalQueue.deliver_after < cutoff,
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+        total_queued = int(
+            (
+                await session.execute(
+                    select(func.count(FreeSignalQueue.id)).where(
+                        FreeSignalQueue.status == "queued",
+                        FreeSignalQueue.sent_at.is_(None),
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+        print(
+            {
+                "mode": "apply" if apply else "dry_run",
+                "queued_unsent": total_queued,
+                "stale_queued": stale_count,
+                "stale_hours": int(stale_hours),
+            }
+        )
         if not apply or stale_count == 0:
             await session.rollback()
             return stale_count

@@ -10,6 +10,7 @@ The DATABASE_URL is read from the environment at connection time:
   3. DATABASE_PUBLIC_URL  (external proxy fallback)
 Never hard-codes credentials or falls back to a local postgres user.
 """
+
 from __future__ import annotations
 
 from db.session import (
@@ -32,6 +33,7 @@ def get_database_url_or_none():
 
 def create_engine():
     return _session_create_engine()
+
 
 __all__ = [
     "get_session",

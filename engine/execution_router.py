@@ -12,7 +12,7 @@ The router decides based on:
 
 Usage:
     from engine.execution_router import SmartRouter
-    
+
     router = SmartRouter()
     strategy = await router.get_execution_decision(asset, urgency, adx)
 """
@@ -35,20 +35,20 @@ HIGH_ADX_THRESHOLD = float(os.getenv("EXECUTION_HIGH_ADX", "40.0"))
 class SmartRouter:
     """
     Determines optimal execution strategy (LIMIT vs MARKET).
-    
+
     In crypto:
     - Maker fees: 0% - 0.01%
     - Taker fees: 0.04% - 0.05%
-    
+
     Saving 0.04% per trade adds up massively over 1000 trades.
     """
-    
+
     def __init__(
         self,
         high_adx_threshold: float = HIGH_ADX_THRESHOLD,
     ):
         self.high_adx_threshold = high_adx_threshold
-    
+
     async def get_execution_decision(
         self,
         asset: str,
@@ -57,18 +57,18 @@ class SmartRouter:
     ) -> Dict[str, Any]:
         """
         Get execution decision for a signal.
-        
+
         Args:
             asset: Trading symbol
             signal_urgency: 'NORMAL', 'HIGH', 'SQUEEZE'
             current_adx: Optional ADX value
-            
+
         Returns:
             Dict with order_type, urgency, reason, estimated_fee, fee_savings
         """
         if not EXECUTION_ROUTER_ENABLED:
             return self._default_strategy()
-        
+
         try:
             # High ADX = violent movement = must use MARKET
             if current_adx and float(current_adx) > self.high_adx_threshold:
@@ -79,7 +79,7 @@ class SmartRouter:
                     "estimated_fee": TAKER_FEE,
                     "fee_savings": 0,
                 }
-            
+
             # High urgency (squeeze) = use MARKET
             if signal_urgency and signal_urgency.upper() in ("HIGH", "SQUEEZE", "URGENT"):
                 return {
@@ -89,11 +89,11 @@ class SmartRouter:
                     "estimated_fee": TAKER_FEE,
                     "fee_savings": 0,
                 }
-            
+
             # Normal conditions = use LIMIT (Maker)
             # Get current spread to estimate savings
             spread_savings = await self._estimate_spread_savings(asset)
-            
+
             return {
                 "order_type": "LIMIT",
                 "urgency": "NORMAL",
@@ -101,24 +101,24 @@ class SmartRouter:
                 "estimated_fee": MAKER_FEE,
                 "fee_savings": TAKER_FEE - MAKER_FEE + spread_savings,
             }
-            
+
         except Exception as e:
             logger.debug(f"[exec_router] Decision failed: {e}")
             return self._default_strategy()
-    
+
     async def _estimate_spread_savings(self, asset: str) -> float:
         """
         Estimate typical spread savings for an asset.
-        
+
         Returns estimated spread benefit (usually very small for liquid pairs).
         """
         # Liquid pairs have tiny spreads
         liquid_pairs = {"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"}
-        
+
         if asset.upper() in liquid_pairs:
             return 0.01  # ~0.01% typical spread
         return 0.02  # Slightly higher for others
-    
+
     def _default_strategy(self) -> Dict[str, Any]:
         """Default fallback strategy."""
         return {
@@ -128,7 +128,7 @@ class SmartRouter:
             "estimated_fee": TAKER_FEE,
             "fee_savings": 0,
         }
-    
+
     def format_execution_message(self, strategy: Dict[str, Any]) -> str:
         """Format execution strategy for Telegram."""
         order = strategy.get("order_type", "MARKET")
@@ -136,20 +136,11 @@ class SmartRouter:
         reason = strategy.get("reason", "")
         fee = strategy.get("estimated_fee", TAKER_FEE) * 100
         savings = strategy.get("fee_savings", 0) * 100
-        
+
         if order == "LIMIT":
-            return (
-                f"📗 Execution: LIMIT (Maker)\n"
-                f"Fee Est: {fee:.2f}%\n"
-                f"Potential Savings: {savings:.2f}%\n"
-                f"{reason}"
-            )
+            return f"📗 Execution: LIMIT (Maker)\nFee Est: {fee:.2f}%\nPotential Savings: {savings:.2f}%\n{reason}"
         else:
-            return (
-                f"📕 Execution: MARKET (Taker)\n"
-                f"Fee Est: {fee:.2f}%\n"
-                f"{reason}"
-            )
+            return f"📕 Execution: MARKET (Taker)\nFee Est: {fee:.2f}%\n{reason}"
 
 
 # Default instance

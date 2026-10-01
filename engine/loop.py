@@ -1,4 +1,5 @@
 """Engine loop: async runner that periodically runs strategies over assets."""
+
 import asyncio
 import logging
 import os
@@ -6,15 +7,18 @@ import time
 from typing import Iterable, List, Dict
 
 from utils.async_runner import run_sync
-from engine.strategies.signal_generator import SignalGenerator, StrategySelector
+from engine.strategies.signal_generator import SignalGenerator
 from engine.signal_deduplicator import SignalDeduplicator, MLRejectionTracker
 from engine.market_state import get_market_state_async
 from db.repository import persist_signal, persist_decision_log
-from db import models
-from db.session import async_session
 from core.redis_state import state
-from datetime import datetime
-from core.telemetry import observe_engine_cycle, observe_engine_task, observe_ml_confidence, observe_signal_generated, trace_span
+from core.telemetry import (
+    observe_engine_cycle,
+    observe_engine_task,
+    observe_ml_confidence,
+    observe_signal_generated,
+    trace_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +32,17 @@ def _market_observation_meta(asset_type: str, indicators: dict | None = None, **
     """Bounded, non-candle snapshot used to measure the complete scan surface."""
     values = dict(indicators or {})
     keep = (
-        "regime", "session", "rsi", "adx", "atr", "atr_rel", "volatility",
-        "relative_volume", "volume_ratio", "trend", "trend_strength",
+        "regime",
+        "session",
+        "rsi",
+        "adx",
+        "atr",
+        "atr_rel",
+        "volatility",
+        "relative_volume",
+        "volume_ratio",
+        "trend",
+        "trend_strength",
     )
     payload = {"asset_type": asset_type, "observation_scope": "market_scan"}
     payload.update({key: values.get(key) for key in keep if values.get(key) is not None})
@@ -86,11 +99,12 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
         # === Phase 2: Market Hours Check - Skip if market is closed ===
         # Import market hours check from fetcher
         from data.fetcher import is_market_open, market_closed_reason
-        
+
         # Get asset type for market hours determination
         from data.fetcher import get_asset_type
+
         asset_type = get_asset_type(asset)
-        
+
         # Check if market is open (skip for non-crypto assets when market is closed)
         if not is_market_open(asset, asset_type):
             closed_reason = market_closed_reason(asset) or "market closed"
@@ -105,15 +119,19 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                 meta={"asset_type": asset_type},
             )
             return signals  # Return empty list, don't generate signals for closed markets
-        
+
         # === End Market Hours Check ===
-        
+
         with trace_span("engine.process_asset_timeframe", asset=asset, timeframe=timeframe, include_ml=include_ml):
             market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
         tf_data = market_state.get("timeframes", {}).get(timeframe)
         if not tf_data:
             await persist_decision_log(
-                None, asset, timeframe, "observed", reason="market_data_unavailable",
+                None,
+                asset,
+                timeframe,
+                "observed",
+                reason="market_data_unavailable",
                 meta=_market_observation_meta(asset_type, scan_result="no_timeframe_data"),
             )
             return signals
@@ -122,15 +140,25 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
         ml_prob = tf_data.get("ml_score") or tf_data.get("ml_probability")
         if len(candles) < 50:
             await persist_decision_log(
-                None, asset, timeframe, "observed", reason="insufficient_candles",
-                meta=_market_observation_meta(asset_type, indicators, scan_result="insufficient_candles", candle_count=len(candles)),
+                None,
+                asset,
+                timeframe,
+                "observed",
+                reason="insufficient_candles",
+                meta=_market_observation_meta(
+                    asset_type, indicators, scan_result="insufficient_candles", candle_count=len(candles)
+                ),
             )
             return signals
         market_data = {"candles": candles, "indicators": indicators, "ml_probability": ml_prob}
         strategy_signals = signal_gen.generate_signals(asset, timeframe, market_data)
         if not strategy_signals:
             await persist_decision_log(
-                None, asset, timeframe, "observed", reason="no_strategy_setup",
+                None,
+                asset,
+                timeframe,
+                "observed",
+                reason="no_strategy_setup",
                 meta=_market_observation_meta(asset_type, indicators, scan_result="no_setup", ml_probability=ml_prob),
             )
         threshold_raw = str(os.getenv("ML_REJECTION_THRESHOLD") or "").strip()
@@ -140,7 +168,11 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             if is_dup:
                 logger.debug("Duplicate signal skipped: %s %s %s", asset, timeframe, sig.direction)
                 await persist_decision_log(
-                    None, asset, timeframe, "skipped", reason="duplicate_candidate",
+                    None,
+                    asset,
+                    timeframe,
+                    "skipped",
+                    reason="duplicate_candidate",
                     meta=_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob),
                 )
                 continue
@@ -148,6 +180,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             if ml_prob_value is None and include_ml:
                 try:
                     from engine.ml import score_signal as _score_signal
+
                     # Build comprehensive signal dict for ML scoring with all required features
                     signal_dict = {
                         "asset": asset,
@@ -160,19 +193,19 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                         "strategy_name": sig.strategy_name,
                         "strategy_group": sig.strategy_group,
                         "confidence": sig.confidence,
-                        "rr_estimate": getattr(sig, 'rr_estimate', None) or getattr(sig, 'rr_ratio', None),
-                        "regime": getattr(sig, 'regime', 'neutral'),
-                        "strength": getattr(sig, 'strength', 0.0) or 0.0,
+                        "rr_estimate": getattr(sig, "rr_estimate", None) or getattr(sig, "rr_ratio", None),
+                        "regime": getattr(sig, "regime", "neutral"),
+                        "strength": getattr(sig, "strength", 0.0) or 0.0,
                         # Additional features that may be available from the signal
-                        "partial_tp_progress": getattr(sig, 'partial_tp_progress', 0.0) or 0.0,
-                        "price_velocity_3": getattr(sig, 'price_velocity_3', 0.0) or 0.0,
-                        "price_velocity_5": getattr(sig, 'price_velocity_5', 0.0) or 0.0,
-                        "price_velocity_10": getattr(sig, 'price_velocity_10', 0.0) or 0.0,
-                        "atr_rel": getattr(sig, 'atr_rel', 0.0) or 0.0,
-                        "atr_regime": getattr(sig, 'atr_regime', 0.0) or 0.0,
-                        "relative_volume": getattr(sig, 'relative_volume', 0.0) or 0.0,
-                        "mtf_4h_trend": getattr(sig, 'mtf_4h_trend', 0.0) or 0.0,
-                        "mtf_1d_trend": getattr(sig, 'mtf_1d_trend', 0.0) or 0.0,
+                        "partial_tp_progress": getattr(sig, "partial_tp_progress", 0.0) or 0.0,
+                        "price_velocity_3": getattr(sig, "price_velocity_3", 0.0) or 0.0,
+                        "price_velocity_5": getattr(sig, "price_velocity_5", 0.0) or 0.0,
+                        "price_velocity_10": getattr(sig, "price_velocity_10", 0.0) or 0.0,
+                        "atr_rel": getattr(sig, "atr_rel", 0.0) or 0.0,
+                        "atr_regime": getattr(sig, "atr_regime", 0.0) or 0.0,
+                        "relative_volume": getattr(sig, "relative_volume", 0.0) or 0.0,
+                        "mtf_4h_trend": getattr(sig, "mtf_4h_trend", 0.0) or 0.0,
+                        "mtf_1d_trend": getattr(sig, "mtf_1d_trend", 0.0) or 0.0,
                     }
                     ml_prob_value = _score_signal(signal_dict)
                 except Exception:
@@ -180,7 +213,10 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             observe_ml_confidence(ml_prob_value)
             if include_ml and ml_threshold is not None and ml_prob_value is not None and ml_prob_value < ml_threshold:
                 decision_meta = _candidate_meta(
-                    sig, asset_type=asset_type, ml_probability=ml_prob_value, ml_threshold=ml_threshold,
+                    sig,
+                    asset_type=asset_type,
+                    ml_probability=ml_prob_value,
+                    ml_threshold=ml_threshold,
                 )
                 decision_id = await persist_decision_log(
                     None,
@@ -202,7 +238,10 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     features={
                         **dict(getattr(sig, "ml_features", {}) or {}),
                         **_candidate_meta(
-                            sig, asset_type=asset_type, ml_probability=ml_prob_value, ml_threshold=ml_threshold,
+                            sig,
+                            asset_type=asset_type,
+                            ml_probability=ml_prob_value,
+                            ml_threshold=ml_threshold,
                         ),
                         "decision": "rejected",
                         "decision_log_id": decision_id or None,
@@ -239,7 +278,10 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                             timeframe,
                             "issued",
                             reason=f"{sig.strategy_name} ({sig.score:.0f}) drift-adjusted",
-                            meta={**_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob_value), "drift": drift_meta},
+                            meta={
+                                **_candidate_meta(sig, asset_type=asset_type, ml_probability=ml_prob_value),
+                                "drift": drift_meta,
+                            },
                         )
                         continue
                     await persist_decision_log(
@@ -319,17 +361,20 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
     return results
 
 
-async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120):
+async def main_loop(
+    assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120
+):
     logger.info("engine loop starting assets=%s tf=%s interval=%s", assets, timeframes, interval_seconds)
-    
+
     # Start signal monitor
     try:
         from engine.signal_monitor import start_signal_monitor
+
         await start_signal_monitor()
         logger.info("Signal monitor started alongside main loop")
     except Exception as e:
         logger.error(f"Failed to start signal monitor: {e}")
-    
+
     while True:
         try:
             cycle_started = time.perf_counter()
@@ -337,7 +382,7 @@ async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml
             total_signals = sum(len(v) for v in res.values())
             logger.info(f"engine cycle completed: {total_signals} signals generated")
             observe_engine_cycle(time.perf_counter() - cycle_started)
-            
+
             # Track ML rejection outcomes
             try:
                 tracked = await ml_tracker.track_rejection_outcomes()
@@ -345,14 +390,16 @@ async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml
                     logger.info(f"Tracked {tracked} ML rejection outcomes")
             except Exception as e:
                 logger.warning(f"ML outcome tracking failed: {e}")
-        
+
         except Exception:
             logger.exception("engine main loop failed")
-        
+
         await asyncio.sleep(interval_seconds)
 
 
-def start_engine_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120):
+def start_engine_loop(
+    assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120
+):
     """Sync entrypoint to run the async main loop using `run_sync` shim."""
     return run_sync(main_loop(assets, timeframes, include_ml=include_ml, interval_seconds=interval_seconds))
 

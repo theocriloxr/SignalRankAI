@@ -1,5 +1,5 @@
 {
-  "count": 153,
+  "count": 154,
   "flags": [
     {
       "dangerous": false,
@@ -1148,6 +1148,14 @@
     {
       "dangerous": false,
       "name": "TRADE_PROFILE_ENGINE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "TRADINGVIEW_OHLCV_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

@@ -8,6 +8,7 @@ Idempotent, auditable persistence for:
 All functions tolerate an unavailable database (return False/None) so they can
 never break the delivery or reconciliation loops.
 """
+
 from __future__ import annotations
 
 import logging
@@ -70,8 +71,6 @@ def _apply(session: Any, telegram_user_id: int, reason: str) -> bool:
 def is_telegram_reachable(telegram_user_id: int, *, session: Any = None) -> bool:
     """True when the user has no terminal unreachable marker (default: reachable)."""
     try:
-        from sqlalchemy import text
-
         if session is None:
             with _session() as sess:
                 return _query_reachable(sess, telegram_user_id)
@@ -109,11 +108,11 @@ def record_outcome_correction(
     makes re-application a no-op, so corrections cannot double-count.
     """
     try:
-        from sqlalchemy import text
-
         if session is None:
             with _session() as sess:
-                return _insert_correction(sess, signal_id, original_outcome, corrected_outcome, reason, evidence, source)
+                return _insert_correction(
+                    sess, signal_id, original_outcome, corrected_outcome, reason, evidence, source
+                )
         return _insert_correction(session, signal_id, original_outcome, corrected_outcome, reason, evidence, source)
     except Exception as exc:  # noqa: BLE001 - unique-violation conflicts are expected
         logger.debug("record_outcome_correction skipped signal=%s: %s", signal_id, exc)
@@ -157,8 +156,6 @@ def upsert_terminal_suppression(
     rescans the same suppressed duplicate every cycle.
     """
     try:
-        from sqlalchemy import text
-
         if session is None:
             with _session() as sess:
                 return _insert_suppression(sess, notification_key, canonical_notification_id, reason)
@@ -195,8 +192,6 @@ def suppression_keys(
 ) -> set[str]:
     """Set of terminally suppressed notification keys for pending-query exclusion."""
     try:
-        from sqlalchemy import text
-
         if session is None:
             with _session() as sess:
                 return _query_suppressions(sess, terminal_only)

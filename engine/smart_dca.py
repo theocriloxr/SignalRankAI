@@ -15,7 +15,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from core.env import env_bool, env_int
 from core.redis_state import state
@@ -146,9 +146,7 @@ class SmartDCA:
             if sig is None:
                 async with get_session(priority="interactive", label="smart_dca_signal") as session:
                     sig = (
-                        await session.execute(
-                            select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
-                        )
+                        await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)).limit(1))
                     ).scalar_one_or_none()
             if sig is None:
                 return False, "signal_not_found"
@@ -156,14 +154,10 @@ class SmartDCA:
             entry = float(sig.entry)
             stop = float(sig.stop_loss)
             current = float(current_price)
-            if not direction or not all(
-                math.isfinite(value) and value > 0 for value in (entry, stop, current)
-            ):
+            if not direction or not all(math.isfinite(value) and value > 0 for value in (entry, stop, current)):
                 return False, "invalid_signal_geometry"
             # Never average after the original hard stop has already been crossed.
-            if (direction == "long" and current <= stop) or (
-                direction == "short" and current >= stop
-            ):
+            if (direction == "long" and current <= stop) or (direction == "short" and current >= stop):
                 return False, "stop_already_crossed"
 
             state_data = await self._load_state(user_telegram_id, signal_id)
@@ -174,12 +168,7 @@ class SmartDCA:
 
             if not dca1_done and max_additions >= 1 and drawdown_pct <= self.profile.dca_triggers[0]:
                 return True, "dca1"
-            if (
-                dca1_done
-                and not dca2_done
-                and max_additions >= 2
-                and drawdown_pct <= self.profile.dca_triggers[1]
-            ):
+            if dca1_done and not dca2_done and max_additions >= 2 and drawdown_pct <= self.profile.dca_triggers[1]:
                 return True, "dca2"
             if dca2_done:
                 return False, "dca_complete"
@@ -204,9 +193,7 @@ class SmartDCA:
             if sig is None:
                 async with get_session(priority="interactive", label="smart_dca_execute") as session:
                     sig = (
-                        await session.execute(
-                            select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
-                        )
+                        await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)).limit(1))
                     ).scalar_one_or_none()
             if sig is None:
                 return False
@@ -214,10 +201,7 @@ class SmartDCA:
             state_data = await self._load_state(user_telegram_id, signal_id)
             if dca_level == "dca1" and state_data.get("dca1_done") is True:
                 return False
-            if dca_level == "dca2" and (
-                state_data.get("dca1_done") is not True
-                or state_data.get("dca2_done") is True
-            ):
+            if dca_level == "dca2" and (state_data.get("dca1_done") is not True or state_data.get("dca2_done") is True):
                 return False
 
             direction = _normalise_direction(sig.direction)
@@ -263,14 +247,10 @@ class SmartDCA:
                 )
                 return False
 
-            previous_weight = float(
-                state_data.get("cumulative_weight") or self.profile.scale_weights[0]
-            )
+            previous_weight = float(state_data.get("cumulative_weight") or self.profile.scale_weights[0])
             previous_average = float(state_data.get("avg_entry") or sig.entry)
             cumulative_weight = previous_weight + weight
-            avg_entry = (
-                (previous_average * previous_weight) + (current * weight)
-            ) / cumulative_weight
+            avg_entry = ((previous_average * previous_weight) + (current * weight)) / cumulative_weight
             state_data.update(
                 {
                     "dca1_done": dca_level == "dca1" or state_data.get("dca1_done") is True,
@@ -307,9 +287,7 @@ async def get_user_dca_profile(telegram_user_id: int) -> str:
     try:
         async with get_session(priority="interactive", label="dca_profile_read") as session:
             user = (
-                await session.execute(
-                    select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-                )
+                await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
             ).scalar_one_or_none()
         value = str(getattr(user, "dca_profile", "balanced") or "balanced").lower()
         return value if value in PROFILES else "balanced"
@@ -324,9 +302,7 @@ async def set_user_dca_profile(telegram_user_id: int, profile: str) -> bool:
     try:
         async with get_session(priority="interactive", label="dca_profile_write") as session:
             user = (
-                await session.execute(
-                    select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-                )
+                await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
             ).scalar_one_or_none()
             if user is None:
                 return False
@@ -357,10 +333,7 @@ async def _eligible_dca_deliveries(limit: int = 50) -> list[tuple[Signal, int, s
             .order_by(Signal.created_at.desc())
             .limit(max(1, min(int(limit), 200)))
         )
-        return [
-            (row[0], int(row[1]), str(row[2] or "balanced"))
-            for row in rows.all()
-        ]
+        return [(row[0], int(row[1]), str(row[2] or "balanced")) for row in rows.all()]
 
 
 async def monitor_dca_once() -> dict[str, int]:

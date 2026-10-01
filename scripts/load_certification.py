@@ -11,6 +11,7 @@ It deliberately does not infer queue/database/delivery correctness from HTTP
 latency. Those metrics must be supplied from the real staging observability
 surface before a profile can PASS.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,6 @@ from dataclasses import asdict, dataclass
 import json
 import math
 from pathlib import Path
-import statistics
 import time
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -85,9 +85,7 @@ def build_plan(
         raise ValueError("invalid_shard_index")
 
     normalized_paths = tuple(
-        path if str(path).startswith("/") else f"/{path}"
-        for path in [str(value).strip() for value in paths]
-        if path
+        path if str(path).startswith("/") else f"/{path}" for path in [str(value).strip() for value in paths] if path
     )
     if not normalized_paths:
         raise ValueError("at_least_one_path_required")
@@ -249,10 +247,7 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
     profiles = {str(report.get("profile") or "") for report in reports}
     targets = {str(report.get("target") or "") for report in reports}
     shard_counts = {int(report.get("shards") or 0) for report in reports}
-    indices = [
-        int(report["shard_index"]) if report.get("shard_index") is not None else -1
-        for report in reports
-    ]
+    indices = [int(report["shard_index"]) if report.get("shard_index") is not None else -1 for report in reports]
     if len(profiles) != 1 or len(targets) != 1 or len(shard_counts) != 1:
         raise ValueError("incompatible_shard_reports")
     expected = next(iter(shard_counts))
@@ -286,10 +281,7 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "profile": next(iter(profiles)),
         "target": next(iter(targets)),
         "shards": expected,
-        "configured_total_concurrency": max(
-            int(report.get("configured_total_concurrency") or 0)
-            for report in reports
-        ),
+        "configured_total_concurrency": max(int(report.get("configured_total_concurrency") or 0) for report in reports),
         "requests": requests,
         "errors": errors,
         "error_rate": errors / requests if requests else 0.0,
@@ -343,10 +335,7 @@ def evaluate_certification(
         if not passed:
             failed.append(name)
 
-    concurrency_ok = (
-        int(merged.get("configured_total_concurrency") or 0)
-        >= int(spec.get("concurrent_users") or 0)
-    )
+    concurrency_ok = int(merged.get("configured_total_concurrency") or 0) >= int(spec.get("concurrent_users") or 0)
     if not concurrency_ok:
         failed.append("configured_total_concurrency")
 
@@ -421,9 +410,7 @@ def main() -> int:
             return 0
         if not args.acknowledge_authorized_target:
             raise SystemExit("load_run_requires_--acknowledge-authorized-target")
-        report = asyncio.run(
-            execute_shard(plan, timeout_seconds=float(args.timeout_seconds))
-        )
+        report = asyncio.run(execute_shard(plan, timeout_seconds=float(args.timeout_seconds)))
         Path(args.output).write_text(
             json.dumps(report, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",

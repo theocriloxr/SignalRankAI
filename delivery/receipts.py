@@ -84,9 +84,7 @@ class DeliveryReceipt:
             mode=str(value.get("mode") or "sent"),
             accepted_at=str(value.get("accepted_at") or ""),
             replaces_signal_id=(
-                str(value.get("replaces_signal_id")).strip()
-                if value.get("replaces_signal_id")
-                else None
+                str(value.get("replaces_signal_id")).strip() if value.get("replaces_signal_id") else None
             ),
         )
 

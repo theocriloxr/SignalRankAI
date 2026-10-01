@@ -7,8 +7,18 @@ from typing import Any, Mapping
 from services.codex_governance import collect_codex_governance_context
 
 _SENSITIVE_KEYS = {
-    "api_key", "authorization", "bot_token", "chat_id", "email", "password",
-    "payment_details", "phone", "secret", "telegram_id", "token", "user_id",
+    "api_key",
+    "authorization",
+    "bot_token",
+    "chat_id",
+    "email",
+    "password",
+    "payment_details",
+    "phone",
+    "secret",
+    "telegram_id",
+    "token",
+    "user_id",
 }
 
 

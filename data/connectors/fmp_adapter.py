@@ -7,6 +7,7 @@ Best for: Stocks, ETFs, Forex (NOT crypto)
 
 Docs: https://site.financialmodelingprep.com/developer/docs
 """
+
 from __future__ import annotations
 
 from typing import List, Dict, Any
@@ -20,10 +21,7 @@ _LAST_CERTIFICATION_HINT: Dict[str, str] | None = None
 
 def _set_certification_hint(status: str | None, reason: str = "") -> None:
     global _LAST_CERTIFICATION_HINT
-    _LAST_CERTIFICATION_HINT = (
-        {"status": str(status), "reason": str(reason)[:500]}
-        if status else None
-    )
+    _LAST_CERTIFICATION_HINT = {"status": str(status), "reason": str(reason)[:500]} if status else None
 
 
 def _classify_external_block(status_code: int, detail: str) -> tuple[str | None, str]:
@@ -113,14 +111,16 @@ async def _async_get_candles(
             if not isinstance(row, dict):
                 continue
             try:
-                out.append({
-                    "timestamp": row.get("date") or row.get("datetime") or row.get("timestamp"),
-                    "open": float(row.get("open", 0)),
-                    "high": float(row.get("high", 0)),
-                    "low": float(row.get("low", 0)),
-                    "close": float(row.get("close", 0)),
-                    "volume": float(row.get("volume", 0) or 0),
-                })
+                out.append(
+                    {
+                        "timestamp": row.get("date") or row.get("datetime") or row.get("timestamp"),
+                        "open": float(row.get("open", 0)),
+                        "high": float(row.get("high", 0)),
+                        "low": float(row.get("low", 0)),
+                        "close": float(row.get("close", 0)),
+                        "volume": float(row.get("volume", 0) or 0),
+                    }
+                )
             except (TypeError, ValueError):
                 continue
         return list(reversed(out))
@@ -135,11 +135,11 @@ async def _async_get_quote(
 ) -> Dict[str, Any]:
     """
     Fetch real-time quote from FMP.
-    
+
     Args:
         symbol: Trading symbol (e.g., "AAPL")
         timeout: Request timeout
-        
+
     Returns:
         Dict with keys: price, change, changePercent, volume
     """
@@ -148,30 +148,30 @@ async def _async_get_quote(
         return {}
 
     symbol = (symbol or "").upper().strip()
-    
+
     request_timeout = min(5.0, max(1.0, float(timeout)))
-    
+
     try:
         url = "https://financialmodelingprep.com/stable/quote"
-        
+
         client = httpx_client.get_client("fmp")
-        
+
         if client is not None:
             resp = await client.get(url, params={"symbol": symbol, "apikey": api_key}, timeout=request_timeout)
         else:
             async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
                 resp = await client_fallback.get(url, params={"symbol": symbol, "apikey": api_key})
-        
+
         if resp.status_code != 200:
             return {}
-        
+
         data = resp.json()
-        
+
         if not data or not isinstance(data, list) or len(data) == 0:
             return {}
-        
+
         quote = data[0]
-        
+
         return {
             "price": float(quote.get("price", 0)),
             "change": float(quote.get("change", 0)),
@@ -182,7 +182,7 @@ async def _async_get_quote(
             "yearHigh": float(quote.get("yearHigh", 0)),
             "yearLow": float(quote.get("yearLow", 0)),
         }
-        
+
     except Exception as e:
         logger.debug(f"fmp_adapter quote error: {e}")
         return {}
@@ -197,6 +197,4 @@ def get_candles(
     """
     Sync-compatible wrapper that runs the async FMP client safely.
     """
-    return run_sync(
-        _async_get_candles(symbol, timeframe, limit=limit, timeout=timeout)
-    )
+    return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))

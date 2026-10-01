@@ -1,7 +1,9 @@
 import logging
 from datetime import datetime, timezone
+
 try:
     import yfinance as yf
+
     _YFINANCE_AVAILABLE = True
 except Exception:
     _YFINANCE_AVAILABLE = False
@@ -42,7 +44,9 @@ def _get_price_cache(symbol: str, max_age_s: float = 120.0):
         rec = _PRICE_CACHE.get((symbol or "").upper())
         if not rec:
             return None
-        if (datetime.now(timezone.utc).timestamp() - float(rec.get("ts", 0))) > float(_env_get("PRICE_CACHE_TTL", max_age_s)):
+        if (datetime.now(timezone.utc).timestamp() - float(rec.get("ts", 0))) > float(
+            _env_get("PRICE_CACHE_TTL", max_age_s)
+        ):
             return None
         return rec.get("price")
     except Exception:
@@ -106,6 +110,7 @@ def _market_closed_reason(symbol: str) -> str | None:
 
     try:
         from data.market_hours import is_fx_holiday, is_stock_holiday, is_commodity_holiday, is_fx_low_liquidity
+
         now = datetime.now(timezone.utc)
         if asset_class == "stock":
             return is_stock_holiday(now)
@@ -243,6 +248,7 @@ def _remove_trade_state(trade) -> None:
 
 def _env_get(name: str, default):
     import os
+
     try:
         return os.getenv(name) or default
     except Exception:
@@ -251,6 +257,7 @@ def _env_get(name: str, default):
 
 def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class TradeRecord:
     def __init__(self, signal):
@@ -261,7 +268,13 @@ class TradeRecord:
         # stop can be provided as 'stop', 'stop_loss' or 'stopLoss'
         self.stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
         # targets may be 'targets' (list) or 'take_profit' / 'take_profits' (single)
-        t = signal.get("targets") or signal.get("targets_list") or signal.get("take_profit") or signal.get("take_profits") or signal.get("take_profit")
+        t = (
+            signal.get("targets")
+            or signal.get("targets_list")
+            or signal.get("take_profit")
+            or signal.get("take_profits")
+            or signal.get("take_profit")
+        )
         self.target = t
         # Normalize direction to lowercase 'long' or 'short' (tests expect lowercase)
         self.direction = (signal.get("direction") or signal.get("side") or "long").lower()
@@ -285,6 +298,7 @@ class TradeRecord:
         # Track which targets have been hit (for partial TP handling)
         self.targets_hit = []
 
+
 open_trades_list = []
 
 
@@ -298,6 +312,7 @@ def _trade_key(signal: dict) -> tuple:
     entry = signal.get("entry") or signal.get("price") or signal.get("entry_price")
     stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
     return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
+
 
 def open_trades():
     try:
@@ -316,10 +331,12 @@ def open_trades():
         _load_open_trades_from_state()
     return list(open_trades_list)
 
+
 def _convert_symbol_for_yfinance(symbol):
     """Convert crypto symbols from Binance format to yfinance format."""
     try:
         from data.market_data import format_ticker
+
         return format_ticker(symbol, "yfinance")
     except Exception:
         if symbol.endswith("USDT"):
@@ -327,6 +344,7 @@ def _convert_symbol_for_yfinance(symbol):
         if symbol.endswith("USD"):
             return f"{symbol[:-3]}-USD"
         return symbol
+
 
 def _get_current_price(symbol):
     """
@@ -372,7 +390,9 @@ def _get_current_price(symbol):
         return None
 
     if not _allow_external_price_fallback():
-        logger.debug("Skipping external price fallback for %s because TRADE_TRACKER_ALLOW_EXTERNAL_FALLBACK is disabled", symbol)
+        logger.debug(
+            "Skipping external price fallback for %s because TRADE_TRACKER_ALLOW_EXTERNAL_FALLBACK is disabled", symbol
+        )
         return None
 
     # Try yfinance first when the optional provider is available.
@@ -380,7 +400,7 @@ def _get_current_price(symbol):
         yf_symbol = _convert_symbol_for_yfinance(symbol)
         ticker = yf.Ticker(yf_symbol)
         fast_info = getattr(ticker, "fast_info", {}) or {}
-        price = fast_info.get('lastPrice') or fast_info.get('last_price') or fast_info.get('regularMarketPrice')
+        price = fast_info.get("lastPrice") or fast_info.get("last_price") or fast_info.get("regularMarketPrice")
         if price and price > 0:
             logger.debug(f"Got price for {symbol} ({yf_symbol}) from yfinance: {price}")
             _record_price_success(symbol)
@@ -394,7 +414,7 @@ def _get_current_price(symbol):
                 return last_close
     except Exception as e:
         logger.debug(f"yfinance failed for {symbol}: {e}")
-    
+
     # Fallback to Binance for crypto
     if symbol.endswith("USDT") or symbol.endswith("USD"):
         try:
@@ -413,10 +433,11 @@ def _get_current_price(symbol):
                 return price
         except Exception as e:
             logger.debug(f"Binance API failed for {symbol}: {e}")
-    
+
     if _allow_provider_waterfall():
         try:
             from data.providers import fetch_candles_waterfall
+
             candles = fetch_candles_waterfall(symbol, "1h", limit=5)
             if candles:
                 last = candles[-1]
@@ -472,6 +493,7 @@ def _resolve_market_price(symbol: str, market_data=None):
 
     return None
 
+
 def price_hit_tp(trade, market_data=None):
     """
     Check if take profit is hit.
@@ -482,16 +504,16 @@ def price_hit_tp(trade, market_data=None):
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
     if current_price is None:
         current_price = _get_current_price(trade.symbol)
-    
+
     if current_price is None:
         return False
-    
+
     # Use normalized targets list
     targets = getattr(trade, "targets", []) or []
     if not targets:
         return False
     direction = (getattr(trade, "direction", "long") or "long").lower()
-    
+
     # Check if any target is hit
     any_hit = False
     for target in targets:
@@ -518,12 +540,13 @@ def price_hit_tp(trade, market_data=None):
 
     return any_hit
 
+
 def price_hit_sl(trade, market_data=None):
     """
     Check if stop loss is hit AFTER confirming entry was reached.
     For LONG: Price must have reached entry level before SL can trigger
     For SHORT: Price must have reached entry level before SL can trigger
-    
+
     This prevents "SL-before-entry" invalidations where the price hits
     the stop loss before ever reaching the entry price.
     """
@@ -531,15 +554,15 @@ def price_hit_sl(trade, market_data=None):
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
     if current_price is None:
         current_price = _get_current_price(trade.symbol)
-    
+
     if current_price is None:
         return False
-    
+
     # Normalize direction, stop, and entry
     direction = (getattr(trade, "direction", "LONG") or "LONG").upper()
     stop = getattr(trade, "stop", None)
     entry = getattr(trade, "entry", None)
-    
+
     if stop is None:
         return False
 
@@ -560,7 +583,7 @@ def price_hit_sl(trade, market_data=None):
             else:
                 # For SHORT: price should have reached or dropped to entry level
                 entry_reached = current_price <= entry_val
-            
+
             if entry_reached:
                 trade.entry_reached = True
                 _persist_trade_state(trade)
@@ -574,7 +597,7 @@ def price_hit_sl(trade, market_data=None):
         except Exception:
             # If entry parsing fails, allow SL check to proceed
             pass
-    
+
     # Now check SL (original logic) - entry was verified reached
     if direction == "LONG":
         if current_price <= stop_val:
@@ -587,12 +610,14 @@ def price_hit_sl(trade, market_data=None):
 
     return False
 
+
 def close_trade(trade: TradeRecord, outcome: str):
     trade.close_time = _utcnow_naive()
     if trade.targets_hit and len(trade.targets_hit) < len(trade.targets):
         trade.outcome = "PARTIAL_TP"
     else:
         trade.outcome = outcome
+
 
 def add_trade(signal: dict):
     """Add a new trade to track."""
@@ -609,6 +634,7 @@ def add_trade(signal: dict):
     logger.info(f"Trade opened: {trade.symbol} {trade.direction} entry={trade.entry}")
     return trade
 
+
 def update_trade_outcomes(market_data=None):
     """
     Update trade outcomes based on current market data.
@@ -616,13 +642,17 @@ def update_trade_outcomes(market_data=None):
     """
     if market_data is None and len(open_trades_list) > 1:
         try:
-            market_data = state.get_latest_tick_snapshot_sync([trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)])
+            market_data = state.get_latest_tick_snapshot_sync(
+                [trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)]
+            )
         except Exception:
             market_data = None
 
     if market_data is None and len(open_trades_list) > 1 and _allow_external_price_fallback():
         try:
-            market_data = _batch_price_snapshot([trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)])
+            market_data = _batch_price_snapshot(
+                [trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)]
+            )
         except Exception:
             market_data = None
 

@@ -12,6 +12,7 @@ Startup logs must make it unambiguous whether the new system is deployed:
 No credentials are ever included.  Every block is computed from the live
 registry modules so the diagnostics themselves prove the code is present.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -91,8 +92,7 @@ def entitlement_catalogue_diagnostics(env: dict[str, str] | None = None) -> dict
         from core import tier_policy  # canonical tier module
 
         customer_tiers = [
-            tier for tier in tier_policy.TIER_ORDER
-            if tier not in {tier_policy.Tier.ADMIN, tier_policy.Tier.OWNER}
+            tier for tier in tier_policy.TIER_ORDER if tier not in {tier_policy.Tier.ADMIN, tier_policy.Tier.OWNER}
         ]
         product_count = 6
         entitlement_count = sum(len(tier_policy.get_entitlements(tier).features) for tier in customer_tiers)
@@ -125,7 +125,13 @@ def strategy_registry_diagnostics() -> dict[str, Any]:
             obj = getattr(strategies_pkg, name)
             if callable(obj) and getattr(obj, "__module__", "").startswith("strategies"):
                 registered += 1
-        return {"available": True, "registered": max(registered, 1), "active": registered, "shadow": 0, "quarantined": 0}
+        return {
+            "available": True,
+            "registered": max(registered, 1),
+            "active": registered,
+            "shadow": 0,
+            "quarantined": 0,
+        }
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "error": str(exc)[:120]}
 
@@ -137,6 +143,7 @@ def model_registry_diagnostics(env: dict[str, str] | None = None) -> dict[str, A
         from core import version as core_version
 
         from ml.schema_version import FEATURE_SCHEMA_VERSION, LABEL_SCHEMA_VERSION
+
         champion = source.get("ML_CHAMPION_MODEL_VERSION") or "champion-unchanged"
         return {
             "available": True,

@@ -13,6 +13,7 @@ This creates a governed "Chief Investment Officer" research layer that:
 Run with: python -m worker.ai_feedback
 Schedule: Daily at midnight or via cron
 """
+
 from utils.timeutils import now_utc_naive
 
 import os
@@ -20,7 +21,7 @@ import sys
 import json
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerformanceStats:
     """Trading performance statistics for one evidence window."""
+
     win_rate: float = 0.0
     total_trades: int = 0
     wins: int = 0
@@ -113,11 +115,7 @@ async def gather_performance_stats(days: int = 7) -> PerformanceStats:
                 from ml.inference import MLFilter
 
                 ml_filter = MLFilter()
-                certified = (
-                    ml_filter.recommended_raw_threshold()
-                    if bool(getattr(ml_filter, "active", False))
-                    else None
-                )
+                certified = ml_filter.recommended_raw_threshold() if bool(getattr(ml_filter, "active", False)) else None
                 if certified is not None:
                     stats.current_base_threshold = float(certified)
                     stats.threshold_source = "promoted_model"
@@ -226,9 +224,12 @@ async def get_gemini_recommendation(stats: PerformanceStats) -> dict:
     }
     try:
         from services.openai_ai import openai_available, provider_order, threshold_recommendation
+
         order = provider_order()
-        if openai_available() and "openai" in order and (
-            "gemini" not in order or order.index("openai") < order.index("gemini")
+        if (
+            openai_available()
+            and "openai" in order
+            and ("gemini" not in order or order.index("openai") < order.index("gemini"))
         ):
             response = await threshold_recommendation(stats_payload)
             if response.get("ok"):
@@ -273,7 +274,8 @@ Reply ONLY as JSON:
                     recom = json.loads(raw)
                 except json.JSONDecodeError:
                     import re
-                    match = re.search(r'\{[^{}]*\}', raw)
+
+                    match = re.search(r"\{[^{}]*\}", raw)
                     recom = json.loads(match.group()) if match else {}
                 if isinstance(recom, dict) and recom.get("new_threshold") is not None:
                     proposed = max(lower, min(upper, float(recom["new_threshold"])))
@@ -299,10 +301,7 @@ Reply ONLY as JSON:
         new_threshold = min(upper, stats.current_base_threshold + 0.03)
         reason = "negative_expectancy_tighten_candidate"
     elif (
-        stats.win_rate > 0.60
-        and stats.profit_factor > 1.5
-        and stats.expectancy_r > 0
-        and stats.average_ml_auc >= 0.70
+        stats.win_rate > 0.60 and stats.profit_factor > 1.5 and stats.expectancy_r > 0 and stats.average_ml_auc >= 0.70
     ):
         new_threshold = max(lower, stats.current_base_threshold - 0.02)
         reason = "positive_multi_metric_evidence_loosen_candidate"
@@ -351,6 +350,7 @@ async def apply_recommendation(recommendation: dict) -> bool:
         }
         try:
             from core.redis_state import state
+
             state.set_sync(
                 "signalrankai:continuous_improvement:last_parameter_proposal",
                 json.dumps(proposal),
@@ -374,19 +374,20 @@ async def apply_recommendation(recommendation: dict) -> bool:
 async def run_ai_feedback(force: bool = False) -> dict:
     """
     Main entry point for AI feedback loop.
-    
+
     Args:
         force: Force run even if recently Run
-    
+
     Returns:
         dict with results: success, stats, recommendation
     """
     import time
-    
+
     # Check cooldown (run at most once per day)
     if not force:
         try:
             from core.redis_state import state
+
             if state.has_redis_sync():
                 redis = state.get_redis_sync()
                 if redis:
@@ -399,30 +400,33 @@ async def run_ai_feedback(force: bool = False) -> dict:
                             return {"skipped": True, "hours_since": hours_since}
         except Exception:
             pass
-    
+
     logger.info("[ai_feedback] Running AI feedback loop...")
-    
+
     # Gather stats
     stats = await gather_performance_stats(days=7)
-    logger.info(f"[ai_feedback] Stats: win_rate={stats.win_rate:.1%}, trades={stats.total_trades}, ml_auc={stats.average_ml_auc:.3f}")
-    
+    logger.info(
+        f"[ai_feedback] Stats: win_rate={stats.win_rate:.1%}, trades={stats.total_trades}, ml_auc={stats.average_ml_auc:.3f}"
+    )
+
     # Get Gemini recommendation
     recommendation = await get_gemini_recommendation(stats)
     logger.info(f"[ai_feedback] AI recommendation proposal: {recommendation}")
-    
+
     # Record recommendation only. This never mutates the active threshold.
     success = await apply_recommendation(recommendation)
-    
+
     # Update last run timestamp
     try:
         from core.redis_state import state
+
         if state.has_redis_sync():
             redis = state.get_redis_sync()
             if redis:
                 redis.set("AI_FEEDBACK_LAST_RUN", str(time.time()))
     except Exception:
         pass
-    
+
     return {
         "success": success,
         "status": "proposal_recorded" if success else "proposal_failed",
@@ -449,10 +453,9 @@ async def run_ai_feedback(force: bool = False) -> dict:
 
 def main():
     """CLI entry point."""
-    import asyncio
-    
+
     result = asyncio.run(run_ai_feedback(force=True))
-    
+
     if result.get("skipped"):
         print(f"Skipped - ran {result.get('hours_since', 0):.1f}h ago")
     elif result.get("success"):

@@ -5,6 +5,7 @@ Telegram-specific.  This module therefore writes idempotent web receipts to
 notification_events after the same profile, quota, cooldown, quality,
 freshness, quote-trust and risk gates used for live delivery.
 """
+
 from __future__ import annotations
 
 import math
@@ -55,10 +56,7 @@ class WebFanoutResult:
 
 
 def _signal_payload(signal: Signal) -> dict[str, Any]:
-    return {
-        column.key: getattr(signal, column.key, None)
-        for column in signal.__table__.columns
-    }
+    return {column.key: getattr(signal, column.key, None) for column in signal.__table__.columns}
 
 
 def _normalized_asset_class(signal: dict[str, Any]) -> str:
@@ -75,10 +73,7 @@ def _normalized_asset_class(signal: dict[str, Any]) -> str:
     try:
         from services.asset_mapper import classify_asset
 
-        inferred = str(
-            classify_asset(str(signal.get("asset") or signal.get("symbol") or ""))
-            or ""
-        ).strip().lower()
+        inferred = str(classify_asset(str(signal.get("asset") or signal.get("symbol") or "")) or "").strip().lower()
         return aliases.get(inferred, inferred)
     except Exception:
         return ""
@@ -193,10 +188,7 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
             3.0,
             min(
                 20.0,
-                float(
-                    os.getenv("WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS", "8")
-                    or 8
-                ),
+                float(os.getenv("WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS", "8") or 8),
             ),
         ),
         drop_if_busy=False,
@@ -209,14 +201,14 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
                         Signal.created_at >= cutoff,
                         Signal.expired.is_(False),
                         Signal.archived.is_(False),
-                        func.lower(func.coalesce(Signal.status, "active")).in_(
-                            ("active", "open", "issued")
-                        ),
+                        func.lower(func.coalesce(Signal.status, "active")).in_(("active", "open", "issued")),
                     )
                     .order_by(Signal.created_at.desc())
                     .limit(signal_limit)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         user_rows = list(
             (
@@ -241,7 +233,9 @@ async def _snapshot_candidates() -> tuple[list[dict[str, Any]], list[dict[str, A
                         )
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
         users: list[dict[str, Any]] = []

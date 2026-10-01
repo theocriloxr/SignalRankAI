@@ -4,7 +4,7 @@ import html
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Iterable
 
 from core.signal_lifecycle import (
     ACTIVE_TRADE,
@@ -27,8 +27,14 @@ logger = logging.getLogger(__name__)
 
 TERMINAL_STATES = set(TERMINAL_SIGNAL_STATES)
 NOTIFIABLE_EVENTS = {
-    "entry_touched", "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit",
-    "breakeven_stop", "missed_entry", "expired",
+    "entry_touched",
+    "tp1_hit",
+    "tp2_hit",
+    "tp3_hit",
+    "sl_hit",
+    "breakeven_stop",
+    "missed_entry",
+    "expired",
 }
 
 
@@ -174,7 +180,7 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
     from core.signal_identity import public_signal_id
 
     ref = html.escape(public_signal_id(signal))
-    ref_line = f"\n\U0001F4CC Signal ID: <code>{ref}</code>" if ref else ""
+    ref_line = f"\n\U0001f4cc Signal ID: <code>{ref}</code>" if ref else ""
     return (
         f"<b>{html.escape(title)}</b>\n\n"
         f"<b>{asset}</b> {direction}\n"
@@ -197,7 +203,7 @@ async def update_lifecycle_observation(
     from db.models import SignalLifecycle, SignalTrackingEvent
     from db.priority import DBPriority
     from db.session import get_session
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     signal_id = str(signal.get("signal_id") or "")
     now = _utc_now_naive()
@@ -228,14 +234,12 @@ async def update_lifecycle_observation(
         ) as session:
             # The tracker runs repeatedly. Waiting tens of seconds on a row lock
             # is worse than deferring one telemetry sample to the next cycle.
-            await session.execute(
-                sql_text(f"SET LOCAL lock_timeout = '{_lifecycle_lock_timeout_ms()}ms'")
-            )
-            row = (await session.execute(
-                select(SignalLifecycle)
-                .where(SignalLifecycle.signal_id == signal_id)
-                .with_for_update()
-            )).scalar_one_or_none()
+            await session.execute(sql_text(f"SET LOCAL lock_timeout = '{_lifecycle_lock_timeout_ms()}ms'"))
+            row = (
+                await session.execute(
+                    select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id).with_for_update()
+                )
+            ).scalar_one_or_none()
             if row is None:
                 row = SignalLifecycle(
                     signal_id=signal_id,
@@ -244,13 +248,15 @@ async def update_lifecycle_observation(
                     watch_started_at=now,
                 )
                 session.add(row)
-                session.add(SignalTrackingEvent(
-                    signal_id=signal_id,
-                    event_type="generated",
-                    event_time=signal.get("created_at") or now,
-                    price=None,
-                    meta={"state": WATCHING_FOR_ENTRY},
-                ))
+                session.add(
+                    SignalTrackingEvent(
+                        signal_id=signal_id,
+                        event_type="generated",
+                        event_time=signal.get("created_at") or now,
+                        price=None,
+                        meta={"state": WATCHING_FOR_ENTRY},
+                    )
+                )
             row.state = normalize_lifecycle_state(getattr(row, "state", None))
             row.last_price = float(price)
             row.last_checked_at = now
@@ -279,8 +285,11 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
     if not _enabled("OUTCOME_LIFECYCLE_ENABLED", True):
         return False
     from db.models import (
-        SignalDelivery, SignalEventNotification, SignalLifecycle,
-        SignalTrackingEvent, User,
+        SignalDelivery,
+        SignalEventNotification,
+        SignalLifecycle,
+        SignalTrackingEvent,
+        User,
     )
     from db.priority import DBPriority
     from db.session import get_session
@@ -292,11 +301,11 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
     now = _utc_now_naive()
     created_at = signal.get("created_at")
     async with get_session(priority=DBPriority.CRITICAL) as session:
-        lifecycle = (await session.execute(
-            select(SignalLifecycle)
-            .where(SignalLifecycle.signal_id == signal_id)
-            .with_for_update()
-        )).scalar_one_or_none()
+        lifecycle = (
+            await session.execute(
+                select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id).with_for_update()
+            )
+        ).scalar_one_or_none()
         if lifecycle is None:
             lifecycle = SignalLifecycle(
                 signal_id=signal_id,
@@ -308,12 +317,14 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             await session.flush()
 
         lifecycle.state = normalize_lifecycle_state(getattr(lifecycle, "state", None))
-        existing = (await session.execute(
-            select(SignalTrackingEvent).where(
-                SignalTrackingEvent.signal_id == signal_id,
-                SignalTrackingEvent.event_type == event_type,
+        existing = (
+            await session.execute(
+                select(SignalTrackingEvent).where(
+                    SignalTrackingEvent.signal_id == signal_id,
+                    SignalTrackingEvent.event_type == event_type,
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         was_new = existing is None
 
         if existing is not None:
@@ -354,10 +365,14 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             if recorded_rank > current_rank and current_state not in TERMINAL_STATES:
                 lifecycle.state = recorded_state
             timestamp_field = {
-                "entry_touched": "entry_touched_at", "tp1_hit": "tp1_hit_at",
-                "tp2_hit": "tp2_hit_at", "tp3_hit": "tp3_hit_at",
-                "sl_hit": "sl_hit_at", "breakeven_stop": "breakeven_at",
-                "missed_entry": "expired_at", "expired": "expired_at",
+                "entry_touched": "entry_touched_at",
+                "tp1_hit": "tp1_hit_at",
+                "tp2_hit": "tp2_hit_at",
+                "tp3_hit": "tp3_hit_at",
+                "sl_hit": "sl_hit_at",
+                "breakeven_stop": "breakeven_at",
+                "missed_entry": "expired_at",
+                "expired": "expired_at",
             }.get(event_type)
             if timestamp_field and getattr(lifecycle, timestamp_field, None) is None:
                 setattr(lifecycle, timestamp_field, getattr(existing, "event_time", None) or now)
@@ -367,7 +382,10 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             if not event_transition_allowed(lifecycle.state, event_type):
                 logger.info(
                     "[lifecycle_transition_rejected] signal=%s current=%s event=%s target=%s",
-                    signal_id[:8], lifecycle.state, event_type, event_state(event_type),
+                    signal_id[:8],
+                    lifecycle.state,
+                    event_type,
+                    event_state(event_type),
                 )
                 await session.rollback()
                 return False
@@ -381,17 +399,21 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             event_meta.setdefault("same_candle_policy", SAME_CANDLE_AMBIGUITY_POLICY)
             try:
                 import os
+
                 clip_min = float(os.getenv("TRAINING_R_CLIP_MIN", "-5") or -5)
                 clip_max = float(os.getenv("TRAINING_R_CLIP_MAX", "10") or 10)
                 event_meta["raw_r"] = r_value
-                event_meta["clipped_r"] = (
-                    min(clip_max, max(clip_min, r_value)) if r_value is not None else None
-                )
+                event_meta["clipped_r"] = min(clip_max, max(clip_min, r_value)) if r_value is not None else None
             except Exception:
                 event_meta["raw_r"] = r_value
             for key in (
-                "regime", "session", "spread", "order_book_imbalance",
-                "funding_rate", "open_interest_delta", "open_interest_change",
+                "regime",
+                "session",
+                "spread",
+                "order_book_imbalance",
+                "funding_rate",
+                "open_interest_delta",
+                "open_interest_change",
             ):
                 value = signal.get(key)
                 if value is None and isinstance(signal.get("_macro"), dict):
@@ -421,10 +443,14 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             lifecycle.last_checked_at = now
             lifecycle.updated_at = now
             field_map = {
-                "entry_touched": "entry_touched_at", "tp1_hit": "tp1_hit_at",
-                "tp2_hit": "tp2_hit_at", "tp3_hit": "tp3_hit_at",
-                "sl_hit": "sl_hit_at", "breakeven_stop": "breakeven_at",
-                "missed_entry": "expired_at", "expired": "expired_at",
+                "entry_touched": "entry_touched_at",
+                "tp1_hit": "tp1_hit_at",
+                "tp2_hit": "tp2_hit_at",
+                "tp3_hit": "tp3_hit_at",
+                "sl_hit": "sl_hit_at",
+                "breakeven_stop": "breakeven_at",
+                "missed_entry": "expired_at",
+                "expired": "expired_at",
             }
             timestamp_field = field_map.get(event_type)
             if timestamp_field:
@@ -435,8 +461,10 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             if base:
                 seconds = max(0, int((now - base).total_seconds()))
                 duration_field = {
-                    "tp1_hit": "time_to_tp1_seconds", "tp2_hit": "time_to_tp2_seconds",
-                    "tp3_hit": "time_to_tp3_seconds", "sl_hit": "time_to_sl_seconds",
+                    "tp1_hit": "time_to_tp1_seconds",
+                    "tp2_hit": "time_to_tp2_seconds",
+                    "tp3_hit": "time_to_tp3_seconds",
+                    "sl_hit": "time_to_sl_seconds",
                 }.get(event_type)
                 if duration_field:
                     setattr(lifecycle, duration_field, seconds)
@@ -453,16 +481,19 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
 
         deliveries = []
         if _should_queue_event_notification(event_type):
-            deliveries = (await session.execute(
-            select(SignalDelivery, User)
-            .join(User, User.id == SignalDelivery.user_id)
-            .where(
-                SignalDelivery.signal_id == signal_id,
-                SignalDelivery.sent_ok.is_(True),
-                func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
-            )
-            )).all()
+            deliveries = (
+                await session.execute(
+                    select(SignalDelivery, User)
+                    .join(User, User.id == SignalDelivery.user_id)
+                    .where(
+                        SignalDelivery.signal_id == signal_id,
+                        SignalDelivery.sent_ok.is_(True),
+                        func.lower(SignalDelivery.delivery_state).in_(("sent", "confirmed", "delivered", "reconciled")),
+                    )
+                )
+            ).all()
         from services.user_signal_monitoring import monitoring_allows_event
+
         for delivery, user in deliveries:
             if not await monitoring_allows_event(
                 session,
@@ -471,24 +502,28 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 event_type=event_type,
             ):
                 continue
-            already = (await session.execute(
-                select(SignalEventNotification.id).where(
-                    SignalEventNotification.signal_id == signal_id,
-                    SignalEventNotification.event_type == event_type,
-                    SignalEventNotification.user_id == user.id,
+            already = (
+                await session.execute(
+                    select(SignalEventNotification.id).where(
+                        SignalEventNotification.signal_id == signal_id,
+                        SignalEventNotification.event_type == event_type,
+                        SignalEventNotification.user_id == user.id,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if already is None:
-                session.add(SignalEventNotification(
-                    event_id=existing.id,
-                    signal_id=signal_id,
-                    event_type=event_type,
-                    user_id=user.id,
-                    telegram_user_id=user.telegram_user_id,
-                    delivery_id=delivery.id,
-                    chat_id=delivery.telegram_chat_id or user.telegram_user_id,
-                    source_message_id=delivery.telegram_message_id,
-                ))
+                session.add(
+                    SignalEventNotification(
+                        event_id=existing.id,
+                        signal_id=signal_id,
+                        event_type=event_type,
+                        user_id=user.id,
+                        telegram_user_id=user.telegram_user_id,
+                        delivery_id=delivery.id,
+                        chat_id=delivery.telegram_chat_id or user.telegram_user_id,
+                        source_message_id=delivery.telegram_message_id,
+                    )
+                )
         await session.commit()
         event_id = int(existing.id)
 
@@ -506,15 +541,17 @@ def _lifecycle_notification_keyboard(signal_id: object):
         ref = str(signal_id or "").strip()[:36]
         if not ref:
             return None
-        return InlineKeyboardMarkup([
+        return InlineKeyboardMarkup(
             [
-                InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{ref}"),
-                InlineKeyboardButton("📋 Open Signal", callback_data=f"open_signal_{ref}"),
-            ],
-            [
-                InlineKeyboardButton("🔎 Check Outcome", callback_data=f"check_outcome_{ref}"),
-            ],
-        ])
+                [
+                    InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{ref}"),
+                    InlineKeyboardButton("📋 Open Signal", callback_data=f"open_signal_{ref}"),
+                ],
+                [
+                    InlineKeyboardButton("🔎 Check Outcome", callback_data=f"check_outcome_{ref}"),
+                ],
+            ]
+        )
     except Exception:
         return None
 
@@ -529,28 +566,30 @@ async def claim_event_notification(notification_id: int, *, stale_after_seconds:
     now = _utc_now_naive()
     stale_cutoff = now - timedelta(seconds=max(60, int(stale_after_seconds)))
     async with get_session(priority="critical", label="lifecycle.notification.claim", timeout_seconds=12) as session:
-        claimed = (await session.execute(
-            update(SignalEventNotification)
-            .where(
-                SignalEventNotification.id == int(notification_id),
-                or_(
-                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
-                    and_(
-                        SignalEventNotification.delivery_state == "sending",
-                        or_(
-                            SignalEventNotification.last_attempt_at.is_(None),
-                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+        claimed = (
+            await session.execute(
+                update(SignalEventNotification)
+                .where(
+                    SignalEventNotification.id == int(notification_id),
+                    or_(
+                        SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                        and_(
+                            SignalEventNotification.delivery_state == "sending",
+                            or_(
+                                SignalEventNotification.last_attempt_at.is_(None),
+                                SignalEventNotification.last_attempt_at <= stale_cutoff,
+                            ),
                         ),
                     ),
-                ),
+                )
+                .values(
+                    delivery_state="sending",
+                    last_attempt_at=now,
+                    updated_at=now,
+                )
+                .returning(SignalEventNotification.id)
             )
-            .values(
-                delivery_state="sending",
-                last_attempt_at=now,
-                updated_at=now,
-            )
-            .returning(SignalEventNotification.id)
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         await session.commit()
         return claimed is not None
 
@@ -567,29 +606,33 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     token = str(config.TELEGRAM_BOT_TOKEN or "").strip()
     if not token:
         return
-    stale_cutoff = _utc_now_naive() - timedelta(seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300))
+    stale_cutoff = _utc_now_naive() - timedelta(
+        seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
+    )
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
         event = await session.get(SignalTrackingEvent, event_id)
         event_price = float(getattr(event, "price", 0) or signal.get("entry") or 0)
-        rows = (await session.execute(
-            select(SignalEventNotification, User, AlertPreference)
-            .join(User, User.id == SignalEventNotification.user_id)
-            .outerjoin(AlertPreference, AlertPreference.user_id == User.id)
-            .where(
-                SignalEventNotification.event_id == event_id,
-                SignalEventNotification.sent_ok.is_(False),
-                or_(
-                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
-                    and_(
-                        SignalEventNotification.delivery_state == "sending",
-                        or_(
-                            SignalEventNotification.last_attempt_at.is_(None),
-                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+        rows = (
+            await session.execute(
+                select(SignalEventNotification, User, AlertPreference)
+                .join(User, User.id == SignalEventNotification.user_id)
+                .outerjoin(AlertPreference, AlertPreference.user_id == User.id)
+                .where(
+                    SignalEventNotification.event_id == event_id,
+                    SignalEventNotification.sent_ok.is_(False),
+                    or_(
+                        SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                        and_(
+                            SignalEventNotification.delivery_state == "sending",
+                            or_(
+                                SignalEventNotification.last_attempt_at.is_(None),
+                                SignalEventNotification.last_attempt_at <= stale_cutoff,
+                            ),
                         ),
                     ),
-                ),
+                )
             )
-        )).all()
+        ).all()
     if not rows:
         return
 
@@ -608,12 +651,16 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                 from zoneinfo import ZoneInfo
                 from signalrank_telegram.timezones import effective_user_timezone
 
-                local_hour = datetime.now(timezone.utc).astimezone(
-                    ZoneInfo(effective_user_timezone(user.timezone, user.telegram_user_id))
-                ).hour
+                local_hour = (
+                    datetime.now(timezone.utc)
+                    .astimezone(ZoneInfo(effective_user_timezone(user.timezone, user.telegram_user_id)))
+                    .hour
+                )
                 start = int(preference.quiet_start_hour)
                 end = int(preference.quiet_end_hour)
-                in_quiet_hours = (start <= local_hour < end) if start < end else (local_hour >= start or local_hour < end)
+                in_quiet_hours = (
+                    (start <= local_hour < end) if start < end else (local_hour >= start or local_hour < end)
+                )
                 if in_quiet_hours:
                     continue
             except Exception:
@@ -624,14 +671,19 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
         ):
             continue
         text = _event_message(
-            signal, notification.event_type, event_price,
-            str(user.timezone or ""), int(user.telegram_user_id),
+            signal,
+            notification.event_type,
+            event_price,
+            str(user.timezone or ""),
+            int(user.telegram_user_id),
         )
         sent_message_id = None
         error = None
         try:
             if not _should_queue_event_notification(notification.event_type):
-                async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
+                async with get_session(
+                    priority="critical", label="lifecycle.notification", timeout_seconds=12
+                ) as session:
                     suppressed = await session.get(SignalEventNotification, notification.id)
                     if suppressed is not None:
                         suppressed.delivery_state = "suppressed"
@@ -648,10 +700,12 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                 "disable_notification": False,
             }
             if notification.source_message_id:
-                send_kwargs.update({
-                    "reply_to_message_id": int(notification.source_message_id),
-                    "allow_sending_without_reply": True,
-                })
+                send_kwargs.update(
+                    {
+                        "reply_to_message_id": int(notification.source_message_id),
+                        "allow_sending_without_reply": True,
+                    }
+                )
             try:
                 result = await bot.send_message(**send_kwargs)
             except TypeError:
@@ -676,31 +730,43 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             row.updated_at = _utc_now_naive()
             if row.sent_ok:
                 outcome_status = {
-                    "tp1_hit": "tp1", "tp2_hit": "tp2", "tp3_hit": "tp3",
-                    "sl_hit": "sl", "breakeven_stop": "partial_win_be",
-                    "missed_entry": "missed_entry", "expired": "expired",
+                    "tp1_hit": "tp1",
+                    "tp2_hit": "tp2",
+                    "tp3_hit": "tp3",
+                    "sl_hit": "sl",
+                    "breakeven_stop": "partial_win_be",
+                    "missed_entry": "missed_entry",
+                    "expired": "expired",
                 }.get(row.event_type)
                 if outcome_status:
-                    pending = (await session.execute(
-                        select(OutcomeNotification).where(
-                            OutcomeNotification.signal_id == row.signal_id,
-                            OutcomeNotification.telegram_user_id == row.telegram_user_id,
-                            OutcomeNotification.outcome_status == outcome_status,
+                    pending = (
+                        (
+                            await session.execute(
+                                select(OutcomeNotification).where(
+                                    OutcomeNotification.signal_id == row.signal_id,
+                                    OutcomeNotification.telegram_user_id == row.telegram_user_id,
+                                    OutcomeNotification.outcome_status == outcome_status,
+                                )
+                            )
                         )
-                    )).scalars().all()
+                        .scalars()
+                        .all()
+                    )
                     for fallback in pending:
                         fallback.delivery_state = "delivered"
                         fallback.delivered_at = _utc_now_naive()
             await session.commit()
 
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
-        remaining = (await session.execute(
-            select(SignalEventNotification.id).where(
-                SignalEventNotification.event_id == event_id,
-                SignalEventNotification.sent_ok.is_(False),
-                SignalEventNotification.delivery_state.in_(["pending", "failed", "sending"]),
+        remaining = (
+            await session.execute(
+                select(SignalEventNotification.id).where(
+                    SignalEventNotification.event_id == event_id,
+                    SignalEventNotification.sent_ok.is_(False),
+                    SignalEventNotification.delivery_state.in_(["pending", "failed", "sending"]),
+                )
             )
-        )).first()
+        ).first()
         if remaining is None:
             event = await session.get(SignalTrackingEvent, event_id)
             if event is not None:
@@ -717,26 +783,30 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
     from sqlalchemy import and_, or_, select
 
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
-        stale_cutoff = _utc_now_naive() - timedelta(seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300))
-        rows = (await session.execute(
-            select(SignalEventNotification.event_id, Signal)
-            .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)
-            .where(
-                SignalEventNotification.sent_ok.is_(False),
-                or_(
-                    SignalEventNotification.delivery_state.in_(["pending", "failed"]),
-                    and_(
-                        SignalEventNotification.delivery_state == "sending",
-                        or_(
-                            SignalEventNotification.last_attempt_at.is_(None),
-                            SignalEventNotification.last_attempt_at <= stale_cutoff,
+        stale_cutoff = _utc_now_naive() - timedelta(
+            seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
+        )
+        rows = (
+            await session.execute(
+                select(SignalEventNotification.event_id, Signal)
+                .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)
+                .where(
+                    SignalEventNotification.sent_ok.is_(False),
+                    or_(
+                        SignalEventNotification.delivery_state.in_(["pending", "failed"]),
+                        and_(
+                            SignalEventNotification.delivery_state == "sending",
+                            or_(
+                                SignalEventNotification.last_attempt_at.is_(None),
+                                SignalEventNotification.last_attempt_at <= stale_cutoff,
+                            ),
                         ),
                     ),
-                ),
+                )
+                .order_by(SignalEventNotification.created_at.asc())
+                .limit(max(1, int(limit)))
             )
-            .order_by(SignalEventNotification.created_at.asc())
-            .limit(max(1, int(limit)))
-        )).all()
+        ).all()
     dispatched = 0
     seen: set[int] = set()
     for event_id, row in rows:

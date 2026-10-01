@@ -56,10 +56,7 @@ def classify_signal(signal: dict[str, Any]) -> str:
     lifecycle_state = str(signal.get("lifecycle_state") or "").upper().strip()
     sent_ok = bool(signal.get("sent_ok") or False)
     has_delivery_proof = bool(
-        signal.get("delivery_proof_id")
-        or signal.get("proof_id")
-        or signal.get("proof_ok")
-        or sent_ok
+        signal.get("delivery_proof_id") or signal.get("proof_id") or signal.get("proof_ok") or sent_ok
     )
 
     if not signal_id:
@@ -149,7 +146,7 @@ async def find_signals(
     limit: int = 1000,
 ) -> list[dict[str, Any]]:
     """Query signals that may need reconciliation."""
-    from sqlalchemy import select, text
+    from sqlalchemy import text
 
     conditions = []
     if asset:
@@ -242,14 +239,16 @@ async def reconcile(session: Any, record: dict[str, Any], *, dry_run: bool = Tru
                 "event_type": "legacy_reconciled",
                 "event_time": _utcnow(),
                 "price": record.get("entry") or 0,
-                "meta": str({
-                    "reason": reason,
-                    "old_status": str(record.get("status")),
-                    "old_lifecycle": str(record.get("lifecycle_state")),
-                    "classification": classification,
-                    "reconciled_by": "reconcile_signal_lifecycle.py",
-                    "dry_run": False,
-                }),
+                "meta": str(
+                    {
+                        "reason": reason,
+                        "old_status": str(record.get("status")),
+                        "old_lifecycle": str(record.get("lifecycle_state")),
+                        "classification": classification,
+                        "reconciled_by": "reconcile_signal_lifecycle.py",
+                        "dry_run": False,
+                    }
+                ),
             },
         )
 
@@ -317,8 +316,10 @@ async def main() -> int:
 
     # Show actionable records
     actionable = [
-        r for r in records
-        if classify_signal(r) in ("active_no_proof", "claimed_delivery_no_proof", "watching_no_proof", "stored_no_progress")
+        r
+        for r in records
+        if classify_signal(r)
+        in ("active_no_proof", "claimed_delivery_no_proof", "watching_no_proof", "stored_no_progress")
     ]
 
     if not actionable:
@@ -328,8 +329,28 @@ async def main() -> int:
         return 0
 
     logger.info("\n%80s", "=" * 80)
-    logger.info("%-14s %-12s %-6s %-7s %-12s %-20s %-15s %s", "Signal ID", "Asset", "TF", "Dir", "Status", "Lifecycle", "Delivery", "Proof")
-    logger.info("%-14s %-12s %-6s %-7s %-12s %-20s %-15s %s", "-" * 12, "-" * 10, "-" * 4, "-" * 5, "-" * 10, "-" * 18, "-" * 13, "-" * 5)
+    logger.info(
+        "%-14s %-12s %-6s %-7s %-12s %-20s %-15s %s",
+        "Signal ID",
+        "Asset",
+        "TF",
+        "Dir",
+        "Status",
+        "Lifecycle",
+        "Delivery",
+        "Proof",
+    )
+    logger.info(
+        "%-14s %-12s %-6s %-7s %-12s %-20s %-15s %s",
+        "-" * 12,
+        "-" * 10,
+        "-" * 4,
+        "-" * 5,
+        "-" * 10,
+        "-" * 18,
+        "-" * 13,
+        "-" * 5,
+    )
     for record in actionable:
         logger.info(display_row(record))
     logger.info("%80s", "=" * 80)

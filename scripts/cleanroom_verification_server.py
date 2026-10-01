@@ -5,6 +5,7 @@ still running" from "process never started". /healthz returns 503 until every
 configured compile/schema/test gate passes, then returns 200. Any failed gate
 stays 503 with a non-secret failure summary available on /.
 """
+
 from __future__ import annotations
 
 import json
@@ -136,22 +137,15 @@ def _set_state(**updates: Any) -> None:
 def _snapshot() -> dict[str, Any]:
     with _state_lock:
         result = dict(_state)
-    result["commit"] = str(
-        os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("GIT_COMMIT_SHA")
-        or ""
-    )
-    result["elapsed_seconds"] = round(
-        max(0.0, time.time() - float(result["started_at_epoch"])), 3
-    )
+    result["commit"] = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
+    result["elapsed_seconds"] = round(max(0.0, time.time() - float(result["started_at_epoch"])), 3)
     return result
 
 
 def _run_step(name: str, command: list[str]) -> int:
     _set_state(stage=name)
     print(
-        "CLEANROOM_STAGE_START "
-        + json.dumps({"stage": name, "command": command}, sort_keys=True),
+        "CLEANROOM_STAGE_START " + json.dumps({"stage": name, "command": command}, sort_keys=True),
         flush=True,
     )
     proc = subprocess.Popen(
@@ -266,8 +260,7 @@ threading.Thread(target=_verify, name="cleanroom-verifier", daemon=True).start()
 
 port = int(os.getenv("PORT") or "8080")
 print(
-    "CLEANROOM_HTTP_LISTEN "
-    + json.dumps({"host": "0.0.0.0", "port": port}, sort_keys=True),
+    "CLEANROOM_HTTP_LISTEN " + json.dumps({"host": "0.0.0.0", "port": port}, sort_keys=True),
     flush=True,
 )
 ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

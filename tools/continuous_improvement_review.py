@@ -23,15 +23,20 @@ def main() -> int:
             output_dir=Path(args.output_dir),
         )
     )
-    print(json.dumps({
-        "ok": True,
-        "review_id": report.review_id,
-        "recommendations": len(report.recommendations),
-        "incidents": len(report.incidents),
-        "external_review_status": report.external_review_status,
-        "artifacts": [str(path) for path in paths or ()],
-        "production_mutation": False,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "review_id": report.review_id,
+                "recommendations": len(report.recommendations),
+                "incidents": len(report.incidents),
+                "external_review_status": report.external_review_status,
+                "artifacts": [str(path) for path in paths or ()],
+                "production_mutation": False,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

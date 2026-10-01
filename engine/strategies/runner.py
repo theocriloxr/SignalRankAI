@@ -4,7 +4,9 @@ from typing import Iterable, List, Any
 from engine.signal import Signal
 
 
-def run_strategy_with_marketstate(strategy: Any, asset: str, timeframes: Iterable[str], include_ml: bool = False) -> List[Signal]:
+def run_strategy_with_marketstate(
+    strategy: Any, asset: str, timeframes: Iterable[str], include_ml: bool = False
+) -> List[Signal]:
     """Sync runner: call async `get_market_state` safely and invoke strategy.generate.
 
     Keeps backward compatibility for sync code paths by using the sync wrapper
@@ -27,11 +29,17 @@ def run_strategy_with_marketstate(strategy: Any, asset: str, timeframes: Iterabl
         # Persist decision log if DB available
         try:
             from db import repository as repo
+
             # Run DB persist in a background task if possible
             try:
                 # best-effort: don't block strategy execution
                 import asyncio as _asyncio
-                _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+
+                _asyncio.get_event_loop().create_task(
+                    repo.persist_decision_log(
+                        None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}
+                    )
+                )
             except Exception:
                 # Fallback: synchronous attempt (will likely raise without session)
                 pass
@@ -42,7 +50,9 @@ def run_strategy_with_marketstate(strategy: Any, asset: str, timeframes: Iterabl
         return []
 
 
-async def run_strategy_with_marketstate_async(strategy: Any, asset: str, timeframes: Iterable[str], include_ml: bool = False) -> List[Signal]:
+async def run_strategy_with_marketstate_async(
+    strategy: Any, asset: str, timeframes: Iterable[str], include_ml: bool = False
+) -> List[Signal]:
     """Async runner: await `get_market_state` and invoke strategy.generate in thread if it's sync."""
     try:
         # Prefer the explicit async variant to avoid awaiting a sync wrapper
@@ -65,9 +75,15 @@ async def run_strategy_with_marketstate_async(strategy: Any, asset: str, timefra
             out = await gen(tf_payload) or []
             try:
                 from db import repository as repo
+
                 try:
                     import asyncio as _asyncio
-                    _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+
+                    _asyncio.get_event_loop().create_task(
+                        repo.persist_decision_log(
+                            None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}
+                        )
+                    )
                 except Exception:
                     pass
             except Exception:
@@ -81,9 +97,15 @@ async def run_strategy_with_marketstate_async(strategy: Any, asset: str, timefra
             out = await asyncio.to_thread(gen, tf_payload) or []
             try:
                 from db import repository as repo
+
                 try:
                     import asyncio as _asyncio
-                    _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+
+                    _asyncio.get_event_loop().create_task(
+                        repo.persist_decision_log(
+                            None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}
+                        )
+                    )
                 except Exception:
                     pass
             except Exception:

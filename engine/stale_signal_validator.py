@@ -18,6 +18,7 @@ Environment variables:
     USE_DYNAMIC_DRIFT          - Enable ATR-based dynamic thresholds (default: true)
     GHOST_PRICE_CHECK        - Enable ghost price detection (default: true)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,23 +32,23 @@ logger = logging.getLogger(__name__)
 class StaleSignalValidator:
     """
     StaleSignalValidator - Validates signal freshness against live market prices.
-    
+
     CRITICAL FIX: This class now explicitly reads from environment variables during __init__
     to prevent the "Zero Threshold" bug (threshold stuck at 0.0%).
-    
+
     The validator ensures that:
     1. Signal entry prices are still achievable at current market prices
     2. Price drift doesn't exceed the configured threshold
     3. Entry zone logic allows for legitimate price fluctuations
     """
-    
+
     def __init__(self):
         """
         Initialize the validator with environment-based configuration.
-        
+
         CRITICAL: Force the code to read the Railway Env Var, or default to a SAFE 1.5%
         This fixes the "Zero Threshold" bug where the threshold was stuck at 0.0%.
-        
+
         FIX: Increased default from 1.0% to 1.5% to handle crypto volatility.
         The old 0.2% caused constant invalidation during volatile moves.
         """
@@ -58,28 +59,28 @@ class StaleSignalValidator:
             self.default_threshold = float(raw_threshold) / 100.0
         except (ValueError, TypeError):
             self.default_threshold = 0.015  # 1.5% safe fallback
-        
+
         # Safety net: NEVER allow 0.0 threshold - always use minimum 0.5%
         if self.default_threshold <= 0.0:
             self.default_threshold = 0.005  # 0.5% minimum
-        
+
         logger.info(
-            f"[StaleSignalValidator] Initialized with threshold={self.default_threshold*100:.2f}% "
+            f"[StaleSignalValidator] Initialized with threshold={self.default_threshold * 100:.2f}% "
             f"(from env: STALE_PRICE_THRESHOLD_PCT={raw_threshold})"
         )
-    
+
     def get_threshold(self) -> float:
         """Return the default threshold as a percentage (0-1 range)."""
         return self.default_threshold
-    
+
     def validate(self, signal_price: float, live_price: float) -> bool:
         """
         Validate that the signal price is still fresh compared to live price.
-        
+
         Args:
             signal_price: The original signal's entry price
             live_price: Current live market price
-        
+
         Returns:
             True if the signal is still fresh (drift within threshold)
             False if the signal is stale (drift exceeds threshold)
@@ -91,8 +92,8 @@ class StaleSignalValidator:
 
         if drift > self.default_threshold:
             logger.info(
-                f"[StaleSignalValidator] Signal INVALIDATED: drift={drift*100:.2f}% > "
-                f"threshold={self.default_threshold*100:.2f}%"
+                f"[StaleSignalValidator] Signal INVALIDATED: drift={drift * 100:.2f}% > "
+                f"threshold={self.default_threshold * 100:.2f}%"
             )
             return False
         return True
@@ -105,11 +106,11 @@ _validator = StaleSignalValidator()
 # FIX: Increased crypto threshold from 3.5% to 2.5% and commodity from 1.0% to 1.5%
 # This fixes signal starvation after risk_passed (17 signals passing but final_signals=0)
 _CLASS_THRESHOLDS: dict[str, float] = {
-    "crypto":     2.5,   # 2.5% (was 3.5% - lowered to allow more signals through)
-    "stock":      0.5,   # 0.5% (stocks)
-    "index":      0.8,   # 0.8% for liquid indices/index CFDs
-    "commodity":  1.5,   # 1.5% (was 1.0% - Gold/Silver need more room)
-    "fx":         0.8,   # 0.8% / ~80 pips (increased for realistic FX latency)
+    "crypto": 2.5,  # 2.5% (was 3.5% - lowered to allow more signals through)
+    "stock": 0.5,  # 0.5% (stocks)
+    "index": 0.8,  # 0.8% for liquid indices/index CFDs
+    "commodity": 1.5,  # 1.5% (was 1.0% - Gold/Silver need more room)
+    "fx": 0.8,  # 0.8% / ~80 pips (increased for realistic FX latency)
 }
 
 
@@ -132,6 +133,7 @@ def _detect_asset_class(symbol: str) -> str:
     sym = symbol.upper()
     try:
         from data.fetcher import is_index
+
         if is_index(sym):
             return "index"
     except Exception:
@@ -143,8 +145,7 @@ def _detect_asset_class(symbol: str) -> str:
     if "/" in sym or (len(sym) == 6 and sym.isalpha()):
         return "fx"
     # Commodities: common tickers
-    if sym in {"XAUUSD", "XAGUSD", "WTIUSD", "BRENTUSD", "XAUEUR",
-               "GOLD", "SILVER", "OIL", "CRUDE"}:
+    if sym in {"XAUUSD", "XAGUSD", "WTIUSD", "BRENTUSD", "XAUEUR", "GOLD", "SILVER", "OIL", "CRUDE"}:
         return "commodity"
     return "stock"
 
@@ -152,27 +153,27 @@ def _detect_asset_class(symbol: str) -> str:
 def get_dynamic_threshold(symbol: str, atr_value: float = 0.0, price: float = 0.0) -> float:
     """
     Calculate ATR-based dynamic drift threshold.
-    
+
     If ATR is provided and USE_DYNAMIC_DRIFT is enabled, the threshold is calculated
     as 10% of ATR (allows for normal market fluctuations).
-    
+
     Args:
         symbol: Trading symbol
         atr_value: Current ATR value (if available)
         price: Current price
-    
+
     Returns:
         Dynamic drift threshold as percentage
     """
     use_dynamic = _env_bool("USE_DYNAMIC_DRIFT", True)
-    
+
     if use_dynamic and atr_value > 0 and price > 0:
         # 10% of ATR as threshold
         # e.g., BTC at $60,000 with $500 ATR = 0.083%
         dynamic_threshold = (atr_value * 0.10) / price
         # Clamp between 0.2% and 5%
         return max(0.002, min(dynamic_threshold, 0.05))
-    
+
     # Fallback to static thresholds
     return _threshold_pct(symbol)
 
@@ -182,7 +183,7 @@ def _threshold_pct(symbol: str = "") -> float:
 
     If STALE_PRICE_THRESHOLD_PCT is set explicitly it overrides all classes.
     Otherwise the per-class default is used (see _CLASS_THRESHOLDS).
-    
+
     CRITICAL: Hardcoded fallback to prevent 0.0% threshold bug.
     """
     # CRITICAL FIX: Add safety fallback to prevent 0.0% threshold
@@ -195,14 +196,14 @@ def _threshold_pct(symbol: str = "") -> float:
                 return max(0.01, val)
     except Exception:
         pass
-    
+
     asset_class = _detect_asset_class(symbol) if symbol else "crypto"
     threshold = _CLASS_THRESHOLDS.get(asset_class, 2.0)
-    
+
     # Safety net: NEVER return 0.0 - use minimum 0.5%
     if threshold <= 0.0:
         threshold = 0.5
-        
+
     return threshold
 
 
@@ -216,29 +217,29 @@ def _fetch_timeout() -> float:
 def is_price_sane(primary_price: float, secondary_price: float, max_diff_pct: float = 1.0) -> bool:
     """
     Check if prices from two sources are aligned (Ghost Price Detection).
-    
+
     If sources differ by more than max_diff_pct%, it's a "Ghost Price".
-    
+
     Args:
         primary_price: Price from primary source
-        secondary_price: Price from secondary source  
+        secondary_price: Price from secondary source
         max_diff_pct: Maximum allowed difference (default 1%)
-    
+
     Returns:
         True if prices are aligned, False if ghost price detected
     """
     if primary_price <= 0 or secondary_price <= 0:
         return True  # Can't validate, assume OK
-    
+
     diff = abs(primary_price - secondary_price) / primary_price * 100.0
-    
+
     if diff > max_diff_pct:
         logger.critical(
             f"[stale_validator] SENSORS MISALIGNED: Primary={primary_price:.5f}, "
             f"Secondary={secondary_price:.5f}, Diff={diff:.2f}%"
         )
         return False
-    
+
     return True
 
 
@@ -247,6 +248,7 @@ async def _get_secondary_price(symbol: str) -> Optional[float]:
     # Try CryptoCompare as secondary if primary was Binance
     try:
         import httpx
+
         url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol.replace('USDT', '')}&tsyms=USD"
         async with httpx.AsyncClient(timeout=3.0) as c:
             r = await c.get(url)
@@ -257,7 +259,7 @@ async def _get_secondary_price(symbol: str) -> Optional[float]:
                     return price
     except Exception:
         pass
-    
+
     return None
 
 
@@ -270,6 +272,7 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
     # 1. Try Binance REST (fastest for crypto)
     try:
         import httpx
+
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}"
         async with httpx.AsyncClient(timeout=3.0) as c:
             r = await c.get(url)
@@ -285,6 +288,7 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
     try:
         from db.session import get_session
         from sqlalchemy import text
+
         async with get_session() as session:
             row = await session.execute(
                 text("SELECT price FROM market_ticks WHERE symbol = :sym"),
@@ -299,10 +303,12 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
     # 3. yfinance fallback (sync, run in thread)
     try:
         from services.asset_mapper import map_symbol
+
         yf_sym = map_symbol(symbol, "yfinance") or symbol
 
         def _yf_price():
             import yfinance as yf
+
             ticker = yf.Ticker(yf_sym)
             info = ticker.fast_info
             return float(getattr(info, "last_price", None) or 0)
@@ -319,15 +325,15 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
 def calculate_entry_zone(entry_price: float, atr_value: float = 0.0, direction: str = "long") -> dict:
     """
     Calculate entry zone instead of exact entry price.
-    
+
     Uses ATR to create a "safe zone" where the signal is still valid.
     This allows for legitimate price fluctuations while maintaining risk.
-    
+
     Args:
         entry_price: Original entry price
         atr_value: Current ATR (optional, for dynamic zone sizing)
         direction: "long" or "short"
-    
+
     Returns:
         Dict with 'entry', 'low', 'high' keys
     """
@@ -337,19 +343,11 @@ def calculate_entry_zone(entry_price: float, atr_value: float = 0.0, direction: 
     else:
         # Fallback: 0.2% of entry price
         zone = entry_price * 0.002
-    
+
     if direction.lower() == "long":
-        return {
-            "entry": entry_price,
-            "low": entry_price - zone,
-            "high": entry_price + zone
-        }
+        return {"entry": entry_price, "low": entry_price - zone, "high": entry_price + zone}
     else:  # short
-        return {
-            "entry": entry_price,
-            "low": entry_price - zone,
-            "high": entry_price + zone
-        }
+        return {"entry": entry_price, "low": entry_price - zone, "high": entry_price + zone}
 
 
 def is_in_entry_zone(entry_price: float, live_price: float, atr_value: float = 0.0, direction: str = "long") -> bool:
@@ -414,7 +412,8 @@ async def validate_signal_freshness(
             if _public_testing:
                 logger.warning(
                     "[delivery_blocked] PUBLIC_TESTING_MODE: error fetching price for %s: %s — blocking delivery",
-                    symbol, exc,
+                    symbol,
+                    exc,
                 )
                 return False, f"price_fetch_error_blocked:{exc}:public_testing_fail_closed", None
             logger.warning("[stale_validator] Error fetching price for %s: %s — allowing signal", symbol, exc)
@@ -446,10 +445,7 @@ async def validate_signal_freshness(
                         f"{symbol} entry={entry:.5f} live={live:.5f}"
                     )
                 else:
-                    reason = (
-                        f"ghost_price: primary={live:.5f} secondary={secondary_price:.5f} "
-                        f"diff > 1%"
-                    )
+                    reason = f"ghost_price: primary={live:.5f} secondary={secondary_price:.5f} diff > 1%"
                     logger.warning(f"[stale_validator] Signal INVALIDATED for {symbol}: {reason}")
                     return False, reason, live
 
@@ -458,7 +454,11 @@ async def validate_signal_freshness(
     # rejects using a different hard-coded percentage.
     threshold_override = signal.get("_canonical_drift_threshold_pct")
     try:
-        threshold = float(threshold_override) if threshold_override not in (None, "") else get_dynamic_threshold(symbol, atr_value, live)
+        threshold = (
+            float(threshold_override)
+            if threshold_override not in (None, "")
+            else get_dynamic_threshold(symbol, atr_value, live)
+        )
     except Exception:
         threshold = get_dynamic_threshold(symbol, atr_value, live)
 
@@ -467,7 +467,7 @@ async def validate_signal_freshness(
     if threshold_override in (None, "") and threshold < 1.0:
         threshold = threshold * 100.0
 
-# Check drift percentage
+    # Check drift percentage
     drift_pct = abs(live - entry) / entry * 100.0
 
     if drift_pct > threshold:
@@ -479,8 +479,12 @@ async def validate_signal_freshness(
             )
             # FIX: Add STALE_AUDIT logging for accepted signals via entry zone
             logger.warning(
-                f"[STALE_AUDIT] ACCEPTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% zone_entry",
-                symbol, entry, live, drift_pct, threshold
+                "[STALE_AUDIT] ACCEPTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% zone_entry",
+                symbol,
+                entry,
+                live,
+                drift_pct,
+                threshold,
             )
         else:
             # Check market calendar before rejecting as stale
@@ -488,8 +492,9 @@ async def validate_signal_freshness(
                 from services.asset_mapper import map_symbol
                 import yfinance as yf
                 import datetime
+
                 yf_sym = map_symbol(symbol, "yfinance") or symbol
-                
+
                 is_closed = False
                 if yf_sym.endswith("=X"):
                     is_closed = datetime.datetime.utcnow().weekday() >= 5
@@ -498,29 +503,34 @@ async def validate_signal_freshness(
                     state = ticker.info.get("marketState", "")
                     if state.upper() == "CLOSED":
                         is_closed = True
-                        
+
                 if is_closed:
                     reason = f"market_closed: entry={entry:.5f} live={live:.5f}"
                     logger.info("[stale_validator] Signal deferred to market_closed for %s: %s", symbol, reason)
                     return False, reason, live
             except Exception as e:
                 logger.debug("[stale_validator] Failed to verify market calendar for %s: %s", symbol, e)
-                
-            reason = (
-                f"stale: entry={entry:.5f} live={live:.5f} "
-                f"drift={drift_pct:.2f}% > threshold={threshold:.1f}%"
-            )
+
+            reason = f"stale: entry={entry:.5f} live={live:.5f} drift={drift_pct:.2f}% > threshold={threshold:.1f}%"
             logger.info("[stale_validator] Signal INVALIDATED for %s: %s", symbol, reason)
             # FIX: Add STALE_AUDIT logging for rejected signals
             logger.warning(
-                f"[STALE_AUDIT] REJECTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% reason=stale",
-                symbol, entry, live, drift_pct, threshold
+                "[STALE_AUDIT] REJECTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% reason=stale",
+                symbol,
+                entry,
+                live,
+                drift_pct,
+                threshold,
             )
             return False, reason, live
 
     logger.debug(
         "[stale_validator] Signal FRESH for %s: entry=%.5f live=%.5f drift=%.3f%% threshold=%.3f%%",
-        symbol, entry, live, drift_pct, threshold,
+        symbol,
+        entry,
+        live,
+        drift_pct,
+        threshold,
     )
     # FIX: Add STALE_AUDIT logging for fresh signals
     logger.warning(
@@ -532,16 +542,17 @@ async def validate_signal_freshness(
 def validate_signal_freshness_sync(signal: Dict[str, Any]) -> Tuple[bool, str, Optional[float]]:
     """Synchronous wrapper around validate_signal_freshness."""
     from utils.async_runner import run_sync
+
     return run_sync(validate_signal_freshness(signal))
 
 
 def get_validator() -> StaleSignalValidator:
     """
     Get the global StaleSignalValidator instance.
-    
+
     This function ensures that the validator is properly initialized with
     environment variables and can be used throughout the codebase.
-    
+
     Returns:
         StaleSignalValidator: The global validator instance
     """
@@ -551,28 +562,28 @@ def get_validator() -> StaleSignalValidator:
 def get_threshold_from_env(symbol: str = "") -> float:
     """
     Get the threshold percentage for a given symbol.
-    
+
     This function now uses the global StaleSignalValidator instance to ensure
     consistent threshold values are used throughout the codebase.
-    
+
     Args:
         symbol: Trading symbol (optional, for asset-class detection)
-    
+
     Returns:
         Threshold as a percentage (0-1 range)
     """
     # First try to get from global validator (uses env var)
     global_threshold = _validator.get_threshold()
-    
+
     # If dynamic drift is enabled and we have ATR, use that
     use_dynamic = _env_bool("USE_DYNAMIC_DRIFT", True)
     if use_dynamic:
         # For symbol-based dynamic threshold, we need ATR value
         # This is just the global threshold if no ATR is provided
         return global_threshold
-    
+
     # Fallback to asset-class threshold if no env var is set
     if not os.getenv("STALE_PRICE_THRESHOLD_PCT"):
         return _threshold_pct(symbol) / 100.0
-    
+
     return global_threshold

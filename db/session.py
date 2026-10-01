@@ -6,7 +6,6 @@ import inspect
 import os
 import random
 import re
-import socket as _socket
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -15,7 +14,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from config import config, resolve_database_url as _config_resolve_database_url, prefer_ipv4_database_url
+from config import resolve_database_url as _config_resolve_database_url, prefer_ipv4_database_url
 from db.priority import DBAdmissionController, DBPriority
 
 logger = logging.getLogger(__name__)
@@ -24,12 +23,7 @@ _T = TypeVar("_T")
 
 
 def _database_role() -> str:
-    raw = (
-        os.getenv("DB_ROLE")
-        or os.getenv("RUN_MODE")
-        or os.getenv("RAILWAY_SERVICE_NAME")
-        or "app"
-    )
+    raw = os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or os.getenv("RAILWAY_SERVICE_NAME") or "app"
     role = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(raw).strip().lower()).strip("-.")
     return (role or "app")[:48]
 
@@ -152,12 +146,12 @@ def _effective_pool_settings() -> tuple[int, int]:
         # PUBLIC_TESTING_MODE blocks any attempt to disable the Railway pool cap.
         # The override env vars are completely ignored in public-testing mode.
         _public_testing = _pool_bool("PUBLIC_TESTING_MODE", False)
-        
+
         # Check for unsafe overrides and log them as errors (not warnings) so
         # operators know the override was ignored.
         disable_requested = _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False)
         allow_uncapped = _pool_bool("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
-        
+
         if disable_requested or allow_uncapped:
             if _public_testing:
                 logger.warning(
@@ -180,9 +174,7 @@ def _effective_pool_settings() -> tuple[int, int]:
         absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
         decomposed_role = _is_decomposed_database_role()
         reviewed_monolith_pool = (
-            not _public_testing
-            and not decomposed_role
-            and _pool_bool("DB_ALLOW_REVIEWED_MONOLITH_POOL", False)
+            not _public_testing and not decomposed_role and _pool_bool("DB_ALLOW_REVIEWED_MONOLITH_POOL", False)
         )
 
         # A reviewed monolith override is intentionally bounded. It exists as a
@@ -197,7 +189,7 @@ def _effective_pool_settings() -> tuple[int, int]:
             _pool_int("DB_REVIEWED_MONOLITH_OVERFLOW_MAX", 2, minimum=0),
             4,
         )
-        
+
         # In public-testing mode, enforce strictest defaults regardless of overrides.
         if _public_testing:
             railway_pool_cap = 2
@@ -218,7 +210,7 @@ def _effective_pool_settings() -> tuple[int, int]:
             railway_pool_cap = min(requested_cap, reviewed_monolith_pool_max)
         else:
             railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
-        
+
         if _public_testing:
             railway_overflow_cap = 0
         elif absolute_overflow_raw is not None and decomposed_role:
@@ -255,7 +247,7 @@ def _effective_pool_settings() -> tuple[int, int]:
                 "set DB_ALLOW_REVIEWED_MONOLITH_POOL=1 after capacity review or decompose the service",
                 _database_role(),
             )
-        
+
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)
@@ -322,8 +314,7 @@ def _effective_session_gate_limit() -> int:
         minimum = _dedicated_analytics_min_sessions()
         if requested < minimum:
             logger.warning(
-                "[db_admission_config] raising dedicated analytics session gate "
-                "requested=%s minimum=%s",
+                "[db_admission_config] raising dedicated analytics session gate requested=%s minimum=%s",
                 requested,
                 minimum,
             )
@@ -344,7 +335,7 @@ def create_engine() -> Optional[AsyncEngine]:
     if not url:
         return None
     pool_size, max_overflow = _effective_pool_settings()
-    
+
     # Use NullPool when pool_size is 0 (NullPool mode enabled)
     if pool_size == 0 and max_overflow == 0:
         return create_async_engine(
@@ -352,7 +343,7 @@ def create_engine() -> Optional[AsyncEngine]:
             poolclass=NullPool,
             connect_args=_engine_connect_args(),
         )
-    
+
     return create_async_engine(
         url,
         pool_size=pool_size,
@@ -380,16 +371,13 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # starving interactive Telegram commands, signal delivery proof writes, or
 # signal storage. The value is intentionally smaller than the main gate.
 _dedicated_noninteractive_db_roles = {
-    "analytics", "scheduler",
+    "analytics",
+    "scheduler",
 }
 _default_foreground_reserve = (
     0
     if _database_role() in _dedicated_noninteractive_db_roles
-    else (
-        1
-        if _session_gate_limit <= 2
-        else min(4, max(2, _session_gate_limit // 4))
-    )
+    else (1 if _session_gate_limit <= 2 else min(4, max(2, _session_gate_limit // 4)))
 )
 _foreground_reserved_sessions = max(
     0,
@@ -419,7 +407,9 @@ _background_gate_limit = max(
 )
 _background_gate = threading.BoundedSemaphore(_background_gate_limit)
 _default_interactive_limit = 1 if _session_gate_limit <= 2 else max(1, _foreground_reserved_sessions // 2)
-_default_critical_limit = 1 if _session_gate_limit <= 2 else max(1, _foreground_reserved_sessions - _default_interactive_limit)
+_default_critical_limit = (
+    1 if _session_gate_limit <= 2 else max(1, _foreground_reserved_sessions - _default_interactive_limit)
+)
 _interactive_session_limit = max(
     1,
     min(
@@ -434,9 +424,7 @@ _critical_session_limit = max(
         _pool_int("DB_CRITICAL_MAX_CONCURRENT_SESSIONS", _default_critical_limit, minimum=1),
     ),
 )
-_dedicated_analytics_role = bool(
-    _database_role() == "analytics" or _database_role().startswith("analytics-")
-)
+_dedicated_analytics_role = bool(_database_role() == "analytics" or _database_role().startswith("analytics-"))
 
 
 def _effective_analytics_session_limit(
@@ -480,8 +468,7 @@ _priority_admission = DBAdmissionController(
 )
 
 logger.info(
-    "[db_admission_config] role=%s session_limit=%s foreground_reserve=%s "
-    "background_limit=%s analytics_limit=%s",
+    "[db_admission_config] role=%s session_limit=%s foreground_reserve=%s background_limit=%s analytics_limit=%s",
     _database_role(),
     _session_gate_limit,
     _foreground_reserved_sessions,
@@ -574,6 +561,7 @@ def _warn_legacy_priority_flag(flag: str) -> None:
         "BACKGROUND" if flag == "noncritical" else flag.upper(),
     )
 
+
 # Backward compatibility for legacy call-sites that still import
 # `_get_global_engine` / `_global_engine` from this module.
 _global_engine: Optional[AsyncEngine] = None
@@ -612,10 +600,7 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
         auxiliary_nullpool = bool(
             _engines_by_loop
             and _is_railway_runtime()
-            and (
-                _pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True)
-                or _pool_bool("DB_AUXILIARY_NULLPOOL", True)
-            )
+            and (_pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True) or _pool_bool("DB_AUXILIARY_NULLPOOL", True))
         )
         if _is_railway_runtime():
             role = _database_role()
@@ -741,34 +726,52 @@ def get_engine_inventory() -> list[dict[str, Any]]:
             pool = engine.sync_engine.pool
             pool_type = type(pool).__name__
             try:
-                pool_size = int(getattr(pool, "size", lambda: 0)() if callable(getattr(pool, "size", None)) else getattr(pool, "size", 0) or 0)
+                pool_size = int(
+                    getattr(pool, "size", lambda: 0)()
+                    if callable(getattr(pool, "size", None))
+                    else getattr(pool, "size", 0) or 0
+                )
             except Exception:
                 pass
             try:
-                max_overflow = int(getattr(pool, "overflow", lambda: 0)() if callable(getattr(pool, "overflow", None)) else getattr(pool, "overflow", 0) or 0)
+                max_overflow = int(
+                    getattr(pool, "overflow", lambda: 0)()
+                    if callable(getattr(pool, "overflow", None))
+                    else getattr(pool, "overflow", 0) or 0
+                )
             except Exception:
                 pass
             try:
-                checked_out = int(getattr(pool, "checkedout", lambda: 0)() if callable(getattr(pool, "checkedout", None)) else getattr(pool, "checkedout", None))
+                checked_out = int(
+                    getattr(pool, "checkedout", lambda: 0)()
+                    if callable(getattr(pool, "checkedout", None))
+                    else getattr(pool, "checkedout", None)
+                )
             except Exception:
                 pass
             try:
-                checked_in = int(getattr(pool, "checkedin", lambda: 0)() if callable(getattr(pool, "checkedin", None)) else getattr(pool, "checkedin", None))
+                checked_in = int(
+                    getattr(pool, "checkedin", lambda: 0)()
+                    if callable(getattr(pool, "checkedin", None))
+                    else getattr(pool, "checkedin", None)
+                )
             except Exception:
                 pass
         except Exception:
             pass
         owning = "main" if loop_id == main_loop_id else "auxiliary"
-        inventory.append({
-            "loop_id": loop_id,
-            "pool_type": pool_type,
-            "pool_size": pool_size,
-            "max_overflow": max_overflow,
-            "checked_out": checked_out,
-            "checked_in": checked_in,
-            "owning_runtime": owning,
-            "nullpool": pool_type == "NullPool" and pool_size == 0 and max_overflow == 0,
-        })
+        inventory.append(
+            {
+                "loop_id": loop_id,
+                "pool_type": pool_type,
+                "pool_size": pool_size,
+                "max_overflow": max_overflow,
+                "checked_out": checked_out,
+                "checked_in": checked_in,
+                "owning_runtime": owning,
+                "nullpool": pool_type == "NullPool" and pool_size == 0 and max_overflow == 0,
+            }
+        )
     return inventory
 
 
@@ -846,8 +849,7 @@ async def collect_database_health() -> dict[str, Any]:
                 )
             )
             result["postgres"]["activity_by_state"] = {
-                str(state or "unknown"): int(count or 0)
-                for state, count in activity.fetchall()
+                str(state or "unknown"): int(count or 0) for state, count in activity.fetchall()
             }
             max_conn = await session.execute(text("SHOW max_connections"))
             result["postgres"]["max_connections"] = str(max_conn.scalar_one_or_none() or "")
@@ -936,9 +938,7 @@ def resolve_db_priority(
     if priority is not None and selected_flags:
         raise ValueError("priority cannot be combined with legacy DB priority flags")
     if len(selected_flags) > 1:
-        raise ValueError(
-            "conflicting legacy DB priority flags: " + ", ".join(selected_flags)
-        )
+        raise ValueError("conflicting legacy DB priority flags: " + ", ".join(selected_flags))
     if priority is not None:
         return DBAdmissionController.normalize(priority)
     if interactive:
@@ -1009,6 +1009,7 @@ async def _acquire_semaphore_cancellation_safe(
     try:
         return bool(await asyncio.shield(worker))
     except asyncio.CancelledError:
+
         def _release_late_acquire(task: asyncio.Task[bool]) -> None:
             try:
                 if task.result():
@@ -1050,11 +1051,14 @@ async def get_session(
     clamped to a safe non-negative duration and does not alter the global
     priority policy.
     """
-    _safe_label = re.sub(
-        r"[^a-zA-Z0-9_.-]+",
-        "_",
-        resolve_session_label(label),
-    )[:64] or "unknown_session_caller"
+    _safe_label = (
+        re.sub(
+            r"[^a-zA-Z0-9_.-]+",
+            "_",
+            resolve_session_label(label),
+        )[:64]
+        or "unknown_session_caller"
+    )
     resolved = resolve_db_priority(
         priority,
         noncritical=noncritical,
@@ -1084,8 +1088,7 @@ async def get_session(
         and _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
     )
     drop_background = bool(
-        is_background
-        and (configured_drop_background if drop_if_busy is None else bool(drop_if_busy))
+        is_background and (configured_drop_background if drop_if_busy is None else bool(drop_if_busy))
     )
     # Analytics is nonblocking by default, but a durable analytics caller may
     # explicitly pass drop_if_busy=False to wait within its bounded timeout.
@@ -1097,10 +1100,7 @@ async def get_session(
     priority_started = 0.0
     holder_token: str | None = None
     foreground_waiting_recorded = False
-    foreground_scope = bool(
-        is_critical
-        or (is_interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True))
-    )
+    foreground_scope = bool(is_critical or (is_interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True)))
     if foreground_scope:
         _mark_critical_db_start()
         with _session_metrics_lock:
@@ -1109,8 +1109,10 @@ async def get_session(
             foreground_waiting_recorded = True
 
     try:
-        if is_background and critical_db_work_active() and _truthy_env(
-            "DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False
+        if (
+            is_background
+            and critical_db_work_active()
+            and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False)
         ):
             _priority_admission.record_deferred(resolved)
             _priority_admission.record_dropped(resolved)
@@ -1134,13 +1136,9 @@ async def get_session(
                     _session_metrics["errors"] += 1
             if is_background:
                 _priority_admission.record_dropped(resolved)
-                raise NoncriticalWriteDropped(
-                    f"background DB work deferred ({_safe_label}): foreground lane reserved"
-                )
+                raise NoncriticalWriteDropped(f"background DB work deferred ({_safe_label}): foreground lane reserved")
             if is_analytics:
-                raise AnalyticsWorkDeferred(
-                    "analytics DB work deferred: foreground or operational work is active"
-                )
+                raise AnalyticsWorkDeferred("analytics DB work deferred: foreground or operational work is active")
             _log_admission_failure(
                 label=_safe_label,
                 priority=resolved,
@@ -1163,18 +1161,14 @@ async def get_session(
                 )
             finally:
                 with _session_metrics_lock:
-                    _session_metrics["background_waiting"] = max(
-                        0, _session_metrics["background_waiting"] - 1
-                    )
+                    _session_metrics["background_waiting"] = max(0, _session_metrics["background_waiting"] - 1)
             if not bg_acquired:
                 _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
                 with _session_metrics_lock:
                     _session_metrics["background_dropped"] += 1
                     _session_metrics["noncritical_dropped"] += 1
-                raise NoncriticalWriteDropped(
-                    f"background DB work deferred ({_safe_label}): background DB gate busy"
-                )
+                raise NoncriticalWriteDropped(f"background DB work deferred ({_safe_label}): background DB gate busy")
             with _session_metrics_lock:
                 _session_metrics["background_active"] += 1
 
@@ -1205,14 +1199,10 @@ async def get_session(
             if is_background:
                 _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
-                raise NoncriticalWriteDropped(
-                    f"background DB work deferred ({_safe_label}): session gate busy"
-                )
+                raise NoncriticalWriteDropped(f"background DB work deferred ({_safe_label}): session gate busy")
             if is_analytics:
                 _priority_admission.record_deferred(resolved)
-                raise AnalyticsWorkDeferred(
-                    "analytics DB work deferred: session gate busy"
-                )
+                raise AnalyticsWorkDeferred("analytics DB work deferred: session gate busy")
             _priority_admission.record_timeout(resolved)
             _log_admission_failure(
                 label=_safe_label,
@@ -1231,15 +1221,11 @@ async def get_session(
             _session_metrics["opened"] += 1
             _session_metrics["active"] += 1
             if is_critical:
-                _session_metrics["critical_waiting"] = max(
-                    0, _session_metrics["critical_waiting"] - 1
-                )
+                _session_metrics["critical_waiting"] = max(0, _session_metrics["critical_waiting"] - 1)
                 _session_metrics["critical_active"] += 1
                 foreground_waiting_recorded = False
             if is_interactive:
-                _session_metrics["interactive_waiting"] = max(
-                    0, _session_metrics["interactive_waiting"] - 1
-                )
+                _session_metrics["interactive_waiting"] = max(0, _session_metrics["interactive_waiting"] - 1)
                 _session_metrics["interactive_active"] += 1
                 foreground_waiting_recorded = False
         holder_token = f"{threading.get_ident()}:{_loop_identity()}:{time.time_ns()}"
@@ -1266,13 +1252,9 @@ async def get_session(
                 _session_metrics["closed"] += 1
                 _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
                 if is_critical:
-                    _session_metrics["critical_active"] = max(
-                        0, _session_metrics["critical_active"] - 1
-                    )
+                    _session_metrics["critical_active"] = max(0, _session_metrics["critical_active"] - 1)
                 if is_interactive:
-                    _session_metrics["interactive_active"] = max(
-                        0, _session_metrics["interactive_active"] - 1
-                    )
+                    _session_metrics["interactive_active"] = max(0, _session_metrics["interactive_active"] - 1)
     finally:
         if holder_token is not None:
             with _active_holder_lock:
@@ -1291,9 +1273,7 @@ async def get_session(
             _session_gate.release()
         if bg_acquired:
             with _session_metrics_lock:
-                _session_metrics["background_active"] = max(
-                    0, _session_metrics["background_active"] - 1
-                )
+                _session_metrics["background_active"] = max(0, _session_metrics["background_active"] - 1)
             _background_gate.release()
         if priority_acquired:
             _priority_admission.release(
@@ -1334,7 +1314,9 @@ def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
 def _build_pg_dsn_from_parts(*, async_driver: bool) -> Optional[str]:
     host = (os.getenv("PGHOST") or os.getenv("POSTGRES_HOST") or os.getenv("DATABASE_HOST") or "").strip()
     user = (os.getenv("PGUSER") or os.getenv("POSTGRES_USER") or os.getenv("DATABASE_USER") or "").strip()
-    password = (os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD") or "").strip()
+    password = (
+        os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD") or ""
+    ).strip()
     database = (os.getenv("PGDATABASE") or os.getenv("POSTGRES_DB") or os.getenv("DATABASE_NAME") or "").strip()
     port = (os.getenv("PGPORT") or os.getenv("POSTGRES_PORT") or os.getenv("DATABASE_PORT") or "").strip()
     if not host or not user or not database:
@@ -1400,6 +1382,7 @@ def get_sync_session():
     Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
     return Session()
 
+
 def resolve_session_label(label: str | None) -> str:
     """Return an explicit label or derive a stable caller label.
 
@@ -1418,16 +1401,22 @@ def resolve_session_label(label: str | None) -> str:
                 break
             module = str(cursor.f_globals.get("__name__", "unknown_module"))
             function = str(cursor.f_code.co_name)
-            if module != __name__ and module != "contextlib" and function not in {
-                "__aenter__",
-                "__anext__",
-            }:
+            if (
+                module != __name__
+                and module != "contextlib"
+                and function
+                not in {
+                    "__aenter__",
+                    "__anext__",
+                }
+            ):
                 return f"{module}.{function}:{int(cursor.f_lineno)}"
             cursor = cursor.f_back
     finally:
         del frame
 
     return "unknown_session_caller"
+
 
 async def init_db() -> None:
     """Create database tables from ORM metadata when an engine is configured."""

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Pattern, Set
+from typing import Dict, Set
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +32,11 @@ _CANONICAL_MAPPINGS: Dict[str, str] = {
     # Crypto Bitcoin variations
     "BTCUSD": "BTCUSDT",
     "BTC/USDT": "BTCUSDT",
-    "BTCUSD": "BTCUSDT",
     "XBTUSD": "BTCUSDT",  # Binance legacy
     "XBTUSDT": "BTCUSDT",
     # Crypto Ethereum variations
     "ETHUSD": "ETHUSDT",
     "ETH/USDT": "ETHUSDT",
-    "ETHUSD": "ETHUSDT",
     "XETHUSD": "ETHUSDT",
     # Crypto Solana
     "SOLUSD": "SOLUSDT",
@@ -71,7 +69,10 @@ _CANONICAL_MAPPINGS: Dict[str, str] = {
 # Asset type detection patterns
 _ASSET_TYPE_PATTERNS: Dict[str, re.Pattern] = {
     # Crypto (ends with USD or USDT, or is in known crypto list)
-    "crypto": re.compile(r"^(BTC|ETH|SOL|XRP|ADA|DOT|AVAX|MATIC|LINK|ATOM|UNI|LTC|NEAR|APT|ARB|OP|INJ|DOGE|XLM|XTZ|MNK|USDT|USD)$", re.IGNORECASE),
+    "crypto": re.compile(
+        r"^(BTC|ETH|SOL|XRP|ADA|DOT|AVAX|MATIC|LINK|ATOM|UNI|LTC|NEAR|APT|ARB|OP|INJ|DOGE|XLM|XTZ|MNK|USDT|USD)$",
+        re.IGNORECASE,
+    ),
     # Forex (major pairs, ends with USD, EUR, JPY, GBP, CHF, CAD, AUD, NZD)
     "forex": re.compile(r"^[A-Z]{3}(USD|EUR|JPY|GBP|CHF|CAD|AUD|NZD)$", re.IGNORECASE),
     # Indices (common patterns)
@@ -82,9 +83,36 @@ _ASSET_TYPE_PATTERNS: Dict[str, re.Pattern] = {
 
 # Known crypto assets (for ambiguous cases)
 _KNOWN_CRYPTO: Set[str] = {
-    "BTC", "ETH", "SOL", "XRP", "ADA", "DOT", "AVAX", "MATIC", "LINK", "ATOM",
-    "UNI", "LTC", "NEAR", "APT", "ARB", "OP", "INJ", "DOGE", "XLM", "XTZ",
-    "USDT", "USD", "BNB", "FTM", "SAND", "MANA", "AAVE", "MKR", "SNX", "CRV",
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP",
+    "ADA",
+    "DOT",
+    "AVAX",
+    "MATIC",
+    "LINK",
+    "ATOM",
+    "UNI",
+    "LTC",
+    "NEAR",
+    "APT",
+    "ARB",
+    "OP",
+    "INJ",
+    "DOGE",
+    "XLM",
+    "XTZ",
+    "USDT",
+    "USD",
+    "BNB",
+    "FTM",
+    "SAND",
+    "MANA",
+    "AAVE",
+    "MKR",
+    "SNX",
+    "CRV",
 }
 
 
@@ -100,22 +128,22 @@ def _clean_symbol(symbol: str) -> str:
 def _detect_asset_type(symbol: str) -> str:
     """
     Detect the type of asset based on symbol patterns.
-    
+
     Returns: "crypto", "forex", "index", "commodity", "stock", or "unknown"
     """
     sym = _clean_symbol(symbol)
     if not sym:
         return "unknown"
-    
+
     # Check known mappings first
     if sym in _KNOWN_CRYPTO:
         return "crypto"
-    
+
     # Check patterns
     for asset_type, pattern in _ASSET_TYPE_PATTERNS.items():
         if pattern.match(sym):
             return asset_type
-    
+
     # Default unknown
     return "unknown"
 
@@ -123,14 +151,14 @@ def _detect_asset_type(symbol: str) -> str:
 def normalize(symbol: str, target_exchange: str = "binance") -> str:
     """
     Normalize a symbol to canonical form.
-    
+
     Args:
         symbol: Input symbol (any format)
         target_exchange: Target exchange (binance, forex, etc.) - currently only binance supported
-        
+
     Returns:
         Canonical symbol string
-        
+
     Examples:
         >>> normalize("BTCUSD")
         'BTCUSDT'
@@ -141,25 +169,25 @@ def normalize(symbol: str, target_exchange: str = "binance") -> str:
     """
     if not symbol:
         return ""
-    
+
     # Clean the symbol
     cleaned = _clean_symbol(symbol)
-    
+
     # Check direct mapping first
     if cleaned in _CANONICAL_MAPPINGS:
         return _CANONICAL_MAPPINGS[cleaned]
-    
+
     # Handle special cases
     # Crypto without USDT suffix
     if len(cleaned) in {4, 5} and cleaned not in {"USDT", "USDT", "USDC"}:
         # Likely a crypto - add USDT
         if cleaned in _KNOWN_CRYPTO or _detect_asset_type(cleaned) == "crypto":
             return f"{cleaned}USDT"
-    
+
     # Check for forex - keep as is
     if _detect_asset_type(cleaned) == "forex":
         return cleaned
-    
+
     # Default: return cleaned (may be already canonical)
     return cleaned
 
@@ -167,14 +195,14 @@ def normalize(symbol: str, target_exchange: str = "binance") -> str:
 def normalize_pair(symbol: str, quote_currency: str = "USDT") -> str:
     """
     Normalize a symbol with explicit quote currency.
-    
+
     Args:
         symbol: Base asset symbol
         quote_currency: Quote currency (default: USDT)
-        
+
     Returns:
         Normalized pair symbol
-        
+
     Examples:
         >>> normalize_pair("BTC")
         'BTCUSDT'
@@ -183,19 +211,19 @@ def normalize_pair(symbol: str, quote_currency: str = "USDT") -> str:
     """
     if not symbol:
         return ""
-    
+
     cleaned = _clean_symbol(symbol)
     quote = _clean_symbol(quote_currency) or "USDT"
-    
+
     # Check if already has quote
     if cleaned.endswith(quote):
         return cleaned
-    
+
     # Check mapping
     full = f"{cleaned}{quote}"
     if full in _CANONICAL_MAPPINGS:
         return _CANONICAL_MAPPINGS[full]
-    
+
     return full
 
 
@@ -234,13 +262,13 @@ def get_quote_asset(symbol: str) -> str:
 def batch_normalize(symbols: list[str]) -> dict[str, str]:
     """
     Normalize a batch of symbols.
-    
+
     Args:
         symbols: List of symbols to normalize
-        
+
     Returns:
         Dict mapping original → normalized
-        
+
     Examples:
         >>> batch_normalize(["BTCUSD", "ETH/USD", "EURUSD"])
         {'BTCUSD': 'BTCUSDT', 'ETH/USD': 'ETHUSDT', 'EURUSD': 'EURUSD'}

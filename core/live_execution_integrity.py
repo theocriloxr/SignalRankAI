@@ -1,4 +1,5 @@
 """Fail-closed admission policy for real-money auto and copy execution."""
+
 from __future__ import annotations
 
 import os

@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env", override=False)
     load_dotenv(".env.local", override=True)
 except Exception:
@@ -33,15 +34,9 @@ def get_url() -> str:
     # Migrations should use a direct PostgreSQL connection when runtime traffic
     # is routed through PgBouncer transaction pooling.  Fall back to the runtime
     # URL for simple/direct-Postgres deployments.
-    url = (
-        os.getenv("DATABASE_MIGRATION_URL")
-        or os.getenv("DATABASE_DIRECT_URL")
-        or app_config.DATABASE_URL
-    )
+    url = os.getenv("DATABASE_MIGRATION_URL") or os.getenv("DATABASE_DIRECT_URL") or app_config.DATABASE_URL
     if not url:
-        raise RuntimeError(
-            "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not set"
-        )
+        raise RuntimeError("DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not set")
     # Railway commonly emits ``postgres://`` while SQLAlchemy 2 requires the
     # canonical ``postgresql`` dialect. Alembic is synchronous, so use the
     # explicitly installed psycopg2 driver for all PostgreSQL URL variants.

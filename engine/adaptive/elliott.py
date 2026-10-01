@@ -5,6 +5,7 @@ This shim keeps deployments and extensions that still import
 ``engine.adaptive.elliott`` operational while the package layout remains
 component-based.
 """
+
 from .components.elliott import ElliottWaveComponent
 
 __all__ = ["ElliottWaveComponent"]

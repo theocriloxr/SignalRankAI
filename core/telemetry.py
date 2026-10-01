@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 import threading
 from contextlib import contextmanager
 from typing import Any, Iterator
@@ -35,7 +34,11 @@ _TRACER_PROVIDER: Any = None
 _TRACER_INITIALIZED = False
 
 SERVICE_UP = Gauge("signalrank_service_up", "Service readiness indicator")
-ENGINE_CYCLE_SECONDS = Histogram("signalrank_engine_cycle_seconds", "Engine loop cycle duration in seconds", buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60))
+ENGINE_CYCLE_SECONDS = Histogram(
+    "signalrank_engine_cycle_seconds",
+    "Engine loop cycle duration in seconds",
+    buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+)
 ENGINE_TASK_SECONDS = Histogram(
     "signalrank_engine_task_seconds",
     "Per-asset/timeframe engine task duration in seconds",
@@ -125,7 +128,9 @@ def observe_engine_cycle(seconds: float) -> None:
 
 def observe_engine_task(asset: str, timeframe: str, seconds: float, outcome: str = "ok") -> None:
     try:
-        ENGINE_TASK_SECONDS.labels(asset=str(asset or "unknown"), timeframe=str(timeframe or "unknown"), outcome=str(outcome or "ok")).observe(max(0.0, float(seconds)))
+        ENGINE_TASK_SECONDS.labels(
+            asset=str(asset or "unknown"), timeframe=str(timeframe or "unknown"), outcome=str(outcome or "ok")
+        ).observe(max(0.0, float(seconds)))
     except Exception:
         logger.debug("[telemetry] failed to observe engine task", exc_info=True)
 
@@ -135,7 +140,9 @@ def observe_signal_dispatch(seconds: float, tier: str, regime: str | None = None
     regime_label = str(regime or "unknown").lower()
     status_label = str(status or "ok").lower()
     try:
-        SIGNAL_DISPATCH_SECONDS.labels(tier=tier_label, regime=regime_label, status=status_label).observe(max(0.0, float(seconds)))
+        SIGNAL_DISPATCH_SECONDS.labels(tier=tier_label, regime=regime_label, status=status_label).observe(
+            max(0.0, float(seconds))
+        )
         SIGNAL_DISPATCH_TOTAL.labels(tier=tier_label, regime=regime_label, status=status_label).inc()
     except Exception:
         logger.debug("[telemetry] failed to observe dispatch", exc_info=True)
@@ -143,7 +150,9 @@ def observe_signal_dispatch(seconds: float, tier: str, regime: str | None = None
 
 def observe_signal_generated(asset: str, timeframe: str) -> None:
     try:
-        SIGNAL_GENERATED_TOTAL.labels(asset=str(asset or "unknown").upper(), timeframe=str(timeframe or "unknown")).inc()
+        SIGNAL_GENERATED_TOTAL.labels(
+            asset=str(asset or "unknown").upper(), timeframe=str(timeframe or "unknown")
+        ).inc()
     except Exception:
         logger.debug("[telemetry] failed to observe generated signal", exc_info=True)
 
@@ -159,7 +168,9 @@ def observe_ml_confidence(value: float | None) -> None:
 
 def observe_http_request(method: str, route: str, status: int | str, seconds: float) -> None:
     try:
-        HTTP_REQUEST_SECONDS.labels(method=str(method or "GET").upper(), route=str(route or "unknown"), status=str(status or "200")).observe(max(0.0, float(seconds)))
+        HTTP_REQUEST_SECONDS.labels(
+            method=str(method or "GET").upper(), route=str(route or "unknown"), status=str(status or "200")
+        ).observe(max(0.0, float(seconds)))
     except Exception:
         logger.debug("[telemetry] failed to observe http request", exc_info=True)
 
@@ -187,9 +198,7 @@ def publish_slo_snapshot(
     }
     try:
         SLO_ERROR_RATE.labels(**labels).set(max(0.0, min(1.0, float(error_rate))))
-        SLO_BUDGET_REMAINING_PCT.labels(**labels).set(
-            max(0.0, min(100.0, float(budget_remaining_pct)))
-        )
+        SLO_BUDGET_REMAINING_PCT.labels(**labels).set(max(0.0, min(100.0, float(budget_remaining_pct))))
         SLO_SAMPLES.labels(**labels).set(max(0, int(samples)))
         SLO_DEGRADED.labels(**labels).set(1 if degraded else 0)
     except Exception:
@@ -225,8 +234,15 @@ def init_tracer(service_name: str = "signalrankai"):
         try:
             resource = Resource.create({"service.name": service_name}) if Resource is not None else None
             provider = TracerProvider(resource=resource) if resource is not None else TracerProvider()
-            endpoint = (os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or "").strip()
-            console_enabled = str(os.getenv("OTEL_CONSOLE_EXPORTER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+            endpoint = (
+                os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or ""
+            ).strip()
+            console_enabled = str(os.getenv("OTEL_CONSOLE_EXPORTER_ENABLED", "0")).strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             if endpoint and OTLPSpanExporter is not None:
                 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
             elif console_enabled and ConsoleSpanExporter is not None:

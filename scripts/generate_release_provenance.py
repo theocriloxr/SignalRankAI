@@ -8,6 +8,7 @@ The generated bundle contains:
 No signing key is created or guessed here. External artifact signing/attestation
 can sign the deterministic digest produced by this tool.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,13 +58,17 @@ def git_value(*args: str) -> str:
 
 
 def release_identity(commit: str | None = None, branch: str | None = None) -> tuple[str, str]:
-    resolved_commit = str(
-        commit
-        or os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("GIT_COMMIT_SHA")
-        or git_value("rev-parse", "HEAD")
-        or ""
-    ).strip().lower()
+    resolved_commit = (
+        str(
+            commit
+            or os.getenv("RAILWAY_GIT_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or git_value("rev-parse", "HEAD")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if not re.fullmatch(r"[0-9a-f]{40}", resolved_commit):
         raise ValueError("release_commit_must_be_exact_40_char_sha")
 
@@ -121,7 +126,7 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
     head = alembic_head()
 
     import datetime
-    
+
     sbom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",

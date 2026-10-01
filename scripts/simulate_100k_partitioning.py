@@ -3,6 +3,7 @@
 This is not a production load test. It catches pathological partition choices
 before a Redis/Railway load test and emits machine-readable distribution data.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,9 +61,7 @@ def main() -> None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
     if result["max_to_mean_ratio"] > args.max_imbalance:
-        raise SystemExit(
-            f"partition imbalance {result['max_to_mean_ratio']:.4f} exceeds {args.max_imbalance:.4f}"
-        )
+        raise SystemExit(f"partition imbalance {result['max_to_mean_ratio']:.4f} exceeds {args.max_imbalance:.4f}")
 
 
 if __name__ == "__main__":

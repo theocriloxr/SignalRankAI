@@ -320,6 +320,7 @@ def _read_positive_int(path: Path) -> int | None:
 
 def _physical_memory_bytes() -> int | None:
     if sys.platform == "win32":
+
         class _MemoryStatus(ctypes.Structure):
             _fields_ = [
                 ("dwLength", ctypes.c_ulong),
@@ -369,10 +370,13 @@ def detect_memory_limit(
     if explicit_bytes > 0:
         return MemoryLimit(explicit_bytes, "explicit")
 
-    paths = tuple(cgroup_paths or (
-        Path("/sys/fs/cgroup/memory.max"),
-        Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
-    ))
+    paths = tuple(
+        cgroup_paths
+        or (
+            Path("/sys/fs/cgroup/memory.max"),
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+        )
+    )
     physical = physical_memory_bytes if physical_memory_bytes is not None else _physical_memory_bytes()
     candidates: list[tuple[int, str]] = []
     for index, raw_path in enumerate(paths):
@@ -409,15 +413,20 @@ def read_process_rss_bytes() -> int | None:
 
     if sys.platform.startswith("linux"):
         try:
-            for line in Path("/proc/self/status").read_text(
-                encoding="ascii",
-                errors="ignore",
-            ).splitlines():
+            for line in (
+                Path("/proc/self/status")
+                .read_text(
+                    encoding="ascii",
+                    errors="ignore",
+                )
+                .splitlines()
+            ):
                 if line.startswith("VmRSS:"):
                     return int(line.split()[1]) * 1024
         except (OSError, IndexError, TypeError, ValueError):
             pass
     if sys.platform == "win32":
+
         class _ProcessMemoryCounters(ctypes.Structure):
             _fields_ = [
                 ("cb", ctypes.c_ulong),
@@ -611,9 +620,7 @@ class ResourceSnapshot:
 class _GovernorMetrics:
     evaluations_total: int = 0
     transitions_total: int = 0
-    state_observations: dict[str, int] = field(
-        default_factory=lambda: {state.value: 0 for state in ResourceState}
-    )
+    state_observations: dict[str, int] = field(default_factory=lambda: {state.value: 0 for state in ResourceState})
     transition_counts: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self, current_state: ResourceState) -> dict[str, Any]:
@@ -667,9 +674,7 @@ class ResourceGovernor:
         memory_limit: MemoryLimit | None = None,
     ) -> None:
         self.thresholds = thresholds or ResourceThresholds.from_env()
-        self.memory_limit = memory_limit or detect_memory_limit(
-            explicit_mb=self.thresholds.explicit_memory_limit_mb
-        )
+        self.memory_limit = memory_limit or detect_memory_limit(explicit_mb=self.thresholds.explicit_memory_limit_mb)
         self._state = ResourceState.OPTIMAL
         self._recovery_streak = 0
         self._lock = threading.Lock()
@@ -745,9 +750,7 @@ class ResourceGovernor:
         **external_inputs: Any,
     ) -> ResourceSnapshot:
         if measure_loop_lag and external_inputs.get("event_loop_lag_ms") is None:
-            external_inputs["event_loop_lag_ms"] = await measure_event_loop_lag_ms(
-                loop_probe_seconds
-            )
+            external_inputs["event_loop_lag_ms"] = await measure_event_loop_lag_ms(loop_probe_seconds)
         inputs = self.collect_inputs(**external_inputs)
         return self.evaluate(inputs)
 
@@ -926,9 +929,7 @@ class ResourceGovernor:
                 )
 
             breaches = tuple(
-                f"{name}:{_LEVEL_STATE[level].value}"
-                for name, level in sorted(levels.items())
-                if level > 0
+                f"{name}:{_LEVEL_STATE[level].value}" for name, level in sorted(levels.items()) if level > 0
             )
             snapshot = ResourceSnapshot(
                 observed_at=datetime.now(timezone.utc).isoformat(),
@@ -953,9 +954,7 @@ class ResourceGovernor:
         try:
             if _RESOURCE_STATE_GAUGE is not None:
                 for state in ResourceState:
-                    _RESOURCE_STATE_GAUGE.labels(state=state.value).set(
-                        1 if state is snapshot.state else 0
-                    )
+                    _RESOURCE_STATE_GAUGE.labels(state=state.value).set(1 if state is snapshot.state else 0)
             if _RESOURCE_PRESSURE_GAUGE is not None:
                 for name, value in snapshot.pressure_values.items():
                     _RESOURCE_PRESSURE_GAUGE.labels(metric=name).set(float(value))

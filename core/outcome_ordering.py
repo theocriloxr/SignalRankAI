@@ -1,4 +1,5 @@
 """Monotonic ordering policy for user-facing outcome notifications."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,8 +25,18 @@ _STAGE_RANKS = {
     "closed": 30,
 }
 _TERMINAL = {
-    "tp3", "sl", "stop", "stopped", "partial_win", "partial_win_be", "breakeven", "be",
-    "missed", "expired", "cancelled", "closed",
+    "tp3",
+    "sl",
+    "stop",
+    "stopped",
+    "partial_win",
+    "partial_win_be",
+    "breakeven",
+    "be",
+    "missed",
+    "expired",
+    "cancelled",
+    "closed",
 }
 
 

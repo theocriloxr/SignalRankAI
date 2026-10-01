@@ -214,7 +214,9 @@ def validate_quote_for_final_delivery(
     checks.append("quote_kind")
 
     if quote.source_timestamp is None:
-        reason = "db_tick_missing_source_timestamp" if quote_kind == QuoteKind.DB_TICK.value else "missing_source_timestamp"
+        reason = (
+            "db_tick_missing_source_timestamp" if quote_kind == QuoteKind.DB_TICK.value else "missing_source_timestamp"
+        )
         return QuoteTrustDecision(False, reason, "BLOCKED_PROVIDER_UNTRUSTED", policy.version)
 
     asset_class = normalize_asset_class(quote.asset_class)
@@ -253,13 +255,26 @@ def validate_quote_for_final_delivery(
     health = str(quote.provider_health or "unknown").lower()
     breaker = str(quote.breaker_state or "closed").lower()
     if quote.untrusted_reason:
-        return QuoteTrustDecision(False, quote.untrusted_reason, "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age)
+        return QuoteTrustDecision(
+            False, quote.untrusted_reason, "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age
+        )
     if health != ProviderHealthState.HEALTHY.value:
-        return QuoteTrustDecision(False, f"provider_health:{health}", "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age)
+        return QuoteTrustDecision(
+            False, f"provider_health:{health}", "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age
+        )
     if breaker != BreakerState.CLOSED.value:
-        return QuoteTrustDecision(False, f"provider_breaker:{breaker}", "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age)
+        return QuoteTrustDecision(
+            False, f"provider_breaker:{breaker}", "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age
+        )
     if not math.isfinite(float(quote.confidence)) or float(quote.confidence) < policy.min_confidence:
-        return QuoteTrustDecision(False, f"confidence_too_low:{quote.confidence}", "BLOCKED_PROVIDER_UNTRUSTED", policy.version, source_age, max_age)
+        return QuoteTrustDecision(
+            False,
+            f"confidence_too_low:{quote.confidence}",
+            "BLOCKED_PROVIDER_UNTRUSTED",
+            policy.version,
+            source_age,
+            max_age,
+        )
     if (
         quote.cross_provider_deviation_pct is not None
         and float(quote.cross_provider_deviation_pct) > policy.max_cross_provider_deviation_pct

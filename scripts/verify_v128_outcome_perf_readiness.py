@@ -1,4 +1,5 @@
 """Static/runtime verifier for SignalRankAI v1.2.8."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,10 +41,14 @@ def main() -> int:
     readiness = run_readiness_checks(ROOT)
     require(readiness.get("ok") is True, "offline production readiness")
     checks = {item["name"]: item for item in readiness.get("checks", [])}
-    require(checks.get("railway_direct_observability_routes", {}).get("ok") is True, "Railway direct observability routes")
+    require(
+        checks.get("railway_direct_observability_routes", {}).get("ok") is True, "Railway direct observability routes"
+    )
 
     require((ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").exists(), "production profile")
-    require((ROOT / "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile")
+    require(
+        (ROOT / "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile"
+    )
     print("PASS v1.2.8 outcome/performance/readiness verification")
     return 0
 

@@ -8,7 +8,7 @@ Usage:
     pm = PatchManager()
     success, backup_path = await pm.apply_gemini_patch("engine/stale_validator.py", patch_content)
 """
-import os
+
 import shutil
 import subprocess
 import logging
@@ -55,11 +55,11 @@ class PatchManager:
     async def apply_gemini_patch(self, target_file: str, patch_content: str) -> Tuple[bool, Optional[Path]]:
         """
         Applies a unified diff patch to a target file.
-        
+
         Args:
             target_file: Path to the file to patch
             patch_content: The unified diff content
-            
+
         Returns:
             (success: bool, backup_path: Optional[Path])
         """
@@ -71,37 +71,31 @@ class PatchManager:
         try:
             # 1. Backup the original
             backup = self.create_backup(str(target_path))
-            
+
             # 2. Write patch to temp file
             patch_file = self.repo_path / "temp_upgrade.patch"
             with open(patch_file, "w", encoding="utf-8") as f:
                 f.write(patch_content)
-            
+
             # 3. Apply the patch using 'git apply' or 'patch'
             # First check if it's clean
             check = subprocess.run(
-                ["git", "apply", "--check", str(patch_file)],
-                capture_output=True,
-                cwd=self.repo_path
+                ["git", "apply", "--check", str(patch_file)], capture_output=True, cwd=self.repo_path
             )
-            
+
             if check.returncode == 0:
                 # Apply the patch
-                subprocess.run(
-                    ["git", "apply", str(patch_file)],
-                    capture_output=True,
-                    cwd=self.repo_path
-                )
+                subprocess.run(["git", "apply", str(patch_file)], capture_output=True, cwd=self.repo_path)
                 # Clean up temp patch file
                 patch_file.unlink(missing_ok=True)
                 logger.info(f"[patch_manager] ✅ Successfully patched {target_file}. Backup: {backup}")
                 return True, backup
             else:
                 # Patch check failed - try manual apply
-                logger.warning(f"[patch_manager] Git apply check failed, trying manual apply")
+                logger.warning("[patch_manager] Git apply check failed, trying manual apply")
                 patch_file.unlink(missing_ok=True)
                 return False, None
-                
+
         except Exception as e:
             logger.error(f"[patch_manager] System Error applying patch: {e}")
             return False, None
@@ -109,11 +103,11 @@ class PatchManager:
     async def apply_inline_patch(self, target_file: str, new_content: str) -> Tuple[bool, Optional[Path]]:
         """
         Apply a patch by replacing entire file content (for simple changes).
-        
+
         Args:
             target_file: Path to the file to patch
             new_content: The new file content
-            
+
         Returns:
             (success: bool, backup_path: Optional[Path])
         """
@@ -125,14 +119,14 @@ class PatchManager:
         try:
             # 1. Backup the original
             backup = self.create_backup(str(target_path))
-            
+
             # 2. Write new content
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            
+
             logger.info(f"[patch_manager] ✅ Successfully updated {target_file}. Backup: {backup}")
             return True, backup
-            
+
         except Exception as e:
             logger.error(f"[patch_manager] System Error applying patch: {e}")
             return False, None

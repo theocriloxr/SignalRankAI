@@ -18,13 +18,13 @@ Redis Streams via ``core.redis_streams`` or ``core.durable_event_stream``).
 This module ships a deterministic in-memory implementation used by the relay
 and by contract tests; a SQL adapter must satisfy the same protocol.
 """
+
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,14 @@ class TransactionalOutbox(Protocol):
     """Persistence contract for outbox work records."""
 
     async def enqueue(
-        self, *, entry_id: str, event_type: str, partition_key: str,
-        payload: Mapping[str, Any], idempotency_key: str, occurred_at: str,
+        self,
+        *,
+        entry_id: str,
+        event_type: str,
+        partition_key: str,
+        payload: Mapping[str, Any],
+        idempotency_key: str,
+        occurred_at: str,
     ) -> OutboxEntry: ...
 
     async def claim(self, *, batch: int = 10) -> list[OutboxEntry]: ...
@@ -85,8 +91,14 @@ class MemoryTransactionalOutbox:
         self.duplicate_count: int = 0
 
     async def enqueue(
-        self, *, entry_id: str, event_type: str, partition_key: str,
-        payload: Mapping[str, Any], idempotency_key: str, occurred_at: str,
+        self,
+        *,
+        entry_id: str,
+        event_type: str,
+        partition_key: str,
+        payload: Mapping[str, Any],
+        idempotency_key: str,
+        occurred_at: str,
     ) -> OutboxEntry:
         existing_id = self._by_idempotency.get(idempotency_key)
         if existing_id is not None:
@@ -131,10 +143,15 @@ class MemoryTransactionalOutbox:
         if entry is None:
             return
         self._entries[entry_id] = OutboxEntry(
-            entry_id=entry.entry_id, event_type=entry.event_type,
-            partition_key=entry.partition_key, payload=entry.payload,
-            idempotency_key=entry.idempotency_key, occurred_at=entry.occurred_at,
-            status="done", attempts=entry.attempts, last_error=entry.last_error,
+            entry_id=entry.entry_id,
+            event_type=entry.event_type,
+            partition_key=entry.partition_key,
+            payload=entry.payload,
+            idempotency_key=entry.idempotency_key,
+            occurred_at=entry.occurred_at,
+            status="done",
+            attempts=entry.attempts,
+            last_error=entry.last_error,
         )
 
     async def mark_failed(self, entry_id: str, error: str, *, attempts: int) -> None:
@@ -142,10 +159,15 @@ class MemoryTransactionalOutbox:
         if entry is None:
             return
         self._entries[entry_id] = OutboxEntry(
-            entry_id=entry.entry_id, event_type=entry.event_type,
-            partition_key=entry.partition_key, payload=entry.payload,
-            idempotency_key=entry.idempotency_key, occurred_at=entry.occurred_at,
-            status="failed", attempts=max(1, int(attempts)), last_error=str(error)[:512],
+            entry_id=entry.entry_id,
+            event_type=entry.event_type,
+            partition_key=entry.partition_key,
+            payload=entry.payload,
+            idempotency_key=entry.idempotency_key,
+            occurred_at=entry.occurred_at,
+            status="failed",
+            attempts=max(1, int(attempts)),
+            last_error=str(error)[:512],
         )
 
     async def dead_letter(self, entry_id: str, reason: str) -> None:
@@ -153,10 +175,14 @@ class MemoryTransactionalOutbox:
         if entry is None:
             return
         self._entries[entry_id] = OutboxEntry(
-            entry_id=entry.entry_id, event_type=entry.event_type,
-            partition_key=entry.partition_key, payload=entry.payload,
-            idempotency_key=entry.idempotency_key, occurred_at=entry.occurred_at,
-            status="dead_lettered", attempts=entry.attempts,
+            entry_id=entry.entry_id,
+            event_type=entry.event_type,
+            partition_key=entry.partition_key,
+            payload=entry.payload,
+            idempotency_key=entry.idempotency_key,
+            occurred_at=entry.occurred_at,
+            status="dead_lettered",
+            attempts=entry.attempts,
             last_error=str(reason)[:512],
         )
 
@@ -166,10 +192,15 @@ class MemoryTransactionalOutbox:
         if entry is None or entry.status != "claimed":
             return
         self._entries[entry_id] = OutboxEntry(
-            entry_id=entry.entry_id, event_type=entry.event_type,
-            partition_key=entry.partition_key, payload=entry.payload,
-            idempotency_key=entry.idempotency_key, occurred_at=entry.occurred_at,
-            status="pending", attempts=entry.attempts, last_error=entry.last_error,
+            entry_id=entry.entry_id,
+            event_type=entry.event_type,
+            partition_key=entry.partition_key,
+            payload=entry.payload,
+            idempotency_key=entry.idempotency_key,
+            occurred_at=entry.occurred_at,
+            status="pending",
+            attempts=entry.attempts,
+            last_error=entry.last_error,
         )
 
     async def depth(self) -> int:

@@ -9,6 +9,7 @@ Two helper apis are provided:
 This module prefers connector adapters under `data.connectors` when
 available and falls back to legacy functions in `data.providers`.
 """
+
 from typing import Callable, List, Tuple
 import asyncio
 import inspect
@@ -17,6 +18,7 @@ import os
 
 def _wrap_callable(fn: Callable, /) -> Callable:
     """Wrap various provider call signatures to a unified (symbol, tf, timeout) API."""
+
     def _call(symbol: str, tf: str, timeout: int = 10):
         try:
             return fn(symbol, tf)
@@ -56,7 +58,6 @@ def _env_enabled(name: str, default: bool = True) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-
 _PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
     "fmp_connector": ("FMP_ENABLED", False),
     "alphavantage_connector": ("ALPHAVANTAGE_ENABLED", False),
@@ -78,6 +79,7 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "nasdaq_data_link_connector": ("NASDAQ_DATA_LINK_API_KEY",),
 }
 
+
 def _provider_configured(name: str) -> bool:
     canonical = str(name or "").lower()
     enable_contract = _PROVIDER_ENABLE_FLAGS.get(canonical)
@@ -98,6 +100,7 @@ def _provider_configured(name: str) -> bool:
             and str(os.getenv("NASDAQ_DATA_LINK_DATASETS_JSON") or "").strip()
         )
     return any(str(os.getenv(key) or "").strip() for key in required)
+
 
 def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
     """Return production provider hierarchy by asset class.
@@ -162,10 +165,7 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
             if item.strip()
         ]
         if configured:
-            by_alias = {
-                name.replace("_connector", ""): (name, fn)
-                for name, fn in crypto
-            }
+            by_alias = {name.replace("_connector", ""): (name, fn) for name, fn in crypto}
             selected = [by_alias[name] for name in configured if name in by_alias]
             if selected:
                 crypto = selected
@@ -215,7 +215,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """Return sync (name, callable) providers for `asset_type`.
 
     asset_type: 'crypto' | 'fx' | 'stock' | 'commodity'
-    
+
     IMPORTANT: Different asset types need different providers!
     - Crypto: binance, bybit, cryptocompare (ONLY crypto exchanges)
     - Stocks: twelvedata, polygon, yahoo (NOT crypto exchanges!)
@@ -224,7 +224,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """
     providers: List[Tuple[str, Callable]] = []
     kind = str(asset_type or "").lower().strip()
-    
+
     # CRITICAL: Keep commodity separate from stock!
     # This is the fix for "Ghost Price" errors
     # Previously commodities were being sent to crypto providers which returned wrong data
@@ -245,6 +245,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     # double-fetching the same public endpoint.
     try:
         from data import providers as legacy
+
         if kind == "crypto":
             existing = {name for name, _ in providers}
             if "coingecko_connector" not in existing:
@@ -295,6 +296,7 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     # Add legacy fallbacks for async callers.
     try:
         from data import providers as legacy
+
         if kind == "crypto":
             providers.extend(
                 [

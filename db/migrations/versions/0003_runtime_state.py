@@ -23,7 +23,9 @@ def upgrade() -> None:
     op.create_table(
         "runtime_state",
         sa.Column("key", sa.String(length=128), primary_key=True, nullable=False),
-        sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "value", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")
+        ),
         sa.Column("expires_at", sa.DateTime(), nullable=True),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
     )

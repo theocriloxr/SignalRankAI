@@ -6,11 +6,11 @@ reference the original entry. Double-entry pairs share one correlation id and
 must balance; ``reconcile`` and ``imbalance`` expose any drift. No dashboard
 aggregate is the system of record here - the entry list is.
 """
+
 from __future__ import annotations
 
 import hashlib
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping
@@ -130,9 +130,7 @@ class FinancialLedger:
         account = str(account_id)
         amount_d = _decimal(amount, "amount")
         if source_event_id and source_event_id in self._by_source:
-            raise DuplicateSourceEvent(
-                f"source_event_id_already_applied:{source_event_id}"
-            )
+            raise DuplicateSourceEvent(f"source_event_id_already_applied:{source_event_id}")
         entry = LedgerEntry(
             entry_id=str(entry_id or uuid4().hex),
             account_id=account,
@@ -244,11 +242,7 @@ class FinancialLedger:
         )
 
     def entries_for_correlation(self, correlation_id: str) -> tuple[LedgerEntry, ...]:
-        return tuple(
-            entry
-            for entry in self._entries.values()
-            if entry.correlation_id == correlation_id
-        )
+        return tuple(entry for entry in self._entries.values() if entry.correlation_id == correlation_id)
 
     def daily_snapshot(self, day: date) -> Mapping[str, Decimal]:
         """End-of-day balances keyed by account for a given UTC date."""
@@ -262,10 +256,7 @@ class FinancialLedger:
     def audit_range(self, *, account_id: str | None = None) -> tuple[LedgerEntry, ...]:
         if account_id is None:
             return self.entries
-        return tuple(
-            entry for entry in self._entries.values()
-            if entry.account_id == account_id
-        )
+        return tuple(entry for entry in self._entries.values() if entry.account_id == account_id)
 
     def rebuild_from(self, events: Iterable[Mapping[str, Any]]) -> dict[str, int]:
         """Replay source events into a fresh ledger (idempotent per event id)."""

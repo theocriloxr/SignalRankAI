@@ -4,7 +4,7 @@ from utils.timeutils import now_utc_naive
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -43,8 +43,13 @@ def governance_review_schema() -> dict[str, Any]:
                         "rollback": {"type": "string"},
                     },
                     "required": [
-                        "title", "objective", "target_paths", "acceptance_tests",
-                        "risk", "expected_metric", "rollback",
+                        "title",
+                        "objective",
+                        "target_paths",
+                        "acceptance_tests",
+                        "risk",
+                        "expected_metric",
+                        "rollback",
                     ],
                 },
             },
@@ -90,15 +95,17 @@ def _coerce_governance_review(value: Any) -> dict[str, Any]:
         paths = [str(path)[:240] for path in list(item.get("target_paths") or [])[:4]]
         tests = [str(test)[:300] for test in list(item.get("acceptance_tests") or [])[:8]]
         risk = str(item.get("risk") or "high").lower()
-        refactors.append({
-            "title": str(item.get("title") or "")[:200],
-            "objective": str(item.get("objective") or "")[:1000],
-            "target_paths": paths,
-            "acceptance_tests": tests,
-            "risk": risk if risk in {"low", "medium", "high"} else "high",
-            "expected_metric": str(item.get("expected_metric") or "")[:300],
-            "rollback": str(item.get("rollback") or "")[:500],
-        })
+        refactors.append(
+            {
+                "title": str(item.get("title") or "")[:200],
+                "objective": str(item.get("objective") or "")[:1000],
+                "target_paths": paths,
+                "acceptance_tests": tests,
+                "risk": risk if risk in {"low", "medium", "high"} else "high",
+                "expected_metric": str(item.get("expected_metric") or "")[:300],
+                "rollback": str(item.get("rollback") or "")[:500],
+            }
+        )
     clean["recommended_refactors"] = refactors
     clean["assessment"] = clean["assessment"][:2000]
     return clean
@@ -171,7 +178,8 @@ def _aggregate_only_context(context: dict[str, Any]) -> dict[str, Any]:
         "full_market_segments": list(context.get("full_market_segments") or [])[:40],
         "ai_provider_performance": list(context.get("ai_provider_performance") or [])[:20],
         "score_calibration": {
-            key: value for key, value in dict(context.get("score_calibration") or {}).items()
+            key: value
+            for key, value in dict(context.get("score_calibration") or {}).items()
             if key != "segment_profiles"
         },
     }
@@ -191,11 +199,7 @@ async def run_external_codex_aggregate_review(
 
     schema = governance_review_schema()
     body = {
-        "model": (
-            os.getenv("OPENAI_CODEX_REVIEW_MODEL")
-            or os.getenv("OPENAI_DEEP_MODEL")
-            or "gpt-6-sol"
-        ).strip(),
+        "model": (os.getenv("OPENAI_CODEX_REVIEW_MODEL") or os.getenv("OPENAI_DEEP_MODEL") or "gpt-6-sol").strip(),
         "input": [
             {
                 "role": "system",
@@ -234,7 +238,9 @@ async def run_external_codex_aggregate_review(
         "max_output_tokens": int(os.getenv("OPENAI_CODEX_REVIEW_MAX_TOKENS", "1200") or 1200),
     }
     try:
-        async with httpx.AsyncClient(timeout=float(os.getenv("OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS", "25") or 25)) as client:
+        async with httpx.AsyncClient(
+            timeout=float(os.getenv("OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS", "25") or 25)
+        ) as client:
             response = await client.post(
                 OPENAI_RESPONSES_URL,
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
@@ -303,9 +309,10 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
     outcome_bucket = _win_bucket_expr()
     async with get_session() as session:
         summary = (
-            await session.execute(
-                text(
-                    f"""
+            (
+                await session.execute(
+                    text(
+                        f"""
                     SELECT COUNT(DISTINCT s.signal_id) AS signals,
                            COUNT(o.id) AS outcomes,
                            SUM(CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
@@ -316,14 +323,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     LEFT JOIN outcomes o ON o.signal_id = s.signal_id
                     WHERE s.created_at >= :since
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         by_segment = (
-            await session.execute(
-                text(
-                    f"""
+            (
+                await session.execute(
+                    text(
+                        f"""
                     SELECT COALESCE(s.asset_class, 'unknown') AS asset_class,
                            COALESCE(s.timeframe, 'unknown') AS timeframe,
                            COALESCE(s.strategy_name, 'unknown') AS strategy_name,
@@ -339,14 +350,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY outcomes DESC
                     LIMIT :limit
                     """
-                ),
-                {"since": since, "limit": int(limit)},
+                    ),
+                    {"since": since, "limit": int(limit)},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         rejections = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COALESCE(rejection_reason, 'unknown') AS reason, COUNT(*) AS n
                     FROM ml_rejected_signals
                     WHERE created_at >= :since
@@ -354,14 +369,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY n DESC
                     LIMIT :limit
                     """
-                ),
-                {"since": since, "limit": int(limit)},
+                    ),
+                    {"since": since, "limit": int(limit)},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         duplicates = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     WITH sent AS (
                         SELECT sd.user_id, s.asset, sd.signal_id, sd.delivered_at,
                                LAG(sd.delivered_at) OVER (PARTITION BY sd.user_id, s.asset ORDER BY sd.delivered_at) AS prev_delivered_at
@@ -374,28 +393,36 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     WHERE prev_delivered_at IS NOT NULL
                       AND delivered_at <= prev_delivered_at + INTERVAL '12 hours'
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         deliveries = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COUNT(*) AS reserved,
                            SUM(CASE WHEN sent_ok IS TRUE THEN 1 ELSE 0 END) AS sent_ok,
                            SUM(CASE WHEN sent_ok IS FALSE THEN 1 ELSE 0 END) AS reserved_not_confirmed
                     FROM signal_deliveries
                     WHERE delivered_at >= :since
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         score_saturation = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COUNT(*) AS signals,
                            SUM(CASE WHEN COALESCE(score, 0) >= 99.999 THEN 1 ELSE 0 END) AS score_100,
                            AVG(COALESCE(score, 0)) AS avg_score,
@@ -403,14 +430,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     FROM signals
                     WHERE created_at >= :since
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         outcome_integrity = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COUNT(*) AS outcome_rows,
                            COUNT(DISTINCT signal_id) AS distinct_signals,
                            SUM(CASE WHEN lower(COALESCE(canonical_outcome, status, '')) IN ('tp1','tp2','partial_tp') THEN 1 ELSE 0 END) AS partial_progress_rows,
@@ -418,14 +449,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     FROM outcomes
                     WHERE closed_at >= :since OR opened_at >= :since
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         decision_surface = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COALESCE(decision, 'unknown') AS decision,
                            COALESCE(meta->>'asset_class', meta->>'asset_type', 'unknown') AS asset_class,
                            COALESCE(timeframe, 'unknown') AS timeframe,
@@ -443,14 +478,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY observations DESC
                     LIMIT 100
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         shadow_coverage = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     WITH dedup AS (
                       SELECT r.*, ROW_NUMBER() OVER (
                         PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
@@ -471,14 +510,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY observations DESC
                     LIMIT 100
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         full_market_segments = (
-            await session.execute(
-                text(
-                    f"""
+            (
+                await session.execute(
+                    text(
+                        f"""
                     WITH rejected_dedup AS (
                       SELECT r.*, ROW_NUMBER() OVER (
                         PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
@@ -517,14 +560,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY outcomes DESC
                     LIMIT 100
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         calibration_rows = (
-            await session.execute(
-                text(
-                    f"""
+            (
+                await session.execute(
+                    text(
+                        f"""
                     WITH rejected_dedup AS (
                       SELECT r.*, ROW_NUMBER() OVER (
                         PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
@@ -562,14 +609,18 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY observed_at ASC
                     LIMIT 20000
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         ai_provider_performance = (
-            await session.execute(
-                text(
-                    f"""
+            (
+                await session.execute(
+                    text(
+                        f"""
                     WITH latest_ai AS (
                         SELECT DISTINCT ON (signal_id)
                                signal_id,
@@ -613,17 +664,24 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     ORDER BY outcomes DESC, provider ASC, model ASC
                     LIMIT 30
                     """
-                ),
-                {"since": since},
+                    ),
+                    {"since": since},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.commit()
     observations = [
         ScoreObservation(
-            score=float(row.get("score") or 0.0), won=bool(row.get("won")),
-            source=str(row.get("source") or "unknown"), observed_at=str(row.get("observed_at") or ""),
-            weight=float(row.get("weight") or 0.0), asset_class=str(row.get("asset_class") or "unknown"),
-            timeframe=str(row.get("timeframe") or "unknown"), strategy=str(row.get("strategy") or "unknown"),
+            score=float(row.get("score") or 0.0),
+            won=bool(row.get("won")),
+            source=str(row.get("source") or "unknown"),
+            observed_at=str(row.get("observed_at") or ""),
+            weight=float(row.get("weight") or 0.0),
+            asset_class=str(row.get("asset_class") or "unknown"),
+            timeframe=str(row.get("timeframe") or "unknown"),
+            strategy=str(row.get("strategy") or "unknown"),
             regime=str(row.get("regime") or "unknown"),
         )
         for row in calibration_rows
@@ -679,12 +737,18 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
 
     if same_asset_12h > 0:
         findings.append(f"{same_asset_12h} same-user/same-asset deliveries occurred inside 12h.")
-        env_tweaks.append("Set ASSET_REPEAT_LOCK_HOURS=4 and DELIVERY_SAME_ASSET_COOLDOWN_HOURS=4 unless the approved tier policy explicitly overrides it.")
-        code_changes.append("Keep all delivery paths routed through record_signal_delivery and the same-asset unresolved exposure gate.")
+        env_tweaks.append(
+            "Set ASSET_REPEAT_LOCK_HOURS=4 and DELIVERY_SAME_ASSET_COOLDOWN_HOURS=4 unless the approved tier policy explicitly overrides it."
+        )
+        code_changes.append(
+            "Keep all delivery paths routed through record_signal_delivery and the same-asset unresolved exposure gate."
+        )
     if reserved and reserved_not_confirmed / max(1, reserved) > 0.05:
         findings.append(f"{reserved_not_confirmed}/{reserved} delivery reservations were not confirmed sent_ok.")
         env_tweaks.append("Keep DELIVERY_INFLIGHT_RETRY_SECONDS>=300 and monitor reserved_not_sent in /qa_report.")
-        code_changes.append("Treat reserved-but-unsent rows as retryable operational failures, not delivered user quota.")
+        code_changes.append(
+            "Treat reserved-but-unsent rows as retryable operational failures, not delivered user quota."
+        )
     if outcomes and win_rate < 45.0:
         findings.append(f"Tracked win rate is {win_rate:.1f}% across {wins + losses} terminal outcomes.")
         env_tweaks.extend(
@@ -693,17 +757,29 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
                 "Prefer QUALITY_MAX_RR_FX<=3.5, QUALITY_MAX_RR_CRYPTO<=3.5, QUALITY_MAX_STOP_LOSS_PCT_CRYPTO<=2.0 for small-account safety.",
             ]
         )
-        code_changes.append("Promote per-asset-class expectancy gates and demote segments with negative avg_r until forward-tested recovery.")
+        code_changes.append(
+            "Promote per-asset-class expectancy gates and demote segments with negative avg_r until forward-tested recovery."
+        )
     if score_100 > 0:
         findings.append(f"{score_100}/{max(1, total_scored)} recent signals scored exactly 100.")
-        env_tweaks.append("Keep SCORE_SOFT_CAP_ENABLED=1 and SCORE_DISPLAY_MAX=99.5 unless running an intentional calibration experiment.")
-        code_changes.append("Audit strategy inputs that stamp score=100 directly and prefer score_calibrated over raw score.")
+        env_tweaks.append(
+            "Keep SCORE_SOFT_CAP_ENABLED=1 and SCORE_DISPLAY_MAX=99.5 unless running an intentional calibration experiment."
+        )
+        code_changes.append(
+            "Audit strategy inputs that stamp score=100 directly and prefer score_calibrated over raw score."
+        )
     if outcome_rows > distinct_outcome_signals:
-        findings.append(f"Outcome table has {outcome_rows} rows for {distinct_outcome_signals} distinct signals in scope.")
+        findings.append(
+            f"Outcome table has {outcome_rows} rows for {distinct_outcome_signals} distinct signals in scope."
+        )
         code_changes.append("Audit outcome idempotency and prevent duplicate terminal writes after restarts.")
     if outcomes and partial_progress_rows == 0 and losses > wins * 5:
-        findings.append("No partial TP progress rows were observed while losses dominate; verify TP1/TP2 tracking before trusting win-rate claims.")
-        code_changes.append("Run outcome replay on a candle sample to prove TP1/TP2/TP3 and SL ordering is classified correctly.")
+        findings.append(
+            "No partial TP progress rows were observed while losses dominate; verify TP1/TP2 tracking before trusting win-rate claims."
+        )
+        code_changes.append(
+            "Run outcome replay on a candle sample to prove TP1/TP2/TP3 and SL ordering is classified correctly."
+        )
     weak_segments = []
     for row in segments:
         seg_wins = int(row.get("wins") or 0)
@@ -717,7 +793,9 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
             )
     if weak_segments:
         findings.append("Weak live segments: " + "; ".join(weak_segments[:5]))
-        code_changes.append("Add segment-level quarantine for strategies/timeframes with enough live losses and negative expectancy.")
+        code_changes.append(
+            "Add segment-level quarantine for strategies/timeframes with enough live losses and negative expectancy."
+        )
 
     holdouts.extend(
         [
@@ -743,7 +821,9 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
 async def run_codex_governance_review(trigger: str, scope: str = "weekly") -> dict[str, Any]:
     days = {"daily": 1, "weekly": 7, "monthly": 30, "all_time": 3650}.get(str(scope or "weekly").lower(), 7)
     context = await collect_codex_governance_context(days=days)
-    local_review = build_local_codex_recommendations(context) if context.get("ok") else {"assessment": context.get("error")}
+    local_review = (
+        build_local_codex_recommendations(context) if context.get("ok") else {"assessment": context.get("error")}
+    )
     external_review = await run_external_codex_aggregate_review(context) if context.get("ok") else None
     result = {
         "ok": bool(context.get("ok")),

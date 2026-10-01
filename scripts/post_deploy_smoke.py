@@ -28,7 +28,9 @@ def _derive_base_url(cli_base: str | None) -> str:
             if raw.startswith("http://") or raw.startswith("https://"):
                 return raw.rstrip("/")
             return f"https://{raw.strip('/')}"
-    raise ValueError("No base URL provided. Pass --base-url or set RAILWAY_PUBLIC_DOMAIN/WEBHOOK_DOMAIN/WEBHOOK_URL/APP_BASE_URL.")
+    raise ValueError(
+        "No base URL provided. Pass --base-url or set RAILWAY_PUBLIC_DOMAIN/WEBHOOK_DOMAIN/WEBHOOK_URL/APP_BASE_URL."
+    )
 
 
 def _http_json(
@@ -79,12 +81,7 @@ def _check_health(base: str) -> CheckResult:
 
 def _check_ready(base: str) -> CheckResult:
     status, body, raw, latency = _http_json("GET", f"{base}/readyz")
-    ok = (
-        status == 200
-        and isinstance(body, dict)
-        and body.get("status") == "ready"
-        and body.get("ready") is True
-    )
+    ok = status == 200 and isinstance(body, dict) and body.get("status") == "ready" and body.get("ready") is True
     detail = f"status={status} body_status={(body or {}).get('status')}"
     if not ok:
         detail = f"{detail} raw={raw}"
@@ -114,9 +111,7 @@ def _check_webhook_enqueue(base: str, *, webhook_secret: str = "") -> CheckResul
         "POST",
         f"{base}/telegram/webhook",
         payload={"update_id": int(time.time()), "message": {"text": "smoke"}},
-        extra_headers={
-            "X-Telegram-Bot-Api-Secret-Token": webhook_secret
-        } if webhook_secret else None,
+        extra_headers={"X-Telegram-Bot-Api-Secret-Token": webhook_secret} if webhook_secret else None,
     )
     ok = status == 200 and isinstance(body, dict) and bool(body.get("ok"))
     backend = (body or {}).get("queue_backend")
@@ -155,9 +150,7 @@ def main() -> int:
     failures = 0
     for item in checks:
         state = "PASS" if item.ok else "FAIL"
-        print(
-            f"[{state}] {item.name} code={item.status_code} latency_ms={item.latency_ms} detail={item.detail}"
-        )
+        print(f"[{state}] {item.name} code={item.status_code} latency_ms={item.latency_ms} detail={item.detail}")
         if not item.ok:
             failures += 1
 

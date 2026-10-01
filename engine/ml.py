@@ -7,10 +7,8 @@ import os
 import threading
 import logging
 import json
-import base64
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, cast
+from typing import Any, Dict, Iterable, List, Optional
 
 import numpy as np
 
@@ -92,9 +90,7 @@ def _restore_durable_primary_if_enabled(path: Path) -> bool:
         restored = restore_active_model_artifact_from_database_sync(
             path,
             model_name="primary",
-            connect_timeout_seconds=int(
-                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
-            ),
+            connect_timeout_seconds=int(os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5),
         )
         if restored:
             logger.info("[ml] durable primary artifact synchronized path=%s", path)
@@ -104,31 +100,28 @@ def _restore_durable_primary_if_enabled(path: Path) -> bool:
         return False
 
 
-
 def _restore_durable_candidate_if_enabled(path: Path) -> bool:
     if not _env_bool("ML_DURABLE_ARTIFACT_SYNC_ENABLED", True):
         return False
     try:
-        interval=max(
+        interval = max(
             15.0,
             float(os.getenv("ML_DURABLE_ARTIFACT_SYNC_INTERVAL_SECONDS", "60") or 60),
         )
     except Exception:
-        interval=60.0
-    now=time.monotonic()
-    last=float(_DURABLE_MODEL_SYNC_STATE.get("candidate_last_attempt") or 0.0)
-    if now-last < interval:
+        interval = 60.0
+    now = time.monotonic()
+    last = float(_DURABLE_MODEL_SYNC_STATE.get("candidate_last_attempt") or 0.0)
+    if now - last < interval:
         return path.exists()
-    _DURABLE_MODEL_SYNC_STATE["candidate_last_attempt"]=now
+    _DURABLE_MODEL_SYNC_STATE["candidate_last_attempt"] = now
     try:
         from ml.artifact_store import restore_active_model_artifact_from_database_sync
 
-        restored=restore_active_model_artifact_from_database_sync(
+        restored = restore_active_model_artifact_from_database_sync(
             path,
             model_name="candidate",
-            connect_timeout_seconds=int(
-                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
-            ),
+            connect_timeout_seconds=int(os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5),
         )
         if restored:
             logger.info("[ml-shadow] durable candidate artifact synchronized path=%s", path)
@@ -145,6 +138,7 @@ def _asset_class_to_int(asset: str) -> float:
     a = str(asset or "").upper().strip()
     try:
         from data.fetcher import is_index
+
         if is_index(a):
             return 4.0
     except Exception:
@@ -184,15 +178,19 @@ def _load_model(*, sync_durable: bool = True) -> None:
         if not sync_durable or not _durable_model_retry_due():
             return
         should_sync_durable = True
-        _MODEL_CACHE.update({
-            "loaded": False,
-            "feature_cols": [],
-            "booster": None,
-            "path": None,
-            "error": None,
-            "metrics": {},
-        })
-    _MODEL_CACHE.update({"loaded": True, "feature_cols": [], "booster": None, "path": str(_model_path()), "error": None})
+        _MODEL_CACHE.update(
+            {
+                "loaded": False,
+                "feature_cols": [],
+                "booster": None,
+                "path": None,
+                "error": None,
+                "metrics": {},
+            }
+        )
+    _MODEL_CACHE.update(
+        {"loaded": True, "feature_cols": [], "booster": None, "path": str(_model_path()), "error": None}
+    )
 
     if xgb is None:
         _MODEL_CACHE["error"] = "xgboost_not_installed"
@@ -221,11 +219,14 @@ def _load_model(*, sync_durable: bool = True) -> None:
 
         from ml.schema_version import get_feature_columns
         from ml.model_registry import compute_feature_schema_hash
+
         current_serving_features = get_feature_columns()
         serving_schema_hash = compute_feature_schema_hash(current_serving_features)
         model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
         if model_schema_hash and model_schema_hash != serving_schema_hash:
-            logger.error("[ml] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash)
+            logger.error(
+                "[ml] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash
+            )
             _MODEL_CACHE["error"] = "feature_schema_hash_mismatch_with_serving"
             return
         # Memory-optimised config for Railway: cap native XGBoost threads.
@@ -250,8 +251,6 @@ def _load_model(*, sync_durable: bool = True) -> None:
         _MODEL_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
 
 
-
-
 def _apply_probability_calibration(raw_probability: float) -> tuple[float, bool, str]:
     """Apply the model artifact's held-out calibration curve when available."""
     raw = max(0.0, min(1.0, float(raw_probability)))
@@ -272,20 +271,22 @@ def _apply_probability_calibration(raw_probability: float) -> tuple[float, bool,
 def reload_model(*, sync_durable: bool = True) -> dict[str, Any]:
     """Atomically clear and reload the active model after training or restore."""
     with _MODEL_RELOAD_LOCK:
-        _MODEL_CACHE.update({
-            "loaded": False,
-            "feature_cols": [],
-            "booster": None,
-            "path": None,
-            "error": None,
-            "version": "",
-            "trained_at": "",
-            "calibration_kind": "none",
-            "calibration_x": [],
-            "calibration_y": [],
-            "metrics": {},
-            "calibration_metrics": {},
-        })
+        _MODEL_CACHE.update(
+            {
+                "loaded": False,
+                "feature_cols": [],
+                "booster": None,
+                "path": None,
+                "error": None,
+                "version": "",
+                "trained_at": "",
+                "calibration_kind": "none",
+                "calibration_x": [],
+                "calibration_y": [],
+                "metrics": {},
+                "calibration_metrics": {},
+            }
+        )
         _load_model(sync_durable=sync_durable)
         status = {
             "loaded": bool(_MODEL_CACHE.get("booster") is not None),
@@ -319,8 +320,10 @@ def get_model_integrity_status(*, ensure_loaded: bool = True) -> dict[str, Any]:
         metrics.get("validated")
         and curve_ok
         and rows >= min_rows
-        and brier is not None and float(brier) <= max_brier
-        and ece is not None and float(ece) <= max_ece
+        and brier is not None
+        and float(brier) <= max_brier
+        and ece is not None
+        and float(ece) <= max_ece
     )
     artifact_id = str(os.getenv("ML_CALIBRATION_ARTIFACT_ID") or "").strip()
     loaded = bool(_MODEL_CACHE.get("booster") is not None)
@@ -345,21 +348,23 @@ def get_model_integrity_status(*, ensure_loaded: bool = True) -> dict[str, Any]:
 def reload_shadow_model(*, sync_durable: bool = True) -> dict[str, Any]:
     """Clear and reload the candidate model used for shadow inference."""
     with _MODEL_RELOAD_LOCK:
-        _SHADOW_CACHE.update({
-            "loaded": False,
-            "booster": None,
-            "feature_cols": [],
-            "name": "xgb_candidate",
-            "version": None,
-            "error": None,
-            "metrics": {},
-            "artifact_hash_sha256": "",
-            "feature_schema_hash_sha256": "",
-            "schema_version": 1,
-            "training_run_id": "",
-            "trained_at": "",
-            "file_mtime_ns": None,
-        })
+        _SHADOW_CACHE.update(
+            {
+                "loaded": False,
+                "booster": None,
+                "feature_cols": [],
+                "name": "xgb_candidate",
+                "version": None,
+                "error": None,
+                "metrics": {},
+                "artifact_hash_sha256": "",
+                "feature_schema_hash_sha256": "",
+                "schema_version": 1,
+                "training_run_id": "",
+                "trained_at": "",
+                "file_mtime_ns": None,
+            }
+        )
         _load_shadow_model(sync_durable=sync_durable)
         status = {
             "loaded": bool(_SHADOW_CACHE.get("booster") is not None),
@@ -406,20 +411,22 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
                 previous_mtime,
                 current_mtime,
             )
-            _SHADOW_CACHE.update({
-                "loaded": False,
-                "booster": None,
-                "feature_cols": [],
-                "metrics": {},
-                "training_meta": {},
-                "artifact_hash_sha256": "",
-                "feature_schema_hash_sha256": "",
-                "schema_version": 1,
-                "training_run_id": "",
-                "trained_at": "",
-                "error": None,
-                "file_mtime_ns": None,
-            })
+            _SHADOW_CACHE.update(
+                {
+                    "loaded": False,
+                    "booster": None,
+                    "feature_cols": [],
+                    "metrics": {},
+                    "training_meta": {},
+                    "artifact_hash_sha256": "",
+                    "feature_schema_hash_sha256": "",
+                    "schema_version": 1,
+                    "training_run_id": "",
+                    "trained_at": "",
+                    "error": None,
+                    "file_mtime_ns": None,
+                }
+            )
         else:
             # A candidate may be persisted by analytics after the engine starts.
             # Retry bounded durable synchronization instead of caching unavailable
@@ -427,33 +434,37 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
             if not sync_durable or not _restore_durable_candidate_if_enabled(p):
                 return
             durable_sync_done = True
-            _SHADOW_CACHE.update({
-                "loaded": False,
-                "booster": None,
-                "feature_cols": [],
-                "metrics": {},
-                "training_meta": {},
-                "artifact_hash_sha256": "",
-                "feature_schema_hash_sha256": "",
-                "schema_version": 1,
-                "training_run_id": "",
-                "trained_at": "",
-                "error": None,
-                "file_mtime_ns": None,
-            })
-    _SHADOW_CACHE.update({
-        "loaded": True,
-        "booster": None,
-        "feature_cols": [],
-        "metrics": {},
-        "training_meta": {},
-        "artifact_hash_sha256": "",
-        "feature_schema_hash_sha256": "",
-        "schema_version": 1,
-        "training_run_id": "",
-        "trained_at": "",
-        "error": None,
-    })
+            _SHADOW_CACHE.update(
+                {
+                    "loaded": False,
+                    "booster": None,
+                    "feature_cols": [],
+                    "metrics": {},
+                    "training_meta": {},
+                    "artifact_hash_sha256": "",
+                    "feature_schema_hash_sha256": "",
+                    "schema_version": 1,
+                    "training_run_id": "",
+                    "trained_at": "",
+                    "error": None,
+                    "file_mtime_ns": None,
+                }
+            )
+    _SHADOW_CACHE.update(
+        {
+            "loaded": True,
+            "booster": None,
+            "feature_cols": [],
+            "metrics": {},
+            "training_meta": {},
+            "artifact_hash_sha256": "",
+            "feature_schema_hash_sha256": "",
+            "schema_version": 1,
+            "training_run_id": "",
+            "trained_at": "",
+            "error": None,
+        }
+    )
     if xgb is None:
         _SHADOW_CACHE["error"] = "xgboost_not_installed"
         return
@@ -475,11 +486,14 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
 
         from ml.schema_version import get_feature_columns
         from ml.model_registry import compute_feature_schema_hash
+
         current_serving_features = get_feature_columns()
         serving_schema_hash = compute_feature_schema_hash(current_serving_features)
         model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
         if model_schema_hash and model_schema_hash != serving_schema_hash:
-            logger.error("[ml-shadow] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash)
+            logger.error(
+                "[ml-shadow] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash
+            )
             _SHADOW_CACHE["error"] = "feature_schema_hash_mismatch_with_serving"
             return
         booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
@@ -487,19 +501,11 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["feature_cols"] = list(feature_cols)
         _SHADOW_CACHE["version"] = str(metadata.get("version") or "unknown")
         _SHADOW_CACHE["metrics"] = dict(metadata.get("metrics") or {})
-        _SHADOW_CACHE["training_meta"] = dict(
-            metadata.get("training_meta") or {}
-        )
-        _SHADOW_CACHE["artifact_hash_sha256"] = str(
-            metadata.get("artifact_hash_sha256") or ""
-        )
-        _SHADOW_CACHE["feature_schema_hash_sha256"] = str(
-            metadata.get("feature_schema_hash_sha256") or ""
-        )
+        _SHADOW_CACHE["training_meta"] = dict(metadata.get("training_meta") or {})
+        _SHADOW_CACHE["artifact_hash_sha256"] = str(metadata.get("artifact_hash_sha256") or "")
+        _SHADOW_CACHE["feature_schema_hash_sha256"] = str(metadata.get("feature_schema_hash_sha256") or "")
         _SHADOW_CACHE["schema_version"] = int(metadata.get("schema_version") or 1)
-        _SHADOW_CACHE["training_run_id"] = str(
-            metadata.get("training_run_id") or ""
-        )
+        _SHADOW_CACHE["training_run_id"] = str(metadata.get("training_run_id") or "")
         _SHADOW_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
         try:
             _SHADOW_CACHE["file_mtime_ns"] = int(p.stat().st_mtime_ns)
@@ -519,21 +525,21 @@ def score_shadow_signal(
 ) -> dict[str, Any]:
     """Score one signal with the durable candidate without promoting it."""
     _load_shadow_model()
-    booster=_SHADOW_CACHE.get("booster")
-    feature_cols: List[str]=_SHADOW_CACHE.get("feature_cols") or []
-    metrics=dict(_SHADOW_CACHE.get("metrics") or {})
-    training_meta=dict(_SHADOW_CACHE.get("training_meta") or {})
-    forward_gate=dict(training_meta.get("candidate_forward_gate") or {})
-    champion_comparison=dict(training_meta.get("champion_comparison") or {})
+    booster = _SHADOW_CACHE.get("booster")
+    feature_cols: List[str] = _SHADOW_CACHE.get("feature_cols") or []
+    metrics = dict(_SHADOW_CACHE.get("metrics") or {})
+    training_meta = dict(_SHADOW_CACHE.get("training_meta") or {})
+    forward_gate = dict(training_meta.get("candidate_forward_gate") or {})
+    champion_comparison = dict(training_meta.get("champion_comparison") or {})
     # The trainer sets this lease only after absolute quality,
     # calibration, lineage and champion non-inferiority gates have passed.
     # Treat the admission bit itself as the canonical governance invariant.
-    recovery_veto_eligible=bool(forward_gate.get("required"))
+    recovery_veto_eligible = bool(forward_gate.get("required"))
     try:
-        threshold=float(metrics.get("classification_threshold"))
+        threshold = float(metrics.get("classification_threshold"))
     except Exception:
-        threshold=0.5
-    threshold=max(0.05, min(0.95, threshold))
+        threshold = 0.5
+    threshold = max(0.05, min(0.95, threshold))
     if booster is None or not feature_cols:
         return {
             "available": False,
@@ -543,7 +549,7 @@ def score_shadow_signal(
             "version": _SHADOW_CACHE.get("version"),
             "error": _SHADOW_CACHE.get("error") or "candidate_unavailable",
         }
-    x=_feature_vector(signal, feature_cols)
+    x = _feature_vector(signal, feature_cols)
     if x is None:
         return {
             "available": False,
@@ -555,12 +561,12 @@ def score_shadow_signal(
         }
     try:
         assert xgb is not None
-        dm=xgb.DMatrix(x, feature_names=feature_cols)
-        preds=booster.predict(dm)
+        dm = xgb.DMatrix(x, feature_names=feature_cols)
+        preds = booster.predict(dm)
         del dm
-        if preds is None or len(preds)==0:
+        if preds is None or len(preds) == 0:
             raise ValueError("empty_candidate_prediction")
-        probability=float(preds[0])
+        probability = float(preds[0])
         if not 0.0 <= probability <= 1.0:
             raise ValueError("candidate_probability_out_of_range")
         result = {
@@ -569,19 +575,13 @@ def score_shadow_signal(
             "threshold": threshold,
             "passed": probability >= threshold,
             "version": _SHADOW_CACHE.get("version"),
-            "artifact_hash_sha256": _SHADOW_CACHE.get(
-                "artifact_hash_sha256"
-            ),
-            "feature_schema_hash_sha256": _SHADOW_CACHE.get(
-                "feature_schema_hash_sha256"
-            ),
+            "artifact_hash_sha256": _SHADOW_CACHE.get("artifact_hash_sha256"),
+            "feature_schema_hash_sha256": _SHADOW_CACHE.get("feature_schema_hash_sha256"),
             "schema_version": _SHADOW_CACHE.get("schema_version"),
             "training_run_id": _SHADOW_CACHE.get("training_run_id"),
             "trained_at": _SHADOW_CACHE.get("trained_at"),
             "candidate_forward_required": bool(forward_gate.get("required")),
-            "champion_comparison_reason": str(
-                champion_comparison.get("reason") or ""
-            ),
+            "champion_comparison_reason": str(champion_comparison.get("reason") or ""),
             "recovery_veto_eligible": recovery_veto_eligible,
             "error": None,
         }
@@ -626,9 +626,7 @@ def _candidate_forward_observation_key(
             ]
         )
         fingerprint = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    return hashlib.sha256(
-        f"{artifact}|{fingerprint}|{candle_timestamp}".encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(f"{artifact}|{fingerprint}|{candle_timestamp}".encode("utf-8")).hexdigest()
 
 
 def _persist_candidate_forward_observation(
@@ -640,18 +638,12 @@ def _persist_candidate_forward_observation(
         return
     artifact_hash = str(candidate.get("artifact_hash_sha256") or "").strip()
     if not artifact_hash:
-        logger.warning(
-            "[ml-shadow] candidate forward observation skipped: artifact hash missing"
-        )
+        logger.warning("[ml-shadow] candidate forward observation skipped: artifact hash missing")
         return
 
     entry = _num(signal.get("entry") or signal.get("close_price"), 0.0)
     stop = _num(signal.get("stop_loss") or signal.get("stop"), 0.0)
-    take_profit = (
-        signal.get("take_profit")
-        or signal.get("targets")
-        or signal.get("tp_levels")
-    )
+    take_profit = signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
     if entry <= 0 or stop <= 0 or not take_profit:
         return
 
@@ -691,20 +683,12 @@ def _persist_candidate_forward_observation(
             "rejection_type": "candidate_shadow",
             "candidate_observation_key": observation_key,
             "candidate_artifact_hash_sha256": artifact_hash,
-            "candidate_feature_schema_hash_sha256": str(
-                candidate.get("feature_schema_hash_sha256") or ""
-            ),
-            "candidate_schema_version": int(
-                candidate.get("schema_version") or 1
-            ),
-            "candidate_training_run_id": str(
-                candidate.get("training_run_id") or ""
-            ),
+            "candidate_feature_schema_hash_sha256": str(candidate.get("feature_schema_hash_sha256") or ""),
+            "candidate_schema_version": int(candidate.get("schema_version") or 1),
+            "candidate_training_run_id": str(candidate.get("training_run_id") or ""),
             "candidate_trained_at": str(candidate.get("trained_at") or ""),
             "candidate_model_version": str(candidate.get("version") or ""),
-            "candidate_probability": float(
-                candidate.get("probability") or 0.0
-            ),
+            "candidate_probability": float(candidate.get("probability") or 0.0),
             "candidate_threshold": float(candidate.get("threshold") or 0.0),
             "candidate_passed": bool(candidate.get("passed")),
             "champion_probability": candidate.get("champion_probability"),
@@ -731,11 +715,7 @@ def _persist_candidate_forward_observation(
             rejection_reason="candidate_shadow_observation",
             features=features,
             rejection_type="candidate_shadow",
-            signal_id=(
-                str(signal.get("signal_id"))
-                if signal.get("signal_id")
-                else None
-            ),
+            signal_id=(str(signal.get("signal_id")) if signal.get("signal_id") else None),
         )
         try:
             future = submit_background_coro(
@@ -764,9 +744,11 @@ def _persist_candidate_forward_observation(
         )
 
 
-def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool, prob_source: str = "model") -> None:
+def _persist_shadow_prediction(
+    signal: Dict[str, Any], prob: float, schema_ok: bool, prob_source: str = "model"
+) -> None:
     """Persist shadow prediction to database.
-    
+
     Args:
         signal: The signal dict containing asset, timeframe, etc.
         prob: The probability score from the model (can be 0.0 or None)
@@ -790,7 +772,7 @@ def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: b
                     is_shadow=True,
                     feature_schema_ok=bool(schema_ok),
                     meta={
-                        "asset": signal.get("asset"), 
+                        "asset": signal.get("asset"),
                         "timeframe": signal.get("timeframe"),
                         "source": prob_source,
                         "signal_entry": signal.get("entry"),
@@ -801,7 +783,10 @@ def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: b
                 await session.commit()
                 logger.info(
                     "[ml-shadow] persisted prediction asset=%s prob=%.3f source=%s schema_ok=%s",
-                    signal.get("asset"), prob_value, prob_source, schema_ok
+                    signal.get("asset"),
+                    prob_value,
+                    prob_source,
+                    schema_ok,
                 )
 
         run_sync(_save())
@@ -817,15 +802,15 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
         missing = [col for col in feature_cols if col not in values]
         if missing:
             preview = ",".join(missing[:8])
-            suffix = f" (+{len(missing)-8} more)" if len(missing) > 8 else ""
+            suffix = f" (+{len(missing) - 8} more)" if len(missing) > 8 else ""
             logger.warning("[ml] schema mismatch: missing features=%s%s", preview, suffix)
-            strict_schema = str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {
-                "1", "true", "yes", "on"
-            }
+            strict_schema = str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {"1", "true", "yes", "on"}
             if strict_schema:
                 logger.error(
                     "[ml] strict schema rejection: missing=%s%s asset=%s",
-                    preview, suffix, signal.get("asset"),
+                    preview,
+                    suffix,
+                    signal.get("asset"),
                 )
                 return None
         vec = [float(values.get(col, 0.0)) for col in feature_cols]
@@ -838,18 +823,19 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
         )
         return None
 
+
 def score_signal(signal: Dict[str, Any]) -> Optional[float]:
     """Return ML probability (0-1) for a signal or None if unavailable.
-    
+
     Always attempts to persist shadow prediction, even on failure, to track all signal attempts.
     """
 
     _load_model()
     booster = _MODEL_CACHE.get("booster")
     feature_cols: List[str] = _MODEL_CACHE.get("feature_cols") or []
-    
+
     shadow_mode = str(os.getenv("ML_SHADOW_MODE", "1")).strip().lower() in {"1", "true", "yes", "on"}
-    
+
     # Handle case where main model is not available
     if booster is None or not feature_cols:
         model_status = _MODEL_CACHE.get("error", "not_loaded")
@@ -896,16 +882,20 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         signal["ml_calibration_ece"] = calibration_metrics.get("calibrated_ece")
         logger.info(
             "[ml] scored asset=%s raw_prob=%.3f probability=%.3f calibrated=%s version=%s",
-            signal.get("asset"), raw_prob, prob, calibrated, calibration_version,
+            signal.get("asset"),
+            raw_prob,
+            prob,
+            calibrated,
+            calibration_version,
         )
-        
+
         # Shadow mode: evaluate candidate model silently and persist
         if shadow_mode:
             try:
                 _load_shadow_model()
                 sh_booster = _SHADOW_CACHE.get("booster")
                 sh_cols: List[str] = _SHADOW_CACHE.get("feature_cols") or []
-                
+
                 if sh_booster is not None and sh_cols:
                     # Shadow model loaded - use it for prediction
                     x_shadow = _feature_vector(signal, sh_cols)
@@ -915,9 +905,13 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
                         dm_shadow = xgb.DMatrix(x_shadow, feature_names=sh_cols)
                         sh_preds = sh_booster.predict(dm_shadow)
                         if sh_preds is not None and len(sh_preds) > 0:
-                            _persist_shadow_prediction(signal, float(sh_preds[0]), schema_ok=schema_ok, prob_source="shadow_model")
+                            _persist_shadow_prediction(
+                                signal, float(sh_preds[0]), schema_ok=schema_ok, prob_source="shadow_model"
+                            )
                         else:
-                            _persist_shadow_prediction(signal, prob, schema_ok=schema_ok, prob_source="fallback_to_main")
+                            _persist_shadow_prediction(
+                                signal, prob, schema_ok=schema_ok, prob_source="fallback_to_main"
+                            )
                     else:
                         _persist_shadow_prediction(signal, prob, schema_ok=False, prob_source="shadow_feature_fail")
                 else:
@@ -926,7 +920,9 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
             except Exception as shadow_exc:
                 logger.warning("[ml-shadow] scoring error: %s", shadow_exc)
                 # Still persist with main model probability to track the attempt
-                _persist_shadow_prediction(signal, prob, schema_ok=True, prob_source=f"shadow_error:{type(shadow_exc).__name__}")
+                _persist_shadow_prediction(
+                    signal, prob, schema_ok=True, prob_source=f"shadow_error:{type(shadow_exc).__name__}"
+                )
         return prob
     except Exception as exc:
         logger.warning("[ml] scoring exception: %s", exc)
@@ -1021,6 +1017,7 @@ def weekly_job() -> bool:
     try:
         from ml.retrain import retrain_model
         from utils.async_runner import run_sync  # type: ignore[import-untyped]
+
         return bool(run_sync(retrain_model(), timeout=1200.0))
     except Exception:
         return False
@@ -1110,6 +1107,7 @@ async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, An
 
     try:
         from core.redis_state import state
+
         payload = {
             "strategy_name": name,
             "weight": float(weight),
@@ -1138,6 +1136,7 @@ def get_live_strategy_weight(strategy_name: str, default: float = 1.0) -> float:
 
     try:
         from core.redis_state import state
+
         raw = state.get_sync(_strategy_weight_key(name))
         if raw:
             payload = json.loads(raw)

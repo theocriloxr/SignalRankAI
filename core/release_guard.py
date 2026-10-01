@@ -10,7 +10,7 @@ import os
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
-from core.env import SafetyFlags, env_bool, env_int
+from core.env import SafetyFlags, env_bool
 from core.financial_activation import evaluate_financial_activation
 
 
@@ -48,13 +48,13 @@ def _evidence(supplied: Mapping[str, Any], key: str, certification_env: str) -> 
 def _check_db_pool_safe() -> GuardCheck:
     """Verify the DB pool configuration is safe for Railway monolith."""
     try:
-        from db.session import _effective_pool_settings, _is_railway_runtime, get_pool_diagnostics
-        
+        from db.session import _effective_pool_settings, _is_railway_runtime
+
         # Check for unsafe override env vars
         disable_cap = _flag("DB_POOL_DISABLE_RAILWAY_CAP", False)
         allow_uncapped = _flag("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
         public_testing = _flag("PUBLIC_TESTING_MODE", False)
-        
+
         if disable_cap or allow_uncapped:
             if public_testing:
                 return GuardCheck(
@@ -68,12 +68,12 @@ def _check_db_pool_safe() -> GuardCheck:
                 False,
                 "DB_POOL_DISABLE_RAILWAY_CAP or DB_POOL_ALLOW_UNCAPPED_RAILWAY override detected",
             )
-        
+
         pool_size, max_overflow = _effective_pool_settings()
         railway = _is_railway_runtime()
-        
+
         public_testing = _flag("PUBLIC_TESTING_MODE", False)
-        
+
         if railway:
             if public_testing:
                 # In public-testing mode, enforce the strictest limits
@@ -92,7 +92,7 @@ def _check_db_pool_safe() -> GuardCheck:
                         False,
                         f"Railway pool exceeds approved threshold: pool_size={pool_size}, max_overflow={max_overflow}",
                     )
-        
+
         return GuardCheck(
             "safe_db_pool",
             True,
@@ -111,7 +111,7 @@ def _check_multiple_engines() -> GuardCheck:
     """Verify no accidental pool multiplication across event loops."""
     try:
         from db.session import _engines_by_loop
-        
+
         engine_count = len(_engines_by_loop)
         if engine_count > 2:
             return GuardCheck(
@@ -143,9 +143,21 @@ def evaluate_release(
     supplied = dict(evidence or {})
     financial = evaluate_financial_activation()
     checks = [
-        GuardCheck("auto_trading_safe", not flags.auto_trade_enabled or financial.ok, "AUTO trading is off or its full live-financial contract passes"),
-        GuardCheck("copy_trading_safe", not flags.copy_trade_enabled or financial.ok, "COPY trading is off or its full live-financial contract passes"),
-        GuardCheck("real_payouts_safe", not flags.real_payouts_enabled or financial.ok, "real payouts are off or their manual-approval contract passes"),
+        GuardCheck(
+            "auto_trading_safe",
+            not flags.auto_trade_enabled or financial.ok,
+            "AUTO trading is off or its full live-financial contract passes",
+        ),
+        GuardCheck(
+            "copy_trading_safe",
+            not flags.copy_trade_enabled or financial.ok,
+            "COPY trading is off or its full live-financial contract passes",
+        ),
+        GuardCheck(
+            "real_payouts_safe",
+            not flags.real_payouts_enabled or financial.ok,
+            "real payouts are off or their manual-approval contract passes",
+        ),
         GuardCheck("financial_activation_contract", financial.ok, "live-money dependency graph is valid"),
         GuardCheck(
             "stale_blocking_enabled",
@@ -182,8 +194,10 @@ def evaluate_release(
             not flags.payments_enabled
             or _flag("PAYMENTS_PUBLIC_TEST_MODE", False)
             or not _flag("PAYMENTS_PUBLIC_ENABLED", False)
-            or (str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().startswith("sk_live_")
-                and str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().startswith("pk_live_")),
+            or (
+                str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().startswith("sk_live_")
+                and str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().startswith("pk_live_")
+            ),
             "public payments require a live Paystack key pair",
         ),
         GuardCheck(

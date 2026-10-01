@@ -5,11 +5,11 @@ request recent candles and derived indicators. It's intentionally small and
 defensive: it prefers `data.fetcher.fetch_market_data` which already validates
 candles and computes indicators.
 """
-from typing import Dict, Iterable, List, Optional, Any
+
+from typing import Dict, Iterable, List, Any
 
 import asyncio
 
-from data.fetcher import async_get_candles
 from data.indicators import calculate_indicators
 from core.validators import validate_candles
 from utils.async_runner import run_sync
@@ -33,6 +33,7 @@ async def _get_market_state_async(asset: str, timeframes: Iterable[str], include
 
     # Prefer the synchronous fetch_market_data (tests often patch this function).
     from data.fetcher import fetch_market_data
+
     market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
 
     for tf in tf_list:

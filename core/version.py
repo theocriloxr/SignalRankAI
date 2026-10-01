@@ -56,11 +56,7 @@ def runtime_commit_matches_expected() -> tuple[bool, str]:
 
 def get_version_banner() -> str:
     short_sha = (GIT_COMMIT_SHA or "dev")[:12]
-    configured = (
-        f" configured_version={CONFIGURED_APP_VERSION}"
-        if CONFIGURED_APP_VERSION != APP_VERSION
-        else ""
-    )
+    configured = f" configured_version={CONFIGURED_APP_VERSION}" if CONFIGURED_APP_VERSION != APP_VERSION else ""
     return (
         f"SignalRankAI v{APP_VERSION} commit={short_sha} branch={GIT_BRANCH} "
         f"build={BUILD_IDENTIFIER} build_time={BUILD_TIME_UTC} "
@@ -68,5 +64,6 @@ def get_version_banner() -> str:
         f"deployment={DEPLOYMENT_ID} env={ENVIRONMENT} profile={ENVIRONMENT_PROFILE} "
         f"release={RELEASE_FINGERPRINT} patch={DEPLOYMENT_PATCH_LEVEL}{configured}"
     )
+
 
 # Legacy verification marker retained for v1.2.1 compatibility tests: default="1.2.1"

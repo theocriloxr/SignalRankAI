@@ -23,7 +23,7 @@ class SmartRiskSizer:
     ):
         """
         Initialize the Smart Risk Sizer.
-        
+
         Args:
             account_balance: Total account balance in quote currency
             base_risk_pct: Base risk percentage (default 1% = 0.01)
@@ -50,13 +50,13 @@ class SmartRiskSizer:
     ) -> float:
         """
         Calculate exact unit size based on conviction and SL distance.
-        
+
         Args:
             entry_price: Entry price for the trade
             stop_loss: Stop loss price
             ml_probability: ML model probability (0-1). If None, uses signal.get('ml_probability')
             signal: Optional signal dict for extracting ml_probability
-            
+
         Returns:
             Position size in units
         """
@@ -64,10 +64,11 @@ class SmartRiskSizer:
         if ml_probability is None:
             if signal is not None:
                 from engine.signal_metrics import resolve_ml_probability
+
                 ml_probability = resolve_ml_probability(signal)
             else:
                 ml_probability = None
-        
+
         # Determine risk multiplier based on ML probability
         if ml_probability is not None:
             ml_prob = float(ml_probability)
@@ -87,28 +88,27 @@ class SmartRiskSizer:
 
         # Calculate actual risk amount
         actual_risk_amount = self.account_balance * (self.base_risk_pct * risk_multiplier)
-        
+
         # Calculate distance to Stop Loss (absolute)
         sl_distance = abs(float(entry_price) - float(stop_loss))
-        
+
         if sl_distance <= 0:
             logger.warning(
-                f"[RiskSizer] Invalid SL distance: entry={entry_price}, sl={stop_loss}. "
-                f"Returning 0 position size."
+                f"[RiskSizer] Invalid SL distance: entry={entry_price}, sl={stop_loss}. Returning 0 position size."
             )
             return 0.0
 
         # Calculate Position Size: Risk Amount / Stop Loss Distance
         position_size = actual_risk_amount / sl_distance
-        
+
         logger.info(
             f"📐 RISK SIZER: Conviction={conviction_level} "
-            f"(ML Prob: {ml_probability*100:.1f}%) -> "
+            f"(ML Prob: {ml_probability * 100:.1f}%) -> "
             f"Risk Multiplier: {risk_multiplier}x "
             f"(Risking ${actual_risk_amount:.2f}) -> "
             f"Position Size: {position_size:.4f} units"
         )
-        
+
         return position_size
 
     def calculate_position_value(
@@ -120,39 +120,37 @@ class SmartRiskSizer:
     ) -> float:
         """
         Calculate position size value in quote currency.
-        
+
         Args:
             entry_price: Entry price
             stop_loss: Stop loss price
             ml_probability: ML probability
             signal: Optional signal dict
-            
+
         Returns:
             Position value in quote currency
         """
-        units = self.calculate_position_size(
-            entry_price, stop_loss, ml_probability, signal
-        )
+        units = self.calculate_position_size(entry_price, stop_loss, ml_probability, signal)
         return units * float(entry_price)
 
     def get_risk_config(self) -> Dict[str, Any]:
         """
         Get current risk configuration.
-        
+
         Returns:
             dict with configuration details
         """
         return {
-            'account_balance': self.account_balance,
-            'base_risk_pct': self.base_risk_pct,
-            'high_confidence_threshold': self.high_confidence_threshold,
-            'medium_confidence_threshold': self.medium_confidence_threshold,
-            'high_risk_multiplier': self.high_risk_multiplier,
-            'medium_risk_multiplier': self.medium_risk_multiplier,
-            'low_risk_multiplier': self.low_risk_multiplier,
-            'high_risk_pct': self.base_risk_pct * self.high_risk_multiplier,
-            'medium_risk_pct': self.base_risk_pct * self.medium_risk_multiplier,
-            'low_risk_pct': self.base_risk_pct * self.low_risk_multiplier,
+            "account_balance": self.account_balance,
+            "base_risk_pct": self.base_risk_pct,
+            "high_confidence_threshold": self.high_confidence_threshold,
+            "medium_confidence_threshold": self.medium_confidence_threshold,
+            "high_risk_multiplier": self.high_risk_multiplier,
+            "medium_risk_multiplier": self.medium_risk_multiplier,
+            "low_risk_multiplier": self.low_risk_multiplier,
+            "high_risk_pct": self.base_risk_pct * self.high_risk_multiplier,
+            "medium_risk_pct": self.base_risk_pct * self.medium_risk_multiplier,
+            "low_risk_pct": self.base_risk_pct * self.low_risk_multiplier,
         }
 
     def update_account_balance(self, new_balance: float) -> None:
@@ -191,14 +189,14 @@ def calculate_position_size(
 ) -> float:
     """
     Convenience function to calculate position size.
-    
+
     Args:
         entry_price: Entry price
         stop_loss: Stop loss price
         ml_probability: ML probability (0-1)
         account_balance: Account balance
         base_risk_pct: Base risk percentage
-        
+
     Returns:
         Position size in units
     """

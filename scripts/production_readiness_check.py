@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -174,7 +174,11 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
         from scripts.validate_governance_docs import validate_governance_docs
 
         governance_errors = validate_governance_docs(root)
-        add("governance_docs", not governance_errors, "errors=" + ",".join(governance_errors) if governance_errors else "valid")
+        add(
+            "governance_docs",
+            not governance_errors,
+            "errors=" + ",".join(governance_errors) if governance_errors else "valid",
+        )
     except Exception as exc:
         add("governance_docs", False, f"validator_error={exc}")
 
@@ -194,7 +198,11 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
         + _read(root, "SignalRankAI_v1.3.2_Railway_Live_Financial_Activation.env.example")
     )
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
-    add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")
+    add(
+        "env_contracts",
+        not missing_env,
+        "missing=" + ",".join(missing_env) if missing_env else "required keys documented",
+    )
     for profile_path, markers in PROFILE_REQUIRED_ENV_KEYS.items():
         profile_text = _read(root, profile_path)
         missing_profile = [marker for marker in markers if marker not in profile_text]
@@ -210,11 +218,13 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     railway_text = _read(root, "railway_main.py")
     web_text = _read(root, "web/app.py") + "\n" + railway_text
     missing_web = [marker for marker in REQUIRED_WEB_MARKERS if marker not in web_text]
-    add("web_health_routes", not missing_web, "missing=" + ",".join(missing_web) if missing_web else "health and metrics routes present")
+    add(
+        "web_health_routes",
+        not missing_web,
+        "missing=" + ",".join(missing_web) if missing_web else "health and metrics routes present",
+    )
 
-    missing_direct = [
-        marker for marker in REQUIRED_RAILWAY_DIRECT_MARKERS if marker not in railway_text
-    ]
+    missing_direct = [marker for marker in REQUIRED_RAILWAY_DIRECT_MARKERS if marker not in railway_text]
     add(
         "railway_direct_observability_routes",
         not missing_direct,
@@ -225,18 +235,28 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
 
     telemetry_text = _read(root, "core/telemetry.py")
     missing_telemetry = [marker for marker in REQUIRED_TELEMETRY_MARKERS if marker not in telemetry_text]
-    add("telemetry_markers", not missing_telemetry, "missing=" + ",".join(missing_telemetry) if missing_telemetry else "core metrics present")
+    add(
+        "telemetry_markers",
+        not missing_telemetry,
+        "missing=" + ",".join(missing_telemetry) if missing_telemetry else "core metrics present",
+    )
 
     bot_text = _read(root, "signalrank_telegram/bot.py")
     missing_commands = [marker for marker in REQUIRED_TELEGRAM_COMMAND_MARKERS if marker not in bot_text]
-    add("telegram_core_commands", not missing_commands, "missing=" + ",".join(missing_commands) if missing_commands else "core commands registered")
+    add(
+        "telegram_core_commands",
+        not missing_commands,
+        "missing=" + ",".join(missing_commands) if missing_commands else "core commands registered",
+    )
 
     fetcher_text = _read(root, "data/fetcher.py").lower()
     missing_real_data = [marker for marker in REQUIRED_REAL_DATA_MARKERS if marker not in fetcher_text]
     add(
         "actual_market_data_contract",
         not missing_real_data,
-        "missing=" + ",".join(missing_real_data) if missing_real_data else "fetcher declares real chart candles with no demo/synthetic generation",
+        "missing=" + ",".join(missing_real_data)
+        if missing_real_data
+        else "fetcher declares real chart candles with no demo/synthetic generation",
     )
 
     open_blockers = []
@@ -247,7 +267,9 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     add(
         "documented_high_risk_items",
         True,
-        "open high-risk items documented in " + ",".join(open_blockers) if open_blockers else "no high-risk register markers found",
+        "open high-risk items documented in " + ",".join(open_blockers)
+        if open_blockers
+        else "no high-risk register markers found",
     )
 
     ok = all(check["ok"] for check in checks)

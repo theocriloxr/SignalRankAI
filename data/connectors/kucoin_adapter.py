@@ -7,6 +7,7 @@ Timeframe mapping: 1h -> 1hour, 4h -> 4hour, 1d -> 1day
 
 Docs: https://docs.kucoin.com/#/en/market/candles
 """
+
 from __future__ import annotations
 
 from typing import List, Dict, Any
@@ -31,13 +32,13 @@ async def _async_get_candles(
 ) -> List[Dict[str, Any]]:
     """
     Fetch candles from KuCoin public API.
-    
+
     Args:
         symbol: Trading symbol (e.g., "BTC/USDT", "ETHUSDT")
         timeframe: Timeframe (1h, 4h, 1d)
         limit: Number of candles to fetch
         timeout: Request timeout
-        
+
     Returns:
         List of candle dicts with keys: timestamp, open, high, low, close, volume
     """
@@ -55,77 +56,72 @@ async def _async_get_candles(
         symbol = raw_symbol
         for quote in ("USDT", "USDC", "USD", "BTC", "ETH", "EUR", "GBP"):
             if symbol.endswith(quote) and len(symbol) > len(quote):
-                symbol = f"{symbol[:-len(quote)]}-{quote}"
+                symbol = f"{symbol[: -len(quote)]}-{quote}"
                 break
     if "-" not in symbol:
         logger.debug("kucoin_adapter unsupported symbol mapping: %s", raw_symbol)
         return []
-    
+
     # 2. Map timeframe strings (KuCoin uses '1hour' instead of '1h')
-    tf_map = {
-        "1m": "1min",
-        "5m": "5min", 
-        "15m": "15min",
-        "1h": "1hour",
-        "4h": "4hour",
-        "1d": "1day"
-    }
+    tf_map = {"1m": "1min", "5m": "5min", "15m": "15min", "1h": "1hour", "4h": "4hour", "1d": "1day"}
     kc_tf = tf_map.get((timeframe or "").strip().lower(), "1hour")
-    
+
     # Build URL
     url = f"https://api.kucoin.com/api/v1/market/candles?type={kc_tf}&symbol={symbol}"
-    
+
     request_timeout = min(5.0, max(1.0, float(timeout)))
-    
+
     try:
         client = httpx_client.get_client("kucoin")
-        
+
         if client is not None:
             resp = await client.get(url, timeout=request_timeout)
         else:
             async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
                 resp = await client_fallback.get(url)
-        
+
         if resp.status_code != 200:
             logger.debug(f"kucoin_adapter HTTP {resp.status_code}: {getattr(resp, 'text', '')[:200]}")
             return []
-        
+
         data = resp.json()
-        
+
         # KuCoin returns: {"code": "200000", "data": [[timestamp, open, close, high, low, volume], ...]}
         code = data.get("code")
         if code != "200000":
             logger.debug(f"kucoin_adapter error code: {code}")
             return []
-        
+
         candles_data = data.get("data")
         if not candles_data or not isinstance(candles_data, list):
             return []
-        
+
         out: List[Dict[str, Any]] = []
-        
+
         # KuCoin returns most recent first, so reverse to get chronological order
         for row in candles_data[:limit]:
             try:
                 # Row format: [timestamp, open, close, high, low, volume]
                 # timestamp is in seconds
                 ts = int(row[0])
-                
-                out.append({
-                    "timestamp": ts,
-                    "open": float(row[1]),
-                    "close": float(row[2]),
-                    "high": float(row[3]),
-                    "low": float(row[4]),
-                    "volume": float(row[5]) if len(row) > 5 else 0.0,
-                })
+
+                out.append(
+                    {
+                        "timestamp": ts,
+                        "open": float(row[1]),
+                        "close": float(row[2]),
+                        "high": float(row[3]),
+                        "low": float(row[4]),
+                        "volume": float(row[5]) if len(row) > 5 else 0.0,
+                    }
+                )
             except (IndexError, ValueError) as e:
                 logger.debug(f"kucoin_adapter parse error: {e}")
                 continue
-        
+
         # Reverse to chronological (oldest to newest)
         return out[::-1]
-        
+
     except Exception as e:
         logger.debug(f"kucoin_adapter exception: {e}")
         return []
@@ -139,9 +135,7 @@ def get_candles(
 ) -> List[Dict[str, Any]]:
     """
     Sync-compatible wrapper that runs the async KuCoin client safely.
-    
+
     Uses `run_sync` shim to avoid `asyncio.run` in running loops.
     """
-    return run_sync(
-        _async_get_candles(symbol, timeframe, limit=limit, timeout=timeout)
-    )
+    return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))

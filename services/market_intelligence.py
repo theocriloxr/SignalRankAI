@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, time, timezone
 from typing import Any
@@ -137,7 +136,9 @@ def evaluate_market(
     trend, trend_score = _trend_regime(candles)
     liquidity = _session_liquidity(profile.asset_class, session)
     news_risk = str((signal or {}).get("news_risk") or "low").lower()
-    news_score = 35.0 if news_risk in {"high", "red", "blocked"} else 78.0 if news_risk in {"medium", "yellow"} else 90.0
+    news_score = (
+        35.0 if news_risk in {"high", "red", "blocked"} else 78.0 if news_risk in {"medium", "yellow"} else 90.0
+    )
     strategy_compat = 75.0
     strategy_name = str((signal or {}).get("strategy_name") or "").lower()
     if strategy_name:
@@ -147,7 +148,17 @@ def evaluate_market(
             strategy_compat = 88.0
         elif "mean" in strategy_name and trend == "ranging":
             strategy_compat = 84.0
-    health = max(0.0, min(100.0, (liquidity * 0.30) + (volatility_score * 0.20) + (trend_score * 0.20) + (news_score * 0.20) + (strategy_compat * 0.10)))
+    health = max(
+        0.0,
+        min(
+            100.0,
+            (liquidity * 0.30)
+            + (volatility_score * 0.20)
+            + (trend_score * 0.20)
+            + (news_score * 0.20)
+            + (strategy_compat * 0.10),
+        ),
+    )
     reasons = [open_reason, f"session={session}", f"volatility={volatility}", f"trend={trend}", f"news={news_risk}"]
     trading_allowed = bool(is_open and health >= 45.0 and news_risk not in {"blocked", "red"})
     priority = health if trading_allowed else min(health, 35.0)

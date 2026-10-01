@@ -4,6 +4,7 @@ Every public function is scoped by canonical users.id plus connection_id.
 The module never accepts Telegram IDs as ownership identifiers. PROP policy
 certification is deliberately separate from user configuration.
 """
+
 from __future__ import annotations
 
 import os
@@ -97,16 +98,13 @@ def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
         "min_expected_rr": str(row.min_expected_rr),
         "safety_buffer_pct": str(row.safety_buffer_pct),
         "external_max_daily_loss_pct": (
-            str(row.external_max_daily_loss_pct)
-            if row.external_max_daily_loss_pct is not None else None
+            str(row.external_max_daily_loss_pct) if row.external_max_daily_loss_pct is not None else None
         ),
         "external_max_weekly_loss_pct": (
-            str(row.external_max_weekly_loss_pct)
-            if row.external_max_weekly_loss_pct is not None else None
+            str(row.external_max_weekly_loss_pct) if row.external_max_weekly_loss_pct is not None else None
         ),
         "external_max_total_drawdown_pct": (
-            str(row.external_max_total_drawdown_pct)
-            if row.external_max_total_drawdown_pct is not None else None
+            str(row.external_max_total_drawdown_pct) if row.external_max_total_drawdown_pct is not None else None
         ),
         "allowed_instruments": list(row.allowed_instruments or []),
         "allowed_asset_classes": list(row.allowed_asset_classes or []),
@@ -132,11 +130,13 @@ def public_account_policy(row: TradingAccountPolicyRecord) -> dict[str, Any]:
 
 
 def _domain_policy(row: TradingAccountPolicyRecord) -> TradingAccountPolicy:
-    return policy_from_mapping({
-        **public_account_policy(row),
-        "certified": row.certified_at is not None,
-        "extra_rules": dict(row.external_rules or {}),
-    })
+    return policy_from_mapping(
+        {
+            **public_account_policy(row),
+            "certified": row.certified_at is not None,
+            "extra_rules": dict(row.external_rules or {}),
+        }
+    )
 
 
 async def _owned_connection(
@@ -163,10 +163,12 @@ async def get_account_policy(user_id: int, connection_id: str) -> dict[str, Any]
         await _owned_connection(session, user_id=int(user_id), connection_id=connection_id)
         row = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.user_id == int(user_id),
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         await session.rollback()
@@ -231,16 +233,13 @@ async def configure_account_policy(
         min_expected_rr=Decimal(str(min_expected_rr)),
         safety_buffer_pct=Decimal(str(safety_buffer_pct)),
         external_max_daily_loss_pct=(
-            Decimal(str(external_max_daily_loss_pct))
-            if external_max_daily_loss_pct is not None else None
+            Decimal(str(external_max_daily_loss_pct)) if external_max_daily_loss_pct is not None else None
         ),
         external_max_weekly_loss_pct=(
-            Decimal(str(external_max_weekly_loss_pct))
-            if external_max_weekly_loss_pct is not None else None
+            Decimal(str(external_max_weekly_loss_pct)) if external_max_weekly_loss_pct is not None else None
         ),
         external_max_total_drawdown_pct=(
-            Decimal(str(external_max_total_drawdown_pct))
-            if external_max_total_drawdown_pct is not None else None
+            Decimal(str(external_max_total_drawdown_pct)) if external_max_total_drawdown_pct is not None else None
         ),
         allowed_instruments=tuple(allowed_instruments or ()),
         allowed_asset_classes=tuple(allowed_asset_classes or ()),
@@ -256,15 +255,16 @@ async def configure_account_policy(
     )
 
     async with get_session(label="account_policy.configure", timeout_seconds=10.0) as session:
-        connection = await _owned_connection(
-            session, user_id=int(user_id), connection_id=str(connection_id), lock=True
-        )
+        connection = await _owned_connection(session, user_id=int(user_id), connection_id=str(connection_id), lock=True)
         row = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
 
@@ -326,8 +326,7 @@ async def configure_account_policy(
             AdminEvent(
                 event_type="account_policy_configured",
                 actor_telegram_user_id=(
-                    int(actor.telegram_user_id)
-                    if actor is not None and actor.telegram_user_id is not None else None
+                    int(actor.telegram_user_id) if actor is not None and actor.telegram_user_id is not None else None
                 ),
                 details={
                     "user_id": int(user_id),
@@ -336,9 +335,7 @@ async def configure_account_policy(
                     "policy_version": int(row.policy_version),
                     "account_mode": str(row.account_mode),
                     "execution_permission": str(row.execution_permission),
-                    "hard_rule_count": len(
-                        list((row.external_rules or {}).get("hard_rules") or [])
-                    ),
+                    "hard_rule_count": len(list((row.external_rules or {}).get("hard_rules") or [])),
                     "execution_disabled": True,
                 },
                 created_at=now_utc_naive(),
@@ -365,9 +362,7 @@ async def certify_prop_policy(
         raise PermissionError("prop_certification_operator_required")
     async with get_session(label="account_policy.certify", timeout_seconds=8.0) as session:
         certifier = (
-            await session.execute(
-                select(User).where(User.id == int(certified_by_user_id)).limit(1)
-            )
+            await session.execute(select(User).where(User.id == int(certified_by_user_id)).limit(1))
         ).scalar_one_or_none()
         if certifier is None:
             raise PermissionError("prop_certification_operator_required")
@@ -375,15 +370,16 @@ async def certify_prop_policy(
         if authority not in {"OWNER", "ADMIN"}:
             raise PermissionError("prop_certification_operator_required")
 
-        await _owned_connection(
-            session, user_id=int(user_id), connection_id=connection_id, lock=True
-        )
+        await _owned_connection(session, user_id=int(user_id), connection_id=connection_id, lock=True)
         row = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:
@@ -395,10 +391,7 @@ async def certify_prop_policy(
         policy = _domain_policy(row)
         if not policy.prop_firm or not policy.prop_rules_version:
             raise PermissionError("prop_rule_identity_incomplete")
-        if (
-            policy.external_max_daily_loss_pct is None
-            or policy.external_max_total_drawdown_pct is None
-        ):
+        if policy.external_max_daily_loss_pct is None or policy.external_max_total_drawdown_pct is None:
             raise PermissionError("prop_external_limits_required")
         row.status = "certified"
         row.certified_at = now_utc_naive()
@@ -410,8 +403,7 @@ async def certify_prop_policy(
             AdminEvent(
                 event_type="prop_policy_certified",
                 actor_telegram_user_id=(
-                    int(certifier.telegram_user_id)
-                    if certifier.telegram_user_id is not None else None
+                    int(certifier.telegram_user_id) if certifier.telegram_user_id is not None else None
                 ),
                 details={
                     "target_user_id": int(user_id),
@@ -440,15 +432,16 @@ async def set_account_frozen(
     if frozen and not reason_value:
         raise ValueError("freeze_reason_required")
     async with get_session(label="account_policy.freeze", timeout_seconds=8.0) as session:
-        connection = await _owned_connection(
-            session, user_id=int(user_id), connection_id=connection_id, lock=True
-        )
+        connection = await _owned_connection(session, user_id=int(user_id), connection_id=connection_id, lock=True)
         row = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:
@@ -457,9 +450,7 @@ async def set_account_frozen(
         if not frozen and row.frozen_at is not None and existing_reason and not existing_reason.startswith("user:"):
             raise PermissionError("system_safety_freeze_requires_reconciliation")
         row.frozen_at = now_utc_naive() if frozen else None
-        row.frozen_reason = (
-            f"user:{reason_value}"[:256] if frozen else None
-        )
+        row.frozen_reason = f"user:{reason_value}"[:256] if frozen else None
         row.updated_at = now_utc_naive()
         if frozen:
             connection.execution_enabled = False
@@ -467,23 +458,16 @@ async def set_account_frozen(
         actor = await session.get(User, int(user_id))
         session.add(
             AdminEvent(
-                event_type=(
-                    "account_policy_safety_frozen"
-                    if frozen else "account_policy_safety_unfrozen"
-                ),
+                event_type=("account_policy_safety_frozen" if frozen else "account_policy_safety_unfrozen"),
                 actor_telegram_user_id=(
-                    int(actor.telegram_user_id)
-                    if actor is not None and actor.telegram_user_id is not None else None
+                    int(actor.telegram_user_id) if actor is not None and actor.telegram_user_id is not None else None
                 ),
                 details={
                     "user_id": int(user_id),
                     "connection_id": str(connection_id),
                     "policy_id": str(row.policy_id),
                     "policy_version": int(row.policy_version),
-                    "reason": (
-                        str(row.frozen_reason or "")[:256]
-                        if frozen else "user_unfreeze"
-                    ),
+                    "reason": (str(row.frozen_reason or "")[:256] if frozen else "user_unfreeze"),
                     "execution_disabled": True,
                 },
                 created_at=now_utc_naive(),
@@ -534,38 +518,22 @@ async def record_reconciliation(
         raise ValueError("invalid_reconciliation_status")
 
     async with get_session(label="account_reconciliation.record", timeout_seconds=8.0) as session:
-        connection = await _owned_connection(
-            session, user_id=int(user_id), connection_id=connection_id, lock=True
-        )
-        row = await session.get(
-            BrokerReconciliationState, str(connection_id), with_for_update=True
-        )
+        connection = await _owned_connection(session, user_id=int(user_id), connection_id=connection_id, lock=True)
+        row = await session.get(BrokerReconciliationState, str(connection_id), with_for_update=True)
         if row is None:
-            row = BrokerReconciliationState(
-                connection_id=str(connection_id), user_id=int(user_id)
-            )
+            row = BrokerReconciliationState(connection_id=str(connection_id), user_id=int(user_id))
             session.add(row)
         if int(row.user_id) != int(user_id):
             raise PermissionError("reconciliation_owner_mismatch")
         row.status = normalized
-        row.discrepancy_code = (
-            str(discrepancy_code).strip()[:128] if discrepancy_code else None
-        )
+        row.discrepancy_code = str(discrepancy_code).strip()[:128] if discrepancy_code else None
         row.details = dict(details or {})
-        row.last_reconciled_at = (
-            now_utc_naive() if normalized == "HEALTHY" else row.last_reconciled_at
-        )
-        row.frozen_at = (
-            now_utc_naive()
-            if normalized in {"DEGRADED", "FROZEN", "AUTH_EXPIRED"}
-            else None
-        )
+        row.last_reconciled_at = now_utc_naive() if normalized == "HEALTHY" else row.last_reconciled_at
+        row.frozen_at = now_utc_naive() if normalized in {"DEGRADED", "FROZEN", "AUTH_EXPIRED"} else None
         row.updated_at = now_utc_naive()
 
         reconciliation_details = dict(details or {})
-        ledger_source_event_id = str(
-            reconciliation_details.get("ledger_source_event_id") or ""
-        ).strip()
+        ledger_source_event_id = str(reconciliation_details.get("ledger_source_event_id") or "").strip()
         if ledger_source_event_id:
             from services.trading_account_ledger import (
                 _append_account_ledger_in_session,
@@ -576,10 +544,7 @@ async def record_reconciliation(
                 user_id=int(user_id),
                 connection_id=str(connection_id),
                 provider=str(
-                    reconciliation_details.get("provider")
-                    or connection.platform
-                    or connection.connector
-                    or "broker"
+                    reconciliation_details.get("provider") or connection.platform or connection.connector or "broker"
                 ),
                 entry_type="equity_snapshot",
                 source_event_id=ledger_source_event_id,
@@ -601,10 +566,13 @@ async def record_reconciliation(
 
         policy = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         # A transient reconciliation pass blocks the current decision but
@@ -615,9 +583,7 @@ async def record_reconciliation(
             connection.execution_enabled = False
             if policy is not None:
                 policy.frozen_at = now_utc_naive()
-                policy.frozen_reason = str(
-                    discrepancy_code or f"reconciliation_{normalized.lower()}"
-                )[:256]
+                policy.frozen_reason = str(discrepancy_code or f"reconciliation_{normalized.lower()}")[:256]
                 policy.updated_at = now_utc_naive()
             session.add(
                 AdminEvent(
@@ -627,10 +593,7 @@ async def record_reconciliation(
                         "user_id": int(user_id),
                         "connection_id": str(connection_id),
                         "status": normalized,
-                        "discrepancy_code": (
-                            str(discrepancy_code)[:128]
-                            if discrepancy_code else None
-                        ),
+                        "discrepancy_code": (str(discrepancy_code)[:128] if discrepancy_code else None),
                         "execution_disabled": True,
                     },
                     created_at=now_utc_naive(),
@@ -652,25 +615,21 @@ async def evaluate_persisted_account_policy(
         await _owned_connection(session, user_id=int(user_id), connection_id=connection_id)
         row = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         reconciliation = await session.get(BrokerReconciliationState, str(connection_id))
         await session.rollback()
     if row is None:
-        return AccountPolicyDecision(
-            False, "ACCOUNT_POLICY_BLOCKED", ("account_policy_missing",), 0
-        )
+        return AccountPolicyDecision(False, "ACCOUNT_POLICY_BLOCKED", ("account_policy_missing",), 0)
     if reconciliation is None or str(reconciliation.status).upper() != "HEALTHY":
-        snapshot = AccountRiskSnapshot(
-            **{**asdict(snapshot), "reconciliation_ready": False}
-        )
-    return evaluate_account_policy(
-        _domain_policy(row), snapshot, execution_mode=execution_mode
-    )
+        snapshot = AccountRiskSnapshot(**{**asdict(snapshot), "reconciliation_ready": False})
+    return evaluate_account_policy(_domain_policy(row), snapshot, execution_mode=execution_mode)
 
 
 async def record_execution_decision(
@@ -704,11 +663,7 @@ async def record_execution_decision(
             policy_version=int(policy_version),
             decision_status="ALLOWED" if allowed else "BLOCKED",
             reason_codes=list(dict.fromkeys(str(item) for item in reasons)),
-            release_sha=str(
-                os.getenv("GIT_COMMIT_SHA")
-                or os.getenv("RAILWAY_GIT_COMMIT_SHA")
-                or ""
-            )[:64] or None,
+            release_sha=str(os.getenv("GIT_COMMIT_SHA") or os.getenv("RAILWAY_GIT_COMMIT_SHA") or "")[:64] or None,
             execution_engine_version="account-policy-v1",
             model_versions=dict(model_versions or {}),
             strategy_versions=dict(strategy_versions or {}),

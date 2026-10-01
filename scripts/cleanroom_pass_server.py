@@ -4,6 +4,7 @@ The process starts only after the shell's compile/schema/test chain succeeds.
 It refuses to run without SIGNALRANK_CLEANROOM=1 so it cannot accidentally
 serve as a production application entrypoint.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,11 +27,7 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.dumps(
             {
                 "status": "CLEANROOM_PASS",
-                "commit": str(
-                    os.getenv("RAILWAY_GIT_COMMIT_SHA")
-                    or os.getenv("GIT_COMMIT_SHA")
-                    or ""
-                ),
+                "commit": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or ""),
             },
             sort_keys=True,
         ).encode("utf-8")

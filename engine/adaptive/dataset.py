@@ -83,7 +83,9 @@ def normalise_evidence_category(value: Any, *, delivered: bool = False, executed
     return category if category in _ALLOWED_EVIDENCE_CATEGORIES else "stored"
 
 
-def build_dataset(rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v1") -> tuple[tuple[AdaptiveDatasetRow, ...], DatasetManifest]:
+def build_dataset(
+    rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v1"
+) -> tuple[tuple[AdaptiveDatasetRow, ...], DatasetManifest]:
     parsed: list[AdaptiveDatasetRow] = []
     for row in rows:
         dt = row.get("decision_time") or row.get("created_at")
@@ -103,7 +105,9 @@ def build_dataset(rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str =
                 regime=str(row.get("regime") or "unknown").lower(),
                 direction=str(row.get("direction") or "UNKNOWN").upper(),
                 r_multiple=float(row.get("r_multiple") or 0.0),
-                evidence_category=normalise_evidence_category(row.get("evidence_category") or row.get("status"), delivered=delivered, executed=executed),
+                evidence_category=normalise_evidence_category(
+                    row.get("evidence_category") or row.get("status"), delivered=delivered, executed=executed
+                ),
                 sequence_hashes=sequence_hashes,
                 data_quality_score=max(0.0, min(1.0, float(row.get("data_quality_score") or 0.0))),
                 profile_id=str(row.get("profile_id")) if row.get("profile_id") else None,
@@ -111,7 +115,9 @@ def build_dataset(rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str =
         )
     parsed.sort(key=lambda item: (item.decision_time, item.signal_id))
     canonical = [item.canonical() for item in parsed]
-    digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    digest = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
     categories = tuple(sorted({item.evidence_category for item in parsed}))
     assets = tuple(sorted({item.asset for item in parsed}))
     with_sequences = sum(1 for item in parsed if item.sequence_hashes)

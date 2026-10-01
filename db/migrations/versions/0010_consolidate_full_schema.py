@@ -12,11 +12,11 @@ Revision ID: 0010_consolidate_full_schema
 Revises: 0009_archived_column
 Create Date: 2026-03-11
 """
+
 from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "0010_consolidate_full_schema"
 down_revision = "0009_archived_column"
@@ -28,6 +28,7 @@ depends_on = None
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _exec(sql: str) -> None:
     op.execute(sa.text(sql))
 
@@ -36,8 +37,8 @@ def _exec(sql: str) -> None:
 # upgrade
 # ---------------------------------------------------------------------------
 
-def upgrade() -> None:
 
+def upgrade() -> None:
     # ── 1. users — additional columns ────────────────────────────────────────
     _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT")
     _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS fixed_lot_size FLOAT NOT NULL DEFAULT 0.01")
@@ -153,8 +154,12 @@ def upgrade() -> None:
             meta                  JSONB         NOT NULL DEFAULT '{}'::jsonb
         )
     """)
-    _exec("CREATE INDEX IF NOT EXISTS ix_signal_corrections_original_signal_id  ON signal_corrections (original_signal_id)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_signal_corrections_corrected_signal_id ON signal_corrections (corrected_signal_id)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_signal_corrections_original_signal_id  ON signal_corrections (original_signal_id)"
+    )
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_signal_corrections_corrected_signal_id ON signal_corrections (corrected_signal_id)"
+    )
     _exec("CREATE INDEX IF NOT EXISTS ix_signal_corrections_error_type          ON signal_corrections (error_type)")
 
     # ── 9. signal_engagements ────────────────────────────────────────────────
@@ -320,7 +325,9 @@ def upgrade() -> None:
     """)
     _exec("CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_assets_symbol       ON managed_assets (symbol)")
     _exec("CREATE INDEX IF NOT EXISTS ix_managed_assets_is_active           ON managed_assets (is_active)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_managed_assets_last_analyzed       ON managed_assets (last_analyzed_at ASC NULLS FIRST)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_managed_assets_last_analyzed       ON managed_assets (last_analyzed_at ASC NULLS FIRST)"
+    )
     # Belt-and-suspenders for existing tables created before last_analyzed_at column existed
     _exec("ALTER TABLE managed_assets ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP")
 
@@ -329,6 +336,7 @@ def upgrade() -> None:
 # downgrade — intentionally no-op: column/table drops are destructive and
 # we never roll back a consolidation migration in production.
 # ---------------------------------------------------------------------------
+
 
 def downgrade() -> None:
     pass

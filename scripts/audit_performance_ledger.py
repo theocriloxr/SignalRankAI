@@ -50,9 +50,11 @@ async def run(args: argparse.Namespace) -> int:
     if args.csv:
         target = Path(args.csv).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
-        fieldnames = [column.name for column in rows[0].__table__.columns] if rows else [
-            "signal_id", "primary_bucket", "final_realized_r", "exclusion_reason"
-        ]
+        fieldnames = (
+            [column.name for column in rows[0].__table__.columns]
+            if rows
+            else ["signal_id", "primary_bucket", "final_realized_r", "exclusion_reason"]
+        )
         with target.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()

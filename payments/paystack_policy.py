@@ -6,6 +6,7 @@ amount. Production keeps its normal live-key behaviour. Railway staging may
 use live keys only after two explicit acknowledgements and only for an
 allowlisted test audience under a configured amount cap.
 """
+
 from __future__ import annotations
 
 import os
@@ -37,13 +38,17 @@ def _clean_key(value: object) -> str:
 
 
 def _environment(env: Mapping[str, str]) -> str:
-    return str(
-        env.get("RAILWAY_ENVIRONMENT_NAME")
-        or env.get("RAILWAY_ENVIRONMENT")
-        or env.get("APP_ENV")
-        or env.get("ENVIRONMENT")
-        or "dev"
-    ).strip().lower()
+    return (
+        str(
+            env.get("RAILWAY_ENVIRONMENT_NAME")
+            or env.get("RAILWAY_ENVIRONMENT")
+            or env.get("APP_ENV")
+            or env.get("ENVIRONMENT")
+            or "dev"
+        )
+        .strip()
+        .lower()
+    )
 
 
 def _parse_ids(raw: object) -> set[int]:
@@ -170,10 +175,11 @@ def evaluate_paystack_operation(
         if amount <= 0:
             return PaystackOperationDecision(False, "live", "amount_invalid", limit)
         if amount > limit:
-            return PaystackOperationDecision(False, "live", f"amount_exceeds_live_staging_cap:{amount:.2f}>{limit:.2f}", limit)
+            return PaystackOperationDecision(
+                False, "live", f"amount_exceeds_live_staging_cap:{amount:.2f}>{limit:.2f}", limit
+            )
 
     return PaystackOperationDecision(True, "live", "guarded_live_staging", limit)
-
 
 
 def verify_paystack_event_signature(

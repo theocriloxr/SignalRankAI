@@ -3,6 +3,7 @@
 Verification may refresh connection health/permissions, but it never places an
 order and never returns credentials.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -74,9 +75,7 @@ async def _verify_bybit(
     client = BybitV5Client(credentials)
     try:
         permissions = await client.verify_trade_only_key(
-            require_ip_binding=str(
-                os.getenv("BYBIT_REQUIRE_IP_BINDING", "1")
-            ).strip().lower()
+            require_ip_binding=str(os.getenv("BYBIT_REQUIRE_IP_BINDING", "1")).strip().lower()
             not in {"0", "false", "no", "off"}
         )
         wallet = await client.get_wallet_balance(coin="USDT")
@@ -89,11 +88,7 @@ async def _verify_bybit(
         }
 
     provider_ms = int(float(ticker.get("_provider_time_ms") or 0))
-    quote_age_seconds = (
-        max(0.0, time.time() - provider_ms / 1000.0)
-        if provider_ms > 0
-        else None
-    )
+    quote_age_seconds = max(0.0, time.time() - provider_ms / 1000.0) if provider_ms > 0 else None
     wallet_rows = list(wallet.get("list") or [])
     wallet_account = dict(wallet_rows[0]) if wallet_rows else {}
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -201,9 +196,7 @@ async def verify_broker_connection_read_only(
             "success": bool(result.get("success")),
             "provider": "metaapi",
             "platform": platform,
-            "account_classification": str(
-                public.get("account_classification") or classification
-            ).upper(),
+            "account_classification": str(public.get("account_classification") or classification).upper(),
             "connection_id": str(connection_id),
             "account_info": safe_info,
             "reconciliation": reconciliation,

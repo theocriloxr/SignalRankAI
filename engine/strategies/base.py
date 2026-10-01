@@ -10,6 +10,7 @@ class Strategy:
 
     Implementations should provide `generate` that returns a list of `Signal`.
     """
+
     name = "base"
 
     def generate(self, market_data: dict) -> List[Signal]:  # pragma: no cover - interface

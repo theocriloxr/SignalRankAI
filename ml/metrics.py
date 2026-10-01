@@ -10,6 +10,7 @@ PR AUC / calibration / sample size / drift.
 All functions are pure and work on numpy arrays so they are trivially testable
 without sklearn or a database.
 """
+
 from __future__ import annotations
 
 import math
@@ -61,10 +62,7 @@ def balanced_accuracy(conf: dict[str, int]) -> float:
 def matthews_correlation_coefficient(conf: dict[str, int]) -> float:
     """MCC: -1..1; 0 = random; robust to class imbalance."""
     denominator = math.sqrt(
-        (conf["tp"] + conf["fp"])
-        * (conf["tp"] + conf["fn"])
-        * (conf["tn"] + conf["fp"])
-        * (conf["tn"] + conf["fn"])
+        (conf["tp"] + conf["fp"]) * (conf["tp"] + conf["fn"]) * (conf["tn"] + conf["fp"]) * (conf["tn"] + conf["fn"])
     )
     if denominator == 0:
         return 0.0
@@ -122,11 +120,16 @@ def pr_auc(y_true: Sequence[int], y_proba: Sequence[float]) -> float:
 
 
 def brier_score(y_true: Sequence[int], y_proba: Sequence[float]) -> float:
-    return float(sum((float(p) - (1 if int(a) == 1 else 0)) ** 2 for a, p in zip(y_true, y_proba)) / max(1, len(y_true)))
+    return float(
+        sum((float(p) - (1 if int(a) == 1 else 0)) ** 2 for a, p in zip(y_true, y_proba)) / max(1, len(y_true))
+    )
 
 
 def expected_calibration_error(
-    y_true: Sequence[int], y_proba: Sequence[float], *, bins: int = 10,
+    y_true: Sequence[int],
+    y_proba: Sequence[float],
+    *,
+    bins: int = 10,
 ) -> float:
     """ECE over probability bins; missing bins are skipped (not penalized)."""
     if len(y_true) < bins:
@@ -166,8 +169,14 @@ def coverage_and_selective_accuracy(
     keep = max(1, int(round(len(order) * float(top_fraction))))
     selected = order[:keep]
     threshold = min(0.99, max(0.01, float(decision_threshold)))
-    sel_correct = sum(1 for i in selected if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0))
-    full_correct = sum(1 for i in range(len(y_true)) if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0))
+    sel_correct = sum(
+        1 for i in selected if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0)
+    )
+    full_correct = sum(
+        1
+        for i in range(len(y_true))
+        if (1 if int(y_true[i]) == 1 else 0) == (1 if float(y_proba[i]) >= threshold else 0)
+    )
     return {
         "coverage": round(keep / len(order), 4),
         "selective_accuracy": round(sel_correct / keep, 4),

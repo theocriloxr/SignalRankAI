@@ -8,6 +8,7 @@ Roles (provider addendum §16):
 The Community API returns unix-second timestamps in ms (``time`` field).
 Candle series use ``timeseries/market-candles``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,8 +57,13 @@ def _normalize_symbol(symbol: str) -> str:
 
 def _map_interval(timeframe: str) -> str:
     return {
-        "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
-        "1h": "1h", "4h": "4h", "1d": "1d",
+        "1m": "1m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1d",
     }.get((timeframe or "").lower(), "1d")
 
 
@@ -102,15 +108,23 @@ def _timestamp_ms(value: Any) -> int:
 
 def _lookback_start(interval: str, limit: int) -> str:
     minutes = {
-        "1m": 1, "5m": 5, "15m": 15, "30m": 30,
-        "1h": 60, "4h": 240, "1d": 1440,
+        "1m": 1,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "1h": 60,
+        "4h": 240,
+        "1d": 1440,
     }.get(interval, 1440)
     days = max(7, int((max(2, int(limit)) * minutes) / 1440) + 7)
     return (datetime.now(timezone.utc) - timedelta(days=min(3650, days))).isoformat()
 
 
 async def _async_get_candles(
-    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0,
+    symbol: str,
+    timeframe: str,
+    limit: int = 200,
+    timeout: float = 10.0,
 ) -> List[Dict[str, Any]]:
     if not _enabled():
         return []
@@ -136,7 +150,8 @@ async def _async_get_candles(
                 "end_time": datetime.now(timezone.utc).isoformat(),
                 "paging_from": "end",
             },
-            headers=_headers(), timeout=timeout,
+            headers=_headers(),
+            timeout=timeout,
         )
         if isinstance(data, dict) and isinstance(data.get("data"), list) and data.get("data"):
             rows = list(data["data"])
@@ -156,7 +171,8 @@ async def _async_get_candles(
                 "page_size": min(10000, max(2, int(limit or 200))),
                 "paging_from": "end",
             },
-            headers=_headers(), timeout=timeout,
+            headers=_headers(),
+            timeout=timeout,
         )
         if isinstance(data, dict) and isinstance(data.get("data"), list):
             rows = list(data.get("data") or [])
@@ -166,16 +182,18 @@ async def _async_get_candles(
         _EMPTY_CACHE[cache_key] = _time.monotonic() + _EMPTY_CACHE_TTL_SECONDS
         return []
     out: List[Dict[str, Any]] = []
-    for row in rows[-int(limit or 200):]:
+    for row in rows[-int(limit or 200) :]:
         try:
-            out.append({
-                "timestamp": _timestamp_ms(row["time"]),
-                "open": float(row["price_open"]),
-                "high": float(row["price_high"]),
-                "low": float(row["price_low"]),
-                "close": float(row["price_close"]),
-                "volume": float(row.get("volume", 0) or 0),
-            })
+            out.append(
+                {
+                    "timestamp": _timestamp_ms(row["time"]),
+                    "open": float(row["price_open"]),
+                    "high": float(row["price_high"]),
+                    "low": float(row["price_low"]),
+                    "close": float(row["price_close"]),
+                    "volume": float(row.get("volume", 0) or 0),
+                }
+            )
         except Exception:
             continue
     out.sort(key=lambda item: int(item.get("timestamp") or 0))
@@ -183,7 +201,10 @@ async def _async_get_candles(
 
 
 def get_candles(
-    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0,
+    symbol: str,
+    timeframe: str,
+    limit: int = 200,
+    timeout: float = 10.0,
 ) -> List[Dict[str, Any]]:
     return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))
 
@@ -196,7 +217,8 @@ async def _async_get_network_metric(asset: str, metric: str) -> Optional[Dict[st
         f"{base_url()}/timeseries/asset-metrics",
         name="coinmetrics",
         params={"assets": _normalize_symbol(asset), "metrics": metric, "page_size": 1},
-        headers=_headers(), timeout=8.0,
+        headers=_headers(),
+        timeout=8.0,
     )
     if not isinstance(data, dict):
         return None
