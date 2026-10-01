@@ -2842,6 +2842,17 @@ async def _mark_delivery_with_telegram_proof(
                 target_state.value,
                 None if success else str(error or "delivery_not_confirmed"),
             )
+            if success:
+                try:
+                    from signalrank_telegram.command_resilience import command_response_cache
+
+                    command_response_cache.delete_prefix(f"signals:{int(telegram_user_id)}:")
+                except Exception:
+                    logger.debug(
+                        "[signals_cache] invalidation skipped user=%s",
+                        telegram_user_id,
+                        exc_info=True,
+                    )
             return success
 
     try:
