@@ -1553,6 +1553,35 @@ class PaperTradingService:
             ).scalar_one_or_none()
             if user is None:
                 return "skipped"
+
+            # Candidate discovery happens before the distributed execution lock.
+            # Another delivery-worker replica may therefore have discovered the
+            # same user/signal before this worker acquired the lock. Re-check
+            # durable finalized decisions inside the lock so a permanent skip
+            # cannot emit a duplicate notification on the second replica.
+            finalized_skip = (
+                await session.execute(
+                    select(PaperTradeAttempt.id)
+                    .where(
+                        PaperTradeAttempt.user_id == int(user.id),
+                        PaperTradeAttempt.signal_id == str(candidate["signal_id"]),
+                        PaperTradeAttempt.decision == "SKIPPED",
+                        PaperTradeAttempt.retryable.is_(False),
+                        PaperTradeAttempt.finalized_at.is_not(None),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if finalized_skip is not None:
+                logger.info(
+                    "[paper_candidate] finalized skip already recorded user=%s signal=%s attempt=%s",
+                    user.id,
+                    candidate.get("signal_id"),
+                    finalized_skip,
+                )
+                await session.rollback()
+                return "skipped"
+
             from core.tier_policy import evaluate_feature_access
             from db.access import resolve_product_tier
 
