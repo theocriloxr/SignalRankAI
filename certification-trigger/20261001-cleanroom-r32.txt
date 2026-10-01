@@ -1,0 +1,11 @@
+SignalRankAI incident certification r32
+branch=implementation-of-master-blueprint
+head_before_trigger=afda6b6dc0c1645ccf9ca1fb2bde4a0895115f1b
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+oct1_paper_signal_integrity=required
+missed_entry_nontrade=required
+governance_registry_sync=required
+live_execution_authorized=false
