@@ -1360,8 +1360,10 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         if status_l == "missed_entry":
             missed_entry_observed_r = r_mult
             missed_entry_observed_pct = pct
-            r_mult = 0.0
-            pct = 0.0
+            # No position existed, therefore there is no realized trade P/L.
+            # Preserve the counterfactual market excursion only in metadata.
+            r_mult = None
+            pct = None
 
         # Canonical protected-exit accounting. A breakeven_stop after TP1/TP2
         # realizes the planned partial closes and a zero-R remainder; it must not
