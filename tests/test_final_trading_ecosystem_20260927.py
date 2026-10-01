@@ -76,18 +76,22 @@ def test_new_account_defaults_match_conservative_policy():
     assert 'field_name="max_total_drawdown_pct",\n            default="0.06",' in canonical
 
 
-def test_adaptive_candle_store_uses_short_transaction_default():
+def test_adaptive_candle_store_uses_short_transaction_default(monkeypatch):
+    from engine.adaptive import candle_store
+
+    monkeypatch.setenv("RUN_MODE", "engine")
+    monkeypatch.delenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", raising=False)
+    monkeypatch.delenv("ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION", raising=False)
+    monkeypatch.delenv("ADAPTIVE_CANDLE_TRANSACTION_BUDGET_SECONDS", raising=False)
+    assert candle_store._capture_history_limit() == 60
+    assert candle_store._transaction_snapshot_limit() == 1
+    assert candle_store._capture_transaction_budget_seconds() == 4.5
+
     source=(ROOT/"engine"/"adaptive"/"candle_store.py").read_text(encoding="utf-8")
-    assert 'def _is_decomposed_engine()' in source
-    assert '"10" if _is_decomposed_engine() else "50"' in source
-    assert 'default="60" if _is_decomposed_engine() else "200"' in source
-    assert 'default = "1" if _is_decomposed_engine() else "2"' in source
+    assert "async with asyncio.timeout(transaction_budget)" in source
     assert "for offset in range(0, len(records), chunk_size):" in source
     loop=source.index("for offset in range(0, len(records), chunk_size):")
     commit=source.index("await session.commit()", loop)
-    assert commit > loop
-    # The per-chunk session must be inside the chunk loop rather than wrapping
-    # the entire initial history backfill in a single transaction.
     session=source.index("async with get_session(", loop)
     assert loop < session < commit
 
