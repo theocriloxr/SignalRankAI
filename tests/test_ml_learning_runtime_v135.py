@@ -153,6 +153,8 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     assert "ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION" in candle
     assert "ADAPTIVE_CANDLE_DB_LOCK_TIMEOUT_MS" in candle
     assert "ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS" in candle
+    assert "ADAPTIVE_CANDLE_TRANSACTION_BUDGET_SECONDS" in candle
+    assert "async with asyncio.timeout(transaction_budget)" in candle
     assert 'sql_text("SET TRANSACTION READ WRITE")' in candle
     assert candle.index('SET TRANSACTION READ WRITE') < candle.index("SET LOCAL lock_timeout")
     assert "dispose_engine_for_event_loop" in candle
