@@ -149,3 +149,21 @@ def test_transient_lifecycle_observations_are_merged_for_retry() -> None:
     assert "observation_low = min(" in block
     assert "_DEFERRED_LIFECYCLE_OBSERVATIONS[signal_id] = merged" in block
     assert "_DEFERRED_LIFECYCLE_OBSERVATION_LIMIT" in block
+
+
+def test_paper_worker_rechecks_permanent_skip_after_distributed_lock() -> None:
+    source = _source("core/paper_trading_service.py")
+    block = source[
+        source.index("async def _open_candidate_locked"):
+        source.index("async def _notify_paper_decision"),
+    ]
+    lock_wrapper = source[
+        source.index("async def _open_candidate("):
+        source.index("async def _open_candidate_locked"),
+    ]
+    assert "execution_destination_lock" in lock_wrapper
+    assert "finalized_skip = (" in block
+    assert 'PaperTradeAttempt.decision == "SKIPPED"' in block
+    assert "PaperTradeAttempt.retryable.is_(False)" in block
+    assert "PaperTradeAttempt.finalized_at.is_not(None)" in block
+    assert "finalized skip already recorded" in block
