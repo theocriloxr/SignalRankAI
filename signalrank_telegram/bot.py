@@ -2305,6 +2305,49 @@ async def _persist_delivery_phase(
         return False
 
 
+def _delivery_signal_snapshot(signal: dict) -> dict[str, Any]:
+    """Return the immutable, JSON-safe signal view actually sent to the user."""
+
+    def _safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if hasattr(value, "isoformat"):
+            try:
+                return value.isoformat()
+            except Exception:
+                pass
+        if isinstance(value, (list, tuple)):
+            return [_safe(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): _safe(item) for key, item in value.items()}
+        return str(value)
+
+    generated_at = signal.get("generated_at") or signal.get("created_at")
+    snapshot = {
+        "signal_id": signal.get("signal_id") or signal.get("id"),
+        "display_id": signal.get("display_id"),
+        "asset": signal.get("asset") or signal.get("symbol"),
+        "asset_class": signal.get("asset_class"),
+        "timeframe": signal.get("timeframe"),
+        "direction": signal.get("direction"),
+        "entry": signal.get("entry"),
+        "stop_loss": signal.get("stop_loss"),
+        "take_profit": signal.get("take_profit"),
+        "take_profits": signal.get("take_profits"),
+        "tp1": signal.get("tp1"),
+        "tp2": signal.get("tp2"),
+        "tp3": signal.get("tp3"),
+        "score": signal.get("score"),
+        "strategy_name": signal.get("strategy_name") or signal.get("strategy"),
+        "regime": signal.get("regime") or signal.get("market_regime"),
+        "generated_at": generated_at,
+        "expires_at": signal.get("expires_at"),
+        "ml_recovery_mode": signal.get("ml_recovery_mode"),
+        "ml_recovery_reason": signal.get("ml_recovery_reason"),
+    }
+    return {key: _safe(value) for key, value in snapshot.items() if value is not None}
+
+
 async def _stash_telegram_delivery_receipt(
     *,
     telegram_user_id: int,
@@ -2331,6 +2374,7 @@ async def _stash_telegram_delivery_receipt(
         message_id=int(message_id),
         mode=str(mode or "sent"),
         replaces_signal_id=replaces_signal_id,
+        signal_snapshot=_delivery_signal_snapshot(signal),
     )
     stashed = await receipt_store.stash(receipt)
     proof = {
@@ -2339,6 +2383,7 @@ async def _stash_telegram_delivery_receipt(
         "message_id": int(message_id),
         "delivery_receipt": receipt.as_dict(),
         "receipt_stashed": bool(stashed),
+        "signal_snapshot": dict(receipt.signal_snapshot or {}),
     }
     if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False):
         task = asyncio.create_task(
