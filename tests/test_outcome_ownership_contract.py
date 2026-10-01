@@ -77,7 +77,11 @@ def test_outcome_reconciliation_is_projection_only_not_market_observation_writer
 
 def test_shadow_outcome_domain_cannot_mutate_canonical_signal_lifecycle():
     source = _source("engine/shadow_outcome_worker.py")
-    assert "MLRejectedSignal" in source
+    assert "DecisionLog" in source
+    assert "MLRejectedSignal" not in source
+    assert 'record.meta = {' in source
+    assert "record.actual_outcome" not in source
+    assert "record.outcome_tracked_at" not in source
     assert "record_lifecycle_event(" not in source
     assert "SignalLifecycle" not in source
 
