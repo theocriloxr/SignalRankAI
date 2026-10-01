@@ -1271,4 +1271,6 @@ async def _monitor_expired_invites_job() -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="info")
+    # Railway/container networking requires binding all interfaces; this is not an
+    # authentication or trust boundary. Access control is enforced by the app.
+    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="info")  # nosec B104
