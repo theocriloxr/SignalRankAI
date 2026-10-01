@@ -1555,7 +1555,7 @@ async def ensure_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
             return None
         password = decrypt_secret(str(found[1] or ""))
         if not password:
-            logger.warning("[mt5_client] saved MT5 credentials could not be decrypted for user=%s", telegram_user_id)
+            logger.warning("[mt5_client] broker material unavailable after decryption attempt")
             return None
         result = await link_mt5_account(
             telegram_user_id=int(telegram_user_id),
@@ -2272,11 +2272,7 @@ async def ensure_platform_metatrader_account_id(
                 allow_legacy=True,
             )
         except BrokerCredentialError:
-            logger.warning(
-                "[metatrader] canonical credentials unavailable user=%s connection=%s",
-                user_id,
-                connection_id_value,
-            )
+            logger.warning("[metatrader] canonical broker material unavailable")
             return None
         result = await link_platform_metatrader_account(
             int(user_id),
