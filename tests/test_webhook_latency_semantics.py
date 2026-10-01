@@ -21,7 +21,7 @@ def test_webhook_http_ingress_does_not_wait_for_handler_completion() -> None:
     source = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     route = source[
         source.index('@app.post("/telegram/webhook")'):
-        source.index("def _webhook_queue_diagnostics")
+        source.index('@app.get("/telegram/webhook_status")')
     ]
     assert "_bot_application.process_update" not in route
     assert "timeout=0.35" in route
