@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, MutableMapping
 
-from core.env import env_bool
+from core.env import env_bool, resolve_runtime_environment_name
 
 LIVE_FINANCIAL_ACK_VALUE = "I_ACCEPT_REAL_MONEY_TRADING_AND_PAYOUT_RISK"
 REAL_PAYOUT_ACK_VALUE = "I_ACCEPT_MANUAL_APPROVAL_REAL_PAYOUT_RISK"
@@ -95,13 +95,8 @@ def _utc_timestamp(value: str) -> datetime | None:
 
 
 def _environment(env: MutableMapping[str, str] | None) -> str:
-    return (
-        _raw(env, "RAILWAY_ENVIRONMENT_NAME")
-        or _raw(env, "RAILWAY_ENVIRONMENT")
-        or _raw(env, "APP_ENV")
-        or _raw(env, "ENVIRONMENT")
-        or "dev"
-    ).lower()
+    source = os.environ if env is None else env
+    return resolve_runtime_environment_name(source, "dev")
 
 
 def evaluate_financial_activation(
