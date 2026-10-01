@@ -80,3 +80,45 @@ def test_production_readiness_rejects_silent_or_duplicate_notification_modes():
     assert "signal_delivery_edit_mode_enabled" in source
     assert "telegram_send_retries_too_low" in source
     assert "unsent_signal_recovery_interval_too_high" in source
+
+
+def test_delayed_short_tp_alert_does_not_call_reversed_later_mark_tp_evidence():
+    message = TierNotificationManager().format_tp_hit_notification(
+        {
+            "signal_id": "0140438f-a1b",
+            "asset": "JNJ",
+            "direction": "short",
+            "timeframe": "1m",
+            "entry": 262.2601,
+            "stop_loss": 262.7518,
+            "take_profit": [260.8439, 259.4277, 258.0116],
+        },
+        "vip",
+        1,
+        0.54,
+        262.45,
+    )
+    assert "TP1 hit level: 260.8439" in message
+    assert "Latest stored price: 262.45 (post-hit mark; not TP evidence)" in message
+    assert "Observed hit price: 262.45" not in message
+    assert "Signal P/L: +0.54%" in message
+
+
+def test_tp_alert_labels_directionally_consistent_price_as_hit_evidence():
+    message = TierNotificationManager().format_tp_hit_notification(
+        {
+            "signal_id": "short-hit",
+            "asset": "JNJ",
+            "direction": "short",
+            "timeframe": "1m",
+            "entry": 262.2601,
+            "stop_loss": 262.7518,
+            "take_profit": [260.8439],
+        },
+        "vip",
+        1,
+        0.54,
+        260.80,
+    )
+    assert "Observed hit price: 260.8" in message
+    assert "post-hit mark" not in message
