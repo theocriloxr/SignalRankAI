@@ -5235,7 +5235,6 @@ async def recap_command(update, context):
 	user_id = update.effective_user.id
 	# Postgres-first recap (delivery-based)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats
