@@ -77,6 +77,7 @@ _TESTS = [
     "tests/test_ml_learning_runtime_v135.py",
     "tests/test_v20_event_platform.py",
     "tests/test_env_alias_conflicts.py",
+    "tests/test_class_fair_scheduler_contract.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
