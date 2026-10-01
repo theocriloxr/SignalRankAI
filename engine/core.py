@@ -2982,7 +2982,9 @@ def main_loop(DRY_RUN: bool = False):
         commodity_assets = [a for a in open_assets if is_commodity(a)]
         fx_enabled = _env_bool("FX_ENABLED", True)
         stocks_enabled = _env_bool("STOCKS_ENABLED", True)
-        indices_enabled = _env_bool("INDICES_ENABLED", _env_bool("INDEX_ENABLED", True))
+        from core.env import env_bool_alias
+
+        indices_enabled = env_bool_alias("INDICES_ENABLED", "INDEX_ENABLED", default=True)
         if not fx_enabled:
             fx_assets = []
         if not stocks_enabled:
