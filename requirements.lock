@@ -119,7 +119,8 @@ soupsieve==2.10
 SQLAlchemy==2.1.1
 starlette==1.7.0
 threadpoolctl==3.7.0
-timezonefinder==7.0.2
+timezonefinder==8.3.0
+timezonefinder-data==1.2026.3
 toolz==1.1.0
 tqdm==4.70.1
 tradingview-ta==3.3.0
