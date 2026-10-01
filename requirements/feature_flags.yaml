@@ -1,5 +1,5 @@
 {
-  "count": 154,
+  "count": 156,
   "flags": [
     {
       "dangerous": false,
@@ -444,6 +444,22 @@
     {
       "dangerous": false,
       "name": "ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EVENT_BUS_DB_OUTBOX_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EVENT_BUS_MEMORY_FALLBACK_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -1241,6 +1257,6 @@
   "schema_version": 1,
   "source_prompt": {
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
-    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+    "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   }
 }
