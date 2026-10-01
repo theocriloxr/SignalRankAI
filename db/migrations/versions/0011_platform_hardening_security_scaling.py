@@ -4,6 +4,7 @@ Revision ID: 0011_platform_harden_security
 Revises: 0010_consolidate_full_schema
 Create Date: 2026-04-05
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -98,13 +99,23 @@ def upgrade() -> None:
     _exec("CREATE INDEX IF NOT EXISTS ix_ml_shadow_predictions_is_shadow ON ml_shadow_predictions (is_shadow)")
 
     # Critical query-path indexes
-    _exec("CREATE INDEX IF NOT EXISTS ix_subscriptions_user_status_exp ON subscriptions (user_id, status, expires_at DESC)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_signals_created_archived_expired ON signals (created_at DESC, archived, expired)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_subscriptions_user_status_exp ON subscriptions (user_id, status, expires_at DESC)"
+    )
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_signals_created_archived_expired ON signals (created_at DESC, archived, expired)"
+    )
     _exec("CREATE INDEX IF NOT EXISTS ix_signals_asset_tf_created ON signals (asset, timeframe, created_at DESC)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_decision_log_created_decision_asset_tf ON decision_log (created_at DESC, decision, asset, timeframe)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_decision_log_created_decision_asset_tf ON decision_log (created_at DESC, decision, asset, timeframe)"
+    )
     _exec("CREATE INDEX IF NOT EXISTS ix_outcomes_signal_closed ON outcomes (signal_id, closed_at DESC)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_payment_events_created_kind_tier ON payment_events (created_at DESC, kind, tier)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_free_signal_queue_status_deliver_after ON free_signal_queue (status, deliver_after)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_payment_events_created_kind_tier ON payment_events (created_at DESC, kind, tier)"
+    )
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_free_signal_queue_status_deliver_after ON free_signal_queue (status, deliver_after)"
+    )
 
 
 def downgrade() -> None:

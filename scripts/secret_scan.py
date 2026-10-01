@@ -5,12 +5,12 @@ The scan ignores generated environments, VCS metadata and documentation while
 checking production source/config files for token-shaped literals and private
 keys. Environment variable names and obvious test placeholders are allowed.
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 import re
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_PARTS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules", ".pytest-tmp"}

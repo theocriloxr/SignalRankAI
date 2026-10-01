@@ -260,18 +260,24 @@ def preferences_from_payload(payload: dict[str, Any] | None) -> UserTradingPrefe
         asset_classes_raw = [data.get("preferred_asset_class")]
     preferred_assets = tuple(str(x).upper().strip() for x in _tuple_from(data.get("preferred_assets")))
     blocked_assets = tuple(str(x).upper().strip() for x in _tuple_from(data.get("blocked_assets")))
-    risk_pct = _as_float(data.get("risk_per_trade_pct"), RISK_PROFILES[normalize_risk_profile(data.get("risk_profile"))]["risk_pct"])
+    risk_pct = _as_float(
+        data.get("risk_per_trade_pct"), RISK_PROFILES[normalize_risk_profile(data.get("risk_profile"))]["risk_pct"]
+    )
     risk_profile = normalize_risk_profile(data.get("risk_profile") or _risk_profile_from_pct(risk_pct))
     max_daily_trades = max(0, _as_int(data.get("max_daily_trades"), 10))
     explicit_daily = data.get("max_signals_per_day")
-    max_signals = None if explicit_daily in (None, "", 0, "0") else max(1, _as_int(explicit_daily, max_daily_trades or 1))
+    max_signals = (
+        None if explicit_daily in (None, "", 0, "0") else max(1, _as_int(explicit_daily, max_daily_trades or 1))
+    )
     return UserTradingPreferences(
         trade_profile=normalize_trade_profile(data.get("trade_profile") or data.get("profile"), default="all"),
         risk_profile=risk_profile,
         asset_classes=_normalize_asset_classes(asset_classes_raw),
         preferred_assets=preferred_assets,
         blocked_assets=blocked_assets,
-        preferred_timeframes=_normalize_timeframes(data.get("preferred_timeframes") or data.get("notification_timeframes")),
+        preferred_timeframes=_normalize_timeframes(
+            data.get("preferred_timeframes") or data.get("notification_timeframes")
+        ),
         preferred_strategies=_tuple_from(data.get("preferred_strategies") or data.get("notification_strategies")),
         sessions=_tuple_from(data.get("sessions"), ("auto",)),
         notification_style=str(data.get("notification_style") or "normal").strip().lower(),
@@ -433,9 +439,7 @@ async def backfill_linked_platform_trading_preferences(
         modern = _mapping(values.get(f"trading_preferences:{telegram_id}"))
         legacy = _mapping(values.get(f"user_prefs:{telegram_id}"))
         profile = values.get(f"trade_profile:{telegram_id}")
-        if not modern and not legacy and not _mapping(profile) and not (
-            isinstance(profile, str) and profile.strip()
-        ):
+        if not modern and not legacy and not _mapping(profile) and not (isinstance(profile, str) and profile.strip()):
             skipped_without_source += 1
             continue
 
@@ -452,6 +456,7 @@ async def backfill_linked_platform_trading_preferences(
     if apply and inserted:
         try:
             from services.profile_demand import clear_profile_demand_cache
+
             clear_profile_demand_cache()
         except Exception:
             pass
@@ -577,6 +582,7 @@ async def set_user_trading_preferences(
         )
     try:
         from services.profile_demand import clear_profile_demand_cache
+
         clear_profile_demand_cache()
     except Exception:
         pass
@@ -643,6 +649,7 @@ async def set_platform_user_trading_preferences(
         )
     try:
         from services.profile_demand import clear_profile_demand_cache
+
         clear_profile_demand_cache()
     except Exception:
         pass
@@ -692,9 +699,12 @@ def signal_matches_preferences(
         return False, f"timeframe:{timeframe}"
 
     strategy_name = str(signal.get("strategy_name") or signal.get("strategy") or "").lower().strip()
-    if prefs.preferred_strategies and strategy_name and not any(
-        preferred in strategy_name or strategy_name in preferred
-        for preferred in prefs.preferred_strategies
+    if (
+        prefs.preferred_strategies
+        and strategy_name
+        and not any(
+            preferred in strategy_name or strategy_name in preferred for preferred in prefs.preferred_strategies
+        )
     ):
         return False, f"strategy:{strategy_name}"
 
@@ -726,9 +736,7 @@ def signal_matches_preferences(
     score_present = any(signal.get(key) is not None for key in score_keys)
     if score_present:
         score = _as_float(
-            signal.get("score_calibrated")
-            or signal.get("score_final")
-            or signal.get("score"),
+            signal.get("score_calibrated") or signal.get("score_final") or signal.get("score"),
             0.0,
         )
         minimum_score = minimum_score_for_preferences(prefs)
@@ -745,9 +753,7 @@ def personalize_signal_for_preferences(
 
     personalized = dict(signal or {})
     base_score = _as_float(
-        personalized.get("score_calibrated")
-        or personalized.get("score_final")
-        or personalized.get("score"),
+        personalized.get("score_calibrated") or personalized.get("score_final") or personalized.get("score"),
         0.0,
     )
     asset = str(personalized.get("asset") or personalized.get("symbol") or "").upper().strip()

@@ -24,6 +24,7 @@ from .fibonacci_confluence import fibonacci_confluence_strategies
 # Import fallback strategies - these run when main strategies produce no signals
 try:
     from .fallback import fallback_strategies
+
     FALLBACK_AVAILABLE = True
 except ImportError:
     FALLBACK_AVAILABLE = False
@@ -34,6 +35,7 @@ except ImportError:
 # Optional TradingView integration
 try:
     from .tradingview import tradingview_strategies
+
     TRADINGVIEW_AVAILABLE = True
 except ImportError:
     TRADINGVIEW_AVAILABLE = False
@@ -44,11 +46,7 @@ def _certified_strategy_market_data(asset, asset_class, market_data):
     """Return only candle timeframes that passed the shared quality contract."""
     from market.data_quality_certification import certify_market_candles
 
-    certified = {
-        key: value
-        for key, value in (market_data or {}).items()
-        if str(key).startswith("_")
-    }
+    certified = {key: value for key, value in (market_data or {}).items() if str(key).startswith("_")}
     for timeframe, data in (market_data or {}).items():
         if str(timeframe).startswith("_") or not isinstance(data, dict):
             continue
@@ -106,23 +104,23 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
     def get_htf_bias(market_data):
         # Use 4h or 1d as HTF, fallback to None
         for tf in ["1d", "4h"]:
-            if tf in market_data and 'indicators' in market_data[tf]:
-                ind = market_data[tf]['indicators']
+            if tf in market_data and "indicators" in market_data[tf]:
+                ind = market_data[tf]["indicators"]
                 # Example: use EMA or trend indicator for bias
-                if ind.get('ema_fast', 0) > ind.get('ema_slow', 0):
-                    return 'BUY'
-                elif ind.get('ema_fast', 0) < ind.get('ema_slow', 0):
-                    return 'SELL'
+                if ind.get("ema_fast", 0) > ind.get("ema_slow", 0):
+                    return "BUY"
+                elif ind.get("ema_fast", 0) < ind.get("ema_slow", 0):
+                    return "SELL"
         return None
 
     htf_bias = get_htf_bias(market_data)
 
     # Normalize htf_bias to the direction labels used across the codebase
     # (strategies now emit 'LONG'/'SHORT'; htf_bias came from old 'BUY'/'SELL' EMA check)
-    if htf_bias == 'BUY':
-        htf_bias = 'LONG'
-    elif htf_bias == 'SELL':
-        htf_bias = 'SHORT'
+    if htf_bias == "BUY":
+        htf_bias = "LONG"
+    elif htf_bias == "SELL":
+        htf_bias = "SHORT"
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", True)
@@ -132,13 +130,19 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 
     # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
     # 'LONG'/'SHORT' (new). Normalize to 'LONG'/'SHORT'.
-    _DIR_MAP = {'BUY': 'LONG', 'SELL': 'SHORT', 'LONG': 'LONG', 'SHORT': 'SHORT'}
+    _DIR_MAP = {"BUY": "LONG", "SELL": "SHORT", "LONG": "LONG", "SHORT": "SHORT"}
 
     if imp_enabled:
         try:
             for sig in institutional_momentum_pulse_strategies(asset, market_data):
-                sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
-                sig['weight'] = strategy_weights.get(sig.get('strategy_name', 'Institutional Momentum Pulse'), 1) if strategy_weights else 1
+                sig["direction"] = _DIR_MAP.get(
+                    str(sig.get("direction", "") or "").upper(), sig.get("direction", "LONG")
+                )
+                sig["weight"] = (
+                    strategy_weights.get(sig.get("strategy_name", "Institutional Momentum Pulse"), 1)
+                    if strategy_weights
+                    else 1
+                )
                 signals.append(sig)
         except Exception as e:
             try:
@@ -152,7 +156,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
     for timeframe, data in market_data.items():
         if not isinstance(data, dict):
             continue
-        if 'indicators' not in data or 'candles' not in data:
+        if "indicators" not in data or "candles" not in data:
             continue
 
         # Only allow lower timeframe trades in direction of HTF bias
@@ -182,11 +186,13 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 
         def _add(sig):
             """Normalize direction, apply HTF filter and weight, then append."""
-            sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
-            if allowed_direction and sig.get('direction') != allowed_direction:
+            sig["direction"] = _DIR_MAP.get(str(sig.get("direction", "") or "").upper(), sig.get("direction", "LONG"))
+            if allowed_direction and sig.get("direction") != allowed_direction:
                 return
-            if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
+            if not strategy_weights or strategy_weights.get(sig.get("strategy", sig.get("name", "")), 1) > 0:
+                sig["weight"] = (
+                    strategy_weights.get(sig.get("strategy", sig.get("name", "")), 1) if strategy_weights else 1
+                )
                 signals.append(sig)
 
         def _run_group(group_name, producer):
@@ -225,11 +231,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             _run_group("fibonacci", lambda: fibonacci_confluence_strategies(asset, market_data))
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
-    
+
     # Queue canonical candle snapshots for asynchronous sequence learning.
     if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
         try:
             from engine.adaptive.candle_store import enqueue_market_snapshot
+
             enqueue_market_snapshot(asset, market_data)
         except Exception as exc:
             logger.debug("[adaptive_candles] enqueue skipped asset=%s error=%s", asset, exc)
@@ -259,9 +266,13 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     existing_fingerprints.add(candidate_fp)
             logger.info(
                 "[adaptive] asset=%s mode=%s profile=%s evidence=%s candidates=%s conflicts=%s quality=%.3f",
-                asset, adaptive_assessment.runtime_mode, adaptive_assessment.profile.profile_id,
-                len(adaptive_assessment.evidence), len(adaptive_candidates),
-                list(adaptive_assessment.conflicts), adaptive_assessment.data_quality_score,
+                asset,
+                adaptive_assessment.runtime_mode,
+                adaptive_assessment.profile.profile_id,
+                len(adaptive_assessment.evidence),
+                len(adaptive_candidates),
+                list(adaptive_assessment.conflicts),
+                adaptive_assessment.data_quality_score,
             )
         except Exception as exc:
             logger.warning("[adaptive] evaluation failed asset=%s error=%s", asset, exc, exc_info=True)
@@ -280,7 +291,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     tf_data = market_data[tf]
                     fallback_timeframe = tf
                     break
-            
+
             if tf_data is None:
                 # Use first available timeframe
                 for tf, candidate_data in market_data.items():
@@ -289,14 +300,16 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     tf_data = candidate_data
                     fallback_timeframe = tf
                     break
-            
+
             if tf_data and isinstance(tf_data, dict):
                 fallback_sigs = fallback_strategies(asset, fallback_timeframe or "1h", tf_data)
                 for sig in fallback_sigs:
-                    sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
-                    sig['is_fallback'] = True  # Mark as fallback
+                    sig["direction"] = _DIR_MAP.get(
+                        str(sig.get("direction", "") or "").upper(), sig.get("direction", "LONG")
+                    )
+                    sig["is_fallback"] = True  # Mark as fallback
                     signals.append(sig)
-                
+
                 if fallback_sigs:
                     logger.info(f"[strategies] Fallback generated {len(fallback_sigs)} signals for {asset}")
         except Exception as e:
@@ -332,5 +345,5 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 )
         except Exception as exc:
             logger.warning("[candle_evidence] enrichment failed asset=%s error=%s", asset, exc, exc_info=True)
-    
+
     return signals

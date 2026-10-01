@@ -11,6 +11,7 @@ Environment:
     ENCRYPTION_KEY  - 32-byte URL-safe base64 key generated with:
                       `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 """
+
 from __future__ import annotations
 
 import os
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from cryptography.fernet import Fernet, InvalidToken
+
     _CRYPTO_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _CRYPTO_AVAILABLE = False

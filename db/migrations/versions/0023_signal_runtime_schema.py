@@ -11,6 +11,7 @@ repair is intentionally idempotent for clean, legacy, and partially prepared
 PostgreSQL databases.  It also recreates the partial unique index using the
 canonical definition after reconciling any unexpected duplicate active rows.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,10 +56,7 @@ def _ensure_columns() -> None:
         bind.execute(sa.text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS mfe_pct DOUBLE PRECISION"))
         bind.execute(sa.text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_pct DOUBLE PRECISION"))
         bind.execute(
-            sa.text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS "
-                "performance_version INTEGER NOT NULL DEFAULT 2"
-            )
+            sa.text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS performance_version INTEGER NOT NULL DEFAULT 2")
         )
         bind.execute(sa.text("UPDATE signals SET performance_version = 2 WHERE performance_version IS NULL"))
         bind.execute(sa.text("ALTER TABLE signals ALTER COLUMN performance_version SET DEFAULT 2"))
@@ -66,10 +64,7 @@ def _ensure_columns() -> None:
         return
 
     inspector = sa.inspect(bind)
-    columns = {
-        str(column.get("name") or "").lower()
-        for column in inspector.get_columns("signals")
-    }
+    columns = {str(column.get("name") or "").lower() for column in inspector.get_columns("signals")}
     if "mfe_pct" not in columns:
         op.add_column("signals", sa.Column("mfe_pct", sa.Float(), nullable=True))
     if "mae_pct" not in columns:
@@ -92,11 +87,7 @@ def _reassert_active_guard() -> None:
     dialect = str(bind.dialect.name or "").lower()
 
     if dialect == "postgresql":
-        bind.execute(
-            sa.text(
-                "SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"
-            )
-        )
+        bind.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"))
 
     result = bind.execute(sa.text(_RECONCILE_DUPLICATES_SQL))
     rows = result.fetchall() if getattr(result, "returns_rows", False) else []

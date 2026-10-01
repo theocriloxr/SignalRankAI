@@ -4,6 +4,7 @@ The package is deliberately additive: deterministic strategy and risk gates rema
 canonical, while approved adaptive profiles can apply bounded weighting and all
 candidate evidence is retained for shadow/learning review.
 """
+
 from .runtime import AdaptiveStrategyService, get_adaptive_strategy_service
 from .types import AssetStrategyProfile, MarketContext, StrategyEvidence
 

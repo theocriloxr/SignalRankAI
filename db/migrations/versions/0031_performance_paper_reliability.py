@@ -270,8 +270,13 @@ def downgrade() -> None:
     op.create_unique_constraint("uq_paper_position_user_signal", "paper_positions", ["user_id", "signal_id"])
     op.drop_table("paper_trade_attempts")
     for column in (
-        "correction_reason", "corrected_by", "corrected_at",
-        "performance_exclusion_reason", "performance_inclusion_status",
-        "calculation_policy_version", "provenance", "terminal_version",
+        "correction_reason",
+        "corrected_by",
+        "corrected_at",
+        "performance_exclusion_reason",
+        "performance_inclusion_status",
+        "calculation_policy_version",
+        "provenance",
+        "terminal_version",
     ):
         op.drop_column("outcomes", column)

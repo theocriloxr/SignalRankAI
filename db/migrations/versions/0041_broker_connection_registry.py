@@ -3,6 +3,7 @@
 Revision ID: 0041_broker_connection_registry
 Revises: 0040_cross_channel_paper_receipt
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

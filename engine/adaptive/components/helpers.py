@@ -22,7 +22,7 @@ def atr(candles: Sequence[Mapping[str, Any]], period: int = 14) -> float:
         return 0.0
     tr = []
     for i in range(1, len(closes)):
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1])))
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
     tail = tr[-period:]
     return sum(tail) / len(tail) if tail else 0.0
 
@@ -33,9 +33,9 @@ def confirmed_pivots(candles: Sequence[Mapping[str, Any]], window: int = 2):
     pivot_lows: list[tuple[int, float]] = []
     # The final `window` candles are never eligible, preventing future-confirmation leakage.
     for i in range(window, max(window, len(candles) - window)):
-        if highs[i] >= max(highs[i-window:i] + highs[i+1:i+window+1]):
+        if highs[i] >= max(highs[i - window : i] + highs[i + 1 : i + window + 1]):
             pivot_highs.append((i, highs[i]))
-        if lows[i] <= min(lows[i-window:i] + lows[i+1:i+window+1]):
+        if lows[i] <= min(lows[i - window : i] + lows[i + 1 : i + window + 1]):
             pivot_lows.append((i, lows[i]))
     return pivot_highs, pivot_lows
 

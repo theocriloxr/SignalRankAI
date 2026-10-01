@@ -11,6 +11,7 @@ signal rows and their delivery/outcome history, selects one deterministic
 canonical active row, marks only the other duplicate rows as ``superseded``,
 and then creates the index idempotently.
 """
+
 from __future__ import annotations
 
 import logging
@@ -127,7 +128,6 @@ WHERE signal_id IN (SELECT signal_id FROM ranked WHERE row_num > 1)
 """
 
 
-
 def _ensure_signal_status_column() -> None:
     """Create the canonical signal lifecycle column on clean/legacy schemas.
 
@@ -142,21 +142,12 @@ def _ensure_signal_status_column() -> None:
         # PostgreSQL supports additive idempotent DDL directly.  Avoid runtime
         # reflection here so ``alembic upgrade --sql`` remains usable.
         bind.execute(
-            sa.text(
-                "ALTER TABLE signals "
-                "ADD COLUMN IF NOT EXISTS status VARCHAR(16) "
-                "NOT NULL DEFAULT 'issued'"
-            )
+            sa.text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'issued'")
         )
-        bind.execute(
-            sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL")
-        )
+        bind.execute(sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL"))
         return
 
-    columns = {
-        str(column.get("name") or "").lower()
-        for column in sa.inspect(bind).get_columns("signals")
-    }
+    columns = {str(column.get("name") or "").lower() for column in sa.inspect(bind).get_columns("signals")}
     if "status" not in columns:
         op.add_column(
             "signals",
@@ -170,9 +161,7 @@ def _ensure_signal_status_column() -> None:
     else:
         # Preserve existing lifecycle values.  Only repair unexpected NULLs so
         # the partial unique index has deterministic semantics.
-        bind.execute(
-            sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL")
-        )
+        bind.execute(sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL"))
 
 
 def _reconcile_active_duplicates() -> int:
@@ -183,11 +172,7 @@ def _reconcile_active_duplicates() -> int:
     if dialect == "postgresql":
         # Serialize the reconciliation/index creation if two pre-deploy jobs are
         # accidentally started against the same database.
-        bind.execute(
-            sa.text(
-                "SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"
-            )
-        )
+        bind.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"))
         result = bind.execute(sa.text(_POSTGRES_RECONCILE_SQL))
     else:
         result = bind.execute(sa.text(_SQLITE_RECONCILE_SQL))

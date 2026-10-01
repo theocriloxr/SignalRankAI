@@ -4,6 +4,7 @@ The functions in this module are deliberately deterministic and side-effect free
 that the delivery, paper, performance, copy-trading and live-execution paths use the
 same policy rather than maintaining slightly different interpretations.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -53,9 +54,15 @@ def canonical_direction(value: Any) -> str:
 def canonical_timeframe(value: Any) -> str:
     raw = str(value or "").strip().lower().replace(" ", "")
     aliases = {
-        "60m": "1h", "1hr": "1h", "1hour": "1h",
-        "240m": "4h", "4hr": "4h", "4hour": "4h",
-        "24h": "1d", "1day": "1d", "daily": "1d",
+        "60m": "1h",
+        "1hr": "1h",
+        "1hour": "1h",
+        "240m": "4h",
+        "4hr": "4h",
+        "4hour": "4h",
+        "24h": "1d",
+        "1day": "1d",
+        "daily": "1d",
     }
     return aliases.get(raw, raw or "1h")
 
@@ -247,7 +254,9 @@ def evaluate_public_win_rate_claim(
     unique_theses: int,
     target_rate: float | None = None,
 ) -> PublicClaimDecision:
-    target = float(target_rate if target_rate is not None else _env_float("PUBLIC_WIN_RATE_CLAIM_TARGET", 0.60, 0.0, 1.0))
+    target = float(
+        target_rate if target_rate is not None else _env_float("PUBLIC_WIN_RATE_CLAIM_TARGET", 0.60, 0.0, 1.0)
+    )
     sample = max(0, int(wins) + int(losses))
     observed = int(wins) / sample if sample else 0.0
     lower = wilson_lower_bound(int(wins), sample)
@@ -275,8 +284,6 @@ def evaluate_public_win_rate_claim(
         terminal_coverage=coverage,
         unique_theses=int(unique_theses),
     )
-
-
 
 
 def calibration_evidence_valid(signal: Mapping[str, Any]) -> bool:
@@ -323,11 +330,7 @@ class ProbabilityDisplay:
 def probability_for_public_display(signal: Mapping[str, Any]) -> ProbabilityDisplay:
     calibrated_raw = signal.get("ml_probability_calibrated")
     version = str(signal.get("ml_calibration_version") or "").strip() or None
-    calibrated = (
-        calibrated_raw is not None
-        and version is not None
-        and calibration_evidence_valid(signal)
-    )
+    calibrated = calibrated_raw is not None and version is not None and calibration_evidence_valid(signal)
     if calibrated:
         try:
             value = max(0.0, min(1.0, float(calibrated_raw)))

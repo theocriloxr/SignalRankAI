@@ -7,10 +7,11 @@ keeps observations point-in-time aware so backtests never leak revisions.
 Dormant-by-default: without ``FRED_API_KEY`` the adapter returns ``[]``/``None``
 and reports ``missing_credentials`` instead of raising.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from data.connectors._common import async_http_get_json, env_bool, env_str
 from utils.async_runner import run_sync
@@ -67,13 +68,15 @@ async def _async_fetch_series(
             parsed = float(value)
         except (TypeError, ValueError):
             continue
-        out.append({
-            "series_id": series_id,
-            "timestamp": row.get("date"),
-            "value": parsed,
-            "realtime_start": row.get("realtime_start"),
-            "realtime_end": row.get("realtime_end"),
-        })
+        out.append(
+            {
+                "series_id": series_id,
+                "timestamp": row.get("date"),
+                "value": parsed,
+                "realtime_start": row.get("realtime_start"),
+                "realtime_end": row.get("realtime_end"),
+            }
+        )
     return out
 
 
@@ -93,10 +96,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "fred",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("FRED_API_KEY",),
         "api_url": API_URL,
     }

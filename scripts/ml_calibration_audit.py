@@ -5,6 +5,7 @@ This replaces the old Railway shell/base64 psql payload. All statements are
 static, quoted SQL executed through SQLAlchemy, and the transaction is forced
 READ ONLY so the audit cannot mutate production.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -143,12 +144,17 @@ async def _main() -> int:
     try:
         result = await run_audit(args.days)
     except Exception as exc:
-        print(json.dumps({
-            "ok": False,
-            "read_only": True,
-            "error": type(exc).__name__,
-            "detail": str(exc)[:400],
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "read_only": True,
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:400],
+                },
+                sort_keys=True,
+            )
+        )
         return 1
     print(json.dumps(result, sort_keys=True, default=str))
     return 0

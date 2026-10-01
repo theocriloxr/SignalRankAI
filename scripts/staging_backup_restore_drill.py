@@ -11,6 +11,7 @@ The drill:
 
 It never mutates the source database and refuses to run outside Railway staging.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -56,9 +57,7 @@ def _run(args: list[str], *, timeout: int = 900, capture: bool = True) -> str:
     )
     if proc.returncode != 0:
         stderr = (proc.stderr or "")[-2000:]
-        raise RuntimeError(
-            f"command_failed tool={Path(args[0]).name} exit={proc.returncode} detail={stderr}"
-        )
+        raise RuntimeError(f"command_failed tool={Path(args[0]).name} exit={proc.returncode} detail={stderr}")
     return (proc.stdout or "").strip()
 
 
@@ -86,12 +85,11 @@ def _stage(name: str, **details: object) -> None:
 
 
 def _safe_environment() -> None:
-    environment = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or ""
-    ).strip().lower()
+    environment = (
+        str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("APP_ENV") or "")
+        .strip()
+        .lower()
+    )
     profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
     if environment != "staging":
         raise RuntimeError(f"restore_drill_requires_staging environment={environment or 'unknown'}")
@@ -146,10 +144,7 @@ def _stale_restore_databases(admin_url: str) -> list[str]:
 def main() -> int:
     _safe_environment()
     source = _normalize_url(
-        os.getenv("SOURCE_DATABASE_URL")
-        or os.getenv("DATABASE_MIGRATION_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
+        os.getenv("SOURCE_DATABASE_URL") or os.getenv("DATABASE_MIGRATION_URL") or os.getenv("DATABASE_URL") or ""
     )
     source_parts = urlsplit(source)
     source_db = source_parts.path.lstrip("/")
@@ -167,9 +162,7 @@ def main() -> int:
     if stale:
         _stage("stale_targets_detected", count=len(stale))
         if str(os.getenv("STAGING_RESTORE_AUTO_CLEAN_STALE") or "").strip() != "1":
-            raise RuntimeError(
-                "stale_restore_databases_present:auto_cleanup_ack_required"
-            )
+            raise RuntimeError("stale_restore_databases_present:auto_cleanup_ack_required")
         for stale_db in stale:
             _stage("stale_cleanup_start", target_database=stale_db)
             _cleanup_database(admin_url, stale_db)
@@ -181,8 +174,7 @@ def main() -> int:
             raise RuntimeError("unsafe_restore_database_name")
         _cleanup_database(admin_url, cleanup_target)
         print(
-            "STAGING_RESTORE_CLEANUP_PASS "
-            + json.dumps({"target_database": cleanup_target}, sort_keys=True),
+            "STAGING_RESTORE_CLEANUP_PASS " + json.dumps({"target_database": cleanup_target}, sort_keys=True),
             flush=True,
         )
         return 0
@@ -267,9 +259,7 @@ def main() -> int:
             )
             report["restored_alembic_head"] = restored_head
             if restored_head != EXPECTED_HEAD:
-                raise RuntimeError(
-                    f"restored_alembic_head_mismatch expected={EXPECTED_HEAD} actual={restored_head}"
-                )
+                raise RuntimeError(f"restored_alembic_head_mismatch expected={EXPECTED_HEAD} actual={restored_head}")
 
             critical_tables = (
                 "users",
@@ -287,9 +277,7 @@ def main() -> int:
             for table in critical_tables:
                 exists = _psql(
                     target_url,
-                    "SELECT CASE WHEN to_regclass('public."
-                    + table
-                    + "') IS NULL THEN '0' ELSE '1' END",
+                    "SELECT CASE WHEN to_regclass('public." + table + "') IS NULL THEN '0' ELSE '1' END",
                 )
                 if exists != "1":
                     missing.append(table)
@@ -327,8 +315,7 @@ def main() -> int:
             report["status"] = "PASS"
             report["total_seconds"] = round(time.monotonic() - started, 3)
             print(
-                "STAGING_BACKUP_RESTORE_VERIFIED_PENDING_CLEANUP "
-                + json.dumps(report, sort_keys=True),
+                "STAGING_BACKUP_RESTORE_VERIFIED_PENDING_CLEANUP " + json.dumps(report, sort_keys=True),
                 flush=True,
             )
             return 0
@@ -341,8 +328,7 @@ def main() -> int:
                 _stage("cleanup_complete", target_database=target_db)
                 if report.get("status") == "PASS":
                     print(
-                        "STAGING_BACKUP_RESTORE_DRILL_PASS "
-                        + json.dumps(report, sort_keys=True),
+                        "STAGING_BACKUP_RESTORE_DRILL_PASS " + json.dumps(report, sort_keys=True),
                         flush=True,
                     )
             except Exception as exc:

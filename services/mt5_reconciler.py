@@ -4,6 +4,7 @@ Closure is accepted only when MetaApi deal history proves a closing deal for the
 exact broker order/position identity and the matching position is no longer
 open. Symbol-only or time-only matching is never used for final attribution.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -121,19 +122,14 @@ def _exact_deals(
 ) -> list[dict[str, Any]]:
     allowed = {_text(order_ref), _text(position_ref)}
     allowed.discard("")
-    return [
-        dict(deal)
-        for deal in deals
-        if isinstance(deal, dict) and bool(_refs(deal) & allowed)
-    ]
+    return [dict(deal) for deal in deals if isinstance(deal, dict) and bool(_refs(deal) & allowed)]
 
 
 def _closing_deals(deals: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         dict(deal)
         for deal in deals
-        if _text(deal.get("entryType") or deal.get("entry_type")).upper()
-        in _CLOSING_ENTRY_TYPES
+        if _text(deal.get("entryType") or deal.get("entry_type")).upper() in _CLOSING_ENTRY_TYPES
     ]
 
 
@@ -185,11 +181,7 @@ def _ledger_events(
             # Provider event identity is mandatory for idempotent persistence.
             continue
         order_ref = _text(deal.get("orderId") or deal.get("order_id")) or execution.order_id
-        deal_position = (
-            _text(deal.get("positionId") or deal.get("position_id"))
-            or position_ref
-            or None
-        )
+        deal_position = _text(deal.get("positionId") or deal.get("position_id")) or position_ref or None
         common = {
             "correlation_id": f"mt5_execution:{execution.id}",
             "order_ref": order_ref,
@@ -313,11 +305,7 @@ async def _persist_reconciliation(
 
     async with get_session(label="mt5.reconcile.write", timeout_seconds=8.0) as session:
         row = (
-            await session.execute(
-                select(MT5Execution)
-                .where(MT5Execution.id == int(execution.id))
-                .with_for_update()
-            )
+            await session.execute(select(MT5Execution).where(MT5Execution.id == int(execution.id)).with_for_update())
         ).scalar_one_or_none()
         if row is None:
             return "missing"
@@ -368,14 +356,8 @@ async def _persist_reconciliation(
             await session.commit()
             return "pending"
 
-        closed_times = [
-            value for value in (_deal_time(deal) for deal in closing) if value is not None
-        ]
-        closed_at = (
-            max(closed_times).replace(tzinfo=None)
-            if closed_times
-            else now
-        )
+        closed_times = [value for value in (_deal_time(deal) for deal in closing) if value is not None]
+        closed_at = max(closed_times).replace(tzinfo=None) if closed_times else now
         transition_execution_row(
             row,
             "closed",
@@ -403,17 +385,21 @@ async def reconcile_mt5_executions_once(*, limit: int = 100) -> dict[str, int]:
     }
     async with get_session(label="mt5.reconcile.scan", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                select(MT5Execution)
-                .where(
-                    MT5Execution.connection_id.is_not(None),
-                    MT5Execution.order_id.is_not(None),
-                    MT5Execution.status.notin_(tuple(_TERMINAL_STATUSES)),
+            (
+                await session.execute(
+                    select(MT5Execution)
+                    .where(
+                        MT5Execution.connection_id.is_not(None),
+                        MT5Execution.order_id.is_not(None),
+                        MT5Execution.status.notin_(tuple(_TERMINAL_STATUSES)),
+                    )
+                    .order_by(MT5Execution.executed_at.asc())
+                    .limit(max(1, min(int(limit), 500)))
                 )
-                .order_by(MT5Execution.executed_at.asc())
-                .limit(max(1, min(int(limit), 500)))
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for row in rows:
             session.expunge(row)
         await session.rollback()

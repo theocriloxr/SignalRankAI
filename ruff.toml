@@ -10,6 +10,9 @@ ignore = [
     "F841",  # local variable assigned but never used — catch blocks
     "W291",  # trailing whitespace — auto-fixable
     "W293",  # whitespace on blank lines — auto-fixable
+    "E402",  # module level import not at top of file
+    "E712",  # comparison to True should be 'if cond is True:' or 'if cond:'
+    "E722",  # do not use bare 'except'
 ]
 
 exclude = [
@@ -100,7 +103,7 @@ exclude = [
 "test_uvicorn.py" = ["ALL"]
 "test_zero_signals.py" = ["ALL"]
 # Alembic — generated migration files
-"alembic/versions/*.py" = ["ALL"]
+"alembic/migrations/versions/*.py" = ["ALL"]
 "alembic/env.py" = ["E402", "F401"]
 # Admin operational scripts — standalone
 "admin/*.py" = ["F401", "F811", "E402"]

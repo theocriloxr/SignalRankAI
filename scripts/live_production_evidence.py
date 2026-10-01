@@ -398,7 +398,12 @@ async def check_outcome_coverage(days: int, min_coverage: float, min_tracked: in
 
 async def check_provider_smoke(enabled: bool) -> Check:
     if not enabled:
-        return Check(name="provider_ohlc_smoke", ok=False, status="SKIP", detail="run with --provider-smoke to call live OHLC providers")
+        return Check(
+            name="provider_ohlc_smoke",
+            ok=False,
+            status="SKIP",
+            detail="run with --provider-smoke to call live OHLC providers",
+        )
     raw_assets = os.getenv(
         "LIVE_PROVIDER_SMOKE_ASSETS",
         "BTCUSDT:crypto,EURUSD:forex,XAUUSD:commodity,AAPL:equity,SPY:indices",
@@ -418,7 +423,9 @@ async def check_provider_smoke(enabled: bool) -> Check:
     try:
         from data.fetcher import get_candles, is_market_open, market_closed_reason
     except Exception as exc:
-        return Check(name="provider_ohlc_smoke", ok=False, status="FAIL", detail="fetcher import failed: " + _safe_error(exc))
+        return Check(
+            name="provider_ohlc_smoke", ok=False, status="FAIL", detail="fetcher import failed: " + _safe_error(exc)
+        )
 
     for symbol, expected_class in assets:
         started = time.perf_counter()
@@ -482,9 +489,7 @@ async def check_broker_sandbox() -> Check:
         async with get_session() as session:
             mt5_row = (await session.execute(text("SELECT COUNT(*) FROM mt5_credentials"))).first()
             exchange_row = (
-                await session.execute(
-                    text("SELECT COUNT(*) FROM runtime_state WHERE key LIKE 'broker_exchange:%'")
-                )
+                await session.execute(text("SELECT COUNT(*) FROM runtime_state WHERE key LIKE 'broker_exchange:%'"))
             ).first()
             await session.rollback()
         mt5_count = int(mt5_row[0] or 0) if mt5_row else 0
@@ -492,7 +497,13 @@ async def check_broker_sandbox() -> Check:
         linked = (mt5_count + exchange_count) > 0
         data.update({"mt5_credentials": mt5_count, "exchange_links": exchange_count})
     except Exception as exc:
-        return Check(name="broker_sandbox_execution", ok=False, status="FAIL", detail="broker DB link check failed: " + _safe_error(exc), data=data)
+        return Check(
+            name="broker_sandbox_execution",
+            ok=False,
+            status="FAIL",
+            detail="broker DB link check failed: " + _safe_error(exc),
+            data=data,
+        )
 
     if not allow_order:
         return Check(
@@ -544,9 +555,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Collect live SignalRankAI production evidence.")
     parser.add_argument("--env-file", default=None, help="Optional .env file to load before checks.")
     parser.add_argument("--days", type=int, default=30, help="Outcome coverage lookback window.")
-    parser.add_argument("--min-coverage", type=float, default=float(os.getenv("EXPECTED_WIN_RATE_MIN_COVERAGE", "0.80") or 0.80))
-    parser.add_argument("--min-tracked", type=int, default=int(os.getenv("EXPECTED_WIN_RATE_MIN_TRACKED", "100") or 100))
-    parser.add_argument("--provider-smoke", action="store_true", help="Call live OHLC providers for representative assets.")
+    parser.add_argument(
+        "--min-coverage", type=float, default=float(os.getenv("EXPECTED_WIN_RATE_MIN_COVERAGE", "0.80") or 0.80)
+    )
+    parser.add_argument(
+        "--min-tracked", type=int, default=int(os.getenv("EXPECTED_WIN_RATE_MIN_TRACKED", "100") or 100)
+    )
+    parser.add_argument(
+        "--provider-smoke", action="store_true", help="Call live OHLC providers for representative assets."
+    )
     parser.add_argument("--json-out", default=None, help="Optional file path for JSON evidence output.")
     return parser.parse_args()
 

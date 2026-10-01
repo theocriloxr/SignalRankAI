@@ -1,6 +1,4 @@
 from utils.timeutils import now_utc_naive
-import hmac
-import hashlib
 import os
 import json
 import logging
@@ -14,9 +12,7 @@ PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
 # compatibility; production can set PAYSTACK_WEBHOOK_IP_WHITELIST to a
 # comma-separated list and the dedicated ingress router will enforce it.
 PAYSTACK_WEBHOOK_IP_WHITELIST = frozenset(
-    item.strip()
-    for item in str(os.getenv("PAYSTACK_WEBHOOK_IP_WHITELIST") or "").split(",")
-    if item.strip()
+    item.strip() for item in str(os.getenv("PAYSTACK_WEBHOOK_IP_WHITELIST") or "").split(",") if item.strip()
 )
 
 _DEFAULT_DURATIONS = {
@@ -49,12 +45,14 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def verify_signature(payload, signature):
     from payments.paystack_policy import verify_paystack_event_signature
+
     return verify_paystack_event_signature(payload, signature)
 
 
 def verify_webhook_signature(payload: bytes | str, signature: str | None) -> bool:
     """Compatibility alias used by the dedicated FastAPI webhook router."""
     return verify_signature(payload, signature)
+
 
 def handle_webhook(request):
     signature = request.headers.get("x-paystack-signature")
@@ -63,6 +61,7 @@ def handle_webhook(request):
         raise Exception("Invalid Paystack signature")
     event = json.loads(payload)
     process_event(event)
+
 
 async def process_event(event):
     """Process a Paystack webhook event and activate subscription."""
@@ -74,6 +73,7 @@ async def process_event(event):
         if not isinstance(data, dict):
             return {"processed": False, "reason": "Invalid transfer data"}
         from payments.payout_service import apply_transfer_event
+
         applied = await apply_transfer_event(str(event_type), data)
         return {"processed": bool(applied), "type": "payout_transfer", "event": event_type}
     if event_type == "subscription.disable":
@@ -90,7 +90,7 @@ async def process_event(event):
         return {"processed": False, "ignored": True, "reason": f"No entitlement mutation for {event_type}"}
     if event_type != "charge.success":
         return {"processed": False, "ignored": True, "reason": f"Unhandled event type: {event_type}"}
-    
+
     if not isinstance(data, dict):
         return {"processed": False, "reason": "Invalid payment data"}
     metadata = data.get("metadata", {})
@@ -106,7 +106,7 @@ async def process_event(event):
     currency = str(data.get("currency") or "NGN").strip().upper()
     if currency != "NGN":
         return {"processed": False, "reason": "Unsupported payment currency"}
-    
+
     raw_telegram_user_id = metadata.get("telegram_user_id")
     raw_user_id = metadata.get("user_id")
     try:
@@ -116,11 +116,11 @@ async def process_event(event):
         return {"processed": False, "reason": "Invalid payment user identity"}
     if telegram_user_id is None and canonical_user_id is None:
         return {"processed": False, "reason": "No canonical user identity in metadata"}
-    
+
     tier = metadata.get("tier", "").upper()
     duration_days = metadata.get("duration_days")
     duration = metadata.get("duration", "")
-    
+
     # Map duration string to days if duration_days not provided
     if duration_days is None:
         try:
@@ -129,7 +129,7 @@ async def process_event(event):
             DURATIONS = _DEFAULT_DURATIONS
         key = f"{tier}_{duration}".upper()
         duration_days = DURATIONS.get(key, 7)
-    
+
     try:
         amount = int(data.get("amount", 0)) // 100  # kobo to naira
     except (TypeError, ValueError):
@@ -142,6 +142,7 @@ async def process_event(event):
             return {"processed": False, "reason": "Provider transaction verification failed"}
 
     from payments.paystack_policy import evaluate_paystack_operation
+
     paystack_policy = evaluate_paystack_operation(
         telegram_user_id=telegram_user_id,
         canonical_user_id=canonical_user_id,
@@ -158,6 +159,7 @@ async def process_event(event):
         try:
             from db.session import get_session
             from payments.catalog import resolve_checkout_product
+
             async with get_session(label="payment.catalog_validation", timeout_seconds=10.0) as session:
                 product = await resolve_checkout_product(session, product_id, currency=currency)
                 await session.rollback()
@@ -188,7 +190,7 @@ async def process_event(event):
                 return {"processed": False, "reason": "Payment amount mismatch"}
         except (TypeError, ValueError):
             return {"processed": False, "reason": "Invalid product amount"}
-    
+
     # Handle extra signals purchase
     if duration == "EXTRA" or metadata.get("extra_count"):
         if telegram_user_id is None:
@@ -209,10 +211,11 @@ async def process_event(event):
             from db.pg_features import record_payment_event
             from db.session import get_session
             from sqlalchemy import select
+
             async with get_session(label="payment.extra_signals", timeout_seconds=10.0) as session:
-                existing_event = (await session.execute(
-                    select(PaymentEvent).where(PaymentEvent.paystack_reference == reference)
-                )).scalar_one_or_none()
+                existing_event = (
+                    await session.execute(select(PaymentEvent).where(PaymentEvent.paystack_reference == reference))
+                ).scalar_one_or_none()
                 if existing_event is None:
                     existing_event = await record_payment_event(
                         session,
@@ -226,35 +229,40 @@ async def process_event(event):
                     )
                     await session.commit()
             from core.redis_state import state
+
             credited = state.add_extra_signals_once_sync(
                 int(telegram_user_id), int(extra_count), reference, ttl_seconds=86400
             )
             if credited is None:
                 return {"processed": False, "reason": "Extra-signal credit storage unavailable"}
             async with get_session(label="payment.extra_signals.complete", timeout_seconds=10.0) as session:
-                row = (await session.execute(
-                    select(PaymentEvent).where(PaymentEvent.paystack_reference == reference).with_for_update()
-                )).scalar_one()
+                row = (
+                    await session.execute(
+                        select(PaymentEvent).where(PaymentEvent.paystack_reference == reference).with_for_update()
+                    )
+                ).scalar_one()
                 row.meta = {**dict(row.meta or {}), "credit_applied": True, "credited_total": int(credited)}
                 await session.commit()
         except Exception as exc:
             return {"processed": False, "reason": f"Extra-signal credit failed: {type(exc).__name__}"}
         return {"processed": True, "type": "extra_signals", "count": extra_count}
-    
+
     # Activate subscription
     try:
         from db.models import PaymentEvent
         from db.pg_features import record_payment_event
         from db.session import get_session
         from sqlalchemy import select
+
         # Use the repository primitive as the single entitlement authority.
         # The Telegram helper historically exposed an incompatible signature
         # and is not present in minimal web deployments.
         from db.repository import activate_subscription
+
         async with get_session(label="payment.subscription", timeout_seconds=10.0) as session:
-            existing_event = (await session.execute(
-                select(PaymentEvent).where(PaymentEvent.paystack_reference == reference)
-            )).scalar_one_or_none()
+            existing_event = (
+                await session.execute(select(PaymentEvent).where(PaymentEvent.paystack_reference == reference))
+            ).scalar_one_or_none()
             if existing_event is not None:
                 return {
                     "processed": True,
@@ -276,7 +284,8 @@ async def process_event(event):
                     (data.get("plan", {}).get("plan_code") if isinstance(data.get("plan"), dict) else data.get("plan"))
                     or metadata.get("plan_code")
                     or ""
-                ) or None,
+                )
+                or None,
                 meta={"event": event_type, "verified_provider": True},
             )
             subscription = await activate_subscription(
@@ -295,11 +304,17 @@ async def process_event(event):
                 },
             )
             from db.models import User
+
             if canonical_user_id is not None:
-                payment_user = (await session.execute(select(User).where(User.id == int(canonical_user_id)))).scalar_one()
+                payment_user = (
+                    await session.execute(select(User).where(User.id == int(canonical_user_id)))
+                ).scalar_one()
             else:
-                payment_user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one()
+                payment_user = (
+                    await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+                ).scalar_one()
             from payments.durable_receipts import create_payment_receipt
+
             await create_payment_receipt(
                 session,
                 user=payment_user,
@@ -315,6 +330,7 @@ async def process_event(event):
             # and must never run a competing reward manager.
             if telegram_user_id is not None:
                 from db.pg_features import record_referral_conversion
+
                 conversion = await record_referral_conversion(
                     session,
                     referred_telegram_user_id=int(telegram_user_id),
@@ -333,19 +349,23 @@ async def process_event(event):
         if type(e).__name__ == "IntegrityError":
             return {"processed": True, "idempotent": True, "tier": str(tier).lower(), "days": int(duration_days)}
         return {"processed": False, "reason": str(e)}
-    
+
     # Send Telegram confirmation when the canonical account has a linked bot identity.
     try:
         if telegram_user_id is None:
             raise RuntimeError("telegram_identity_not_linked")
         from signalrank_telegram.bot import application
+
         bot = application.bot
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         import re
+
         expiry = now_utc_naive() + timedelta(days=int(duration_days))
+
         def escape_md(text):
             # Escape all MarkdownV2 special chars
-            return re.sub(r'([_\*\[\]()~`>#+\-=|{}.!])', r'\\\1', str(text))
+            return re.sub(r"([_\*\[\]()~`>#+\-=|{}.!])", r"\\\1", str(text))
+
         msg = (
             f"✅ Payment confirmed\\! You're now {escape_md(tier)} tier\\.\n\n"
             f"📅 Active until: {escape_md(expiry.strftime('%Y-%m-%d'))}\n"
@@ -354,56 +374,51 @@ async def process_event(event):
         await bot.send_message(chat_id=int(telegram_user_id), text=msg, parse_mode="MarkdownV2")
     except Exception:
         pass
-    
+
     return {"processed": True, "tier": tier, "days": duration_days}
+
 
 async def verify_payment(reference: str, amount_paid: float) -> bool:
     """Verify a Paystack payment by reference and activate subscription.
-    
+
     Args:
         reference: Paystack transaction reference
         amount_paid: Amount paid in NGN (for validation)
-    
+
     Returns:
         True if payment is verified and valid, False otherwise
     """
     secret = os.getenv("PAYSTACK_SECRET_KEY")
     if not secret:
         return False
-    
+
     try:
-        headers = {
-            "Authorization": f"Bearer {secret}",
-            "Content-Type": "application/json"
-        }
-        
+        headers = {"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
-                headers=headers
-            )
-            
+            response = await client.get(f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}", headers=headers)
+
             if response.status_code != 200:
                 return False
-            
+
             data = response.json()
             if not data.get("status"):
                 return False
-            
+
             tx_data = data.get("data", {})
             tx_status = tx_data.get("status")
             tx_amount = tx_data.get("amount", 0) / 100  # kobo to NGN
-            
+
             # Verify transaction was successful
             if tx_status != "success":
                 return False
-            
+
             # Verify amount matches (allow small variance for fees)
             if abs(tx_amount - amount_paid) > 1.0:  # Allow 1 NGN variance
                 return False
-            
+
             return True
-            
+
     except Exception as e:
         return False
 
@@ -431,6 +446,7 @@ async def process_subscription_disable(data: dict) -> bool:
         if not telegram_user_id:
             return False
         from payments.paystack_policy import evaluate_paystack_operation
+
         policy = evaluate_paystack_operation(telegram_user_id=int(telegram_user_id))
         if not policy.allowed:
             return False
@@ -439,9 +455,7 @@ async def process_subscription_disable(data: dict) -> bool:
         from sqlalchemy import select
 
         async with get_session() as session:
-            row = await session.execute(
-                select(User).where(User.telegram_user_id == int(telegram_user_id))
-            )
+            row = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
             user = row.scalars().first()
             if user is None:
                 return False
@@ -466,4 +480,3 @@ async def _lookup_user_by_email(email: str) -> int | None:
             return int(user.telegram_user_id) if user is not None else None
     except Exception:
         return None
-

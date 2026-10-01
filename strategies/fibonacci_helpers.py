@@ -1,6 +1,3 @@
-from typing import Tuple
-
-
 def is_price_in_golden_pocket(price: float, swing_high: float, swing_low: float, tol_pct: float = 0.0001) -> bool:
     """Return True if `price` lies inside the Golden Pocket (0.618-0.786) for the given swing.
 

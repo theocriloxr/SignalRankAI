@@ -50,14 +50,18 @@ def runtime_environment_name(default: str = "dev") -> str:
     copied APP_ENV=production value from contaminating staging advisory locks,
     ledgers, caches, and delivery scopes.
     """
-    raw = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT_ID")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or default
-    ).strip().lower()
+    raw = (
+        str(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME")
+            or os.getenv("RAILWAY_ENVIRONMENT_ID")
+            or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("APP_ENV")
+            or os.getenv("ENVIRONMENT")
+            or default
+        )
+        .strip()
+        .lower()
+    )
     aliases = {"prod": "production", "development": "dev", "preview": "staging"}
     return aliases.get(raw, raw or default)
 

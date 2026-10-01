@@ -1,4 +1,5 @@
 """Provider instrument catalogue refresh owned by analytics in decomposed deployments."""
+
 from __future__ import annotations
 
 import asyncio
@@ -206,10 +207,7 @@ async def refresh_instrument_catalogue_once() -> dict[str, Any]:
             "unchanged": 0,
             "mapping_failures": 0,
             "duration_ms": 0.0,
-            "asset_classes": {
-                str(key): len(value or [])
-                for key, value in dict(runtime_universe or {}).items()
-            },
+            "asset_classes": {str(key): len(value or []) for key, value in dict(runtime_universe or {}).items()},
         }
     except Exception as exc:
         provider_results["runtime_multiasset"] = {

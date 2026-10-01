@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline verifier for the v1.2.3 log-driven Railway hotfix."""
+
 from __future__ import annotations
 
 import importlib
@@ -19,17 +20,26 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> None:
     for name in (
-        "elliott", "fibonacci", "harmonic", "ict_smc", "indicators",
-        "order_flow", "price_action", "supply_demand", "wyckoff",
+        "elliott",
+        "fibonacci",
+        "harmonic",
+        "ict_smc",
+        "indicators",
+        "order_flow",
+        "price_action",
+        "supply_demand",
+        "wyckoff",
     ):
         importlib.import_module(f"engine.adaptive.{name}")
     require(True, "adaptive compatibility imports")
 
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
+
     require(APP_VERSION == "1.2.3", "runtime version")
     require(RELEASE_FINGERPRINT.startswith("v1.2.3-"), "release fingerprint")
 
     from runtime_safety import FULL_SYSTEM_STAGING_TEST_ACK_VALUE, is_full_system_ack_valid
+
     require(is_full_system_ack_valid(FULL_SYSTEM_STAGING_TEST_ACK_VALUE), "exact staging acknowledgement")
     require(is_full_system_ack_valid(f'"{FULL_SYSTEM_STAGING_TEST_ACK_VALUE}"'), "quoted Railway acknowledgement")
 

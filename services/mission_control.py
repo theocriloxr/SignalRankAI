@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 
@@ -53,11 +53,15 @@ def parse_tp_levels(raw: Any) -> list[float]:
     return out
 
 
-def build_mission_snapshot(signal: dict[str, Any], current_price: float | None = None, now: datetime | None = None) -> MissionSnapshot:
+def build_mission_snapshot(
+    signal: dict[str, Any], current_price: float | None = None, now: datetime | None = None
+) -> MissionSnapshot:
     sig = dict(signal or {})
     entry = _f(sig.get("entry"))
     stop = _f(sig.get("stop_loss") or sig.get("stop"))
-    price = _f(current_price if current_price is not None else sig.get("current_price") or sig.get("live_price") or entry)
+    price = _f(
+        current_price if current_price is not None else sig.get("current_price") or sig.get("live_price") or entry
+    )
     direction = str(sig.get("direction") or "long").lower()
     is_short = direction in {"short", "sell"}
     tp_levels = parse_tp_levels(sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels"))
@@ -78,7 +82,17 @@ def build_mission_snapshot(signal: dict[str, Any], current_price: float | None =
     mtf = _f(sig.get("mtf_alignment_score"), 55.0)
     market_health = _f(sig.get("asset_health_score"), 60.0)
     time_score = _f(sig.get("time_to_target_score"), 60.0)
-    health = max(0.0, min(100.0, base_score * 0.35 + mtf * 0.20 + market_health * 0.20 + time_score * 0.15 + max(0.0, 100.0 - drawdown_ratio * 40.0) * 0.10))
+    health = max(
+        0.0,
+        min(
+            100.0,
+            base_score * 0.35
+            + mtf * 0.20
+            + market_health * 0.20
+            + time_score * 0.15
+            + max(0.0, 100.0 - drawdown_ratio * 40.0) * 0.10,
+        ),
+    )
     tp_today = _probability_tp_today(sig, progress, health)
     recovery = max(0.0, min(100.0, health - drawdown_ratio * 28.0 + (15.0 if progress > 25 else 0.0)))
     if health < 40 or recovery < 25:

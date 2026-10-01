@@ -4,6 +4,7 @@ Provider adapters may observe events out of order.  Persistence is therefore
 governed by one monotonic transition graph rather than ad-hoc string writes.
 Terminal execution states are absorbing; same-state observations are idempotent.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -207,9 +208,7 @@ def evaluate_execution_transition(
             position_state_for_execution(destination),
         )
     if destination not in _TRANSITIONS[source]:
-        raise InvalidExecutionTransition(
-            f"invalid_execution_transition:{source.value}->{destination.value}"
-        )
+        raise InvalidExecutionTransition(f"invalid_execution_transition:{source.value}->{destination.value}")
     return ExecutionTransition(
         source,
         destination,

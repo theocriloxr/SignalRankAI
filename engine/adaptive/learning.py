@@ -73,7 +73,9 @@ def _profile_fingerprint(
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _derive_weights(rows: list[AdaptiveDatasetRow], minimum_samples: int) -> tuple[dict[str, float], dict[str, float], dict[str, Any]]:
+def _derive_weights(
+    rows: list[AdaptiveDatasetRow], minimum_samples: int
+) -> tuple[dict[str, float], dict[str, float], dict[str, Any]]:
     by_family: dict[str, list[float]] = defaultdict(list)
     by_regime: dict[str, list[float]] = defaultdict(list)
     for row in rows:
@@ -84,12 +86,18 @@ def _derive_weights(rows: list[AdaptiveDatasetRow], minimum_samples: int) -> tup
         expectancy = sum(values) / len(values)
         reliability = min(1.0, len(values) / max(minimum_samples * 3, 1))
         weight = 1.0 + max(-0.15, min(0.15, expectancy * 0.08)) * reliability
-        if _profit_factor(values) < 1.0 or _max_drawdown(values) > float(os.getenv("ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R", "12") or 12):
+        if _profit_factor(values) < 1.0 or _max_drawdown(values) > float(
+            os.getenv("ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R", "12") or 12
+        ):
             weight = min(weight, 0.90)
         return round(max(0.80, min(1.15, weight)), 4)
 
-    family_weights = {family: bounded_weight(values) for family, values in by_family.items() if len(values) >= minimum_samples}
-    regime_weights = {regime: bounded_weight(values) for regime, values in by_regime.items() if len(values) >= minimum_samples}
+    family_weights = {
+        family: bounded_weight(values) for family, values in by_family.items() if len(values) >= minimum_samples
+    }
+    regime_weights = {
+        regime: bounded_weight(values) for regime, values in by_regime.items() if len(values) >= minimum_samples
+    }
     all_returns = [row.r_multiple for row in rows]
     summary = {
         "sample_size": len(rows),
@@ -109,9 +117,10 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     brier_limit = max(0.05, min(1.0, float(os.getenv("ADAPTIVE_DRIFT_MAX_BRIER", "0.35") or 0.35)))
     expectancy_floor = float(os.getenv("ADAPTIVE_DRIFT_MIN_EXPECTANCY_R", "-0.10") or -0.10)
     rows = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,
                        MAX(ev.confidence) AS confidence,o.r_multiple,s.created_at,s.signal_id
                 FROM adaptive_asset_profiles p
@@ -131,9 +140,12 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
                 GROUP BY p.profile_id,p.asset,p.state,p.rollback_profile_id,o.r_multiple,s.created_at,s.signal_id
                 ORDER BY p.profile_id,s.created_at DESC
                 """
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     profile_meta: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -151,7 +163,8 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
         expectancy = sum(returns) / len(returns)
         drawdown = _max_drawdown(returns)
         brier = sum(
-            (max(0.0, min(1.0, float(row.get("confidence") or 0.0))) - (1.0 if float(row["r_multiple"]) > 0 else 0.0)) ** 2
+            (max(0.0, min(1.0, float(row.get("confidence") or 0.0))) - (1.0 if float(row["r_multiple"]) > 0 else 0.0))
+            ** 2
             for row in evidence_rows
         ) / len(evidence_rows)
         reasons: list[str] = []
@@ -178,7 +191,15 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             ),
             {
                 "profile_id": profile_id,
-                "details": json.dumps({"reasons": reasons, "sample_size": len(evidence_rows), "expectancy_r": expectancy, "max_drawdown_r": drawdown, "brier_score": brier}),
+                "details": json.dumps(
+                    {
+                        "reasons": reasons,
+                        "sample_size": len(evidence_rows),
+                        "expectancy_r": expectancy,
+                        "max_drawdown_r": drawdown,
+                        "brier_score": brier,
+                    }
+                ),
             },
         )
         await session.execute(
@@ -191,7 +212,15 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             {
                 "asset": asset,
                 "profile_id": profile_id,
-                "metrics": json.dumps({"reasons": reasons, "sample_size": len(evidence_rows), "expectancy_r": expectancy, "max_drawdown_r": drawdown, "brier_score": brier}),
+                "metrics": json.dumps(
+                    {
+                        "reasons": reasons,
+                        "sample_size": len(evidence_rows),
+                        "expectancy_r": expectancy,
+                        "max_drawdown_r": drawdown,
+                        "brier_score": brier,
+                    }
+                ),
                 "resolution": "rollback" if rollback_profile_id else "neutral_fallback",
             },
         )
@@ -219,7 +248,12 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
 class AdaptiveLearningWorker:
     async def run_once(self) -> dict[str, Any]:
         published = await publish_approved_profiles()
-        paused = str(state.get_sync("adaptive:optimisation:paused") or "0").strip().lower() in {"1", "true", "yes", "on"}
+        paused = str(state.get_sync("adaptive:optimisation:paused") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if paused:
             return {"published": published, "candidates": 0, "paused": True}
         if str(os.getenv("ADAPTIVE_OPTIMISATION_ENABLED", "1")).lower() not in {"1", "true", "yes", "on"}:
@@ -247,9 +281,10 @@ class AdaptiveLearningWorker:
                 return {"published": published, "candidates": 0, "skipped": "distributed_lock_busy"}
 
             raw_rows = (
-                await session.execute(
-                    text(
-                        """
+                (
+                    await session.execute(
+                        text(
+                            """
                         SELECT
                             s.signal_id,
                             s.created_at AS decision_time,
@@ -300,10 +335,13 @@ class AdaptiveLearningWorker:
                           AND o.r_multiple IS NOT NULL
                         ORDER BY s.created_at, s.signal_id
                         """
-                    ),
-                    {"cutoff": cutoff},
+                        ),
+                        {"cutoff": cutoff},
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             dataset_rows, manifest = build_dataset(raw_rows)
             await session.execute(
@@ -342,7 +380,9 @@ class AdaptiveLearningWorker:
                     "version": feature_version,
                     "content_hash": feature_hash,
                     "components": json.dumps(component_versions),
-                    "schema": json.dumps({"market_context": "v1", "strategy_evidence": "v1", "sequence_reference": "v1"}),
+                    "schema": json.dumps(
+                        {"market_context": "v1", "strategy_evidence": "v1", "sequence_reference": "v1"}
+                    ),
                 },
             )
             await session.execute(
@@ -424,7 +464,9 @@ class AdaptiveLearningWorker:
                 version = int(
                     (
                         await session.execute(
-                            text("SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"),
+                            text(
+                                "SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"
+                            ),
                             {"asset": asset},
                         )
                     ).scalar()
@@ -489,21 +531,33 @@ class AdaptiveLearningWorker:
                         "profile_id": profile_id,
                         "dataset_version": manifest.dataset_version,
                         "feature_version": feature_version,
-                        "config": json.dumps({"chronological": True, "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)}),
+                        "config": json.dumps(
+                            {
+                                "chronological": True,
+                                "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0),
+                            }
+                        ),
                         "metrics": json.dumps({key: value for key, value in wfo.to_dict().items() if key != "folds"}),
-                        "folds": json.dumps([fold.__dict__ if hasattr(fold, "__dict__") else {
-                            "fold": fold.fold,
-                            "train_count": fold.train_count,
-                            "validation_count": fold.validation_count,
-                            "train_end": fold.train_end,
-                            "validation_start": fold.validation_start,
-                            "validation_end": fold.validation_end,
-                            "baseline_expectancy_r": fold.baseline_expectancy_r,
-                            "candidate_expectancy_r": fold.candidate_expectancy_r,
-                            "candidate_profit_factor": fold.candidate_profit_factor,
-                            "candidate_max_drawdown_r": fold.candidate_max_drawdown_r,
-                            "positive": fold.positive,
-                        } for fold in wfo.folds]),
+                        "folds": json.dumps(
+                            [
+                                fold.__dict__
+                                if hasattr(fold, "__dict__")
+                                else {
+                                    "fold": fold.fold,
+                                    "train_count": fold.train_count,
+                                    "validation_count": fold.validation_count,
+                                    "train_end": fold.train_end,
+                                    "validation_start": fold.validation_start,
+                                    "validation_end": fold.validation_end,
+                                    "baseline_expectancy_r": fold.baseline_expectancy_r,
+                                    "candidate_expectancy_r": fold.candidate_expectancy_r,
+                                    "candidate_profit_factor": fold.candidate_profit_factor,
+                                    "candidate_max_drawdown_r": fold.candidate_max_drawdown_r,
+                                    "positive": fold.positive,
+                                }
+                                for fold in wfo.folds
+                            ]
+                        ),
                     },
                 )
                 created += 1
@@ -539,6 +593,7 @@ class AdaptiveLearningWorker:
         if drift_result.get("suspended_assets"):
             for suspended_asset in drift_result["suspended_assets"]:
                 from .repository import invalidate_profile_cache
+
                 invalidate_profile_cache(suspended_asset)
             published = await publish_approved_profiles()
 

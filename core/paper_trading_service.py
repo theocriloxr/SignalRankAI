@@ -4,6 +4,7 @@ The service is deliberately isolated from broker execution. It consumes only
 Telegram-confirmed signal deliveries, creates virtual fills, marks positions to
 live market prices, and persists a separate paper-trading ledger.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +15,7 @@ import os
 import time
 from dataclasses import asdict, dataclass
 from datetime import timedelta
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import and_, func, or_, select, text
@@ -40,8 +41,20 @@ logger = logging.getLogger(__name__)
 
 
 TERMINAL_OUTCOMES = {
-    "tp", "tp1", "tp2", "tp3", "sl", "stop", "stopped", "expired",
-    "missed", "cancelled", "closed", "win", "loss", "partial_win",
+    "tp",
+    "tp1",
+    "tp2",
+    "tp3",
+    "sl",
+    "stop",
+    "stopped",
+    "expired",
+    "missed",
+    "cancelled",
+    "closed",
+    "win",
+    "loss",
+    "partial_win",
 }
 
 
@@ -151,8 +164,16 @@ def position_max_age_hours(timeframe: str | None = None) -> float:
             pass
     tf = str(timeframe or "").lower().strip()
     defaults = {
-        "1m": 4.0, "3m": 6.0, "5m": 12.0, "15m": 18.0, "30m": 24.0,
-        "1h": 48.0, "2h": 72.0, "4h": 120.0, "1d": 336.0, "1w": 720.0,
+        "1m": 4.0,
+        "3m": 6.0,
+        "5m": 12.0,
+        "15m": 18.0,
+        "30m": 24.0,
+        "1h": 48.0,
+        "2h": 72.0,
+        "4h": 120.0,
+        "1d": 336.0,
+        "1w": 720.0,
     }
     return defaults.get(tf, 72.0)
 
@@ -160,14 +181,21 @@ def position_max_age_hours(timeframe: str | None = None) -> float:
 def canonical_asset_class(asset: str, value: Any = None) -> str:
     text = str(value or "").strip().lower()
     aliases = {
-        "forex": "fx", "equity": "stock", "equities": "stock",
-        "stocks": "stock", "indices": "index", "commodities": "commodity",
-        "rates": "macro", "yield": "macro", "yields": "macro",
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "stocks": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+        "rates": "macro",
+        "yield": "macro",
+        "yields": "macro",
     }
     if text:
         return aliases.get(text, text)
     try:
         from engine.price_fetcher import get_asset_class
+
         return aliases.get(get_asset_class(asset), get_asset_class(asset))
     except Exception:
         return "unknown"
@@ -217,20 +245,12 @@ class PaperTradingService:
         user_identity: str = "telegram",
     ) -> User | None:
         identity = str(user_identity or "telegram").strip().lower()
-        criterion = (
-            User.id == int(user_id)
-            if identity == "platform"
-            else User.telegram_user_id == int(user_id)
-        )
-        return (
-            await session.execute(select(User).where(criterion).limit(1))
-        ).scalar_one_or_none()
+        criterion = User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id)
+        return (await session.execute(select(User).where(criterion).limit(1))).scalar_one_or_none()
 
     async def _ensure_account_for_user(self, session, user: User) -> PaperAccount:
         account = (
-            await session.execute(
-                select(PaperAccount).where(PaperAccount.user_id == int(user.id)).limit(1)
-            )
+            await session.execute(select(PaperAccount).where(PaperAccount.user_id == int(user.id)).limit(1))
         ).scalar_one_or_none()
         if account is not None:
             return account
@@ -254,15 +274,17 @@ class PaperTradingService:
         )
         session.add(account)
         await session.flush()
-        session.add(PaperLedgerEntry(
-            account_id=int(account.id),
-            user_id=int(user.id),
-            entry_type="ACCOUNT_CREATED",
-            amount=0.0,
-            balance_after=float(balance),
-            description="Paper account created",
-            meta={"auto_trade_enabled": bool(account.auto_trade_enabled)},
-        ))
+        session.add(
+            PaperLedgerEntry(
+                account_id=int(account.id),
+                user_id=int(user.id),
+                entry_type="ACCOUNT_CREATED",
+                amount=0.0,
+                balance_after=float(balance),
+                description="Paper account created",
+                meta={"auto_trade_enabled": bool(account.auto_trade_enabled)},
+            )
+        )
         return account
 
     async def ensure_account(
@@ -342,30 +364,33 @@ class PaperTradingService:
                 return None
             await session.commit()
             open_rows = (
-                await session.execute(
-                    select(PaperPosition).where(
-                        PaperPosition.user_id == int(account.user_id),
-                        PaperPosition.status == "open",
+                (
+                    await session.execute(
+                        select(PaperPosition).where(
+                            PaperPosition.user_id == int(account.user_id),
+                            PaperPosition.status == "open",
+                        )
                     )
                 )
-            ).scalars().all()
-            closed_count = int((
-                await session.execute(
-                    select(func.count(PaperPosition.position_id)).where(
-                        PaperPosition.user_id == int(account.user_id),
-                        PaperPosition.status == "closed",
+                .scalars()
+                .all()
+            )
+            closed_count = int(
+                (
+                    await session.execute(
+                        select(func.count(PaperPosition.position_id)).where(
+                            PaperPosition.user_id == int(account.user_id),
+                            PaperPosition.status == "closed",
+                        )
                     )
-                )
-            ).scalar() or 0)
+                ).scalar()
+                or 0
+            )
             reserved = sum(_safe_float(row.reserved_cash) for row in open_rows)
             unrealized = sum(_safe_float(row.unrealized_pnl) for row in open_rows)
             equity = _safe_float(account.cash_balance) + reserved + unrealized
             return PaperSnapshot(
-                telegram_user_id=(
-                    int(user.telegram_user_id)
-                    if user.telegram_user_id is not None
-                    else None
-                ),
+                telegram_user_id=(int(user.telegram_user_id) if user.telegram_user_id is not None else None),
                 user_id=int(user.id),
                 identity=identity,
                 starting_balance=_safe_float(account.starting_balance),
@@ -385,9 +410,7 @@ class PaperTradingService:
                 fee_bps=_safe_float(account.fee_bps),
                 target_mode=str(account.target_mode or "TP1").upper(),
                 allowed_directions=str(account.allowed_directions or "both").lower(),
-                allowed_asset_classes=[
-                    str(x).lower() for x in (account.allowed_asset_classes or [])
-                ],
+                allowed_asset_classes=[str(x).lower() for x in (account.allowed_asset_classes or [])],
             )
 
     async def update_settings(
@@ -399,9 +422,16 @@ class PaperTradingService:
     ) -> PaperSnapshot | None:
         identity = str(user_identity or "telegram").strip().lower()
         allowed = {
-            "auto_trade_enabled", "risk_pct", "max_open_positions", "min_signal_score",
-            "spread_bps", "slippage_bps", "fee_bps", "target_mode",
-            "allowed_directions", "allowed_asset_classes",
+            "auto_trade_enabled",
+            "risk_pct",
+            "max_open_positions",
+            "min_signal_score",
+            "spread_bps",
+            "slippage_bps",
+            "fee_bps",
+            "target_mode",
+            "allowed_directions",
+            "allowed_asset_classes",
         }
         async with get_session(priority="interactive", label="paper.update_settings") as session:
             user = await self._user_row(
@@ -413,9 +443,7 @@ class PaperTradingService:
                 return None
             account = (
                 await session.execute(
-                    select(PaperAccount)
-                    .where(PaperAccount.user_id == int(user.id))
-                    .with_for_update()
+                    select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
                 )
             ).scalar_one_or_none()
             if account is None:
@@ -441,25 +469,23 @@ class PaperTradingService:
                     if value not in {"both", "long", "short"}:
                         raise ValueError("allowed_directions must be both, long, or short")
                 elif key == "allowed_asset_classes":
-                    value = sorted({
-                        str(x).strip().lower()
-                        for x in (value or [])
-                        if str(x).strip()
-                    })
+                    value = sorted({str(x).strip().lower() for x in (value or []) if str(x).strip()})
                 elif key == "auto_trade_enabled":
                     value = bool(value)
                 setattr(account, key, value)
                 changed[key] = value
             account.updated_at = now_utc_naive()
-            session.add(PaperLedgerEntry(
-                account_id=int(account.id),
-                user_id=int(user.id),
-                entry_type="SETTINGS_UPDATED",
-                amount=0.0,
-                balance_after=_safe_float(account.cash_balance),
-                description="Paper settings updated",
-                meta={**changed, "identity": identity},
-            ))
+            session.add(
+                PaperLedgerEntry(
+                    account_id=int(account.id),
+                    user_id=int(user.id),
+                    entry_type="SETTINGS_UPDATED",
+                    amount=0.0,
+                    balance_after=_safe_float(account.cash_balance),
+                    description="Paper settings updated",
+                    meta={**changed, "identity": identity},
+                )
+            )
             await session.commit()
         return await self.snapshot(
             int(user_id),
@@ -491,43 +517,40 @@ class PaperTradingService:
                 return None
             account = (
                 await session.execute(
-                    select(PaperAccount)
-                    .where(PaperAccount.user_id == int(user.id))
-                    .with_for_update()
+                    select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
                 )
             ).scalar_one_or_none()
             if account is None:
                 account = await self._ensure_account_for_user(session, user)
-            open_count = int((
-                await session.execute(
-                    select(func.count(PaperPosition.position_id)).where(
-                        PaperPosition.user_id == int(user.id),
-                        PaperPosition.status == "open",
+            open_count = int(
+                (
+                    await session.execute(
+                        select(func.count(PaperPosition.position_id)).where(
+                            PaperPosition.user_id == int(user.id),
+                            PaperPosition.status == "open",
+                        )
                     )
-                )
-            ).scalar() or 0)
-            if open_count:
-                raise ValueError(
-                    "Close or wait for all paper positions before resetting the account"
-                )
-            await session.execute(
-                PaperPosition.__table__.delete().where(
-                    PaperPosition.user_id == int(user.id)
-                )
+                ).scalar()
+                or 0
             )
+            if open_count:
+                raise ValueError("Close or wait for all paper positions before resetting the account")
+            await session.execute(PaperPosition.__table__.delete().where(PaperPosition.user_id == int(user.id)))
             account.starting_balance = balance
             account.cash_balance = balance
             account.realized_pnl = 0.0
             account.updated_at = now_utc_naive()
-            session.add(PaperLedgerEntry(
-                account_id=int(account.id),
-                user_id=int(user.id),
-                entry_type="ACCOUNT_RESET",
-                amount=0.0,
-                balance_after=balance,
-                description="Paper account reset",
-                meta={"starting_balance": balance, "identity": identity},
-            ))
+            session.add(
+                PaperLedgerEntry(
+                    account_id=int(account.id),
+                    user_id=int(user.id),
+                    entry_type="ACCOUNT_RESET",
+                    amount=0.0,
+                    balance_after=balance,
+                    description="Paper account reset",
+                    meta={"starting_balance": balance, "identity": identity},
+                )
+            )
             await session.commit()
         return await self.snapshot(
             int(user_id),
@@ -551,20 +574,18 @@ class PaperTradingService:
             )
             if user is None:
                 return []
-            query = select(PaperPosition).where(
-                PaperPosition.user_id == int(user.id)
-            )
+            query = select(PaperPosition).where(PaperPosition.user_id == int(user.id))
             if status:
-                query = query.where(
-                    PaperPosition.status == str(status).lower()
-                )
+                query = query.where(PaperPosition.status == str(status).lower())
             rows = (
-                await session.execute(
-                    query.order_by(PaperPosition.opened_at.desc()).limit(
-                        max(1, min(500, int(limit)))
+                (
+                    await session.execute(
+                        query.order_by(PaperPosition.opened_at.desc()).limit(max(1, min(500, int(limit))))
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             return [self._position_dict(row) for row in rows]
 
     async def stale_positions(
@@ -579,17 +600,23 @@ class PaperTradingService:
         (active-position-blocking remediation): they are reported stale for
         owner review / policy-based closure instead of silently locking assets.
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
-        async with get_session(priority=_paper_worker_priority(), label="paper.stale_positions", timeout_seconds=_paper_db_timeout(8.0)) as session:
+        async with get_session(
+            priority=_paper_worker_priority(), label="paper.stale_positions", timeout_seconds=_paper_db_timeout(8.0)
+        ) as session:
             rows = (
-                await session.execute(
-                    select(PaperPosition)
-                    .where(PaperPosition.status == "open")
-                    .order_by(PaperPosition.opened_at.asc())
-                    .limit(max(1, min(500, int(limit))))
+                (
+                    await session.execute(
+                        select(PaperPosition)
+                        .where(PaperPosition.status == "open")
+                        .order_by(PaperPosition.opened_at.asc())
+                        .limit(max(1, min(500, int(limit))))
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         out: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc)
         for row in rows:
@@ -598,7 +625,9 @@ class PaperTradingService:
                 continue
             opened = opened_at.replace(tzinfo=timezone.utc) if opened_at.tzinfo is None else opened_at
             age_h = (now - opened).total_seconds() / 3600.0
-            policy_h = float(max_age_hours) if max_age_hours else position_max_age_hours(getattr(row, "timeframe", None))
+            policy_h = (
+                float(max_age_hours) if max_age_hours else position_max_age_hours(getattr(row, "timeframe", None))
+            )
             if age_h > policy_h:
                 item = self._position_dict(row)
                 item["age_hours"] = round(age_h, 2)
@@ -655,41 +684,22 @@ class PaperTradingService:
         )
         wins = [r for r in rows if _safe_float(r.get("realized_pnl")) > 0]
         losses = [r for r in rows if _safe_float(r.get("realized_pnl")) < 0]
-        flat = [
-            r for r in rows
-            if abs(_safe_float(r.get("realized_pnl"))) < 1e-9
-        ]
+        flat = [r for r in rows if abs(_safe_float(r.get("realized_pnl"))) < 1e-9]
         net = sum(_safe_float(r.get("realized_pnl")) for r in rows)
         gross_win = sum(_safe_float(r.get("realized_pnl")) for r in wins)
         gross_loss = abs(sum(_safe_float(r.get("realized_pnl")) for r in losses))
-        r_values = [
-            _safe_float(r.get("r_multiple"))
-            for r in rows
-            if r.get("r_multiple") is not None
-        ]
+        r_values = [_safe_float(r.get("r_multiple")) for r in rows if r.get("r_multiple") is not None]
         return {
             "snapshot": asdict(snapshot),
             "sample_size": len(rows),
             "wins": len(wins),
             "losses": len(losses),
             "flat": len(flat),
-            "win_rate_pct": (
-                len(wins) / len(rows) * 100.0 if rows else 0.0
-            ),
+            "win_rate_pct": (len(wins) / len(rows) * 100.0 if rows else 0.0),
             "net_pnl": net,
-            "return_pct": (
-                net / snapshot.starting_balance * 100.0
-                if snapshot.starting_balance > 0
-                else 0.0
-            ),
-            "profit_factor": (
-                gross_win / gross_loss
-                if gross_loss > 0
-                else (float("inf") if gross_win > 0 else 0.0)
-            ),
-            "avg_r": (
-                sum(r_values) / len(r_values) if r_values else 0.0
-            ),
+            "return_pct": (net / snapshot.starting_balance * 100.0 if snapshot.starting_balance > 0 else 0.0),
+            "profit_factor": (gross_win / gross_loss if gross_loss > 0 else (float("inf") if gross_win > 0 else 0.0)),
+            "avg_r": (sum(r_values) / len(r_values) if r_values else 0.0),
         }
 
     async def delivered_r_samples(
@@ -701,8 +711,15 @@ class PaperTradingService:
         """Return terminal R samples from receipts authorized for this identity."""
         identity = str(user_identity or "telegram").strip().lower()
         terminal_statuses = (
-            "tp", "tp3", "sl", "invalid", "invalidated", "time_stop",
-            "partial_win_be", "missed_entry", "expired",
+            "tp",
+            "tp3",
+            "sl",
+            "invalid",
+            "invalidated",
+            "time_stop",
+            "partial_win_be",
+            "missed_entry",
+            "expired",
         )
         partial_statuses = ("tp1", "tp2")
         async with get_session(
@@ -756,7 +773,9 @@ class PaperTradingService:
                     {web_union}
                 )
             """
-            terminal_sql = receipts_cte + """
+            terminal_sql = (
+                receipts_cte
+                + """
                 SELECT
                     o.signal_id,
                     o.r_multiple,
@@ -771,6 +790,7 @@ class PaperTradingService:
                   AND o.r_multiple IS NOT NULL
                 ORDER BY o.closed_at ASC NULLS LAST
             """
+            )
             rows = (
                 await session.execute(
                     text(terminal_sql),
@@ -793,10 +813,7 @@ class PaperTradingService:
             delivered_total = int(
                 (
                     await session.execute(
-                        text(
-                            receipts_cte
-                            + " SELECT COUNT(DISTINCT signal_id) FROM receipts"
-                        ),
+                        text(receipts_cte + " SELECT COUNT(DISTINCT signal_id) FROM receipts"),
                         {"uid": int(user.id)},
                     )
                 ).scalar()
@@ -843,31 +860,47 @@ class PaperTradingService:
             label="paper.delivery_candidates",
             timeout_seconds=_paper_db_timeout(8.0),
         ) as session:
-            permanent_attempt = select(PaperTradeAttempt.id).where(
-                PaperTradeAttempt.user_id == User.id,
-                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
-                PaperTradeAttempt.decision == "SKIPPED",
-                PaperTradeAttempt.retryable.is_(False),
-                PaperTradeAttempt.finalized_at.is_not(None),
-            ).exists()
-            retry_backoff = select(PaperTradeAttempt.id).where(
-                PaperTradeAttempt.user_id == User.id,
-                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
-                PaperTradeAttempt.retryable.is_(True),
-                PaperTradeAttempt.next_retry_at.is_not(None),
-                PaperTradeAttempt.next_retry_at > now,
-            ).exists()
-            retry_override = select(PaperTradeAttempt.id).where(
-                PaperTradeAttempt.user_id == User.id,
-                PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
-                PaperTradeAttempt.decision == "RETRY_PENDING",
-                PaperTradeAttempt.retry_deadline > now,
-            ).exists()
+            permanent_attempt = (
+                select(PaperTradeAttempt.id)
+                .where(
+                    PaperTradeAttempt.user_id == User.id,
+                    PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                    PaperTradeAttempt.decision == "SKIPPED",
+                    PaperTradeAttempt.retryable.is_(False),
+                    PaperTradeAttempt.finalized_at.is_not(None),
+                )
+                .exists()
+            )
+            retry_backoff = (
+                select(PaperTradeAttempt.id)
+                .where(
+                    PaperTradeAttempt.user_id == User.id,
+                    PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                    PaperTradeAttempt.retryable.is_(True),
+                    PaperTradeAttempt.next_retry_at.is_not(None),
+                    PaperTradeAttempt.next_retry_at > now,
+                )
+                .exists()
+            )
+            retry_override = (
+                select(PaperTradeAttempt.id)
+                .where(
+                    PaperTradeAttempt.user_id == User.id,
+                    PaperTradeAttempt.signal_id == SignalDelivery.signal_id,
+                    PaperTradeAttempt.decision == "RETRY_PENDING",
+                    PaperTradeAttempt.retry_deadline > now,
+                )
+                .exists()
+            )
             rows = (
                 await session.execute(
                     select(
-                        SignalDelivery, Signal, User, PaperAccount,
-                        PaperPosition.position_id, SignalLifecycle,
+                        SignalDelivery,
+                        Signal,
+                        User,
+                        PaperAccount,
+                        PaperPosition.position_id,
+                        SignalLifecycle,
                     )
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .join(User, User.id == SignalDelivery.user_id)
@@ -900,50 +933,53 @@ class PaperTradingService:
             ).all()
             out: list[dict[str, Any]] = []
             for delivery, signal, user, account, _, lifecycle in rows:
-                out.append({
-                    "delivery_id": int(delivery.id),
-                    "receipt_channel": "telegram",
-                    "receipt_reference": str(delivery.id),
-                    "telegram_user_id": (
-                        int(user.telegram_user_id)
-                        if user.telegram_user_id is not None
-                        else None
-                    ),
-                    "user_id": int(user.id),
-                    "signal_id": str(signal.signal_id),
-                    "display_id": str(getattr(signal, "display_id", "") or ""),
-                    "asset": str(signal.asset),
-                    "asset_class": canonical_asset_class(str(signal.asset), signal.asset_class),
-                    "timeframe": str(signal.timeframe or ""),
-                    "direction": canonical_direction(signal.direction),
-                    "entry": _safe_float(signal.entry),
-                    "stop_loss": _safe_float(signal.stop_loss),
-                    "take_profits": parse_targets(signal.take_profit),
-                    "score": _safe_float(signal.score),
-                    "generated_at": delivery.generated_at_utc or signal.created_at,
-                    "signal_age_at_delivery_seconds": delivery.signal_age_at_delivery_seconds,
-                    "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None) or signal_thesis_fingerprint({
-                        "asset": signal.asset,
-                        "direction": signal.direction,
-                        "strategy_name": signal.strategy_name,
-                        "regime": signal.regime,
-                        "entry": signal.entry,
-                        "timeframe": signal.timeframe,
-                    }),
-                    "confirmed_at": delivery.delivery_confirmed_at,
-                    "retry_deadline": (delivery.generated_at_utc or signal.created_at) + timedelta(
-                        seconds=evaluate_signal_freshness(
-                            timeframe=signal.timeframe,
-                            generated_at=delivery.generated_at_utc or signal.created_at,
-                            now=now,
-                            purpose="paper",
-                        ).max_age_seconds
-                    ),
-                    "account_exists": account is not None,
-                    "lifecycle_state": str(getattr(lifecycle, "state", "") or ""),
-                    "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
-                })
+                out.append(
+                    {
+                        "delivery_id": int(delivery.id),
+                        "receipt_channel": "telegram",
+                        "receipt_reference": str(delivery.id),
+                        "telegram_user_id": (int(user.telegram_user_id) if user.telegram_user_id is not None else None),
+                        "user_id": int(user.id),
+                        "signal_id": str(signal.signal_id),
+                        "display_id": str(getattr(signal, "display_id", "") or ""),
+                        "asset": str(signal.asset),
+                        "asset_class": canonical_asset_class(str(signal.asset), signal.asset_class),
+                        "timeframe": str(signal.timeframe or ""),
+                        "direction": canonical_direction(signal.direction),
+                        "entry": _safe_float(signal.entry),
+                        "stop_loss": _safe_float(signal.stop_loss),
+                        "take_profits": parse_targets(signal.take_profit),
+                        "score": _safe_float(signal.score),
+                        "generated_at": delivery.generated_at_utc or signal.created_at,
+                        "signal_age_at_delivery_seconds": delivery.signal_age_at_delivery_seconds,
+                        "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None)
+                        or signal_thesis_fingerprint(
+                            {
+                                "asset": signal.asset,
+                                "direction": signal.direction,
+                                "strategy_name": signal.strategy_name,
+                                "regime": signal.regime,
+                                "entry": signal.entry,
+                                "timeframe": signal.timeframe,
+                            }
+                        ),
+                        "confirmed_at": delivery.delivery_confirmed_at,
+                        "retry_deadline": (delivery.generated_at_utc or signal.created_at)
+                        + timedelta(
+                            seconds=evaluate_signal_freshness(
+                                timeframe=signal.timeframe,
+                                generated_at=delivery.generated_at_utc or signal.created_at,
+                                now=now,
+                                purpose="paper",
+                            ).max_age_seconds
+                        ),
+                        "account_exists": account is not None,
+                        "lifecycle_state": str(getattr(lifecycle, "state", "") or ""),
+                        "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
+                    }
+                )
             return out
+
     async def _web_delivery_candidates(self, limit: int) -> list[dict[str, Any]]:
         """Discover gated web receipts without manufacturing Telegram deliveries."""
         max_age_s = _env_int(
@@ -955,9 +991,22 @@ class PaperTradingService:
         now = now_utc_naive()
         cutoff = now - timedelta(seconds=max_age_s)
         terminal_statuses = (
-            "tp", "tp3", "sl", "stop", "stopped", "expired", "missed",
-            "cancelled", "closed", "win", "loss", "partial_win",
-            "invalid", "invalidated", "time_stop", "partial_win_be",
+            "tp",
+            "tp3",
+            "sl",
+            "stop",
+            "stopped",
+            "expired",
+            "missed",
+            "cancelled",
+            "closed",
+            "win",
+            "loss",
+            "partial_win",
+            "invalid",
+            "invalidated",
+            "time_stop",
+            "partial_win_be",
             "missed_entry",
         )
         status_sql = ",".join(f"'{item}'" for item in terminal_statuses)
@@ -1037,15 +1086,19 @@ class PaperTradingService:
             timeout_seconds=_paper_db_timeout(8.0),
         ) as session:
             rows = (
-                await session.execute(
-                    text(sql),
-                    {
-                        "cutoff": cutoff,
-                        "now": now,
-                        "limit": max(1, min(500, int(limit))),
-                    },
+                (
+                    await session.execute(
+                        text(sql),
+                        {
+                            "cutoff": cutoff,
+                            "now": now,
+                            "limit": max(1, min(500, int(limit))),
+                        },
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
             await session.rollback()
 
         out: list[dict[str, Any]] = []
@@ -1073,9 +1126,7 @@ class PaperTradingService:
                     "receipt_channel": "web",
                     "receipt_reference": str(row["notification_id"]),
                     "telegram_user_id": (
-                        int(row["telegram_user_id"])
-                        if row.get("telegram_user_id") is not None
-                        else None
+                        int(row["telegram_user_id"]) if row.get("telegram_user_id") is not None else None
                     ),
                     "user_id": int(row["user_id"]),
                     "signal_id": str(row["signal_id"]),
@@ -1113,9 +1164,7 @@ class PaperTradingService:
                         else confirmed_at
                     ),
                     "account_exists": row.get("account_id") is not None,
-                    "lifecycle_state": str(
-                        row.get("lifecycle_state") or ""
-                    ),
+                    "lifecycle_state": str(row.get("lifecycle_state") or ""),
                     "entry_touched_at": row.get("entry_touched_at"),
                 }
             )
@@ -1152,6 +1201,7 @@ class PaperTradingService:
         prices: dict[str, Optional[float]] = {}
         try:
             from engine.price_fetcher import get_live_price_batch
+
             prices = await get_live_price_batch(assets, max_concurrent=_env_int("PAPER_PRICE_CONCURRENCY", 4, 1, 20))
         except Exception as exc:
             logger.warning("[paper] live price batch failed; new paper entries will be deferred: %s", exc)
@@ -1186,16 +1236,21 @@ class PaperTradingService:
         now = now_utc_naive()
         previous_attempt = (
             await session.execute(
-                select(PaperTradeAttempt).where(
+                select(PaperTradeAttempt)
+                .where(
                     PaperTradeAttempt.user_id == int(user.id),
                     PaperTradeAttempt.signal_id == str(candidate["signal_id"]),
-                ).order_by(PaperTradeAttempt.attempt_number.desc()).limit(1)
+                )
+                .order_by(PaperTradeAttempt.attempt_number.desc())
+                .limit(1)
             )
         ).scalar_one_or_none()
         attempt_number = int(getattr(previous_attempt, "attempt_number", 0) or 0) + 1
         first_attempt_at = getattr(previous_attempt, "first_attempt_at", None) or now
         retry_deadline = candidate.get("retry_deadline")
-        retry_delay = int(next_retry_seconds if next_retry_seconds is not None else os.getenv("PAPER_ENTRY_RETRY_SECONDS", "15"))
+        retry_delay = int(
+            next_retry_seconds if next_retry_seconds is not None else os.getenv("PAPER_ENTRY_RETRY_SECONDS", "15")
+        )
         next_retry_at = now + timedelta(seconds=max(1, retry_delay)) if retryable else None
         if retry_deadline is not None and next_retry_at is not None and next_retry_at >= retry_deadline:
             retryable = False
@@ -1204,10 +1259,9 @@ class PaperTradingService:
             reason = "paper_entry_retry_deadline_expired"
             finalized = True
         delivery_id = candidate.get("delivery_id")
-        receipt_channel = str(
-            candidate.get("receipt_channel")
-            or ("telegram" if delivery_id is not None else "web")
-        ).strip().lower()
+        receipt_channel = (
+            str(candidate.get("receipt_channel") or ("telegram" if delivery_id is not None else "web")).strip().lower()
+        )
         receipt_reference = str(
             candidate.get("receipt_reference")
             or (delivery_id if delivery_id is not None else candidate.get("signal_id"))
@@ -1218,17 +1272,10 @@ class PaperTradingService:
             account_id=int(account.id),
             user_id=int(user.id),
             signal_id=str(candidate["signal_id"]),
-            delivery_id=(
-                int(delivery_id)
-                if delivery_id is not None
-                else None
-            ),
+            delivery_id=(int(delivery_id) if delivery_id is not None else None),
             receipt_channel=receipt_channel,
             receipt_reference=receipt_reference[:64] or None,
-            idempotency_key=(
-                f"paper:{receipt_channel}:{receipt_reference}:"
-                f"{attempt_number}:{decision.lower()}"
-            )[:128],
+            idempotency_key=(f"paper:{receipt_channel}:{receipt_reference}:{attempt_number}:{decision.lower()}")[:128],
             decision=str(decision).upper(),
             reason=str(reason)[:128],
             retryable=bool(retryable),
@@ -1251,23 +1298,25 @@ class PaperTradingService:
             updated_at=now,
         )
         session.add(attempt)
-        session.add(PaperLedgerEntry(
-            account_id=int(account.id),
-            user_id=int(user.id),
-            entry_type=f"PAPER_{str(decision).upper()}",
-            amount=0.0,
-            balance_after=_safe_float(account.cash_balance),
-            description=f"Paper candidate {str(decision).lower()}: {reason}",
-            meta={
-                "attempt_id": attempt.attempt_id,
-                "signal_id": candidate.get("signal_id"),
-                "delivery_id": candidate.get("delivery_id"),
-                "receipt_channel": receipt_channel,
-                "receipt_reference": receipt_reference,
-                "reason": reason,
-                "retryable": bool(retryable),
-            },
-        ))
+        session.add(
+            PaperLedgerEntry(
+                account_id=int(account.id),
+                user_id=int(user.id),
+                entry_type=f"PAPER_{str(decision).upper()}",
+                amount=0.0,
+                balance_after=_safe_float(account.cash_balance),
+                description=f"Paper candidate {str(decision).lower()}: {reason}",
+                meta={
+                    "attempt_id": attempt.attempt_id,
+                    "signal_id": candidate.get("signal_id"),
+                    "delivery_id": candidate.get("delivery_id"),
+                    "receipt_channel": receipt_channel,
+                    "receipt_reference": receipt_reference,
+                    "reason": reason,
+                    "retryable": bool(retryable),
+                },
+            )
+        )
         await session.flush()
         return attempt
 
@@ -1291,26 +1340,32 @@ class PaperTradingService:
         if decision == "DEFERRED":
             return
         actionable_reasons = {
-            "score_below_paper_minimum", "direction_not_allowed",
-            "asset_class_not_allowed", "max_open_positions",
-            "incomplete_signal_levels", "paper_entry_no_longer_valid",
-            "paper_entry_retry_deadline_expired", "auto_trade_disabled",
-            "signal_stale", "generated_at_missing", "duplicate_open_asset",
-            "max_open_positions_asset_class", "max_total_exposure",
-            "max_open_risk", "paper_daily_loss_limit",
-            "entry_deviation_too_large", "uncalibrated_signal",
+            "score_below_paper_minimum",
+            "direction_not_allowed",
+            "asset_class_not_allowed",
+            "max_open_positions",
+            "incomplete_signal_levels",
+            "paper_entry_no_longer_valid",
+            "paper_entry_retry_deadline_expired",
+            "auto_trade_disabled",
+            "signal_stale",
+            "generated_at_missing",
+            "duplicate_open_asset",
+            "max_open_positions_asset_class",
+            "max_total_exposure",
+            "max_open_risk",
+            "paper_daily_loss_limit",
+            "entry_deviation_too_large",
+            "uncalibrated_signal",
             "profile_preference_mismatch",
             "profile_trading_mode_excludes_paper",
-            "profile_daily_trade_limit", "profile_unavailable",
+            "profile_daily_trade_limit",
+            "profile_unavailable",
         }
         if decision != "OPENED" and reason not in actionable_reasons:
             return
 
-        signal_ref = str(
-            candidate.get("display_id")
-            or candidate.get("signal_id")
-            or ""
-        )
+        signal_ref = str(candidate.get("display_id") or candidate.get("signal_id") or "")
         if decision == "OPENED":
             try:
                 from core.paper_sizing import paper_risk_report_text
@@ -1364,16 +1419,11 @@ class PaperTradingService:
         canonical_user_id = int(candidate.get("user_id") or 0)
         if canonical_user_id > 0:
             try:
-                event_key = (
-                    attempt_id
-                    or position_id
-                    or str(candidate.get("receipt_reference") or reason)
-                )
+                event_key = attempt_id or position_id or str(candidate.get("receipt_reference") or reason)
                 notification_id = str(
                     uuid5(
                         NAMESPACE_URL,
-                        f"signalrank:web-paper:{canonical_user_id}:"
-                        f"{candidate.get('signal_id')}:{decision}:{event_key}",
+                        f"signalrank:web-paper:{canonical_user_id}:{candidate.get('signal_id')}:{decision}:{event_key}",
                     )
                 )
                 async with get_session(
@@ -1417,14 +1467,9 @@ class PaperTradingService:
                             {
                                 "nid": notification_id,
                                 "uid": canonical_user_id,
-                                "title": (
-                                    f"Paper trade {decision.lower()}: "
-                                    f"{candidate.get('asset')}"
-                                )[:200],
+                                "title": (f"Paper trade {decision.lower()}: {candidate.get('asset')}")[:200],
                                 "body": message_text,
-                                "severity": (
-                                    "info" if decision == "OPENED" else "warning"
-                                ),
+                                "severity": ("info" if decision == "OPENED" else "warning"),
                                 "channel_data": json.dumps(
                                     {
                                         "channel": "web",
@@ -1434,12 +1479,8 @@ class PaperTradingService:
                                         "reason": reason,
                                         "position_id": position_id,
                                         "attempt_id": attempt_id,
-                                        "receipt_channel": candidate.get(
-                                            "receipt_channel"
-                                        ),
-                                        "receipt_reference": candidate.get(
-                                            "receipt_reference"
-                                        ),
+                                        "receipt_channel": candidate.get("receipt_channel"),
+                                        "receipt_reference": candidate.get("receipt_reference"),
                                     },
                                     separators=(",", ":"),
                                     default=str,
@@ -1449,8 +1490,7 @@ class PaperTradingService:
                         await session.commit()
             except Exception as exc:
                 logger.warning(
-                    "[paper_web_notification_failed] user=%s signal=%s "
-                    "decision=%s error=%s",
+                    "[paper_web_notification_failed] user=%s signal=%s decision=%s error=%s",
                     canonical_user_id,
                     candidate.get("signal_id"),
                     decision,
@@ -1485,11 +1525,7 @@ class PaperTradingService:
         from core.execution_claims import execution_destination_lock
 
         telegram_id = candidate.get("telegram_user_id")
-        lock_user_id = (
-            int(telegram_id)
-            if telegram_id is not None
-            else -(1_000_000_000_000 + int(candidate["user_id"]))
-        )
+        lock_user_id = int(telegram_id) if telegram_id is not None else -(1_000_000_000_000 + int(candidate["user_id"]))
         async with execution_destination_lock(
             lock_user_id,
             str(candidate["signal_id"]),
@@ -1498,7 +1534,8 @@ class PaperTradingService:
             if not claimed:
                 logger.warning(
                     "[paper_candidate] execution destination lock unavailable user=%s signal=%s",
-                    candidate.get("telegram_user_id"), candidate.get("signal_id"),
+                    candidate.get("telegram_user_id"),
+                    candidate.get("signal_id"),
                 )
                 return "deferred"
             return await self._open_candidate_locked(candidate, market_price)
@@ -1543,13 +1580,21 @@ class PaperTradingService:
             if execution_mode in {"auto", "copy", "copy_trade", "live"}:
                 logger.info(
                     "[paper_candidate] skipped broker execution mode user=%s signal=%s mode=%s",
-                    user.telegram_user_id, candidate.get("signal_id"), execution_mode,
+                    user.telegram_user_id,
+                    candidate.get("signal_id"),
+                    execution_mode,
                 )
                 return "skipped"
             if account.status != "active" or not bool(account.auto_trade_enabled):
                 await self._record_attempt(
-                    session, account=account, user=user, candidate=candidate,
-                    decision="SKIPPED", reason="auto_trade_disabled", retryable=False, finalized=True,
+                    session,
+                    account=account,
+                    user=user,
+                    candidate=candidate,
+                    decision="SKIPPED",
+                    reason="auto_trade_disabled",
+                    retryable=False,
+                    finalized=True,
                 )
                 await session.commit()
                 notify = {"decision": "SKIPPED", "reason": "auto_trade_disabled"}
@@ -1557,11 +1602,13 @@ class PaperTradingService:
             else:
                 existing = (
                     await session.execute(
-                        select(PaperPosition.position_id).where(
+                        select(PaperPosition.position_id)
+                        .where(
                             PaperPosition.user_id == int(user.id),
                             PaperPosition.signal_id == str(candidate["signal_id"]),
                             func.lower(PaperPosition.status).in_(["open", "closed"]),
-                        ).limit(1)
+                        )
+                        .limit(1)
                     )
                 ).scalar_one_or_none()
                 if existing:
@@ -1575,13 +1622,9 @@ class PaperTradingService:
                     user_id=int(user.id),
                     signal_id=str(candidate["signal_id"]),
                 )
-                if (
-                    not evidence_before.get("access_proven")
-                    or evidence_before.get("position_count")
-                ):
+                if not evidence_before.get("access_proven") or evidence_before.get("position_count"):
                     logger.warning(
-                        "[paper_candidate] blocked by canonical evidence "
-                        "user=%s signal=%s evidence=%s",
+                        "[paper_candidate] blocked by canonical evidence user=%s signal=%s evidence=%s",
                         user.id,
                         candidate.get("signal_id"),
                         evidence_before,
@@ -1592,6 +1635,7 @@ class PaperTradingService:
                         get_platform_user_trading_preferences,
                         signal_matches_preferences,
                     )
+
                     profile_prefs = await get_platform_user_trading_preferences(
                         session,
                         int(user.id),
@@ -1605,17 +1649,28 @@ class PaperTradingService:
                     )
                     profile_prefs = None
 
-                open_rows = (await session.execute(
-                    select(PaperPosition).where(
-                        PaperPosition.user_id == int(user.id),
-                        func.lower(PaperPosition.status) == "open",
-                    ).with_for_update()
-                )).scalars().all()
+                open_rows = (
+                    (
+                        await session.execute(
+                            select(PaperPosition)
+                            .where(
+                                PaperPosition.user_id == int(user.id),
+                                func.lower(PaperPosition.status) == "open",
+                            )
+                            .with_for_update()
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 open_count = len(open_rows)
                 skip_reason = ""
                 profile_reason = ""
                 require_profile = str(os.getenv("PAPER_REQUIRE_USER_PROFILE", "1")).strip().lower() in {
-                    "1", "true", "yes", "on",
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
                 }
                 if profile_prefs is None and require_profile:
                     skip_reason = "profile_unavailable"
@@ -1639,30 +1694,44 @@ class PaperTradingService:
                 if profile_prefs is not None:
                     effective_max_positions = min(
                         effective_max_positions,
-                        max(1, int(getattr(profile_prefs, "max_concurrent_positions", effective_max_positions) or effective_max_positions)),
+                        max(
+                            1,
+                            int(
+                                getattr(profile_prefs, "max_concurrent_positions", effective_max_positions)
+                                or effective_max_positions
+                            ),
+                        ),
                     )
                 if open_count >= effective_max_positions:
                     skip_reason = skip_reason or "max_open_positions"
                 day_start = now_utc_naive().replace(hour=0, minute=0, second=0, microsecond=0)
                 if profile_prefs is not None:
-                    opened_today = int((await session.execute(
-                        select(func.count(PaperPosition.position_id)).where(
-                            PaperPosition.user_id == int(user.id),
-                            PaperPosition.opened_at >= day_start,
-                        )
-                    )).scalar_one() or 0)
+                    opened_today = int(
+                        (
+                            await session.execute(
+                                select(func.count(PaperPosition.position_id)).where(
+                                    PaperPosition.user_id == int(user.id),
+                                    PaperPosition.opened_at >= day_start,
+                                )
+                            )
+                        ).scalar_one()
+                        or 0
+                    )
                     if opened_today >= max(0, int(getattr(profile_prefs, "max_daily_trades", 0) or 0)) > 0:
                         skip_reason = skip_reason or "profile_daily_trade_limit"
-                realized_today = float((await session.execute(
-                    select(func.coalesce(func.sum(PaperPosition.realized_pnl), 0.0)).where(
-                        PaperPosition.user_id == int(user.id),
-                        func.lower(PaperPosition.status) == "closed",
-                        PaperPosition.closed_at >= day_start,
-                    )
-                )).scalar_one() or 0.0)
-                configured_daily_loss_pct = _env_float(
-                    "PAPER_MAX_DAILY_LOSS_PCT", 5.0, 0.1, 100.0
+                realized_today = float(
+                    (
+                        await session.execute(
+                            select(func.coalesce(func.sum(PaperPosition.realized_pnl), 0.0)).where(
+                                PaperPosition.user_id == int(user.id),
+                                func.lower(PaperPosition.status) == "closed",
+                                PaperPosition.closed_at >= day_start,
+                            )
+                        )
+                    ).scalar_one()
+                    or 0.0
                 )
+                configured_daily_loss_pct = _env_float("PAPER_MAX_DAILY_LOSS_PCT", 5.0, 0.1, 100.0)
                 profile_daily_loss_pct = (
                     max(
                         0.1,
@@ -1687,7 +1756,8 @@ class PaperTradingService:
                     skip_reason = skip_reason or "duplicate_open_asset"
                 max_per_class = _env_int("PAPER_MAX_OPEN_POSITIONS_PER_ASSET_CLASS", 2, 1, 20)
                 class_open_count = sum(
-                    1 for row in open_rows
+                    1
+                    for row in open_rows
                     if canonical_asset_class(str(row.asset or ""), row.asset_class) == asset_class
                 )
                 if class_open_count >= max_per_class:
@@ -1702,9 +1772,15 @@ class PaperTradingService:
                     skip_reason = skip_reason or "incomplete_signal_levels"
                 if skip_reason:
                     await self._record_attempt(
-                        session, account=account, user=user, candidate=candidate,
-                        decision="SKIPPED", reason=skip_reason, retryable=False,
-                        market_price=market_price, finalized=True,
+                        session,
+                        account=account,
+                        user=user,
+                        candidate=candidate,
+                        decision="SKIPPED",
+                        reason=skip_reason,
+                        retryable=False,
+                        market_price=market_price,
+                        finalized=True,
                         meta={"profile_reason": profile_reason} if profile_reason else None,
                     )
                     await session.commit()
@@ -1714,8 +1790,13 @@ class PaperTradingService:
                     lifecycle_state = str(candidate.get("lifecycle_state") or "").strip().lower()
                     if lifecycle_state == "watching_for_entry" and candidate.get("entry_touched_at") is None:
                         await self._record_attempt(
-                            session, account=account, user=user, candidate=candidate,
-                            decision="DEFERRED", reason="watching_for_entry", retryable=True,
+                            session,
+                            account=account,
+                            user=user,
+                            candidate=candidate,
+                            decision="DEFERRED",
+                            reason="watching_for_entry",
+                            retryable=True,
                             market_price=market_price,
                         )
                         await session.commit()
@@ -1724,23 +1805,34 @@ class PaperTradingService:
                         live = _safe_float(market_price)
                         if live <= 0:
                             await self._record_attempt(
-                                session, account=account, user=user, candidate=candidate,
-                                decision="DEFERRED", reason="live_price_unavailable", retryable=True,
+                                session,
+                                account=account,
+                                user=user,
+                                candidate=candidate,
+                                decision="DEFERRED",
+                                reason="live_price_unavailable",
+                                retryable=True,
                             )
                             await session.commit()
                             result_status = "deferred"
                         else:
                             entry_deviation_bps = abs(live - entry) / max(entry, 1e-12) * 10000.0
-                            max_entry_deviation_bps = _env_float(
-                                "PAPER_MAX_ENTRY_DEVIATION_BPS", 25.0, 1.0, 500.0
-                            )
+                            max_entry_deviation_bps = _env_float("PAPER_MAX_ENTRY_DEVIATION_BPS", 25.0, 1.0, 500.0)
                             if entry_deviation_bps > max_entry_deviation_bps:
                                 await self._record_attempt(
-                                    session, account=account, user=user, candidate=candidate,
-                                    decision="SKIPPED", reason="entry_deviation_too_large",
-                                    retryable=False, market_price=market_price, finalized=True,
-                                    meta={"entry_deviation_bps": entry_deviation_bps,
-                                          "maximum_bps": max_entry_deviation_bps},
+                                    session,
+                                    account=account,
+                                    user=user,
+                                    candidate=candidate,
+                                    decision="SKIPPED",
+                                    reason="entry_deviation_too_large",
+                                    retryable=False,
+                                    market_price=market_price,
+                                    finalized=True,
+                                    meta={
+                                        "entry_deviation_bps": entry_deviation_bps,
+                                        "maximum_bps": max_entry_deviation_bps,
+                                    },
                                 )
                                 await session.commit()
                                 notify = {"decision": "SKIPPED", "reason": "entry_deviation_too_large"}
@@ -1752,15 +1844,27 @@ class PaperTradingService:
                                 bps = (_safe_float(account.spread_bps) + _safe_float(account.slippage_bps)) / 10000.0
                                 fill = live * (1.0 + bps if direction == "long" else 1.0 - bps)
                                 risk_per_unit = abs(fill - stop)
-                                target_idx = {"TP1": 0, "TP2": 1, "TP3": 2}.get(str(account.target_mode or "TP1").upper(), 0)
+                                target_idx = {"TP1": 0, "TP2": 1, "TP3": 2}.get(
+                                    str(account.target_mode or "TP1").upper(), 0
+                                )
                                 target = targets[min(target_idx, len(targets) - 1)]
-                                valid_geometry = (stop < fill < target) if direction == "long" else (target < fill < stop)
+                                valid_geometry = (
+                                    (stop < fill < target) if direction == "long" else (target < fill < stop)
+                                )
                             if live > 0 and (risk_per_unit <= 0 or not valid_geometry):
-                                reason = "invalid_risk_distance" if risk_per_unit <= 0 else "paper_entry_no_longer_valid"
+                                reason = (
+                                    "invalid_risk_distance" if risk_per_unit <= 0 else "paper_entry_no_longer_valid"
+                                )
                                 await self._record_attempt(
-                                    session, account=account, user=user, candidate=candidate,
-                                    decision="SKIPPED", reason=reason, retryable=False,
-                                    market_price=market_price, finalized=True,
+                                    session,
+                                    account=account,
+                                    user=user,
+                                    candidate=candidate,
+                                    decision="SKIPPED",
+                                    reason=reason,
+                                    retryable=False,
+                                    market_price=market_price,
+                                    finalized=True,
                                 )
                                 await session.commit()
                                 notify = {"decision": "SKIPPED", "reason": reason}
@@ -1775,7 +1879,12 @@ class PaperTradingService:
                                     if profile_prefs is not None:
                                         effective_risk_pct = min(
                                             effective_risk_pct,
-                                            max(0.01, _safe_float(getattr(profile_prefs, "risk_per_trade_pct", effective_risk_pct))),
+                                            max(
+                                                0.01,
+                                                _safe_float(
+                                                    getattr(profile_prefs, "risk_per_trade_pct", effective_risk_pct)
+                                                ),
+                                            ),
                                         )
                                     sizing = calculate_paper_position_size(
                                         cash=cash,
@@ -1789,9 +1898,15 @@ class PaperTradingService:
                                 except ValueError as exc:
                                     reason = str(exc)
                                     await self._record_attempt(
-                                        session, account=account, user=user, candidate=candidate,
-                                        decision="SKIPPED", reason=reason, retryable=False,
-                                        market_price=market_price, finalized=True,
+                                        session,
+                                        account=account,
+                                        user=user,
+                                        candidate=candidate,
+                                        decision="SKIPPED",
+                                        reason=reason,
+                                        retryable=False,
+                                        market_price=market_price,
+                                        finalized=True,
                                     )
                                     await session.commit()
                                     notify = {"decision": "SKIPPED", "reason": reason}
@@ -1805,17 +1920,23 @@ class PaperTradingService:
                                     max_total_exposure_pct = _env_float(
                                         "PAPER_MAX_TOTAL_EXPOSURE_PCT", 80.0, 5.0, 100.0
                                     )
-                                    projected_exposure_pct = (
-                                        (existing_exposure + notional) / starting_balance * 100.0
-                                    )
+                                    projected_exposure_pct = (existing_exposure + notional) / starting_balance * 100.0
                                     if projected_exposure_pct > max_total_exposure_pct:
                                         await self._record_attempt(
-                                            session, account=account, user=user, candidate=candidate,
-                                            decision="SKIPPED", reason="max_total_exposure",
-                                            retryable=False, market_price=market_price,
-                                            sizing=sizing, finalized=True,
-                                            meta={"projected_exposure_pct": projected_exposure_pct,
-                                                  "maximum_pct": max_total_exposure_pct},
+                                            session,
+                                            account=account,
+                                            user=user,
+                                            candidate=candidate,
+                                            decision="SKIPPED",
+                                            reason="max_total_exposure",
+                                            retryable=False,
+                                            market_price=market_price,
+                                            sizing=sizing,
+                                            finalized=True,
+                                            meta={
+                                                "projected_exposure_pct": projected_exposure_pct,
+                                                "maximum_pct": max_total_exposure_pct,
+                                            },
                                         )
                                         await session.commit()
                                         notify = {"decision": "SKIPPED", "reason": "max_total_exposure"}
@@ -1827,21 +1948,25 @@ class PaperTradingService:
                                         for row in open_rows
                                     )
                                     projected_open_risk_pct = (
-                                        (existing_open_risk + (risk_per_unit * quantity))
-                                        / starting_balance
-                                        * 100.0
+                                        (existing_open_risk + (risk_per_unit * quantity)) / starting_balance * 100.0
                                     )
-                                    max_open_risk_pct = _env_float(
-                                        "PAPER_MAX_OPEN_RISK_PCT", 3.0, 0.1, 25.0
-                                    )
+                                    max_open_risk_pct = _env_float("PAPER_MAX_OPEN_RISK_PCT", 3.0, 0.1, 25.0)
                                     if quantity > 0 and projected_open_risk_pct > max_open_risk_pct:
                                         await self._record_attempt(
-                                            session, account=account, user=user, candidate=candidate,
-                                            decision="SKIPPED", reason="max_open_risk",
-                                            retryable=False, market_price=market_price,
-                                            sizing=sizing, finalized=True,
-                                            meta={"projected_open_risk_pct": projected_open_risk_pct,
-                                                  "maximum_pct": max_open_risk_pct},
+                                            session,
+                                            account=account,
+                                            user=user,
+                                            candidate=candidate,
+                                            decision="SKIPPED",
+                                            reason="max_open_risk",
+                                            retryable=False,
+                                            market_price=market_price,
+                                            sizing=sizing,
+                                            finalized=True,
+                                            meta={
+                                                "projected_open_risk_pct": projected_open_risk_pct,
+                                                "maximum_pct": max_open_risk_pct,
+                                            },
                                         )
                                         await session.commit()
                                         notify = {"decision": "SKIPPED", "reason": "max_open_risk"}
@@ -1849,19 +1974,33 @@ class PaperTradingService:
                                         quantity = 0.0
                                     if quantity > 0:
                                         position = PaperPosition(
-                                            position_id=str(uuid4()), account_id=int(account.id), user_id=int(user.id),
+                                            position_id=str(uuid4()),
+                                            account_id=int(account.id),
+                                            user_id=int(user.id),
                                             signal_id=str(candidate["signal_id"]),
                                             delivery_id=(
                                                 int(candidate["delivery_id"])
                                                 if candidate.get("delivery_id") is not None
                                                 else None
                                             ),
-                                            asset=str(candidate["asset"]), asset_class=asset_class,
-                                            timeframe=str(candidate.get("timeframe") or ""), direction=direction,
-                                            status="open", signal_entry=entry, fill_entry=fill, current_price=live,
-                                            stop_loss=stop, take_profits=targets, target_price=target,
-                                            quantity=quantity, notional=notional, reserved_cash=notional,
-                                            entry_fee=entry_fee, exit_fee=0.0, unrealized_pnl=0.0, realized_pnl=0.0,
+                                            asset=str(candidate["asset"]),
+                                            asset_class=asset_class,
+                                            timeframe=str(candidate.get("timeframe") or ""),
+                                            direction=direction,
+                                            status="open",
+                                            signal_entry=entry,
+                                            fill_entry=fill,
+                                            current_price=live,
+                                            stop_loss=stop,
+                                            take_profits=targets,
+                                            target_price=target,
+                                            quantity=quantity,
+                                            notional=notional,
+                                            reserved_cash=notional,
+                                            entry_fee=entry_fee,
+                                            exit_fee=0.0,
+                                            unrealized_pnl=0.0,
+                                            realized_pnl=0.0,
                                             opened_at=now_utc_naive(),
                                             source=(
                                                 "web_signal_receipt"
@@ -1869,7 +2008,8 @@ class PaperTradingService:
                                                 else "delivered_signal"
                                             ),
                                             meta={
-                                                "score": candidate.get("score"), "price_source": "live",
+                                                "score": candidate.get("score"),
+                                                "price_source": "live",
                                                 "receipt_channel": candidate.get("receipt_channel") or "telegram",
                                                 "receipt_reference": candidate.get("receipt_reference"),
                                                 "confirmed_at": str(candidate.get("confirmed_at") or ""),
@@ -1888,8 +2028,12 @@ class PaperTradingService:
                                                 "leverage": 1.0,
                                                 "fees": float(sizing.fees),
                                                 "slippage": float(_safe_float(account.slippage_bps) / 10000.0 * live),
-                                                "user_trade_profile": getattr(profile_prefs, "trade_profile", "all") if profile_prefs is not None else "all",
-                                                "user_risk_profile": getattr(profile_prefs, "risk_profile", "balanced") if profile_prefs is not None else "balanced",
+                                                "user_trade_profile": getattr(profile_prefs, "trade_profile", "all")
+                                                if profile_prefs is not None
+                                                else "all",
+                                                "user_risk_profile": getattr(profile_prefs, "risk_profile", "balanced")
+                                                if profile_prefs is not None
+                                                else "balanced",
                                                 "profile_verified": profile_prefs is not None,
                                                 "target_mode": str(account.target_mode or "TP1").upper(),
                                                 "sizing_policy_version": sizing.policy_version,
@@ -1901,25 +2045,41 @@ class PaperTradingService:
                                             },
                                         )
                                         account.cash_balance = cash - float(sizing.total_required)
-                                        if account.cash_balance < -float(os.getenv("PAPER_CASH_TOLERANCE", "0.00000001")):
+                                        if account.cash_balance < -float(
+                                            os.getenv("PAPER_CASH_TOLERANCE", "0.00000001")
+                                        ):
                                             raise RuntimeError("paper_cash_balance_would_be_negative")
                                         account.updated_at = now_utc_naive()
                                         session.add(position)
                                         await session.flush()
-                                        session.add(PaperLedgerEntry(
-                                            account_id=int(account.id), user_id=int(user.id), position_id=position.position_id,
-                                            entry_type="POSITION_OPENED", amount=-float(sizing.total_required),
-                                            balance_after=_safe_float(account.cash_balance),
-                                            description=f"Opened paper {direction.upper()} {candidate['asset']}",
-                                            meta={
-                                                "fill": fill, "quantity": quantity, "entry_fee": entry_fee,
-                                                "sizing_policy_version": sizing.policy_version,
-                                            },
-                                        ))
+                                        session.add(
+                                            PaperLedgerEntry(
+                                                account_id=int(account.id),
+                                                user_id=int(user.id),
+                                                position_id=position.position_id,
+                                                entry_type="POSITION_OPENED",
+                                                amount=-float(sizing.total_required),
+                                                balance_after=_safe_float(account.cash_balance),
+                                                description=f"Opened paper {direction.upper()} {candidate['asset']}",
+                                                meta={
+                                                    "fill": fill,
+                                                    "quantity": quantity,
+                                                    "entry_fee": entry_fee,
+                                                    "sizing_policy_version": sizing.policy_version,
+                                                },
+                                            )
+                                        )
                                         attempt = await self._record_attempt(
-                                            session, account=account, user=user, candidate=candidate,
-                                            decision="OPENED", reason="eligible_confirmed_delivery", retryable=False,
-                                            market_price=market_price, sizing=sizing, finalized=True,
+                                            session,
+                                            account=account,
+                                            user=user,
+                                            candidate=candidate,
+                                            decision="OPENED",
+                                            reason="eligible_confirmed_delivery",
+                                            retryable=False,
+                                            market_price=market_price,
+                                            sizing=sizing,
+                                            finalized=True,
                                             meta={
                                                 "position_id": position.position_id,
                                                 "requested_risk_pct": float(sizing.requested_risk_pct),
@@ -1945,9 +2105,14 @@ class PaperTradingService:
                                             return "skipped"
                                         result_status = "opened"
                                         notify = {
-                                            "decision": "OPENED", "reason": "eligible_confirmed_delivery",
-                                            "fill": fill, "sizing": sizing, "risk_pct": float(effective_risk_pct),
-                                            "stop": stop, "target": target, "remaining_cash": account.cash_balance,
+                                            "decision": "OPENED",
+                                            "reason": "eligible_confirmed_delivery",
+                                            "fill": fill,
+                                            "sizing": sizing,
+                                            "risk_pct": float(effective_risk_pct),
+                                            "stop": stop,
+                                            "target": target,
+                                            "remaining_cash": account.cash_balance,
                                             "position_id": str(position.position_id),
                                             "attempt_id": str(attempt.attempt_id),
                                             "execution_evidence": execution_evidence,
@@ -1956,16 +2121,24 @@ class PaperTradingService:
                                             "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s "
                                             "decision=OPENED cash=%.4f risk_pct=%.4f risk_amount=%.4f fill=%.8f "
                                             "stop=%.8f quantity=%.10f notional=%.4f entry_fee=%.4f target=%.8f",
-                                            user.telegram_user_id, candidate["signal_id"], candidate["delivery_id"],
-                                            candidate["asset"], cash, _safe_float(account.risk_pct),
-                                            float(sizing.risk_amount), fill, stop, quantity, notional, entry_fee, target,
+                                            user.telegram_user_id,
+                                            candidate["signal_id"],
+                                            candidate["delivery_id"],
+                                            candidate["asset"],
+                                            cash,
+                                            _safe_float(account.risk_pct),
+                                            float(sizing.risk_amount),
+                                            fill,
+                                            stop,
+                                            quantity,
+                                            notional,
+                                            entry_fee,
+                                            target,
                                         )
         if notify is not None:
             await self._notify_paper_decision(
                 telegram_user_id=(
-                    int(candidate["telegram_user_id"])
-                    if candidate.get("telegram_user_id") is not None
-                    else None
+                    int(candidate["telegram_user_id"]) if candidate.get("telegram_user_id") is not None else None
                 ),
                 candidate=candidate,
                 **notify,
@@ -1973,21 +2146,37 @@ class PaperTradingService:
         if result_status != "opened":
             logger.info(
                 "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s decision=%s reason=%s",
-                candidate.get("telegram_user_id"), candidate.get("signal_id"), candidate.get("delivery_id"),
-                candidate.get("asset"), result_status.upper(), (notify or {}).get("reason", "retry_pending"),
+                candidate.get("telegram_user_id"),
+                candidate.get("signal_id"),
+                candidate.get("delivery_id"),
+                candidate.get("asset"),
+                result_status.upper(),
+                (notify or {}).get("reason", "retry_pending"),
             )
         return result_status
 
     async def _record_skipped(
-        self, session, account: PaperAccount, user: User, candidate: dict[str, Any],
-        reason: str, market_price: float | None,
+        self,
+        session,
+        account: PaperAccount,
+        user: User,
+        candidate: dict[str, Any],
+        reason: str,
+        market_price: float | None,
     ) -> None:
         """Compatibility adapter: skipped decisions now live in the attempt ledger."""
         await self._record_attempt(
-            session, account=account, user=user, candidate=candidate,
-            decision="SKIPPED", reason=reason, retryable=False,
-            market_price=market_price, finalized=True,
+            session,
+            account=account,
+            user=user,
+            candidate=candidate,
+            decision="SKIPPED",
+            reason=reason,
+            retryable=False,
+            market_price=market_price,
+            finalized=True,
         )
+
     async def list_attempts(
         self,
         user_id: int,
@@ -2011,33 +2200,23 @@ class PaperTradingService:
                 .where(PaperTradeAttempt.user_id == int(user.id))
             )
             if decision:
-                query = query.where(
-                    PaperTradeAttempt.decision == str(decision).upper()
-                )
+                query = query.where(PaperTradeAttempt.decision == str(decision).upper())
             rows = (
                 await session.execute(
-                    query.order_by(PaperTradeAttempt.created_at.desc()).limit(
-                        max(1, min(100, int(limit)))
-                    )
+                    query.order_by(PaperTradeAttempt.created_at.desc()).limit(max(1, min(100, int(limit))))
                 )
             ).all()
             return [
                 {
                     "attempt_id": attempt.attempt_id,
                     "signal_id": attempt.signal_id,
-                    "display_id": str(
-                        getattr(signal, "display_id", "")
-                        or attempt.signal_id[:12]
-                    ),
+                    "display_id": str(getattr(signal, "display_id", "") or attempt.signal_id[:12]),
                     "asset": signal.asset,
                     "decision": attempt.decision,
                     "reason": attempt.reason,
                     "retryable": bool(attempt.retryable),
                     "attempt_number": int(attempt.attempt_number or 0),
-                    "receipt_channel": str(
-                        getattr(attempt, "receipt_channel", "telegram")
-                        or "telegram"
-                    ),
+                    "receipt_channel": str(getattr(attempt, "receipt_channel", "telegram") or "telegram"),
                     "receipt_reference": getattr(
                         attempt,
                         "receipt_reference",
@@ -2123,9 +2302,7 @@ class PaperTradingService:
                 return False, "paper account user not found"
             account = (
                 await session.execute(
-                    select(PaperAccount)
-                    .where(PaperAccount.user_id == int(user.id))
-                    .with_for_update()
+                    select(PaperAccount).where(PaperAccount.user_id == int(user.id)).with_for_update()
                 )
             ).scalar_one_or_none()
             if account is None or not bool(account.auto_trade_enabled):
@@ -2134,11 +2311,13 @@ class PaperTradingService:
             signal_id = str(resolved.signal.signal_id)
             actual = (
                 await session.execute(
-                    select(PaperPosition.position_id).where(
+                    select(PaperPosition.position_id)
+                    .where(
                         PaperPosition.user_id == int(user.id),
                         PaperPosition.signal_id == signal_id,
                         func.lower(PaperPosition.status).in_(["open", "closed"]),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if actual:
@@ -2146,17 +2325,17 @@ class PaperTradingService:
 
             delivery = (
                 await session.execute(
-                    select(SignalDelivery).where(
+                    select(SignalDelivery)
+                    .where(
                         SignalDelivery.user_id == int(user.id),
                         SignalDelivery.signal_id == signal_id,
                         SignalDelivery.sent_ok.is_(True),
                         SignalDelivery.telegram_chat_id.is_not(None),
                         SignalDelivery.telegram_message_id.is_not(None),
                         SignalDelivery.delivery_confirmed_at.is_not(None),
-                        func.lower(SignalDelivery.delivery_state).in_(
-                            tuple(CONFIRMED_DELIVERY_STATES)
-                        ),
-                    ).limit(1)
+                        func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
 
@@ -2172,9 +2351,10 @@ class PaperTradingService:
                 generated_at = delivery.generated_at_utc or resolved.signal.created_at
             elif identity == "platform":
                 web_receipt = (
-                    await session.execute(
-                        text(
-                            """
+                    (
+                        await session.execute(
+                            text(
+                                """
                             SELECT notification_id,created_at
                             FROM notification_events
                             WHERE user_id=:uid
@@ -2184,10 +2364,13 @@ class PaperTradingService:
                             ORDER BY created_at DESC
                             LIMIT 1
                             """
-                        ),
-                        {"uid": int(user.id), "sid": signal_id},
+                            ),
+                            {"uid": int(user.id), "sid": signal_id},
+                        )
                     )
-                ).mappings().first()
+                    .mappings()
+                    .first()
+                )
                 if web_receipt is not None:
                     receipt_channel = "web"
                     receipt_reference = str(web_receipt["notification_id"])
@@ -2202,20 +2385,18 @@ class PaperTradingService:
                 now=now,
                 purpose="paper",
             )
-            deadline = generated_at + timedelta(
-                seconds=freshness.max_age_seconds
-            )
+            deadline = generated_at + timedelta(seconds=freshness.max_age_seconds)
             if not freshness.ok or deadline <= now:
                 return False, "paper entry freshness deadline expired"
 
-            terminal_statuses = tuple(
-                TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"}
-            )
+            terminal_statuses = tuple(TERMINAL_OUTCOMES - {"tp1", "tp2", "partial_win"})
             terminal = await session.scalar(
-                select(Outcome.id).where(
+                select(Outcome.id)
+                .where(
                     Outcome.signal_id == signal_id,
                     func.lower(Outcome.status).in_(terminal_statuses),
-                ).limit(1)
+                )
+                .limit(1)
             )
             if terminal is not None:
                 return False, "signal already has a terminal outcome"
@@ -2228,11 +2409,7 @@ class PaperTradingService:
                 "retry_deadline": deadline,
                 "asset": resolved.signal.asset,
                 "user_id": int(user.id),
-                "telegram_user_id": (
-                    int(user.telegram_user_id)
-                    if user.telegram_user_id is not None
-                    else None
-                ),
+                "telegram_user_id": (int(user.telegram_user_id) if user.telegram_user_id is not None else None),
                 "confirmed_at": confirmed_at,
             }
             await self._record_attempt(
@@ -2253,7 +2430,9 @@ class PaperTradingService:
             return True, "retry queued"
 
     async def _open_position_snapshots(self, limit: int) -> list[dict[str, Any]]:
-        async with get_session(priority=_paper_worker_priority(), label="paper.open_snapshots", timeout_seconds=_paper_db_timeout(8.0)) as session:
+        async with get_session(
+            priority=_paper_worker_priority(), label="paper.open_snapshots", timeout_seconds=_paper_db_timeout(8.0)
+        ) as session:
             rows = (
                 await session.execute(
                     select(PaperPosition.position_id, PaperPosition.asset)
@@ -2271,6 +2450,7 @@ class PaperTradingService:
         assets = sorted({row["asset"] for row in snapshots})
         try:
             from engine.price_fetcher import get_live_price_batch
+
             prices = await get_live_price_batch(assets, max_concurrent=_env_int("PAPER_PRICE_CONCURRENCY", 4, 1, 20))
         except Exception as exc:
             logger.warning("[paper] mark-to-market prices unavailable: %s", exc)
@@ -2289,9 +2469,15 @@ class PaperTradingService:
         return result
 
     async def _mark_one(
-        self, position_id: str, current_price: float, *, force_exit_reason: str | None = None,
+        self,
+        position_id: str,
+        current_price: float,
+        *,
+        force_exit_reason: str | None = None,
     ) -> bool:
-        async with get_session(priority=_paper_worker_priority(), label="paper.mark_one", timeout_seconds=_paper_db_timeout(10.0)) as session:
+        async with get_session(
+            priority=_paper_worker_priority(), label="paper.mark_one", timeout_seconds=_paper_db_timeout(10.0)
+        ) as session:
             position = (
                 await session.execute(
                     select(PaperPosition).where(PaperPosition.position_id == str(position_id)).with_for_update()
@@ -2334,7 +2520,9 @@ class PaperTradingService:
             net_pnl = gross - _safe_float(position.entry_fee) - exit_fee
             risk_amount = abs(fill - stop) * quantity
             r_multiple = net_pnl / risk_amount if risk_amount > 0 else 0.0
-            account.cash_balance = _safe_float(account.cash_balance) + _safe_float(position.reserved_cash) + gross - exit_fee
+            account.cash_balance = (
+                _safe_float(account.cash_balance) + _safe_float(position.reserved_cash) + gross - exit_fee
+            )
             account.realized_pnl = _safe_float(account.realized_pnl) + net_pnl
             account.updated_at = now_utc_naive()
             position.status = "closed"
@@ -2344,20 +2532,27 @@ class PaperTradingService:
             position.r_multiple = r_multiple
             position.closed_at = now_utc_naive()
             position.exit_reason = exit_reason
-            session.add(PaperLedgerEntry(
-                account_id=int(account.id),
-                user_id=int(position.user_id),
-                position_id=position.position_id,
-                entry_type="POSITION_CLOSED",
-                amount=_safe_float(position.reserved_cash) + gross - exit_fee,
-                balance_after=_safe_float(account.cash_balance),
-                description=f"Closed paper {position.asset} at {exit_reason}",
-                meta={"exit_price": current_price, "net_pnl": net_pnl, "r_multiple": r_multiple},
-            ))
+            session.add(
+                PaperLedgerEntry(
+                    account_id=int(account.id),
+                    user_id=int(position.user_id),
+                    position_id=position.position_id,
+                    entry_type="POSITION_CLOSED",
+                    amount=_safe_float(position.reserved_cash) + gross - exit_fee,
+                    balance_after=_safe_float(account.cash_balance),
+                    description=f"Closed paper {position.asset} at {exit_reason}",
+                    meta={"exit_price": current_price, "net_pnl": net_pnl, "r_multiple": r_multiple},
+                )
+            )
             await session.commit()
             logger.info(
                 "[paper_auto_close] position=%s signal=%s asset=%s reason=%s pnl=%.4f r=%.3f",
-                position.position_id, position.signal_id, position.asset, exit_reason, net_pnl, r_multiple,
+                position.position_id,
+                position.signal_id,
+                position.asset,
+                exit_reason,
+                net_pnl,
+                r_multiple,
             )
             return True
 
@@ -2397,10 +2592,7 @@ class PaperTradingService:
             ).all()
         if not rows:
             return {"open": 0, "closed": 0, "failed": 0}
-        assets = sorted({
-            str(asset)
-            for _, asset, _current_price, _updated_at in rows
-        })
+        assets = sorted({str(asset) for _, asset, _current_price, _updated_at in rows})
         try:
             from engine.price_fetcher import get_live_price_batch
 
@@ -2437,22 +2629,14 @@ class PaperTradingService:
             price = _safe_float(prices.get(str(asset)))
             if price <= 0 and allow_last_mark_fallback:
                 try:
-                    mark_age = (
-                        (now - last_updated_at).total_seconds()
-                        if last_updated_at
-                        else float("inf")
-                    )
+                    mark_age = (now - last_updated_at).total_seconds() if last_updated_at else float("inf")
                 except Exception:
                     mark_age = float("inf")
-                if (
-                    _safe_float(last_mark) > 0
-                    and mark_age <= max_last_mark_age
-                ):
+                if _safe_float(last_mark) > 0 and mark_age <= max_last_mark_age:
                     price = _safe_float(last_mark)
                     result["last_mark_fallback"] += 1
                     logger.warning(
-                        "[paper_close_all] using fresh last mark "
-                        "position=%s asset=%s age_s=%.1f",
+                        "[paper_close_all] using fresh last mark position=%s asset=%s age_s=%.1f",
                         position_id,
                         asset,
                         mark_age,
@@ -2464,9 +2648,7 @@ class PaperTradingService:
                 closed = await self._mark_one(
                     str(position_id),
                     price,
-                    force_exit_reason=str(
-                        reason or "MANUAL_CLOSE_ALL"
-                    ),
+                    force_exit_reason=str(reason or "MANUAL_CLOSE_ALL"),
                 )
                 result["closed" if closed else "failed"] += 1
             except Exception:
@@ -2483,7 +2665,10 @@ class PaperTradingService:
         mark_limit = _env_int("PAPER_TRADING_MARK_BATCH_SIZE", 500, 1, 2000)
         logger.info(
             "[paper_worker] started interval=%.1fs auto_default=%s delivery_batch=%s mark_batch=%s",
-            interval, self._default_auto_enabled(), delivery_limit, mark_limit,
+            interval,
+            self._default_auto_enabled(),
+            delivery_limit,
+            mark_limit,
         )
         last_deferred_log = 0.0
         while not stop_event.is_set():
@@ -2515,10 +2700,13 @@ class PaperTradingService:
             self._last_cycle_at = now_utc_naive()
             self._last_cycle_result = {"openings": dict(opened), "marking": dict(marked)}
             logger.info(
-                "[paper_worker_cycle] candidates=%s opened=%s skipped=%s deferred=%s failed=%s "
-                "marked=%s closed=%s",
-                opened.get("candidates", 0), opened.get("opened", 0), opened.get("skipped", 0),
-                opened.get("deferred", 0), opened.get("failed", 0), marked.get("updated", 0),
+                "[paper_worker_cycle] candidates=%s opened=%s skipped=%s deferred=%s failed=%s marked=%s closed=%s",
+                opened.get("candidates", 0),
+                opened.get("opened", 0),
+                opened.get("skipped", 0),
+                opened.get("deferred", 0),
+                opened.get("failed", 0),
+                marked.get("updated", 0),
                 marked.get("closed", 0),
             )
             try:
@@ -2531,6 +2719,10 @@ paper_trading_service = PaperTradingService()
 
 
 __all__ = [
-    "PaperSnapshot", "PaperTradingService", "paper_trading_service",
-    "canonical_asset_class", "canonical_direction", "parse_targets",
+    "PaperSnapshot",
+    "PaperTradingService",
+    "paper_trading_service",
+    "canonical_asset_class",
+    "canonical_direction",
+    "parse_targets",
 ]

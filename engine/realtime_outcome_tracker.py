@@ -16,6 +16,7 @@ Environment:
     OUTCOME_CHECK_INTERVAL_SECONDS  - Poll interval (default: 20)
     ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 168)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -126,7 +127,10 @@ def _outcome_db_timeout() -> float:
 def _outcome_tracker_ml_retrain_owned_here() -> bool:
     """Keep retraining on the analytics owner in decomposed deployments."""
     decomposed = str(os.getenv("DECOMPOSED_TOPOLOGY_ENABLED", "0") or "0").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     if not decomposed:
         return True
@@ -193,8 +197,13 @@ async def _get_outcome_quote(symbol: str) -> OutcomePriceObservation:
         )
         if isinstance(result, LivePriceFailure):
             return OutcomePriceObservation(
-                canonical, None, str(result.provider or "all"), None, False,
-                str(result.reason or "quote_unavailable"), str(result.request_id or "") or None,
+                canonical,
+                None,
+                str(result.provider or "all"),
+                None,
+                False,
+                str(result.reason or "quote_unavailable"),
+                str(result.request_id or "") or None,
             )
         if not isinstance(result, LivePriceQuote):
             return OutcomePriceObservation(canonical, None, "unknown", None, False, "invalid_quote_contract")
@@ -218,8 +227,13 @@ async def _get_outcome_quote(symbol: str) -> OutcomePriceObservation:
         )
     except Exception as exc:
         return OutcomePriceObservation(
-            canonical, None, "all", None, False,
-            f"quote_fetch_error:{type(exc).__name__}", None,
+            canonical,
+            None,
+            "all",
+            None,
+            False,
+            f"quote_fetch_error:{type(exc).__name__}",
+            None,
         )
 
 
@@ -247,7 +261,10 @@ def _candle_timestamp_utc(value: Any) -> datetime | None:
 async def _get_recent_outcome_range(symbol: str) -> tuple[float | None, float | None, str | None, bool]:
     """Fetch a fresh closed/current micro candle for intracycle hit recovery."""
     if str(os.getenv("OUTCOME_CANDLE_RECONCILIATION_ENABLED", "1")).strip().lower() not in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }:
         return None, None, None, False
     timeframe = str(os.getenv("OUTCOME_CANDLE_RECONCILIATION_TIMEFRAME", "1m") or "1m").strip().lower()
@@ -518,10 +535,7 @@ def state_to_db_outcome(state: str, highest_tp_hit: int) -> str:
 async def _write_outcome_to_db(signal: TrackedSignal, new_state: str, transition: dict) -> None:
     """Persist a state-machine transition through the existing outcome writer."""
     exit_price = float(
-        transition.get("exit_price")
-        or transition.get("tp_price")
-        or transition.get("fill_price")
-        or signal.entry
+        transition.get("exit_price") or transition.get("tp_price") or transition.get("fill_price") or signal.entry
     )
     status = state_to_db_outcome(new_state, signal.highest_tp_hit)
     if status != "unknown":
@@ -560,9 +574,10 @@ async def _notify_web_outcome(
             timeout_seconds=_outcome_db_timeout(),
         ) as session:
             recipients = (
-                await session.execute(
-                    text(
-                        """
+                (
+                    await session.execute(
+                        text(
+                            """
                         SELECT DISTINCT
                             ne.user_id,
                             COALESCE(ne.channel_data->>'tier','free') AS tier
@@ -576,10 +591,13 @@ async def _notify_web_outcome(
                           AND COALESCE(u.is_blocked, FALSE) IS FALSE
                           AND COALESCE(u.is_suspended, FALSE) IS FALSE
                         """
-                    ),
-                    {"sid": signal_id},
+                        ),
+                        {"sid": signal_id},
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             asset = str(signal.get("asset") or "Signal").upper().strip()
             direction = str(signal.get("direction") or "").upper().strip()
@@ -661,10 +679,7 @@ async def _broadcast_state_change(signal: TrackedSignal, new_state: str, transit
         "timeframe": signal.timeframe,
     }
     price = float(
-        transition.get("exit_price")
-        or transition.get("tp_price")
-        or transition.get("fill_price")
-        or signal.entry
+        transition.get("exit_price") or transition.get("tp_price") or transition.get("fill_price") or signal.entry
     )
     await _notify_outcome(signal_dict, status, price)
     await _notify_web_outcome(signal_dict, status, price)
@@ -689,8 +704,8 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
     try:
         from db.session import get_session
         from db.models import Signal, SignalDelivery, Outcome, SignalLifecycle
-        from db.priority import DBPriority
         from sqlalchemy import select, or_, exists, and_, func
+
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with _session_scope(
@@ -720,17 +735,19 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 .where(
                     or_(
                         Outcome.id.is_(None),
-                        func.lower(Outcome.status).in_([
-                            "pending",
-                            "entry",
-                            "entered",
-                            "active",
-                            "watching",
-                            "tp1",
-                            "tp2",
-                            "partial_win",
-                            "breakeven",
-                        ]),
+                        func.lower(Outcome.status).in_(
+                            [
+                                "pending",
+                                "entry",
+                                "entered",
+                                "active",
+                                "watching",
+                                "tp1",
+                                "tp2",
+                                "partial_win",
+                                "breakeven",
+                            ]
+                        ),
                     )
                 )
                 .limit(limit)
@@ -765,6 +782,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
     except Exception as exc:
         try:
             from db.session import DatabaseWorkDeferred
+
             if isinstance(exc, DatabaseWorkDeferred):
                 logger.info(
                     "[outcome_tracker] fetch deferred by DB admission controller: %s",
@@ -777,6 +795,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         diagnostics = None
         try:
             from db.session import get_pool_diagnostics
+
             diagnostics = get_pool_diagnostics()
         except Exception:
             diagnostics = None
@@ -807,7 +826,11 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
             return []
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             stmt = (
                 select(Signal)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
@@ -928,19 +951,11 @@ async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str,
             "score": signal_row.score,
             "ml_probability": getattr(signal_row, "ml_probability", None),
             "prev_outcome_status": (
-                str(getattr(outcome_row, "status", "") or "").lower()
-                if outcome_row is not None
-                else None
+                str(getattr(outcome_row, "status", "") or "").lower() if outcome_row is not None else None
             ),
-            "prev_outcome_meta": (
-                dict(getattr(outcome_row, "meta", {}) or {})
-                if outcome_row is not None
-                else {}
-            ),
+            "prev_outcome_meta": (dict(getattr(outcome_row, "meta", {}) or {}) if outcome_row is not None else {}),
             "expires_at": signal_row.expires_at,
-            "lifecycle_state": str(
-                getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"
-            ),
+            "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
             "highest_tp_hit": _database_tp_progress(lifecycle, outcome_row),
             "lifecycle_last_price": getattr(lifecycle, "last_price", None),
             "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
@@ -961,6 +976,7 @@ async def _get_live_price(symbol: str) -> Optional[float]:
     """Fetch live price for a symbol (same logic as stale validator)."""
     try:
         from engine.stale_signal_validator import _get_live_price_async
+
         return await asyncio.wait_for(_get_live_price_async(symbol), timeout=5.0)
     except Exception:
         return None
@@ -968,6 +984,7 @@ async def _get_live_price(symbol: str) -> Optional[float]:
 
 def _parse_tp_levels(take_profit_raw: Any) -> List[float]:
     """Parse take_profit field which may be a JSON list, comma string, or float."""
+
     def _coerce_tp(value: Any) -> Optional[float]:
         try:
             if isinstance(value, dict):
@@ -1073,11 +1090,7 @@ def _range_is_new_for_signal(signal: Dict[str, Any], observation: OutcomePriceOb
     range_start = _candle_timestamp_utc(observation.range_time)
     if range_start is None:
         return False
-    baseline = (
-        signal.get("lifecycle_last_checked_at")
-        or signal.get("entry_touched_at")
-        or signal.get("created_at")
-    )
+    baseline = signal.get("lifecycle_last_checked_at") or signal.get("entry_touched_at") or signal.get("created_at")
     baseline_dt = _candle_timestamp_utc(baseline)
     if baseline_dt is None:
         return True
@@ -1119,6 +1132,7 @@ async def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 
     """Returns True only once per signal for the configured TTL window."""
     try:
         from core.redis_state import state
+
         key = _risk_free_cache_key(signal_id)
         if await state.cache_get(key):
             return False
@@ -1172,6 +1186,7 @@ async def _get_tp_progress(signal: Dict[str, Any]) -> int:
     )
     try:
         from core.redis_state import state
+
         cached = await state.cache_get(_tp_progress_cache_key(str(signal.get("signal_id") or "")))
         if cached is not None:
             durable = max(durable, int(cached))
@@ -1183,6 +1198,7 @@ async def _get_tp_progress(signal: Dict[str, Any]) -> int:
 async def _set_tp_progress(signal_id: str, idx: int, ttl_seconds: int = 10 * 24 * 3600) -> None:
     try:
         from core.redis_state import state
+
         await state.cache_set(
             _tp_progress_cache_key(signal_id),
             str(max(0, int(idx))),
@@ -1195,6 +1211,7 @@ async def _set_tp_progress(signal_id: str, idx: int, ttl_seconds: int = 10 * 24 
 async def _mark_retrace_warned(signal_id: str, ttl_seconds: int = 10 * 24 * 3600) -> bool:
     try:
         from core.redis_state import state
+
         key = _retrace_warn_cache_key(signal_id)
         if await state.cache_get(key):
             return False
@@ -1204,7 +1221,9 @@ async def _mark_retrace_warned(signal_id: str, ttl_seconds: int = 10 * 24 * 3600
         return True
 
 
-def _retrace_warning_triggered(direction: str, sl: float, best_tp_price: float, price: float, zone_pct: float = 0.20) -> bool:
+def _retrace_warning_triggered(
+    direction: str, sl: float, best_tp_price: float, price: float, zone_pct: float = 0.20
+) -> bool:
     """True when price retraces into SL danger zone after at least one TP hit.
 
     zone_pct=0.20 means: notify when price is within 20% of distance to SL from
@@ -1239,14 +1258,21 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         )
         from sqlalchemy import select
         from sqlalchemy import update as sa_update
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         pct: Optional[float] = None
         r_mult: Optional[float] = None
 
         status_l = str(status or "").lower()
         terminal = status_l in {
-            "sl", "tp3", "tp", "invalid", "time_stop", "partial_win_be",
-            "missed_entry", "expired",
+            "sl",
+            "tp3",
+            "tp",
+            "invalid",
+            "time_stop",
+            "partial_win_be",
+            "missed_entry",
+            "expired",
         }
 
         vip_fill_outcome = "pending"
@@ -1261,13 +1287,9 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         existing_outcome_meta: Dict[str, Any] = {}
         try:
             async with _session_scope(get_session, priority=DBPriority.CRITICAL) as _session:
-                result = await _session.execute(
-                    select(Signal).where(Signal.signal_id == signal_id)
-                )
+                result = await _session.execute(select(Signal).where(Signal.signal_id == signal_id))
                 signal_data = result.scalar_one_or_none()
-                outcome_result = await _session.execute(
-                    select(Outcome).where(Outcome.signal_id == signal_id)
-                )
+                outcome_result = await _session.execute(select(Outcome).where(Outcome.signal_id == signal_id))
                 existing_outcome = outcome_result.scalar_one_or_none()
                 existing_outcome_meta = dict(getattr(existing_outcome, "meta", {}) or {})
                 lifecycle_result = await _session.execute(
@@ -1337,6 +1359,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         if status_l == "partial_win_be" and signal_data is not None and tp_hit_index > 0:
             try:
                 from core.partial_exit_accounting import result_from_signal
+
                 partial_result = result_from_signal(signal_data, tp_hit_index, residual_exit_r=0.0)
                 if partial_result is not None:
                     r_mult = float(partial_result.realized_r)
@@ -1344,7 +1367,9 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             except Exception as partial_error:
                 logger.warning(
                     "[partial_exit_accounting] failed signal=%s highest_tp=%s error=%s",
-                    str(signal_id)[:8], tp_hit_index, partial_error,
+                    str(signal_id)[:8],
+                    tp_hit_index,
+                    partial_error,
                 )
 
         async with _session_scope(get_session, priority=DBPriority.CRITICAL) as session:
@@ -1353,9 +1378,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             locked_outcome = None
             try:
                 locked_result = await session.execute(
-                    select(Outcome)
-                    .where(Outcome.signal_id == signal_id)
-                    .with_for_update()
+                    select(Outcome).where(Outcome.signal_id == signal_id).with_for_update()
                 )
                 locked_outcome = locked_result.scalar_one_or_none()
             except Exception:
@@ -1364,7 +1387,9 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             if current_status and not outcome_transition_allowed(current_status, status_l):
                 logger.info(
                     "[outcome_transition_rejected] signal=%s current=%s target=%s",
-                    str(signal_id)[:8], current_status, status_l,
+                    str(signal_id)[:8],
+                    current_status,
+                    status_l,
                 )
                 rollback = getattr(session, "rollback", None)
                 if rollback is not None:
@@ -1385,7 +1410,8 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 "tp1_hit": bool(tp_hit_index >= 1),
                 "tp2_hit": bool(tp_hit_index >= 2),
                 "tp3_hit": bool(tp_hit_index >= 3),
-                "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0) or bool(status_l == "partial_win_be" and tp_hit_index > 0),
+                "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0)
+                or bool(status_l == "partial_win_be" and tp_hit_index > 0),
                 "partial_exit_policy": getattr(partial_result, "policy_version", None),
                 "partial_exit_realized_r": getattr(partial_result, "realized_r", None),
                 "partial_exit_realized_percent": getattr(partial_result, "realized_percent", None),
@@ -1424,11 +1450,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             if terminal:
                 # new requirement: do not archive unresolved tracked states
                 # (tp1/tp2 are tracked states); archive only terminal outcomes.
-                await session.execute(
-                    sa_update(Signal)
-                    .where(Signal.signal_id == signal_id)
-                    .values(archived=True)
-                )
+                await session.execute(sa_update(Signal).where(Signal.signal_id == signal_id).values(archived=True))
             # Commit canonical trading truth before notification fan-out. In
             # v1.3.6.8 the outbox helper ran inside this same transaction, so a
             # notification-only NameError rolled back the Outcome row, signal
@@ -1462,11 +1484,12 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
 
             if terminal:
                 _EXCURSION_CACHE.pop(str(signal_id), None)
-            
+
             # NEW: Log to ML training data table for model retraining
             if terminal and status_l not in {"missed_entry", "expired"} and signal_data is not None:
                 try:
                     from engine.ml_logger import log_ml_training_data
+
                     _outcome_status = canonical_outcome if canonical_outcome != "pending" else status_l
                     _ml_saved = await log_ml_training_data(
                         session,
@@ -1477,7 +1500,9 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                         entry=float(getattr(signal_data, "entry", 0) or 0),
                         stop_loss=float(getattr(signal_data, "stop_loss", 0) or 0),
                         take_profit=str(getattr(signal_data, "take_profit", "") or ""),
-                        ml_probability=float(getattr(signal_data, "ml_probability", 0) or 0) if getattr(signal_data, "ml_probability", None) else None,
+                        ml_probability=float(getattr(signal_data, "ml_probability", 0) or 0)
+                        if getattr(signal_data, "ml_probability", None)
+                        else None,
                         outcome_status=_outcome_status,
                         outcome_r_multiple=float(r_mult) if r_mult is not None else None,
                         outcome_percent=float(pct) if pct is not None else None,
@@ -1489,16 +1514,19 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     if _ml_saved:
                         logger.info(
                             "[outcome_tracker] ML training data persisted: %s outcome=%s r=%s",
-                            signal_id[:8], _outcome_status, r_label,
+                            signal_id[:8],
+                            _outcome_status,
+                            r_label,
                         )
                     else:
                         logger.warning(
                             "[outcome_tracker] ML training persistence returned false; retry required: %s outcome=%s",
-                            signal_id[:8], _outcome_status,
+                            signal_id[:8],
+                            _outcome_status,
                         )
                 except Exception as _ml_train_err:
                     logger.debug(f"[outcome_tracker] ML training data logging failed: {_ml_train_err}")
-            
+
         logger.info("[outcome_tracker] Outcome persisted: %s -> %s @ %.5f", signal_id[:8], status_l, price)
     except Exception as exc:
         # This path is financially and operationally significant: a failure
@@ -1521,7 +1549,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
     try:
         from db.session import get_session
         from db.models import SignalDelivery, User
-        from sqlalchemy import select, or_, and_, func
+        from sqlalchemy import select
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -1547,7 +1575,11 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1566,12 +1598,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
 
 def _h(text: str) -> str:
     """Escape text for Telegram HTML parse_mode."""
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _fmt_price(price: float) -> str:
@@ -1655,7 +1682,7 @@ def _build_outcome_message(
                 f"🎯 <b>TAKE PROFIT HIT</b>\n\n"
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
-                f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
+                f"\U0001f4cc Signal ID: <code>{ref_short}</code>\n"
                 f"🏆 {status_u} reached!\n"
                 f"{suggested_sl_line}\n"
                 f"🕐 {_h(now_str)}\n\n"
@@ -1666,7 +1693,7 @@ def _build_outcome_message(
             f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
             f"📊 Ref: <code>{ref_short}</code>\n\n"
-            f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
+            f"\U0001f4cc Signal ID: <code>{ref_short}</code>\n"
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
             f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
@@ -1682,7 +1709,7 @@ def _build_outcome_message(
                 f"🛑 <b>STOP LOSS HIT</b>\n\n"
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
-                f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
+                f"\U0001f4cc Signal ID: <code>{ref_short}</code>\n"
                 f"🕐 {_h(now_str)}\n\n"
                 f"<i>Upgrade to Premium for full details &amp; next signals.</i>"
             )
@@ -1690,7 +1717,7 @@ def _build_outcome_message(
             f"🛑 <b>STOP LOSS HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
             f"📊 Ref: <code>{ref_short}</code>\n\n"
-            f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
+            f"\U0001f4cc Signal ID: <code>{ref_short}</code>\n"
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 SL hit: <code>{_h(_fmt_price(price))}</code>\n"
             f"📉 Loss: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
@@ -1703,7 +1730,7 @@ def _build_outcome_message(
     return (
         f"📌 <b>Signal Closed</b>\n\n"
         f"🪙 <b>{asset_h}</b> | Ref: <code>{ref_short}</code>\n"
-        f"\U0001F4CC Signal ID: <code>{ref_short}</code>\n"
+        f"\U0001f4cc Signal ID: <code>{ref_short}</code>\n"
         f"Status: <b>{_h(status_u)}</b> @ <code>{_h(_fmt_price(price))}</code>\n"
         f"🕐 {_h(now_str)}"
     )
@@ -1732,16 +1759,20 @@ def _outcome_monitoring_keyboard(signal_id: str, status: str):
 
     ref = str(signal_id or "")[:36]
     next_label = "Continue to TP2/TP3" if stage == 1 else "Continue to TP3"
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            f"\u25b6\ufe0f {next_label}",
-            callback_data=f"sigmon_continue_{stage}_{ref}",
-        ),
-        InlineKeyboardButton(
-            f"\u23f9 Stop at TP{stage}",
-            callback_data=f"sigmon_stop_{stage}_{ref}",
-        ),
-    ]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"\u25b6\ufe0f {next_label}",
+                    callback_data=f"sigmon_continue_{stage}_{ref}",
+                ),
+                InlineKeyboardButton(
+                    f"\u23f9 Stop at TP{stage}",
+                    callback_data=f"sigmon_stop_{stage}_{ref}",
+                ),
+            ]
+        ]
+    )
 
 
 async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> None:
@@ -1759,7 +1790,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             mark_outcome_notification_delivered,
             mark_outcome_notification_failed,
         )
-        from sqlalchemy import select, or_, and_, func
+        from sqlalchemy import select, or_, and_
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -1785,7 +1816,11 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             stale_claim_seconds = max(
                 60,
                 int(os.getenv("OUTCOME_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
@@ -1833,9 +1868,9 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         continue
 
                     from services.user_signal_monitoring import monitoring_allows_event
+
                     recipient_allowed = not (
-                        bool(getattr(user_row, "is_blocked", False))
-                        or bool(getattr(user_row, "is_suspended", False))
+                        bool(getattr(user_row, "is_blocked", False)) or bool(getattr(user_row, "is_suspended", False))
                     ) and await monitoring_allows_event(
                         session,
                         user_id=int(user_row.id),
@@ -1910,9 +1945,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         tier_at_send=tier_at_send,
                     )
                     if status_l in {"tp1", "partial_tp", "tp2"}:
-                        body += (
-                            "\n\nMonitoring will continue automatically unless you choose Stop."
-                        )
+                        body += "\n\nMonitoring will continue automatically unless you choose Stop."
 
                     _send_message_sync(
                         bot,
@@ -1926,7 +1959,9 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                 except Exception as exc:
                     await mark_outcome_notification_failed(session, int(row.id), error=str(exc))
                     await session.commit()
-                    logger.debug("[outcome_tracker] notify user %s error: %s", getattr(row, "telegram_user_id", "?"), exc)
+                    logger.debug(
+                        "[outcome_tracker] notify user %s error: %s", getattr(row, "telegram_user_id", "?"), exc
+                    )
 
     except Exception as exc:
         logger.error("[outcome_tracker] _notify_outcome error: %s", exc)
@@ -1972,7 +2007,11 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -2014,7 +2053,12 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.session import get_session
         from db.models import Trade
         from sqlalchemy import update as sa_update
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             await session.execute(
                 sa_update(Trade)
                 .where(Trade.signal_id == signal_id)
@@ -2030,9 +2074,14 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
     try:
         from db.session import get_session
         from db.models import Trade, User
-        from sqlalchemy import select, join
+        from sqlalchemy import select
         from services.mt5_client import update_stop_loss, get_user_mt5_account_id
-        async with get_session(priority=_outcome_db_priority(), label="engine_realtime_outcome_tracker", timeout_seconds=_outcome_db_timeout()) as session:
+
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="engine_realtime_outcome_tracker",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as session:
             stmt = (
                 select(Trade, User)
                 .join(User, Trade.symbol == User.telegram_user_id.cast(str))
@@ -2142,9 +2191,13 @@ class RealtimeOutcomeTracker:
 
         # Track which users had outcomes updated
         updated_users = set()
-        update_user_perf = str(
-            os.getenv("OUTCOME_TRACKER_UPDATE_USER_PERF", "0") or "0"
-        ).strip().lower() in {"1", "true", "yes", "y", "on"}
+        update_user_perf = str(os.getenv("OUTCOME_TRACKER_UPDATE_USER_PERF", "0") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
         max_concurrency = max(1, int(os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY", "2") or 2))
         signal_semaphore = asyncio.Semaphore(max_concurrency)
 
@@ -2182,11 +2235,7 @@ class RealtimeOutcomeTracker:
                             .where(SignalDelivery.sent_ok.is_(True))
                             .where(SignalDelivery.telegram_chat_id.is_not(None))
                             .where(SignalDelivery.telegram_message_id.is_not(None))
-                            .where(
-                                func.lower(SignalDelivery.delivery_state).in_(
-                                    _DELIVERY_PROOF_STATES
-                                )
-                            )
+                            .where(func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES))
                         )
                         for (telegram_user_id,) in rows.all():
                             if telegram_user_id is not None:
@@ -2225,6 +2274,7 @@ class RealtimeOutcomeTracker:
             try:
                 from db.session import get_session
                 from db.pg_features import get_user_performance_30d
+
                 async with _session_scope(get_session, noncritical=True) as session:
                     for user_id in updated_users:
                         try:
@@ -2261,9 +2311,12 @@ class RealtimeOutcomeTracker:
         signal_id = str(signal.get("signal_id") or "")
         lifecycle_state = normalize_lifecycle_state(signal.get("lifecycle_state"))
         prev_tp = int(await _get_tp_progress(signal) or 0)
-        lifecycle_cas_enabled = str(
-            os.getenv("OUTCOME_LIFECYCLE_ENABLED", "1") or "1"
-        ).strip().lower() in {"1", "true", "yes", "on"}
+        lifecycle_cas_enabled = str(os.getenv("OUTCOME_LIFECYCLE_ENABLED", "1") or "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         observation = observation or await _get_outcome_quote(symbol)
 
         async def publish_snapshot() -> None:
@@ -2316,9 +2369,12 @@ class RealtimeOutcomeTracker:
 
         # Entry is authoritative. A signal cannot hit TP or SL until the market
         # has actually traded through its entry level.
-        entry_gating_enabled = str(
-            os.getenv("SIGNAL_ENTRY_GATING_ENABLED", "1") or "1"
-        ).strip().lower() in {"1", "true", "yes", "on"}
+        entry_gating_enabled = str(os.getenv("SIGNAL_ENTRY_GATING_ENABLED", "1") or "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if entry_gating_enabled and lifecycle_state == WATCHING_FOR_ENTRY:
             expires_at = signal.get("expires_at")
             is_expired = False
@@ -2326,9 +2382,7 @@ class RealtimeOutcomeTracker:
                 compare_now = datetime.now(timezone.utc) if expires_at.tzinfo else _utc_now_naive()
                 is_expired = compare_now >= expires_at
             if is_expired:
-                accepted = await record_lifecycle_event(
-                    signal, "missed_entry", price, {"reason": "entry_not_touched"}
-                )
+                accepted = await record_lifecycle_event(signal, "missed_entry", price, {"reason": "entry_not_touched"})
                 if accepted or not lifecycle_cas_enabled:
                     lifecycle_state = MISSED_ENTRY
                     signal["lifecycle_state"] = lifecycle_state
@@ -2372,8 +2426,10 @@ class RealtimeOutcomeTracker:
         try:
             tp1 = float(tp_levels[0])
             favorable_price = (
-                float(range_low) if str(direction).lower() == "short" and range_low is not None
-                else float(range_high) if str(direction).lower() == "long" and range_high is not None
+                float(range_low)
+                if str(direction).lower() == "short" and range_low is not None
+                else float(range_high)
+                if str(direction).lower() == "long" and range_high is not None
                 else price
             )
             if _halfway_to_tp1_reached(direction, entry, tp1, favorable_price):
@@ -2388,7 +2444,10 @@ class RealtimeOutcomeTracker:
                     await _notify_risk_free_update(signal, price)
                     logger.info(
                         "[outcome_tracker] Risk-free trigger: %s halfway_to_tp1 price=%.5f entry=%.5f tp1=%.5f",
-                        signal_id[:8], price, float(entry), float(tp1),
+                        signal_id[:8],
+                        price,
+                        float(entry),
+                        float(tp1),
                     )
         except Exception as exc:
             logger.debug("[outcome_tracker] risk-free trigger check failed for %s: %s", signal_id[:8], exc)
@@ -2402,12 +2461,17 @@ class RealtimeOutcomeTracker:
                 ml_prob = signal.get("ml_probability")
                 ml_gate = float(os.getenv("TP_RETRACE_MIN_ML_CONF", "0.55") or 0.55)
                 ml_allows_warning = (ml_prob is None) or (float(ml_prob) <= ml_gate)
-                if ml_allows_warning and _retrace_warning_triggered(direction, sl, best_tp_price, price, zone_pct=zone_pct):
+                if ml_allows_warning and _retrace_warning_triggered(
+                    direction, sl, best_tp_price, price, zone_pct=zone_pct
+                ):
                     if await _mark_retrace_warned(signal_id):
                         await _notify_retrace_warning(signal, price, prev_tp)
                         logger.info(
                             "[outcome_tracker] Retrace warning: %s tp=%d price=%.5f sl=%.5f",
-                            signal_id[:8], prev_tp, price, float(sl),
+                            signal_id[:8],
+                            prev_tp,
+                            price,
+                            float(sl),
                         )
         except Exception as exc:
             logger.debug("[outcome_tracker] retrace warning check failed for %s: %s", signal_id[:8], exc)
@@ -2466,7 +2530,11 @@ class RealtimeOutcomeTracker:
                 if advanced_stages:
                     logger.info(
                         "[outcome_tracker] Hit committed: %s -> tp%d @ %.5f (entry=%.5f sl=%.5f)",
-                        signal_id[:8], max(advanced_stages), price, entry, sl,
+                        signal_id[:8],
+                        max(advanced_stages),
+                        price,
+                        entry,
+                        sl,
                     )
                 await publish_snapshot()
                 return
@@ -2522,6 +2590,7 @@ class RealtimeOutcomeTracker:
         # Persist transient SLA countdown in shared cache for fast read-side visibility.
         try:
             from core.redis_state import state
+
             remaining_h = max(0.0, float(max(24, force_hours)) - float(age_h))
             await state.cache_set(f"sla_countdown_hours:{signal_id}", f"{remaining_h:.4f}", ex=3600)
         except Exception:

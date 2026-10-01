@@ -9,6 +9,7 @@ Waterfall order:
 
 Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
+
 from utils.timeutils import now_utc_naive
 
 import os
@@ -134,10 +135,14 @@ def get_candles(symbol: str, timeframe: str, limit: int = 200):
 
 def _get_candles_cache(symbol: str, timeframe: str, max_age_s: float = 300.0):
     return []
+
+
 def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = None, message: str = "") -> float | None:
     msg = (message or "").lower()
     if provider == "twelvedata":
-        if status_code == 429 or any(term in msg for term in ("run out of api credits", "daily limit", "credit limit", "rate limit")):
+        if status_code == 429 or any(
+            term in msg for term in ("run out of api credits", "daily limit", "credit limit", "rate limit")
+        ):
             return _env_float("TWELVEDATA_RATE_LIMIT_COOLDOWN_SECONDS", 12 * 60 * 60)
     elif provider == "polygon":
         if status_code == 429 or any(term in msg for term in ("rate limit", "too many requests", "throttle")):
@@ -149,18 +154,18 @@ def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = Non
 
 def _jitter_sleep(base_seconds: float = 1.0, jitter_factor: float = 0.5) -> float:
     """Calculate sleep time with jitter for rate limit backoff.
-    
+
     Bug Fix: "Dead Zone" - Add jitter to prevent thundering herd on API rate limits.
-    
+
     Args:
         base_seconds: Base wait time before jitter
         jitter_factor: Random factor (0.0-1.0) to add to base time
-        
+
     Returns:
         Total seconds to sleep
     """
     import random
-    import math
+
     # Ensure positive values
     base = max(0.1, float(base_seconds))
     jitter_mult = max(0.0, min(1.0, float(jitter_factor)))
@@ -202,9 +207,8 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
 
     try:
         proxy_url = (
-            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
-            or proxy_manager.get_proxy_sync()
-        )
+            os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or ""
+        ).strip() or proxy_manager.get_proxy_sync()
         exchange_config: dict = {
             "enableRateLimit": True,
             "timeout": 2500,
@@ -341,19 +345,22 @@ def fetch_cryptopanic_news(limit: int = 10, currencies: Optional[List[str]] = No
         out = []
         for p in posts or []:
             try:
-                out.append({
-                    "id": p.get("id"),
-                    "title": p.get("title"),
-                    "domain": p.get("domain"),
-                    "published_at": p.get("published_at"),
-                    "votes": p.get("votes"),
-                    "url": p.get("url"),
-                })
+                out.append(
+                    {
+                        "id": p.get("id"),
+                        "title": p.get("title"),
+                        "domain": p.get("domain"),
+                        "published_at": p.get("published_at"),
+                        "votes": p.get("votes"),
+                        "url": p.get("url"),
+                    }
+                )
             except Exception:
                 continue
         return out
     except Exception:
         return []
+
 
 async def _fetch_binance_ccxt_async(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     """Async CCXT adapter using ccxt.async_support with optional proxy support.
@@ -367,9 +374,8 @@ async def _fetch_binance_ccxt_async(symbol: str, timeframe: str, limit: int = 20
 
     try:
         proxy_url = (
-            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
-            or proxy_manager.get_proxy_sync()
-        )
+            os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or ""
+        ).strip() or proxy_manager.get_proxy_sync()
         exchange_config: dict = {
             "enableRateLimit": True,
             "timeout": 2500,
@@ -422,7 +428,9 @@ def fetch_binance_ccxt_candles(symbol: str, timeframe: str, limit: int = 200) ->
             pass
         # Fallback to thread-executed sync adapter
         try:
-            return await asyncio.wait_for(asyncio.to_thread(_fetch_binance_ccxt_sync, symbol, timeframe, limit), timeout=2.5)
+            return await asyncio.wait_for(
+                asyncio.to_thread(_fetch_binance_ccxt_sync, symbol, timeframe, limit), timeout=2.5
+            )
         except Exception:
             return []
 
@@ -439,22 +447,23 @@ def fetch_binance_ccxt_candles(symbol: str, timeframe: str, limit: int = 200) ->
 # POLYGON.IO - Premium multi-asset data (stocks, FX, crypto)
 # ============================================================================
 
+
 def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks") -> List[Dict]:
     """
     Fetch OHLCV from Polygon.io.
-    
+
     Args:
         symbol: Ticker (e.g., "AAPL", "EUR/USD", "X:BTCUSD")
         timeframe: "5m", "15m", "1h", "4h", "1d"
         asset_type: "stocks", "forex", "crypto"
-    
+
     Returns:
         List of candle dicts with timestamp, open, high, low, close, volume
     """
     api_key = os.getenv("POLYGON_API_KEY", "").strip()
     if not api_key or _is_cooldown_active("polygon"):
         return []
-    
+
     # Map timeframe to Polygon format
     tf_map = {
         "5m": ("5", "minute"),
@@ -464,7 +473,7 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
         "1d": ("1", "day"),
     }
     multiplier, timespan = tf_map.get(timeframe, ("1", "hour"))
-    
+
     # Prefix symbol for asset type
     if asset_type == "forex":
         if "/" not in symbol:
@@ -472,53 +481,55 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
     elif asset_type == "crypto":
         if ":" not in symbol:
             symbol = f"X:BTC{symbol.replace('USDT', 'USD')}"  # X:BTCUSD format
-    
+
     # Date range: last 200 periods
     end_date = now_utc_naive()
     start_date = end_date - timedelta(days=200 if timespan == "day" else 30)
-    
+
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
-    
+
     params = {
         "adjusted": "true",
         "sort": "asc",
         "limit": 200,
         "apiKey": api_key,
     }
-    
+
     _rate_limit("polygon", _env_float("POLYGON_MIN_SECONDS_BETWEEN_CALLS", 12.0))
-    
+
     try:
         resp = requests.get(url, params=params, timeout=15)
         data = resp.json() if resp.ok else {}
-        
+
         if not resp.ok:
             logger.warning(f"[polygon] fetch_failed symbol={symbol} status={resp.status_code}")
             _maybe_apply_rate_limit_cooldown("polygon", status_code=resp.status_code)
             return []
-        
+
         results = data.get("results", [])
         if not results:
             return []
-        
+
         candles = []
         for bar in results:
             try:
-                candles.append({
-                    "timestamp": int(bar["t"]),
-                    "open": float(bar["o"]),
-                    "high": float(bar["h"]),
-                    "low": float(bar["l"]),
-                    "close": float(bar["c"]),
-                    "volume": float(bar.get("v", 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(bar["t"]),
+                        "open": float(bar["o"]),
+                        "high": float(bar["h"]),
+                        "low": float(bar["l"]),
+                        "close": float(bar["c"]),
+                        "volume": float(bar.get("v", 0)),
+                    }
+                )
             except Exception:
                 continue
-        
+
         logger.info(f"[polygon] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
         _set_candles_cache(symbol, timeframe, candles)
         return candles
-    
+
     except Exception as e:
         logger.error(f"[polygon] error symbol={symbol} err={e}")
         return []
@@ -528,12 +539,13 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
 # TWELVE DATA - Multi-asset with generous free tier
 # ============================================================================
 
+
 def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "stocks") -> List[Dict]:
     """Fetch OHLCV from Twelve Data API."""
     api_key = os.getenv("TWELVEDATA_API_KEY", "").strip()
     if not api_key or _is_cooldown_active("twelvedata"):
         return []
-    
+
     # Map timeframe
     tf_map = {
         "5m": "5min",
@@ -543,7 +555,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         "1d": "1day",
     }
     interval = tf_map.get(timeframe, "1h")
-    
+
     url = "https://api.twelvedata.com/time_series"
     params = {
         "symbol": symbol,
@@ -551,13 +563,13 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         "outputsize": 200,
         "apikey": api_key,
     }
-    
+
     _rate_limit("twelvedata", _env_float("TWELVEDATA_MIN_SECONDS_BETWEEN_CALLS", 1.0))
-    
+
     try:
         resp = requests.get(url, params=params, timeout=15)
         data = resp.json() if resp.ok else {}
-        
+
         if not resp.ok or data.get("status") == "error":
             logger.warning(f"[twelvedata] fetch_failed symbol={symbol} msg={data.get('message', '')}")
             _maybe_apply_rate_limit_cooldown(
@@ -566,7 +578,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
                 message=str(data.get("message", "")),
             )
             return []
-        
+
         values = data.get("values", [])
         if not values:
             return []
@@ -576,21 +588,23 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
             try:
                 # Twelve Data returns datetime string
                 dt = datetime.fromisoformat(bar["datetime"].replace("Z", ""))
-                candles.append({
-                    "timestamp": int(dt.timestamp() * 1000),
-                    "open": float(bar["open"]),
-                    "high": float(bar["high"]),
-                    "low": float(bar["low"]),
-                    "close": float(bar["close"]),
-                    "volume": float(bar.get("volume", 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(dt.timestamp() * 1000),
+                        "open": float(bar["open"]),
+                        "high": float(bar["high"]),
+                        "low": float(bar["low"]),
+                        "close": float(bar["close"]),
+                        "volume": float(bar.get("volume", 0)),
+                    }
+                )
             except Exception:
                 continue
 
         logger.info(f"[twelvedata] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
         _set_candles_cache(symbol, timeframe, candles)
         return candles
-    
+
     except Exception as e:
         logger.error(f"[twelvedata] error symbol={symbol} err={e}")
         return []
@@ -600,6 +614,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
 # YAHOO FINANCE - Free, no API key needed
 # ============================================================================
 
+
 def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     """Fetch OHLCV from Yahoo Finance using yfinance library."""
     try:
@@ -607,7 +622,7 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     except ImportError:
         logger.warning("[yahoo] yfinance not installed")
         return []
-    
+
     if _is_cooldown_active("yahoo"):
         return []
 
@@ -650,7 +665,7 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
             symbol = f"{s}=X"
     except Exception:
         pass
-    
+
     # Map timeframe to yfinance intervals
     tf_map = {
         "5m": "5m",
@@ -668,14 +683,14 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
         "1d": "1y",
     }
     period = period_map.get(timeframe, "1mo")
-    
+
     _rate_limit("yahoo", 0.5)  # Yahoo is pretty lenient
-    
-    def _fetch_history() -> "pd.DataFrame":
+
+    def _fetch_history():
         ticker = yf.Ticker(symbol)
         return ticker.history(period=period, interval=interval)
 
-    async def _fetch_with_timeout() -> "pd.DataFrame":
+    async def _fetch_with_timeout():
         timeout_s = float(os.getenv("YFINANCE_TIMEOUT_SECONDS", "6") or 6)
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_history),
@@ -684,28 +699,30 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
 
     try:
         hist = run_sync(_fetch_with_timeout())
-        
+
         if hist.empty:
             return []
-        
+
         candles = []
         for idx, row in hist.iterrows():
             try:
-                candles.append({
-                    "timestamp": int(idx.timestamp() * 1000),
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
-                    "close": float(row["Close"]),
-                    "volume": float(row.get("Volume", 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(idx.timestamp() * 1000),
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": float(row["Close"]),
+                        "volume": float(row.get("Volume", 0)),
+                    }
+                )
             except Exception:
                 continue
-        
+
         logger.info(f"[yahoo] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
         _set_candles_cache(symbol, timeframe, candles)
         return candles
-    
+
     except asyncio.TimeoutError:
         logger.warning(f"[yahoo] timeout symbol={symbol} tf={timeframe}")
         _set_cooldown("yahoo", 60.0)
@@ -721,10 +738,11 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
 # OANDA - Bank-grade FX data (demo account = free)
 # ============================================================================
 
+
 def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
     """
     Fetch FX candles from OANDA API.
-    
+
     Args:
         instrument: FX pair in format "EUR_USD" (OANDA uses underscore)
         timeframe: "5m", "15m", "1h", "4h", "1d"
@@ -732,14 +750,14 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
     api_key = os.getenv("OANDA_API_KEY", "").strip()
     account_id = os.getenv("OANDA_ACCOUNT_ID", "").strip()
     practice = os.getenv("OANDA_PRACTICE", "true").lower() == "true"
-    
+
     if not api_key or _is_cooldown_active("oanda"):
         return []
-    
+
     # Convert symbol format: EURUSD -> EUR_USD
     if "_" not in instrument and len(instrument) == 6:
         instrument = f"{instrument[:3]}_{instrument[3:]}"
-    
+
     # Map timeframe to OANDA granularity
     tf_map = {
         "5m": "M5",
@@ -749,10 +767,10 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
         "1d": "D",
     }
     granularity = tf_map.get(timeframe, "H1")
-    
+
     base_url = "https://api-fxpractice.oanda.com" if practice else "https://api-fxtrade.oanda.com"
     url = f"{base_url}/v3/instruments/{instrument}/candles"
-    
+
     headers = {
         "Authorization": f"Bearer {api_key}",
     }
@@ -761,46 +779,48 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
         "granularity": granularity,
         "price": "M",  # Midpoint prices
     }
-    
+
     _rate_limit("oanda", 0.5)
-    
+
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=15)
         data = resp.json() if resp.ok else {}
-        
+
         if not resp.ok:
             logger.warning(f"[oanda] fetch_failed instrument={instrument} status={resp.status_code}")
             if resp.status_code == 429:
                 _set_cooldown("oanda", 60.0)
             return []
-        
+
         candles_data = data.get("candles", [])
         if not candles_data:
             return []
-        
+
         candles = []
         for bar in candles_data:
             try:
                 if not bar.get("complete"):
                     continue  # Skip incomplete candles
-                
+
                 dt = datetime.fromisoformat(bar["time"].replace("Z", "+00:00"))
                 mid = bar["mid"]
-                candles.append({
-                    "timestamp": int(dt.timestamp() * 1000),
-                    "open": float(mid["o"]),
-                    "high": float(mid["h"]),
-                    "low": float(mid["l"]),
-                    "close": float(mid["c"]),
-                    "volume": float(bar.get("volume", 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(dt.timestamp() * 1000),
+                        "open": float(mid["o"]),
+                        "high": float(mid["h"]),
+                        "low": float(mid["l"]),
+                        "close": float(mid["c"]),
+                        "volume": float(bar.get("volume", 0)),
+                    }
+                )
             except Exception:
                 continue
-        
+
         logger.info(f"[oanda] fetched instrument={instrument} tf={timeframe} candles={len(candles)}")
         _set_candles_cache(instrument, timeframe, candles)
         return candles
-    
+
     except Exception as e:
         logger.error(f"[oanda] error instrument={instrument} err={e}")
         return []
@@ -810,18 +830,19 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
 # TRADINGVIEW - Fetch OHLCV data (in addition to technical summary)
 # ============================================================================
 
+
 def fetch_tradingview_candles(symbol: str, timeframe: str, exchange: str = "BINANCE") -> List[Dict]:
     """
     Fetch OHLCV candles from TradingView (requires web scraping or unofficial API).
     Note: TradingView doesn't have an official OHLCV API, so this uses tradingview-ta
     which only provides technical analysis summary. For actual candles, consider
     using tradingview-scraper or similar libraries.
-    
+
     For now, this is a placeholder. Real implementation would need:
     - tradingview-scraper library or similar
     - Or use TradingView's chart data API (unofficial)
     """
-    if not _env_bool("TRADINGVIEW_OHLCV_ENABLED", False):
+    if os.getenv("TRADINGVIEW_OHLCV_ENABLED", "0").lower() not in {"1", "true", "yes", "on"}:
         return []
     logger.warning("[tradingview] OHLCV fetching not yet implemented - use other providers")
     return []
@@ -831,6 +852,7 @@ def fetch_tradingview_candles(symbol: str, timeframe: str, exchange: str = "BINA
 # COINGECKO - Free crypto OHLCV (no API key required for basic use)
 # ============================================================================
 
+
 def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
     """Fetch OHLCV from CoinGecko free API.
 
@@ -838,7 +860,8 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
     timeframe: "1h", "4h", "1d" (CoinGecko has limited granularity).
     """
     try:
-        from services.asset_mapper import map_symbol, classify_asset
+        from services.asset_mapper import map_symbol
+
         cg_id = map_symbol(symbol.upper(), "coingecko")
         if not cg_id:
             # Fall back to lower-case base
@@ -874,14 +897,16 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
         for row in rows:
             try:
                 ts, o, h, l, c = row
-                candles.append({
-                    "timestamp": int(ts),
-                    "open": float(o),
-                    "high": float(h),
-                    "low": float(l),
-                    "close": float(c),
-                    "volume": 0.0,
-                })
+                candles.append(
+                    {
+                        "timestamp": int(ts),
+                        "open": float(o),
+                        "high": float(h),
+                        "low": float(l),
+                        "close": float(c),
+                        "volume": 0.0,
+                    }
+                )
             except Exception:
                 continue
         logger.info("[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
@@ -903,17 +928,12 @@ _ALPHAVANTAGE_CERTIFICATION_HINT: Dict[str, str] | None = None
 def _set_alphavantage_certification_hint(status: str | None, reason: str = "") -> None:
     global _ALPHAVANTAGE_CERTIFICATION_HINT
     _ALPHAVANTAGE_CERTIFICATION_HINT = (
-        {"status": str(status), "reason": str(reason).replace("\n", " ")[:500]}
-        if status else None
+        {"status": str(status), "reason": str(reason).replace("\n", " ")[:500]} if status else None
     )
 
 
 def get_alphavantage_certification_hint() -> Dict[str, str] | None:
-    return (
-        dict(_ALPHAVANTAGE_CERTIFICATION_HINT)
-        if _ALPHAVANTAGE_CERTIFICATION_HINT
-        else None
-    )
+    return dict(_ALPHAVANTAGE_CERTIFICATION_HINT) if _ALPHAVANTAGE_CERTIFICATION_HINT else None
 
 
 def _classify_alphavantage_block(status_code: int, detail: str) -> tuple[str | None, str]:
@@ -924,8 +944,7 @@ def _classify_alphavantage_block(status_code: int, detail: str) -> tuple[str | N
     if any(token in lowered for token in ("premium", "subscribe", "subscription", "higher api call volume")):
         return "BLOCKED_PAID_PLAN", text or f"HTTP {status_code}"
     if status_code in {401, 403} or any(
-        token in lowered
-        for token in ("invalid api key", "invalid apikey", "not authorized", "unauthorized")
+        token in lowered for token in ("invalid api key", "invalid apikey", "not authorized", "unauthorized")
     ):
         return "BLOCKED_ACCOUNT_APPROVAL", text or f"HTTP {status_code}"
     if any(token in lowered for token in ("region", "country", "not available in your location")):
@@ -942,6 +961,7 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
 
     try:
         from services.asset_mapper import classify_asset
+
         cls = classify_asset(symbol)
     except Exception:
         cls = "stock"
@@ -954,18 +974,21 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
         if cls == "forex":
             fn = "FX_INTRADAY" if timeframe != "1d" else "FX_DAILY"
             base, quote = (symbol[:3], symbol[3:]) if len(symbol) == 6 else (symbol, "USD")
-            params: Dict = {"function": fn, "from_symbol": base, "to_symbol": quote,
-                            "interval": interval, "outputsize": "full", "apikey": api_key}
+            params: Dict = {
+                "function": fn,
+                "from_symbol": base,
+                "to_symbol": quote,
+                "interval": interval,
+                "outputsize": "full",
+                "apikey": api_key,
+            }
         else:
             fn = "TIME_SERIES_INTRADAY" if timeframe != "1d" else "TIME_SERIES_DAILY"
-            params = {"function": fn, "symbol": symbol, "interval": interval,
-                      "outputsize": "full", "apikey": api_key}
+            params = {"function": fn, "symbol": symbol, "interval": interval, "outputsize": "full", "apikey": api_key}
 
         resp = requests.get("https://www.alphavantage.co/query", params=params, timeout=20)
         if not resp.ok:
-            status, reason = _classify_alphavantage_block(
-                int(resp.status_code), getattr(resp, "text", "")[:500]
-            )
+            status, reason = _classify_alphavantage_block(int(resp.status_code), getattr(resp, "text", "")[:500])
             _set_alphavantage_certification_hint(status, reason)
             return []
         data = resp.json()
@@ -973,11 +996,7 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
         ts_key = next((k for k in data if "Time Series" in k), None)
         if not ts_key:
             detail = str(
-                data.get("Information")
-                or data.get("Note")
-                or data.get("Error Message")
-                or data.get("message")
-                or ""
+                data.get("Information") or data.get("Note") or data.get("Error Message") or data.get("message") or ""
             )
             status, reason = _classify_alphavantage_block(int(resp.status_code), detail)
             _set_alphavantage_certification_hint(status, reason)
@@ -989,14 +1008,16 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
         for dt_str, bar in ts.items():
             try:
                 dt = datetime.fromisoformat(dt_str)
-                candles.append({
-                    "timestamp": int(dt.timestamp() * 1000),
-                    "open": float(bar.get("1. open") or bar.get("1a. open (USD)", 0)),
-                    "high": float(bar.get("2. high") or bar.get("2a. high (USD)", 0)),
-                    "low": float(bar.get("3. low") or bar.get("3a. low (USD)", 0)),
-                    "close": float(bar.get("4. close") or bar.get("4a. close (USD)", 0)),
-                    "volume": float(bar.get("5. volume", 0) or 0),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(dt.timestamp() * 1000),
+                        "open": float(bar.get("1. open") or bar.get("1a. open (USD)", 0)),
+                        "high": float(bar.get("2. high") or bar.get("2a. high (USD)", 0)),
+                        "low": float(bar.get("3. low") or bar.get("3a. low (USD)", 0)),
+                        "close": float(bar.get("4. close") or bar.get("4a. close (USD)", 0)),
+                        "volume": float(bar.get("5. volume", 0) or 0),
+                    }
+                )
             except Exception:
                 continue
         candles.sort(key=lambda c: c["timestamp"])
@@ -1012,6 +1033,7 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
 # ============================================================================
 # WATERFALL FETCHER - Unified entry point with provider fallbacks
 # ============================================================================
+
 
 def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     """Fetch OHLCV with automatic provider waterfall.

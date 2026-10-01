@@ -3,6 +3,7 @@
 Dry-run by default. Use --apply after deploying migration 0032. This repairs
 referrals that were lost when the old /start handler swallowed referral errors.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,13 +34,17 @@ async def _load_candidates(days: int, limit: int) -> list[dict]:
         label="referral.reconcile.scan",
         timeout_seconds=20.0,
     ) as session:
-        rows = list((await session.execute(
-            select(BotEvent, User.telegram_user_id)
-            .join(User, User.id == BotEvent.user_id)
-            .where(BotEvent.event_type == "user_start", BotEvent.created_at >= cutoff)
-            .order_by(BotEvent.id.asc())
-            .limit(max(1, int(limit)))
-        )).all())
+        rows = list(
+            (
+                await session.execute(
+                    select(BotEvent, User.telegram_user_id)
+                    .join(User, User.id == BotEvent.user_id)
+                    .where(BotEvent.event_type == "user_start", BotEvent.created_at >= cutoff)
+                    .order_by(BotEvent.id.asc())
+                    .limit(max(1, int(limit)))
+                )
+            ).all()
+        )
     candidates: list[dict] = []
     for event, telegram_user_id in rows:
         meta = dict(event.meta or {})
@@ -51,13 +56,15 @@ async def _load_candidates(days: int, limit: int) -> list[dict]:
         prior_status = str((referral_meta or {}).get("status") or "missing")
         if prior_status in {"attributed", "reward_granted", "reward_already_granted", "already_referred"}:
             continue
-        candidates.append({
-            "event_id": int(event.id),
-            "telegram_user_id": int(telegram_user_id),
-            "code": code,
-            "is_new": bool(meta.get("is_new")),
-            "prior_status": prior_status,
-        })
+        candidates.append(
+            {
+                "event_id": int(event.id),
+                "telegram_user_id": int(telegram_user_id),
+                "code": code,
+                "is_new": bool(meta.get("is_new")),
+                "prior_status": prior_status,
+            }
+        )
     return candidates
 
 
@@ -96,8 +103,7 @@ async def main() -> int:
         except Exception as exc:
             counts[f"error:{type(exc).__name__}"] += 1
             print(
-                f"event={candidate['event_id']} user={candidate['telegram_user_id']} "
-                f"error={type(exc).__name__}: {exc}"
+                f"event={candidate['event_id']} user={candidate['telegram_user_id']} error={type(exc).__name__}: {exc}"
             )
     print("Summary:", dict(sorted(counts.items())))
     if not args.apply:

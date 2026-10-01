@@ -30,6 +30,7 @@ async def _notify_admins(report) -> dict[str, Any]:
     try:
         from config import OWNER_IDS, ADMIN_IDS
         from services.waitlist_jobs import _send_telegram_dm
+
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
     except Exception:
         recipients = []
@@ -53,18 +54,22 @@ async def _notify_admins(report) -> dict[str, Any]:
         provider = str(getattr(recommendation, "provider", "local"))[:32]
         risk = str(getattr(recommendation, "risk", "medium"))[:24]
         tests = list(getattr(recommendation, "acceptance_tests", ()) or ())
-        lines.extend([
-            f"{idx}. {title}",
-            f"Provider: {provider} | Risk: {risk}",
-            f"Why: {rationale}",
-        ])
+        lines.extend(
+            [
+                f"{idx}. {title}",
+                f"Provider: {provider} | Risk: {risk}",
+                f"Why: {rationale}",
+            ]
+        )
         if tests:
             lines.append(f"Test: {str(tests[0])[:240]}")
         lines.append("")
-    lines.extend([
-        "No change was auto-applied.",
-        "Use /ai_audit or /codex_audit for detailed evidence before approving an experiment.",
-    ])
+    lines.extend(
+        [
+            "No change was auto-applied.",
+            "Use /ai_audit or /codex_audit for detailed evidence before approving an experiment.",
+        ]
+    )
     message = "\n".join(lines)[:3900]
 
     sent = 0

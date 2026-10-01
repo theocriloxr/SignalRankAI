@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -192,17 +192,25 @@ def estimate_time_to_target(signal: dict[str, Any], profile_name: str | None = N
     # Practical approximation until replay-calibrated empirical distributions exist.
     tf = str(signal.get("timeframe") or "").lower()
     tf_minutes = {
-        "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
-        "1h": 60, "2h": 120, "4h": 240, "6h": 360, "8h": 480,
-        "12h": 720, "1d": 1440, "24h": 1440, "1w": 10080,
+        "1m": 1,
+        "3m": 3,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "1h": 60,
+        "2h": 120,
+        "4h": 240,
+        "6h": 360,
+        "8h": 480,
+        "12h": 720,
+        "1d": 1440,
+        "24h": 1440,
+        "1w": 10080,
     }.get(tf, 60)
     tp1_hours = max(0.05, (tp1_distance_atr * tf_minutes * 4.0) / 60.0)
     score = max(0.0, min(100.0, (profile.max_tp1_hours / max(tp1_hours, 0.05)) * 100.0))
     horizons = (1, 4, 12, 24, 72, 168)
-    probabilities = {
-        f"tp1_{h}h": round(max(0.0, min(0.99, h / max(tp1_hours * 1.35, 0.1))), 3)
-        for h in horizons
-    }
+    probabilities = {f"tp1_{h}h": round(max(0.0, min(0.99, h / max(tp1_hours * 1.35, 0.1))), 3) for h in horizons}
     return {
         "profile": profile.name,
         "expected_duration": profile.expected_duration,
@@ -232,9 +240,7 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     is_long = direction in {"long", "buy"}
     is_short = direction in {"short", "sell"}
     stop = _as_float(sig.get("stop_loss") or sig.get("stop"), 0.0)
-    original_levels = _parse_tp_levels(
-        sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels")
-    )
+    original_levels = _parse_tp_levels(sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels"))
 
     geometry_valid = bool(
         entry > 0
@@ -265,9 +271,7 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     # Canonical R:R is always recalculated from the geometry that will actually
     # be displayed/persisted.
     final_stop = _as_float(sig.get("stop_loss") or sig.get("stop"), 0.0)
-    final_levels = _parse_tp_levels(
-        sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels")
-    )
+    final_levels = _parse_tp_levels(sig.get("take_profit") or sig.get("targets") or sig.get("tp_levels"))
     risk = abs(entry - final_stop) if entry > 0 and final_stop > 0 else 0.0
     target_rrs = [
         abs(float(level) - entry) / risk
@@ -303,6 +307,7 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     else:
         sig["profile_score_blended"] = False
     return sig
+
 
 def signal_matches_user_profile(signal: dict[str, Any], user_profile: str | None) -> bool:
     normalized = normalize_trade_profile(user_profile or "all", default="all")

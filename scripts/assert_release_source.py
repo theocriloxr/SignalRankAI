@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-fast release source identity gate for Railway runtime roles."""
+
 from __future__ import annotations
 
 import os
@@ -36,9 +37,7 @@ def validate_release_source() -> list[str]:
     elif not actual_commit:
         errors.append("runtime commit is unavailable")
     elif actual_commit.lower() != expected_commit.lower():
-        errors.append(
-            f"runtime commit {actual_commit[:12]} does not match expected {expected_commit[:12]}"
-        )
+        errors.append(f"runtime commit {actual_commit[:12]} does not match expected {expected_commit[:12]}")
     return errors
 
 

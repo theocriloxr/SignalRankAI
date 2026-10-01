@@ -4,6 +4,7 @@ Revision ID: 0034_production_integrity
 Revises: 0033_ml_learning_runtime
 Create Date: 2026-08-02
 """
+
 from alembic import op
 
 revision = "0034_production_integrity"
@@ -30,7 +31,9 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_signals_thesis_fingerprint ON signals (thesis_fingerprint)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_signals_asset_discovery_provider ON signals (asset_discovery_provider)")
     op.execute("ALTER TABLE performance_ledger_entries ADD COLUMN IF NOT EXISTS thesis_fingerprint VARCHAR(64)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_performance_ledger_thesis ON performance_ledger_entries (thesis_fingerprint)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_performance_ledger_thesis ON performance_ledger_entries (thesis_fingerprint)"
+    )
     op.execute("ALTER TABLE outcome_notifications ADD COLUMN IF NOT EXISTS stage_rank INTEGER NOT NULL DEFAULT 0")
     op.execute("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_stage_rank ON outcome_notifications (stage_rank)")
     # Reconcile duplicate open paper positions before enforcing uniqueness. The

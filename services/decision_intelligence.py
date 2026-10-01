@@ -171,9 +171,7 @@ def build_decision_record(
         "timeframe": timeframe,
         "direction": direction,
         "decision": signal.get("decision") or "issued",
-        "decision_reason": (
-            str(decision_reason)[:1000] if decision_reason not in (None, "") else None
-        ),
+        "decision_reason": (str(decision_reason)[:1000] if decision_reason not in (None, "") else None),
         "lifecycle_disposition": derive_lifecycle_disposition(
             signal.get("decision") or "issued",
             decision_reason,
@@ -211,7 +209,13 @@ def validate_decision_record(record: Mapping[str, Any]) -> Dict[str, Any]:
     if record.get("decision") not in {"issued", "rejected", "skipped", "observed", "delayed", "suppressed", "error"}:
         errors.append("unknown_decision")
     if record.get("lifecycle_disposition") not in {
-        "issued", "rejected", "skipped", "observed", "delayed", "suppressed", "error"
+        "issued",
+        "rejected",
+        "skipped",
+        "observed",
+        "delayed",
+        "suppressed",
+        "error",
     }:
         errors.append("unknown_lifecycle_disposition")
     if missing:

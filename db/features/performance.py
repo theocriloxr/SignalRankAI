@@ -13,7 +13,9 @@ from ml.evidence import compute_metrics
 
 
 def summarize_rows(rows: Iterable[Mapping[str, Any]], *, provenance: str = "live") -> dict[str, Any]:
-    normalized = [dict(row) for row in rows if str(row.get("provenance", provenance)).lower() == str(provenance).lower()]
+    normalized = [
+        dict(row) for row in rows if str(row.get("provenance", provenance)).lower() == str(provenance).lower()
+    ]
     metrics = compute_metrics(normalized)
     return {
         "provenance": str(provenance).lower(),
@@ -35,7 +37,12 @@ def summarize_rows(rows: Iterable[Mapping[str, Any]], *, provenance: str = "live
     }
 
 
-def segment_summaries(rows: Iterable[Mapping[str, Any]], *, provenance: str = "live", fields: tuple[str, ...] = ("asset", "strategy", "timeframe", "provider")) -> dict[str, dict[str, Any]]:
+def segment_summaries(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    provenance: str = "live",
+    fields: tuple[str, ...] = ("asset", "strategy", "timeframe", "provider"),
+) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
         if str(row.get("provenance", provenance)).lower() != str(provenance).lower():

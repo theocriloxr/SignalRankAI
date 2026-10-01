@@ -7,6 +7,7 @@ async engine accepts a JSON serializer, so install one centrally before
 write RFC-compatible without requiring each repository call site to remember to
 sanitize its own payload.
 """
+
 from __future__ import annotations
 
 import json

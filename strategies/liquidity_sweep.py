@@ -3,12 +3,12 @@ from utils.timeutils import now_utc_naive
 
 import os
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import numpy as np
 from engine.signal_analytics import calculate_volume_delta
 import logging
+import pandas as pd
 
 
 @dataclass(slots=True, frozen=True)
@@ -103,7 +103,9 @@ def _previous_session_high_low(highs: np.ndarray, lows: np.ndarray) -> tuple[flo
     return float(np.max(highs[:-1])), float(np.min(lows[:-1]))
 
 
-def _detect_bullish_signal(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, atr_val: float) -> dict[str, float] | None:
+def _detect_bullish_signal(
+    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, atr_val: float
+) -> dict[str, float] | None:
     if len(closes) < 8:
         return None
     pdh, pdl = _previous_session_high_low(highs[-24:], lows[-24:])
@@ -137,7 +139,9 @@ def _detect_bullish_signal(highs: np.ndarray, lows: np.ndarray, closes: np.ndarr
     return None
 
 
-def _detect_bearish_signal(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, atr_val: float) -> dict[str, float] | None:
+def _detect_bearish_signal(
+    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, atr_val: float
+) -> dict[str, float] | None:
     if len(closes) < 8:
         return None
     pdh, pdl = _previous_session_high_low(highs[-24:], lows[-24:])
@@ -195,32 +199,36 @@ def detect_liquidity_sweep_fvg(df_1m: list[dict[str, Any]], df_htf: list[dict[st
     results: list[dict[str, Any]] = []
 
     if bullish is not None:
-        results.append({
-            "direction": "LONG",
-            "entry": float(bullish["entry"]),
-            "stop_loss": float(bullish["stop"]),
-            "take_profit": float(bullish["entry"] + (abs(bullish["entry"] - bullish["stop"]) * cfg.rr_ratio)),
-            "confidence": 0.88,
-            "rr_ratio": cfg.rr_ratio,
-            "sweep_level": float(bullish["sweep_level"]),
-            "mss_level": float(bullish["mss_level"]),
-            "fvg_low": float(bullish["gap_low"]),
-            "fvg_high": float(bullish["gap_high"]),
-        })
+        results.append(
+            {
+                "direction": "LONG",
+                "entry": float(bullish["entry"]),
+                "stop_loss": float(bullish["stop"]),
+                "take_profit": float(bullish["entry"] + (abs(bullish["entry"] - bullish["stop"]) * cfg.rr_ratio)),
+                "confidence": 0.88,
+                "rr_ratio": cfg.rr_ratio,
+                "sweep_level": float(bullish["sweep_level"]),
+                "mss_level": float(bullish["mss_level"]),
+                "fvg_low": float(bullish["gap_low"]),
+                "fvg_high": float(bullish["gap_high"]),
+            }
+        )
 
     if bearish is not None:
-        results.append({
-            "direction": "SHORT",
-            "entry": float(bearish["entry"]),
-            "stop_loss": float(bearish["stop"]),
-            "take_profit": float(bearish["entry"] - (abs(bearish["entry"] - bearish["stop"]) * cfg.rr_ratio)),
-            "confidence": 0.88,
-            "rr_ratio": cfg.rr_ratio,
-            "sweep_level": float(bearish["sweep_level"]),
-            "mss_level": float(bearish["mss_level"]),
-            "fvg_low": float(bearish["gap_low"]),
-            "fvg_high": float(bearish["gap_high"]),
-        })
+        results.append(
+            {
+                "direction": "SHORT",
+                "entry": float(bearish["entry"]),
+                "stop_loss": float(bearish["stop"]),
+                "take_profit": float(bearish["entry"] - (abs(bearish["entry"] - bearish["stop"]) * cfg.rr_ratio)),
+                "confidence": 0.88,
+                "rr_ratio": cfg.rr_ratio,
+                "sweep_level": float(bearish["sweep_level"]),
+                "mss_level": float(bearish["mss_level"]),
+                "fvg_low": float(bearish["gap_low"]),
+                "fvg_high": float(bearish["gap_high"]),
+            }
+        )
 
     return results
 
@@ -250,28 +258,31 @@ def liquidity_sweep_strategies(asset: str, market_data: dict[str, Any]) -> list[
         out: list[dict[str, Any]] = []
         for sig in base_signals:
             # SmartVolume grading
+            df_1m = pd.DataFrame(candles)
             vol_stats = calculate_volume_delta(df_1m, window=20)
             rvol = float(vol_stats.get("rvol") or 0.0)
             grade = "B"
             if rvol >= 1.5:
                 grade = "A"
-            sig.update({
-                "asset": symbol,
-                "symbol": symbol,
-                "timeframe": exec_tf,
-                "strategy_name": "Liquidity Sweep FVG",
-                "strategy_group": "liquidity",
-                "reasoning": (
-                    f"Sweep + MSS + FVG detected on {exec_tf}; entry in gap, stop below sweep, RR 1:{_SweepConfig.rr_ratio:.1f}."
-                ),
-                "strength": float(sig.get("confidence") or 0.0) + (0.06 if grade == "A" else 0.0),
-                "grade": grade,
-                "volatility": float(atr_val / max(1e-9, float(closes[-1]))),
-                "market_open_confirmed": True,
-                "rr_ratio": _SweepConfig.rr_ratio,
-                "created_at": now_utc_naive(),
-                "source": "liquidity_sweep",
-            })
+            sig.update(
+                {
+                    "asset": symbol,
+                    "symbol": symbol,
+                    "timeframe": exec_tf,
+                    "strategy_name": "Liquidity Sweep FVG",
+                    "strategy_group": "liquidity",
+                    "reasoning": (
+                        f"Sweep + MSS + FVG detected on {exec_tf}; entry in gap, stop below sweep, RR 1:{_SweepConfig.rr_ratio:.1f}."
+                    ),
+                    "strength": float(sig.get("confidence") or 0.0) + (0.06 if grade == "A" else 0.0),
+                    "grade": grade,
+                    "volatility": float(atr_val / max(1e-9, float(closes[-1]))),
+                    "market_open_confirmed": True,
+                    "rr_ratio": _SweepConfig.rr_ratio,
+                    "created_at": now_utc_naive(),
+                    "source": "liquidity_sweep",
+                }
+            )
             out.append(sig)
         return out
     except Exception as exc:

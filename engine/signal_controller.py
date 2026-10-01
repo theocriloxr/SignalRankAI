@@ -1,11 +1,9 @@
 from __future__ import annotations
-from utils.timeutils import now_utc_naive
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
-import json
 import os
 import threading
 
@@ -113,7 +111,7 @@ class SignalController:
         Returns one representative signal per (asset, timeframe) pair, with the winning direction.
         """
         grouped: Dict[Tuple[str, str], List[Signal]] = {}
-        for s in (signals or []):
+        for s in signals or []:
             asset = str(s.get("asset") or s.get("symbol") or "").upper().strip()
             tf = str(s.get("timeframe") or "").lower().strip()
             direction = str(s.get("direction") or "").lower().strip()
@@ -130,9 +128,9 @@ class SignalController:
                 w = sig.get("weight")
                 if w is None:
                     w = 1.0
-                
+
                 base_conf = float(conf or 0.0) * float(w or 1.0)
-                
+
                 # Apply ML probability as a multiplier if available
                 ml_prob = sig.get("ml_probability")
                 if ml_prob is not None:
@@ -144,7 +142,7 @@ class SignalController:
                         base_conf = base_conf * ml_factor
                     except Exception:
                         pass
-                
+
                 return base_conf
             except Exception:
                 return 0.0
@@ -201,9 +199,7 @@ class SignalController:
                     ):
                         return winner, f"{provider}_ok:{confidence:.2f}"
                     return None, f"{provider}_ambiguous:{confidence:.2f}"
-                return None, str(
-                    (result or {}).get("error") if isinstance(result, dict) else "ai_unavailable"
-                )
+                return None, str((result or {}).get("error") if isinstance(result, dict) else "ai_unavailable")
             except Exception as exc:
                 self.audit_logger.debug(
                     "provider_neutral_inline failed asset=%s tf=%s error=%s",
@@ -271,8 +267,14 @@ class SignalController:
 
             # Add contributor metadata for debugging/analysis
             try:
-                best["contributors"] = [str(s.get("strategy_name") or s.get("strategy") or "").strip() for s in winning if (s.get("strategy_name") or s.get("strategy"))]
-                best["contributor_groups"] = [str(s.get("strategy_group") or "").strip().lower() for s in winning if s.get("strategy_group")]
+                best["contributors"] = [
+                    str(s.get("strategy_name") or s.get("strategy") or "").strip()
+                    for s in winning
+                    if (s.get("strategy_name") or s.get("strategy"))
+                ]
+                best["contributor_groups"] = [
+                    str(s.get("strategy_group") or "").strip().lower() for s in winning if s.get("strategy_group")
+                ]
                 best["direction_score_long"] = float(long_sum)
                 best["direction_score_short"] = float(short_sum)
                 best["num_strategies"] = len(winning)
@@ -284,13 +286,13 @@ class SignalController:
                         best["winning_avg_ml_prob"] = sum(winning_ml_probs) / len(winning_ml_probs)
                 best["ai_inline_reason"] = str(gemini_reason)
                 best["ai_inline_provider"] = (
-                    "openai" if str(gemini_reason).startswith("openai_")
-                    else "gemini" if str(gemini_reason) == "ok" or str(gemini_reason).startswith("gemini_")
+                    "openai"
+                    if str(gemini_reason).startswith("openai_")
+                    else "gemini"
+                    if str(gemini_reason) == "ok" or str(gemini_reason).startswith("gemini_")
                     else "local"
                 )
-                best["ai_inline_used"] = bool(
-                    str(gemini_reason) == "ok" or str(gemini_reason).startswith("openai_ok")
-                )
+                best["ai_inline_used"] = bool(str(gemini_reason) == "ok" or str(gemini_reason).startswith("openai_ok"))
                 # Compatibility aliases.
                 best["gemini_inline_reason"] = str(gemini_reason)
                 best["gemini_inline_used"] = bool(str(gemini_reason) == "ok")
@@ -407,7 +409,11 @@ class SignalController:
                     existing_pairs = []
                     for payload in (active or {}).values():
                         try:
-                            asset = str(payload.get("symbol") or payload.get("asset") or payload.get("symbol") or "").upper().strip()
+                            asset = (
+                                str(payload.get("symbol") or payload.get("asset") or payload.get("symbol") or "")
+                                .upper()
+                                .strip()
+                            )
                             if asset and asset != new_asset:
                                 existing_pairs.append(asset)
                         except Exception:
@@ -423,6 +429,7 @@ class SignalController:
                         returns_data = {}
                         try:
                             import numpy as np
+
                             for asset in [new_asset] + existing_pairs:
                                 md = run_sync(lambda a=asset: fetch_market_data(a, [tf]))
                                 indicators = md.get(tf, {}).get("indicators") if md else None
@@ -436,7 +443,9 @@ class SignalController:
                             returns_data = {}
 
                         cm = CorrelationManager()
-                        ok, reason = cm.can_add_correlated_position(new_asset, existing_pairs, returns_data=returns_data)
+                        ok, reason = cm.can_add_correlated_position(
+                            new_asset, existing_pairs, returns_data=returns_data
+                        )
                         if not ok:
                             self.audit_logger.info("Correlation block: %s -> %s", new_asset, reason)
                             return False
@@ -556,14 +565,24 @@ class SignalController:
                         atr = indicators.get("atr") or indicators.get("ATR") or indicators.get("atr_14")
                     if atr is None and candles and isinstance(candles, list):
                         # Fallback: approx ATR from highs/lows
-                        highs = [float(c.get("high") or (c[2] if isinstance(c, list) and len(c) > 2 else 0)) for c in candles]
-                        lows = [float(c.get("low") or (c[3] if isinstance(c, list) and len(c) > 3 else 0)) for c in candles]
-                        closes = [float(c.get("close") or (c[4] if isinstance(c, list) and len(c) > 4 else 0)) for c in candles]
+                        highs = [
+                            float(c.get("high") or (c[2] if isinstance(c, list) and len(c) > 2 else 0)) for c in candles
+                        ]
+                        lows = [
+                            float(c.get("low") or (c[3] if isinstance(c, list) and len(c) > 3 else 0)) for c in candles
+                        ]
+                        closes = [
+                            float(c.get("close") or (c[4] if isinstance(c, list) and len(c) > 4 else 0))
+                            for c in candles
+                        ]
                         if len(highs) >= 5:
                             import numpy as _np
+
                             trs = []
                             for i in range(1, len(closes)):
-                                tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+                                tr = max(
+                                    highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])
+                                )
                                 trs.append(tr)
                             if trs:
                                 atr = float(_np.mean(trs))
@@ -573,7 +592,16 @@ class SignalController:
                         entry_f = float(entry_val)
                         recent_low = min([float(c.get("low") or 0) for c in candles]) if candles else entry_f * 0.995
                         recent_high = max([float(c.get("high") or 0) for c in candles]) if candles else entry_f * 1.005
-                        stops = adm.calculate_smart_stops(entry_f, float(atr), out.get("direction") or "long", entry_f, recent_low, recent_high, recent_low, recent_high)
+                        stops = adm.calculate_smart_stops(
+                            entry_f,
+                            float(atr),
+                            out.get("direction") or "long",
+                            entry_f,
+                            recent_low,
+                            recent_high,
+                            recent_low,
+                            recent_high,
+                        )
                         out["stop_loss"] = stops.get("stop_loss")
                         # set take_profit list using tp1,tp2,tp3
                         out["take_profit"] = [stops.get("tp1"), stops.get("tp2"), stops.get("tp3")]

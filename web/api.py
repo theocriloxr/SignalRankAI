@@ -11,7 +11,7 @@ import logging
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -85,9 +85,7 @@ async def authenticate_api_key(
                 owner = None
                 scope_denied = False
             elif required_scope:
-                owner = await get_api_token_owner(
-                    session, token, required_scope=required_scope
-                )
+                owner = await get_api_token_owner(session, token, required_scope=required_scope)
                 scope_denied = owner is None
             else:
                 owner = owner_any

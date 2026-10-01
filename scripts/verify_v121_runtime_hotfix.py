@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline verifier for the v1.2.1 Railway runtime hotfix."""
+
 from __future__ import annotations
 
 import ast
@@ -41,7 +42,9 @@ def main() -> int:
             if not isinstance(node, ast.Call):
                 continue
             target = node.func
-            name = target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute) else ""
+            name = (
+                target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute) else ""
+            )
             if name == "get_session" and any(keyword.arg == "timeout" for keyword in node.keywords):
                 stale.append(f"{path.relative_to(ROOT)}:{node.lineno}")
     if stale:

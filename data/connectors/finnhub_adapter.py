@@ -1,4 +1,5 @@
 """Finnhub candle adapter for stock, forex and crypto endpoints."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -36,7 +37,9 @@ def _route_symbol(symbol: str) -> tuple[str, str]:
     return "stock", raw
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     token = str(os.getenv("FINNHUB_API_KEY") or "").strip()
     resolution = _resolution(timeframe)
     if not token or not resolution:

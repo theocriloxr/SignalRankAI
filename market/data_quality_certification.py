@@ -64,6 +64,7 @@ def _is_expected_closure(
     if elapsed_hours <= 96.0 and asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}:
         try:
             from data.market_hours import CME_HOLIDAYS, FX_REDUCED_LIQUIDITY
+
             holiday_set = CME_HOLIDAYS if asset_class is AssetClass.COMMODITY else FX_REDUCED_LIQUIDITY
             if any(day in holiday_set for day in _dates_between()):
                 return True
@@ -83,12 +84,12 @@ def _is_expected_closure(
     if asset_class is AssetClass.FOREX and elapsed_hours <= 3.0:
         cursor = previous.date()
         while cursor <= current.date():
-            rollover_start = datetime.combine(
-                cursor, datetime.min.time(), tzinfo=timezone.utc
-            ).replace(hour=20, minute=30)
-            rollover_end = datetime.combine(
-                cursor, datetime.min.time(), tzinfo=timezone.utc
-            ).replace(hour=22, minute=30)
+            rollover_start = datetime.combine(cursor, datetime.min.time(), tzinfo=timezone.utc).replace(
+                hour=20, minute=30
+            )
+            rollover_end = datetime.combine(cursor, datetime.min.time(), tzinfo=timezone.utc).replace(
+                hour=22, minute=30
+            )
             if previous <= rollover_end and current >= rollover_start:
                 return True
             cursor += timedelta(days=1)
@@ -99,6 +100,7 @@ def _is_expected_closure(
     if asset_class is AssetClass.INDEX and symbol and elapsed_hours <= 2.5:
         try:
             from core.asset_registry import resolve_asset_spec
+
             spec = resolve_asset_spec(symbol)
             local_previous = previous.astimezone(__import__("zoneinfo").ZoneInfo(spec.timezone))
             local_current = current.astimezone(__import__("zoneinfo").ZoneInfo(spec.timezone))
@@ -109,12 +111,8 @@ def _is_expected_closure(
             window = lunch_windows.get(spec.session_calendar)
             if window and local_previous.date() == local_current.date():
                 start_hm, end_hm = window
-                lunch_start = local_previous.replace(
-                    hour=start_hm[0], minute=start_hm[1], second=0, microsecond=0
-                )
-                lunch_end = local_previous.replace(
-                    hour=end_hm[0], minute=end_hm[1], second=0, microsecond=0
-                )
+                lunch_start = local_previous.replace(hour=start_hm[0], minute=start_hm[1], second=0, microsecond=0)
+                lunch_end = local_previous.replace(hour=end_hm[0], minute=end_hm[1], second=0, microsecond=0)
                 if local_previous <= lunch_end and local_current >= lunch_start:
                     return True
         except Exception:
@@ -167,7 +165,11 @@ def certify_market_candles(
             continue
         if timestamp > int(datetime.now(timezone.utc).timestamp() * 1000) + expected_ms:
             timezone_errors += 1
-        if previous and timestamp - previous > expected_ms * 1.8 and not _is_expected_closure(previous, timestamp, canonical, symbol=symbol):
+        if (
+            previous
+            and timestamp - previous > expected_ms * 1.8
+            and not _is_expected_closure(previous, timestamp, canonical, symbol=symbol)
+        ):
             session_gap_count += max(1, round((timestamp - previous) / expected_ms) - 1)
         previous = timestamp
     if session_gap_count:
@@ -182,7 +184,11 @@ def certify_market_candles(
         corporate_adjusted = bool(meta.get("split_adjusted") and meta.get("dividend_adjusted"))
         if meta.get("corporate_actions_required") and not corporate_adjusted:
             reasons.append("unadjusted_corporate_actions")
-    elif canonical is AssetClass.COMMODITY and str(meta.get("instrument_type") or "").lower() in {"future", "futures", "continuous_future"}:
+    elif canonical is AssetClass.COMMODITY and str(meta.get("instrument_type") or "").lower() in {
+        "future",
+        "futures",
+        "continuous_future",
+    }:
         contract_valid = bool(meta.get("contract_expiry") and meta.get("roll_method"))
         if not contract_valid:
             reasons.append("missing_contract_roll_metadata")
@@ -197,13 +203,25 @@ def certify_market_candles(
             reasons.append("ambiguous_index_feed_type")
     elif canonical is AssetClass.CRYPTO and meta.get("exchange_outage"):
         reasons.append("exchange_outage")
-    elif canonical is AssetClass.FOREX and meta.get("quote_conversion_required") and not meta.get("quote_conversion_rate"):
+    elif (
+        canonical is AssetClass.FOREX
+        and meta.get("quote_conversion_required")
+        and not meta.get("quote_conversion_rate")
+    ):
         reasons.append("missing_quote_currency_conversion")
 
     fatal_prefixes = (
-        "insufficient_candles", "stale_candles", "impossible_ohlc", "missing_prices",
-        "duplicates", "unexpected_session_gaps", "timezone_errors", "unadjusted_corporate_actions",
-        "missing_contract_roll_metadata", "ambiguous_index_feed_type", "exchange_outage",
+        "insufficient_candles",
+        "stale_candles",
+        "impossible_ohlc",
+        "missing_prices",
+        "duplicates",
+        "unexpected_session_gaps",
+        "timezone_errors",
+        "unadjusted_corporate_actions",
+        "missing_contract_roll_metadata",
+        "ambiguous_index_feed_type",
+        "exchange_outage",
         "missing_quote_currency_conversion",
     )
     fatal = any(reason.startswith(fatal_prefixes) for reason in reasons)

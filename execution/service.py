@@ -81,20 +81,13 @@ class ExecutionRequest:
         identity = str(self.user_identity or "telegram").strip().lower()
         if self.canonical_user_id is not None:
             payload = (
-                f"platform:{self.canonical_user_id}|{self.account_id}|"
-                f"{self.signal_id}|{str(self.mode).strip().lower()}"
+                f"platform:{self.canonical_user_id}|{self.account_id}|{self.signal_id}|{str(self.mode).strip().lower()}"
             )
         elif identity == "telegram":
             # Preserve historical Telegram idempotency keys exactly.
-            payload = (
-                f"{self.user_id}|{self.account_id}|"
-                f"{self.signal_id}|{str(self.mode).strip().lower()}"
-            )
+            payload = f"{self.user_id}|{self.account_id}|{self.signal_id}|{str(self.mode).strip().lower()}"
         else:
-            payload = (
-                f"{identity}:{self.user_id}|{self.account_id}|"
-                f"{self.signal_id}|{str(self.mode).strip().lower()}"
-            )
+            payload = f"{identity}:{self.user_id}|{self.account_id}|{self.signal_id}|{str(self.mode).strip().lower()}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -157,9 +150,8 @@ class ExecutionGate:
             reasons.append("paper_account_broker_execution_forbidden")
         elif classification not in {"DEMO", "LIVE_PERSONAL", "PROP"}:
             reasons.append("unknown_account_classification")
-        elif (
-            (classification == "DEMO" and request.account_is_demo is not True)
-            or (classification in {"LIVE_PERSONAL", "PROP"} and request.account_is_demo is not False)
+        elif (classification == "DEMO" and request.account_is_demo is not True) or (
+            classification in {"LIVE_PERSONAL", "PROP"} and request.account_is_demo is not False
         ):
             reasons.append("account_classification_mismatch")
 
@@ -248,16 +240,12 @@ class ExecutionGate:
                 for item in str(os.getenv("LIVE_EXECUTION_ALLOWED_SYMBOLS") or "").split(",")
                 if item.strip()
             }
-            request_symbol = str(
-                (request.signal or {}).get("symbol")
-                or (request.signal or {}).get("asset")
-                or ""
-            ).strip().upper()
+            request_symbol = (
+                str((request.signal or {}).get("symbol") or (request.signal or {}).get("asset") or "").strip().upper()
+            )
             if str(request.user_id) not in allowed_users:
                 reasons.append(
-                    "LIVE_PLATFORM_USER_NOT_ALLOWLISTED"
-                    if identity == "platform"
-                    else "LIVE_USER_NOT_ALLOWLISTED"
+                    "LIVE_PLATFORM_USER_NOT_ALLOWLISTED" if identity == "platform" else "LIVE_USER_NOT_ALLOWLISTED"
                 )
             if str(request.account_id or "").strip() not in allowed_accounts:
                 reasons.append("LIVE_ACCOUNT_NOT_ALLOWLISTED")
@@ -301,11 +289,7 @@ class ExecutionGate:
             reasons.append("reconciliation_unavailable")
         if request.kill_switch:
             reasons.append("kill_switch_enabled")
-        required_feature = (
-            "execution_preflight"
-            if mode in {"auto", "live", "copy_trade"}
-            else "broker_connection"
-        )
+        required_feature = "execution_preflight" if mode in {"auto", "live", "copy_trade"} else "broker_connection"
         tier_decision = evaluate_feature_access(request.tier, required_feature)
         if not tier_decision.allowed:
             reasons.append("tier_not_eligible")

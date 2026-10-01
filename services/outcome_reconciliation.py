@@ -1,4 +1,5 @@
 """Canonical reconciliation for proof-backed delivery outcome projections."""
+
 from __future__ import annotations
 
 import asyncio
@@ -95,9 +96,7 @@ def _canonical_outcome(status: str, highest_tp: int) -> str:
     status_l = str(status or "").lower()
     if status_l in {"tp", "tp3"}:
         return "win"
-    if status_l in {"tp1", "tp2", "partial_win_be"} or (
-        status_l == "sl" and int(highest_tp or 0) > 0
-    ):
+    if status_l in {"tp1", "tp2", "partial_win_be"} or (status_l == "sl" and int(highest_tp or 0) > 0):
         return "partial_win"
     if status_l == "sl":
         return "loss"
@@ -254,10 +253,26 @@ async def ensure_outcome_projections(
 
     examined = created = projected = repaired = unchanged = failed = 0
     terminal_statuses = {
-        "tp", "tp3", "win", "sl", "loss", "stop", "stop_loss",
-        "be", "breakeven", "break_even", "partial_win", "partial_win_be",
-        "time_stop", "expired", "missed_entry", "cancel", "cancelled",
-        "tracking_failed", "invalid", "invalidated",
+        "tp",
+        "tp3",
+        "win",
+        "sl",
+        "loss",
+        "stop",
+        "stop_loss",
+        "be",
+        "breakeven",
+        "break_even",
+        "partial_win",
+        "partial_win_be",
+        "time_stop",
+        "expired",
+        "missed_entry",
+        "cancel",
+        "cancelled",
+        "tracking_failed",
+        "invalid",
+        "invalidated",
     }
     for signal, lifecycle, outcome in rows:
         examined += 1
@@ -266,22 +281,16 @@ async def ensure_outcome_projections(
         # expired after a savepoint rollback and must not be accessed in the except
         # handler.
         signal_id = str(getattr(signal, "signal_id", "") or "")
-        lifecycle_state_for_log = (
-            str(getattr(lifecycle, "state", "") or "")
-            if lifecycle is not None
-            else ""
-        )
-        existing_status_for_log = (
-            str(getattr(outcome, "status", "") or "")
-            if outcome is not None
-            else ""
-        )
+        lifecycle_state_for_log = str(getattr(lifecycle, "state", "") or "") if lifecycle is not None else ""
+        existing_status_for_log = str(getattr(outcome, "status", "") or "") if outcome is not None else ""
 
         try:
             # A savepoint keeps a malformed historical row from aborting every
             # remaining signal in the recovery batch.
             async with session.begin_nested():
-                lifecycle_status = outcome_status_for_lifecycle(getattr(lifecycle, "state", None)) if lifecycle else None
+                lifecycle_status = (
+                    outcome_status_for_lifecycle(getattr(lifecycle, "state", None)) if lifecycle else None
+                )
                 status = str(lifecycle_status or "pending")
                 terminal = bool(lifecycle and is_terminal_signal_state(getattr(lifecycle, "state", None)))
                 current_status = str(getattr(outcome, "status", "") or "").lower() if outcome is not None else ""
@@ -323,14 +332,16 @@ async def ensure_outcome_projections(
                 # Existing finalized rows are immutable by design.  Recovery is
                 # therefore an attributed system correction, not a silent edit.
                 if outcome is not None and current_status in terminal_statuses:
-                    meta.update({
-                        "audited_correction": True,
-                        "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
-                        "correction_reason": (
-                            "repair lifecycle/outcome disagreement or missing terminal timestamp "
-                            "after v1.3.6.8 outcome persistence failure"
-                        ),
-                    })
+                    meta.update(
+                        {
+                            "audited_correction": True,
+                            "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
+                            "correction_reason": (
+                                "repair lifecycle/outcome disagreement or missing terminal timestamp "
+                                "after v1.3.6.8 outcome persistence failure"
+                            ),
+                        }
+                    )
                     try:
                         from db.staging_remediation import record_outcome_correction
 
@@ -376,11 +387,7 @@ async def ensure_outcome_projections(
                 # ``upsert_outcome`` only queues when it detects a changed row.
                 # This idempotent call also repairs terminal rows that predate the
                 # outbox or were closed during the v1.3.6.8 persistence outage.
-                if (
-                    queue_notifications
-                    and terminal
-                    and getattr(projected_outcome, "closed_at", None) is not None
-                ):
+                if queue_notifications and terminal and getattr(projected_outcome, "closed_at", None) is not None:
                     await queue_outcome_notifications_for_outcome(
                         session,
                         int(getattr(projected_outcome, "id")),
@@ -390,8 +397,7 @@ async def ensure_outcome_projections(
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_reconciliation] signal repair failed "
-                "signal=%s lifecycle=%s existing=%s error=%s",
+                "[outcome_reconciliation] signal repair failed signal=%s lifecycle=%s existing=%s error=%s",
                 signal_id,
                 lifecycle_state_for_log,
                 existing_status_for_log,
@@ -411,12 +417,18 @@ async def repair_outcome_notification_outbox(
     days = max(1, int(days or os.getenv("OUTCOME_OUTBOX_REPAIR_DAYS", "30") or 30))
     limit = max(1, min(10000, int(limit or os.getenv("OUTCOME_OUTBOX_REPAIR_LIMIT", "2000") or 2000)))
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-    outcomes = list((await session.execute(
-        select(Outcome)
-        .where(Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff)
-        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
-        .limit(limit)
-    )).scalars().all())
+    outcomes = list(
+        (
+            await session.execute(
+                select(Outcome)
+                .where(Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff)
+                .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
     queued = failed = 0
     for outcome in outcomes:
         outcome_id = int(getattr(outcome, "id"))
@@ -434,8 +446,7 @@ async def repair_outcome_notification_outbox(
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_outbox_repair] failed "
-                "outcome_id=%s signal=%s status=%s error_type=%s error=%r",
+                "[outcome_outbox_repair] failed outcome_id=%s signal=%s status=%s error_type=%s error=%r",
                 outcome_id,
                 outcome_signal_id,
                 outcome_status,
@@ -463,26 +474,36 @@ async def outcome_projection_health(session, *, days: int = 30) -> dict[str, flo
         SignalDelivery.delivered_at_utc,
         SignalDelivery.delivered_at,
     )
-    delivered = int((await session.execute(
-        select(func.count(func.distinct(SignalDelivery.signal_id))).where(
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
-            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
-            proof_time >= cutoff,
-        )
-    )).scalar_one() or 0)
-    with_outcome = int((await session.execute(
-        select(func.count(func.distinct(SignalDelivery.signal_id)))
-        .join(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
-        .where(
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
-            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
-            proof_time >= cutoff,
-        )
-    )).scalar_one() or 0)
+    delivered = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(SignalDelivery.signal_id))).where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_chat_id.is_not(None),
+                    SignalDelivery.telegram_message_id.is_not(None),
+                    func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
+                    proof_time >= cutoff,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
+    with_outcome = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(SignalDelivery.signal_id)))
+                .join(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+                .where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_chat_id.is_not(None),
+                    SignalDelivery.telegram_message_id.is_not(None),
+                    func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
+                    proof_time >= cutoff,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     coverage = with_outcome / delivered if delivered else 1.0
     return {
         "ok": coverage >= float(os.getenv("OUTCOME_PROJECTION_MIN_COVERAGE", "0.99") or 0.99),

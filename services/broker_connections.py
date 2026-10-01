@@ -5,11 +5,11 @@ that account".  Every connection starts execution-disabled.  Platform-specific
 adapters can be added without changing the account, billing, UI, or audit
 contract.
 """
+
 from __future__ import annotations
 
 import os
 import hashlib
-import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -209,12 +209,16 @@ def platform_catalog(tier: str) -> list[dict[str, Any]]:
 async def list_connections(user_id: int) -> list[dict[str, Any]]:
     async with get_session(label="broker.connections.list", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                select(BrokerConnection)
-                .where(BrokerConnection.user_id == int(user_id))
-                .order_by(BrokerConnection.is_default.desc(), BrokerConnection.created_at.asc())
+            (
+                await session.execute(
+                    select(BrokerConnection)
+                    .where(BrokerConnection.user_id == int(user_id))
+                    .order_by(BrokerConnection.is_default.desc(), BrokerConnection.created_at.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         await session.rollback()
     return [public_connection(row) for row in rows]
 
@@ -302,7 +306,10 @@ def execution_connection_error(row: BrokerConnection, user_id: int) -> str | Non
 
 
 async def resolve_execution_connection(
-    user_id: int, *, platform: str, connection_id: str | None = None,
+    user_id: int,
+    *,
+    platform: str,
+    connection_id: str | None = None,
 ) -> BrokerConnection:
     """Resolve one owned account; a preferred account cannot resolve ambiguity."""
     async with get_session(label="broker.execution.resolve", timeout_seconds=6.0) as session:
@@ -343,16 +350,14 @@ async def register_platform_exchange_connection(
     unverified provider permissions keep the account non-ready and execution
     remains disabled.
     """
-    provider_n=str(provider or "").strip().lower()
+    provider_n = str(provider or "").strip().lower()
     if provider_n not in {"bybit", "binance", "binanceus"}:
         raise ValueError("unsupported_exchange_provider")
-    sandbox=payload.get("sandbox")
+    sandbox = payload.get("sandbox")
     if type(sandbox) is not bool:
         raise ValueError("Broker demo/live classification is required")
-    permissions=dict(payload.get("permissions") or {})
-    account_ref=hashlib.sha256(
-        f"{provider_n}:{sandbox}:{api_key}".encode()
-    ).hexdigest()
+    permissions = dict(payload.get("permissions") or {})
+    account_ref = hashlib.sha256(f"{provider_n}:{sandbox}:{api_key}".encode()).hexdigest()
     return await upsert_connection(
         user_id=int(user_id),
         platform=provider_n,
@@ -378,14 +383,18 @@ async def register_platform_exchange_connection(
 
 
 async def register_exchange_connection(
-    telegram_user_id: int, *, provider: str, api_key: str, payload: dict[str, Any],
+    telegram_user_id: int,
+    *,
+    provider: str,
+    api_key: str,
+    payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Persist one exchange account through the canonical credential boundary."""
 
     async with get_session(label="broker.exchange.owner", timeout_seconds=6.0) as session:
-        owner = (await session.execute(
-            select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-        )).scalar_one_or_none()
+        owner = (
+            await session.execute(select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
+        ).scalar_one_or_none()
         await session.rollback()
     if owner is None:
         raise LookupError("canonical user not found")
@@ -395,10 +404,15 @@ async def register_exchange_connection(
     # API fingerprints are internal identifiers; masked keys are display-only.
     account_ref = hashlib.sha256(f"{provider}:{sandbox}:{api_key}".encode()).hexdigest()
     return await upsert_connection(
-        user_id=int(owner), platform=provider, connector=provider,
-        account_ref=account_ref, external_account_id=None,
-        environment="demo" if sandbox else "live", auth_mode="api_key",
-        credential_payload=dict(payload), status="verified",
+        user_id=int(owner),
+        platform=provider,
+        connector=provider,
+        account_ref=account_ref,
+        external_account_id=None,
+        environment="demo" if sandbox else "live",
+        auth_mode="api_key",
+        credential_payload=dict(payload),
+        status="verified",
         permissions=dict(payload.get("permissions") or {}),
         meta={"account_classification": "DEMO" if sandbox else "LIVE_PERSONAL"},
     )
@@ -506,31 +520,37 @@ async def upsert_connection(
         if account_ref:
             row = (
                 await session.execute(
-                    select(BrokerConnection).where(
+                    select(BrokerConnection)
+                    .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.platform == platform_n,
                         BrokerConnection.account_ref == str(account_ref),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
         if row is None and external_account_id:
             row = (
                 await session.execute(
-                    select(BrokerConnection).where(
+                    select(BrokerConnection)
+                    .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.connector == connector_n,
                         BrokerConnection.external_account_id == str(external_account_id),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
 
         if row is None:
             existing_default = (
                 await session.execute(
-                    select(BrokerConnection.connection_id).where(
+                    select(BrokerConnection.connection_id)
+                    .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.is_default.is_(True),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             row = BrokerConnection(
@@ -549,15 +569,11 @@ async def upsert_connection(
         row.account_label = str(account_label).strip()[:128] if account_label else None
         row.account_ref = str(account_ref).strip()[:128] if account_ref else row.account_ref
         row.external_account_id = (
-            str(external_account_id).strip()[:128]
-            if external_account_id
-            else row.external_account_id
+            str(external_account_id).strip()[:128] if external_account_id else row.external_account_id
         )
         next_environment = str(environment or "unknown").strip().lower()[:16]
         if credential_payload is not None and secret_encrypted is not None:
-            raise ValueError(
-                "Provide credential_payload or a validated credential envelope, not both"
-            )
+            raise ValueError("Provide credential_payload or a validated credential envelope, not both")
 
         previous_secret = str(row.secret_encrypted or "")
         if credential_payload is not None:
@@ -590,9 +606,7 @@ async def upsert_connection(
 
             candidate = str(secret_encrypted)
             if not is_broker_credential_envelope(candidate):
-                raise ValueError(
-                    "Raw legacy broker ciphertext cannot be written to a new connection"
-                )
+                raise ValueError("Raw legacy broker ciphertext cannot be written to a new connection")
             payload_check, crypto = decrypt_broker_credentials(
                 candidate,
                 user_id=int(user_id),
@@ -635,12 +649,8 @@ async def upsert_connection(
             row.execution_enabled = False
         if is_default is not None:
             row.is_default = bool(is_default)
-        row.last_error_code = (
-            str(last_error_code).strip()[:128] if last_error_code else None
-        )
-        row.last_error_message = (
-            str(last_error_message).strip()[:512] if last_error_message else None
-        )
+        row.last_error_code = str(last_error_code).strip()[:128] if last_error_code else None
+        row.last_error_message = str(last_error_message).strip()[:512] if last_error_message else None
         next_meta = dict(meta or row.meta or {})
         if (row.meta or {}).get("account_classification") is not None:
             # Relinking credentials must never downgrade a PROP account policy.
@@ -656,22 +666,18 @@ async def upsert_connection(
 
         account_policy = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == str(row.connection_id),
                     TradingAccountPolicyRecord.user_id == int(user_id),
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         if account_policy is None:
-            requested_classification = str(
-                (row.meta or {}).get("account_classification") or ""
-            ).strip().upper()
+            requested_classification = str((row.meta or {}).get("account_classification") or "").strip().upper()
             if requested_classification not in {"PAPER", "DEMO", "LIVE_PERSONAL", "PROP"}:
-                requested_classification = (
-                    "LIVE_PERSONAL"
-                    if str(row.environment or "").lower() == "live"
-                    else "DEMO"
-                )
+                requested_classification = "LIVE_PERSONAL" if str(row.environment or "").lower() == "live" else "DEMO"
             account_policy = TradingAccountPolicyRecord(
                 policy_id=str(uuid4()),
                 connection_id=str(row.connection_id),
@@ -705,10 +711,13 @@ async def set_execution_enabled(
     async with get_session(label="broker.connections.execution_toggle", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
-                select(BrokerConnection).where(
+                select(BrokerConnection)
+                .where(
                     BrokerConnection.connection_id == str(connection_id),
                     BrokerConnection.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:
@@ -726,10 +735,13 @@ async def set_execution_enabled(
 
             policy = (
                 await session.execute(
-                    select(TradingAccountPolicyRecord).where(
+                    select(TradingAccountPolicyRecord)
+                    .where(
                         TradingAccountPolicyRecord.connection_id == str(connection_id),
                         TradingAccountPolicyRecord.user_id == int(user_id),
-                    ).with_for_update().limit(1)
+                    )
+                    .with_for_update()
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if policy is None:
@@ -758,10 +770,13 @@ async def set_default_connection(user_id: int, connection_id: str) -> dict[str, 
     async with get_session(label="broker.connections.default", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
-                select(BrokerConnection).where(
+                select(BrokerConnection)
+                .where(
                     BrokerConnection.connection_id == str(connection_id),
                     BrokerConnection.user_id == int(user_id),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:
@@ -781,10 +796,12 @@ async def delete_connection(user_id: int, connection_id: str) -> None:
     async with get_session(label="broker.connections.delete", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
-                select(BrokerConnection).where(
+                select(BrokerConnection)
+                .where(
                     BrokerConnection.connection_id == str(connection_id),
                     BrokerConnection.user_id == int(user_id),
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:

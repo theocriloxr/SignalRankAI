@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Optional
 
 
 def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
@@ -13,7 +12,7 @@ def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
     root = logging.getLogger()
     root.setLevel(level)
     handler = logging.StreamHandler(stream=sys.stdout)
-    
+
     try:
         import json as _json
         from utils.context import get_correlation_id
@@ -26,12 +25,12 @@ def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
                     "name": record.name,
                     "msg": record.getMessage(),
                 }
-                
+
                 # Inject correlation ID if present in context
                 corr_id = get_correlation_id()
                 if corr_id:
                     payload["correlation_id"] = corr_id
-                    
+
                 try:
                     if record.exc_info:
                         payload["exc"] = self.formatException(record.exc_info)
@@ -59,10 +58,12 @@ def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
     # Optionally initialize Sentry if available via env SENTRY_DSN
     try:
         import os
+
         dsn = os.getenv("SENTRY_DSN") or os.getenv("SENTRY_URL")
         if dsn:
             try:
                 import sentry_sdk
+
                 sentry_kwargs = {}
                 try:
                     traces = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
@@ -81,4 +82,3 @@ def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
                 root.warning("Sentry SDK not available or failed to initialize")
     except Exception:
         pass
-

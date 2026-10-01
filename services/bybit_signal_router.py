@@ -1,4 +1,5 @@
 """Fail-closed Bybit signal execution router."""
+
 from __future__ import annotations
 
 import hashlib
@@ -79,6 +80,7 @@ def _asset_supported(signal: Mapping[str, Any]) -> bool:
 async def _resources_available() -> bool:
     try:
         from core.resource_governor import ResourceState, get_resource_governor
+
         return get_resource_governor().snapshot().state is not ResourceState.CRITICAL
     except Exception:
         return False
@@ -94,11 +96,10 @@ async def _route_signal_to_bybit_for_identity(
 ) -> BybitRouteResult:
     identity = str(user_identity or "").strip().lower()
     if identity not in {"telegram", "platform"}:
-        return BybitRouteResult(
-            False, "Unsupported execution identity", error="unsupported_execution_identity"
-        )
+        return BybitRouteResult(False, "Unsupported execution identity", error="unsupported_execution_identity")
     if str(execution_mode or "").strip().lower() in {"auto", "copy", "copy_trade"}:
         from core.live_execution_integrity import evaluate_live_signal_admission
+
         integrity = evaluate_live_signal_admission(signal)
         if not integrity.allowed:
             reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
@@ -112,40 +113,45 @@ async def _route_signal_to_bybit_for_identity(
     stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
     take_profit = _tp1(signal)
     direction = str(signal.get("direction") or signal.get("side") or "").strip().lower()
-    if not signal_id or entry <= 0 or stop <= 0 or take_profit <= 0 or direction not in {"buy", "sell", "long", "short"}:
+    if (
+        not signal_id
+        or entry <= 0
+        or stop <= 0
+        or take_profit <= 0
+        or direction not in {"buy", "sell", "long", "short"}
+    ):
         return BybitRouteResult(False, "Signal lacks broker-safe entry, stop, TP, or direction", error="invalid_signal")
 
     async with get_session(label="bybit.preflight", timeout_seconds=8.0) as session:
         user_filter = (
-            User.id == int(principal_id)
-            if identity == "platform"
-            else User.telegram_user_id == int(principal_id)
+            User.id == int(principal_id) if identity == "platform" else User.telegram_user_id == int(principal_id)
         )
-        user = (
-            await session.execute(select(User).where(user_filter).limit(1))
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(user_filter).limit(1))).scalar_one_or_none()
         if user is None:
             return BybitRouteResult(False, "User profile not found", error="user_not_found")
         try:
             connection = await resolve_execution_connection(
-                int(user.id), platform="bybit", connection_id=connection_id,
+                int(user.id),
+                platform="bybit",
+                connection_id=connection_id,
             )
         except (LookupError, PermissionError) as exc:
             return BybitRouteResult(False, "Broker account selection blocked", error=str(exc))
         try:
             from services.account_policies import public_account_policy
+
             account_policy_row = (
                 await session.execute(
-                    select(TradingAccountPolicyRecord).where(
+                    select(TradingAccountPolicyRecord)
+                    .where(
                         TradingAccountPolicyRecord.user_id == int(user.id),
                         TradingAccountPolicyRecord.connection_id == str(connection.connection_id),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             account_policy_payload = (
-                public_account_policy(account_policy_row)
-                if account_policy_row is not None
-                else None
+                public_account_policy(account_policy_row) if account_policy_row is not None else None
             )
         except Exception:
             account_policy_payload = None
@@ -155,8 +161,10 @@ async def _route_signal_to_bybit_for_identity(
                 get_user_trading_preferences,
                 signal_matches_preferences,
             )
+
             if identity == "platform":
                 from services.user_intelligence import get_platform_user_trading_preferences
+
                 profile_prefs = await get_platform_user_trading_preferences(
                     session,
                     int(user.id),
@@ -178,16 +186,20 @@ async def _route_signal_to_bybit_for_identity(
                 error="user_profile_signal_mismatch",
             )
         if str(profile_prefs.trading_mode or "paper").lower() not in {"live", "both"}:
-            return BybitRouteResult(False, "Live trading is disabled in the user profile", error="profile_live_disabled")
+            return BybitRouteResult(
+                False, "Live trading is disabled in the user profile", error="profile_live_disabled"
+            )
         requested_mode = str(execution_mode or "auto").strip().lower()
         configured_mode = str(profile_prefs.execution_mode or "manual").strip().lower()
         if requested_mode in {"copy", "copy_trade"} and configured_mode != "copy_trade":
-            return BybitRouteResult(False, "Copy trading is not enabled in the user profile", error="profile_copy_disabled")
+            return BybitRouteResult(
+                False, "Copy trading is not enabled in the user profile", error="profile_copy_disabled"
+            )
         if requested_mode in {"auto", "live"} and configured_mode not in {"auto", "live"}:
-            return BybitRouteResult(False, "Automatic execution is not enabled in the user profile", error="profile_auto_disabled")
-        if requested_mode == "manual_confirmed" and configured_mode not in {
-            "manual", "manual_confirmed", "semi_auto"
-        }:
+            return BybitRouteResult(
+                False, "Automatic execution is not enabled in the user profile", error="profile_auto_disabled"
+            )
+        if requested_mode == "manual_confirmed" and configured_mode not in {"manual", "manual_confirmed", "semi_auto"}:
             return BybitRouteResult(
                 False,
                 "Assisted execution is not enabled in the user profile",
@@ -195,33 +207,57 @@ async def _route_signal_to_bybit_for_identity(
             )
         configured_provider = str(profile_prefs.execution_provider or "auto").strip().lower()
         if configured_provider not in {"auto", "bybit"}:
-            return BybitRouteResult(False, "User profile selected a different execution provider", error="profile_provider_mismatch")
+            return BybitRouteResult(
+                False, "User profile selected a different execution provider", error="profile_provider_mismatch"
+            )
         open_statuses = ("reserved", "submitting", "ambiguous", "confirmed", "open", "reconciliation_pending")
-        bybit_open_count = int((await session.execute(
-            select(func.count(BrokerExecution.id)).where(
-                BrokerExecution.user_id == int(user.id),
-                func.lower(BrokerExecution.status).in_(open_statuses),
+        bybit_open_count = int(
+            (
+                await session.execute(
+                    select(func.count(BrokerExecution.id)).where(
+                        BrokerExecution.user_id == int(user.id),
+                        func.lower(BrokerExecution.status).in_(open_statuses),
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
+        mt5_open_count = int(
+            (
+                await session.execute(
+                    select(func.count(MT5Execution.id)).where(
+                        MT5Execution.user_id == int(user.id),
+                        func.lower(MT5Execution.status).in_(("pending", "confirmed", "open", "submitted")),
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
+        duplicate_asset = (
+            int(
+                (
+                    await session.execute(
+                        select(func.count(BrokerExecution.id)).where(
+                            BrokerExecution.user_id == int(user.id),
+                            BrokerExecution.account_ref == connection.connection_id,
+                            BrokerExecution.symbol == symbol,
+                            func.lower(BrokerExecution.status).in_(open_statuses),
+                        )
+                    )
+                ).scalar_one()
+                or 0
             )
-        )).scalar_one() or 0)
-        mt5_open_count = int((await session.execute(
-            select(func.count(MT5Execution.id)).where(
-                MT5Execution.user_id == int(user.id),
-                func.lower(MT5Execution.status).in_(("pending", "confirmed", "open", "submitted")),
-            )
-        )).scalar_one() or 0)
-        duplicate_asset = int((await session.execute(
-            select(func.count(BrokerExecution.id)).where(
-                BrokerExecution.user_id == int(user.id),
-                BrokerExecution.account_ref == connection.connection_id,
-                BrokerExecution.symbol == symbol,
-                func.lower(BrokerExecution.status).in_(open_statuses),
-            )
-        )).scalar_one() or 0) > 0
+            > 0
+        )
         max_positions = max(1, int(profile_prefs.max_concurrent_positions or 1))
         if duplicate_asset:
-            return BybitRouteResult(False, "An open execution already exists for this asset", error="duplicate_open_asset")
+            return BybitRouteResult(
+                False, "An open execution already exists for this asset", error="duplicate_open_asset"
+            )
         if bybit_open_count + mt5_open_count >= max_positions:
-            return BybitRouteResult(False, "User profile maximum concurrent positions reached", error="profile_max_concurrent_positions")
+            return BybitRouteResult(
+                False, "User profile maximum concurrent positions reached", error="profile_max_concurrent_positions"
+            )
         try:
             from services.broker_credentials import (
                 BrokerCredentialError,
@@ -238,23 +274,31 @@ async def _route_signal_to_bybit_for_identity(
                 "Broker credentials unavailable",
                 error="broker_credentials_invalid",
             )
-        delivery = (await session.execute(
-            select(SignalDelivery).where(
-                SignalDelivery.user_id == int(user.id),
-                SignalDelivery.signal_id == signal_id,
-                SignalDelivery.sent_ok.is_(True),
+        delivery = (
+            await session.execute(
+                select(SignalDelivery).where(
+                    SignalDelivery.user_id == int(user.id),
+                    SignalDelivery.signal_id == signal_id,
+                    SignalDelivery.sent_ok.is_(True),
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
 
     api_key = str(value.get("api_key") or "").strip()
     api_secret = str(value.get("api_secret") or "").strip()
     sandbox = value.get("sandbox")
-    if type(sandbox) is not bool or (
-        (account_classification(connection) == "DEMO") != sandbox
-    ):
-        return BybitRouteResult(False, "Broker account classification mismatch", error="account_classification_mismatch")
+    if type(sandbox) is not bool or ((account_classification(connection) == "DEMO") != sandbox):
+        return BybitRouteResult(
+            False, "Broker account classification mismatch", error="account_classification_mismatch"
+        )
     permissions = dict(connection.permissions or {})
-    account_ready = bool(api_key and api_secret and permissions.get("trade") and not permissions.get("withdraw") and not permissions.get("internal_transfer"))
+    account_ready = bool(
+        api_key
+        and api_secret
+        and permissions.get("trade")
+        and not permissions.get("withdraw")
+        and not permissions.get("internal_transfer")
+    )
 
     client = BybitV5Client(BybitCredentials(str(api_key or ""), str(api_secret or ""), sandbox))
     permission_info: dict[str, Any] = {}
@@ -283,19 +327,11 @@ async def _route_signal_to_bybit_for_identity(
         accounts = list(wallet.get("list") or [])
         if accounts:
             wallet_account = dict(accounts[0])
-            wallet_equity = float(
-                wallet_account.get("totalEquity")
-                or wallet_account.get("totalWalletBalance")
-                or 0
-            )
+            wallet_equity = float(wallet_account.get("totalEquity") or wallet_account.get("totalWalletBalance") or 0)
         ticker = await client.get_ticker(symbol) if account_ready else {}
         quote_value = float(ticker.get("lastPrice") or 0)
         provider_time_ms = int(float(ticker.get("_provider_time_ms") or 0))
-        quote_age = (
-            max(0.0, time.time() - (provider_time_ms / 1000.0))
-            if provider_time_ms > 0
-            else float("inf")
-        )
+        quote_age = max(0.0, time.time() - (provider_time_ms / 1000.0)) if provider_time_ms > 0 else float("inf")
         max_quote_age = max(
             1.0,
             float(os.getenv("BYBIT_MAX_QUOTE_AGE_SECONDS", "10") or 10),
@@ -305,8 +341,7 @@ async def _route_signal_to_bybit_for_identity(
             quote_value > 0
             and math.isfinite(quote_age)
             and quote_age <= max_quote_age
-            and abs(quote_value - entry) / entry
-            <= float(os.getenv("BYBIT_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
+            and abs(quote_value - entry) / entry <= float(os.getenv("BYBIT_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
         )
         positions = await client.get_positions(symbol=symbol) if account_ready else []
         reconciliation_ok = isinstance(positions, list)
@@ -375,10 +410,7 @@ async def _route_signal_to_bybit_for_identity(
                 "currency": "USD",
                 "balance": wallet_account.get("totalWalletBalance"),
                 "equity": wallet_account.get("totalEquity"),
-                "margin": (
-                    wallet_account.get("totalInitialMargin")
-                    or wallet_account.get("totalMarginBalance")
-                ),
+                "margin": (wallet_account.get("totalInitialMargin") or wallet_account.get("totalMarginBalance")),
                 "free_margin": wallet_account.get("totalAvailableBalance"),
                 "unrealized_pnl": wallet_account.get("totalPerpUPL"),
             },
@@ -402,9 +434,7 @@ async def _route_signal_to_bybit_for_identity(
             executable_quote = ask if raw_direction in {"long", "buy"} else bid
             slippage_bps = Decimal("1000000")
             if entry_decimal > 0 and executable_quote > 0:
-                slippage_bps = (
-                    abs(executable_quote - entry_decimal) / entry_decimal
-                ) * Decimal("10000")
+                slippage_bps = (abs(executable_quote - entry_decimal) / entry_decimal) * Decimal("10000")
 
             confidence = Decimal("0")
             raw_confidence = (
@@ -437,13 +467,15 @@ async def _route_signal_to_bybit_for_identity(
                 week_start_equity=Decimal("0"),
                 weekly_realized_pnl=Decimal("0"),
                 open_positions=sum(
-                    1 for item in positions
-                    if isinstance(item, Mapping) and float(item.get("size") or 0) > 0
-                ) if isinstance(positions, list) else 0,
+                    1 for item in positions if isinstance(item, Mapping) and float(item.get("size") or 0) > 0
+                )
+                if isinstance(positions, list)
+                else 0,
                 proposed_risk_pct=Decimal(str(risk_pct)) / Decimal("100"),
                 proposed_leverage=(
                     Decimal(str(quantity)) * entry_decimal / Decimal(str(wallet_equity))
-                    if wallet_equity > 0 else Decimal("0")
+                    if wallet_equity > 0
+                    else Decimal("0")
                 ),
                 spread_bps=spread_bps,
                 expected_slippage_bps=slippage_bps,
@@ -487,15 +519,15 @@ async def _route_signal_to_bybit_for_identity(
             if identity == "platform"
             else f"{optin_prefix}_user_optin:{int(principal_id)}"
         )
+        from db.models import RuntimeState
         async with get_session(label="bybit.consent", timeout_seconds=5.0) as session:
             optin = await session.get(RuntimeState, optin_key)
-            user_enabled = bool(
-                (dict(getattr(optin, "value", {}) or {})).get("enabled")
-            ) if optin else False
+            user_enabled = bool((dict(getattr(optin, "value", {}) or {})).get("enabled")) if optin else False
 
     kill_switch = True
     try:
         from core.redis_state import state
+
         kill_state = await state.get_killswitch()
         kill_switch = bool(getattr(kill_state, "enabled", True))
     except Exception:
@@ -517,7 +549,7 @@ async def _route_signal_to_bybit_for_identity(
         account_id=connection.connection_id,
         user_enabled=user_enabled,
         account_is_demo=sandbox,
-        credentials_encrypted=bool(key_enc and secret_enc),
+        credentials_encrypted=bool(getattr(connection, "api_key", None) and getattr(connection, "api_secret", None)),
         quote_age_seconds=quote_age,
         max_quote_age_seconds=max_quote_age if "max_quote_age" in locals() else 10.0,
         broker_healthy=bool(account_ready and wallet_ok and quote_ok),
@@ -541,6 +573,7 @@ async def _route_signal_to_bybit_for_identity(
     preflight = gate.preflight(gate_request)
     try:
         from services.account_policies import record_execution_decision
+
         await record_execution_decision(
             user_id=int(user.id),
             connection_id=str(connection.connection_id),
@@ -589,7 +622,9 @@ async def _route_signal_to_bybit_for_identity(
     async def submit(_: ExecutionRequest) -> dict[str, Any]:
         try:
             current = await resolve_execution_connection(
-                int(user.id), platform="bybit", connection_id=connection.connection_id,
+                int(user.id),
+                platform="bybit",
+                connection_id=connection.connection_id,
             )
         except (LookupError, PermissionError) as exc:
             return {"success": False, "status": "BLOCKED", "error": str(exc)}
@@ -597,10 +632,16 @@ async def _route_signal_to_bybit_for_identity(
             return {"success": False, "status": "BLOCKED", "error": "broker_connection_changed"}
         quota_user_id: int | None = None
         async with get_session(label="bybit.reserve", timeout_seconds=8.0) as session:
-            existing = (await session.execute(select(BrokerExecution).where(
-                BrokerExecution.provider == "bybit",
-                BrokerExecution.idempotency_key == idempotency_key,
-            ).with_for_update())).scalar_one_or_none()
+            existing = (
+                await session.execute(
+                    select(BrokerExecution)
+                    .where(
+                        BrokerExecution.provider == "bybit",
+                        BrokerExecution.idempotency_key == idempotency_key,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
             if existing is not None:
                 existing_status = str(existing.status or "").strip().lower()
                 if existing_status in {"rejected", "cancelled", "failed", "blocked"}:
@@ -610,7 +651,13 @@ async def _route_signal_to_bybit_for_identity(
                         "error": existing.error_code or "previous_execution_rejected",
                     }
                 if existing.provider_order_id and existing_status in {
-                    "submitted", "confirmed", "open", "partially_filled", "filled", "closed", "success"
+                    "submitted",
+                    "confirmed",
+                    "open",
+                    "partially_filled",
+                    "filled",
+                    "closed",
+                    "success",
                 }:
                     return {"success": True, "order_id": existing.provider_order_id, "status": existing.status}
                 return {
@@ -619,12 +666,21 @@ async def _route_signal_to_bybit_for_identity(
                     "error": "execution_state_requires_reconciliation",
                 }
             row = BrokerExecution(
-                user_id=int(user.id), signal_id=signal_id, provider="bybit",
+                user_id=int(user.id),
+                signal_id=signal_id,
+                provider="bybit",
                 connection_id=connection.connection_id,
-                account_ref=connection.connection_id, idempotency_key=idempotency_key,
-                provider_client_order_id=client_order_id, symbol=symbol, direction=direction,
-                quantity=float(quantity), entry_price=entry, stop_loss=stop, take_profit=take_profit,
-                status="reserved", tier_at_execution=str(getattr(user, "tier", "vip") or "vip"),
+                account_ref=connection.connection_id,
+                idempotency_key=idempotency_key,
+                provider_client_order_id=client_order_id,
+                symbol=symbol,
+                direction=direction,
+                quantity=float(quantity),
+                entry_price=entry,
+                stop_loss=stop,
+                take_profit=take_profit,
+                status="reserved",
+                tier_at_execution=str(getattr(user, "tier", "vip") or "vip"),
                 meta={
                     "sandbox": sandbox,
                     "execution_mode": execution_mode,
@@ -641,12 +697,11 @@ async def _route_signal_to_bybit_for_identity(
 
         if identity == "platform":
             from services.execution_quota import reserve_platform_user_execution_quota
-            quota_ok, quota_reason, quota_user_id = (
-                await reserve_platform_user_execution_quota(
-                    int(user.id),
-                    tier=str(getattr(user, "tier", "vip") or "vip"),
-                    execution_mode=execution_mode,
-                )
+
+            quota_ok, quota_reason, quota_user_id = await reserve_platform_user_execution_quota(
+                int(user.id),
+                tier=str(getattr(user, "tier", "vip") or "vip"),
+                execution_mode=execution_mode,
             )
         else:
             quota_ok, quota_reason, quota_user_id = await reserve_user_execution_quota(
@@ -656,9 +711,16 @@ async def _route_signal_to_bybit_for_identity(
             )
         if not quota_ok:
             async with get_session(label="bybit.quota_block", timeout_seconds=8.0) as session:
-                row = (await session.execute(select(BrokerExecution).where(
-                    BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key,
-                ).with_for_update())).scalar_one()
+                row = (
+                    await session.execute(
+                        select(BrokerExecution)
+                        .where(
+                            BrokerExecution.provider == "bybit",
+                            BrokerExecution.idempotency_key == idempotency_key,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one()
                 transition_execution_row(
                     row,
                     "blocked",
@@ -669,9 +731,16 @@ async def _route_signal_to_bybit_for_identity(
             return {"success": False, "status": "BLOCKED", "error": quota_reason}
 
         async with get_session(label="bybit.submitting", timeout_seconds=8.0) as session:
-            row = (await session.execute(select(BrokerExecution).where(
-                BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key,
-            ).with_for_update())).scalar_one()
+            row = (
+                await session.execute(
+                    select(BrokerExecution)
+                    .where(
+                        BrokerExecution.provider == "bybit",
+                        BrokerExecution.idempotency_key == idempotency_key,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one()
             transition_execution_row(
                 row,
                 "submitting",
@@ -690,7 +759,13 @@ async def _route_signal_to_bybit_for_identity(
             )
         except BybitAmbiguousOrderError as exc:
             async with get_session(label="bybit.ambiguous", timeout_seconds=8.0) as session:
-                row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
+                row = (
+                    await session.execute(
+                        select(BrokerExecution)
+                        .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                        .with_for_update()
+                    )
+                ).scalar_one()
                 transition_execution_row(
                     row,
                     "ambiguous",
@@ -701,7 +776,13 @@ async def _route_signal_to_bybit_for_identity(
             raise
         except BybitError as exc:
             async with get_session(label="bybit.rejected", timeout_seconds=8.0) as session:
-                row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
+                row = (
+                    await session.execute(
+                        select(BrokerExecution)
+                        .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                        .with_for_update()
+                    )
+                ).scalar_one()
                 now = now_utc_naive()
                 transition_execution_row(
                     row,
@@ -715,7 +796,13 @@ async def _route_signal_to_bybit_for_identity(
             return {"success": False, "status": "REJECTED", "error": str(exc)}
 
         async with get_session(label="bybit.confirm", timeout_seconds=8.0) as session:
-            row = (await session.execute(select(BrokerExecution).where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key).with_for_update())).scalar_one()
+            row = (
+                await session.execute(
+                    select(BrokerExecution)
+                    .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                    .with_for_update()
+                )
+            ).scalar_one()
             now = now_utc_naive()
             transition_execution_row(
                 row,
@@ -757,7 +844,9 @@ async def _route_signal_to_bybit_for_identity(
     result = await gate.execute(gate_request, submit)
     if result.accepted:
         return BybitRouteResult(True, "Bybit order confirmed", result.order_id, result.status)
-    return BybitRouteResult(False, "Bybit execution blocked", status=result.status, error=result.error or ",".join(result.decision.reasons))
+    return BybitRouteResult(
+        False, "Bybit execution blocked", status=result.status, error=result.error or ",".join(result.decision.reasons)
+    )
 
 
 async def route_signal_to_bybit(

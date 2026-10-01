@@ -4,6 +4,7 @@ Role (provider addendum §20): exchange flows, stablecoin metrics, network
 activity.  The free plan is low-resolution; higher plans provide better
 history and API limits.  Dormant until ``CRYPTOQUANT_API_KEY`` is configured.
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,7 +39,8 @@ async def _async_onchain_metric(exchange: str, metric: str) -> Optional[Dict[str
         f"{API_URL}/metrics/exchange/{metric}",
         name="cryptoquant",
         params={"exchange": str(exchange).lower(), "window": "day", "limit": 1},
-        headers=_headers(), timeout=10.0,
+        headers=_headers(),
+        timeout=10.0,
     )
     if not isinstance(data, dict):
         return None
@@ -58,10 +60,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "cryptoquant",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("CRYPTOQUANT_API_KEY",),
         "api_url": API_URL,
     }

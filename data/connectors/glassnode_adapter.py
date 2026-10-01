@@ -8,6 +8,7 @@ This adapter supersedes the context-only fetcher in
 ``data.alternative_providers.fetch_glassnode_context`` (kept for backwards
 compatibility) by providing the full normalized request surface.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,10 +55,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "glassnode",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("GLASSNODE_API_KEY",),
         "api_url": API_URL,
     }

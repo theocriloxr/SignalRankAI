@@ -5,7 +5,6 @@ from utils.timeutils import now_utc_naive
 import os
 from config import config, resolve_database_url
 import time
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ def run_startup_ops(run_mode: str) -> None:
     if not db_url:
         print("[auto_ops] No database URL configured, skipping startup ops", flush=True)
         return
-    
+
     print(f"[auto_ops] Database configured, running startup ops for mode={run_mode}", flush=True)
 
     # Production hardening: runtime auto-migrate can be disabled, but we still
@@ -287,11 +286,15 @@ def run_startup_ops(run_mode: str) -> None:
                 except Exception:
                     pass
                 try:
-                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_state ON signal_deliveries(delivery_state)")
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS ix_signal_deliveries_state ON signal_deliveries(delivery_state)"
+                    )
                 except Exception:
                     pass
                 try:
-                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_telegram_msg ON signal_deliveries(telegram_chat_id, telegram_message_id)")
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS ix_signal_deliveries_telegram_msg ON signal_deliveries(telegram_chat_id, telegram_message_id)"
+                    )
                 except Exception:
                     pass
                 try:
@@ -353,7 +356,9 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
-                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+                cur.execute(
+                    "ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()"
+                )
                 cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")
@@ -388,12 +393,8 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
-                cur.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_assets_symbol ON managed_assets (symbol)"
-                )
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS ix_managed_assets_is_active ON managed_assets (is_active)"
-                )
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_assets_symbol ON managed_assets (symbol)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_managed_assets_is_active ON managed_assets (is_active)")
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS ix_managed_assets_last_analyzed "
                     "ON managed_assets (last_analyzed_at ASC NULLS FIRST)"
@@ -460,9 +461,7 @@ def run_startup_ops(run_mode: str) -> None:
                     if raw_model_path
                     else Path(__file__).resolve().parents[1] / "ml" / "model.json"
                 )
-                restored = restore_active_model_artifact_sync(
-                    conn, model_path, model_name="primary"
-                )
+                restored = restore_active_model_artifact_sync(conn, model_path, model_name="primary")
                 candidate_restored = False
                 candidate_path = Path(
                     str(
@@ -477,13 +476,11 @@ def run_startup_ops(run_mode: str) -> None:
                 if restored or candidate_restored:
                     try:
                         from engine import ml as engine_ml
+
                         reload_status = engine_ml.reload_model() if restored else None
-                        shadow_status = (
-                            engine_ml.reload_shadow_model() if candidate_restored else None
-                        )
+                        shadow_status = engine_ml.reload_shadow_model() if candidate_restored else None
                         print(
-                            "[auto_ops] restored ML artifacts "
-                            f"primary={reload_status} candidate={shadow_status}",
+                            f"[auto_ops] restored ML artifacts primary={reload_status} candidate={shadow_status}",
                             flush=True,
                         )
                     except Exception as exc:

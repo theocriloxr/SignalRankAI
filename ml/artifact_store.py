@@ -15,12 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _artifact_db_priority() -> str:
     explicit = str(os.getenv("ML_TRAINING_DB_PRIORITY") or "").strip().lower()
-    role = str(
-        os.getenv("DB_ROLE")
-        or os.getenv("RUN_MODE")
-        or os.getenv("SERVICE_ROLE")
-        or ""
-    ).strip().lower()
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "").strip().lower()
     # Model persistence is part of the analytics-owned training transaction.
     # A dedicated analytics service must not fall back to the generic
     # background lane, whose foreground reservation can reject this durable
@@ -101,9 +96,7 @@ async def persist_active_model_artifact(
                     model_name=normalized_model_name,
                     model_version=str(payload.get("version") or "unknown"),
                     feature_schema_version=str(
-                        payload.get("feature_schema_version")
-                        or meta.get("feature_schema_version")
-                        or "1"
+                        payload.get("feature_schema_version") or meta.get("feature_schema_version") or "1"
                     ),
                     artifact_hash_sha256=_payload_hash(payload),
                     payload=payload,
@@ -122,8 +115,7 @@ async def persist_active_model_artifact(
             else "candidate"
         )
         logger.info(
-            "[ml_artifact] persisted model artifact name=%s version=%s hash=%s role=%s "
-            "champion_unchanged=%s",
+            "[ml_artifact] persisted model artifact name=%s version=%s hash=%s role=%s champion_unchanged=%s",
             normalized_model_name,
             payload.get("version"),
             _payload_hash(payload),
@@ -134,7 +126,6 @@ async def persist_active_model_artifact(
     except Exception as exc:
         logger.exception("[ml_artifact] persistence failed: %s", exc)
         return False
-
 
 
 async def promote_active_candidate_artifact(
@@ -160,36 +151,36 @@ async def promote_active_candidate_artifact(
         async with get_session(
             priority=_artifact_db_priority(),
             label="ml_candidate_promote",
-            timeout_seconds=float(
-                os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30
-            ),
+            timeout_seconds=float(os.getenv("ML_TRAINING_DB_TIMEOUT_SECONDS", "30") or 30),
             drop_if_busy=False,
         ) as session:
             candidate = (
-                await asyncio.wait_for(
-                    session.execute(
-                        select(MLModelArtifact)
-                        .where(
-                            MLModelArtifact.model_name == "candidate",
-                            MLModelArtifact.is_active.is_(True),
-                        )
-                        .order_by(
-                            desc(MLModelArtifact.created_at),
-                            desc(MLModelArtifact.id),
-                        )
-                        .limit(1)
-                        .with_for_update()
-                    ),
-                    timeout=_artifact_query_timeout(),
+                (
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLModelArtifact)
+                            .where(
+                                MLModelArtifact.model_name == "candidate",
+                                MLModelArtifact.is_active.is_(True),
+                            )
+                            .order_by(
+                                desc(MLModelArtifact.created_at),
+                                desc(MLModelArtifact.id),
+                            )
+                            .limit(1)
+                            .with_for_update()
+                        ),
+                        timeout=_artifact_query_timeout(),
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if candidate is None:
                 await session.rollback()
                 return {"ok": False, "reason": "active_candidate_missing"}
 
-            candidate_hash = str(
-                getattr(candidate, "artifact_hash_sha256", "") or ""
-            ).strip().lower()
+            candidate_hash = str(getattr(candidate, "artifact_hash_sha256", "") or "").strip().lower()
             if candidate_hash != expected:
                 await session.rollback()
                 return {
@@ -214,26 +205,28 @@ async def promote_active_candidate_artifact(
                 }
 
             current_primary = (
-                await asyncio.wait_for(
-                    session.execute(
-                        select(MLModelArtifact)
-                        .where(
-                            MLModelArtifact.model_name == "primary",
-                            MLModelArtifact.is_active.is_(True),
-                        )
-                        .order_by(
-                            desc(MLModelArtifact.created_at),
-                            desc(MLModelArtifact.id),
-                        )
-                        .limit(1)
-                        .with_for_update()
-                    ),
-                    timeout=_artifact_query_timeout(),
+                (
+                    await asyncio.wait_for(
+                        session.execute(
+                            select(MLModelArtifact)
+                            .where(
+                                MLModelArtifact.model_name == "primary",
+                                MLModelArtifact.is_active.is_(True),
+                            )
+                            .order_by(
+                                desc(MLModelArtifact.created_at),
+                                desc(MLModelArtifact.id),
+                            )
+                            .limit(1)
+                            .with_for_update()
+                        ),
+                        timeout=_artifact_query_timeout(),
+                    )
                 )
-            ).scalars().first()
-            previous_hash = str(
-                getattr(current_primary, "artifact_hash_sha256", "") or ""
-            ).strip().lower()
+                .scalars()
+                .first()
+            )
+            previous_hash = str(getattr(current_primary, "artifact_hash_sha256", "") or "").strip().lower()
 
             if previous_hash == candidate_hash:
                 await session.rollback()
@@ -258,23 +251,14 @@ async def promote_active_candidate_artifact(
             session.add(
                 MLModelArtifact(
                     model_name="primary",
-                    model_version=str(
-                        getattr(candidate, "model_version", "") or "unknown"
-                    ),
-                    feature_schema_version=str(
-                        getattr(candidate, "feature_schema_version", "") or "1"
-                    ),
+                    model_version=str(getattr(candidate, "model_version", "") or "unknown"),
+                    feature_schema_version=str(getattr(candidate, "feature_schema_version", "") or "1"),
                     artifact_hash_sha256=candidate_hash,
                     payload=payload,
                     metrics=dict(getattr(candidate, "metrics", {}) or {}),
-                    source_counts=dict(
-                        getattr(candidate, "source_counts", {}) or {}
-                    ),
+                    source_counts=dict(getattr(candidate, "source_counts", {}) or {}),
                     is_active=True,
-                    trained_at=(
-                        getattr(candidate, "trained_at", None)
-                        or now_utc_naive()
-                    ),
+                    trained_at=(getattr(candidate, "trained_at", None) or now_utc_naive()),
                 )
             )
             await asyncio.wait_for(
@@ -323,8 +307,7 @@ def restore_active_model_artifact_sync(
                 WHERE model_name = %s AND is_active = TRUE
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1
-                """
-                ,
+                """,
                 (normalized_model_name,),
             )
             row = cursor.fetchone()
@@ -346,9 +329,7 @@ def restore_active_model_artifact_sync(
             )
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(
-            prefix="model.restore.", suffix=".json.tmp", dir=str(target.parent)
-        )
+        fd, temp_name = tempfile.mkstemp(prefix="model.restore.", suffix=".json.tmp", dir=str(target.parent))
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2)

@@ -5,6 +5,7 @@ ranking and distribution for each user.  This module tells the engine which
 asset classes, instruments and timeframes active profiles currently require so
 it does not scan a hard-coded or irrelevant universe.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,8 @@ class ProfileDemandSnapshot:
     @property
     def preferred_assets(self) -> tuple[str, ...]:
         return tuple(
-            key for key, _ in sorted(
+            key
+            for key, _ in sorted(
                 self.preferred_asset_counts.items(),
                 key=lambda item: (-int(item[1]), item[0]),
             )
@@ -81,11 +83,15 @@ class ProfileDemandSnapshot:
         default_list = [str(value).strip().lower() for value in defaults if str(value).strip()]
         allowed_set = {str(value).strip().lower() for value in (allowed or []) if str(value).strip()}
         class_name = str(asset_class or "").strip().lower()
-        class_demanded = [
-            key.split(":", 1)[1]
-            for key, count in self.asset_class_timeframe_counts.items()
-            if count > 0 and key.startswith(f"{class_name}:")
-        ] if class_name else []
+        class_demanded = (
+            [
+                key.split(":", 1)[1]
+                for key, count in self.asset_class_timeframe_counts.items()
+                if count > 0 and key.startswith(f"{class_name}:")
+            ]
+            if class_name
+            else []
+        )
         demanded = class_demanded or list(self.preferred_timeframes)
         if self.active_profiles <= 0 or not demanded:
             out = default_list
@@ -171,7 +177,8 @@ def aggregate_profile_demand(
             tier_policy = get_entitlements(str(sources.get("tier") or "free"))
             requested_classes = list(merged.get("asset_classes") or [])
             merged["asset_classes"] = [
-                value for value in requested_classes
+                value
+                for value in requested_classes
                 if str(value).strip().lower() in set(tier_policy.allowed_asset_classes)
             ] or list(tier_policy.allowed_asset_classes)
             requested_profile = str(merged.get("trade_profile") or "all").strip().lower()
@@ -231,9 +238,7 @@ async def load_profile_demand(session) -> ProfileDemandSnapshot:
         active_rows = active_result.all()
         active_user_ids = {int(row[0]) for row in active_rows if row[0] is not None}
         telegram_to_user = {
-            int(row[1]): int(row[0])
-            for row in active_rows
-            if row[0] is not None and row[1] is not None
+            int(row[1]): int(row[0]) for row in active_rows if row[0] is not None and row[1] is not None
         }
         for row in active_rows:
             if row[0] is None:

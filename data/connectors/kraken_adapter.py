@@ -59,7 +59,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
                 rows = value
                 break
         out: List[Dict[str, Any]] = []
-        for row in rows[-int(limit or 200):]:
+        for row in rows[-int(limit or 200) :]:
             try:
                 # [time_seconds, open, high, low, close, vwap, volume, count]
                 out.append(

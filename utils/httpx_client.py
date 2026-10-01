@@ -1,4 +1,5 @@
 """Shared httpx AsyncClient and lightweight retry/circuit helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -49,6 +50,6 @@ async def retry_async(fn: Callable[..., Any], retries: int = 3, backoff: float =
             return await fn(*args, **kwargs)
         except Exception as exc:
             last_exc = exc
-            wait = backoff * (2 ** attempt)
+            wait = backoff * (2**attempt)
             await asyncio.sleep(wait)
     raise last_exc

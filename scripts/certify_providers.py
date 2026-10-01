@@ -7,6 +7,7 @@ Examples:
 
 Live mode is intentionally opt-in and never prints credential values.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,7 +17,6 @@ from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path
-import socket
 import sys
 import time
 from typing import Any
@@ -137,7 +137,9 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
     )
 
     if not implemented:
-        result.certification_status = CertificationStatus.DISABLED.value if not enabled else CertificationStatus.FAILED.value
+        result.certification_status = (
+            CertificationStatus.DISABLED.value if not enabled else CertificationStatus.FAILED.value
+        )
         result.error = "No canonical connector implementation in this repository snapshot."
         return result
 
@@ -280,10 +282,7 @@ def _markdown(results: list[ProviderCertification]) -> str:
 async def _run(args: argparse.Namespace) -> int:
     requested = {item.strip().lower() for item in (args.providers or "").split(",") if item.strip()}
     specs = [spec for spec in list_provider_specs() if not requested or spec.key in requested]
-    results = [
-        await certify_one(spec, live=args.live, timeout=args.timeout, limit=args.limit)
-        for spec in specs
-    ]
+    results = [await certify_one(spec, live=args.live, timeout=args.timeout, limit=args.limit) for spec in specs]
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -296,11 +295,7 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"JSON: {json_path}")
     print(f"Markdown: {md_path}")
 
-    hard_fail = any(
-        item.certification_status == CertificationStatus.FAILED.value
-        and item.enabled
-        for item in results
-    )
+    hard_fail = any(item.certification_status == CertificationStatus.FAILED.value and item.enabled for item in results)
     return 1 if hard_fail else 0
 
 

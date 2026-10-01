@@ -3,6 +3,7 @@
 Kept deliberately small: adapters stay standalone and testable, and only reuse
 the two operations every adapter needs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,9 +50,7 @@ async def async_http_get_json(
         return None
 
     async def _do():
-        resp = await client.get(
-            url, params=dict(params or {}), headers=dict(headers or {}), timeout=timeout
-        )
+        resp = await client.get(url, params=dict(params or {}), headers=dict(headers or {}), timeout=timeout)
         if resp.status_code != 200:
             logger.debug("%s HTTP %s url=%s", name, resp.status_code, url)
             return None

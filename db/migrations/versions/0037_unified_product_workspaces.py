@@ -3,6 +3,7 @@
 Revision ID: 0037_unified_product_workspaces
 Revises: 0036_unified_platform_identity
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -35,7 +36,9 @@ def upgrade() -> None:
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_journal_entries_user_time ON journal_entries(user_id, occurred_at DESC)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_journal_entries_signal ON journal_entries(signal_id) WHERE signal_id IS NOT NULL")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_journal_entries_signal ON journal_entries(signal_id) WHERE signal_id IS NOT NULL"
+    )
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS api_keys (
@@ -148,7 +151,9 @@ def upgrade() -> None:
             ingested_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_analytics_event_name_time ON analytics_events(event_name, occurred_at DESC)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_analytics_event_name_time ON analytics_events(event_name, occurred_at DESC)"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS ix_analytics_user_time ON analytics_events(user_id, occurred_at DESC)")
 
 

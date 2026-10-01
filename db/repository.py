@@ -3,7 +3,6 @@ from utils.timeutils import now_utc_naive
 
 import os
 import json
-import hmac
 import hashlib
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -36,13 +35,10 @@ async def count_active_subscriptions(
 ) -> int:
     """Count ALL active subscriptions across all tiers."""
     now = now_utc_naive()
-    q = (
-        select(func.count(Subscription.id))
-        .where(
-            Subscription.status == "active",
-            Subscription.expires_at.is_not(None),
-            Subscription.expires_at > now,
-        )
+    q = select(func.count(Subscription.id)).where(
+        Subscription.status == "active",
+        Subscription.expires_at.is_not(None),
+        Subscription.expires_at > now,
     )
     res = await session.execute(q)
     return int(res.scalar() or 0)
@@ -129,7 +125,9 @@ async def get_or_create_user(
             await session.flush()
         return user
 
-    user = User(telegram_user_id=telegram_user_id, username=username, tier=(str(tier).strip().lower()[:16] if tier else "free"))
+    user = User(
+        telegram_user_id=telegram_user_id, username=username, tier=(str(tier).strip().lower()[:16] if tier else "free")
+    )
     session.add(user)
     try:
         await session.flush()
@@ -162,9 +160,7 @@ async def activate_subscription(
     # webhook idempotency is enforced by payment_events, which permits each
     # renewal to keep its own provider reference without mutating this row.
     if paystack_reference:
-        res = await session.execute(
-            select(Subscription).where(Subscription.paystack_reference == paystack_reference)
-        )
+        res = await session.execute(select(Subscription).where(Subscription.paystack_reference == paystack_reference))
         existing = res.scalar_one_or_none()
         if existing is not None:
             return existing
@@ -186,17 +182,23 @@ async def activate_subscription(
     add_days = max(int(duration_days), 1)
 
     tier_order = {"free": 0, "premium": 1, "vip": 2, "professional": 3, "institutional": 4}
-    active_rows = list((await session.execute(
-        select(Subscription)
-        .where(
-            Subscription.user_id == user.id,
-            Subscription.status == "active",
-            Subscription.expires_at.is_not(None),
-            Subscription.expires_at > now,
+    active_rows = list(
+        (
+            await session.execute(
+                select(Subscription)
+                .where(
+                    Subscription.user_id == user.id,
+                    Subscription.status == "active",
+                    Subscription.expires_at.is_not(None),
+                    Subscription.expires_at > now,
+                )
+                .order_by(Subscription.expires_at.desc())
+                .with_for_update()
+            )
         )
-        .order_by(Subscription.expires_at.desc())
-        .with_for_update()
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
     highest = max(active_rows, key=lambda row: tier_order.get(normalize_tier(row.tier), 0), default=None)
     purchased_rank = tier_order.get(tier_norm, 0)
     highest_rank = tier_order.get(normalize_tier(highest.tier), 0) if highest is not None else -1
@@ -270,11 +272,14 @@ async def persist_decision_log(
     """Persist a decision/annotation about a signal or market evaluation.
 
     Returns inserted row id (when available) or 0.
-    
+
     IMPORTANT: With NullPool enabled, failing to commit causes data loss!
     """
     if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }:
         return 0
     try:
@@ -289,25 +294,28 @@ async def persist_decision_log(
             )
             session.add(dl)
             await session.flush()
-            
+
             # FIX: Explicit commit for NullPool compatibility (data vanishes without commit!)
             await session.commit()
-            
+
             try:
                 return int(dl.id or 0)
             except Exception:
                 return 0
     except Exception as e:
         import logging
+
         if type(e).__name__ == "NoncriticalWriteDropped":
-            _DECISION_LOG_RETRY_QUEUE.append({
-                "signal_id": signal_id,
-                "asset": asset,
-                "timeframe": timeframe,
-                "decision": decision,
-                "reason": reason,
-                "meta": dict(meta or {}),
-            })
+            _DECISION_LOG_RETRY_QUEUE.append(
+                {
+                    "signal_id": signal_id,
+                    "asset": asset,
+                    "timeframe": timeframe,
+                    "decision": decision,
+                    "reason": reason,
+                    "meta": dict(meta or {}),
+                }
+            )
             logging.getLogger(__name__).info(
                 "Decision log queued because DB gate is busy pending=%s",
                 len(_DECISION_LOG_RETRY_QUEUE),
@@ -326,16 +334,24 @@ async def persist_decision_logs_batch(rows: list[dict[str, Any]]) -> int:
     not silently erase the very examples used by the full-market learner.
     """
     if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }:
         return 0
     clean = []
     for row in list(rows or [])[:100]:
-        clean.append({
-            "signal_id": row.get("signal_id"), "asset": row.get("asset"),
-            "timeframe": row.get("timeframe"), "decision": str(row.get("decision") or "observed")[:32],
-            "reason": str(row.get("reason") or "")[:1000] or None, "meta": dict(row.get("meta") or {}),
-        })
+        clean.append(
+            {
+                "signal_id": row.get("signal_id"),
+                "asset": row.get("asset"),
+                "timeframe": row.get("timeframe"),
+                "decision": str(row.get("decision") or "observed")[:32],
+                "reason": str(row.get("reason") or "")[:1000] or None,
+                "meta": dict(row.get("meta") or {}),
+            }
+        )
     if not clean:
         return 0
     for item in clean:
@@ -359,6 +375,7 @@ async def flush_decision_log_retry_queue(limit: int = 100) -> int:
         for item in reversed(batch):
             _DECISION_LOG_RETRY_QUEUE.appendleft(item)
         import logging
+
         logging.getLogger(__name__).warning(
             "Decision-log retry batch deferred: %s pending=%s",
             type(exc).__name__,
@@ -379,6 +396,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 signal_thesis_fingerprint,
                 signal_thesis_scope,
             )
+
             direction = canonical_direction(signal_data.get("direction"))
             thesis_fingerprint = signal_thesis_fingerprint(signal_data)
             # Serialize duplicate-thesis admission across engine replicas. This
@@ -402,40 +420,53 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     )
             except Exception as lock_error:
                 from core.env import runtime_environment_name
+
                 if runtime_environment_name("development") == "production":
                     raise RuntimeError("signal_thesis_lock_unavailable") from lock_error
                 # Non-production SQLite/test environments still receive the
                 # deterministic recent-thesis query below.
-            thesis_cutoff = now_utc_naive() - timedelta(
-                hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4))
-            )
-            recent_thesis = (await session.execute(
-                select(Signal.signal_id).where(
-                    Signal.thesis_fingerprint == thesis_fingerprint,
-                    Signal.created_at >= thesis_cutoff,
-                    Signal.archived.is_(False),
-                    Signal.expired.is_(False),
-                ).limit(1)
-            )).scalar_one_or_none()
+            thesis_cutoff = now_utc_naive() - timedelta(hours=max(1, _env_int("SIGNAL_THESIS_DEDUP_HOURS", 4)))
+            recent_thesis = (
+                await session.execute(
+                    select(Signal.signal_id)
+                    .where(
+                        Signal.thesis_fingerprint == thesis_fingerprint,
+                        Signal.created_at >= thesis_cutoff,
+                        Signal.archived.is_(False),
+                        Signal.expired.is_(False),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
             if recent_thesis is not None:
                 return None
             try:
-                semantic_tolerance = max(0.0001, min(0.05, float(
-                    os.getenv("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", "0.003") or 0.003
-                )))
+                semantic_tolerance = max(
+                    0.0001, min(0.05, float(os.getenv("SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT", "0.003") or 0.003))
+                )
             except Exception:
                 semantic_tolerance = 0.003
-            strategy_name = str(signal_data.get("strategy_name") or signal_data.get("strategy") or "unknown").lower().strip()
-            semantic_candidates = (await session.execute(
-                select(Signal).where(
-                    Signal.asset == asset,
-                    Signal.direction == direction,
-                    func.lower(Signal.strategy_name) == strategy_name,
-                    Signal.created_at >= thesis_cutoff,
-                    Signal.archived.is_(False),
-                    Signal.expired.is_(False),
-                ).order_by(Signal.created_at.desc())
-            )).scalars().all()
+            strategy_name = (
+                str(signal_data.get("strategy_name") or signal_data.get("strategy") or "unknown").lower().strip()
+            )
+            semantic_candidates = (
+                (
+                    await session.execute(
+                        select(Signal)
+                        .where(
+                            Signal.asset == asset,
+                            Signal.direction == direction,
+                            func.lower(Signal.strategy_name) == strategy_name,
+                            Signal.created_at >= thesis_cutoff,
+                            Signal.archived.is_(False),
+                            Signal.expired.is_(False),
+                        )
+                        .order_by(Signal.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
             entry_value = float(signal_data.get("entry") or 0)
             for candidate in semantic_candidates:
                 if semantic_entries_equivalent(
@@ -445,18 +476,22 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 ):
                     return None
             exact_active = (
-                await session.execute(
-                    select(Signal)
-                    .where(
-                        Signal.asset == asset,
-                        Signal.direction == direction,
-                        Signal.timeframe == timeframe,
-                        Signal.status == "active",
+                (
+                    await session.execute(
+                        select(Signal)
+                        .where(
+                            Signal.asset == asset,
+                            Signal.direction == direction,
+                            Signal.timeframe == timeframe,
+                            Signal.status == "active",
+                        )
+                        .order_by(Signal.created_at.desc())
+                        .limit(1)
                     )
-                    .order_by(Signal.created_at.desc())
-                    .limit(1)
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if exact_active is not None:
                 if bool(exact_active.expired) or bool(exact_active.archived):
                     exact_active.status = "superseded"
@@ -482,47 +517,46 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 if existing_conflict:
                     return None
             # Convert take_profit list to JSON string
-            tp_json = json.dumps(signal_data.get('take_profit', []))
-            
+            tp_json = json.dumps(signal_data.get("take_profit", []))
+
             calibrated_probability = signal_data.get("ml_probability_calibrated")
             calibration_version = signal_data.get("ml_calibration_version")
             signal = Signal(
-                asset=asset or signal_data.get('asset'),
-                timeframe=timeframe or signal_data.get('timeframe'),
-                direction=direction or signal_data.get('direction'),
-                entry=signal_data.get('entry'),
-                stop_loss=signal_data.get('stop_loss'),
+                asset=asset or signal_data.get("asset"),
+                timeframe=timeframe or signal_data.get("timeframe"),
+                direction=direction or signal_data.get("direction"),
+                entry=signal_data.get("entry"),
+                stop_loss=signal_data.get("stop_loss"),
                 take_profit=tp_json,
-                status=signal_data.get('status', 'issued'),
-                score=signal_data.get('score', 70),
-                strategy_name=signal_data.get('strategy_name', 'unknown'),
-                strategy_group=signal_data.get('strategy_group', 'mixed'),
-                strength=signal_data.get('confidence', 0.7),
-                ml_probability=calibrated_probability if calibrated_probability is not None else signal_data.get('ml_probability'),
-                ml_probability_raw=signal_data.get('ml_probability_raw') or signal_data.get('ml_probability'),
+                status=signal_data.get("status", "issued"),
+                score=signal_data.get("score", 70),
+                strategy_name=signal_data.get("strategy_name", "unknown"),
+                strategy_group=signal_data.get("strategy_group", "mixed"),
+                strength=signal_data.get("confidence", 0.7),
+                ml_probability=calibrated_probability
+                if calibrated_probability is not None
+                else signal_data.get("ml_probability"),
+                ml_probability_raw=signal_data.get("ml_probability_raw") or signal_data.get("ml_probability"),
                 ml_probability_calibrated=calibrated_probability,
                 ml_calibration_version=calibration_version,
-                ml_calibration_validated=bool(signal_data.get('ml_calibration_validated', False)),
+                ml_calibration_validated=bool(signal_data.get("ml_calibration_validated", False)),
                 ml_calibration_validation_rows=(
-                    int(signal_data.get('ml_calibration_validation_rows'))
-                    if signal_data.get('ml_calibration_validation_rows') is not None
+                    int(signal_data.get("ml_calibration_validation_rows"))
+                    if signal_data.get("ml_calibration_validation_rows") is not None
                     else None
                 ),
                 ml_calibration_brier=(
-                    float(signal_data.get('ml_calibration_brier'))
-                    if signal_data.get('ml_calibration_brier') is not None
+                    float(signal_data.get("ml_calibration_brier"))
+                    if signal_data.get("ml_calibration_brier") is not None
                     else None
                 ),
                 ml_calibration_ece=(
-                    float(signal_data.get('ml_calibration_ece'))
-                    if signal_data.get('ml_calibration_ece') is not None
+                    float(signal_data.get("ml_calibration_ece"))
+                    if signal_data.get("ml_calibration_ece") is not None
                     else None
                 ),
                 ml_recovery_mode=bool(signal_data.get("ml_recovery_mode", False)),
-                ml_recovery_reason=(
-                    str(signal_data.get("ml_recovery_reason") or "").strip()[:64]
-                    or None
-                ),
+                ml_recovery_reason=(str(signal_data.get("ml_recovery_reason") or "").strip()[:64] or None),
                 ml_recovery_champion_raw_probability=(
                     float(signal_data.get("ml_recovery_champion_raw_probability"))
                     if signal_data.get("ml_recovery_champion_raw_probability") is not None
@@ -544,17 +578,16 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                     else None
                 ),
                 ml_recovery_challenger_version=(
-                    str(signal_data.get("ml_recovery_challenger_version") or "").strip()[:64]
-                    or None
+                    str(signal_data.get("ml_recovery_challenger_version") or "").strip()[:64] or None
                 ),
                 fingerprint=thesis_fingerprint,
                 thesis_fingerprint=thesis_fingerprint,
                 asset_discovery_provider=(str(signal_data.get("asset_discovery_provider") or "").strip()[:128] or None),
-                quality_gate_version=str(signal_data.get('quality_gate_version') or 'production-integrity-v1'),
-                quality_gate_passed=bool(signal_data.get('quality_gate_passed', False)),
+                quality_gate_version=str(signal_data.get("quality_gate_version") or "production-integrity-v1"),
+                quality_gate_passed=bool(signal_data.get("quality_gate_passed", False)),
                 created_at=now_utc_naive(),
             )
-            
+
             session.add(signal)
             await session.flush()
 
@@ -563,20 +596,24 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             if signal_data.get("adaptive_evidence") or signal_data.get("adaptive_sequence_refs"):
                 try:
                     from engine.adaptive.repository import persist_signal_adaptive_evidence
+
                     await persist_signal_adaptive_evidence(session, signal, signal_data)
                 except Exception as adaptive_error:
                     import logging
+
                     logging.getLogger(__name__).warning(
                         "[adaptive] evidence persistence skipped signal=%s error=%s",
-                        getattr(signal, "signal_id", None), adaptive_error,
+                        getattr(signal, "signal_id", None),
+                        adaptive_error,
                     )
-            
+
             # FIX: Explicit commit for NullPool compatibility
             await session.commit()
-            
+
             return signal
     except Exception as e:
         import logging
+
         logging.error(f"Failed to persist signal: {e}")
         return None
 
@@ -661,11 +698,7 @@ async def revoke_api_token(
 ) -> int:
     now = now_utc_naive()
     tok_hash = hash_api_token(raw_token)
-    stmt = (
-        update(ApiToken)
-        .where(ApiToken.token_hash == tok_hash, ApiToken.revoked_at.is_(None))
-        .values(revoked_at=now)
-    )
+    stmt = update(ApiToken).where(ApiToken.token_hash == tok_hash, ApiToken.revoked_at.is_(None)).values(revoked_at=now)
     res = await session.execute(stmt)
     await session.flush()
     return int(getattr(res, "rowcount", 0) or 0)
@@ -748,9 +781,7 @@ async def mark_webhook_event_processed(
 
 async def get_webhook_event(session: AsyncSession, event_id: str) -> ProcessedWebhookEvent | None:
     return (
-        await session.execute(
-            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == str(event_id))
-        )
+        await session.execute(select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == str(event_id)))
     ).scalar_one_or_none()
 
 
@@ -764,9 +795,7 @@ async def update_webhook_event_status(
 ) -> ProcessedWebhookEvent | None:
     row = (
         await session.execute(
-            select(ProcessedWebhookEvent)
-            .where(ProcessedWebhookEvent.event_id == str(event_id))
-            .with_for_update()
+            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == str(event_id)).with_for_update()
         )
     ).scalar_one_or_none()
     if row is None:

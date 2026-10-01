@@ -50,14 +50,19 @@ async def _run(args: argparse.Namespace) -> int:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({
-        "ok": True,
-        "approved": decision.approved,
-        "applied": result["applied"],
-        "changed_paths": result["changed_paths"],
-        "artifact": str(output),
-        "draft_pr_required": True,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "approved": decision.approved,
+                "applied": result["applied"],
+                "changed_paths": result["changed_paths"],
+                "artifact": str(output),
+                "draft_pr_required": True,
+            },
+            indent=2,
+        )
+    )
     return 0 if decision.approved else 3
 
 

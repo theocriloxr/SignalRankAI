@@ -6,6 +6,7 @@ This module enables continuous ML learning by:
 2. Labeling signals with outcomes when trades close
 3. Triggering automated retraining with recent data
 """
+
 from utils.timeutils import now_utc_naive
 
 import logging
@@ -22,20 +23,21 @@ RETRAIN_INTERVAL_HOURS = int(os.getenv("ML_RETRAIN_INTERVAL_HOURS", "168"))
 
 class MLFeedbackLoop:
     """ML Feedback Loop for continuous learning."""
-    
+
     def __init__(self):
         self._redis = None
         self._redis_url = self._resolve_redis_url()
         self._last_retrain: Optional[datetime] = None
         if self._redis_url:
             self._init_redis()
-    
+
     def _resolve_redis_url(self) -> Optional[str]:
         return os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL") or None
-    
+
     def _init_redis(self):
         try:
             import redis
+
             self._redis = redis.from_url(
                 self._redis_url,
                 decode_responses=True,
@@ -47,19 +49,15 @@ class MLFeedbackLoop:
         except Exception as e:
             logger.debug(f"[ml_feedback] Redis unavailable: {e}")
             self._redis = None
-    
-    async def record_signal(
-        self,
-        signal: Dict[str, Any],
-        market_context: Dict[str, Any]
-    ) -> None:
+
+    async def record_signal(self, signal: Dict[str, Any], market_context: Dict[str, Any]) -> None:
         """Record a signal with market context for ML training."""
         import json
-        
+
         signal_id = signal.get("signal_id") or signal.get("id")
         if not signal_id:
             return
-        
+
         record = {
             "signal_id": signal_id,
             "asset": signal.get("asset"),
@@ -86,63 +84,47 @@ class MLFeedbackLoop:
             "r_multiple": None,
             "recorded_at": now_utc_naive().isoformat(),
         }
-        
+
         if self._redis:
-            self._redis.hset(
-                "signalrankai:ml_signals",
-                signal_id,
-                json.dumps(record)
-            )
-        
+            self._redis.hset("signalrankai:ml_signals", signal_id, json.dumps(record))
+
         logger.debug(f"[ml_feedback] Recorded signal {signal_id} with context")
-    
+
     async def update_outcome(
-        self,
-        signal_id: str,
-        outcome: str,
-        r_multiple: Optional[float] = None,
-        closed_at: Optional[datetime] = None
+        self, signal_id: str, outcome: str, r_multiple: Optional[float] = None, closed_at: Optional[datetime] = None
     ) -> None:
         """Update a signal with its outcome after trade closes."""
         import json
-        
+
         if closed_at is None:
             closed_at = now_utc_naive()
-        
+
         outcome_data = {
             "outcome": outcome,
             "r_multiple": r_multiple,
             "closed_at": closed_at.isoformat(),
         }
-        
+
         if self._redis:
             existing = self._redis.hget("signalrankai:ml_signals", signal_id)
             if existing:
                 record = json.loads(existing)
                 record.update(outcome_data)
-                self._redis.hset(
-                    "signalrankai:ml_signals",
-                    signal_id,
-                    json.dumps(record)
-                )
-        
+                self._redis.hset("signalrankai:ml_signals", signal_id, json.dumps(record))
+
         logger.info(f"[ml_feedback] Updated outcome for {signal_id}: {outcome} ({r_multiple}R)")
-    
-    async def get_recent_signals(
-        self,
-        days: int = RETRAIN_DAYS,
-        limit: int = 1000
-    ) -> List[Dict[str, Any]]:
+
+    async def get_recent_signals(self, days: int = RETRAIN_DAYS, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get recent signals with outcomes for retraining."""
         import json
-        
+
         signals = []
         cutoff = now_utc_naive() - timedelta(days=days)
         cutoff_str = cutoff.isoformat()
-        
+
         if self._redis:
             all_data = self._redis.hgetall("signalrankai:ml_signals")
-            
+
             for signal_id, data in (all_data or {}).items():
                 try:
                     record = json.loads(data)
@@ -150,63 +132,54 @@ class MLFeedbackLoop:
                         signals.append(record)
                 except Exception:
                     continue
-        
+
         signals.sort(key=lambda x: x.get("recorded_at", ""), reverse=True)
         return signals[:limit]
-    
-    async def trigger_retraining(
-        self,
-        force: bool = False
-    ) -> Dict[str, Any]:
+
+    async def trigger_retraining(self, force: bool = False) -> Dict[str, Any]:
         """Trigger ML model retraining with recent signals."""
         if not force and self._last_retrain:
-            hours_since = (
-                now_utc_naive() - self._last_retrain
-            ).total_seconds() / 3600
-            
+            hours_since = (now_utc_naive() - self._last_retrain).total_seconds() / 3600
+
             if hours_since < RETRAIN_INTERVAL_HOURS:
                 logger.info(
                     f"[ml_feedback] Skipping retrain: only {hours_since:.1f}h since last "
                     f"(min: {RETRAIN_INTERVAL_HOURS}h)"
                 )
                 return {"skipped": True, "reason": "not_due"}
-        
+
         signals = await self.get_recent_signals(days=RETRAIN_DAYS)
-        
+
         if len(signals) < MIN_SAMPLES:
-            logger.info(
-                f"[ml_feedback] Skipping retrain: only {len(signals)} samples "
-                f"(min: {MIN_SAMPLES})"
-            )
+            logger.info(f"[ml_feedback] Skipping retrain: only {len(signals)} samples (min: {MIN_SAMPLES})")
             return {"skipped": True, "reason": "not_enough_samples"}
-        
+
         outcomes = {}
         for sig in signals:
             outcome = sig.get("outcome", "unknown")
             outcomes[outcome] = outcomes.get(outcome, 0) + 1
-        
-        logger.info(
-            f"[ml_feedback] Retraining with {len(signals)} signals: {outcomes}"
-        )
-        
+
+        logger.info(f"[ml_feedback] Retraining with {len(signals)} signals: {outcomes}")
+
         self._last_retrain = now_utc_naive()
-        
+
         return {
             "success": True,
             "signals_used": len(signals),
             "outcomes": outcomes,
         }
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get feedback loop statistics."""
         count = 0
         with_outcomes = 0
-        
+
         if self._redis:
             import json
+
             all_data = self._redis.hgetall("signalrankai:ml_signals")
             count = len(all_data or {})
-            
+
             for _, data in (all_data or {}).items():
                 try:
                     record = json.loads(data)
@@ -214,7 +187,7 @@ class MLFeedbackLoop:
                         with_outcomes += 1
                 except Exception:
                     pass
-        
+
         return {
             "total_signals": count,
             "with_outcomes": with_outcomes,

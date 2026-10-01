@@ -6,6 +6,7 @@ periodic database tasks.  Importing ``web.app`` can fail when an optional web
 integration is unavailable, which previously made both waitlist jobs disappear
 without a useful traceback.
 """
+
 from __future__ import annotations
 
 import logging
@@ -72,9 +73,7 @@ async def check_waitlist_capacity_job() -> None:
                 logger.debug("[waitlist] no pending entries")
                 return
 
-            user = (
-                await session.execute(select(User).where(User.id == int(entry.user_id)))
-            ).scalars().first()
+            user = (await session.execute(select(User).where(User.id == int(entry.user_id)))).scalars().first()
             if user is None:
                 await session.rollback()
                 logger.warning("[waitlist] user %s not found", entry.user_id)

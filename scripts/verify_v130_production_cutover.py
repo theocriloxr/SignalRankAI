@@ -1,4 +1,5 @@
 """Release verifier for the current SignalRankAI production cutover contract."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,7 +34,10 @@ def main() -> int:
     require(validate(profile) == [], "production environment contract")
     source = (ROOT / "db/pg_features.py").read_text()
     require("pg_advisory_xact_lock" in source, "outcome advisory lock")
-    require("on_conflict_do_update" not in source[source.index("async def upsert_outcome"):], "no fragile outcome ON CONFLICT")
+    require(
+        "on_conflict_do_update" not in source[source.index("async def upsert_outcome") :],
+        "no fragile outcome ON CONFLICT",
+    )
     print("PASS v1.3.6.7 production cutover verification")
     return 0
 

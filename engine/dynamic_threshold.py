@@ -22,49 +22,50 @@ try:
     )
 except ImportError as e:
     logger.warning(f"[engine] ml.dynamic_threshold not available: {e}")
+
     # Stub functions
     def _ml_calculate_threshold(*args, **kwargs):
         return 0.30
+
     def _get_ml_auc():
         return None
+
     def _get_dynamic_threshold(*args, **kwargs):
         return 0.30
 
 
 def calculate_dynamic_threshold(
-    base_threshold: Optional[float] = None,
-    current_auc: Optional[float] = None,
-    target_auc: float = 0.85
+    base_threshold: Optional[float] = None, current_auc: Optional[float] = None, target_auc: float = 0.85
 ) -> float:
     """
     Calculate dynamic threshold based on ML model AUC.
-    
+
     This is the main function the engine calls to get the threshold.
-    
+
     If base_threshold is None, reads from ML_PROB_THRESHOLD env var (default: 0.30)
     If current_auc is None, fetches from Redis key "ml:model:auc"
-    
+
     Args:
         base_threshold: Base ML probability threshold. If None, uses env var.
         current_auc: Current model AUC. If None, fetches from Redis.
         target_auc: Target AUC to normalize against (default: 0.85)
-    
+
     Returns:
         Dynamically adjusted threshold based on model performance
     """
     # Get base threshold from env if not provided
     if base_threshold is None:
         base_threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.30"))
-    
+
     # Try to get AUC from Redis if not provided
     if current_auc is None:
         current_auc = _get_ml_auc()
-    
+
     # If no AUC available, return base threshold
     if current_auc is None:
         logger.debug("[engine] No AUC available, using base threshold %.2f", base_threshold)
         return base_threshold
-    
+
     # Calculate dynamic threshold
     try:
         return _ml_calculate_threshold(base_threshold, current_auc, target_auc)
@@ -87,6 +88,6 @@ def get_threshold() -> float:
 # Convenience function for engine/core.py import
 __all__ = [
     "calculate_dynamic_threshold",
-    "get_ml_model_auc", 
+    "get_ml_model_auc",
     "get_threshold",
 ]

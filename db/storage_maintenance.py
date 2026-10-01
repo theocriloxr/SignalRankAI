@@ -11,10 +11,10 @@ from db.session import get_session
 
 logger = logging.getLogger(__name__)
 
+
 def _retention_db_priority() -> str:
     role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
     return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
-
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

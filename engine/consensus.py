@@ -104,7 +104,11 @@ def consensus_filter(signals, min_score=None):
 
     approved: list[dict] = []
     # TEMPORARILY disabled strict_groups for debugging - was blocking all signals
-    strict_groups = _env_bool("CONSENSUS_STRICT_GROUPS", False) if _env_bool("PROD_MODE", True) else _env_bool("CONSENSUS_STRICT_GROUPS", False)
+    strict_groups = (
+        _env_bool("CONSENSUS_STRICT_GROUPS", False)
+        if _env_bool("PROD_MODE", True)
+        else _env_bool("CONSENSUS_STRICT_GROUPS", False)
+    )
     required_groups = ["momentum", "trend", "structure", "volatility", "volume"]
     for key, sigs in grouped_signals.items():
         # Only approve if total confidence and group count pass thresholds
@@ -127,7 +131,9 @@ def consensus_filter(signals, min_score=None):
                 continue
         # Guarantee one unique signal per asset/timeframe/direction/consensus
         # Pick the highest-confidence signal as representative
-        best = max(sigs, key=lambda s: float(s.get("confidence", s.get("strength", s.get("score", 0)) or 0)), default=None)
+        best = max(
+            sigs, key=lambda s: float(s.get("confidence", s.get("strength", s.get("score", 0)) or 0)), default=None
+        )
         if best:
             approved.append(best)
     return approved
@@ -140,7 +146,7 @@ def group_by_asset_and_direction(signals):
     # Group signals by (asset, direction)
     grouped = {}
     for s in signals:
-        key = (s.get('asset'), s.get('direction'))
+        key = (s.get("asset"), s.get("direction"))
         if key not in grouped:
             grouped[key] = []
         grouped[key].append(s)

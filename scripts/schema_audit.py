@@ -25,7 +25,12 @@ def audit_versions(root: Path = ROOT) -> dict[str, object]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             values: dict[str, object] = {}
             for node in tree.body:
-                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in {"revision", "down_revision"}:
+                if (
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id in {"revision", "down_revision"}
+                ):
                     values[node.targets[0].id] = ast.literal_eval(node.value)
             revision = str(values.get("revision") or "")
             down = values.get("down_revision")
@@ -38,20 +43,19 @@ def audit_versions(root: Path = ROOT) -> dict[str, object]:
                 revisions[revision] = down_value
         except Exception as exc:
             errors.append(f"{path.name}: {type(exc).__name__}")
-    heads = sorted(revision for revision in revisions if revision not in set(value for value in revisions.values() if value))
+    heads = sorted(
+        revision for revision in revisions if revision not in set(value for value in revisions.values() if value)
+    )
     missing_parents = sorted(value for value in revisions.values() if value and value not in revisions)
     errors.extend(f"missing parent: {parent}" for parent in missing_parents)
     return {"ok": not errors and len(heads) == 1, "heads": heads, "revisions": len(revisions), "errors": errors}
-
 
 
 @lru_cache(maxsize=4)
 def render_head_sql(root: Path = ROOT) -> tuple[bool, str, str]:
     """Render the configured Alembic head once and reuse it across contracts."""
     env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = (
-        "postgresql+psycopg2://audit:audit@localhost/audit"
-    )
+    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
         cwd=root,
@@ -82,9 +86,7 @@ def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
     if create_match:
         for raw_line in create_match.group(1).splitlines():
             line = raw_line.strip().rstrip(",")
-            if not line or line.upper().startswith((
-                "PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK"
-            )):
+            if not line or line.upper().startswith(("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")):
                 continue
             migrated.add(line.split()[0].strip('"').lower())
     for match in re.finditer(
@@ -121,8 +123,11 @@ def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
             "detail": render_error[-1000:],
         }
     from db.models import MLRejectedSignal
+
     migrated: set[str] = set()
-    create_match = re.search(r"CREATE TABLE(?: IF NOT EXISTS)? ml_rejected_signals \((.*?)\n\s*\);", rendered, re.S | re.I)
+    create_match = re.search(
+        r"CREATE TABLE(?: IF NOT EXISTS)? ml_rejected_signals \((.*?)\n\s*\);", rendered, re.S | re.I
+    )
     if create_match:
         for raw_line in create_match.group(1).splitlines():
             line = raw_line.strip().rstrip(",")
@@ -130,13 +135,13 @@ def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
                 migrated.add(line.split()[0].strip('"').lower())
     for match in re.finditer(
         r"ALTER TABLE ml_rejected_signals ADD COLUMN(?: IF NOT EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)",
-        rendered, re.I,
+        rendered,
+        re.I,
     ):
         migrated.add(match.group(1).lower())
     expected = {column.name.lower() for column in MLRejectedSignal.__table__.columns}
     missing = sorted(expected - migrated)
     return {"ok": not missing, "missing_columns": missing}
-
 
 
 def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
@@ -151,19 +156,21 @@ def audit_outcome_projection_contract(root: Path = ROOT) -> dict[str, object]:
     unique_sql = bool(
         re.search(
             r"CREATE UNIQUE INDEX(?: IF NOT EXISTS)? uq_outcomes_signal_id\s+ON outcomes \(signal_id\)",
-            rendered, re.I,
+            rendered,
+            re.I,
         )
     )
     from db.models import Outcome
+
     model_unique = any(
-        getattr(constraint, "name", None) == "uq_outcomes_signal_id"
-        for constraint in Outcome.__table__.constraints
+        getattr(constraint, "name", None) == "uq_outcomes_signal_id" for constraint in Outcome.__table__.constraints
     )
     return {
         "ok": bool(unique_sql and model_unique),
         "unique_guard_sql": unique_sql,
         "model_unique_constraint": model_unique,
     }
+
 
 def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify the rendered head contains the canonical immutable broker ledger."""
@@ -187,16 +194,11 @@ def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object
     if create_match:
         for raw_line in create_match.group(1).splitlines():
             line = raw_line.strip().rstrip(",")
-            if not line or line.upper().startswith(
-                ("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")
-            ):
+            if not line or line.upper().startswith(("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")):
                 continue
             migrated.add(line.split()[0].strip('"').lower())
 
-    expected = {
-        column.name.lower()
-        for column in TradingAccountLedgerEntry.__table__.columns
-    }
+    expected = {column.name.lower() for column in TradingAccountLedgerEntry.__table__.columns}
     missing = sorted(expected - migrated)
     immutable_trigger = bool(
         re.search(
@@ -205,9 +207,7 @@ def audit_trading_account_ledger_contract(root: Path = ROOT) -> dict[str, object
             re.I,
         )
     )
-    idempotency_constraint = (
-        "uq_trading_account_ledger_provider_event" in rendered
-    )
+    idempotency_constraint = "uq_trading_account_ledger_provider_event" in rendered
     return {
         "ok": not missing and immutable_trigger and idempotency_constraint,
         "missing_columns": missing,
@@ -229,9 +229,9 @@ def audit_broker_credential_envelope_contract(
             "detail": render_error[-1000:],
         }
 
-    migration = (
-        root / "db/migrations/versions/0044_broker_credential_envelope.py"
-    ).read_text(encoding="utf-8", errors="replace")
+    migration = (root / "db/migrations/versions/0044_broker_credential_envelope.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
     required_columns = {
         "credential_format",
         "credential_version",
@@ -239,21 +239,12 @@ def audit_broker_credential_envelope_contract(
         "credential_revision",
         "credential_rotated_at",
     }
-    rendered_missing = sorted(
-        column for column in required_columns
-        if column not in rendered
-    )
-    source_missing = sorted(
-        column for column in required_columns
-        if column not in migration
-    )
+    rendered_missing = sorted(column for column in required_columns if column not in rendered)
+    source_missing = sorted(column for column in required_columns if column not in migration)
 
     from db.models import BrokerConnection
 
-    model_columns = {
-        column.name
-        for column in BrokerConnection.__table__.columns
-    }
+    model_columns = {column.name for column in BrokerConnection.__table__.columns}
     model_missing = sorted(required_columns - model_columns)
     markers = {
         "legacy_backfill": "legacy_fernet" in rendered,
@@ -261,12 +252,7 @@ def audit_broker_credential_envelope_contract(
         "key_index": "ix_broker_connections_credential_key_id" in rendered,
         "down_revision": 'down_revision = "0043_account_execution_policy"' in migration,
     }
-    ok = (
-        not rendered_missing
-        and not source_missing
-        and not model_missing
-        and all(markers.values())
-    )
+    ok = not rendered_missing and not source_missing and not model_missing and all(markers.values())
     return {
         "ok": ok,
         "rendered_missing": rendered_missing,
@@ -278,19 +264,26 @@ def audit_broker_credential_envelope_contract(
 
 def audit_live_financial_contract(root: Path = ROOT) -> dict[str, object]:
     """Verify execution/payout tables and idempotency constraints exist in head."""
-    migration = (root / "db/migrations/versions/0029_live_financial_ledger.py").read_text(encoding="utf-8", errors="replace")
+    migration = (root / "db/migrations/versions/0029_live_financial_ledger.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
     required_markers = (
         '"broker_executions"',
         '"payout_accounts"',
         '"payout_requests"',
-        'uq_broker_execution_provider_key',
-        'uq_payout_account_user_currency',
-        'uq_payout_request_reference',
+        "uq_broker_execution_provider_key",
+        "uq_payout_account_user_currency",
+        "uq_payout_request_reference",
     )
     missing = [marker for marker in required_markers if marker not in migration]
     try:
         from db.models import BrokerExecution, PayoutAccountRecord, PayoutRequestRecord
-        model_tables = {BrokerExecution.__tablename__, PayoutAccountRecord.__tablename__, PayoutRequestRecord.__tablename__}
+
+        model_tables = {
+            BrokerExecution.__tablename__,
+            PayoutAccountRecord.__tablename__,
+            PayoutRequestRecord.__tablename__,
+        }
     except Exception as exc:
         return {"ok": False, "missing": missing, "error": f"model_import:{type(exc).__name__}"}
     expected_tables = {"broker_executions", "payout_accounts", "payout_requests"}

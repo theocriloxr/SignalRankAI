@@ -3,6 +3,7 @@
 Revision ID: 0045_mt5_credential_retirement
 Revises: 0044_broker_credential_envelope
 """
+
 from __future__ import annotations
 
 from alembic import op

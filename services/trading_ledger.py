@@ -2,7 +2,6 @@ from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,7 +76,9 @@ async def record_trading_event(
     await session.flush()
 
 
-async def record_signal_generated_event(session: AsyncSession, signal: dict[str, Any], signal_id: str | None = None) -> None:
+async def record_signal_generated_event(
+    session: AsyncSession, signal: dict[str, Any], signal_id: str | None = None
+) -> None:
     await record_trading_event(
         session,
         event_type="SignalGenerated",
@@ -93,4 +94,3 @@ async def record_signal_generated_event(session: AsyncSession, signal: dict[str,
             "time_to_target_score": signal.get("time_to_target_score"),
         },
     )
-

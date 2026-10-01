@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
+
 # Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
 try:
     from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -174,6 +175,8 @@ class Signal(Base):
     performance_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
+
+
 @event.listens_for(Signal, "before_insert")
 def _assign_signal_identity(_mapper, _connection, target: Signal) -> None:
     """Generate the UUID and immutable public reference together exactly once."""
@@ -183,8 +186,6 @@ def _assign_signal_identity(_mapper, _connection, target: Signal) -> None:
         target.signal_id = str(uuid4())
     if not getattr(target, "display_id", None):
         target.display_id = make_display_signal_id(target.signal_id)
-
-
 
 
 @event.listens_for(Signal.display_id, "set", retval=True, active_history=True)
@@ -319,9 +320,7 @@ class FreeSignalQueue(Base):
 
 class SignalDelivery(Base):
     __tablename__ = "signal_deliveries"
-    __table_args__ = (
-        UniqueConstraint("user_id", "signal_id", name="uq_signal_delivery_user_signal"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "signal_id", name="uq_signal_delivery_user_signal"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -364,9 +363,7 @@ class SignalCorrection(Base):
 
 class SignalEngagement(Base):
     __tablename__ = "signal_engagements"
-    __table_args__ = (
-        UniqueConstraint("user_id", "signal_id", name="uq_signal_engagement_user_signal"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "signal_id", name="uq_signal_engagement_user_signal"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -377,9 +374,7 @@ class SignalEngagement(Base):
 
 class ActiveSignalMessage(Base):
     __tablename__ = "active_signal_messages"
-    __table_args__ = (
-        UniqueConstraint("user_id", "signal_id", name="uq_active_signal_msg_user_signal"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "signal_id", name="uq_active_signal_msg_user_signal"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -393,9 +388,7 @@ class ActiveSignalMessage(Base):
 class SignalLifecycle(Base):
     __tablename__ = "signal_lifecycles"
 
-    signal_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("signals.signal_id"), primary_key=True
-    )
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), primary_key=True)
     state: Mapped[str] = mapped_column(String(32), default="WATCHING_FOR_ENTRY", index=True)
     generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     watch_started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -436,9 +429,7 @@ class UserSignalMonitoring(Base):
     """Per-recipient monitoring preference; never mutates global signal truth."""
 
     __tablename__ = "user_signal_monitoring"
-    __table_args__ = (
-        UniqueConstraint("user_id", "signal_id", name="uq_user_signal_monitoring_user_signal"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "signal_id", name="uq_user_signal_monitoring_user_signal"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -475,9 +466,7 @@ class UserSignalMonitoringAction(Base):
 
 class SignalTrackingEvent(Base):
     __tablename__ = "signal_tracking_events"
-    __table_args__ = (
-        UniqueConstraint("signal_id", "event_type", name="uq_signal_tracking_event_stage"),
-    )
+    __table_args__ = (UniqueConstraint("signal_id", "event_type", name="uq_signal_tracking_event_stage"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
@@ -493,7 +482,9 @@ class SignalEventNotification(Base):
     __tablename__ = "signal_event_notifications"
     __table_args__ = (
         UniqueConstraint(
-            "signal_id", "event_type", "user_id",
+            "signal_id",
+            "event_type",
+            "user_id",
             name="uq_signal_event_notification_recipient",
         ),
     )
@@ -536,9 +527,7 @@ class MT5Execution(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     signal_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("signals.signal_id"))
-    connection_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("broker_connections.connection_id"), index=True
-    )
+    connection_id: Mapped[Optional[str]] = mapped_column(ForeignKey("broker_connections.connection_id"), index=True)
     metaapi_account_id: Mapped[str] = mapped_column(String(128))
     order_id: Mapped[Optional[str]] = mapped_column(String(128))
     symbol: Mapped[str] = mapped_column(String(32))
@@ -560,9 +549,7 @@ class BrokerExecution(Base):
     """Provider-neutral, idempotent execution ledger."""
 
     __tablename__ = "broker_executions"
-    __table_args__ = (
-        UniqueConstraint("provider", "idempotency_key", name="uq_broker_execution_provider_key"),
-    )
+    __table_args__ = (UniqueConstraint("provider", "idempotency_key", name="uq_broker_execution_provider_key"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -571,9 +558,7 @@ class BrokerExecution(Base):
     # Canonical multi-account ownership. Historical rows may be NULL until
     # reconciled/backfilled, but every new provider-neutral execution should
     # persist the broker connection ID.
-    connection_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("broker_connections.connection_id"), index=True
-    )
+    connection_id: Mapped[Optional[str]] = mapped_column(ForeignKey("broker_connections.connection_id"), index=True)
     account_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_order_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
@@ -662,24 +647,14 @@ class TradingAccountPolicyRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     policy_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     account_mode: Mapped[str] = mapped_column(String(24), default="DEMO", index=True, nullable=False)
-    execution_permission: Mapped[str] = mapped_column(
-        String(32), default="SIGNALS_ONLY", nullable=False
-    )
+    execution_permission: Mapped[str] = mapped_column(String(32), default="SIGNALS_ONLY", nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="configured", index=True, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
     reset_timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
-    max_risk_per_trade_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.005, nullable=False
-    )
-    max_daily_loss_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.02, nullable=False
-    )
-    max_weekly_loss_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.04, nullable=False
-    )
-    max_total_drawdown_pct: Mapped[Any] = mapped_column(
-        Numeric(12, 8), default=0.06, nullable=False
-    )
+    max_risk_per_trade_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0.005, nullable=False)
+    max_daily_loss_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0.02, nullable=False)
+    max_weekly_loss_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0.04, nullable=False)
+    max_total_drawdown_pct: Mapped[Any] = mapped_column(Numeric(12, 8), default=0.06, nullable=False)
     max_open_positions: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_leverage: Mapped[Any] = mapped_column(Numeric(18, 8), default=1, nullable=False)
     max_spread_bps: Mapped[Any] = mapped_column(Numeric(18, 8), default=50, nullable=False)
@@ -702,9 +677,7 @@ class TradingAccountPolicyRecord(Base):
     external_rules: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     certified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     certification_ref: Mapped[Optional[str]] = mapped_column(String(160))
-    certified_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    certified_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     certified_by_authority: Mapped[Optional[str]] = mapped_column(String(16))
     frozen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     frozen_reason: Mapped[Optional[str]] = mapped_column(String(256))
@@ -773,9 +746,7 @@ class TradingAccountLedgerEntry(Base):
         ForeignKey("trading_account_ledger_entries.entry_id", ondelete="RESTRICT")
     )
     provider_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    metadata_json: Mapped[Dict[str, Any]] = mapped_column(
-        "metadata", JSON, default=dict, nullable=False
-    )
+    metadata_json: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
@@ -827,9 +798,7 @@ class BrokerConnection(Base):
     environment: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     auth_mode: Mapped[str] = mapped_column(String(32), default="existing", nullable=False)
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text)
-    credential_format: Mapped[str] = mapped_column(
-        String(32), default="none", nullable=False
-    )
+    credential_format: Mapped[str] = mapped_column(String(32), default="none", nullable=False)
     credential_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     credential_key_id: Mapped[Optional[str]] = mapped_column(String(64))
     credential_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -847,6 +816,7 @@ class BrokerConnection(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
 
 class MT5Credentials(Base):
     __tablename__ = "mt5_credentials"
@@ -989,9 +959,7 @@ class PaperAccount(Base):
 
 class PaperPosition(Base):
     __tablename__ = "paper_positions"
-    __table_args__ = (
-        UniqueConstraint("user_id", "signal_id", name="uq_paper_position_user_signal"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "signal_id", name="uq_paper_position_user_signal"),)
 
     position_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id"), index=True, nullable=False)
@@ -1045,9 +1013,7 @@ class PaperTradeAttempt(Base):
     """Audited paper-candidate decisions; positions contain only real trades."""
 
     __tablename__ = "paper_trade_attempts"
-    __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_paper_trade_attempt_key"),
-    )
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_paper_trade_attempt_key"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     attempt_id: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid4()), nullable=False)
@@ -1125,7 +1091,9 @@ class PerformanceCorrectionAudit(Base):
     __tablename__ = "performance_correction_audit"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    ledger_id: Mapped[str] = mapped_column(ForeignKey("performance_ledger_entries.ledger_id"), index=True, nullable=False)
+    ledger_id: Mapped[str] = mapped_column(
+        ForeignKey("performance_ledger_entries.ledger_id"), index=True, nullable=False
+    )
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     before_values: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
@@ -1231,6 +1199,8 @@ class MLModelArtifact(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
     trained_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class MLRejectedSignal(Base):
     __tablename__ = "ml_rejected_signals"
 
@@ -1361,7 +1331,11 @@ class AdaptiveSignalEvidence(Base):
 
 class AdaptiveSignalSequence(Base):
     __tablename__ = "adaptive_signal_sequences"
-    __table_args__ = (UniqueConstraint("signal_id", "timeframe", "evidence_stage", "sequence_hash", name="uq_adaptive_signal_sequence"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "signal_id", "timeframe", "evidence_stage", "sequence_hash", name="uq_adaptive_signal_sequence"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)

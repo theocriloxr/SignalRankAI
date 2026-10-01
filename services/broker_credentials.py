@@ -18,6 +18,7 @@ the existing ENCRYPTION_KEY is treated as key ID "legacy-env-v1".  Existing raw
 Fernet broker secrets may be read only through allow_legacy=True and should be
 rotated into the bound envelope before ENCRYPTION_KEY is replaced.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -77,15 +78,11 @@ def _utc_iso(value: datetime | None = None) -> str:
 def _validated_fernet(key: str, *, key_id: str) -> Fernet:
     raw = str(key or "").strip()
     if not raw:
-        raise BrokerCredentialKeyUnavailable(
-            f"broker credential key unavailable: {key_id}"
-        )
+        raise BrokerCredentialKeyUnavailable(f"broker credential key unavailable: {key_id}")
     try:
         return Fernet(raw.encode("utf-8"))
     except Exception as exc:
-        raise BrokerCredentialKeyUnavailable(
-            f"broker credential key invalid: {key_id}"
-        ) from exc
+        raise BrokerCredentialKeyUnavailable(f"broker credential key invalid: {key_id}") from exc
 
 
 def _keyring(
@@ -99,36 +96,24 @@ def _keyring(
         try:
             decoded = json.loads(raw_keyring)
         except Exception as exc:
-            raise BrokerCredentialKeyUnavailable(
-                "BROKER_CREDENTIAL_KEYRING_JSON is invalid JSON"
-            ) from exc
+            raise BrokerCredentialKeyUnavailable("BROKER_CREDENTIAL_KEYRING_JSON is invalid JSON") from exc
         if not isinstance(decoded, dict) or not decoded:
-            raise BrokerCredentialKeyUnavailable(
-                "BROKER_CREDENTIAL_KEYRING_JSON must be a non-empty object"
-            )
+            raise BrokerCredentialKeyUnavailable("BROKER_CREDENTIAL_KEYRING_JSON must be a non-empty object")
         if not active:
-            raise BrokerCredentialKeyUnavailable(
-                "BROKER_CREDENTIAL_ACTIVE_KEY_ID is required with the keyring"
-            )
+            raise BrokerCredentialKeyUnavailable("BROKER_CREDENTIAL_ACTIVE_KEY_ID is required with the keyring")
         ring = {
             str(key_id): _validated_fernet(str(key), key_id=str(key_id))
             for key_id, key in decoded.items()
             if str(key_id).strip()
         }
         if active not in ring:
-            raise BrokerCredentialKeyUnavailable(
-                "active broker credential key is not present in the keyring"
-            )
+            raise BrokerCredentialKeyUnavailable("active broker credential key is not present in the keyring")
         return ring, active
 
     legacy_key = str(env.get("ENCRYPTION_KEY") or "").strip()
     if not legacy_key:
-        raise BrokerCredentialKeyUnavailable(
-            "broker credential encryption key is not configured"
-        )
-    return {
-        LEGACY_KEY_ID: _validated_fernet(legacy_key, key_id=LEGACY_KEY_ID)
-    }, LEGACY_KEY_ID
+        raise BrokerCredentialKeyUnavailable("broker credential encryption key is not configured")
+    return {LEGACY_KEY_ID: _validated_fernet(legacy_key, key_id=LEGACY_KEY_ID)}, LEGACY_KEY_ID
 
 
 def broker_credential_encryption_available(
@@ -174,9 +159,7 @@ def _claims(
     provider_n = _normalize(provider)
     connector_n = _normalize(connector)
     if not connection or not provider_n or not connector_n:
-        raise BrokerCredentialBindingError(
-            "broker credential account context is incomplete"
-        )
+        raise BrokerCredentialBindingError("broker credential account context is incomplete")
     if int(revision) <= 0:
         raise BrokerCredentialBindingError("invalid broker credential revision")
     return {
@@ -243,33 +226,19 @@ def _parse_envelope(value: str) -> dict[str, Any]:
     try:
         envelope = json.loads(str(value or ""))
     except Exception as exc:
-        raise BrokerCredentialEnvelopeError(
-            "broker credential envelope is malformed"
-        ) from exc
+        raise BrokerCredentialEnvelopeError("broker credential envelope is malformed") from exc
     if not isinstance(envelope, dict):
-        raise BrokerCredentialEnvelopeError(
-            "broker credential envelope must be an object"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential envelope must be an object")
     if envelope.get("schema") != ENVELOPE_SCHEMA:
-        raise BrokerCredentialEnvelopeError(
-            "unsupported broker credential envelope schema"
-        )
+        raise BrokerCredentialEnvelopeError("unsupported broker credential envelope schema")
     if int(envelope.get("version") or 0) != ENVELOPE_VERSION:
-        raise BrokerCredentialEnvelopeError(
-            "unsupported broker credential envelope version"
-        )
+        raise BrokerCredentialEnvelopeError("unsupported broker credential envelope version")
     if str(envelope.get("algorithm") or "") != "fernet":
-        raise BrokerCredentialEnvelopeError(
-            "unsupported broker credential envelope algorithm"
-        )
+        raise BrokerCredentialEnvelopeError("unsupported broker credential envelope algorithm")
     if not str(envelope.get("key_id") or "").strip():
-        raise BrokerCredentialEnvelopeError(
-            "broker credential envelope key ID is missing"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential envelope key ID is missing")
     if not str(envelope.get("ciphertext") or "").strip():
-        raise BrokerCredentialEnvelopeError(
-            "broker credential envelope ciphertext is missing"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential envelope ciphertext is missing")
     return envelope
 
 
@@ -284,28 +253,20 @@ def _decrypt_with_ring(
     if key_id:
         fernet = ring.get(str(key_id))
         if fernet is None:
-            raise BrokerCredentialKeyUnavailable(
-                f"broker credential key unavailable: {key_id}"
-            )
+            raise BrokerCredentialKeyUnavailable(f"broker credential key unavailable: {key_id}")
         try:
             return fernet.decrypt(token.encode("utf-8")), str(key_id)
         except InvalidToken as exc:
-            raise BrokerCredentialEnvelopeError(
-                "broker credential ciphertext is invalid or tampered"
-            ) from exc
+            raise BrokerCredentialEnvelopeError("broker credential ciphertext is invalid or tampered") from exc
 
     if not allow_any_key:
-        raise BrokerCredentialKeyUnavailable(
-            "broker credential key ID is required"
-        )
+        raise BrokerCredentialKeyUnavailable("broker credential key ID is required")
     for candidate_id, fernet in ring.items():
         try:
             return fernet.decrypt(token.encode("utf-8")), candidate_id
         except InvalidToken:
             continue
-    raise BrokerCredentialEnvelopeError(
-        "legacy broker credential ciphertext cannot be decrypted"
-    )
+    raise BrokerCredentialEnvelopeError("legacy broker credential ciphertext cannot be decrypted")
 
 
 def _verify_claims(
@@ -318,13 +279,9 @@ def _verify_claims(
     expected_revision: int | None = None,
 ) -> dict[str, Any]:
     if claims.get("schema") != ENVELOPE_SCHEMA:
-        raise BrokerCredentialEnvelopeError(
-            "broker credential plaintext schema is invalid"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential plaintext schema is invalid")
     if int(claims.get("version") or 0) != ENVELOPE_VERSION:
-        raise BrokerCredentialEnvelopeError(
-            "broker credential plaintext version is invalid"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential plaintext version is invalid")
     expected = {
         "user_id": int(user_id),
         "connection_id": str(connection_id or "").strip(),
@@ -338,23 +295,15 @@ def _verify_claims(
         "connector": _normalize(claims.get("connector")),
     }
     if actual != expected:
-        raise BrokerCredentialBindingError(
-            "broker credential envelope account binding mismatch"
-        )
+        raise BrokerCredentialBindingError("broker credential envelope account binding mismatch")
     revision = int(claims.get("revision") or 0)
     if revision <= 0:
-        raise BrokerCredentialEnvelopeError(
-            "broker credential revision is invalid"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential revision is invalid")
     if expected_revision is not None and revision != int(expected_revision):
-        raise BrokerCredentialBindingError(
-            "broker credential revision mismatch"
-        )
+        raise BrokerCredentialBindingError("broker credential revision mismatch")
     payload = claims.get("payload")
     if not isinstance(payload, dict):
-        raise BrokerCredentialEnvelopeError(
-            "broker credential payload is invalid"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential payload is invalid")
     return dict(payload)
 
 
@@ -378,13 +327,9 @@ def decrypt_broker_credentials(
     try:
         claims = json.loads(plaintext.decode("utf-8"))
     except Exception as exc:
-        raise BrokerCredentialEnvelopeError(
-            "broker credential plaintext is malformed"
-        ) from exc
+        raise BrokerCredentialEnvelopeError("broker credential plaintext is malformed") from exc
     if not isinstance(claims, dict):
-        raise BrokerCredentialEnvelopeError(
-            "broker credential plaintext must be an object"
-        )
+        raise BrokerCredentialEnvelopeError("broker credential plaintext must be an object")
     payload = _verify_claims(
         claims,
         user_id=int(user_id),
@@ -417,13 +362,9 @@ def _decrypt_legacy_payload(
     try:
         decoded = json.loads(plaintext.decode("utf-8"))
     except Exception as exc:
-        raise BrokerCredentialEnvelopeError(
-            "legacy broker credential payload is malformed"
-        ) from exc
+        raise BrokerCredentialEnvelopeError("legacy broker credential payload is malformed") from exc
     if not isinstance(decoded, dict):
-        raise BrokerCredentialEnvelopeError(
-            "legacy broker credential payload must be an object"
-        )
+        raise BrokerCredentialEnvelopeError("legacy broker credential payload must be an object")
 
     # Older exchange rows encrypted API components individually and then
     # encrypted the containing JSON a second time. Normalize that shape only
@@ -455,9 +396,7 @@ def decrypt_connection_credentials(
 ) -> tuple[dict[str, Any], BrokerCredentialCryptoMetadata]:
     value = str(getattr(row, "secret_encrypted", "") or "").strip()
     if not value:
-        raise BrokerCredentialEnvelopeError(
-            "broker connection has no application-managed credentials"
-        )
+        raise BrokerCredentialEnvelopeError("broker connection has no application-managed credentials")
 
     if is_broker_credential_envelope(value):
         return decrypt_broker_credentials(
@@ -466,16 +405,12 @@ def decrypt_connection_credentials(
             connection_id=str(getattr(row, "connection_id")),
             provider=str(getattr(row, "platform")),
             connector=str(getattr(row, "connector")),
-            expected_revision=(
-                int(getattr(row, "credential_revision", 0) or 0) or None
-            ),
+            expected_revision=(int(getattr(row, "credential_revision", 0) or 0) or None),
             environ=environ,
         )
 
     if not allow_legacy:
-        raise BrokerCredentialEnvelopeError(
-            "legacy broker credential format is not accepted here"
-        )
+        raise BrokerCredentialEnvelopeError("legacy broker credential format is not accepted here")
     payload = _decrypt_legacy_payload(value, environ=environ)
     return payload, BrokerCredentialCryptoMetadata(
         format=LEGACY_FORMAT,
@@ -516,9 +451,7 @@ async def rotate_connection_credentials(
         if row is None:
             raise LookupError("broker_connection_not_found")
         if not row.secret_encrypted:
-            raise BrokerCredentialEnvelopeError(
-                "broker connection has no application-managed credentials"
-            )
+            raise BrokerCredentialEnvelopeError("broker connection has no application-managed credentials")
 
         payload, previous = decrypt_connection_credentials(
             row,
@@ -551,9 +484,7 @@ async def rotate_connection_credentials(
             AdminEvent(
                 event_type="broker_credentials_rotated",
                 actor_telegram_user_id=(
-                    int(actor.telegram_user_id)
-                    if actor is not None and actor.telegram_user_id is not None
-                    else None
+                    int(actor.telegram_user_id) if actor is not None and actor.telegram_user_id is not None else None
                 ),
                 details={
                     "user_id": int(user_id),

@@ -25,17 +25,18 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-WEBHOOK_SECRET   = os.getenv("WEBHOOK_SECRET",   "").strip()
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL",       "").strip()
-WEBHOOK_TIMEOUT  = int(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10") or 10)
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
+WEBHOOK_TIMEOUT = int(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10") or 10)
 WEBHOOK_MAX_RETRY = int(os.getenv("WEBHOOK_MAX_RETRY", "3") or 3)
 
 
 # ─── Payload builders ─────────────────────────────────────────────────────────
+
 
 def _parse_tp_list(raw) -> List[float]:
     """Parse TP levels into a clean list of floats."""
@@ -67,60 +68,52 @@ def _parse_tp_list(raw) -> List[float]:
 def build_native_payload(signal: dict) -> dict:
     """
     Build the SignalRankAI native webhook payload (full detail).
-    
+
     This is the canonical format — all fields, including ML scores and
     institutional concept tags.
     """
-    tp_levels = _parse_tp_list(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    tp_levels = _parse_tp_list(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
 
     payload = {
         "version": "1.0",
-        "source":  "signalrankAI",
+        "source": "signalrankAI",
         "timestamp": int(time.time()),
         "signal_id": str(signal.get("signal_id") or ""),
-        "asset":      str(signal.get("asset") or signal.get("symbol") or "").upper(),
-        "direction":  str(signal.get("direction") or "long").lower(),
-        "timeframe":  str(signal.get("timeframe") or "").lower(),
-        "action":     "open",
-
+        "asset": str(signal.get("asset") or signal.get("symbol") or "").upper(),
+        "direction": str(signal.get("direction") or "long").lower(),
+        "timeframe": str(signal.get("timeframe") or "").lower(),
+        "action": "open",
         # Prices
-        "entry":     float(signal.get("entry") or 0),
+        "entry": float(signal.get("entry") or 0),
         "stop_loss": float(signal.get("stop_loss") or signal.get("stop") or 0),
-        "tp1":       float(tp_levels[0]) if len(tp_levels) > 0 else None,
-        "tp2":       float(tp_levels[1]) if len(tp_levels) > 1 else None,
-        "tp3":       float(tp_levels[2]) if len(tp_levels) > 2 else None,
+        "tp1": float(tp_levels[0]) if len(tp_levels) > 0 else None,
+        "tp2": float(tp_levels[1]) if len(tp_levels) > 1 else None,
+        "tp3": float(tp_levels[2]) if len(tp_levels) > 2 else None,
         "tp_levels": tp_levels,
-
         # Scoring
-        "score":           float(signal.get("score") or signal.get("display_score") or 0),
-        "rr_ratio":        float(signal.get("rr_ratio") or signal.get("rr_estimate") or 0),
-        "ml_probability":  signal.get("ml_probability") or signal.get("ml_prob"),
-
+        "score": float(signal.get("score") or signal.get("display_score") or 0),
+        "rr_ratio": float(signal.get("rr_ratio") or signal.get("rr_estimate") or 0),
+        "ml_probability": signal.get("ml_probability") or signal.get("ml_prob"),
         # Sub-scores
-        "trend_score":     signal.get("trend_score"),
-        "volume_score":    signal.get("volume_score"),
+        "trend_score": signal.get("trend_score"),
+        "volume_score": signal.get("volume_score"),
         "liquidity_score": signal.get("liquidity_score"),
-        "ml_score":        signal.get("ml_score"),
-
+        "ml_score": signal.get("ml_score"),
         # Context
-        "regime":        str(signal.get("regime") or ""),
+        "regime": str(signal.get("regime") or ""),
         "strategy_name": str(signal.get("strategy_name") or signal.get("strategy") or ""),
-        "strategy_group":str(signal.get("strategy_group") or ""),
-        "htf_bias":      str(signal.get("htf_bias") or ""),
-        "session":       str(signal.get("session") or ""),
-
+        "strategy_group": str(signal.get("strategy_group") or ""),
+        "htf_bias": str(signal.get("htf_bias") or ""),
+        "session": str(signal.get("session") or ""),
         # Institutional concepts
-        "has_order_block":     bool(signal.get("has_order_block")),
-        "has_fvg":             bool(signal.get("has_fvg")),
+        "has_order_block": bool(signal.get("has_order_block")),
+        "has_fvg": bool(signal.get("has_fvg")),
         "has_liquidity_sweep": bool(signal.get("has_liquidity_sweep")),
-        "has_bos":             bool(signal.get("has_bos")),
-        "has_choch":           bool(signal.get("has_choch")),
-
+        "has_bos": bool(signal.get("has_bos")),
+        "has_choch": bool(signal.get("has_choch")),
         # Explainability
-        "trade_logic":   str(signal.get("trade_logic") or signal.get("technical_reason") or ""),
-        "invalidation":  str(signal.get("invalidation") or ""),
+        "trade_logic": str(signal.get("trade_logic") or signal.get("technical_reason") or ""),
+        "invalidation": str(signal.get("invalidation") or ""),
     }
 
     # Remove None values to keep payload clean
@@ -130,57 +123,53 @@ def build_native_payload(signal: dict) -> dict:
 def build_pinescript_payload(signal: dict) -> dict:
     """
     Build PineConnector-compatible alert payload.
-    
+
     Format used by PineConnector MT4/MT5 bridge.
-    
+
     Example:
         {"license_id": "xxx", "ticker": "BTCUSD", "action": "buy",
          "sl": 29000, "tp": 31000, "risk": 1}
     """
-    tp_levels = _parse_tp_list(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    tp_levels = _parse_tp_list(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
     direction = str(signal.get("direction") or "long").lower()
-    action    = "buy" if direction in ("long", "buy") else "sell"
+    action = "buy" if direction in ("long", "buy") else "sell"
 
     return {
         "license_id": os.getenv("PINECONNECTOR_LICENSE_ID", ""),
-        "ticker":     str(signal.get("asset") or "").upper(),
-        "action":     action,
-        "sl":         float(signal.get("stop_loss") or 0),
-        "tp":         float(tp_levels[0]) if tp_levels else 0,
-        "risk":       float(os.getenv("PINECONNECTOR_RISK_PCT", "1") or 1),
-        "comment":    f"SignalRankAI|{str(signal.get('signal_id') or '')[:8]}",
+        "ticker": str(signal.get("asset") or "").upper(),
+        "action": action,
+        "sl": float(signal.get("stop_loss") or 0),
+        "tp": float(tp_levels[0]) if tp_levels else 0,
+        "risk": float(os.getenv("PINECONNECTOR_RISK_PCT", "1") or 1),
+        "comment": f"SignalRankAI|{str(signal.get('signal_id') or '')[:8]}",
     }
 
 
 def build_cornix_payload(signal: dict) -> dict:
     """
     Build Cornix-compatible signal payload.
-    
+
     Cornix format (simplified):
         {"symbol": "BTCUSDT", "side": "BUY", "entry": [...], "sl": ..., "tp": [...]}
     """
-    tp_levels = _parse_tp_list(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    tp_levels = _parse_tp_list(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
     direction = str(signal.get("direction") or "long").lower()
-    side      = "BUY" if direction in ("long", "buy") else "SELL"
-    entry     = float(signal.get("entry") or 0)
+    side = "BUY" if direction in ("long", "buy") else "SELL"
+    entry = float(signal.get("entry") or 0)
 
     # Cornix supports entry zone (±0.3%)
-    entry_low  = round(entry * 0.997, 6) if entry else 0
+    entry_low = round(entry * 0.997, 6) if entry else 0
     entry_high = round(entry * 1.003, 6) if entry else 0
 
     return {
-        "symbol":    str(signal.get("asset") or "").upper(),
-        "side":      side,
-        "exchange":  "BINANCE",
-        "entry":     [entry_low, entry_high] if entry else [entry],
-        "sl":        float(signal.get("stop_loss") or 0),
-        "tp":        tp_levels[:3],
-        "leverage":  int(os.getenv("CORNIX_LEVERAGE", "1") or 1),
-        "comment":   f"SignalRankAI score={float(signal.get('score') or 0):.0f}",
+        "symbol": str(signal.get("asset") or "").upper(),
+        "side": side,
+        "exchange": "BINANCE",
+        "entry": [entry_low, entry_high] if entry else [entry],
+        "sl": float(signal.get("stop_loss") or 0),
+        "tp": tp_levels[:3],
+        "leverage": int(os.getenv("CORNIX_LEVERAGE", "1") or 1),
+        "comment": f"SignalRankAI score={float(signal.get('score') or 0):.0f}",
     }
 
 
@@ -189,21 +178,22 @@ def build_outcome_payload(signal_id: str, outcome: str, data: dict) -> dict:
     Build webhook payload for signal outcome notifications (TP hit, SL hit, etc.).
     """
     return {
-        "version":    "1.0",
-        "source":     "signalrankAI",
-        "timestamp":  int(time.time()),
-        "type":       "outcome",
-        "signal_id":  str(signal_id),
-        "outcome":    str(outcome).upper(),
+        "version": "1.0",
+        "source": "signalrankAI",
+        "timestamp": int(time.time()),
+        "type": "outcome",
+        "signal_id": str(signal_id),
+        "outcome": str(outcome).upper(),
         "exit_price": float(data.get("exit_price") or data.get("tp_price") or 0),
         "r_multiple": data.get("r_multiple"),
-        "percent":    data.get("percent"),
-        "tp_number":  data.get("tp_number"),
-        "be_stop":    bool(data.get("break_even_stop")),
+        "percent": data.get("percent"),
+        "tp_number": data.get("tp_number"),
+        "be_stop": bool(data.get("break_even_stop")),
     }
 
 
 # ─── Signature ────────────────────────────────────────────────────────────────
+
 
 def generate_webhook_payload(signal: dict) -> dict:
     """
@@ -239,7 +229,7 @@ def generate_webhook_payload(signal: dict) -> dict:
 def sign_payload(payload: dict) -> str:
     """
     Generate HMAC-SHA256 signature for a payload.
-    
+
     Used in X-SignalRank-Signature header to allow receivers to verify
     the webhook came from a legitimate SignalRankAI instance.
     """
@@ -247,7 +237,7 @@ def sign_payload(payload: dict) -> str:
         return ""
     try:
         body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        sig  = hmac.new(
+        sig = hmac.new(
             WEBHOOK_SECRET.encode("utf-8"),
             body.encode("utf-8"),
             hashlib.sha256,
@@ -260,6 +250,7 @@ def sign_payload(payload: dict) -> str:
 
 # ─── HTTP dispatch ─────────────────────────────────────────────────────────────
 
+
 async def dispatch_webhook(
     payload: dict,
     url: Optional[str] = None,
@@ -268,7 +259,7 @@ async def dispatch_webhook(
 ) -> bool:
     """
     Send a webhook payload to the configured endpoint.
-    
+
     Returns True if delivery succeeded (2xx response).
     Retries up to WEBHOOK_MAX_RETRY times on failure.
     """
@@ -279,9 +270,9 @@ async def dispatch_webhook(
 
     signature = sign_payload(payload)
     headers = {
-        "Content-Type":         "application/json",
+        "Content-Type": "application/json",
         "X-SignalRank-Signature": signature,
-        "X-SignalRank-Version":  "1.0",
+        "X-SignalRank-Version": "1.0",
     }
 
     body = json.dumps(payload, default=str)
@@ -290,6 +281,7 @@ async def dispatch_webhook(
     for attempt in range(1, max_attempts + 1):
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=float(WEBHOOK_TIMEOUT)) as client:
                 resp = await client.post(target_url, content=body, headers=headers)
 
@@ -303,14 +295,16 @@ async def dispatch_webhook(
             else:
                 logger.warning(
                     "[webhook] Non-2xx response: %d (attempt %d/%d)",
-                    resp.status_code, attempt, max_attempts,
+                    resp.status_code,
+                    attempt,
+                    max_attempts,
                 )
 
         except Exception as exc:
             logger.debug("[webhook] Dispatch error (attempt %d/%d): %s", attempt, max_attempts, exc)
 
         if attempt < max_attempts:
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            await asyncio.sleep(2**attempt)  # Exponential backoff
 
     return False
 
@@ -318,12 +312,12 @@ async def dispatch_webhook(
 async def broadcast_signal_webhook(signal: dict) -> bool:
     """
     Broadcast a new signal to all configured webhook endpoints.
-    
+
     Sends:
       1. Native SignalRankAI payload to WEBHOOK_URL
       2. PineConnector payload to PINECONNECTOR_WEBHOOK_URL (if set)
       3. Cornix payload to CORNIX_WEBHOOK_URL (if set)
-    
+
     Returns True if at least one webhook succeeded.
     """
     tasks = []

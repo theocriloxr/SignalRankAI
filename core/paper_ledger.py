@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -17,78 +16,65 @@ class PaperLedger:
     Paper trading ledger for managing virtual accounts and positions.
     Uses immutable, double-entry transactional accounting.
     """
-    
+
     def __init__(self):
         pass
-        
+
     async def get_balance(self, user_id: int) -> float:
         """Get a user's virtual account balance (creates account if none)."""
         from db.session import get_session
         from db.models import PaperAccount
         from sqlalchemy import select
-        
+
         async with get_session() as session:
-            result = await session.execute(
-                select(PaperAccount).where(PaperAccount.user_id == user_id)
-            )
+            result = await session.execute(select(PaperAccount).where(PaperAccount.user_id == user_id))
             account = result.scalar_one_or_none()
             if not account:
                 account = PaperAccount(
-                    user_id=user_id,
-                    starting_balance=DEFAULT_PAPER_BALANCE,
-                    cash_balance=DEFAULT_PAPER_BALANCE
+                    user_id=user_id, starting_balance=DEFAULT_PAPER_BALANCE, cash_balance=DEFAULT_PAPER_BALANCE
                 )
                 session.add(account)
                 await session.commit()
                 return DEFAULT_PAPER_BALANCE
             return float(account.cash_balance)
-            
+
     async def set_balance(self, user_id: int, balance: float) -> None:
         """Set a user's virtual account balance."""
         from db.session import get_session
         from db.models import PaperAccount
         from sqlalchemy import select
-        
+
         async with get_session() as session:
-            result = await session.execute(
-                select(PaperAccount).where(PaperAccount.user_id == user_id)
-            )
+            result = await session.execute(select(PaperAccount).where(PaperAccount.user_id == user_id))
             account = result.scalar_one_or_none()
             if account:
                 account.cash_balance = balance
                 await session.commit()
-                
+
     async def _get_account(self, session, user_id: int):
         from db.models import PaperAccount
         from sqlalchemy import select
-        result = await session.execute(
-            select(PaperAccount).where(PaperAccount.user_id == user_id)
-        )
+
+        result = await session.execute(select(PaperAccount).where(PaperAccount.user_id == user_id))
         account = result.scalar_one_or_none()
         if not account:
             account = PaperAccount(
-                user_id=user_id,
-                starting_balance=DEFAULT_PAPER_BALANCE,
-                cash_balance=DEFAULT_PAPER_BALANCE
+                user_id=user_id, starting_balance=DEFAULT_PAPER_BALANCE, cash_balance=DEFAULT_PAPER_BALANCE
             )
             session.add(account)
             await session.flush()
         return account
 
     async def open_position(
-        self,
-        user_id: int,
-        signal: Dict[str, Any],
-        size: Optional[float] = None,
-        risk_pct: float = 1.0
-    ) -> Optional[Any]: # Returns the PaperPosition model instance
+        self, user_id: int, signal: Dict[str, Any], size: Optional[float] = None, risk_pct: float = 1.0
+    ) -> Optional[Any]:  # Returns the PaperPosition model instance
         from db.session import get_session
         from db.models import PaperPosition, PaperLedgerEntry
-        
+
         async with get_session() as session:
             account = await self._get_account(session, user_id)
             balance = account.cash_balance
-            
+
             if size is None:
                 entry = float(signal.get("entry", 0))
                 stop_loss = float(signal.get("stop_loss") or signal.get("stop", 0))
@@ -97,19 +83,19 @@ class PaperLedger:
                     risk_per_unit = abs(entry - stop_loss)
                     if risk_per_unit > 0:
                         size = risk_amount / risk_per_unit
-                        
+
             if size is None or size <= 0:
                 size = balance * 0.01
 
             entry = float(signal.get("entry", 0))
             entry_value = size * entry
-            
+
             if entry_value > balance:
                 size = balance / entry
                 entry_value = size * entry
-                
+
             position_id = f"paper_{user_id}_{signal.get('asset', 'unknown')}_{int(now_utc_naive().timestamp())}"
-            
+
             pos = PaperPosition(
                 position_id=position_id,
                 account_id=account.id,
@@ -125,12 +111,12 @@ class PaperLedger:
                 quantity=size,
                 notional=entry_value,
                 reserved_cash=entry_value,
-                opened_at=now_utc_naive()
+                opened_at=now_utc_naive(),
             )
             session.add(pos)
-            
+
             account.cash_balance -= entry_value
-            
+
             entry_log = PaperLedgerEntry(
                 account_id=account.id,
                 user_id=user_id,
@@ -138,61 +124,53 @@ class PaperLedger:
                 entry_type="TRADE_OPEN",
                 amount=-entry_value,
                 balance_after=account.cash_balance,
-                description=f"Opened {pos.direction} {size} {pos.asset} at {entry}"
+                description=f"Opened {pos.direction} {size} {pos.asset} at {entry}",
             )
             session.add(entry_log)
             await session.commit()
             return pos
 
     async def close_position(
-        self,
-        user_id: int,
-        position_id: str,
-        exit_reason: str,
-        exit_price: float,
-        exit_time: Optional[datetime] = None
+        self, user_id: int, position_id: str, exit_reason: str, exit_price: float, exit_time: Optional[datetime] = None
     ) -> Optional[Dict[str, Any]]:
         if exit_time is None:
             exit_time = now_utc_naive()
-            
+
         from db.session import get_session
         from db.models import PaperPosition, PaperLedgerEntry
         from sqlalchemy import select
-        
+
         async with get_session() as session:
             account = await self._get_account(session, user_id)
             result = await session.execute(
-                select(PaperPosition).where(
-                    PaperPosition.position_id == position_id,
-                    PaperPosition.user_id == user_id
-                )
+                select(PaperPosition).where(PaperPosition.position_id == position_id, PaperPosition.user_id == user_id)
             )
             pos = result.scalar_one_or_none()
-            
+
             if not pos or pos.status != "open":
                 return None
-                
+
             direction = pos.direction.lower()
             if direction == "long":
                 pnl = (exit_price - pos.fill_entry) * pos.quantity
             else:
                 pnl = (pos.fill_entry - exit_price) * pos.quantity
-                
+
             risk = abs(pos.fill_entry - pos.stop_loss) if pos.stop_loss > 0 else 0
             r_multiple = pnl / (risk * pos.quantity) if risk > 0 and pos.quantity > 0 else 0
-            
+
             pos.status = "closed"
             pos.closed_at = exit_time
             pos.exit_reason = exit_reason
             pos.realized_pnl = pnl
             pos.r_multiple = r_multiple
             pos.current_price = exit_price
-            
+
             # Return reserved cash + pnl
             amount_to_return = pos.reserved_cash + pnl
             account.cash_balance += amount_to_return
             account.realized_pnl += pnl
-            
+
             entry_type = "TRADE_WIN" if pnl > 0 else "TRADE_LOSS"
             entry_log = PaperLedgerEntry(
                 account_id=account.id,
@@ -201,23 +179,24 @@ class PaperLedger:
                 entry_type=entry_type,
                 amount=amount_to_return,
                 balance_after=account.cash_balance,
-                description=f"Closed {pos.asset} {exit_reason}: {pnl:+.2f} ({r_multiple:+.2f}R)"
+                description=f"Closed {pos.asset} {exit_reason}: {pnl:+.2f} ({r_multiple:+.2f}R)",
             )
             session.add(entry_log)
             await session.commit()
-            
+
             return {
                 "position_id": position_id,
                 "pnl": pnl,
                 "r_multiple": r_multiple,
                 "exit_reason": exit_reason,
-                "new_balance": account.cash_balance
+                "new_balance": account.cash_balance,
             }
 
     async def _get_position(self, position_id: str, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         from db.session import get_session
         from db.models import PaperPosition
         from sqlalchemy import select
+
         async with get_session() as session:
             stmt = select(PaperPosition).where(PaperPosition.position_id == position_id)
             if user_id:
@@ -234,7 +213,7 @@ class PaperLedger:
                     "status": pos.status,
                     "entry_price": pos.fill_entry,
                     "stop_loss": pos.stop_loss,
-                    "size": pos.quantity
+                    "size": pos.quantity,
                 }
         return None
 
@@ -242,24 +221,17 @@ class PaperLedger:
         from db.session import get_session
         from db.models import PaperPosition
         from sqlalchemy import select
+
         async with get_session() as session:
             result = await session.execute(
-                select(PaperPosition).where(
-                    PaperPosition.user_id == user_id,
-                    PaperPosition.status == "open"
-                )
+                select(PaperPosition).where(PaperPosition.user_id == user_id, PaperPosition.status == "open")
             )
             return list(result.scalars().all())
 
-    async def _add_ledger_entry(
-        self,
-        user_id: int,
-        amount: float,
-        entry_type: str,
-        description: str
-    ) -> None:
+    async def _add_ledger_entry(self, user_id: int, amount: float, entry_type: str, description: str) -> None:
         from db.session import get_session
         from db.models import PaperLedgerEntry
+
         async with get_session() as session:
             account = await self._get_account(session, user_id)
             account.cash_balance += amount
@@ -269,21 +241,22 @@ class PaperLedger:
                 entry_type=entry_type,
                 amount=amount,
                 balance_after=account.cash_balance,
-                description=description
+                description=description,
             )
             session.add(entry_log)
             await session.commit()
-            
+
     async def check_tp_sl_hit(self, user_id: int, asset: str, current_price: float) -> Optional[str]:
         positions = await self.get_open_positions(user_id)
         hit_reason = None
         for pos in positions:
-            if pos.asset != asset: continue
-            
+            if pos.asset != asset:
+                continue
+
             direction = pos.direction.lower()
             sl = pos.stop_loss
-            tp = pos.target_price or 0.0 # simplified from original take_profits list
-            
+            tp = pos.target_price or 0.0  # simplified from original take_profits list
+
             if direction == "long":
                 if sl > 0 and current_price <= sl:
                     await self.close_position(user_id, pos.position_id, "SL", sl)
@@ -303,6 +276,7 @@ class PaperLedger:
 
 def get_paper_ledger() -> PaperLedger:
     return PaperLedger()
+
 
 async def sync_execution(
     signal_id: str,

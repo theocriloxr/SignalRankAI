@@ -142,9 +142,13 @@ def analyze_dump(path: Path) -> dict[str, Any]:
     if terminal:
         wr = outcome_counts["win"] / terminal * 100.0
         if wr < 45.0:
-            findings.append(f"Terminal tracked win rate is {wr:.1f}% ({outcome_counts['win']}W/{outcome_counts['loss']}L).")
+            findings.append(
+                f"Terminal tracked win rate is {wr:.1f}% ({outcome_counts['win']}W/{outcome_counts['loss']}L)."
+            )
     if score_summary["score_100_count"]:
-        findings.append(f"{score_summary['score_100_count']} signals scored 100; inspect max_score_raw logs and score calibration.")
+        findings.append(
+            f"{score_summary['score_100_count']} signals scored 100; inspect max_score_raw logs and score calibration."
+        )
 
     return {
         "table_counts": table_counts,
@@ -155,14 +159,18 @@ def analyze_dump(path: Path) -> dict[str, Any]:
         "outcome_segments": {key: dict(value) for key, value in segment_counts.items()},
         "same_asset_duplicate_12h_count": len(same_asset_duplicates),
         "same_asset_duplicate_12h_examples": same_asset_duplicates[:20],
-        "active_signal_messages": dict(Counter(str(row.get("is_active") or "unknown") for row in rows["active_signal_messages"])),
+        "active_signal_messages": dict(
+            Counter(str(row.get("is_active") or "unknown") for row in rows["active_signal_messages"])
+        ),
         "mt5_credentials": mt5,
         "findings": findings,
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Analyze a Railway PostgreSQL plain SQL dump for SignalRankAI delivery/outcome issues.")
+    parser = argparse.ArgumentParser(
+        description="Analyze a Railway PostgreSQL plain SQL dump for SignalRankAI delivery/outcome issues."
+    )
     parser.add_argument("dump", type=Path, help="Path to railway_data.sql")
     parser.add_argument("--json", action="store_true", help="Print full JSON instead of a concise report")
     args = parser.parse_args()
@@ -185,4 +193,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -4,6 +4,7 @@ This module never changes serving decisions while collecting evidence. It reads
 outcome-tracked candidate_shadow observations and decides whether the active
 candidate has enough live-forward evidence to be considered for promotion.
 """
+
 from __future__ import annotations
 
 import math
@@ -17,17 +18,8 @@ from utils.timeutils import now_utc_naive
 def _candidate_db_priority():
     from db.priority import DBPriority
 
-    role = str(
-        os.getenv("DB_ROLE")
-        or os.getenv("RUN_MODE")
-        or os.getenv("SERVICE_ROLE")
-        or ""
-    ).strip().lower()
-    return (
-        DBPriority.ANALYTICS
-        if role == "analytics" or role.startswith("analytics-")
-        else DBPriority.BACKGROUND
-    )
+    role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "").strip().lower()
+    return DBPriority.ANALYTICS if role == "analytics" or role.startswith("analytics-") else DBPriority.BACKGROUND
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -106,11 +98,7 @@ def _row_r_multiple(row: Any, outcome: str) -> float:
 
 
 def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> dict[str, Any]:
-    selected = [
-        (row, features, outcome)
-        for row, features, outcome in rows
-        if _boolish(features.get(key))
-    ]
+    selected = [(row, features, outcome) for row, features, outcome in rows if _boolish(features.get(key))]
     r_values = [_row_r_multiple(row, outcome) for row, _, outcome in selected]
     usable = [value for value in r_values if value != 0.0]
     wins = sum(1 for _, _, outcome in selected if outcome == "win")
@@ -119,11 +107,7 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
     gross_profit = sum(value for value in usable if value > 0.0)
     gross_loss = abs(sum(value for value in usable if value < 0.0))
     expectancy = (sum(usable) / len(usable)) if usable else 0.0
-    profit_factor = (
-        gross_profit / gross_loss
-        if gross_loss > 0.0
-        else (999.0 if gross_profit > 0.0 else 0.0)
-    )
+    profit_factor = gross_profit / gross_loss if gross_loss > 0.0 else (999.0 if gross_profit > 0.0 else 0.0)
     return {
         "resolved": resolved,
         "wins": wins,
@@ -136,7 +120,6 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
 
 async def load_active_candidate() -> dict[str, Any] | None:
     from db.models import MLModelArtifact
-    from db.priority import DBPriority
     from db.session import get_session
     from sqlalchemy import desc, select
 
@@ -147,42 +130,35 @@ async def load_active_candidate() -> dict[str, Any] | None:
         drop_if_busy=False,
     ) as session:
         row = (
-            await session.execute(
-                select(MLModelArtifact)
-                .where(
-                    MLModelArtifact.model_name == "candidate",
-                    MLModelArtifact.is_active.is_(True),
+            (
+                await session.execute(
+                    select(MLModelArtifact)
+                    .where(
+                        MLModelArtifact.model_name == "candidate",
+                        MLModelArtifact.is_active.is_(True),
+                    )
+                    .order_by(desc(MLModelArtifact.created_at), desc(MLModelArtifact.id))
+                    .limit(1)
                 )
-                .order_by(desc(MLModelArtifact.created_at), desc(MLModelArtifact.id))
-                .limit(1)
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None:
             await session.rollback()
             return None
         payload = dict(getattr(row, "payload", {}) or {})
         snapshot = {
             "id": int(getattr(row, "id", 0) or 0),
-            "artifact_hash_sha256": str(
-                getattr(row, "artifact_hash_sha256", "") or ""
-            ),
+            "artifact_hash_sha256": str(getattr(row, "artifact_hash_sha256", "") or ""),
             "model_version": str(getattr(row, "model_version", "") or ""),
-            "feature_schema_version": str(
-                getattr(row, "feature_schema_version", "") or ""
-            ),
+            "feature_schema_version": str(getattr(row, "feature_schema_version", "") or ""),
             "schema_version": int(payload.get("schema_version") or 1),
-            "feature_schema_hash_sha256": str(
-                payload.get("feature_schema_hash_sha256") or ""
-            ),
+            "feature_schema_hash_sha256": str(payload.get("feature_schema_hash_sha256") or ""),
             "training_run_id": str(payload.get("training_run_id") or ""),
-            "trained_at": (
-                getattr(row, "trained_at", None)
-                or _parse_dt(payload.get("trained_at"))
-            ),
+            "trained_at": (getattr(row, "trained_at", None) or _parse_dt(payload.get("trained_at"))),
             "created_at": getattr(row, "created_at", None),
-            "metrics": dict(
-                getattr(row, "metrics", {}) or payload.get("metrics") or {}
-            ),
+            "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
             "payload": payload,
         }
         await session.rollback()
@@ -191,7 +167,6 @@ async def load_active_candidate() -> dict[str, Any] | None:
 
 async def load_active_primary() -> dict[str, Any] | None:
     from db.models import MLModelArtifact
-    from db.priority import DBPriority
     from db.session import get_session
     from sqlalchemy import desc, select
 
@@ -202,34 +177,32 @@ async def load_active_primary() -> dict[str, Any] | None:
         drop_if_busy=False,
     ) as session:
         row = (
-            await session.execute(
-                select(MLModelArtifact)
-                .where(
-                    MLModelArtifact.model_name == "primary",
-                    MLModelArtifact.is_active.is_(True),
+            (
+                await session.execute(
+                    select(MLModelArtifact)
+                    .where(
+                        MLModelArtifact.model_name == "primary",
+                        MLModelArtifact.is_active.is_(True),
+                    )
+                    .order_by(desc(MLModelArtifact.created_at), desc(MLModelArtifact.id))
+                    .limit(1)
                 )
-                .order_by(desc(MLModelArtifact.created_at), desc(MLModelArtifact.id))
-                .limit(1)
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None:
             await session.rollback()
             return None
         payload = dict(getattr(row, "payload", {}) or {})
         snapshot = {
             "id": int(getattr(row, "id", 0) or 0),
-            "artifact_hash_sha256": str(
-                getattr(row, "artifact_hash_sha256", "") or ""
-            ),
+            "artifact_hash_sha256": str(getattr(row, "artifact_hash_sha256", "") or ""),
             "model_version": str(getattr(row, "model_version", "") or ""),
-            "feature_schema_version": str(
-                getattr(row, "feature_schema_version", "") or ""
-            ),
+            "feature_schema_version": str(getattr(row, "feature_schema_version", "") or ""),
             "schema_version": int(payload.get("schema_version") or 1),
             "trained_at": getattr(row, "trained_at", None),
-            "metrics": dict(
-                getattr(row, "metrics", {}) or payload.get("metrics") or {}
-            ),
+            "metrics": dict(getattr(row, "metrics", {}) or payload.get("metrics") or {}),
         }
         await session.rollback()
         return snapshot
@@ -239,7 +212,6 @@ async def evaluate_candidate_forward_evidence(
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from db.models import MLRejectedSignal
-    from db.priority import DBPriority
     from db.session import get_session
     from sqlalchemy import select
 
@@ -275,7 +247,9 @@ async def evaluate_candidate_forward_evidence(
                     .order_by(MLRejectedSignal.created_at.asc())
                     .limit(max_rows)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         await session.rollback()
 
@@ -306,22 +280,16 @@ async def evaluate_candidate_forward_evidence(
     candidate_stats = _decision_stats(resolved_rows, "candidate_passed")
     champion_stats = _decision_stats(resolved_rows, "champion_passed")
     candidate_passed_all = sum(
-        1
-        for row in all_rows
-        if _boolish((getattr(row, "features", {}) or {}).get("candidate_passed"))
+        1 for row in all_rows if _boolish((getattr(row, "features", {}) or {}).get("candidate_passed"))
     )
     champion_passed_all = sum(
-        1
-        for row in all_rows
-        if _boolish((getattr(row, "features", {}) or {}).get("champion_passed"))
+        1 for row in all_rows if _boolish((getattr(row, "features", {}) or {}).get("champion_passed"))
     )
     candidate_pass_rate = candidate_passed_all / len(all_rows) if all_rows else 0.0
     champion_pass_rate = champion_passed_all / len(all_rows) if all_rows else 0.0
 
     observation_times = [
-        getattr(row, "created_at", None)
-        for row in all_rows
-        if isinstance(getattr(row, "created_at", None), datetime)
+        getattr(row, "created_at", None) for row in all_rows if isinstance(getattr(row, "created_at", None), datetime)
     ]
     if observation_times:
         first_at = min(observation_times)
@@ -371,9 +339,7 @@ async def evaluate_candidate_forward_evidence(
         if float(candidate_stats["profit_factor"]) < min_profit_factor:
             reasons.append("candidate_profit_factor_below_floor")
     if champion_stats["resolved"] >= champion_min_compare:
-        if float(candidate_stats["expected_r"]) < (
-            float(champion_stats["expected_r"]) - max_expected_r_regression
-        ):
+        if float(candidate_stats["expected_r"]) < (float(champion_stats["expected_r"]) - max_expected_r_regression):
             reasons.append("candidate_expected_r_materially_below_champion")
 
     age_hours = max(
@@ -409,11 +375,7 @@ async def evaluate_candidate_forward_evidence(
         "candidate_pass_rate": candidate_pass_rate,
         "champion_pass_rate": champion_pass_rate,
         "candidate": {
-            **{
-                key: value
-                for key, value in candidate.items()
-                if key != "payload"
-            },
+            **{key: value for key, value in candidate.items() if key != "payload"},
             "decision_stats": candidate_stats,
         },
         "champion": {
@@ -440,6 +402,7 @@ async def evaluate_candidate_forward_evidence(
             "max_age_hours": max_age_hours,
         },
     }
+
 
 async def candidate_replacement_lease() -> dict[str, Any]:
     """Decide whether production retraining may replace the active challenger.
@@ -474,27 +437,21 @@ async def candidate_replacement_lease() -> dict[str, Any]:
         return {
             "blocked": False,
             "reason": "legacy_candidate_without_forward_lease",
-            "candidate_artifact_hash_sha256": str(
-                candidate.get("artifact_hash_sha256") or ""
-            ),
+            "candidate_artifact_hash_sha256": str(candidate.get("artifact_hash_sha256") or ""),
         }
 
-    parent_hash = str(
-        payload.get("parent_model_hash_sha256")
-        or training_meta.get("parent_model_hash_sha256")
-        or ""
-    ).strip().lower()
+    parent_hash = (
+        str(payload.get("parent_model_hash_sha256") or training_meta.get("parent_model_hash_sha256") or "")
+        .strip()
+        .lower()
+    )
     primary = await load_active_primary()
-    primary_hash = str(
-        (primary or {}).get("artifact_hash_sha256") or ""
-    ).strip().lower()
+    primary_hash = str((primary or {}).get("artifact_hash_sha256") or "").strip().lower()
     if primary_hash and parent_hash != primary_hash:
         return {
             "blocked": False,
             "reason": "candidate_parent_no_longer_current",
-            "candidate_artifact_hash_sha256": str(
-                candidate.get("artifact_hash_sha256") or ""
-            ),
+            "candidate_artifact_hash_sha256": str(candidate.get("artifact_hash_sha256") or ""),
             "candidate_parent_hash_sha256": parent_hash,
             "current_primary_hash_sha256": primary_hash,
         }
@@ -504,14 +461,8 @@ async def candidate_replacement_lease() -> dict[str, Any]:
     blocked = status in {"collecting", "eligible"}
     return {
         "blocked": blocked,
-        "reason": (
-            "active_candidate_forward_lease"
-            if blocked
-            else f"candidate_forward_status_{status or 'unknown'}"
-        ),
-        "candidate_artifact_hash_sha256": str(
-            candidate.get("artifact_hash_sha256") or ""
-        ),
+        "reason": ("active_candidate_forward_lease" if blocked else f"candidate_forward_status_{status or 'unknown'}"),
+        "candidate_artifact_hash_sha256": str(candidate.get("artifact_hash_sha256") or ""),
         "candidate_status": status,
         "candidate_age_hours": evidence.get("candidate_age_hours"),
         "observations": evidence.get("observations"),
@@ -547,12 +498,7 @@ async def promote_candidate_from_forward_proof(
 
     payload = dict(candidate.get("payload") or {})
     training_meta = dict(payload.get("training_meta") or {})
-    candidate_metrics = dict(
-        candidate.get("metrics")
-        or payload.get("metrics")
-        or training_meta.get("metrics")
-        or {}
-    )
+    candidate_metrics = dict(candidate.get("metrics") or payload.get("metrics") or training_meta.get("metrics") or {})
     offline_quality = dict(training_meta.get("offline_quality_gate") or {})
     if not bool(offline_quality.get("passed")):
         return {
@@ -581,9 +527,7 @@ async def promote_candidate_from_forward_proof(
         }
 
     calibration = dict(candidate_metrics.get("calibration") or {})
-    if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and not bool(
-        calibration.get("validated")
-    ):
+    if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and not bool(calibration.get("validated")):
         return {
             "ok": False,
             "reason": "candidate_calibration_unvalidated",
@@ -598,11 +542,11 @@ async def promote_candidate_from_forward_proof(
             "lineage": lineage,
         }
 
-    parent_hash = str(
-        payload.get("parent_model_hash_sha256")
-        or training_meta.get("parent_model_hash_sha256")
-        or ""
-    ).strip().lower()
+    parent_hash = (
+        str(payload.get("parent_model_hash_sha256") or training_meta.get("parent_model_hash_sha256") or "")
+        .strip()
+        .lower()
+    )
     if primary_hash and parent_hash != primary_hash.lower():
         return {
             "ok": False,
@@ -638,9 +582,7 @@ async def promote_candidate_from_forward_proof(
             "ML_ALLOW_SCHEMA_VERSION_PROMOTION",
             False,
         )
-        schema_certification = str(
-            os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or ""
-        ).strip()
+        schema_certification = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or "").strip()
         if not (schema_allowed and schema_certification):
             return {
                 "ok": False,
@@ -675,10 +617,7 @@ async def promote_candidate_from_forward_proof(
         import asyncio
         from engine import ml as engine_ml
 
-        primary_path = Path(
-            os.getenv("ML_MODEL_PATH")
-            or (Path(__file__).parent / "model.json")
-        )
+        primary_path = Path(os.getenv("ML_MODEL_PATH") or (Path(__file__).parent / "model.json"))
         restored = await asyncio.to_thread(
             restore_active_model_artifact_from_database_sync,
             primary_path,
@@ -708,11 +647,8 @@ async def promote_candidate_from_forward_proof(
     return {
         "ok": True,
         "reason": "candidate_promoted",
-        "authorization_id": (
-            explicit_authorization or "automatic_forward_proof"
-        ),
+        "authorization_id": (explicit_authorization or "automatic_forward_proof"),
         "promotion": promoted,
         "reload": reload_status,
         "evidence": evidence,
     }
-
