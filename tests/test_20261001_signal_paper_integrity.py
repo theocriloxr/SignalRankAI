@@ -103,7 +103,12 @@ def test_active_signals_are_confirmed_delivery_and_lifecycle_authoritative() -> 
     ]
     assert ".outerjoin(SignalLifecycle" in block
     assert "lifecycle_active" in block
-    assert "active_projection" in block
+    assert "active_projection = or_(" in block
+    projection = block[block.index("active_projection = or_("):block.index("q: Select")]
+    # Entered/TP1/TP2 lifecycle state remains visible even when the original
+    # pre-entry setup expiry is in the past. Expiry only guards legacy rows.
+    assert projection.index("lifecycle_active") < projection.index("Signal.expires_at")
+    assert "~lifecycle_exists" in projection
     assert "SignalDelivery.delivery_confirmed_at.is_not(None)" in block
     assert "CONFIRMED_DELIVERY_STATES" in block
     assert "seen_market_buckets" not in block
@@ -167,3 +172,66 @@ def test_paper_worker_rechecks_permanent_skip_after_distributed_lock() -> None:
     assert "PaperTradeAttempt.retryable.is_(False)" in block
     assert "PaperTradeAttempt.finalized_at.is_not(None)" in block
     assert "finalized skip already recorded" in block
+
+
+def test_delivery_receipt_round_trip_preserves_exact_signal_snapshot() -> None:
+    from delivery.receipts import DeliveryReceipt
+    from delivery.service import DeliveryOperation
+
+    operation = DeliveryOperation(
+        user_id=123,
+        signal_id="sig-immutable",
+        channel_id=123,
+        signal_version="1",
+        delivery_kind="signal",
+    )
+    snapshot = {
+        "signal_id": "sig-immutable",
+        "asset": "US30",
+        "timeframe": "15m",
+        "direction": "SELL",
+        "entry": 50686.17,
+        "stop_loss": 50877.72,
+        "take_profits": [50134.51, 49582.84, 49031.18],
+        "generated_at": "2026-10-01T14:14:00+00:00",
+    }
+    receipt = DeliveryReceipt.accepted(
+        operation,
+        message_id=56763,
+        mode="sent",
+        signal_snapshot=snapshot,
+    )
+    restored = DeliveryReceipt.from_dict(receipt.as_dict())
+    assert restored.signal_snapshot == snapshot
+    assert restored.as_dict()["signal_snapshot"]["entry"] == 50686.17
+
+
+def test_delivery_proof_persists_snapshot_generated_time_not_mutable_signal_row() -> None:
+    source = _source("db/pg_features.py")
+    block = source[
+        source.index("async def mark_signal_delivery_result"):
+        source.index("async def list_signals_sent_today"),
+    ]
+    assert "_delivery_snapshot_from_proof(telegram_api_result)" in block
+    assert '_delivery_snapshot_datetime(proof_snapshot.get("generated_at"))' in block
+    assert "or getattr(signal_row, \"created_at\", None)" in block
+
+
+def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> None:
+    source = _source("core/paper_trading_service.py")
+    candidates = source[
+        source.index("async def _telegram_delivery_candidates"):
+        source.index("async def _web_delivery_candidates"),
+    ]
+    assert "_proof_signal_snapshot(delivery)" in candidates
+    assert '_proof_datetime(snapshot.get("generated_at"))' in candidates
+    assert '_proof_datetime(snapshot.get("expires_at"))' in candidates
+    assert '_snapshot_or(snapshot, "entry", signal.entry)' in candidates
+    assert '_snapshot_or(snapshot, "stop_loss", signal.stop_loss)' in candidates
+    assert "snapshot_targets" in candidates
+
+    open_block = source[
+        source.index("async def _open_candidate_locked"):
+        source.index("async def _notify_paper_decision"),
+    ]
+    assert "expires_at=candidate.get(\"expires_at\")" in open_block
