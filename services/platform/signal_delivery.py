@@ -448,7 +448,8 @@ async def deliver_recent_web_signals() -> dict[str, int]:
                     ),
                 },
             )
-            if int(result.rowcount or 0) == 1:
+            rowcount_raw: Any = getattr(result, "rowcount", 0)
+            if int(rowcount_raw or 0) == 1:
                 counters["delivered"] += 1
             else:
                 counters["duplicates"] += 1
