@@ -47,6 +47,7 @@ from db.models import (
     ReferralReward,
     Signal,
     SignalDelivery,
+    SignalLifecycle,
     ActiveSignalMessage,
     Outcome,
     OutcomeNotification,
@@ -1790,13 +1791,15 @@ async def list_delivered_signals_for_user(
     limit: int = 50,
     sent_ok_only: bool = True,
 ) -> list[Signal]:
-    """Return signals actually delivered to a Telegram user.
+    """Return canonical delivery-proven signals for one Telegram user.
 
-    This is the canonical user-facing query for /signals. It starts from
-    SignalDelivery rather than Signal so generated/reserved-but-never-sent
-    rows do not appear in a user's active signal list.
+    Active state is lifecycle-authoritative when a lifecycle row exists. Signal
+    archived/expired booleans are only legacy projections and must not hide an
+    ACTIVE_TRADE/TP1/TP2 signal after a confirmed delivery.
     """
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    res: Result[Tuple[User]] = await session.execute(
+        select(User).where(User.telegram_user_id == int(telegram_user_id))
+    )
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
@@ -1805,29 +1808,48 @@ async def list_delivered_signals_for_user(
     if mode == "running":
         mode = "active"
     cutoff_days = max(1, int(lookback_days or 7))
-    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
+    now = _utcnow()
+    cutoff: datetime = now - timedelta(days=cutoff_days)
     max_rows = max(1, min(int(limit or 50), 200))
 
     terminal_statuses = {
-        "sl",
-        "tp",
-        "tp3",
-        "invalid",
-        "invalidated",
-        "time_stop",
-        "cancel",
-        "cancelled",
-        "expired",
-        "superseded",
+        "sl", "tp", "tp3", "invalid", "invalidated", "time_stop",
+        "cancel", "cancelled", "expired", "superseded", "missed_entry",
+        "partial_win_be",
     }
-    winner_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp"}
+    terminal_lifecycle_states = {
+        "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+    }
+    winner_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp", "partial_win"}
     loser_statuses = {"sl", "stop_loss"}
-    missed_statuses = {"missed", "time_stop", "expired", "invalid", "invalidated", "cancel", "cancelled"}
+    missed_statuses = {
+        "missed", "missed_entry", "time_stop", "expired",
+        "invalid", "invalidated", "cancel", "cancelled",
+    }
+
+    status_lower = func.lower(Outcome.status)
+    lifecycle_upper = func.upper(func.coalesce(SignalLifecycle.state, ""))
+    lifecycle_exists = SignalLifecycle.signal_id.is_not(None)
+    lifecycle_active = and_(
+        lifecycle_exists,
+        lifecycle_upper.notin_(terminal_lifecycle_states),
+    )
+    legacy_projection_active = and_(
+        ~lifecycle_exists,
+        Signal.archived.is_(False),
+        Signal.expired.is_(False),
+        or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
+    )
+    active_projection = and_(
+        or_(Signal.expires_at.is_(None), Signal.expires_at > now),
+        or_(lifecycle_active, legacy_projection_active),
+    )
 
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+        .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
         .where(
             SignalDelivery.user_id == int(user.id),
             SignalDelivery.delivered_at >= cutoff,
@@ -1840,53 +1862,57 @@ async def list_delivered_signals_for_user(
             SignalDelivery.sent_ok.is_(True),
             SignalDelivery.telegram_chat_id.is_not(None),
             SignalDelivery.telegram_message_id.is_not(None),
+            SignalDelivery.delivery_confirmed_at.is_not(None),
+            func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
         )
     if asset:
         q = q.where(Signal.asset == str(asset).upper().strip())
 
-    status_lower = func.lower(Outcome.status)
     if mode in {"active", ""}:
-        q = q.where(
-            Signal.archived.is_(False),
-            Signal.expired.is_(False),
-            or_(Signal.expires_at.is_(None), Signal.expires_at > _utcnow()),
-            or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
-        )
+        q = q.where(active_projection)
     elif mode == "closed":
-        q = q.where(or_(Signal.archived.is_(True), Signal.expired.is_(True), status_lower.in_(terminal_statuses)))
+        q = q.where(
+            or_(
+                lifecycle_upper.in_(terminal_lifecycle_states),
+                Signal.archived.is_(True),
+                Signal.expired.is_(True),
+                status_lower.in_(terminal_statuses),
+            )
+        )
     elif mode == "winners":
         q = q.where(status_lower.in_(winner_statuses))
     elif mode == "losers":
         q = q.where(status_lower.in_(loser_statuses))
     elif mode == "missed":
-        q = q.where(or_(Signal.expired.is_(True), status_lower.in_(missed_statuses)))
+        q = q.where(
+            or_(
+                lifecycle_upper.in_({"MISSED_ENTRY", "EXPIRED"}),
+                Signal.expired.is_(True),
+                status_lower.in_(missed_statuses),
+            )
+        )
     elif mode == "all":
         pass
     else:
-        q = q.where(
-            Signal.archived.is_(False),
-            Signal.expired.is_(False),
-            or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
-        )
+        q = q.where(active_projection)
 
     res2: Result[Tuple[Signal]] = await session.execute(q)
     rows = list(res2.scalars().all())
 
-    # If delivery marking failed during a DB-pressure window, active message
-    # tracking is the strongest evidence that the user really saw the signal.
+    # Active-message tracking is a second delivery proof if the delivery row was
+    # temporarily unavailable under DB pressure. Lifecycle truth still decides
+    # whether that message represents an actionable/managed signal.
     if mode == "active":
         q_active: Select[Tuple[Signal]] = (
             select(Signal)
             .join(ActiveSignalMessage, ActiveSignalMessage.signal_id == Signal.signal_id)
             .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+            .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
             .where(
                 ActiveSignalMessage.user_id == int(user.id),
                 ActiveSignalMessage.is_active.is_(True),
                 ActiveSignalMessage.created_at >= cutoff,
-                Signal.archived.is_(False),
-                Signal.expired.is_(False),
-                or_(Signal.expires_at.is_(None), Signal.expires_at > _utcnow()),
-                or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
+                active_projection,
             )
             .order_by(ActiveSignalMessage.created_at.desc())
             .limit(max_rows)
@@ -1897,20 +1923,12 @@ async def list_delivered_signals_for_user(
         rows.extend(list(res3.scalars().all()))
 
     seen: set[str] = set()
-    seen_market_buckets: set[tuple[str, str]] = set()
     out: list[Signal] = []
     for sig in rows:
         sid = str(getattr(sig, "signal_id", "") or "")
         if not sid or sid in seen:
             continue
-        bucket = (
-            str(getattr(sig, "asset", "") or "").upper(),
-            str(getattr(sig, "timeframe", "") or "").lower(),
-        )
-        if mode == "active" and bucket in seen_market_buckets:
-            continue
         seen.add(sid)
-        seen_market_buckets.add(bucket)
         out.append(sig)
         if len(out) >= max_rows:
             break
