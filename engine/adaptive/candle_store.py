@@ -109,6 +109,21 @@ def _capture_statement_timeout_ms() -> int:
     return max(500, min(10000, configured))
 
 
+def _capture_transaction_budget_seconds() -> float:
+    """Hard wall-clock budget for one noncritical candle DB transaction.
+
+    PostgreSQL statement_timeout does not cover every wait/commit path. This
+    outer budget guarantees learning evidence cannot hold a scarce pooled
+    session indefinitely under contention.
+    """
+    default = "4.5" if _is_decomposed_engine() else "6.0"
+    try:
+        configured = float(os.getenv("ADAPTIVE_CANDLE_TRANSACTION_BUDGET_SECONDS", default) or default)
+    except (TypeError, ValueError):
+        configured = float(default)
+    return max(1.0, min(10.0, configured))
+
+
 def _error_text(exc: BaseException) -> str:
     return str(exc).strip() or "<empty>"
 
@@ -365,40 +380,42 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
             chunk = records[offset : offset + chunk_size]
             for read_write_attempt in range(2):
                 try:
-                    async with get_session(
-                        priority=capture_priority,
-                        label="adaptive.candle_capture",
-                        timeout_seconds=admission_timeout,
-                        # Candle snapshots are idempotent learning evidence. Under DB
-                        # pressure they yield immediately to decisions, delivery and
-                        # interactive commands.
-                        drop_if_busy=noncritical,
-                    ) as session:
-                        # This path is intentionally a durable write path. Some pooled
-                        # production connections can inherit a read-only transaction
-                        # characteristic from prior audit/read workloads; declare the
-                        # bounded candle transaction READ WRITE before any SET LOCAL or
-                        # DML so idempotent learning evidence cannot be stranded.
-                        await session.execute(sql_text("SET TRANSACTION READ WRITE"))
-                        await session.execute(sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'"))
-                        await session.execute(sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'"))
-                        stmt = pg_insert(MarketCandle).values(chunk)
-                        stmt = stmt.on_conflict_do_update(
-                            constraint="uq_market_candles_symbol_tf_open",
-                            set_={
-                                "close_time_ms": stmt.excluded.close_time_ms,
-                                "open": stmt.excluded.open,
-                                "high": stmt.excluded.high,
-                                "low": stmt.excluded.low,
-                                "close": stmt.excluded.close,
-                                "volume": stmt.excluded.volume,
-                                "is_final": stmt.excluded.is_final,
-                                "updated_at": stmt.excluded.updated_at,
-                            },
-                        )
-                        await session.execute(stmt)
-                        await session.commit()
-                        inserted += len(chunk)
+                    transaction_budget = _capture_transaction_budget_seconds()
+                    async with asyncio.timeout(transaction_budget):
+                        async with get_session(
+                            priority=capture_priority,
+                            label="adaptive.candle_capture",
+                            timeout_seconds=admission_timeout,
+                            # Candle snapshots are idempotent learning evidence. Under DB
+                            # pressure they yield immediately to decisions, delivery and
+                            # interactive commands.
+                            drop_if_busy=noncritical,
+                        ) as session:
+                            # This path is intentionally a durable write path. Some pooled
+                            # production connections can inherit a read-only transaction
+                            # characteristic from prior audit/read workloads; declare the
+                            # bounded candle transaction READ WRITE before any SET LOCAL or
+                            # DML so idempotent learning evidence cannot be stranded.
+                            await session.execute(sql_text("SET TRANSACTION READ WRITE"))
+                            await session.execute(sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'"))
+                            await session.execute(sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'"))
+                            stmt = pg_insert(MarketCandle).values(chunk)
+                            stmt = stmt.on_conflict_do_update(
+                                constraint="uq_market_candles_symbol_tf_open",
+                                set_={
+                                    "close_time_ms": stmt.excluded.close_time_ms,
+                                    "open": stmt.excluded.open,
+                                    "high": stmt.excluded.high,
+                                    "low": stmt.excluded.low,
+                                    "close": stmt.excluded.close,
+                                    "volume": stmt.excluded.volume,
+                                    "is_final": stmt.excluded.is_final,
+                                    "updated_at": stmt.excluded.updated_at,
+                                },
+                            )
+                            await session.execute(stmt)
+                            await session.commit()
+                            inserted += len(chunk)
                     break
                 except Exception as exc:
                     readonly_error = "read-only transaction" in _error_text(exc).lower()
