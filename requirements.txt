@@ -29,7 +29,7 @@ alembic==1.20.0
 scikit-learn==1.9.1
 xgboost-cpu==3.2.0
 tradingview-ta==3.3.0
-yfinance==1.2.0
+yfinance==1.7.0
 curl_cffi==0.15.0
 oandapyV20==0.7.2
 newsapi-python==0.2.7
@@ -46,3 +46,6 @@ pytest-asyncio==1.4.0
 google-genai==1.2.0
 pyarrow==25.0.1
 Pillow==12.3.0
+
+cffi==2.1.1
+rich==15.0.0
