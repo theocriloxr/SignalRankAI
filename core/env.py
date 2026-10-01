@@ -106,9 +106,11 @@ def runtime_environment_name(default: str = "dev") -> str:
     copied APP_ENV=production value from contaminating staging advisory locks,
     ledgers, caches, and delivery scopes.
     """
+    override = str(os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE") or "").strip().lower()
     raw = (
         str(
-            os.getenv("RAILWAY_ENVIRONMENT_NAME")
+            override
+            or os.getenv("RAILWAY_ENVIRONMENT_NAME")
             or os.getenv("RAILWAY_ENVIRONMENT_ID")
             or os.getenv("RAILWAY_ENVIRONMENT")
             or os.getenv("APP_ENV")
