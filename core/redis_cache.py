@@ -66,7 +66,7 @@ def cache_key(prefix: str, *args: Any, **kwargs: Any) -> str:
     for k, v in sorted(kwargs.items()):
         parts.append(f"{k}:{str(v)[:50]}")
     key_str = "_".join(parts)
-    return f"cache:{hashlib.md5(key_str.encode()).hexdigest()}"
+    return f"cache:{hashlib.md5(key_str.encode(), usedforsecurity=False).hexdigest()}"
 
 
 async def cached_market_data(symbol: str, timeframe: str, category: str = "market_data_crypto") -> Optional[Dict]:
