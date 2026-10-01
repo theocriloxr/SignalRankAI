@@ -249,6 +249,21 @@ class SafetyFlags:
         )
 
 
+def financial_feature_flags() -> dict[str, bool]:
+    """Return non-secret financial safety state for owner diagnostics."""
+    flags = SafetyFlags.from_env()
+    return {
+        "real_execution_enabled": flags.real_execution_enabled,
+        "auto_execution_enabled": flags.auto_execution_enabled,
+        "auto_trade_enabled": flags.auto_trade_enabled,
+        "copy_trade_enabled": flags.copy_trade_enabled,
+        "mt5_live_accounts_enabled": flags.mt5_live_accounts_enabled,
+        "bybit_execution_enabled": flags.bybit_execution_enabled,
+        "real_payouts_enabled": flags.real_payouts_enabled,
+        "payments_enabled": flags.payments_enabled,
+    }
+
+
 def validate_required_secrets(names: Iterable[str]) -> tuple[str, ...]:
     return tuple(name for name in names if not secret_present(name))
 
@@ -259,6 +274,7 @@ __all__ = [
     "env_bool",
     "env_bool_alias",
     "env_int",
+    "financial_feature_flags",
     "environment",
     "redact_value",
     "runtime_environment_name",
