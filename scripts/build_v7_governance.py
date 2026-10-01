@@ -1369,6 +1369,39 @@ def generate() -> None:
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
+
+def _semantic_check_bytes(name: str, raw: bytes) -> bytes:
+    """Normalize volatile source locations for deterministic governance checks.
+
+    Environment-variable ownership is semantic at the file level; source line
+    numbers move whenever unrelated imports/comments are added and should not
+    force a registry rewrite. Variable presence, defaults, sensitivity and
+    required-by-code classification remain release-blocking.
+    """
+    if name != "environment_registry.yaml":
+        return raw
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return raw
+    variables = payload.get("variables")
+    if isinstance(variables, list):
+        for item in variables:
+            if not isinstance(item, dict):
+                continue
+            locations = item.get("read_locations")
+            if not isinstance(locations, list):
+                continue
+            item["read_locations"] = sorted(
+                {
+                    re.sub(r":\\d+$", "", str(location))
+                    for location in locations
+                    if str(location).strip()
+                }
+            )
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="Regenerate and fail if tracked output changes")
@@ -1377,10 +1410,18 @@ def main() -> int:
     generate()
     if args.check:
         after = {path.name: path.read_bytes() for path in OUT.glob("*") if path.is_file()}
-        if before != after:
+        semantic_before = {
+            name: _semantic_check_bytes(name, raw)
+            for name, raw in before.items()
+        }
+        semantic_after = {
+            name: _semantic_check_bytes(name, raw)
+            for name, raw in after.items()
+        }
+        if semantic_before != semantic_after:
             changed = sorted(
-                name for name in set(before) | set(after)
-                if before.get(name) != after.get(name)
+                name for name in set(semantic_before) | set(semantic_after)
+                if semantic_before.get(name) != semantic_after.get(name)
             )
             diff_dir = Path("/tmp/signalrank-governance-diffs")
             diff_dir.mkdir(parents=True, exist_ok=True)
