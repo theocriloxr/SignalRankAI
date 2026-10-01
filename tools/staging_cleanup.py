@@ -18,9 +18,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _environment() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("APP_ENV") or "local"
-    ).lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("local")
 
 
 def _is_production() -> bool:
