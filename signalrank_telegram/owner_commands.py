@@ -215,7 +215,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # ── Check DB for belt-and-suspenders (in case Redis was flushed) ────────
     already_used_db = False
     try:
-            from db.models import BotEvent
+        from db.models import BotEvent
         from db.repository import get_or_create_user
         from sqlalchemy import select
         if get_engine_for_event_loop() is not None:
