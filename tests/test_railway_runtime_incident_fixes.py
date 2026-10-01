@@ -208,11 +208,11 @@ def test_railway_app_links_prefer_the_current_service_domain() -> None:
         assert 'f"https://{base_url}"' in source or 'f"https://{configured}"' in source
 
 
-def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
+def test_signal_insert_never_recycles_a_delivered_or_expired_active_bucket() -> None:
     source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
-    guard = source.index("[dedup] exact active bucket reused")
-    insert = source.index("s = Signal(", guard)
     bucket_lock = source.index('exact_bucket_scope = f"signal-active-bucket:{asset}:{direction}:{timeframe}"')
+    guard = source.index("[dedup] exact active bucket blocks new candidate", bucket_lock)
+    insert = source.index("s = Signal(", guard)
     assert bucket_lock < guard < insert
     assert 'pg_advisory_xact_lock(hashtext(:bucket_scope))' in source[bucket_lock:guard]
     lookup = source[bucket_lock:insert]
@@ -224,7 +224,9 @@ def test_signal_insert_reuses_the_exact_active_unique_index_bucket() -> None:
     ):
         assert predicate in lookup
     assert 'exact_active.status = "superseded"' in lookup
-    assert "bool(exact_active.expired) or bool(exact_active.archived)" in lookup
+    assert "stale_by_time" in lookup
+    assert "stale_null_expiry" in lookup
+    assert 'SignalDedupBlocked("active_bucket_conflict"' in lookup
 
 
 def test_both_signal_persistence_paths_serialize_database_unique_bucket() -> None:
