@@ -96,7 +96,10 @@ def test_threshold_force_uses_boolean_parsing_and_logs_effective_values():
     dedup_source = text("engine/signal_deduplicator.py")
     assert '_env_bool("PREMIUM_SCORE_THRESHOLD_FORCE", False)' in core_source
     assert 'bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE")' not in core_source
-    assert 'in {"1", "true", "yes", "on", "y"}' in dedup_source
+    force_block_start = dedup_source.index('os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE")')
+    force_block = dedup_source[force_block_start:force_block_start + 320]
+    for truthy in ('"1"', '"true"', '"yes"', '"on"', '"y"'):
+        assert truthy in force_block
     assert "preserving env thresholds" in core_source
 
 
