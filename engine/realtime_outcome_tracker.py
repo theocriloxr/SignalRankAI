@@ -78,6 +78,160 @@ def _verified_telegram_delivery_exists(
     )
 
 
+def _delivery_snapshot_from_proof(proof: Any) -> dict[str, Any]:
+    """Extract the immutable signal view persisted with a confirmed delivery."""
+    payload = dict(proof or {}) if isinstance(proof, dict) else {}
+    snapshot = payload.get("signal_snapshot")
+    if not isinstance(snapshot, dict):
+        receipt = payload.get("delivery_receipt")
+        if isinstance(receipt, dict):
+            snapshot = receipt.get("signal_snapshot")
+    return dict(snapshot or {}) if isinstance(snapshot, dict) else {}
+
+
+def _snapshot_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _snapshot_targets(snapshot: dict[str, Any], fallback: Any = None) -> Any:
+    for key in ("take_profits", "take_profit", "targets", "tp_levels"):
+        value = snapshot.get(key)
+        if value not in (None, "", []):
+            return value
+    levels = [snapshot.get("tp1"), snapshot.get("tp2"), snapshot.get("tp3")]
+    levels = [value for value in levels if value not in (None, "")]
+    return levels if levels else fallback
+
+
+def _normalise_level(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+        return round(parsed, 10) if parsed > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalise_targets(value: Any) -> tuple[float, ...]:
+    parsed = _parse_tp_levels(value)
+    return tuple(round(float(item), 10) for item in parsed if float(item) > 0)
+
+
+def _delivery_snapshot_signature(snapshot: dict[str, Any]) -> tuple[Any, ...] | None:
+    """Canonical trade terms used to detect conflicting recipient snapshots."""
+    if not snapshot:
+        return None
+    entry = _normalise_level(snapshot.get("entry"))
+    stop = _normalise_level(snapshot.get("stop_loss"))
+    targets = _normalise_targets(_snapshot_targets(snapshot))
+    if entry is None or stop is None or not targets:
+        return None
+    return (
+        str(snapshot.get("asset") or "").upper().strip(),
+        str(snapshot.get("direction") or "").lower().strip(),
+        str(snapshot.get("timeframe") or "").lower().strip(),
+        entry,
+        stop,
+        targets,
+    )
+
+
+async def _confirmed_delivery_snapshot_map(
+    session: Any,
+    SignalDelivery: Any,
+    signal_ids: list[str],
+) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    """Load one immutable Telegram snapshot per signal and quarantine conflicts."""
+    if not signal_ids:
+        return {}, set()
+    result = await session.execute(
+        select(SignalDelivery.signal_id, SignalDelivery.telegram_api_result)
+        .where(
+            SignalDelivery.signal_id.in_(signal_ids),
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+            func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES),
+        )
+        .order_by(SignalDelivery.signal_id.asc(), SignalDelivery.delivery_confirmed_at.asc().nullslast(), SignalDelivery.id.asc())
+    )
+    snapshots: dict[str, dict[str, Any]] = {}
+    signatures: dict[str, tuple[Any, ...]] = {}
+    conflicts: set[str] = set()
+    for signal_id, proof in result.all():
+        sid = str(signal_id or "")
+        snapshot = _delivery_snapshot_from_proof(proof)
+        signature = _delivery_snapshot_signature(snapshot)
+        if not sid or signature is None:
+            continue
+        previous = signatures.get(sid)
+        if previous is not None and previous != signature:
+            conflicts.add(sid)
+            continue
+        signatures.setdefault(sid, signature)
+        snapshots.setdefault(sid, snapshot)
+    for sid in conflicts:
+        snapshots.pop(sid, None)
+        logger.error(
+            "[outcome_snapshot_conflict] signal=%s recipient delivery snapshots disagree; tracking quarantined",
+            sid[:16],
+        )
+    return snapshots, conflicts
+
+
+def _tracked_signal_payload(
+    signal_row: Any,
+    outcome_row: Any,
+    lifecycle: Any,
+    snapshot: dict[str, Any] | None = None,
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    snapshot = dict(snapshot or {})
+    generated_at = _snapshot_datetime(snapshot.get("generated_at")) or getattr(signal_row, "created_at", None)
+    expires_at = _snapshot_datetime(snapshot.get("expires_at")) or getattr(signal_row, "expires_at", None)
+    return {
+        "signal_id": str(getattr(signal_row, "signal_id", "") or ""),
+        "asset": snapshot.get("asset") or getattr(signal_row, "asset", None),
+        "direction": snapshot.get("direction") or getattr(signal_row, "direction", None),
+        "entry": snapshot.get("entry") if snapshot.get("entry") not in (None, "") else getattr(signal_row, "entry", None),
+        "stop_loss": (
+            snapshot.get("stop_loss")
+            if snapshot.get("stop_loss") not in (None, "")
+            else getattr(signal_row, "stop_loss", None)
+        ),
+        "take_profit": _snapshot_targets(snapshot, getattr(signal_row, "take_profit", None)),
+        "created_at": generated_at,
+        "timeframe": snapshot.get("timeframe") or getattr(signal_row, "timeframe", None),
+        "score": snapshot.get("score") if snapshot.get("score") is not None else getattr(signal_row, "score", None),
+        "ml_probability": getattr(signal_row, "ml_probability", None),
+        "prev_outcome_status": (
+            str(getattr(outcome_row, "status", "") or "").lower() if outcome_row is not None else None
+        ),
+        "prev_outcome_meta": dict(getattr(outcome_row, "meta", {}) or {}) if outcome_row is not None else {},
+        "expires_at": expires_at,
+        "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
+        "highest_tp_hit": _database_tp_progress(lifecycle, outcome_row),
+        "lifecycle_last_price": getattr(lifecycle, "last_price", None),
+        "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
+        "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
+        "outcome_category": "LIVE_DELIVERED",
+        "outcome_eligibility_reason": reason,
+        "delivery_snapshot_authoritative": bool(snapshot),
+    }
+
+
 def _record_excursion(signal_id: str, direction: str, entry: float, price: float) -> Dict[str, float]:
     """Accumulate signed MFE/MAE in memory between persisted lifecycle events."""
     try:
@@ -758,30 +912,22 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
             )
             res = await session.execute(stmt)
             rows = res.all()
+            signal_ids = [str(row[0].signal_id) for row in rows if getattr(row[0], "signal_id", None)]
+            snapshots, conflicts = await _confirmed_delivery_snapshot_map(session, SignalDelivery, signal_ids)
             return [
-                {
-                    "signal_id": s.signal_id,
-                    "asset": s.asset,
-                    "direction": s.direction,
-                    "entry": s.entry,
-                    "stop_loss": s.stop_loss,
-                    "take_profit": s.take_profit,
-                    "created_at": s.created_at,
-                    "timeframe": s.timeframe,
-                    "score": s.score,
-                    "ml_probability": getattr(s, "ml_probability", None),
-                    "prev_outcome_status": str(getattr(o, "status", "") or "").lower() if o is not None else None,
-                    "prev_outcome_meta": dict(getattr(o, "meta", {}) or {}) if o is not None else {},
-                    "expires_at": s.expires_at,
-                    "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
-                    "highest_tp_hit": _database_tp_progress(lifecycle, o),
-                    "lifecycle_last_price": getattr(lifecycle, "last_price", None),
-                    "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
-                    "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
-                    "outcome_category": "LIVE_DELIVERED",
-                    "outcome_eligibility_reason": "verified_delivery_query",
-                }
-                for s, o, lifecycle in rows
+                _tracked_signal_payload(
+                    signal_row,
+                    outcome_row,
+                    lifecycle,
+                    snapshots.get(str(signal_row.signal_id)),
+                    reason=(
+                        "verified_delivery_snapshot"
+                        if str(signal_row.signal_id) in snapshots
+                        else "verified_delivery_query"
+                    ),
+                )
+                for signal_row, outcome_row, lifecycle in rows
+                if str(signal_row.signal_id) not in conflicts
             ]
     except Exception as exc:
         try:
@@ -859,36 +1005,40 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
             rows = res.scalars().all()
             await session.commit()
 
+        # Re-open a short session only for receipt snapshots. Network work is not
+        # performed while this transaction is held.
+        async with get_session(
+            priority=_outcome_db_priority(),
+            label="outcome_tracker.fetch_delivery_snapshots",
+            timeout_seconds=_outcome_db_timeout(),
+        ) as snapshot_session:
+            signal_ids = [str(getattr(row, "signal_id", "") or "") for row in rows]
+            snapshots, conflicts = await _confirmed_delivery_snapshot_map(
+                snapshot_session,
+                SignalDelivery,
+                signal_ids,
+            )
+            await snapshot_session.rollback()
+
         out: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for s in rows:
-            sid = str(getattr(s, "signal_id", "") or "")
-            if not sid or sid in seen:
+        for signal_row in rows:
+            sid = str(getattr(signal_row, "signal_id", "") or "")
+            if not sid or sid in seen or sid in conflicts:
                 continue
             seen.add(sid)
             out.append(
-                {
-                    "signal_id": sid,
-                    "asset": s.asset,
-                    "direction": s.direction,
-                    "entry": s.entry,
-                    "stop_loss": s.stop_loss,
-                    "take_profit": s.take_profit,
-                    "created_at": s.created_at,
-                    "timeframe": s.timeframe,
-                    "score": s.score,
-                    "ml_probability": getattr(s, "ml_probability", None),
-                    "prev_outcome_status": None,
-                    "prev_outcome_meta": {},
-                    "expires_at": s.expires_at,
-                    "lifecycle_state": "WATCHING_FOR_ENTRY",
-                    "highest_tp_hit": 0,
-                    "lifecycle_last_price": None,
-                    "lifecycle_last_checked_at": None,
-                    "entry_touched_at": None,
-                    "outcome_category": "LIVE_DELIVERED",
-                    "outcome_eligibility_reason": "verified_delivery_backfill_query",
-                }
+                _tracked_signal_payload(
+                    signal_row,
+                    None,
+                    None,
+                    snapshots.get(sid),
+                    reason=(
+                        "verified_delivery_snapshot_backfill"
+                        if sid in snapshots
+                        else "verified_delivery_backfill_query"
+                    ),
+                )
             )
         return out
     except Exception as exc:
@@ -938,35 +1088,29 @@ async def _fetch_signal_for_reconciliation(signal_id: str) -> Optional[Dict[str,
                 .limit(1)
             )
             row = (await session.execute(stmt)).first()
+            snapshot = None
+            conflicts: set[str] = set()
+            if row is not None:
+                snapshots, conflicts = await _confirmed_delivery_snapshot_map(
+                    session,
+                    SignalDelivery,
+                    [str(row[0].signal_id)],
+                )
+                snapshot = snapshots.get(str(row[0].signal_id))
             await session.commit()
 
         if row is None:
             return None
         signal_row, outcome_row, lifecycle = row
-        return {
-            "signal_id": signal_row.signal_id,
-            "asset": signal_row.asset,
-            "direction": signal_row.direction,
-            "entry": signal_row.entry,
-            "stop_loss": signal_row.stop_loss,
-            "take_profit": signal_row.take_profit,
-            "created_at": signal_row.created_at,
-            "timeframe": signal_row.timeframe,
-            "score": signal_row.score,
-            "ml_probability": getattr(signal_row, "ml_probability", None),
-            "prev_outcome_status": (
-                str(getattr(outcome_row, "status", "") or "").lower() if outcome_row is not None else None
-            ),
-            "prev_outcome_meta": (dict(getattr(outcome_row, "meta", {}) or {}) if outcome_row is not None else {}),
-            "expires_at": signal_row.expires_at,
-            "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
-            "highest_tp_hit": _database_tp_progress(lifecycle, outcome_row),
-            "lifecycle_last_price": getattr(lifecycle, "last_price", None),
-            "lifecycle_last_checked_at": getattr(lifecycle, "last_checked_at", None),
-            "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
-            "outcome_category": "LIVE_DELIVERED",
-            "outcome_eligibility_reason": "interactive_reconciliation",
-        }
+        if str(signal_row.signal_id) in conflicts:
+            return None
+        return _tracked_signal_payload(
+            signal_row,
+            outcome_row,
+            lifecycle,
+            snapshot,
+            reason=("interactive_delivery_snapshot" if snapshot else "interactive_reconciliation"),
+        )
     except Exception as exc:
         logger.warning(
             "[outcome_tracker] reconcile lookup failed signal=%s err=%s",
