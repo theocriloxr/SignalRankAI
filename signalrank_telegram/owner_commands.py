@@ -215,8 +215,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # ── Check DB for belt-and-suspenders (in case Redis was flushed) ────────
     already_used_db = False
     try:
-        from db.session import get_engine_for_event_loop, get_session
-        from db.models import BotEvent
+            from db.models import BotEvent
         from db.repository import get_or_create_user
         from sqlalchemy import select
         if get_engine_for_event_loop() is not None:
@@ -251,12 +250,10 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ── Grant 7-day Premium ─────────────────────────────────────────────────
-    from datetime import datetime, timedelta
     premium_until = now_utc_naive() + timedelta(days=7)
 
     try:
-        from db.session import get_engine_for_event_loop, get_session
-        from db.repository import get_or_create_user
+            from db.repository import get_or_create_user
         from db.models import BotEvent, Subscription, AdminEvent
         from db.pg_features import record_bot_event
 
@@ -331,8 +328,8 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Owner/admin command: show provider health and circuit-breaker snapshot.
+async def _provider_status_snapshot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Internal provider-health snapshot helper.
 
     Returns a short report listing unhealthy providers (down > threshold),
     a small provider-health summary from the in-process cache, and the
@@ -433,7 +430,6 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     ]
     candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
 
-    from db.session import get_engine_for_event_loop, get_session
     from db.models import Signal, AdminEvent
     from engine.market_state import get_market_state_async
     from engine.strategies.signal_generator import SignalGenerator
@@ -663,7 +659,6 @@ async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     signal_id = context.args[0].strip()
 
-    from db.session import get_engine_for_event_loop, get_session
     from db.models import Signal, AdminEvent
     from sqlalchemy import select, or_
 
@@ -706,8 +701,7 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        from db.session import get_engine_for_event_loop, get_session
-        if get_engine_for_event_loop() is None:
+            if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import User, Subscription
@@ -750,8 +744,7 @@ async def owner_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     try:
-        from db.session import get_engine_for_event_loop, get_session
-        if get_engine_for_event_loop() is None:
+            if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import PaymentEvent
@@ -867,8 +860,7 @@ async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     try:
-        from db.session import get_engine_for_event_loop, get_session
-        if get_engine_for_event_loop() is None:
+            if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         
@@ -1076,7 +1068,6 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Usage: /qa_report [days] [min=N]")
         return
 
-    from datetime import datetime, timedelta
     from sqlalchemy import select, func, or_
     from db.models import SignalDelivery, Signal, Outcome
     from data.fetcher import get_asset_type
