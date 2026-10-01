@@ -426,12 +426,12 @@ def test_ai_provider_provenance_is_preserved_and_outcome_attributed():
     reviewer = Path("scripts/ai_reviewer.py").read_text(encoding="utf-8")
 
     scoring = engine[engine.index("gemini_ok, gemini_score, gemini_reason"):engine.index("from core.signal_quality_gate", engine.index("gemini_ok, gemini_score, gemini_reason"))]
+    logging_block = engine[engine.index("def _log_decision"):engine.index("def _log_market_observations")]
     assert 'sig.get("ai_review_provider")' in scoring
     assert "provider=consensus" in scoring
     assert 'signal["ai_review_provider"] = provider' in engine
     assert '"ai_review_provider"' in logging_block
 
-    logging_block = engine[engine.index("def _log_decision"):engine.index("def _log_market_observations")]
     for key in (
         "ai_review_provider",
         "ai_review_model",
