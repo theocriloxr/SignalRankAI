@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from signalrank_telegram.command_resilience import CommandResponseCache
 
@@ -9,6 +10,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _function_block(source: str, name: str) -> str:
+    """Extract one function/method regardless of its position in the module."""
+    match = re.search(
+        rf"(?m)^(?P<indent>[ \t]*)(?:async\s+)?def\s+{re.escape(name)}\s*\(",
+        source,
+    )
+    if match is None:
+        raise AssertionError(f"function not found: {name}")
+    indent = match.group("indent")
+    tail = source[match.end():]
+    next_match = re.search(
+        rf"(?m)^{re.escape(indent)}(?:(?:async\s+)?def|class)\s+",
+        tail,
+    )
+    end = match.end() + next_match.start() if next_match else len(source)
+    return source[match.start():end]
 
 
 def test_command_cache_can_invalidate_only_one_users_signal_views() -> None:
@@ -36,10 +55,7 @@ def test_confirmed_delivery_invalidates_signals_command_cache() -> None:
 def test_delivery_proven_paper_candidates_do_not_repeat_profile_delivery_filter() -> None:
     source = _source("core/paper_trading_service.py")
     assert source.count('"delivery_proven": True') >= 2
-    open_block = source[
-        source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision")
-    ]
+    open_block = _function_block(source, "_open_candidate_locked")
     assert 'delivery_proven = bool(candidate.get("delivery_proven"))' in open_block
     assert "if not delivery_proven:" in open_block
     assert "signal_matches_preferences(candidate, profile_prefs)" in open_block
@@ -79,19 +95,11 @@ def test_delivered_signal_id_cannot_be_recycled_for_a_new_candidate() -> None:
 
 
 def test_semantic_dedup_only_reuses_logically_unexpired_rows() -> None:
-    source = _source("db/pg_features.py")
-    region = source[
-        source.index("thesis_cutoff ="):
-        source.index("if existing is not None:")
-    ]
-    assert region.count("Signal.expires_at > now") >= 2
+    primary = _function_block(_source("db/pg_features.py"), "get_or_create_signal_impl")
+    assert primary.count("Signal.expires_at > now") >= 2
 
-    secondary = _source("db/repository.py")
-    region2 = secondary[
-        secondary.index("thesis_cutoff ="):
-        secondary.index('opposite = "short"')
-    ]
-    assert region2.count("Signal.expires_at > now") >= 2
+    secondary = _function_block(_source("db/repository.py"), "persist_signal")
+    assert secondary.count("Signal.expires_at > now") >= 2
     assert "expires_at=signal_expires_at" in secondary
 
 
@@ -116,10 +124,7 @@ def test_active_signals_are_confirmed_delivery_and_lifecycle_authoritative() -> 
 
 def test_missed_entry_is_observation_not_realized_loss() -> None:
     source = _source("engine/realtime_outcome_tracker.py")
-    block = source[
-        source.index("async def _persist_outcome"):
-        source.index("async def _persist_ml_training_data")
-    ]
+    block = _function_block(source, "_persist_outcome")
     assert 'if status_l == "missed_entry":' in block
     assert "missed_entry_observed_r = r_mult" in block
     assert "missed_entry_observed_pct = pct" in block
@@ -158,14 +163,8 @@ def test_transient_lifecycle_observations_are_merged_for_retry() -> None:
 
 def test_paper_worker_rechecks_permanent_skip_after_distributed_lock() -> None:
     source = _source("core/paper_trading_service.py")
-    block = source[
-        source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision")
-    ]
-    lock_wrapper = source[
-        source.index("async def _open_candidate("):
-        source.index("async def _open_candidate_locked")
-    ]
+    block = _function_block(source, "_open_candidate_locked")
+    lock_wrapper = _function_block(source, "_open_candidate")
     assert "execution_destination_lock" in lock_wrapper
     assert "finalized_skip = (" in block
     assert 'PaperTradeAttempt.decision == "SKIPPED"' in block
@@ -208,10 +207,7 @@ def test_delivery_receipt_round_trip_preserves_exact_signal_snapshot() -> None:
 
 def test_delivery_proof_persists_snapshot_generated_time_not_mutable_signal_row() -> None:
     source = _source("db/pg_features.py")
-    block = source[
-        source.index("async def mark_signal_delivery_result"):
-        source.index("async def list_signals_sent_today")
-    ]
+    block = _function_block(source, "mark_signal_delivery_result")
     assert "_delivery_snapshot_from_proof(telegram_api_result)" in block
     assert '_delivery_snapshot_datetime(proof_snapshot.get("generated_at"))' in block
     assert "or getattr(signal_row, \"created_at\", None)" in block
@@ -219,10 +215,7 @@ def test_delivery_proof_persists_snapshot_generated_time_not_mutable_signal_row(
 
 def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> None:
     source = _source("core/paper_trading_service.py")
-    candidates = source[
-        source.index("async def _telegram_delivery_candidates"):
-        source.index("async def _web_delivery_candidates")
-    ]
+    candidates = _function_block(source, "_telegram_delivery_candidates")
     assert "_proof_signal_snapshot(delivery)" in candidates
     assert '_proof_datetime(snapshot.get("generated_at"))' in candidates
     assert '_proof_datetime(snapshot.get("expires_at"))' in candidates
@@ -230,8 +223,5 @@ def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> Non
     assert '_snapshot_or(snapshot, "stop_loss", signal.stop_loss)' in candidates
     assert "snapshot_targets" in candidates
 
-    open_block = source[
-        source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision")
-    ]
+    open_block = _function_block(source, "_open_candidate_locked")
     assert "expires_at=candidate.get(\"expires_at\")" in open_block
