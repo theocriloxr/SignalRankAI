@@ -47,6 +47,9 @@ class ProviderCertification:
     candle_count: int = 0
     latency_ms: float | None = None
     validation: dict[str, Any] | None = None
+    freshness_age_seconds: float | None = None
+    freshness_limit_seconds: float | None = None
+    execution_eligible: bool = False
     error: str | None = None
     docs_url: str = ""
     tested_at: str = ""
@@ -70,6 +73,42 @@ def _looks_like_network_failure(exc: BaseException | str) -> bool:
             "timeout",
         )
     )
+
+
+_TIMEFRAME_SECONDS = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+}
+
+
+def _freshness_validation(
+    spec: ProviderSpec,
+    validation: dict[str, Any] | None,
+) -> tuple[bool, float | None, float | None, str | None]:
+    """Require genuinely recent data before a provider is execution-eligible."""
+    if not spec.realtime_capable:
+        return False, None, None, "provider_catalog_not_realtime_capable"
+    payload = dict(validation or {})
+    last = payload.get("last_timestamp")
+    if last is None:
+        return False, None, None, "missing_last_timestamp"
+    try:
+        last_value = float(last)
+    except (TypeError, ValueError):
+        return False, None, None, "invalid_last_timestamp"
+    while last_value > 10_000_000_000:
+        last_value /= 1000.0
+    age = max(0.0, time.time() - last_value)
+    interval = float(_TIMEFRAME_SECONDS.get(str(spec.sample_timeframe).lower(), 3600))
+    limit = max(180.0, interval * 2.5)
+    if age > limit:
+        return False, age, limit, f"stale_live_sample:{age:.0f}s>{limit:.0f}s"
+    return True, age, limit, None
 
 
 def _provider_certification_hint(module: Any) -> dict[str, str] | None:
