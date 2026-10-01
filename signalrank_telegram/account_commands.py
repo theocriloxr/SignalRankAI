@@ -172,58 +172,38 @@ async def history_command(update, context):
             await update.message.reply_text(safe_command_error("Could not load signal history.", exc))
 
 async def apikey_command(update, context) -> None:
-    """Generate or rotate API key for /signals web endpoint."""
+    """Show API-key metadata only; secrets stay in the authenticated web flow."""
     if update.effective_user is None or update.message is None:
         return
-    user_id = update.effective_user.id
-    args = context.args or []
-    try:
-        from web.api import generate_api_key
-    except Exception:
-        generate_api_key = lambda: "demo-key"
-    
-    async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
-        from db.repository import create_api_token
-        token = generate_api_key()
-        expires = now_utc_naive() + timedelta(days=max(1, min(int(ttl_days), 365)))
-        async with get_session() as session:
-            await create_api_token(
-                session,
-                telegram_user_id=int(user_id),
-                raw_token=str(token),
-                scope="signals:read",
-                expires_at=expires,
-            )
-            await session.commit()
-        return str(token)
-    
-    async def _get_existing_api_token_meta(user_id: int):
-        from db.session import get_session
-        from db.repository import get_latest_active_api_token_meta
-        async with get_session() as session:
-            meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
-            await session.commit()
-        return meta
-    
-    if args and args[0].lower() == "regenerate":
-        key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-        await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
-        return
-    
-    meta = await _get_existing_api_token_meta(int(user_id))
+    user_id = int(update.effective_user.id)
+    from db.repository import get_latest_active_api_token_meta
+    async with get_session(priority="interactive", label="telegram_api_key_metadata") as session:
+        meta = await get_latest_active_api_token_meta(session, telegram_user_id=user_id)
+        await session.rollback()
+
+    base_url = str(
+        os.getenv("APP_BASE_URL")
+        or os.getenv("WEB_APP_URL")
+        or "https://signalrank.criloxsolutions.com"
+    ).rstrip("/")
+    manage_url = f"{base_url}/app/settings"
     if meta is None:
-        key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-        await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
-        return
-    
-    prefix = str(meta.get("token_prefix") or "")
-    exp = str(meta.get("expires_at") or "unknown")
-    await update.message.reply_text(
-        f"🔑 Active API key exists.\n"
-        f"Prefix: <code>{prefix}</code>\n"
-        f"Expires: <code>{exp}</code>\n\n"
-        f"Use /apikey regenerate to rotate and receive a new full key.",
-        parse_mode="HTML",
-    )
+        message = (
+            "🔐 No active API key is registered.\n\n"
+            "API keys are never created or revealed inside Telegram. "
+            f"Open your authenticated SignalRankAI settings to create one: {manage_url}"
+        )
+    else:
+        prefix = str(meta.get("token_prefix") or "")
+        exp = str(meta.get("expires_at") or "unknown")
+        message = (
+            "🔐 Active API key metadata\n"
+            f"Prefix: {prefix}\n"
+            f"Expires: {exp}\n\n"
+            "Rotate, revoke, or create keys only from the authenticated web app: "
+            f"{manage_url}"
+        )
+    await update.message.reply_text(message)
+
 
 __all__ = ['performance_command', 'history_command', 'apikey_command']
