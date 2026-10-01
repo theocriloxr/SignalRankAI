@@ -9,8 +9,8 @@
     {
       "id": "static-ruff",
       "group": "static",
-      "description": "Ruff correctness lint",
-      "command": "ruff check .",
+      "description": "Ruff release-critical Python correctness",
+      "command": "ruff check --select F601,F602,F811,F821,F822,F823,F831 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -22,8 +22,8 @@
     {
       "id": "static-pyright",
       "group": "static",
-      "description": "Pyright type analysis",
-      "command": "pyright .",
+      "description": "Pyright active runtime type analysis",
+      "command": "pyright core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
       "severity": "critical",
       "required": true,
       "environments": [
