@@ -97,7 +97,8 @@ def test_outbox_repair_stops_after_transaction_poisoning():
 def test_lifecycle_observation_uses_short_postgres_lock_wait():
     source = (ROOT / "engine/signal_lifecycle.py").read_text(encoding="utf-8")
     block = source[source.index("async def update_lifecycle_observation"):source.index("async def record_lifecycle_event")]
-    assert "SET LOCAL lock_timeout" in block
+    assert "set_config('lock_timeout', :value, true)" in block
+    assert '{"value": f"{_lifecycle_lock_timeout_ms()}ms"}' in block
     assert "outcome.lifecycle_observation" in block
     assert "lifecycle_observation_deferred" in block
 
