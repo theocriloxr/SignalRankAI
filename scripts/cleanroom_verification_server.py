@@ -72,6 +72,9 @@ _TESTS = [
     "tests/test_copy_trade_safety_foundation.py",
     "tests/test_final_trading_ecosystem_20260927.py",
     "tests/test_mt5_multiaccount_telegram_ux_20260927.py",
+    "tests/test_web_platform_runtime_contract.py",
+    "tests/test_webhook_latency_semantics.py",
+    "tests/test_ml_learning_runtime_v135.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
@@ -96,7 +99,7 @@ _STEPS: list[tuple[str, list[str]]] = [
     ),
     (
         "alembic_release_chain",
-        [sys.executable, "scripts/verify_0045_release_chain.py"],
+        [sys.executable, "scripts/verify_release_chain.py"],
     ),
     (
         "schema_audit",
