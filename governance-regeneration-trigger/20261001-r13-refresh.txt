@@ -2,3 +2,4 @@ Regenerate SignalRankAI governance registries from a real Git checkout.
 source_head=e76e2232f9cdfbbc9548c0441d51b33e5f466b45
 purpose=refresh-derived-governance-after-environment-and-certification-changes
 trigger_retry=2026-10-01T16:05:00Z
+regenerate_after_write_fix=2026-10-01T16:40:00Z
