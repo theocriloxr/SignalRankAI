@@ -94,7 +94,7 @@ async def authenticate_api_key(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("[api] token lookup unavailable: %s", type(exc).__name__)
+        logger.warning("[api] auth lookup unavailable error_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     if owner is None:
         if scope_denied:
@@ -157,7 +157,7 @@ async def rotate_api_token(
             )
             await session.commit()
     except Exception as exc:
-        logger.warning("[api] token rotation unavailable: %s", type(exc).__name__)
+        logger.warning("[api] auth rotation unavailable error_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     return {"token": raw, "expires_at": expires.isoformat(), "scope": payload.scope}
 
