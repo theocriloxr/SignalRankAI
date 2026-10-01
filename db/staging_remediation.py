@@ -204,8 +204,12 @@ def suppression_keys(
 def _query_suppressions(session, terminal_only: bool) -> set[str]:
     from sqlalchemy import text
 
-    where = "WHERE terminal = TRUE" if terminal_only else ""
-    rows = session.execute(text(f"SELECT notification_key FROM notification_suppressions {where}")).fetchall()
+    statement = (
+        text("SELECT notification_key FROM notification_suppressions WHERE terminal = TRUE")
+        if terminal_only
+        else text("SELECT notification_key FROM notification_suppressions")
+    )
+    rows = session.execute(statement).fetchall()
     return {str(row[0]) for row in rows}
 
 
