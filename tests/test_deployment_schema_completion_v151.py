@@ -174,6 +174,28 @@ def test_r4_soak_certification_contract():
     assert '"--filter", $blockerFilter' in text
 
 
+def test_0031_establishes_outcome_truth_columns_before_first_use():
+    source = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "versions"
+        / "0031_performance_paper_reliability.py"
+    ).read_text(encoding="utf-8")
+    upgrade = source[source.index("def upgrade()"):source.index("def downgrade()")]
+    first_use = upgrade.index("COALESCE(canonical_outcome")
+    for statement in (
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_canonical_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_vip_fill_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_sentiment_outcome",
+    ):
+        assert statement in upgrade
+        assert upgrade.index(statement) < first_use
+
+
 def test_controlled_migrate_supports_brand_new_empty_database():
     source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
     helper = source[source.index("def _current_revision"):source.index("def migrate()")]
