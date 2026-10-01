@@ -3,16 +3,16 @@ import time
 import pytest
 
 
-def _candles(timeframe_seconds=300, *, stale=False):
+def _candles(timeframe_seconds=300, *, stale=False, base_price=100.0):
     end = time.time() - (timeframe_seconds * 10 if stale else 0)
     start = end - (29 * timeframe_seconds)
     return [
         {
             "timestamp": int((start + index * timeframe_seconds) * 1000),
-            "open": 100.0 + index,
-            "high": 101.0 + index,
-            "low": 99.0 + index,
-            "close": 100.5 + index,
+            "open": base_price + index,
+            "high": base_price + 1.0 + index,
+            "low": base_price - 1.0 + index,
+            "close": base_price + 0.5 + index,
             "volume": 1000.0,
         }
         for index in range(30)
@@ -161,7 +161,7 @@ async def test_staging_decision_path_never_uses_yfinance_as_primary(monkeypatch)
     monkeypatch.setenv("TRADINGVIEW_ENABLED", "0")
 
     async def provider(asset, timeframe):
-        return _candles(3600)
+        return _candles(3600, base_price=2500.0)
 
     monkeypatch.setattr(market_data, "async_get_candles", provider)
     monkeypatch.setattr(market_data, "_get_last_provider_used", lambda asset, tf: "twelvedata_connector")
@@ -188,7 +188,7 @@ async def test_staging_analysis_scope_can_use_yfinance_but_marks_it_ineligible(m
     monkeypatch.setenv("TRADINGVIEW_ENABLED", "0")
 
     async def yf(asset, timeframe, limit):
-        return _candles(3600)
+        return _candles(3600, base_price=2500.0)
 
     async def no_provider(asset, timeframe):
         raise AssertionError("provider waterfall should not be needed after research payload")
