@@ -542,6 +542,7 @@ def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
 
         from psycopg2 import sql as pg_sql
 
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- table names come exclusively from the hard-coded list above and are quoted with psycopg2.sql.Identifier.
         cur.execute(
             pg_sql.SQL("TRUNCATE {} RESTART IDENTITY CASCADE").format(
                 pg_sql.SQL(",").join(pg_sql.Identifier(name) for name in tables)
