@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
-import importlib
 import math
 import os
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -81,10 +80,65 @@ class ProviderSpec:
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     def resolve_connector(self) -> Callable[..., Any] | None:
+        """Resolve only connectors explicitly compiled into the provider catalogue."""
         if not self.connector_module or not self.connector_attr:
             return None
-        module = importlib.import_module(self.connector_module)
-        value = getattr(module, self.connector_attr)
+
+        key = (self.connector_module, self.connector_attr)
+        if key == ("data.connectors.coinbase_adapter", "get_candles"):
+            from data.connectors.coinbase_adapter import get_candles as value
+        elif key == ("data.connectors.okx_adapter", "get_candles"):
+            from data.connectors.okx_adapter import get_candles as value
+        elif key == ("data.connectors.kraken_adapter", "get_candles"):
+            from data.connectors.kraken_adapter import get_candles as value
+        elif key == ("data.connectors.kucoin_adapter", "get_candles"):
+            from data.connectors.kucoin_adapter import get_candles as value
+        elif key == ("data.connectors.bybit_adapter", "get_candles"):
+            from data.connectors.bybit_adapter import get_candles as value
+        elif key == ("data.connectors.binance_adapter", "get_candles"):
+            from data.connectors.binance_adapter import get_candles as value
+        elif key == ("data.connectors.cryptocompare_adapter", "cryptocompare_get_candles_sync"):
+            from data.connectors.cryptocompare_adapter import cryptocompare_get_candles_sync as value
+        elif key == ("data.connectors.yfinance_adapter", "get_candles"):
+            from data.connectors.yfinance_adapter import get_candles as value
+        elif key == ("data.connectors.twelvedata_adapter", "get_candles"):
+            from data.connectors.twelvedata_adapter import get_candles as value
+        elif key == ("data.connectors.polygon_adapter", "get_candles"):
+            from data.connectors.polygon_adapter import get_candles as value
+        elif key == ("data.connectors.tiingo_adapter", "get_candles"):
+            from data.connectors.tiingo_adapter import get_candles as value
+        elif key == ("data.connectors.fmp_adapter", "get_candles"):
+            from data.connectors.fmp_adapter import get_candles as value
+        elif key == ("data.connectors.alphavantage_adapter", "get_candles"):
+            from data.connectors.alphavantage_adapter import get_candles as value
+        elif key == ("data.connectors.oanda_adapter", "get_candles"):
+            from data.connectors.oanda_adapter import get_candles as value
+        elif key == ("data.connectors.ecb_adapter", "get_candles"):
+            from data.connectors.ecb_adapter import get_candles as value
+        elif key == ("data.connectors.deribit_adapter", "get_candles"):
+            from data.connectors.deribit_adapter import get_candles as value
+        elif key == ("data.connectors.eodhd_adapter", "get_candles"):
+            from data.connectors.eodhd_adapter import get_candles as value
+        elif key == ("data.connectors.marketstack_adapter", "get_candles"):
+            from data.connectors.marketstack_adapter import get_candles as value
+        elif key == ("data.connectors.finnhub_adapter", "get_candles"):
+            from data.connectors.finnhub_adapter import get_candles as value
+        elif key == ("data.connectors.alpaca_adapter", "get_candles"):
+            from data.connectors.alpaca_adapter import get_candles as value
+        elif key == ("data.connectors.tradier_adapter", "get_candles"):
+            from data.connectors.tradier_adapter import get_candles as value
+        elif key == ("data.connectors.nasdaq_data_link_adapter", "get_candles"):
+            from data.connectors.nasdaq_data_link_adapter import get_candles as value
+        elif key == ("data.connectors.stooq_adapter", "get_candles"):
+            from data.connectors.stooq_adapter import get_candles as value
+        elif key == ("data.connectors.coingecko_adapter", "get_candles"):
+            from data.connectors.coingecko_adapter import get_candles as value
+        elif key == ("data.connectors.coinmetrics_adapter", "get_candles"):
+            from data.connectors.coinmetrics_adapter import get_candles as value
+        else:
+            raise LookupError(
+                f"connector_not_allowlisted:{self.connector_module}.{self.connector_attr}"
+            )
         if not callable(value):
             raise TypeError(f"{self.connector_module}.{self.connector_attr} is not callable")
         return value
