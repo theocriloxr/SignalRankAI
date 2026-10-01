@@ -720,21 +720,35 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
 
 
 async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
-    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not token:
-        logger.debug("[admin_pulse] no telegram token configured")
-        _record_engine_pulse_health(status="degraded", error="telegram_token_missing")
-        return False
     try:
+        # Engine health is an accounting/integrity signal. Telegram is only one
+        # notification transport and must not make healthy engine counters fail
+        # readiness when the channel is intentionally absent (for example
+        # isolated staging).
+        stats = await compute_engine_health(window_hours=window_hours)
+        invariant_ok = int(stats.get("unaccounted") or 0) == 0
+        token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+        if not token:
+            logger.debug("[admin_pulse] no telegram token configured")
+            _record_engine_pulse_health(
+                status="healthy" if invariant_ok else "degraded",
+                stats=stats,
+                error="telegram_token_missing" if invariant_ok else "counter_invariant_failed",
+            )
+            return False
+
         from config import OWNER_IDS, ADMIN_IDS
 
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
         if not recipients:
             logger.debug("[admin_pulse] no recipients configured")
-            _record_engine_pulse_health(status="degraded", error="admin_recipients_missing")
+            _record_engine_pulse_health(
+                status="healthy" if invariant_ok else "degraded",
+                stats=stats,
+                error="admin_recipients_missing" if invariant_ok else "counter_invariant_failed",
+            )
             return False
 
-        stats = await compute_engine_health(window_hours=window_hours)
         txt = (
             f"Engine Pulse ({window_hours}h)\n\n"
             f"Scope: global | Window: trailing {window_hours}h\n\n"
@@ -839,12 +853,11 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                     sent += 1
             except Exception:
                 continue
-        invariant_ok = int(stats.get("unaccounted") or 0) == 0
-        # Engine health and notification fanout are different concerns. A stale
-        # admin chat must not make correct engine counters fail readiness, while
-        # a total Telegram delivery outage still remains a degraded pulse.
+        # Engine integrity and notification reachability are separate concerns.
+        # Readiness consumes the former; this function's boolean return still
+        # reports whether Telegram delivery itself succeeded.
         notification_reachable = sent > 0
-        status = "healthy" if invariant_ok and notification_reachable else "degraded"
+        status = "healthy" if invariant_ok else "degraded"
         error = None
         if not invariant_ok:
             error = "counter_invariant_failed"
@@ -863,7 +876,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             recipients=sent,
             recipients_attempted=len(recipients),
         )
-        return status == "healthy"
+        return bool(invariant_ok and notification_reachable)
     except Exception as exc:
         logger.error("[admin_pulse] send error: %s", exc)
         _record_engine_pulse_health(status="error", error=f"{type(exc).__name__}:{exc}")
