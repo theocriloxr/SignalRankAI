@@ -29,11 +29,9 @@ _CREDENTIAL_READY_FORMATS = {"envelope_v1", "provider_managed"}
 
 
 def _environment() -> str:
-    return (
-        str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("APP_ENV") or "")
-        .strip()
-        .lower()
-    )
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("")
 
 
 async def collect_demo_account_preflight() -> dict[str, Any]:
