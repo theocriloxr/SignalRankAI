@@ -592,6 +592,10 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
             logger.critical("[db] DATABASE_URL is not configured: %s", exc)
             return None
 
+        if not url:
+            logger.critical("[db] resolved DATABASE_URL is empty")
+            return None
+
         pool_size, max_overflow = _effective_pool_settings()
 
         # Keep only the first event loop backed by a persistent Railway pool.
@@ -742,19 +746,17 @@ def get_engine_inventory() -> list[dict[str, Any]]:
             except Exception:
                 pass
             try:
-                checked_out = int(
-                    getattr(pool, "checkedout", lambda: 0)()
-                    if callable(getattr(pool, "checkedout", None))
-                    else getattr(pool, "checkedout", None)
-                )
+                checked_out_raw: Any = getattr(pool, "checkedout", None)
+                if callable(checked_out_raw):
+                    checked_out_raw = checked_out_raw()
+                checked_out = int(checked_out_raw or 0)
             except Exception:
                 pass
             try:
-                checked_in = int(
-                    getattr(pool, "checkedin", lambda: 0)()
-                    if callable(getattr(pool, "checkedin", None))
-                    else getattr(pool, "checkedin", None)
-                )
+                checked_in_raw: Any = getattr(pool, "checkedin", None)
+                if callable(checked_in_raw):
+                    checked_in_raw = checked_in_raw()
+                checked_in = int(checked_in_raw or 0)
             except Exception:
                 pass
         except Exception:
@@ -813,8 +815,9 @@ def get_pool_diagnostics() -> dict[str, Any]:
         info["pool_class"] = type(pool).__name__
         for attr in ("size", "checkedin", "checkedout", "overflow"):
             try:
-                value = getattr(pool, attr)
-                info[attr] = int(value() if callable(value) else value)
+                value: Any = getattr(pool, attr)
+                resolved = value() if callable(value) else value
+                info[attr] = int(resolved or 0)
             except Exception:
                 pass
         try:
