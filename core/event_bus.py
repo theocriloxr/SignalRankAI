@@ -52,9 +52,9 @@ class EventBus:
     """
 
     def __init__(self):
-        self._redis = None
+        self._redis: Any = None
         self._redis_url = _resolve_redis_url()
-        self._pubsub = None
+        self._pubsub: Any = None
         self._has_redis = False
         self._subscriptions: Dict[str, Callable] = {}
         self._running = False
@@ -321,7 +321,7 @@ class EventSubscriber:
         self.callback = callback
         self._running = True
 
-    async def __aiter__(self):
+    def __aiter__(self):
         return self
 
     async def __anext__(self) -> Dict[str, Any]:
@@ -329,23 +329,41 @@ class EventSubscriber:
         if not self._running:
             raise StopAsyncIteration()
 
-        # Try to get from Redis pub/sub
+        # The event bus intentionally uses the synchronous Redis client for
+        # publish/stream compatibility. Pub/sub blocking work must therefore be
+        # moved off the asyncio loop rather than awaited as if it were redis.asyncio.
         if self.event_bus._has_redis and self.event_bus._redis:
+            pubsub: Any = None
             try:
                 pubsub = self.event_bus._redis.pubsub()
-                await pubsub.subscribe(self.channel)
+                await asyncio.to_thread(pubsub.subscribe, self.channel)
 
-                for message in pubsub.listen():
-                    if message["type"] == "message":
-                        try:
-                            event = json.loads(message["data"])
-                            if self.callback:
-                                await self.callback(event)
-                            return event
-                        except Exception:
-                            continue
-            except Exception:
-                pass
+                while self._running:
+                    message = await asyncio.to_thread(
+                        pubsub.get_message,
+                        ignore_subscribe_messages=True,
+                        timeout=1.0,
+                    )
+                    if not message:
+                        await asyncio.sleep(0)
+                        continue
+                    if message.get("type") != "message":
+                        continue
+                    try:
+                        event = json.loads(message["data"])
+                        if self.callback:
+                            await self.callback(event)
+                        return event
+                    except Exception:
+                        continue
+            except Exception as exc:
+                logger.debug("[event_bus] subscriber Redis read failed: %s", type(exc).__name__)
+            finally:
+                if pubsub is not None:
+                    try:
+                        await asyncio.to_thread(pubsub.close)
+                    except Exception:
+                        pass
 
         # Fallback to in-memory queue
         if self.event_bus._fallback_queue:
