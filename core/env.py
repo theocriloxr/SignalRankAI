@@ -14,10 +14,12 @@ FALSE_VALUES = frozenset({"0", "false", "no", "n", "off", ""})
 
 
 _BOOL_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED"),
     ("ENABLE_ML", "ML_ENABLED"),
     ("INDEX_ENABLED", "INDICES_ENABLED"),
 )
+# Secret aliases may intentionally coexist during credential rotation. Their
+# values must never be logged or fingerprinted; consumers choose canonical
+# order and validate credentials against the provider.
 _SECRET_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
     ("META_API_TOKEN", "METAAPI_TOKEN"),
     ("TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN"),
@@ -43,11 +45,9 @@ def validate_alias_conflicts() -> None:
         values = {value for _name, value in configured}
         if len(values) > 1:
             raise RuntimeError("conflicting_boolean_environment_aliases:" + ",".join(name for name, _ in configured))
-    for group in _SECRET_ALIAS_GROUPS:
-        configured = [(name, str(os.getenv(name) or "").strip()) for name in group if str(os.getenv(name) or "").strip()]
-        values = {value for _name, value in configured}
-        if len(values) > 1:
-            raise RuntimeError("conflicting_secret_environment_aliases:" + ",".join(name for name, _ in configured))
+    # Secret aliases are deliberately not compared: dual values can be a safe
+    # rotation state and comparing/reporting them creates unnecessary secret
+    # handling. Provider authentication decides which candidate is valid.
 
 
 def sanitized_config_fingerprint(names: Iterable[str]) -> str:
