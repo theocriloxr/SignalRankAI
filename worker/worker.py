@@ -332,10 +332,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start MT5 reconciliation: %s", e)
         else:
-            logger.info(
-                "[worker] MT5ExecutionReconciliation disabled token_configured=%s",
-                bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()),
-            )
+            logger.info("[worker] MT5ExecutionReconciliation disabled by configuration")
 
         if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
             try:
