@@ -19,12 +19,7 @@ from core.command_limits import (
 	FREE_MIN_SCORE,
 	FREE_SIGNAL_DAILY_LIMIT,
 )
-from .admin_commands import admin_dashboard, admin_top_assets_command
-from .user_commands import start_command, status_command, account_command
-from .signal_commands import signals_command, proof_command
-from .account_commands import performance_command, history_command, apikey_command
-from .mt5_commands import mt5_link_command, mt5_status_command
-from .utils import tier_rank, _effective_tier, _public_guard
+from .utils import tier_rank
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
 from .command_resilience import safe_command_error
@@ -1025,8 +1020,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Alias for /status with dynamic tier menu."""
 	return await status_command(update, context)
-
-import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
@@ -2368,10 +2361,8 @@ async def reports_command(update, context) -> None:
 	)
 
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
-from db.session import get_session
 from db.pg_features import get_or_create_user
 from db.models import Outcome, ReferralReward, ReferralAttribution, Signal, Subscription, User
-import asyncio
 
 async def referral_leaderboard_command(update, context) -> None:
 	if await _public_guard(update):
@@ -3088,17 +3079,11 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		feedback_store.flush()
 
 # /pricing command
-import os
 import logging
-import inspect
 import socket
 import random
 from datetime import datetime, timezone
 
-from telegram import Update
-from telegram.ext import ContextTypes
-
-from core.redis_state import KillSwitchState, state
 from .access import resolve_user_tier
 
 
@@ -4091,7 +4076,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 	# Postgres-backed lookup (required for per-user delivery protection)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
+		from db.session import get_engine_for_event_loop
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
