@@ -143,6 +143,14 @@ def _projection_metrics(
             r_multiple = abs(r_multiple)
             percent = abs(percent)
 
+    missed_entry_observed_r = None
+    missed_entry_observed_pct = None
+    if status_l == "missed_entry":
+        missed_entry_observed_r = r_multiple
+        missed_entry_observed_pct = percent
+        r_multiple = None
+        percent = None
+
     partial = None
     if highest_tp > 0 and status_l in {"partial_win_be", "sl"}:
         try:
@@ -181,6 +189,8 @@ def _projection_metrics(
         "partial_exit_realized_percent": getattr(partial, "realized_percent", None),
         "partial_exit_fractions": list(getattr(partial, "fractions", ()) or ()),
         "partial_exit_tp_r_multiples": list(getattr(partial, "tp_r_multiples", ()) or ()),
+        "missed_entry_observed_r": missed_entry_observed_r,
+        "missed_entry_observed_pct": missed_entry_observed_pct,
     }
     return r_multiple, percent, meta
 
