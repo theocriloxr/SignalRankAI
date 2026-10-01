@@ -1840,9 +1840,17 @@ async def list_delivered_signals_for_user(
         Signal.expired.is_(False),
         or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
     )
-    active_projection = and_(
-        or_(Signal.expires_at.is_(None), Signal.expires_at > now),
-        or_(lifecycle_active, legacy_projection_active),
+    # Once a canonical lifecycle exists, lifecycle state is authoritative.
+    # The setup expiry only controls pre-entry/legacy rows. Applying the original
+    # Signal.expires_at to ACTIVE_TRADE/TP1/TP2 hides a still-managed position
+    # from /signals after its entry window closes.
+    active_projection = or_(
+        lifecycle_active,
+        and_(
+            ~lifecycle_exists,
+            or_(Signal.expires_at.is_(None), Signal.expires_at > now),
+            legacy_projection_active,
+        ),
     )
 
     q: Select[Tuple[Signal]] = (
