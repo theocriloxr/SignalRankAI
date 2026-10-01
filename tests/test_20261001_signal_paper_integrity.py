@@ -27,7 +27,7 @@ def test_confirmed_delivery_invalidates_signals_command_cache() -> None:
     source = _source("signalrank_telegram/bot.py")
     proof = source[
         source.index("async def _mark_delivery_with_telegram_proof"):
-        source.index("def _auto_execute_signal_if_enabled"),
+        source.index("def _auto_execute_signal_if_enabled")
     ]
     assert 'if success:' in proof
     assert 'command_response_cache.delete_prefix(f"signals:{int(telegram_user_id)}:")' in proof
@@ -38,7 +38,7 @@ def test_delivery_proven_paper_candidates_do_not_repeat_profile_delivery_filter(
     assert source.count('"delivery_proven": True') >= 2
     open_block = source[
         source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision"),
+        source.index("async def _notify_paper_decision")
     ]
     assert 'delivery_proven = bool(candidate.get("delivery_proven"))' in open_block
     assert "if not delivery_proven:" in open_block
@@ -61,7 +61,7 @@ def test_delivered_signal_id_cannot_be_recycled_for_a_new_candidate() -> None:
     source = _source("db/pg_features.py")
     block = source[
         source.index("if existing is not None:"):
-        source.index("# The database's final admission rule"),
+        source.index("# The database's final admission rule")
     ]
     assert "confirmed_delivery_count > 0" in block
     assert 'SignalDedupBlocked("delivered_active_thesis"' in block
@@ -70,7 +70,7 @@ def test_delivered_signal_id_cannot_be_recycled_for_a_new_candidate() -> None:
 
     exact = source[
         source.index("exact_active = ("):
-        source.index('logger.info(\n        "[dedup] creating canonical signal'),
+        source.index('logger.info(\n        "[dedup] creating canonical signal')
     ]
     assert "stale_by_time" in exact
     assert "stale_null_expiry" in exact
@@ -82,14 +82,14 @@ def test_semantic_dedup_only_reuses_logically_unexpired_rows() -> None:
     source = _source("db/pg_features.py")
     region = source[
         source.index("thesis_cutoff ="):
-        source.index("if existing is not None:"),
+        source.index("if existing is not None:")
     ]
     assert region.count("Signal.expires_at > now") >= 2
 
     secondary = _source("db/repository.py")
     region2 = secondary[
         secondary.index("thesis_cutoff ="):
-        secondary.index('opposite = "short"'),
+        secondary.index('opposite = "short"')
     ]
     assert region2.count("Signal.expires_at > now") >= 2
     assert "expires_at=signal_expires_at" in secondary
@@ -99,7 +99,7 @@ def test_active_signals_are_confirmed_delivery_and_lifecycle_authoritative() -> 
     source = _source("db/pg_features.py")
     block = source[
         source.index("async def list_delivered_signals_for_user"):
-        source.index("async def get_delivered_signal_by_ref"),
+        source.index("async def get_delivered_signal_by_ref")
     ]
     assert ".outerjoin(SignalLifecycle" in block
     assert "lifecycle_active" in block
@@ -118,7 +118,7 @@ def test_missed_entry_is_observation_not_realized_loss() -> None:
     source = _source("engine/realtime_outcome_tracker.py")
     block = source[
         source.index("async def _persist_outcome"):
-        source.index("async def _persist_ml_training_data"),
+        source.index("async def _persist_ml_training_data")
     ]
     assert 'if status_l == "missed_entry":' in block
     assert "missed_entry_observed_r = r_mult" in block
@@ -133,7 +133,7 @@ def test_outcome_messages_have_one_notification_owner() -> None:
     source = _source("engine/signal_lifecycle.py")
     helper = source[
         source.index("def _should_queue_event_notification"):
-        source.index("def entry_was_touched"),
+        source.index("def entry_was_touched")
     ]
     for event in (
         "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop",
@@ -147,7 +147,7 @@ def test_transient_lifecycle_observations_are_merged_for_retry() -> None:
     source = _source("engine/signal_lifecycle.py")
     block = source[
         source.index("async def update_lifecycle_observation"):
-        source.index("async def record_lifecycle_event"),
+        source.index("async def record_lifecycle_event")
     ]
     assert "_DEFERRED_LIFECYCLE_OBSERVATIONS.pop(signal_id, None)" in block
     assert "observation_high = max(" in block
@@ -160,11 +160,11 @@ def test_paper_worker_rechecks_permanent_skip_after_distributed_lock() -> None:
     source = _source("core/paper_trading_service.py")
     block = source[
         source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision"),
+        source.index("async def _notify_paper_decision")
     ]
     lock_wrapper = source[
         source.index("async def _open_candidate("):
-        source.index("async def _open_candidate_locked"),
+        source.index("async def _open_candidate_locked")
     ]
     assert "execution_destination_lock" in lock_wrapper
     assert "finalized_skip = (" in block
@@ -210,7 +210,7 @@ def test_delivery_proof_persists_snapshot_generated_time_not_mutable_signal_row(
     source = _source("db/pg_features.py")
     block = source[
         source.index("async def mark_signal_delivery_result"):
-        source.index("async def list_signals_sent_today"),
+        source.index("async def list_signals_sent_today")
     ]
     assert "_delivery_snapshot_from_proof(telegram_api_result)" in block
     assert '_delivery_snapshot_datetime(proof_snapshot.get("generated_at"))' in block
@@ -221,7 +221,7 @@ def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> Non
     source = _source("core/paper_trading_service.py")
     candidates = source[
         source.index("async def _telegram_delivery_candidates"):
-        source.index("async def _web_delivery_candidates"),
+        source.index("async def _web_delivery_candidates")
     ]
     assert "_proof_signal_snapshot(delivery)" in candidates
     assert '_proof_datetime(snapshot.get("generated_at"))' in candidates
@@ -232,6 +232,6 @@ def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> Non
 
     open_block = source[
         source.index("async def _open_candidate_locked"):
-        source.index("async def _notify_paper_decision"),
+        source.index("async def _notify_paper_decision")
     ]
     assert "expires_at=candidate.get(\"expires_at\")" in open_block
