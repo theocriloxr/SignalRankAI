@@ -111,10 +111,6 @@ def _coerce_governance_review(value: Any) -> dict[str, Any]:
     return clean
 
 
-def _win_bucket_expr() -> str:
-    return "lower(COALESCE(o.canonical_outcome, o.status, ''))"
-
-
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -306,18 +302,17 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
     if not is_db_configured():
         return {"ok": False, "error": "database not configured"}
     since = now_utc_naive() - timedelta(days=max(1, int(days)))
-    outcome_bucket = _win_bucket_expr()
     async with get_session() as session:
         summary = (
             (
                 await session.execute(
                     text(
-                        f"""
+                        """
                     SELECT COUNT(DISTINCT s.signal_id) AS signals,
                            COUNT(o.id) AS outcomes,
-                           SUM(CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
-                           SUM(CASE WHEN {outcome_bucket} IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
-                           SUM(CASE WHEN {outcome_bucket} IN ('time_stop','expired') THEN 1 ELSE 0 END) AS time_stops,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('time_stop','expired') THEN 1 ELSE 0 END) AS time_stops,
                            AVG(COALESCE(o.r_multiple, 0)) AS avg_r
                     FROM signals s
                     LEFT JOIN outcomes o ON o.signal_id = s.signal_id
@@ -334,13 +329,13 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
             (
                 await session.execute(
                     text(
-                        f"""
+                        """
                     SELECT COALESCE(s.asset_class, 'unknown') AS asset_class,
                            COALESCE(s.timeframe, 'unknown') AS timeframe,
                            COALESCE(s.strategy_name, 'unknown') AS strategy_name,
                            COUNT(o.id) AS outcomes,
-                           SUM(CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
-                           SUM(CASE WHEN {outcome_bucket} IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
                            AVG(COALESCE(o.r_multiple, 0)) AS avg_r
                     FROM outcomes o
                     JOIN signals s ON s.signal_id = o.signal_id
@@ -521,7 +516,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
             (
                 await session.execute(
                     text(
-                        f"""
+                        """
                     WITH rejected_dedup AS (
                       SELECT r.*, ROW_NUMBER() OVER (
                         PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
@@ -536,11 +531,11 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                              COALESCE(s.timeframe, 'unknown') AS timeframe,
                              COALESCE(s.strategy_name, 'unknown') AS strategy_name,
                              COALESCE(s.regime, 'unknown') AS regime,
-                             CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END AS won,
+                             CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END AS won,
                              o.r_multiple AS r_multiple
                       FROM outcomes o JOIN signals s ON s.signal_id=o.signal_id
                       WHERE COALESCE(o.closed_at, o.opened_at) >= :since
-                        AND {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                        AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
                       UNION ALL
                       SELECT 'shadow_rejected', COALESCE(r.features->>'decision', 'rejected'),
                              COALESCE(r.features->>'asset_class', 'unknown'), COALESCE(r.timeframe, 'unknown'),
@@ -571,7 +566,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
             (
                 await session.execute(
                     text(
-                        f"""
+                        """
                     WITH rejected_dedup AS (
                       SELECT r.*, ROW_NUMBER() OVER (
                         PARTITION BY asset, timeframe, direction, ROUND(entry::numeric, 8),
@@ -582,7 +577,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                       FROM ml_rejected_signals r WHERE created_at >= :since
                     )
                     SELECT COALESCE(s.score, 0) AS score,
-                           CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN TRUE ELSE FALSE END AS won,
+                           CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN TRUE ELSE FALSE END AS won,
                            'canonical_issued'::text AS source, 1.0::double precision AS weight,
                            COALESCE(o.closed_at, o.opened_at, s.created_at)::text AS observed_at,
                            COALESCE(s.asset_class, 'unknown') AS asset_class,
@@ -591,7 +586,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                            COALESCE(s.regime, 'unknown') AS regime
                     FROM outcomes o JOIN signals s ON s.signal_id=o.signal_id
                     WHERE COALESCE(o.closed_at, o.opened_at) >= :since
-                      AND {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                      AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
                     UNION ALL
                     SELECT CASE
                              WHEN COALESCE(r.features->>'score', '') ~ '^[0-9]+([.][0-9]+)?$' THEN (r.features->>'score')::double precision
@@ -620,7 +615,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
             (
                 await session.execute(
                     text(
-                        f"""
+                        """
                     WITH latest_ai AS (
                         SELECT DISTINCT ON (signal_id)
                                signal_id,
@@ -651,15 +646,15 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                     SELECT a.provider,
                            a.model,
                            COUNT(o.id) AS outcomes,
-                           SUM(CASE WHEN {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
-                           SUM(CASE WHEN {outcome_bucket} IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                           SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
                            AVG(o.r_multiple) AS avg_r,
                            AVG(a.ai_score) AS avg_ai_score,
                            AVG(a.ai_confidence) AS avg_ai_confidence,
                            AVG(a.ai_disagreement) AS avg_ai_disagreement
                     FROM latest_ai a
                     JOIN outcomes o ON o.signal_id = a.signal_id
-                    WHERE {outcome_bucket} IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                    WHERE lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
                     GROUP BY 1,2
                     ORDER BY outcomes DESC, provider ASC, model ASC
                     LIMIT 30
