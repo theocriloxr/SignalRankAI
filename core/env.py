@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "y", "on"})
@@ -131,30 +132,56 @@ def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int
     return value
 
 
-def runtime_environment_name(default: str = "dev") -> str:
-    """Return the platform environment used for runtime isolation.
+def resolve_runtime_environment_name(
+    environ: Mapping[str, str],
+    default: str = "dev",
+) -> str:
+    """Resolve environment identity without letting a copied override spoof production.
 
-    Railway environment metadata is authoritative when present. This prevents a
-    copied APP_ENV=production value from contaminating staging advisory locks,
-    ledgers, caches, and delivery scopes.
+    Railway environment metadata remains authoritative by default. An isolated
+    certification project whose default Railway environment is named production
+    may opt into staging semantics only when the staging profile, explicit
+    staging override, and exact pinned Railway project ID all agree.
     """
-    override = str(os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE") or "").strip().lower()
+    override = str(environ.get("SIGNALRANK_ENVIRONMENT_OVERRIDE") or "").strip().lower()
+    railway_name = str(
+        environ.get("RAILWAY_ENVIRONMENT_NAME")
+        or environ.get("RAILWAY_ENVIRONMENT")
+        or ""
+    ).strip().lower()
+
+    if override and railway_name in {"production", "prod"} and override not in {"production", "prod"}:
+        profile = str(environ.get("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
+        expected_project = str(environ.get("STAGING_CERTIFICATION_PROJECT_ID") or "").strip()
+        actual_project = str(environ.get("RAILWAY_PROJECT_ID") or "").strip()
+        pinned_staging = (
+            override in {"staging", "stage", "preview"}
+            and profile == "staging-certification"
+            and bool(expected_project)
+            and bool(actual_project)
+            and hmac.compare_digest(expected_project, actual_project)
+        )
+        if not pinned_staging:
+            override = ""
+
     raw = (
         str(
             override
-            or os.getenv("RAILWAY_ENVIRONMENT_NAME")
-            or os.getenv("RAILWAY_ENVIRONMENT_ID")
-            or os.getenv("RAILWAY_ENVIRONMENT")
-            or os.getenv("APP_ENV")
-            or os.getenv("ENVIRONMENT")
+            or railway_name
+            or environ.get("RAILWAY_ENVIRONMENT_ID")
+            or environ.get("APP_ENV")
+            or environ.get("ENVIRONMENT")
             or default
         )
         .strip()
         .lower()
     )
-    aliases = {"prod": "production", "development": "dev", "preview": "staging"}
+    aliases = {"prod": "production", "development": "dev", "preview": "staging", "stage": "staging"}
     return aliases.get(raw, raw or default)
 
+
+def runtime_environment_name(default: str = "dev") -> str:
+    return resolve_runtime_environment_name(os.environ, default)
 
 def environment() -> Environment:
     raw = runtime_environment_name("dev")
