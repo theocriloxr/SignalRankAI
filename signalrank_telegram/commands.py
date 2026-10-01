@@ -5556,7 +5556,6 @@ async def start_command(update, context):
 	upgrade_notice = None
 	logger.info("[/start] user_id=%s — opening DB session", user_id)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.models import User
