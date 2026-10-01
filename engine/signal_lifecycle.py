@@ -75,14 +75,25 @@ def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+_DEFERRED_LIFECYCLE_OBSERVATION_LIMIT = max(
+    100,
+    min(10000, int(os.getenv("LIFECYCLE_OBSERVATION_RETRY_MAX", "2000") or 2000)),
+)
+_DEFERRED_LIFECYCLE_OBSERVATIONS: dict[str, dict[str, object]] = {}
+
+
 def _should_queue_event_notification(event_type: str) -> bool:
     event = str(event_type or "").strip().lower()
     if event not in NOTIFIABLE_EVENTS:
         return False
-    if event in {"tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop"}:
-        # The outcome-notification ledger owns TP/SL messages. Running both
-        # dispatchers created duplicate and out-of-order Telegram alerts.
-        return _enabled("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", False)
+    if event in {
+        "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop",
+        "missed_entry", "expired",
+    }:
+        # The outcome-notification ledger is the single owner of outcome
+        # messages. Queueing the same terminal event here races the compatibility
+        # outbox and can produce duplicate "Signal Expired"/"Entry Missed" alerts.
+        return _enabled("LIFECYCLE_OUTCOME_NOTIFICATIONS_ENABLED", False)
     return True
 
 
@@ -213,6 +224,13 @@ async def update_lifecycle_observation(
     risk = abs(entry - stop)
     observation_high = float(high) if high is not None else float(price)
     observation_low = float(low) if low is not None else float(price)
+
+    # Merge any sample that previously lost a short DB-admission/row-lock race.
+    # This preserves observed extrema until a later scan can persist them.
+    deferred = _DEFERRED_LIFECYCLE_OBSERVATIONS.pop(signal_id, None)
+    if deferred is not None:
+        observation_high = max(observation_high, float(deferred.get("high", observation_high)))
+        observation_low = min(observation_low, float(deferred.get("low", observation_low)))
     if direction.lower() == "short":
         favorable_move = entry - observation_low
         adverse_move = entry - observation_high
@@ -274,10 +292,24 @@ async def update_lifecycle_observation(
             return normalize_lifecycle_state(row.state)
     except Exception as exc:
         if _transient_lifecycle_db_error(exc):
+            previous = _DEFERRED_LIFECYCLE_OBSERVATIONS.get(signal_id)
+            merged = {
+                "price": float(price),
+                "high": observation_high,
+                "low": observation_low,
+                "updated_at": now,
+            }
+            if previous is not None:
+                merged["high"] = max(float(previous.get("high", observation_high)), observation_high)
+                merged["low"] = min(float(previous.get("low", observation_low)), observation_low)
+            _DEFERRED_LIFECYCLE_OBSERVATIONS[signal_id] = merged
+            while len(_DEFERRED_LIFECYCLE_OBSERVATIONS) > _DEFERRED_LIFECYCLE_OBSERVATION_LIMIT:
+                _DEFERRED_LIFECYCLE_OBSERVATIONS.pop(next(iter(_DEFERRED_LIFECYCLE_OBSERVATIONS)))
             logger.info(
-                "[lifecycle_observation_deferred] signal=%s error_type=%s",
+                "[lifecycle_observation_deferred] signal=%s error_type=%s pending=%s",
                 signal_id[:12],
                 type(exc).__name__,
+                len(_DEFERRED_LIFECYCLE_OBSERVATIONS),
             )
             return normalize_lifecycle_state(signal.get("lifecycle_state"))
         raise
