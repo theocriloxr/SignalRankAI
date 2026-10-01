@@ -124,15 +124,10 @@ def _fail_closed_on_unavailable() -> bool:
 
 
 def _ml_enabled() -> bool:
-    """ML switch with compatibility across env naming.
+    """ML switch with strict compatibility alias handling."""
+    from core.env import env_bool_alias
 
-    Supports both ENABLE_ML and ML_ENABLED; ML_ENABLED wins if both are set.
-    """
-    if os.getenv("ML_ENABLED") is not None:
-        return _env_bool("ML_ENABLED", True)
-    if os.getenv("ENABLE_ML") is not None:
-        return _env_bool("ENABLE_ML", False)
-    return True
+    return env_bool_alias("ML_ENABLED", "ENABLE_ML", default=True)
 
 
 def _runtime_state_model_payload() -> dict | None:
