@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     TELEGRAM_READ_TIMEOUT: int = 30
     TELEGRAM_WRITE_TIMEOUT: int = 30
 
-    if not globals().get("_PYDANTIC_V2_SETTINGS", False):
+    if not _PYDANTIC_V2_SETTINGS:
 
         class Config:
             env_file = ".env"
