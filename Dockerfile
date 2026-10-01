@@ -1,47 +1,56 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Install system dependencies required by some Python packages (e.g. psycopg2)
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends gcc libpq-dev \
-	&& rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the declared direct requirements and the certified full dependency graph
-# Copy the declared direct requirements and the certified full dependency graph
-# first to preserve Docker layer caching. Runtime images install the lock, not
-# a freshly-resolved graph.
 COPY requirements.txt requirements.lock release_certification_manifest.txt ./
+RUN python -m venv "$VIRTUAL_ENV" \
+    && python -m pip install --upgrade pip setuptools wheel \
+    && pip install --no-deps -r requirements.lock \
+    && pip check
 
-# Install the exact certified graph without allowing pip to re-resolve
-# transitive dependencies. pip check fails the image build if the lock is
-# internally inconsistent or misses a dependency required by installed
-# packages.
-RUN python -m pip install --upgrade pip setuptools wheel \
-	&& pip install --no-deps -r requirements.lock \
-	&& pip check
-
-# Copy application code
 COPY . .
 
-# Release-critical regression gate. GitHub-hosted CI can be unavailable before a
-# runner starts; these deterministic tests therefore also execute in the image
-# build and must pass before Railway can deploy the artifact.
-RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
-    && python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
+# Build-time certification is intentionally deterministic and network-free
+# except for dependency installation above. This prevents Railway from
+# deploying an image whose release-critical regression set does not pass.
+RUN python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
     && xargs -a release_certification_manifest.txt python -m pytest -q \
-    && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
-    && python scripts/generate_release_docs.py --provenance /tmp/signalrank-build-provenance/release-provenance.json --output /tmp/signalrank-build-provenance/RELEASE_NOTES.md \
+    && python scripts/generate_release_provenance.py \
+         --output-dir /tmp/signalrank-build-provenance \
+         --commit 0000000000000000000000000000000000000000 \
+         --branch build-gate \
+         --verify-self \
     && python scripts/production_readiness_check.py
 
-# Ensure start script is executable and use it as entrypoint so migrations/run-time
-# setup happens when the container starts (not during image build).
-RUN chmod +x ./start.sh || true
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system signalrank \
+    && useradd --system --gid signalrank --create-home --home-dir /home/signalrank signalrank
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder --chown=signalrank:signalrank /app /app
+
+RUN chmod +x /app/start.sh
+USER signalrank
 
 EXPOSE 8080
-
-# Use the start script which runs migrations and then starts the appropriate service
-ENTRYPOINT ["/bin/bash", "./start.sh"]
+ENTRYPOINT ["/bin/bash", "/app/start.sh"]
