@@ -3123,21 +3123,65 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
                 "ok": False,
                 "detail": f"health_probe_failed:{type(exc).__name__}",
             }
-    pulse_required = production or _env_bool("WORKER_ENGINE_PULSE_ENABLED", True)
-    if pulse_required:
+    # Traffic readiness depends on the engine's actual cycle heartbeat, not
+    # the hourly owner/admin pulse. The latter is an observability/certification
+    # signal and can legitimately be absent during a fresh deployment.
+    engine_runtime_required = production or _runtime_environment_name() == "staging"
+    if engine_runtime_required:
         try:
-            from engine.admin_pulse import _engine_pulse_health
-            pulse_health = _engine_pulse_health()
-            checks["engine_pulse"] = {
-                "ok": bool(pulse_health.get("proven")),
-                "detail": str(pulse_health.get("status") or "missing"),
-                **pulse_health,
+            raw_cycle = state.get_sync("engine:last_cycle")
+            cycle = raw_cycle if isinstance(raw_cycle, dict) else json.loads(str(raw_cycle or "{}"))
+            stamp_raw = cycle.get("completed_at") or cycle.get("started_at")
+            stamp = datetime.fromisoformat(str(stamp_raw or "").replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            age_seconds = max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
+            max_age = max(60.0, float(os.getenv("ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS", "300") or 300))
+            cycle_sha = str(cycle.get("git_sha") or "")
+            expected_sha = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
+            sha_ok = not cycle_sha or not expected_sha or cycle_sha == expected_sha
+            status_ok = str(cycle.get("status") or "") in {
+                "started",
+                "market_data_fetched",
+                "pipeline_in_progress",
+                "completed",
+            }
+            checks["engine_runtime"] = {
+                "ok": bool(status_ok and age_seconds <= max_age and sha_ok),
+                "detail": str(cycle.get("status") or "missing"),
+                "heartbeat_age_seconds": age_seconds,
+                "maximum_age_seconds": max_age,
+                "cycle": cycle.get("cycle"),
+                "git_sha": cycle_sha or None,
+                "release_match": sha_ok,
             }
         except Exception as exc:
-            checks["engine_pulse"] = {
+            checks["engine_runtime"] = {
                 "ok": False,
                 "detail": f"health_probe_failed:{type(exc).__name__}",
+                "heartbeat_age_seconds": None,
             }
+
+    # Admin pulse stays visible but is non-blocking unless explicitly required
+    # by an operational policy. Its own certification gate remains separate.
+    pulse_required = _env_bool("READINESS_REQUIRE_ENGINE_PULSE", False)
+    try:
+        from engine.admin_pulse import _engine_pulse_health
+        pulse_health = _engine_pulse_health()
+        checks["engine_pulse"] = {
+            "ok": bool(pulse_health.get("proven")) if pulse_required else True,
+            "required": pulse_required,
+            "detail": str(pulse_health.get("status") or "missing"),
+            **pulse_health,
+        }
+        if not pulse_required:
+            checks["engine_pulse"]["ok"] = True
+    except Exception as exc:
+        checks["engine_pulse"] = {
+            "ok": not pulse_required,
+            "required": pulse_required,
+            "detail": f"health_probe_failed:{type(exc).__name__}",
+        }
     if str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
         checks["telegram"] = {
             "ok": bool(_bot_ready and _bot_application is not None),
