@@ -2851,13 +2851,9 @@ def _production_cutover_check() -> dict[str, object]:
 
 
 def _runtime_environment_name() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("")
 
 
 def _production_readiness_required() -> bool:
