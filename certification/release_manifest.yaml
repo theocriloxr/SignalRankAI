@@ -215,6 +215,18 @@
       ]
     },
     {
+      "id": "frontend-audit",
+      "group": "frontend",
+      "description": "Frontend npm vulnerability gate (high/critical)",
+      "command": "cd frontend && npm audit --audit-level=high",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
       "id": "frontend-build",
       "group": "frontend",
       "description": "Next.js production build",
@@ -251,10 +263,22 @@
       ]
     },
     {
+      "id": "mobile-audit",
+      "group": "mobile",
+      "description": "Mobile npm vulnerability gate (high/critical)",
+      "command": "cd mobile && npm audit --audit-level=high",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
       "id": "mobile-export",
       "group": "mobile",
-      "description": "Expo web export",
-      "command": "cd mobile && npx expo export --platform web --output-dir dist-web",
+      "description": "Expo native Android and iOS bundle export",
+      "command": "cd mobile && npx expo export --platform android --output-dir dist-android && npx expo export --platform ios --output-dir dist-ios",
       "severity": "high",
       "required": true,
       "environments": [
