@@ -34,7 +34,8 @@ curl_cffi==0.15.0
 oandapyV20==0.7.2
 newsapi-python==0.2.7
 pytz==2026.4
-timezonefinder==7.0.2
+timezonefinder==8.3.0
+timezonefinder-data==1.2026.3
 pandas_market_calendars==5.4.0
 yahoo_fin==0.8.9.1
 cachetools==7.2.0
