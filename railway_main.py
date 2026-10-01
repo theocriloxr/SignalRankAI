@@ -162,6 +162,8 @@ _webhook_dispatch_queue: asyncio.Queue | None = None
 _webhook_dispatch_workers: list[asyncio.Task] = []
 _webhook_enqueue_started_at: dict[str, float] = {}
 _webhook_dispatch_latency_window_s = deque(maxlen=2000)
+_webhook_queue_delay_window_s = deque(maxlen=2000)
+_webhook_handler_duration_window_s = deque(maxlen=2000)
 _scheduler_instance: AsyncIOScheduler | None = None
 _lifespan_heartbeat_task: asyncio.Task | None = None
 _monitor_tasks: list[asyncio.Task] = []
@@ -192,8 +194,18 @@ webhook_slo_alerts_total = Counter(
 )
 webhook_dispatch_latency_seconds = Histogram(
     "signalrankai_webhook_dispatch_latency_seconds",
-    "Latency from webhook enqueue to worker dispatch completion",
+    "End-to-end latency from webhook enqueue to handler completion",
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+)
+webhook_queue_delay_seconds = Histogram(
+    "signalrankai_webhook_queue_delay_seconds",
+    "Latency from durable webhook enqueue to worker start",
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+)
+webhook_handler_duration_seconds = Histogram(
+    "signalrankai_webhook_handler_duration_seconds",
+    "Telegram handler processing duration after worker start",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120),
 )
 webhook_queue_depth_gauge = Gauge(
     "signalrankai_webhook_queue_depth",
@@ -229,12 +241,30 @@ def _emit_slo_alert(kind: str, message: str) -> None:
     logger.warning("[slo] %s", message)
 
 
-def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
-    if started_at is None:
+def _record_dispatch_latency(
+    update_id: str,
+    enqueued_at: float | None,
+    handler_started_at: float,
+) -> None:
+    """Record queue delay, handler time, and end-to-end time separately.
+
+    The historical metric was labelled "webhook dispatch latency" but measured
+    through handler completion, so a legitimate multi-second command produced
+    a false webhook-ACK SLO alert. HTTP request telemetry owns acknowledgement
+    latency; these metrics describe asynchronous processing.
+    """
+    completed_at = time.monotonic()
+    handler_duration = max(0.0, completed_at - handler_started_at)
+    _webhook_handler_duration_window_s.append(handler_duration)
+    webhook_handler_duration_seconds.observe(handler_duration)
+    if enqueued_at is None:
         return
-    elapsed = max(0.0, time.monotonic() - started_at)
-    _webhook_dispatch_latency_window_s.append(elapsed)
-    webhook_dispatch_latency_seconds.observe(elapsed)
+    queue_delay = max(0.0, handler_started_at - enqueued_at)
+    total = max(0.0, completed_at - enqueued_at)
+    _webhook_queue_delay_window_s.append(queue_delay)
+    _webhook_dispatch_latency_window_s.append(total)
+    webhook_queue_delay_seconds.observe(queue_delay)
+    webhook_dispatch_latency_seconds.observe(total)
 
 
 def _extract_chat_id(payload: dict | None) -> int:
@@ -1705,11 +1735,20 @@ async def lifespan(_: FastAPI):
                         f"webhook queue utilization high: utilization={queue_util:.2f} size={queue_size}",
                     )
 
-                lat_p99 = _percentile(_webhook_dispatch_latency_window_s, 99.0)
-                if lat_p99 is not None and lat_p99 > 5.0:
+                queue_p99 = _percentile(_webhook_queue_delay_window_s, 99.0)
+                queue_slo = max(0.1, float(os.getenv("WEBHOOK_QUEUE_DELAY_P99_SLO_SECONDS", "1.0") or 1.0))
+                if queue_p99 is not None and queue_p99 > queue_slo:
                     _emit_slo_alert(
-                        "webhook_dispatch_latency",
-                        f"webhook dispatch latency p99 breached: p99_s={lat_p99:.3f}",
+                        "webhook_queue_delay",
+                        f"webhook queue delay p99 breached: p99_s={queue_p99:.3f} slo_s={queue_slo:.3f}",
+                    )
+
+                handler_p99 = _percentile(_webhook_handler_duration_window_s, 99.0)
+                handler_slo = max(1.0, float(os.getenv("WEBHOOK_HANDLER_P99_SLO_SECONDS", "30") or 30.0))
+                if handler_p99 is not None and handler_p99 > handler_slo:
+                    _emit_slo_alert(
+                        "webhook_handler_duration",
+                        f"webhook handler duration p99 breached: p99_s={handler_p99:.3f} slo_s={handler_slo:.3f}",
                     )
 
                 out_p95 = await _sample_outcome_latency_p95_seconds(hours=24, limit=500)
@@ -1832,6 +1871,7 @@ async def lifespan(_: FastAPI):
 
             payload_update_id = (payload or {}).get("update_id", "?")
             started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
+            handler_started_at = time.monotonic()
             try:
                 logger.info(
                     "[webhook] worker=%s start update_id=%s backend=%s",
@@ -1877,7 +1917,7 @@ async def lifespan(_: FastAPI):
                         process_task.cancel()
                         logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
                         raise
-                _record_dispatch_latency(str(payload_update_id), started_at)
+                _record_dispatch_latency(str(payload_update_id), started_at, handler_started_at)
                 if stream_message is not None:
                     acknowledged = await _webhook_stream.ack(stream_message.message_id)
                     if not acknowledged:
