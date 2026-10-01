@@ -47,7 +47,7 @@ def test_provenance_binds_current_release_lock_and_dockerfile(tmp_path: Path):
 
     assert report["release"]["git_commit"] == COMMIT
     assert report["release"]["git_branch"] == BRANCH
-    assert report["release"]["alembic_head"] == "0045_mt5_credential_retirement"
+    assert report["release"]["alembic_head"] == "0047_event_outbox"
     assert report["inputs"]["requirements.lock"]["sha256"] == provenance.sha256_file(
         provenance.LOCK
     )
