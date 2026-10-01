@@ -125,6 +125,18 @@ def _database_urls() -> tuple[str, str]:
     return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
 
 
+
+def _current_revision(connection) -> str | None:
+    """Read Alembic revision without failing on a brand-new empty database."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('public.alembic_version')")
+        exists = cursor.fetchone()
+        if not exists or exists[0] is None:
+            return None
+        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
+
 def migrate() -> dict[str, Any]:
     source_errors = _source_errors()
     if source_errors:
@@ -147,10 +159,7 @@ def migrate() -> dict[str, Any]:
 
         # Fast-path routine deploys: if schema is already at repository head,
         # do not require a fresh backup and do not contend on the migration lock.
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cursor.fetchone()
-            before = str(row[0]) if row else None
+        before = _current_revision(connection)
         if before == expected:
             after = before
         else:
@@ -182,10 +191,7 @@ def migrate() -> dict[str, Any]:
             try:
                 # Re-read under the lock because another migration owner may
                 # have completed while this deployment was waiting.
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                    row = cursor.fetchone()
-                    before = str(row[0]) if row else None
+                before = _current_revision(connection)
                 if before == expected:
                     after = before
                     migration_required = False
@@ -193,10 +199,7 @@ def migrate() -> dict[str, Any]:
                     config = Config(str(ROOT / "alembic.ini"))
                     config.set_main_option("sqlalchemy.url", db_url)
                     command.upgrade(config, "head")
-                    with connection.cursor() as cursor:
-                        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                        row = cursor.fetchone()
-                        after = str(row[0]) if row else None
+                    after = _current_revision(connection)
                     if after != expected:
                         raise RuntimeError(f"migration verification failed: current={after} expected={expected}")
             finally:
