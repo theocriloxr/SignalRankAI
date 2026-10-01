@@ -279,6 +279,27 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
             result.certification_status = CertificationStatus.FAILED.value
             result.error = "; ".join(result.validation["errors"][:8])
             return result
+
+        fresh, age, freshness_limit, freshness_error = _freshness_validation(spec, result.validation)
+        result.freshness_age_seconds = round(age, 3) if age is not None else None
+        result.freshness_limit_seconds = round(freshness_limit, 3) if freshness_limit is not None else None
+        result.execution_eligible = bool(fresh)
+        result.validation = {
+            **dict(result.validation or {}),
+            "freshness_valid": bool(fresh),
+            "freshness_age_seconds": result.freshness_age_seconds,
+            "freshness_limit_seconds": result.freshness_limit_seconds,
+            "realtime_capable": bool(spec.realtime_capable),
+        }
+        if not spec.realtime_capable:
+            result.certification_status = CertificationStatus.ANALYSIS_ONLY.value
+            result.error = freshness_error
+            return result
+        if not fresh:
+            result.certification_status = CertificationStatus.FAILED.value
+            result.error = freshness_error
+            return result
+
         if spec.sandbox:
             result.certification_status = CertificationStatus.IMPLEMENTED_AND_SANDBOX_VERIFIED.value
         elif spec.public_endpoint and not spec.required_env:
