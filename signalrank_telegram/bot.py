@@ -930,8 +930,8 @@ import asyncio
 import socket
 import logging
 import time
+import html
 from telegram import Bot
-from telegram.ext import Application, CommandHandler
 from datetime import datetime, timedelta
 
 from core.performance import performance_tracker
@@ -2377,7 +2377,7 @@ async def _deliver_or_update_signal_async(
         from db.models import User
         from db.session import get_session
         from sqlalchemy import select
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         async with get_session(priority="background", label="signalrank_telegram_bot") as _tz_session:
             _tz_user = (await _tz_session.execute(
@@ -6631,13 +6631,11 @@ def run_bot() -> None:
     application.add_handler(_CQH_cancel(cancel_nevermind_callback, pattern="^cancel_nevermind$"))
 
     # \u2500\u2500 Terms gate callbacks (/start disclaimer) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from .commands import agree_terms_callback, decline_terms_callback
     from telegram.ext import CallbackQueryHandler as _CQH_terms
     application.add_handler(_CQH_terms(agree_terms_callback, pattern="^agree_terms$"))
     application.add_handler(_CQH_terms(decline_terms_callback, pattern="^decline_terms$"))
 
     # \u2500\u2500 VIP waitlist join callback (/upgrade when full) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from .commands import vip_waitlist_join_callback
     from telegram.ext import CallbackQueryHandler as _CQH_vip
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
