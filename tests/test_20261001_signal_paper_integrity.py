@@ -225,3 +225,34 @@ def test_paper_candidate_uses_exact_delivery_snapshot_levels_and_expiry() -> Non
 
     open_block = _function_block(source, "_open_candidate_locked")
     assert "expires_at=candidate.get(\"expires_at\")" in open_block
+
+
+def test_staging_oct1_incident_replay_is_fail_closed_and_behavior_complete() -> None:
+    replay = (ROOT / "scripts/staging_oct1_incident_replay.py").read_text(encoding="utf-8")
+    assert 'EXPECTED_STAGING_PROJECT = "8d21a09b-8e45-4c10-87dd-e3568441153f"' in replay
+    assert 'if env != "staging"' in replay
+    assert '"staging_project_pin_mismatch"' in replay
+    assert '"global_execution_kill_switch_off"' in replay
+    assert '"unsafe_live_flags="' in replay
+    assert "paper_trading_service._telegram_delivery_candidates" in replay
+    assert "paper_trading_service._open_candidate(candidate, snapshot_entry)" in replay
+    assert "paper_trading_service._notify_paper_decision = _noop_notification" in replay
+    assert "list_delivered_signals_for_user" in replay
+    assert '_persist_outcome(missed_id, "missed_entry", 53.09, 53.575)' in replay
+    for assertion_name in (
+        "ordinary_profile_would_reject",
+        "snapshot_entry_restored",
+        "snapshot_generated_at_restored",
+        "paper_first_opened",
+        "duplicate_open_prevented",
+        "signals_command_projection_contains_active_signal",
+        "no_profile_mismatch_attempt",
+        "no_signal_stale_attempt",
+        "missed_entry_realized_r_null",
+        "missed_entry_pnl_pct_null",
+        "missed_entry_marks_no_realized_position",
+    ):
+        assert f'"{assertion_name}"' in replay
+    assert '"retained_evidence": True' in replay
+    assert '"external_notifications_sent": False' in replay
+    assert '"broker_orders_submitted": False' in replay
