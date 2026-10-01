@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from enum import StrEnum
@@ -10,6 +11,61 @@ from typing import Iterable
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "y", "on"})
 FALSE_VALUES = frozenset({"0", "false", "no", "n", "off", ""})
+
+
+_BOOL_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED"),
+    ("ENABLE_ML", "ML_ENABLED"),
+    ("INDEX_ENABLED", "INDICES_ENABLED"),
+)
+_SECRET_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("META_API_TOKEN", "METAAPI_TOKEN"),
+    ("TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN"),
+)
+
+
+def _normalized_bool_value(name: str) -> bool | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip().lower()
+    if value in TRUE_VALUES:
+        return True
+    if value in FALSE_VALUES:
+        return False
+    raise RuntimeError(f"invalid_boolean_environment_value:{name}")
+
+
+def validate_alias_conflicts() -> None:
+    """Fail startup when equivalent configuration aliases disagree."""
+    for group in _BOOL_ALIAS_GROUPS:
+        configured = [(name, _normalized_bool_value(name)) for name in group if os.getenv(name) is not None]
+        values = {value for _name, value in configured}
+        if len(values) > 1:
+            raise RuntimeError("conflicting_boolean_environment_aliases:" + ",".join(name for name, _ in configured))
+    for group in _SECRET_ALIAS_GROUPS:
+        configured = [(name, str(os.getenv(name) or "").strip()) for name in group if str(os.getenv(name) or "").strip()]
+        values = {value for _name, value in configured}
+        if len(values) > 1:
+            raise RuntimeError("conflicting_secret_environment_aliases:" + ",".join(name for name, _ in configured))
+
+
+def sanitized_config_fingerprint(names: Iterable[str]) -> str:
+    """Hash only non-secret configuration presence/boolean state, never values."""
+    material: list[str] = []
+    secret_names = {name for group in _SECRET_ALIAS_GROUPS for name in group}
+    for name in sorted({str(n) for n in names}):
+        raw = os.getenv(name)
+        if name in secret_names:
+            state = "present" if bool(str(raw or "").strip()) else "absent"
+        elif raw is None:
+            state = "unset"
+        else:
+            normalized = str(raw).strip().lower()
+            state = normalized if normalized in TRUE_VALUES | FALSE_VALUES else "set"
+        material.append(f"{name}={state}")
+    return hashlib.sha256("|".join(material).encode("utf-8")).hexdigest()
+
 
 
 class Environment(StrEnum):
@@ -149,6 +205,8 @@ __all__ = [
     "environment",
     "redact_value",
     "runtime_environment_name",
+    "sanitized_config_fingerprint",
     "secret_present",
+    "validate_alias_conflicts",
     "validate_required_secrets",
 ]
