@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def _send_telegram_dm(telegram_user_id: int, message: str) -> None:
     token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
-        logger.warning("[waitlist] Telegram token missing; notification deferred user=%s", telegram_user_id)
+        logger.warning("[waitlist] Telegram delivery unavailable; notification deferred")
         return
     try:
         from telegram import Bot
@@ -36,11 +36,8 @@ async def _send_telegram_dm(telegram_user_id: int, message: str) -> None:
             await bot.send_message(chat_id=int(telegram_user_id), text=message)
     except Exception as exc:
         logger.warning(
-            "[waitlist] Telegram notification failed user=%s err_type=%s err=%s",
-            telegram_user_id,
+            "[waitlist] Telegram notification failed err_type=%s",
             type(exc).__name__,
-            exc,
-            exc_info=True,
         )
 
 
