@@ -237,7 +237,7 @@ async def test_adaptive_candle_pressure_requeues_full_batch(monkeypatch) -> None
     calls = {"sessions": 0, "evictions": 0, "insert_attempts": 0}
 
     class FakeSession:
-        async def execute(self, statement):
+        async def execute(self, statement, params=None):
             text_value = str(statement)
             if text_value.lstrip().upper().startswith("INSERT"):
                 calls["insert_attempts"] += 1
@@ -325,7 +325,7 @@ async def test_adaptive_candle_batch_deduplicates_same_database_key(monkeypatch)
     statements: list[str] = []
 
     class FakeSession:
-        async def execute(self, statement):
+        async def execute(self, statement, params=None):
             text_value = str(statement)
             if text_value.lstrip().upper().startswith("INSERT"):
                 statements.append(text_value)
