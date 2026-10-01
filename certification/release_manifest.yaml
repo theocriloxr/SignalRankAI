@@ -20,16 +20,28 @@
       ]
     },
     {
-      "id": "static-pyright",
+      "id": "static-pyright-critical",
       "group": "static",
-      "description": "Pyright active runtime type analysis",
-      "command": "pyright core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
+      "description": "Zero-error Pyright analysis for release-critical safety boundaries",
+      "command": "pyright --project pyright-critical.json",
       "severity": "critical",
       "required": true,
       "environments": [
         "ci",
         "cleanroom",
         "local"
+      ]
+    },
+    {
+      "id": "static-pyright-legacy-budget",
+      "group": "static",
+      "description": "Full-runtime Pyright debt must not exceed certified baseline",
+      "command": "python scripts/pyright_legacy_budget.py",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
       ]
     },
     {
