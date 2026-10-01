@@ -3,19 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - SignalRankAI User Dashboard</title>
+    <meta http-equiv="refresh" content="0; url=/app">
+    <title>SignalRankAI</title>
     <link rel="stylesheet" href="/static/userdash.css">
 </head>
 <body>
-    <div class="container">
-        <h2>Login to Your Dashboard</h2>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="post">
-            <label for="user_id">Telegram User ID:</label><br>
-            <input type="text" id="user_id" name="user_id" required><br><br>
-            <button type="submit">Login</button>
-        </form>
-        <p class="hint">(Ask the bot for your user ID with <b>/myid</b> if unsure.)</p>
-    </div>
+    <main class="container">
+        <h2>Legacy dashboard retired</h2>
+        <p>This compatibility surface no longer accepts Telegram IDs or other credentials.</p>
+        <p><a href="/app">Continue to the secure SignalRankAI application</a></p>
+    </main>
 </body>
 </html>
