@@ -1049,17 +1049,18 @@ class MT5SignalRouter:
                 }
             else:
                 user_enabled = requested_mode in {ExecutionMode.AUTO, "live"}
+            account_info_map: Dict[str, Any] = account_info if isinstance(account_info, dict) else {}
+            symbol_spec_map: Dict[str, Any] = symbol_spec if isinstance(symbol_spec, dict) else {}
             account_ready = bool(
-                isinstance(account_info, dict)
-                and account_info.get("connected") is True
-                and isinstance(account_info.get("equity"), (int, float))
-                and float(account_info["equity"]) > 0
-                and isinstance(account_info.get("free_margin"), (int, float))
-                and float(account_info["free_margin"]) > 0
+                account_info_map.get("connected") is True
+                and isinstance(account_info_map.get("equity"), (int, float))
+                and float(account_info_map["equity"]) > 0
+                and isinstance(account_info_map.get("free_margin"), (int, float))
+                and float(account_info_map["free_margin"]) > 0
             )
             account_is_demo = (
-                account_info.get("is_demo")
-                if isinstance(account_info, dict) and isinstance(account_info.get("is_demo"), bool)
+                account_info_map.get("is_demo")
+                if isinstance(account_info_map.get("is_demo"), bool)
                 else None
             )
             quote_trusted = bool(
@@ -1067,7 +1068,7 @@ class MT5SignalRouter:
             )
             quote_age = quote.get("age_seconds") if isinstance(quote, dict) else None
             max_quote_age = quote.get("max_age_seconds", 15.0) if isinstance(quote, dict) else 15.0
-            symbol_ready = bool(isinstance(symbol_spec, dict) and symbol_spec.get("trade_allowed") is True)
+            symbol_ready = bool(symbol_spec_map.get("trade_allowed") is True)
             risk_allowed = bool(volume > 0 and symbol_ready and account_ready)
 
             # Evaluate the immutable per-account policy separately from the
@@ -1104,16 +1105,16 @@ class MT5SignalRouter:
                                 else ""
                             ),
                             "provider_timestamp": str(reconciliation.get("checked_at") or "") or None,
-                            "currency": str(account_info.get("currency") or "USD").upper(),
-                            "balance": account_info.get("balance"),
-                            "equity": account_info.get("equity"),
-                            "margin": account_info.get("margin"),
-                            "free_margin": account_info.get("free_margin"),
-                            "realized_pnl": account_info.get("realized_pnl"),
+                            "currency": str(account_info_map.get("currency") or "USD").upper(),
+                            "balance": account_info_map.get("balance"),
+                            "equity": account_info_map.get("equity"),
+                            "margin": account_info_map.get("margin"),
+                            "free_margin": account_info_map.get("free_margin"),
+                            "realized_pnl": account_info_map.get("realized_pnl"),
                             "unrealized_pnl": (
-                                account_info.get("unrealized_pnl")
-                                if account_info.get("unrealized_pnl") is not None
-                                else account_info.get("profit")
+                                account_info_map.get("unrealized_pnl")
+                                if account_info_map.get("unrealized_pnl") is not None
+                                else account_info_map.get("profit")
                             ),
                         },
                     )
@@ -1139,10 +1140,10 @@ class MT5SignalRouter:
                     prop_policy_version = str(account_policy.prop_rules_version or "")
                     account_frozen = bool(account_policy.frozen)
 
-                    current_equity = Decimal(str(account_info.get("equity") or 0))
-                    raw_day_start = account_info.get("day_start_equity")
-                    raw_week_start = account_info.get("week_start_equity")
-                    raw_peak = account_info.get("peak_equity")
+                    current_equity = Decimal(str(account_info_map.get("equity") or 0))
+                    raw_day_start = account_info_map.get("day_start_equity")
+                    raw_week_start = account_info_map.get("week_start_equity")
+                    raw_peak = account_info_map.get("peak_equity")
                     baseline_verified = bool(
                         isinstance(raw_day_start, (int, float))
                         and float(raw_day_start) > 0
@@ -1155,10 +1156,10 @@ class MT5SignalRouter:
                     day_start_equity = Decimal(str(raw_day_start if baseline_verified else current_equity))
                     week_start_equity = Decimal(str(raw_week_start if weekly_baseline_verified else 0))
                     peak_equity = Decimal(str(raw_peak if baseline_verified else current_equity))
-                    daily_realized_pnl = Decimal(str(account_info.get("daily_realized_pnl") or 0))
-                    weekly_realized_pnl = Decimal(str(account_info.get("weekly_realized_pnl") or 0))
+                    daily_realized_pnl = Decimal(str(account_info_map.get("daily_realized_pnl") or 0))
+                    weekly_realized_pnl = Decimal(str(account_info_map.get("weekly_realized_pnl") or 0))
                     profile_risk_fraction = Decimal(str(profile_policy.get("risk_per_trade_pct") or 0)) / Decimal("100")
-                    contract_size = Decimal(str(symbol_spec.get("contract_size") or 0))
+                    contract_size = Decimal(str(symbol_spec_map.get("contract_size") or 0))
                     entry_decimal = Decimal(str(signal.get("entry") or 0))
                     proposed_leverage = Decimal("0")
                     if current_equity > 0 and contract_size > 0 and entry_decimal > 0:
@@ -1563,9 +1564,14 @@ class MT5SignalRouter:
             base = float(volume)
             fraction = float(weight)
             spec = symbol_spec if isinstance(symbol_spec, dict) else {}
-            step = float(spec.get("volume_step"))
-            minimum = float(spec.get("min_volume"))
-            maximum = float(spec.get("max_volume"))
+            raw_step = spec.get("volume_step")
+            raw_minimum = spec.get("min_volume")
+            raw_maximum = spec.get("max_volume")
+            if raw_step is None or raw_minimum is None or raw_maximum is None:
+                return 0.0
+            step = float(raw_step)
+            minimum = float(raw_minimum)
+            maximum = float(raw_maximum)
             values = (base, fraction, step, minimum, maximum)
             if not all(math.isfinite(value) for value in values):
                 return 0.0
@@ -1621,16 +1627,37 @@ class MT5SignalRouter:
             if spec.get("trade_allowed") is not True:
                 return 0.0
 
-            equity = float(info.get("equity"))
-            free_margin = float(info.get("free_margin"))
+            raw_equity = info.get("equity")
+            raw_free_margin = info.get("free_margin")
+            raw_tick_size = spec.get("tick_size")
+            raw_tick_value = spec.get("tick_value")
+            raw_contract_size = spec.get("contract_size")
+            raw_min_volume = spec.get("min_volume")
+            raw_max_volume = spec.get("max_volume")
+            raw_volume_step = spec.get("volume_step")
+            required_values = (
+                raw_equity,
+                raw_free_margin,
+                raw_tick_size,
+                raw_tick_value,
+                raw_contract_size,
+                raw_min_volume,
+                raw_max_volume,
+                raw_volume_step,
+            )
+            if any(value is None for value in required_values):
+                return 0.0
+
+            equity = float(raw_equity)
+            free_margin = float(raw_free_margin)
             entry_f = float(entry)
             stop_f = float(stop_loss)
-            tick_size = float(spec.get("tick_size"))
-            tick_value = float(spec.get("tick_value"))
-            contract_size = float(spec.get("contract_size"))
-            min_volume = float(spec.get("min_volume"))
-            max_volume = float(spec.get("max_volume"))
-            volume_step = float(spec.get("volume_step"))
+            tick_size = float(raw_tick_size)
+            tick_value = float(raw_tick_value)
+            contract_size = float(raw_contract_size)
+            min_volume = float(raw_min_volume)
+            max_volume = float(raw_max_volume)
+            volume_step = float(raw_volume_step)
             values = (
                 equity,
                 free_margin,
