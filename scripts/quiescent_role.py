@@ -59,11 +59,9 @@ def validate_quiescent_environment(
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     env = dict(os.environ if environ is None else environ)
-    environment = (
-        str(env.get("RAILWAY_ENVIRONMENT_NAME") or env.get("RAILWAY_ENVIRONMENT") or env.get("APP_ENV") or "")
-        .strip()
-        .lower()
-    )
+    from core.env import resolve_runtime_environment_name
+
+    environment = resolve_runtime_environment_name(env, "")
     profile = str(env.get("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
     requested = str(env.get("RUN_MODE") or env.get("SERVICE_ROLE") or env.get("DB_ROLE") or "").strip().lower()
 
