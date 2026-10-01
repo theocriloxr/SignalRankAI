@@ -234,7 +234,10 @@ async def update_lifecycle_observation(
         ) as session:
             # The tracker runs repeatedly. Waiting tens of seconds on a row lock
             # is worse than deferring one telemetry sample to the next cycle.
-            await session.execute(sql_text(f"SET LOCAL lock_timeout = '{_lifecycle_lock_timeout_ms()}ms'"))
+            await session.execute(
+                sql_text("SELECT set_config('lock_timeout', :value, true)"),
+                {"value": f"{_lifecycle_lock_timeout_ms()}ms"},
+            )
             row = (
                 await session.execute(
                     select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id).with_for_update()
