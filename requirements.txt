@@ -30,6 +30,7 @@ scikit-learn==1.9.1
 xgboost-cpu==3.2.0
 tradingview-ta==3.3.0
 yfinance==1.2.0
+curl_cffi==0.15.0
 oandapyV20==0.7.2
 newsapi-python==0.2.7
 pytz==2026.4
@@ -38,7 +39,7 @@ pandas_market_calendars==5.4.0
 yahoo_fin==0.8.9.1
 cachetools==7.2.0
 redis==5.3.1
-cryptography==45.0.7
+cryptography==50.0.1
 optuna==5.0.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
