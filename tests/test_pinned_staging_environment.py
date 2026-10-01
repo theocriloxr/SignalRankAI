@@ -84,3 +84,66 @@ def test_quiescent_role_accepts_exact_pinned_staging_project_only() -> None:
         assert "requires staging environment" in str(exc)
     else:
         raise AssertionError("mismatched project ID must not pass staging certification")
+
+
+def _install(monkeypatch, values: dict[str, str]) -> None:
+    for key in (
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_PROJECT_ID",
+        "STAGING_CERTIFICATION_PROJECT_ID",
+        "SIGNALRANK_ENV_PROFILE",
+        "SIGNALRANK_ENVIRONMENT_OVERRIDE",
+        "PRODUCTION_DB_BACKUP_VERIFIED",
+        "PRODUCTION_DB_BACKUP_ID",
+        "PRODUCTION_DB_BACKUP_CREATED_AT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+
+def test_controlled_migration_does_not_consume_production_backup_gate_in_pinned_staging(monkeypatch) -> None:
+    from scripts import controlled_migrate
+
+    env = _pinned_env()
+    _install(monkeypatch, env)
+    assert controlled_migrate._environment() == "staging"
+    assert controlled_migrate._backup_errors() == []
+
+    env["RAILWAY_PROJECT_ID"] = "real-production-project"
+    _install(monkeypatch, env)
+    assert controlled_migrate._environment() == "production"
+    errors = controlled_migrate._backup_errors()
+    assert "PRODUCTION_DB_BACKUP_VERIFIED must be 1" in errors
+
+
+def test_staging_bootstrap_and_cleanup_share_pinned_identity(monkeypatch) -> None:
+    from scripts import staging_migrate_and_bootstrap
+    from tools import staging_cleanup
+
+    env = _pinned_env()
+    _install(monkeypatch, env)
+    assert staging_migrate_and_bootstrap._environment() == "staging"
+    assert staging_cleanup._environment() == "staging"
+    assert staging_cleanup._is_production() is False
+
+    env["RAILWAY_PROJECT_ID"] = "real-production-project"
+    _install(monkeypatch, env)
+    assert staging_migrate_and_bootstrap._environment() == "production"
+    assert staging_cleanup._is_production() is True
+
+
+def test_certification_and_analytics_share_pinned_identity(monkeypatch) -> None:
+    from runtime import analytics
+    from tools import staging_certification
+
+    env = _pinned_env()
+    _install(monkeypatch, env)
+    assert staging_certification.environment_name() == "staging"
+    assert analytics._production_runtime() is False
+
+    env["RAILWAY_PROJECT_ID"] = "real-production-project"
+    _install(monkeypatch, env)
+    assert staging_certification.environment_name() == "production"
+    assert analytics._production_runtime() is True
