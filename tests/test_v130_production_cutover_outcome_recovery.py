@@ -70,6 +70,7 @@ def test_staging_dependency_readiness_does_not_require_production_cutover(monkey
     assert check["ok"] is True
     assert check["required"] is False
     assert check["production_detail"]
+    assert check["environment"] == "staging"
 
 
 def test_production_dependency_readiness_keeps_cutover_fail_closed(monkeypatch) -> None:
