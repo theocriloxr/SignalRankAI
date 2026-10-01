@@ -270,8 +270,10 @@ def test_main_engine_persistence_path_enforces_canonical_thesis_integrity():
     source = Path("db/pg_features.py").read_text(encoding="utf-8")
     assert 'pg_advisory_xact_lock(hashtext(:fingerprint))' in source
     assert 'Signal.thesis_fingerprint == thesis_fingerprint' in source
-    assert 'confirmed_delivery_count == 0' in source
+    assert 'confirmed_delivery_count > 0' in source
+    assert 'SignalDedupBlocked("delivered_active_thesis"' in source
     assert 'existing.entry = entry' in source
+    assert "elif existing.expires_at is None" not in source
     assert 'thesis_fingerprint=thesis_fingerprint' in source
     for field in (
         'asset_discovery_provider=asset_discovery_provider',
