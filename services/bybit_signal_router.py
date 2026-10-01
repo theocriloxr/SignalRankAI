@@ -81,7 +81,8 @@ async def _resources_available() -> bool:
     try:
         from core.resource_governor import ResourceState, get_resource_governor
 
-        return get_resource_governor().snapshot().state is not ResourceState.CRITICAL
+        snapshot = get_resource_governor().snapshot
+        return snapshot is not None and snapshot.state is not ResourceState.CRITICAL
     except Exception:
         return False
 
