@@ -2717,13 +2717,7 @@ def _is_unconfigured_runtime_value(value: object) -> bool:
 
 def _production_cutover_check() -> dict[str, object]:
     """Reject accidental staging, placeholder, or restricted production deployments."""
-    environment = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    environment = _runtime_environment_name()
     violations: list[str] = []
     if environment not in {"production", "prod"}:
         violations.append("environment_not_production")
