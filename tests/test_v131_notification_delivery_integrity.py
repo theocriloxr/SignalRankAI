@@ -42,10 +42,12 @@ def test_lifecycle_updates_never_replace_the_original_signal_card(monkeypatch):
     assert "edit_message_text" not in source
     assert "reply_to_message_id" in source
     assert '"disable_notification": False' in source
-    monkeypatch.delenv("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", raising=False)
+    monkeypatch.delenv("LIFECYCLE_OUTCOME_NOTIFICATIONS_ENABLED", raising=False)
     assert _should_queue_event_notification("entry_touched") is True
     assert _should_queue_event_notification("tp3_hit") is False
     assert _should_queue_event_notification("sl_hit") is False
+    assert _should_queue_event_notification("missed_entry") is False
+    assert _should_queue_event_notification("expired") is False
 
 
 def test_primary_signal_and_outcome_sends_are_explicitly_non_silent():
