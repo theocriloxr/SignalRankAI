@@ -3249,6 +3249,8 @@ def main_loop(DRY_RUN: bool = False):
             macro_snapshot = {}
 
         scored_signals_all: List[Dict] = []
+        strict_candidates: List[Dict] = []
+        dispatched = 0
         max_candidate_score = None
         # Cycle-level sets prevent duplicate and opposite-direction same-asset
         # signals in the same batch, even when they come from different TFs.
@@ -6597,22 +6599,20 @@ def main_loop(DRY_RUN: bool = False):
         try:
             if str(os.getenv("AUTO_ANALYST_ENABLED", "1")).strip().lower() in {"1", "true", "yes"}:
                 try:
-                    # Only run when strict_candidates list exists in this scope and useful work was skipped
-                    if "strict_candidates" in globals() or "strict_candidates" in locals():
-                        sc_count = len(strict_candidates) if isinstance(strict_candidates, list) else 0
-                        fs_count = len(final_signals) if isinstance(final_signals, list) else 0
-                        if sc_count > 0 and sc_count > fs_count:
-                            try:
-                                from services.automated_analyst import run_automated_audit
+                    sc_count = int(pipeline_stats.get("strict_candidates", 0) or 0)
+                    fs_count = int(pipeline_stats.get("final_signals", 0) or 0)
+                    if sc_count > 0 and sc_count > fs_count:
+                        try:
+                            from services.automated_analyst import run_automated_audit
 
-                                # Best-effort synchronous call with timeout so the engine isn't blocked long
-                                try:
-                                    run_sync(run_automated_audit(cycle_no, sc_count, fs_count), timeout=60.0)
-                                except Exception:
-                                    # swallow - non-critical
-                                    logger.debug("[engine] automated analyst call failed or timed out", exc_info=True)
+                            # Best-effort synchronous call with timeout so the engine isn't blocked long
+                            try:
+                                run_sync(run_automated_audit(cycle_no, sc_count, fs_count), timeout=60.0)
                             except Exception:
-                                logger.debug("[engine] failed to import automated_analyst", exc_info=True)
+                                # swallow - non-critical
+                                logger.debug("[engine] automated analyst call failed or timed out", exc_info=True)
+                        except Exception:
+                            logger.debug("[engine] failed to import automated_analyst", exc_info=True)
                 except Exception:
                     logger.debug("[engine] automated analyst check failed", exc_info=True)
         except Exception:
@@ -6686,7 +6686,7 @@ def main_loop(DRY_RUN: bool = False):
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                     "duration_ms": int((time.monotonic() - cycle_started_monotonic) * 1000),
                     "generated_signals": int(len(scored_signals_all or [])),
-                    "dispatched": int(locals().get("dispatched", 0) or 0),
+                    "dispatched": int(dispatched or 0),
                     "max_score": _diagnostic_score(_cycle_top_raw),
                     "max_score_raw": _cycle_top_raw,
                     "max_score_pre_threshold": _diagnostic_score(max_candidate_score),
