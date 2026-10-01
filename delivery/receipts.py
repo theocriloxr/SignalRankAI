@@ -66,7 +66,11 @@ class DeliveryReceipt:
             "mode": self.mode,
             "accepted_at": self.accepted_at,
             "replaces_signal_id": self.replaces_signal_id,
-            "signal_snapshot": dict(self.signal_snapshot or {}),
+            "signal_snapshot": (
+                dict(self.signal_snapshot)
+                if self.signal_snapshot is not None
+                else None
+            ),
         }
 
     @classmethod
