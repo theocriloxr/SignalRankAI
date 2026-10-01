@@ -1,9 +1,9 @@
-SignalRankAI synchronized certification trigger r6b
+SignalRankAI synchronized certification trigger r6
 branch=implementation-of-master-blueprint
-head_before_trigger=934e0fa6ba58381ddf0af67f9fdd37bebb2e50ee
+head_before_trigger=6db48c0358f846c3f0e419948170cae7b6012c0a
 backend_cleanroom=required
 frontend_cleanroom=required
 mobile_native_cleanroom=required
 static_security_cleanroom=required
-market_data_live_path_contract=required
+api_key_secret_boundary=required
 live_execution_authorized=false
