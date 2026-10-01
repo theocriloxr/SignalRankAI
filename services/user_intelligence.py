@@ -5,7 +5,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from services.trade_profiles import normalize_trade_profile
 
@@ -339,12 +339,13 @@ async def _telegram_user_id_from_canonical(session, user_id: int) -> int | None:
 async def _runtime_state_values(session, keys: tuple[str, ...]) -> dict[str, Any]:
     if not keys:
         return {}
-    params = {f"k{i}": key for i, key in enumerate(keys)}
-    placeholders = ", ".join(f":k{i}" for i in range(len(keys)))
+    statement = text(
+        "SELECT key, value FROM runtime_state WHERE key IN :keys"
+    ).bindparams(bindparam("keys", expanding=True))
     try:
         result = await session.execute(
-            text(f"SELECT key, value FROM runtime_state WHERE key IN ({placeholders})"),
-            params,
+            statement,
+            {"keys": list(keys)},
         )
         rows = result.all()
     except Exception:
