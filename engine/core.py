@@ -3144,6 +3144,8 @@ def main_loop(DRY_RUN: bool = False):
         _cycle_state = {
             "status": "started",
             "cycle": int(cycle_no),
+            "git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+            "deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"),
             "round": getattr(_cycle_queue, "round_progress", ""),
             "started_at": cycle_started_at.isoformat(),
             "assets_attempted": int(cycle_assets),
