@@ -23,14 +23,7 @@ COPY . .
 # Build-time certification is intentionally deterministic and network-free
 # except for dependency installation above. This prevents Railway from
 # deploying an image whose release-critical regression set does not pass.
-RUN python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
-    && xargs -a release_certification_manifest.txt python -m pytest -q \
-    && python scripts/generate_release_provenance.py \
-         --output-dir /tmp/signalrank-build-provenance \
-         --commit 0000000000000000000000000000000000000000 \
-         --branch build-gate \
-         --verify-self \
-    && python scripts/production_readiness_check.py
+RUN python scripts/run_release_manifest.py --environment image --group image
 
 FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS runtime
 
