@@ -248,7 +248,7 @@ def test_paper_recovery_ultra_failure_is_advisory_but_normal_ultra_failure_stays
     assert 'if bool(sig.get("ml_recovery_mode"))' in ultra
     assert 'sig["ml_recovery_ultra_advisory"] = ultra_reason' in ultra
     assert "canonical_quality_continues=1" in ultra
-    assert '_post_ml_reject(sig, "ultra_quality", sig[\'rejection_reason\'])' in ultra
+    assert '_post_ml_reject(sig, "ultra_quality", sig["rejection_reason"])' in ultra
     assert "continue" in ultra
 
 
