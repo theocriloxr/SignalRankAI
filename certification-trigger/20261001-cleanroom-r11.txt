@@ -1,8 +1,10 @@
-SignalRankAI unified certification trigger r11
+SignalRankAI synchronized certification trigger r11
 branch=implementation-of-master-blueprint
-head_before_trigger=34208407caf161bb8d5da477e6e76d343b043d08
+head_before_trigger=8d1d85d71a306f8f43293c06408160354fe0fbf8
 backend_cleanroom=required
 frontend_cleanroom=required
 mobile_native_cleanroom=required
 static_security_cleanroom=required
+pinned_staging_identity_contract=required
+controlled_migration_staging_boundary=required
 live_execution_authorized=false
