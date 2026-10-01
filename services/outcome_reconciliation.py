@@ -69,6 +69,8 @@ def _terminal_price(lifecycle: SignalLifecycle | None, signal: Signal) -> float 
         getattr(lifecycle, "last_price", None) if lifecycle is not None else None,
         getattr(signal, "entry", None),
     ):
+        if value is None:
+            continue
         try:
             number = float(value)
             if number > 0:
