@@ -6,5 +6,6 @@ RUN npm ci
 COPY frontend ./
 RUN npm run lint \
     && npx tsc --noEmit \
+    && npm audit --audit-level=high \
     && npm run build
 CMD ["node","-e","console.log('SIGNALRANK_FRONTEND_CLEANROOM_PASS'); setInterval(()=>{}, 60000)"]
