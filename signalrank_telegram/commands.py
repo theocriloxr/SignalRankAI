@@ -1020,15 +1020,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Alias for /status with dynamic tier menu."""
 	return await status_command(update, context)
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
-try:
-	from web.api import generate_api_key
-except Exception:
-	generate_api_key = lambda: "demo-key"
-
-
 async def _get_existing_api_token_meta(user_id: int):
 	from db.session import get_session
 	from db.repository import get_latest_active_api_token_meta
