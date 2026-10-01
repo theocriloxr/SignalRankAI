@@ -215,6 +215,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # ── Check DB for belt-and-suspenders (in case Redis was flushed) ────────
     already_used_db = False
     try:
+        from db.session import get_session
         from db.models import BotEvent
         from db.repository import get_or_create_user
         from sqlalchemy import select
@@ -253,7 +254,8 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     premium_until = now_utc_naive() + timedelta(days=7)
 
     try:
-            from db.repository import get_or_create_user
+        from db.session import get_session
+        from db.repository import get_or_create_user
         from db.models import BotEvent, Subscription, AdminEvent
         from db.pg_features import record_bot_event
 
@@ -329,7 +331,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _provider_status_snapshot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Internal provider-health snapshot helper.
+    """Owner/admin helper: show provider health and circuit-breaker snapshot.
 
     Returns a short report listing unhealthy providers (down > threshold),
     a small provider-health summary from the in-process cache, and the
@@ -430,6 +432,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     ]
     candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
 
+    from db.session import get_session
     from db.models import Signal, AdminEvent
     from engine.market_state import get_market_state_async
     from engine.strategies.signal_generator import SignalGenerator
@@ -659,6 +662,7 @@ async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     signal_id = context.args[0].strip()
 
+    from db.session import get_session
     from db.models import Signal, AdminEvent
     from sqlalchemy import select, or_
 
@@ -701,7 +705,8 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-            if get_engine_for_event_loop() is None:
+        from db.session import get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import User, Subscription
@@ -744,7 +749,8 @@ async def owner_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     try:
-            if get_engine_for_event_loop() is None:
+        from db.session import get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import PaymentEvent
@@ -860,7 +866,8 @@ async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     try:
-            if get_engine_for_event_loop() is None:
+        from db.session import get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         
