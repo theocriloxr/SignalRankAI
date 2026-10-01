@@ -156,8 +156,21 @@ class SignalRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "healthy"
     uptime: float
-    signals_active: int
-    cache_hit_rate: float
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    checks: Dict[str, bool]
+
+
+class VersionResponse(BaseModel):
+    version: str
+    git_sha: str
+    git_branch: str
+    build_id: str
+    build_timestamp: str
+    image_digest: str
+    schema_head: str
 
 
 class MetricsResponse(BaseModel):
@@ -365,7 +378,7 @@ async def platform_csrf_middleware(request: Request, call_next):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Global rate limiting middleware."""
-    if request.url.path in ["/health", "/healthz", "/metrics", "/metrics/prometheus"]:
+    if request.url.path in ["/health", "/healthz", "/ready", "/readyz", "/version", "/metrics", "/metrics/prometheus"]:
         started = time.perf_counter()
         response = await call_next(request)
         route_obj = request.scope.get("route")
@@ -389,82 +402,58 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse)
 @app.get("/healthz", response_model=HealthResponse)
-@app.get("/ready", response_model=HealthResponse)
-@app.get("/readyz", response_model=HealthResponse)
 async def health():
-    """Liveness + readiness probe.
-
-    Railway healthcheck - should return quickly even if DB is slow/unavailable.
-    Uses a deadline to avoid blocking Railway's healthcheck.
-    """
+    """Process liveness only. Never perform database/provider work here."""
     uptime = time.time() - float(os.getenv("START_TS", str(time.time())))
+    return HealthResponse(status="healthy", uptime=uptime)
 
-    # Use a deadline to avoid blocking Railway healthcheck
-    # If DB is slow/unavailable, still return healthy (status="degraded")
-    active_signals = -1
-    deadline = time.time() + 3.0  # 3 second deadline
-    db_configured = False
 
-    # First check if DB is configured
+@app.get("/ready", response_model=ReadinessResponse)
+@app.get("/readyz", response_model=ReadinessResponse)
+async def readiness():
+    """Bounded dependency readiness for traffic admission.
+
+    Readiness is deliberately distinct from liveness: a process can stay alive
+    for diagnostics while refusing trading/API traffic when its durable state
+    dependencies are unavailable.
+    """
+    checks = {"database": False, "state_redis": False}
     try:
-        from db.session import is_db_configured
+        if is_db_configured():
+            async with get_session(
+                priority="interactive",
+                label="web.readiness",
+                timeout_seconds=2.0,
+                drop_if_busy=False,
+            ) as session:
+                result = await asyncio.wait_for(session.execute(select(1)), timeout=2.5)
+                checks["database"] = bool(result.scalar_one() == 1)
+    except Exception as exc:
+        logger.warning("[readyz] database not ready: %s", type(exc).__name__)
 
-        db_configured = is_db_configured()
-    except Exception as e:
-        logger.warning(f"[healthz] DB config check failed: {e}")
-        db_configured = False
-
-    if not db_configured:
-        logger.warning("[healthz] DB not configured, returning degraded status")
-        active_signals = -1
-    else:
-        try:
-            if time.time() >= deadline:
-                raise TimeoutError("Health check deadline exceeded")
-
-            from sqlalchemy import select
-
-            async with get_session() as session:
-                # Check deadline before executing query
-                if time.time() >= deadline:
-                    raise TimeoutError("Health check deadline exceeded before DB query")
-
-                # Try with fallback columns - check if archived/expired exist
-                try:
-                    count_stmt = (
-                        select(func.count())
-                        .select_from(Signal)
-                        .where(Signal.archived == False, Signal.expired == False)
-                    )
-                    result = await session.execute(count_stmt)
-                    active_signals = int(result.scalar_one() or 0)
-                except Exception as col_err:
-                    # Fallback: count all signals if columns don't exist
-                    logger.warning(f"[healthz] Column check failed, trying fallback: {col_err}")
-                    count_stmt = select(func.count()).select_from(Signal)
-                    result = await session.execute(count_stmt)
-                    active_signals = int(result.scalar_one() or 0)
-        except (TimeoutError, asyncio.TimeoutError) as e:
-            # DB query took too long - still healthy but degraded
-            logger.warning(f"[healthz] DB query timeout: {e}, returning degraded status")
-            active_signals = -1
-        except Exception as e:
-            # DB unavailable or other error - still healthy
-            logger.warning(f"[healthz] DB query failed: {e}, returning degraded status")
-            active_signals = -1
-
-    hit_rate = 0.0
     try:
-        cache = await cache_stats()
-        hit_rate = float(cache.get("hit_rate", 0))
-    except Exception:
-        hit_rate = 0.0
+        checks["state_redis"] = bool(await asyncio.wait_for(state.ping(), timeout=2.0))
+    except Exception as exc:
+        logger.warning("[readyz] state redis not ready: %s", type(exc).__name__)
 
-    return HealthResponse(
-        status="healthy" if active_signals >= 0 else "degraded",
-        uptime=uptime,
-        signals_active=int(active_signals) if active_signals >= 0 else 0,
-        cache_hit_rate=hit_rate,
+    ready = all(checks.values())
+    payload = ReadinessResponse(status="ready" if ready else "not_ready", checks=checks)
+    if not ready:
+        return JSONResponse(status_code=503, content=payload.model_dump())
+    return payload
+
+
+@app.get("/version", response_model=VersionResponse)
+async def version():
+    """Immutable release provenance exposed without secrets."""
+    return VersionResponse(
+        version=CODE_VERSION,
+        git_sha=str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+        git_branch=str(os.getenv("RAILWAY_GIT_BRANCH") or os.getenv("GIT_BRANCH") or "unknown"),
+        build_id=str(os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("BUILD_ID") or "unknown"),
+        build_timestamp=str(os.getenv("BUILD_TIMESTAMP") or os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT") or "unknown"),
+        image_digest=str(os.getenv("IMAGE_DIGEST") or "unknown"),
+        schema_head=str(os.getenv("EXPECTED_SCHEMA_HEAD") or "unknown"),
     )
 
 
