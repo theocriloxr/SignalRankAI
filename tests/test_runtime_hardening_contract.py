@@ -226,3 +226,25 @@ def test_subscription_catalogue_bootstrap_batches_db_round_trips():
     assert 'bindparam("product_id", type_=String(64))' in block
     assert 'bindparam("price_kobo", type_=BigInteger())' in block
 
+
+
+def test_frontdoor_readiness_uses_live_engine_cycle_not_hourly_admin_pulse():
+    railway = text("railway_main.py")
+    engine = text("engine/core.py")
+    assert 'state.get_sync("engine:last_cycle")' in railway
+    assert 'ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS' in railway
+    assert '"engine_runtime"' in railway
+    assert 'READINESS_REQUIRE_ENGINE_PULSE", False' in railway
+    assert '"git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA")' in engine
+    assert '"deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID")' in engine
+
+
+def test_learning_retention_never_mutates_legacy_ml_rejected_view():
+    retention = text("db/storage_maintenance.py")
+    assert "DELETE FROM ml_rejected_signals" not in retention
+    assert "SELECT id FROM ml_rejected_signals" not in retention
+    assert "DELETE FROM decision_log AS target" in retention
+    assert "COALESCE(meta->>'layer', '') = 'ml'" in retention
+    assert "REJECTION_TRACKED_RETENTION_DAYS" in retention
+    assert "REJECTION_UNTRACKED_RETENTION_DAYS" in retention
+    assert "NOT (" in retention
