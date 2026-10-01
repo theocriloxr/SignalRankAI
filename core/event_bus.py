@@ -18,6 +18,7 @@ import logging
 from collections import deque
 import time
 from typing import Any, Dict, List, Optional, Callable, Awaitable
+from uuid import uuid4
 
 from core.event_types import SIGNAL_READY, SIGNAL_DELIVERED, SIGNAL_FAILED, CHANNEL_SIGNALS, EVENT_PRIORITIES
 
@@ -67,6 +68,11 @@ class EventBus:
             explicit_fallback in {"1", "true", "yes", "on"}
             or env_name in {"", "local", "dev", "development", "test", "testing"}
         )
+        outbox_raw = str(os.getenv("EVENT_BUS_DB_OUTBOX_ENABLED") or "1").strip().lower()
+        self._db_outbox_enabled = (
+            outbox_raw in {"1", "true", "yes", "on"}
+            and env_name not in {"local", "dev", "development", "test", "testing"}
+        )
         fallback_limit = max(1, min(10000, int(os.getenv("EVENT_BUS_MEMORY_FALLBACK_MAXLEN", "1000") or 1000)))
         self._fallback_queue = deque(maxlen=fallback_limit)
 
@@ -103,61 +109,100 @@ class EventBus:
             self._init_redis()
         return self._redis
 
+    async def _publish_to_redis(self, event: Dict[str, Any], channel: str) -> bool:
+        """Publish one already-identified event without invoking fallback logic."""
+        client = self._get_redis()
+        if client is None or not self._has_redis:
+            return False
+        try:
+            serialized = json.dumps(event, separators=(",", ":"), default=str)
+            client.publish(channel, serialized)
+            stream_key = f"{_EVENT_PREFIX}stream"
+            client.xadd(
+                stream_key,
+                {
+                    "event_id": str(event["id"]),
+                    "event_type": str(event["type"]),
+                    "priority": str(event["priority"]),
+                    "channel": str(channel),
+                    "data": json.dumps(event["payload"], separators=(",", ":"), default=str),
+                },
+                maxlen=10000,
+            )
+            client.incr(f"{_EVENT_PREFIX}published:{event['type']}")
+            return True
+        except Exception as exc:
+            logger.warning("[event_bus] Redis publish failed type=%s err=%s", event.get("type"), type(exc).__name__)
+            self._has_redis = False
+            self._redis = None
+            return False
+
+    async def _persist_to_outbox(self, event: Dict[str, Any], channel: str) -> bool:
+        if not self._db_outbox_enabled:
+            return False
+        try:
+            from core.transactional_outbox import PostgresTransactionalOutbox
+
+            payload = dict(event.get("payload") or {})
+            partition_key = str(
+                payload.get("signal_id")
+                or payload.get("user_id")
+                or payload.get("asset")
+                or channel
+                or event.get("type")
+            )
+            outbox = PostgresTransactionalOutbox()
+            await outbox.enqueue(
+                entry_id=str(event["id"]),
+                event_type=str(event["type"]),
+                partition_key=partition_key,
+                payload={
+                    "event_id": str(event["id"]),
+                    "payload": payload,
+                    "priority": int(event.get("priority") or 50),
+                    "channel": str(channel),
+                },
+                idempotency_key=str(event["id"]),
+                occurred_at=str(event["timestamp"]),
+            )
+            logger.warning("[event_bus] persisted event to DB outbox type=%s id=%s", event.get("type"), event.get("id"))
+            return True
+        except Exception as exc:
+            logger.error(
+                "[event_bus] DB outbox persistence failed type=%s err=%s",
+                event.get("type"),
+                type(exc).__name__,
+            )
+            return False
+
     async def publish(
         self, event_type: str, payload: Dict[str, Any], priority: Optional[int] = None, channel: str = CHANNEL_SIGNALS
     ) -> bool:
-        """
-        Publish an event to the event bus.
-
-        Args:
-            event_type: Type of event (e.g., SIGNAL_READY)
-            payload: Event data
-            priority: Priority level (higher = process first)
-            channel: Redis channel to publish to
-
-        Returns:
-            True if published successfully
-        """
-        # Determine priority
+        """Publish with Redis-first delivery and durable PostgreSQL fallback."""
         if priority is None:
             priority = EVENT_PRIORITIES.get(event_type, 50)
 
         event = {
             "type": event_type,
-            "payload": payload,
-            "priority": priority,
+            "payload": dict(payload),
+            "priority": int(priority),
             "timestamp": now_utc_naive().isoformat(),
-            "id": f"{event_type}:{time.time()}:{id(payload)}",
+            "id": str(uuid4()),
         }
 
-        if self._has_redis and self._redis:
-            try:
-                # Publish to channel for real-time subscribers
-                self._redis.publish(channel, json.dumps(event))
+        if await self._publish_to_redis(event, channel):
+            logger.debug("[event_bus] Published %s with priority %s", event_type, priority)
+            return True
 
-                # Also add to stream for durability
-                stream_key = f"{_EVENT_PREFIX}stream"
-                self._redis.xadd(
-                    stream_key,
-                    {"event_type": event_type, "priority": str(priority), "data": json.dumps(payload)},
-                    maxlen=10000,  # Keep last 10k events
-                )
+        # In production/staging, persist a durable retry record before reporting
+        # acceptance. The worker relay publishes it after Redis recovers.
+        if await self._persist_to_outbox(event, channel):
+            return True
 
-                # Track for stats
-                self._redis.incr(f"{_EVENT_PREFIX}published:{event_type}")
-
-                logger.debug(f"[event_bus] Published {event_type} with priority {priority}")
-                return True
-            except Exception as e:
-                logger.debug(f"[event_bus] Redis publish failed: {e}")
-                # Fall through to in-memory
-
-        # In-memory fallback is test/development only. In staging/production,
-        # return failure so callers can retry/defer instead of losing an event
-        # while the system incorrectly reports successful publication.
+        # Local/test only: bounded non-durable fallback for hermetic tests.
         if not self._memory_fallback_allowed:
             logger.error(
-                "[event_bus] durable transport unavailable; event rejected type=%s channel=%s",
+                "[event_bus] no durable transport available; event rejected type=%s channel=%s",
                 event_type,
                 channel,
             )
@@ -251,6 +296,13 @@ class EventBus:
             except Exception:
                 pass
 
+        if self._db_outbox_enabled:
+            try:
+                from core.transactional_outbox import PostgresTransactionalOutbox
+                stats["pending_db_outbox"] = int(await PostgresTransactionalOutbox().depth())
+            except Exception:
+                stats["pending_db_outbox"] = -1
+
         return stats
 
     def is_healthy(self) -> bool:
@@ -316,6 +368,21 @@ event_bus = EventBus()
 
 
 # Convenience functions
+
+
+async def publish_outbox_entry(entry: Any) -> None:
+    """Relay one persisted DB outbox entry back to Redis without recursion."""
+    body = dict(getattr(entry, "payload", {}) or {})
+    event = {
+        "id": str(body.get("event_id") or getattr(entry, "entry_id", "")),
+        "type": str(getattr(entry, "event_type", "") or ""),
+        "payload": dict(body.get("payload") or {}),
+        "priority": int(body.get("priority") or EVENT_PRIORITIES.get(str(getattr(entry, "event_type", "")), 50)),
+        "timestamp": str(getattr(entry, "occurred_at", "") or now_utc_naive().isoformat()),
+    }
+    channel = str(body.get("channel") or CHANNEL_SIGNALS)
+    if not await event_bus._publish_to_redis(event, channel):
+        raise RuntimeError("event_redis_unavailable")
 
 
 async def publish_signal_ready(signal: Dict[str, Any], priority: int = 90) -> bool:
