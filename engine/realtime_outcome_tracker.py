@@ -282,8 +282,12 @@ async def _get_recent_outcome_range(symbol: str) -> tuple[float | None, float | 
         candle = candles[-1]
         if not isinstance(candle, dict):
             return None, None, None, False
-        high = float(candle.get("high") if candle.get("high") is not None else candle.get("h"))
-        low = float(candle.get("low") if candle.get("low") is not None else candle.get("l"))
+        raw_high = candle.get("high") if candle.get("high") is not None else candle.get("h")
+        raw_low = candle.get("low") if candle.get("low") is not None else candle.get("l")
+        if raw_high is None or raw_low is None:
+            return None, None, None, False
+        high = float(raw_high)
+        low = float(raw_low)
         if not (high > 0 and low > 0 and high >= low):
             return None, None, None, False
         candle_time = _candle_timestamp_utc(
@@ -418,7 +422,7 @@ class TrackedSignal:
         self.state = SignalState.PENDING
         self.sl_current = self.stop_loss
         self.highest_tp_hit = 0
-        self.entry_filled_at = None
+        self.entry_filled_at: datetime | None = None
         self.tp_levels = _parse_tp_levels(getattr(row, "take_profit", None))
 
     @property
@@ -1240,9 +1244,6 @@ def _retrace_warning_triggered(
         return float(price) <= threshold
     except Exception:
         return False
-    except Exception:
-        # If Redis is unavailable, allow trigger (idempotency is still mostly safe).
-        return True
 
 
 async def _persist_outcome(signal_id: str, status: str, entry: float, price: float) -> None:
@@ -1589,7 +1590,10 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             ).all()
             for _delivery, user in rows:
                 try:
-                    _send_message_sync(bot, chat_id=int(user.telegram_user_id), text=txt, parse_mode="HTML")
+                    telegram_user_id = getattr(user, "telegram_user_id", None)
+                    if telegram_user_id is None:
+                        continue
+                    _send_message_sync(bot, chat_id=int(telegram_user_id), text=txt, parse_mode="HTML")
                 except Exception as exc:
                     logger.debug("[outcome_tracker] retrace warn user notify failed: %s", exc)
     except Exception as exc:
@@ -1742,31 +1746,39 @@ def _outcome_monitoring_keyboard(signal_id: str, status: str):
     stage = 1 if status_l in {"tp1", "partial_tp"} else (2 if status_l == "tp2" else 0)
     if stage == 0:
         return None
+    Button: Any
+    Markup: Any
     try:
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        from telegram import InlineKeyboardButton as TelegramButton
+        from telegram import InlineKeyboardMarkup as TelegramMarkup
+
+        Button = TelegramButton
+        Markup = TelegramMarkup
     except ImportError:  # pragma: no cover - audit/test environments only
         # Keep this pure helper testable when the optional Telegram runtime is
-        # not installed. Production requirements include python-telegram-bot,
-        # so normal deployments always use the real classes.
-        class InlineKeyboardButton:  # type: ignore[no-redef]
+        # not installed. Production requirements include python-telegram-bot.
+        class FallbackButton:
             def __init__(self, text: str, callback_data: str):
                 self.text = text
                 self.callback_data = callback_data
 
-        class InlineKeyboardMarkup:  # type: ignore[no-redef]
-            def __init__(self, inline_keyboard):
+        class FallbackMarkup:
+            def __init__(self, inline_keyboard: Any):
                 self.inline_keyboard = inline_keyboard
+
+        Button = FallbackButton
+        Markup = FallbackMarkup
 
     ref = str(signal_id or "")[:36]
     next_label = "Continue to TP2/TP3" if stage == 1 else "Continue to TP3"
-    return InlineKeyboardMarkup(
+    return Markup(
         [
             [
-                InlineKeyboardButton(
+                Button(
                     f"\u25b6\ufe0f {next_label}",
                     callback_data=f"sigmon_continue_{stage}_{ref}",
                 ),
-                InlineKeyboardButton(
+                Button(
                     f"\u23f9 Stop at TP{stage}",
                     callback_data=f"sigmon_stop_{stage}_{ref}",
                 ),
@@ -2021,12 +2033,16 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             ).all()
             for _delivery, user in rows:
                 try:
+                    telegram_user_id = getattr(user, "telegram_user_id", None)
+                    if telegram_user_id is None:
+                        continue
+                    user_chat_id = int(telegram_user_id)
                     _tier_at_send = str(getattr(_delivery, "tier_at_send", "free") or "free").lower()
                     if _tier_at_send not in {"premium", "vip", "admin", "owner", "free_fomo"}:
                         continue
                     if _tier_at_send == "free":
                         continue
-                    if not await _mark_risk_free_recipient_triggered(int(user.telegram_user_id), signal):
+                    if not await _mark_risk_free_recipient_triggered(user_chat_id, signal):
                         logger.debug(
                             "[outcome_tracker] risk-free user cooldown user=%s asset=%s tf=%s direction=%s",
                             getattr(user, "telegram_user_id", "?"),
@@ -2035,7 +2051,7 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
                             direction,
                         )
                         continue
-                    _send_message_sync(bot, chat_id=int(user.telegram_user_id), text=text, parse_mode="HTML")
+                    _send_message_sync(bot, chat_id=user_chat_id, text=text, parse_mode="HTML")
                 except Exception as exc:
                     logger.debug("[outcome_tracker] risk-free notify user=%s error: %s", getattr(user, "id", "?"), exc)
     except Exception as exc:
@@ -2091,7 +2107,10 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
             )
             rows = (await session.execute(stmt)).fetchall()
             for trade, user in rows:
-                acct_id = await get_user_mt5_account_id(user.telegram_user_id)
+                telegram_user_id = getattr(user, "telegram_user_id", None)
+                if telegram_user_id is None:
+                    continue
+                acct_id = await get_user_mt5_account_id(int(telegram_user_id))
                 if acct_id and trade.trade_metadata.get("mt5_order_id"):
                     await update_stop_loss(
                         acct_id,
