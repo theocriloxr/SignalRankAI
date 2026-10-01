@@ -14,7 +14,7 @@ import math
 import os
 import time
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -112,6 +112,38 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     except Exception:
         pass
     return float(default)
+
+
+def _proof_signal_snapshot(delivery: Any) -> dict[str, Any]:
+    proof = getattr(delivery, "telegram_api_result", None)
+    payload = dict(proof or {}) if isinstance(proof, dict) else {}
+    snapshot = payload.get("signal_snapshot")
+    if not isinstance(snapshot, dict):
+        receipt = payload.get("delivery_receipt")
+        if isinstance(receipt, dict):
+            snapshot = receipt.get("signal_snapshot")
+    return dict(snapshot or {}) if isinstance(snapshot, dict) else {}
+
+
+def _proof_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _snapshot_or(snapshot: dict[str, Any], key: str, fallback: Any) -> Any:
+    value = snapshot.get(key)
+    return fallback if value is None or value == "" else value
 
 
 def parse_targets(raw: Any) -> list[float]:
@@ -933,6 +965,19 @@ class PaperTradingService:
             ).all()
             out: list[dict[str, Any]] = []
             for delivery, signal, user, account, _, lifecycle in rows:
+                snapshot = _proof_signal_snapshot(delivery)
+                generated_at = (
+                    _proof_datetime(snapshot.get("generated_at"))
+                    or delivery.generated_at_utc
+                    or signal.created_at
+                )
+                expires_at = _proof_datetime(snapshot.get("expires_at")) or getattr(signal, "expires_at", None)
+                snapshot_asset = str(_snapshot_or(snapshot, "asset", signal.asset) or "")
+                snapshot_targets = (
+                    snapshot.get("take_profits")
+                    or snapshot.get("take_profit")
+                    or [snapshot.get("tp1"), snapshot.get("tp2"), snapshot.get("tp3")]
+                )
                 out.append(
                     {
                         "delivery_id": int(delivery.id),
@@ -942,16 +987,20 @@ class PaperTradingService:
                         "telegram_user_id": (int(user.telegram_user_id) if user.telegram_user_id is not None else None),
                         "user_id": int(user.id),
                         "signal_id": str(signal.signal_id),
-                        "display_id": str(getattr(signal, "display_id", "") or ""),
-                        "asset": str(signal.asset),
-                        "asset_class": canonical_asset_class(str(signal.asset), signal.asset_class),
-                        "timeframe": str(signal.timeframe or ""),
-                        "direction": canonical_direction(signal.direction),
-                        "entry": _safe_float(signal.entry),
-                        "stop_loss": _safe_float(signal.stop_loss),
-                        "take_profits": parse_targets(signal.take_profit),
-                        "score": _safe_float(signal.score),
-                        "generated_at": delivery.generated_at_utc or signal.created_at,
+                        "display_id": str(_snapshot_or(snapshot, "display_id", getattr(signal, "display_id", "")) or ""),
+                        "asset": snapshot_asset,
+                        "asset_class": canonical_asset_class(
+                            snapshot_asset,
+                            _snapshot_or(snapshot, "asset_class", signal.asset_class),
+                        ),
+                        "timeframe": str(_snapshot_or(snapshot, "timeframe", signal.timeframe) or ""),
+                        "direction": canonical_direction(_snapshot_or(snapshot, "direction", signal.direction)),
+                        "entry": _safe_float(_snapshot_or(snapshot, "entry", signal.entry)),
+                        "stop_loss": _safe_float(_snapshot_or(snapshot, "stop_loss", signal.stop_loss)),
+                        "take_profits": parse_targets(snapshot_targets) or parse_targets(signal.take_profit),
+                        "score": _safe_float(_snapshot_or(snapshot, "score", signal.score)),
+                        "generated_at": generated_at,
+                        "expires_at": expires_at,
                         "signal_age_at_delivery_seconds": delivery.signal_age_at_delivery_seconds,
                         "thesis_fingerprint": getattr(signal, "thesis_fingerprint", None)
                         or signal_thesis_fingerprint(
@@ -965,14 +1014,24 @@ class PaperTradingService:
                             }
                         ),
                         "confirmed_at": delivery.delivery_confirmed_at,
-                        "retry_deadline": (delivery.generated_at_utc or signal.created_at)
-                        + timedelta(
-                            seconds=evaluate_signal_freshness(
-                                timeframe=signal.timeframe,
-                                generated_at=delivery.generated_at_utc or signal.created_at,
-                                now=now,
-                                purpose="paper",
-                            ).max_age_seconds
+                        "retry_deadline": min(
+                            [
+                                deadline
+                                for deadline in (
+                                    expires_at,
+                                    generated_at
+                                    + timedelta(
+                                        seconds=evaluate_signal_freshness(
+                                            timeframe=_snapshot_or(snapshot, "timeframe", signal.timeframe),
+                                            generated_at=generated_at,
+                                            expires_at=expires_at,
+                                            now=now,
+                                            purpose="paper",
+                                        ).max_age_seconds
+                                    ),
+                                )
+                                if deadline is not None
+                            ]
                         ),
                         "account_exists": account is not None,
                         "lifecycle_state": str(getattr(lifecycle, "state", "") or ""),
@@ -1724,6 +1783,7 @@ class PaperTradingService:
                 freshness = evaluate_signal_freshness(
                     timeframe=candidate.get("timeframe"),
                     generated_at=candidate.get("generated_at"),
+                    expires_at=candidate.get("expires_at"),
                     now=now_utc_naive(),
                     purpose="paper",
                 )
