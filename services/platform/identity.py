@@ -100,7 +100,9 @@ def _sha256(value: str | bytes) -> str:
 
 def _auth_secret() -> bytes:
     secret = str(os.getenv("APP_AUTH_SECRET") or os.getenv("WEB_SECRET_KEY") or "").strip()
-    environment = str(os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local").lower()
+    from core.env import runtime_environment_name
+
+    environment = runtime_environment_name("local")
     if not secret:
         if environment in {"production", "staging"}:
             raise RuntimeError("APP_AUTH_SECRET is required in staging and production")
