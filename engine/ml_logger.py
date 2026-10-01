@@ -86,7 +86,7 @@ async def log_ml_training_data(
     entry: float,
     stop_loss: float,
     take_profit: str,
-    ml_probability: float,
+    ml_probability: Optional[float],
     outcome_status: str,  # "win", "loss", "breakeven"
     outcome_r_multiple: Optional[float] = None,
     outcome_percent: Optional[float] = None,
