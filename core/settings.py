@@ -77,7 +77,9 @@ def get_settings() -> Settings:
 
 def validate_required_settings() -> None:
     import logging as _logging
+    from core.env import validate_alias_conflicts
 
+    validate_alias_conflicts()
     s = get_settings()
     _log = _logging.getLogger(__name__)
     fatal: list[str] = []
