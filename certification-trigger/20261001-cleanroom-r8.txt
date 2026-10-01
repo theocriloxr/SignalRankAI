@@ -1,10 +1,11 @@
 SignalRankAI synchronized certification trigger r8
 branch=implementation-of-master-blueprint
-head_before_trigger=44b2e0c1ddf7a7ce11c8cebcdffaf79258ec38d2
+head_before_trigger=3ae65856767c3b402501a42c76b259e3df9525d2
 backend_cleanroom=required
 frontend_cleanroom=required
 mobile_native_cleanroom=required
 static_security_cleanroom=required
-production_image_gate=required
-canonical_release_manifest=required
+dependency_graph_pip_check=required
+dependency_vulnerability_audit=required
+market_data_live_path_contract=required
 live_execution_authorized=false
