@@ -26,14 +26,14 @@ def test_rejection_schema_repair_is_the_sole_head() -> None:
     assert 'ix_ml_rejected_signals_signal_id' in migration
 
 
-def test_clean_schema_and_auto_ops_include_signal_id() -> None:
-    for path in (
-        "db/migrations/versions/0010_consolidate_full_schema.py",
-        "db/auto_ops.py",
-    ):
-        source = _source(path)
+def test_clean_schema_and_auto_ops_include_unified_decision_signal_index() -> None:
+    migration = _source("db/migrations/versions/0010_consolidate_full_schema.py")
+    auto_ops = _source("db/auto_ops.py")
+    for source in (migration, auto_ops):
         assert "signal_id" in source
-        assert "ix_ml_rejected_signals_signal_id" in source
+        assert "ix_decision_log_signal_id" in source
+    assert "decision_log" in auto_ops
+    assert "Legacy ml_rejected_signals table creation removed" in auto_ops
 
 
 def test_delivery_lock_is_token_checked_and_released() -> None:
