@@ -18,7 +18,7 @@ async def log_ml_prediction(
     asset: str,
     timeframe: str,
     direction: str,
-    ml_probability: float,
+    ml_probability: Optional[float],
     features: Dict[str, Any],
     model_name: str = "xgboost_default",
     model_version: str = "1.0.0",
