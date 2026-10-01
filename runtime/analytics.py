@@ -15,14 +15,9 @@ def _enabled(name: str, default: bool=True) -> bool:
 
 
 def _production_runtime() -> bool:
-    value = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
-    return value in {"production", "prod"}
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("") == "production"
 
 
 def _automatic_retrain_enabled(reason: str) -> bool:
