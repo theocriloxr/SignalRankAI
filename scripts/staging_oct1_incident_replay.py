@@ -443,23 +443,31 @@ async def run() -> dict[str, Any]:
             limit=20,
         )
         active_ids = {str(row.signal_id) for row in active}
+        position_evidence = [
+            {
+                "position_id": str(row.position_id),
+                "signal_entry": float(row.signal_entry),
+                "stop_loss": float(row.stop_loss),
+                "take_profits": [float(v) for v in (row.take_profits or [])],
+            }
+            for row in positions
+        ]
+        attempt_reasons = [str(row.reason or "") for row in attempts]
         await session.rollback()
 
-    if len(positions) != 1:
-        raise RuntimeError(f"OCT1_REPLAY_FAIL expected one paper position, found {len(positions)}")
-    position = positions[0]
+    if len(position_evidence) != 1:
+        raise RuntimeError(f"OCT1_REPLAY_FAIL expected one paper position, found {len(position_evidence)}")
+    position = position_evidence[0]
     assertions.update(
         {
             "paper_first_opened": first_status == "opened",
-            "duplicate_open_prevented": second_status == "skipped" and len(positions) == 1,
-            "position_uses_snapshot_entry": abs(float(position.signal_entry) - snapshot_entry) < 1e-9,
-            "position_uses_snapshot_stop": abs(float(position.stop_loss) - snapshot_stop) < 1e-9,
-            "position_uses_snapshot_targets": [float(v) for v in position.take_profits] == snapshot_targets,
+            "duplicate_open_prevented": second_status == "skipped" and len(position_evidence) == 1,
+            "position_uses_snapshot_entry": abs(float(position["signal_entry"]) - snapshot_entry) < 1e-9,
+            "position_uses_snapshot_stop": abs(float(position["stop_loss"]) - snapshot_stop) < 1e-9,
+            "position_uses_snapshot_targets": [float(v) for v in position["take_profits"]] == snapshot_targets,
             "signals_command_projection_contains_active_signal": us30_id in active_ids,
-            "no_profile_mismatch_attempt": not any(
-                str(row.reason) == "profile_preference_mismatch" for row in attempts
-            ),
-            "no_signal_stale_attempt": not any(str(row.reason) == "signal_stale" for row in attempts),
+            "no_profile_mismatch_attempt": "profile_preference_mismatch" not in attempt_reasons,
+            "no_signal_stale_attempt": "signal_stale" not in attempt_reasons,
         }
     )
 
@@ -516,7 +524,7 @@ async def run() -> dict[str, Any]:
         "profile_mismatch_reason": prefs_reason,
         "paper_open_status": first_status,
         "duplicate_open_status": second_status,
-        "position_id": str(position.position_id),
+        "position_id": str(position["position_id"]),
         "active_signal_ids": sorted(active_ids),
         "assertions": assertions,
         "failed_assertions": failed,
