@@ -559,6 +559,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "mt5_link": Tier.PREMIUM,
         "mt5_status": Tier.PREMIUM,
         "connect_broker": Tier.PREMIUM,
+        "verifybroker": Tier.PREMIUM,
         "cancel": Tier.PREMIUM,
         # VIP execution-grade/product surface.
         "simulate": Tier.VIP,
@@ -580,6 +581,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "gemini_predict": Tier.ADMIN,
         "ai": Tier.ADMIN,
         "ai_review": Tier.ADMIN,
+        "ai_improve": Tier.ADMIN,
         "ai_analyze": Tier.ADMIN,
         "ai_audit": Tier.ADMIN,
         "ai_predict": Tier.ADMIN,
