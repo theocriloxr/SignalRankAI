@@ -5010,7 +5010,21 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     f"asset={signal.get('asset') or signal.get('symbol')}"
                                 )
                                 continue
-                            s = await get_or_create_signal(session, signal)
+                            try:
+                                s = await get_or_create_signal(session, signal)
+                            except Exception as _dedup_exc:
+                                try:
+                                    from db.pg_features import SignalDedupBlocked as _SDB
+                                    if isinstance(_dedup_exc, _SDB):
+                                        logger.info(
+                                            "[delivery_reserve] dedup blocked reason=%s asset=%s -- skip delivery",
+                                            getattr(_dedup_exc, "reason", str(_dedup_exc)),
+                                            signal.get("asset"),
+                                        )
+                                        continue
+                                except Exception:
+                                    pass
+                                raise
                             logger.debug(f"[db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}")
                             ok = await record_signal_delivery(
                                 session,
@@ -5072,7 +5086,22 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             label="delivery_reserve_one",
                             timeout_seconds=max(3.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 15.0)),
                         ) as session:
-                            s = await get_or_create_signal(session, _signal)
+                            try:
+                                s = await get_or_create_signal(session, _signal)
+                            except Exception as _dedup_exc:
+                                try:
+                                    from db.pg_features import SignalDedupBlocked as _SDB
+                                    if isinstance(_dedup_exc, _SDB):
+                                        logger.info(
+                                            "[delivery_reserve_one] dedup blocked reason=%s asset=%s -- skip",
+                                            getattr(_dedup_exc, "reason", str(_dedup_exc)),
+                                            _signal.get("asset"),
+                                        )
+                                        await session.rollback()
+                                        return None
+                                except Exception:
+                                    pass
+                                raise
                             ok = await record_signal_delivery(
                                 session,
                                 telegram_user_id=int(user_id),

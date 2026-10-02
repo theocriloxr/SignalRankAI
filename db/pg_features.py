@@ -862,6 +862,8 @@ async def get_or_create_signal_impl(
                     recent_signal.signal_id,
                 )
                 raise SignalDedupBlocked("min_interval", signal_id=str(recent_signal.signal_id))
+        except SignalDedupBlocked:
+            raise
         except Exception:
             pass
 
@@ -895,8 +897,12 @@ async def get_or_create_signal_impl(
                         continue
                     if _entry_within_buffer(entry, float(candidate.entry or 0), price_buffer_pct):
                         return candidate
+                except SignalDedupBlocked:
+                    raise
                 except Exception:
                     continue
+        except SignalDedupBlocked:
+            raise
         except Exception:
             pass
 
@@ -3116,7 +3122,15 @@ async def queue_free_signal_summary(
     if already >= int(daily_limit):
         return False
 
-    s: Signal = await get_or_create_signal(session, signal)
+    try:
+        s: Signal = await get_or_create_signal(session, signal)
+    except SignalDedupBlocked as _sdb:
+        logger.info(
+            "[queue_free_signal] dedup blocked reason=%s asset=%s -- not queued",
+            getattr(_sdb, "reason", str(_sdb)),
+            signal.get("asset"),
+        )
+        return False
 
     # Dedupe: do not queue the exact same signal more than once per user/day.
     res_dupe: Result[Tuple[int]] = await session.execute(
@@ -3952,7 +3966,15 @@ async def queue_signal_to_global_pool(
 
     All generated signals are added to a pool, then randomly distributed to FREE users.
     """
-    s: Signal = await get_or_create_signal(session, signal)
+    try:
+        s: Signal = await get_or_create_signal(session, signal)
+    except SignalDedupBlocked as _sdb:
+        logger.info(
+            "[queue_global_pool] dedup blocked reason=%s asset=%s -- not pooled",
+            getattr(_sdb, "reason", str(_sdb)),
+            signal.get("asset"),
+        )
+        return False
     # Signal is now in the database and available for random selection
     return True
 

@@ -220,7 +220,7 @@ except Exception:
 
     class SmartFilterSuite:
         def run_all_filters(self, signal, market_filter_data, session):
-            return False, ["advanced_filter_unavailable"]
+            return False, ['advanced_filter_unavailable']
 
 
 try:
@@ -2558,7 +2558,7 @@ def main_loop(DRY_RUN: bool = False):
     _running_on_railway = bool(
         (os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
     )
-    _tf_default = "1m,5m,15m,1h,4h,24h"
+    _tf_default = '1m,5m,15m,1h,4h,24h'
 
     def _norm_tf(tf: str) -> str:
         _tf = str(tf or "").strip().lower()

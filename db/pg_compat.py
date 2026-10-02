@@ -114,14 +114,14 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
                 )
             except SignalDedupBlocked as exc:
                 logger.warning(
-                    "[store_signal] blocked reason=%s asset=%s timeframe=%s direction=%s signal_id=%s",
+                    "[store_signal] blocked reason=%s asset=%s timeframe=%s direction=%s signal_id=%s -- suppressed, not delivered",
                     getattr(exc, "reason", str(exc)),
                     ctx.get("asset"),
                     ctx.get("timeframe"),
                     ctx.get("direction"),
                     getattr(exc, "signal_id", None),
                 )
-                return str(exc.signal_id or "")
+                raise  # MUST propagate -- callers must not receive old signal ID
             await session.commit()
             db_exec_ms = int((time.monotonic() - exec_started) * 1000)
             logger.info(

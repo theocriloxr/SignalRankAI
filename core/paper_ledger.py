@@ -11,6 +11,74 @@ logger = logging.getLogger(__name__)
 DEFAULT_PAPER_BALANCE = 10000.0
 
 
+class PaperPosition:
+    """
+    Lightweight value-object wrapping a position dict.
+
+    Used by tests and in-memory position tracking where a full SQLAlchemy
+    model is not available.  The ``check_tp_sl_hit`` method in PaperLedger
+    expects attribute access to ``asset``, ``direction``, ``stop_loss``,
+    ``target_price`` and ``position_id``.
+
+    ``take_profit`` is parsed into ``target_price`` at construction time so
+    callers can pass either a list of dicts/floats or a plain float/str.
+    """
+
+    def __init__(self, data: dict) -> None:
+        self._data = data
+
+    def _extract_tp(self, value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        # JSON string
+        if isinstance(value, str):
+            import json as _json
+            try:
+                value = _json.loads(value)
+            except Exception:
+                try:
+                    return float(value)
+                except Exception:
+                    return None
+        # List of dicts or floats
+        if isinstance(value, (list, tuple)) and value:
+            first = value[0]
+            if isinstance(first, dict):
+                for key in ("price", "tp", "target", "target_price"):
+                    if key in first:
+                        try:
+                            return float(first[key])
+                        except Exception:
+                            pass
+                return None
+            try:
+                return float(first)
+            except Exception:
+                return None
+        # Plain float/int
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if name == "target_price":
+            return self._extract_tp(self._data.get("take_profit"))
+        if name == "entry_price":
+            return self._data.get("entry_price") or self._data.get("fill_entry") or self._data.get("entry")
+        if name == "fill_entry":
+            return self._data.get("fill_entry") or self._data.get("entry_price") or self._data.get("entry")
+        return self._data.get(name)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def __repr__(self) -> str:
+        return f"PaperPosition({self._data!r})"
+
+
 class PaperLedger:
     """
     Paper trading ledger for managing virtual accounts and positions.
@@ -254,22 +322,40 @@ class PaperLedger:
                 continue
 
             direction = pos.direction.lower()
-            sl = pos.stop_loss
-            tp = pos.target_price or 0.0  # simplified from original take_profits list
+            try:
+                sl = float(pos.stop_loss or 0)
+            except Exception:
+                sl = 0.0
+            try:
+                tp = float(pos.target_price or 0)
+            except Exception:
+                tp = 0.0
 
             if direction == "long":
                 if sl > 0 and current_price <= sl:
-                    await self.close_position(user_id, pos.position_id, "SL", sl)
+                    try:
+                        await self.close_position(user_id, pos.position_id, "SL", sl)
+                    except Exception:
+                        pass
                     hit_reason = "SL"
                 elif tp > 0 and current_price >= tp:
-                    await self.close_position(user_id, pos.position_id, "TP", tp)
+                    try:
+                        await self.close_position(user_id, pos.position_id, "TP", tp)
+                    except Exception:
+                        pass
                     hit_reason = "TP"
             else:
                 if sl > 0 and current_price >= sl:
-                    await self.close_position(user_id, pos.position_id, "SL", sl)
+                    try:
+                        await self.close_position(user_id, pos.position_id, "SL", sl)
+                    except Exception:
+                        pass
                     hit_reason = "SL"
                 elif tp > 0 and current_price <= tp:
-                    await self.close_position(user_id, pos.position_id, "TP", tp)
+                    try:
+                        await self.close_position(user_id, pos.position_id, "TP", tp)
+                    except Exception:
+                        pass
                     hit_reason = "TP"
         return hit_reason
 
