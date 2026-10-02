@@ -96,3 +96,37 @@ def test_fallback_delivery_asset_gate_releases_missed_entry() -> None:
     assert '"missed_entry"' in block
     assert '"entry_missed"' in block
     assert '"not_triggered"' in block
+
+
+def test_tp1_rebound_notification_never_claims_latest_price_is_hit_evidence() -> None:
+    from engine.tier_notifications import TierNotificationManager
+
+    message = TierNotificationManager().format_tp_hit_notification(
+        {
+            "signal_id": "0140438f-a1bd-4eb4-bdb2-89e9256734c5",
+            "asset": "JNJ",
+            "direction": "SELL",
+            "timeframe": "1m",
+            "entry": 262.2601,
+            "stop_loss": 262.7518,
+            "take_profit": [260.8439, 259.4277, 258.0116],
+        },
+        "owner",
+        1,
+        0.54,
+        current_market_price=262.45,
+    )
+    assert "TP1 hit level: 260.8439" in message
+    assert "Latest stored price: 262.45 (post-hit mark; not TP evidence)" in message
+    assert "Observed hit price: 262.45" not in message
+    assert "P/L at TP event: +0.54%" in message
+    assert "Signal P/L:" not in message
+
+
+def test_canonical_lifecycle_notification_uses_persisted_event_price() -> None:
+    source = (ROOT / "engine" / "signal_lifecycle.py").read_text(encoding="utf-8")
+    dispatch = source[source.index("async def dispatch_event_notifications"):]
+
+    assert "event_price = float(getattr(event, \"price\", 0)" in dispatch
+    assert "_event_message(" in dispatch
+    assert "event_price," in dispatch
