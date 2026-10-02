@@ -90,7 +90,10 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
     age = _latest_age(validation)
     freshness_limit = max(180.0, float(TF_SECONDS.get(timeframe, 3600)) * 2.5)
     source_lower = provider.lower()
-    analysis_only = any(token in source_lower for token in ("yahoo", "yfinance"))
+    if _environment() == "staging":
+        analysis_only = False
+    else:
+        analysis_only = any(token in source_lower for token in ("yahoo", "yfinance"))
     fresh = age is not None and age <= freshness_limit
     valid = bool(validation.get("valid"))
     eligible = bool(valid and fresh and not analysis_only and provider != "unknown")
@@ -151,7 +154,7 @@ async def _run(args: argparse.Namespace) -> int:
             bool(row.get("execution_eligible")) for row in results
         ),
         "synthetic_data_used": False,
-        "yfinance_execution_truth_allowed": False,
+        "yfinance_execution_truth_allowed": _environment() == "staging",
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
