@@ -1,0 +1,5 @@
+SignalRankAI staging replay trigger r46
+branch=implementation-of-master-blueprint
+parent=bf4110de592cc7c19bc50dd4990145b37be87b99
+purpose=rerun exact-source Oct-1 paper/lifecycle replay after governance regeneration
+live_execution_authorized=false

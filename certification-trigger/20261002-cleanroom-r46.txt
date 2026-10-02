@@ -1,0 +1,11 @@
+SignalRankAI synchronized certification trigger r46
+branch=implementation-of-master-blueprint
+parent=bf4110de592cc7c19bc50dd4990145b37be87b99
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+image_governance=required
+oct1_incident_replay=required
+postgresql18_staging_parity=required
+live_execution_authorized=false
