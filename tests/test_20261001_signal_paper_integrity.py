@@ -335,3 +335,19 @@ def test_outcome_tracker_quarantines_conflicting_delivery_snapshots_before_track
     assert "_confirmed_delivery_snapshot_map" in active
     assert "if str(signal_row.signal_id) not in conflicts" in active
     assert "_tracked_signal_payload(" in active
+
+
+def test_staging_oct1_replay_materializes_orm_evidence_before_session_close() -> None:
+    replay = _source("scripts/staging_oct1_incident_replay.py")
+    verify = replay[
+        replay.index('label="certification.oct1.verify"'):
+        replay.index("# Use the real outcome tracker")
+    ]
+    assert "position_evidence = [" in verify
+    assert "attempt_reasons = [" in verify
+    assert verify.index("position_evidence = [") < verify.index("await session.rollback()")
+    assert verify.index("attempt_reasons = [") < verify.index("await session.rollback()")
+    assert 'position["signal_entry"]' in verify
+    assert 'position["stop_loss"]' in verify
+    assert "position.signal_entry" not in verify
+    assert "position.stop_loss" not in verify
