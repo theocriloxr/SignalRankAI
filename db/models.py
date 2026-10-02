@@ -1231,8 +1231,6 @@ class MLModelArtifact(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
     trained_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-
-
 class MLRejectedSignal(Base):
     __tablename__ = "ml_rejected_signals"
 

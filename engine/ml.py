@@ -218,6 +218,16 @@ def _load_model(*, sync_durable: bool = True) -> None:
         if err:
             _MODEL_CACHE["error"] = err
             return
+
+        from ml.schema_version import get_feature_columns
+        from ml.model_registry import compute_feature_schema_hash
+        current_serving_features = get_feature_columns()
+        serving_schema_hash = compute_feature_schema_hash(current_serving_features)
+        model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
+        if model_schema_hash and model_schema_hash != serving_schema_hash:
+            logger.error("[ml] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash)
+            _MODEL_CACHE["error"] = "feature_schema_hash_mismatch_with_serving"
+            return
         # Memory-optimised config for Railway: cap native XGBoost threads.
         booster_any: Any = booster
         booster_any.set_param("nthread", str(max(1, int(os.getenv("XGB_NTHREAD", "2") or 2))))
@@ -461,6 +471,16 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         booster, feature_cols, metadata, err = load_model_with_metadata(p, xgb)
         if err or booster is None or not feature_cols:
             _SHADOW_CACHE["error"] = err or "invalid_candidate_payload"
+            return
+
+        from ml.schema_version import get_feature_columns
+        from ml.model_registry import compute_feature_schema_hash
+        current_serving_features = get_feature_columns()
+        serving_schema_hash = compute_feature_schema_hash(current_serving_features)
+        model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
+        if model_schema_hash and model_schema_hash != serving_schema_hash:
+            logger.error("[ml-shadow] feature schema hash mismatch! serving=%s model=%s", serving_schema_hash, model_schema_hash)
+            _SHADOW_CACHE["error"] = "feature_schema_hash_mismatch_with_serving"
             return
         booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
         _SHADOW_CACHE["booster"] = booster

@@ -5,38 +5,42 @@ import sys
 from typing import Optional
 
 
-def setup_logging(level: int = logging.INFO, json: bool = False) -> None:
+def setup_logging(level: int = logging.INFO, json: bool = True) -> None:
     """Basic logging setup used by scripts and main entrypoints.
 
-    - `json=True` will use a compact JSON formatter if available, otherwise
-      falls back to plain text.
+    - Work Package G: Enforces structured JSON logging and injects correlation_id.
     """
     root = logging.getLogger()
     root.setLevel(level)
     handler = logging.StreamHandler(stream=sys.stdout)
-    if json:
-        try:
-            import json as _json
+    
+    try:
+        import json as _json
+        from utils.context import get_correlation_id
 
-            class JsonFormatter(logging.Formatter):
-                def format(self, record: logging.LogRecord) -> str:
-                    payload = {
-                        "ts": int(record.created),
-                        "level": record.levelname,
-                        "name": record.name,
-                        "msg": record.getMessage(),
-                    }
-                    try:
-                        if record.exc_info:
-                            payload["exc"] = self.formatException(record.exc_info)
-                    except Exception:
-                        pass
-                    return _json.dumps(payload)
+        class JsonFormatter(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                payload = {
+                    "ts": int(record.created),
+                    "level": record.levelname,
+                    "name": record.name,
+                    "msg": record.getMessage(),
+                }
+                
+                # Inject correlation ID if present in context
+                corr_id = get_correlation_id()
+                if corr_id:
+                    payload["correlation_id"] = corr_id
+                    
+                try:
+                    if record.exc_info:
+                        payload["exc"] = self.formatException(record.exc_info)
+                except Exception:
+                    pass
+                return _json.dumps(payload)
 
-            handler.setFormatter(JsonFormatter())
-        except Exception:
-            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    else:
+        handler.setFormatter(JsonFormatter())
+    except Exception:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 
     # Remove other handlers to avoid duplicate logs in certain environments

@@ -16,10 +16,10 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install Python deps into virtualenv
-COPY requirements.txt ./
+COPY requirements.lock ./
 RUN python -m venv $VIRTUAL_ENV \
     && pip install --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.lock
 
 # Copy project sources (used for any build-time steps; runtime image will copy final app)
 COPY . /app

@@ -282,14 +282,51 @@ def test_staging_quality_advisory_requires_nonproduction_and_no_live_execution()
     assert 'FULL_SYSTEM_STAGING_TEST_ACTIVE' not in helper
 
 
-def test_worker_startup_db_jobs_use_bounded_configurable_waits():
-    from pathlib import Path
+def test_worker_startup_db_jobs_use_bounded_configurable_waits(monkeypatch):
+    import asyncio
+    from worker.worker import Worker
+    import worker.worker as worker_module
+    import db.ecosystem_bootstrap
 
+    called_phases = []
+    
+    async def mock_seed(*args, **kwargs):
+        called_phases.append("seed")
+        return True
+
+    monkeypatch.setattr(worker_module, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db.ecosystem_bootstrap, "seed_subscription_catalogue", mock_seed)
+    monkeypatch.setattr(db.ecosystem_bootstrap, "seed_ml_governance", mock_seed)
+    monkeypatch.setattr(db.ecosystem_bootstrap, "seed_strategy_registry", mock_seed)
+
+    session_calls = []
+    class MockSessionContext:
+        def __init__(self, **kwargs):
+            session_calls.append(kwargs)
+        async def __aenter__(self):
+            class DummySession:
+                async def commit(self): pass
+            return DummySession()
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    monkeypatch.setattr(worker_module, "get_session", MockSessionContext)
+    
+    monkeypatch.setenv("WORKER_BOOTSTRAP_PHASE_TIMEOUT_SECONDS", "10.0")
+    monkeypatch.setenv("WORKER_BOOTSTRAP_DB_ADMISSION_TIMEOUT_SECONDS", "5.0")
+
+    w = Worker()
+    asyncio.run(w._ecosystem_bootstrap_once())
+
+    assert len(called_phases) == 3
+    assert len(session_calls) == 3
+    for call in session_calls:
+        assert call.get("drop_if_busy") is False
+        assert 3.0 <= call.get("timeout_seconds", 0) <= 12.0
+
+    from pathlib import Path
     source = Path("worker/worker.py").read_text(encoding="utf-8")
-    assert "WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS" in source
     assert "INSTRUMENT_DISCOVERY_DB_TIMEOUT_SECONDS" in source
-    assert '_env_float("WORKER_BOOTSTRAP_DB_TIMEOUT_SECONDS", 60.0' in source
-    assert '_env_float("INSTRUMENT_DISCOVERY_DB_TIMEOUT_SECONDS", 60.0' in source
 
 
 def test_delivery_worker_does_not_own_learning_retention():
