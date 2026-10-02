@@ -494,17 +494,23 @@ async def run() -> dict[str, Any]:
             ).scalar_one()
             or 0
         )
+        if outcome is None:
+            raise RuntimeError("OCT1_REPLAY_FAIL missed-entry outcome missing")
+        outcome_evidence = {
+            "r_multiple": outcome.r_multiple,
+            "percent": outcome.percent,
+            "pnl_pct": outcome.pnl_pct,
+            "meta": dict(outcome.meta or {}),
+        }
         await session.rollback()
 
-    if outcome is None:
-        raise RuntimeError("OCT1_REPLAY_FAIL missed-entry outcome missing")
-    outcome_meta = dict(outcome.meta or {})
+    outcome_meta = dict(outcome_evidence["meta"] or {})
     assertions.update(
         {
             "missed_entry_has_no_position": missed_positions == 0,
-            "missed_entry_realized_r_null": outcome.r_multiple is None,
-            "missed_entry_percent_null": outcome.percent is None,
-            "missed_entry_pnl_pct_null": outcome.pnl_pct is None,
+            "missed_entry_realized_r_null": outcome_evidence["r_multiple"] is None,
+            "missed_entry_percent_null": outcome_evidence["percent"] is None,
+            "missed_entry_pnl_pct_null": outcome_evidence["pnl_pct"] is None,
             "missed_entry_marks_no_realized_position": outcome_meta.get("realized_position_opened") is False,
             "missed_entry_counterfactual_retained": outcome_meta.get("missed_entry_observed_r") is not None,
         }
