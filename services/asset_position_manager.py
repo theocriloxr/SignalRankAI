@@ -22,6 +22,10 @@ TERMINAL_OUTCOMES = {
     "invalidated",
     "expired",
     "time_stop",
+    "missed",
+    "missed_entry",
+    "entry_missed",
+    "not_triggered",
     "cancel",
     "cancelled",
 }
@@ -84,7 +88,7 @@ def _state_from_status(status: str | None) -> str:
         return "TP3"
     if s in {"sl", "loss", "stop_loss"}:
         return "STOPPED"
-    if s in {"expired", "time_stop"}:
+    if s in {"expired", "time_stop", "missed", "missed_entry", "entry_missed", "not_triggered"}:
         return "EXPIRED"
     if s in {"cancel", "cancelled", "invalid", "invalidated"}:
         return "CANCELLED"
