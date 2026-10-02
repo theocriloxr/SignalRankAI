@@ -351,3 +351,19 @@ def test_staging_oct1_replay_materializes_orm_evidence_before_session_close() ->
     assert 'position["stop_loss"]' in verify
     assert "position.signal_entry" not in verify
     assert "position.stop_loss" not in verify
+
+
+def test_staging_oct1_replay_materializes_outcome_before_session_close() -> None:
+    replay = _source("scripts/staging_oct1_incident_replay.py")
+    block = replay[
+        replay.index('label="certification.oct1.outcome_verify"'):
+        replay.index("failed = sorted")
+    ]
+    assert "outcome_evidence = {" in block
+    assert block.index("outcome_evidence = {") < block.index("await session.rollback()")
+    for field in ("r_multiple", "percent", "pnl_pct", "meta"):
+        assert f'"{field}"' in block
+    assert 'outcome_evidence["r_multiple"]' in block
+    assert 'outcome_evidence["pnl_pct"]' in block
+    assert "outcome.r_multiple" not in block[block.index("await session.rollback()"):]
+    assert "outcome.pnl_pct" not in block[block.index("await session.rollback()"):]
