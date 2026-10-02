@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RTM = ROOT / "docs" / "architecture" / "REQUIREMENTS_TRACEABILITY_MATRIX.md"
 LEDGER = ROOT / "docs" / "architecture" / "COMPLETION_EVIDENCE_LEDGER.md"
+CANDIDATE_LEDGER = ROOT / "certification" / "evidence_ledger.yaml"
+CURRENT_RELEASE = ROOT / "CURRENT_RELEASE.md"
 
 _ALLOWED = {
     "IMPLEMENTED",
@@ -75,26 +78,22 @@ def test_blocked_external_rows_are_explicitly_fail_closed() -> None:
     }
 
 
-def test_current_release_boundary_names_active_0045_head() -> None:
-    text = LEDGER.read_text(encoding="utf-8")
-    rows = _rows(LEDGER)
-    counts = {
-        status: sum(1 for row in rows if row[1] == status)
-        for status in _ALLOWED
+def test_current_release_candidate_uses_truthful_machine_readable_statuses() -> None:
+    candidate = json.loads(CANDIDATE_LEDGER.read_text(encoding="utf-8"))
+    entries = {row["id"]: row for row in candidate["entries"]}
+    release = CURRENT_RELEASE.read_text(encoding="utf-8")
+
+    assert "Repository Alembic head: 0047_event_outbox" in release
+    assert "NOT YET LIVE-CERTIFIED" in release
+    assert entries["SR-LIVE-001"]["status"] == "FAILED"
+    assert entries["SR-SOAK-001"]["status"] == "BLOCKED_EXTERNAL"
+    assert entries["SR-STORAGE-001"]["status"] == "BLOCKED_EXTERNAL"
+    assert entries["SR-GITHUB-001"]["status"] == "BLOCKED_EXTERNAL"
+    assert set(candidate["statuses"]) >= {
+        "IMPLEMENTED_VERIFIED",
+        "IMPLEMENTED_UNVERIFIED",
+        "PARTIAL",
+        "BLOCKED_EXTERNAL",
+        "FAILED",
     }
 
-    assert "0045_mt5_credential_retirement" in text
-    assert re.search(r"Current verified release head: `?[0-9a-f]{40}`?", text)
-
-    # The human-readable release summary must be mechanically consistent with
-    # the actual ledger rows.  This prevents stale 70/67/3-style bookkeeping
-    # after new requirements or external gates are added.
-    assert f"Tracked requirements: **{len(rows)}**." in text
-    for status in (
-        "VERIFIED",
-        "IMPLEMENTED",
-        "BLOCKED_EXTERNAL",
-        "DEFERRED_WITH_REASON",
-        "NOT_APPLICABLE",
-    ):
-        assert f"`{status}`: **{counts[status]}**." in text

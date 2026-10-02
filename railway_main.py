@@ -63,6 +63,7 @@ import logging
 import threading
 from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 from typing import Iterable
@@ -162,6 +163,8 @@ _webhook_dispatch_queue: asyncio.Queue | None = None
 _webhook_dispatch_workers: list[asyncio.Task] = []
 _webhook_enqueue_started_at: dict[str, float] = {}
 _webhook_dispatch_latency_window_s = deque(maxlen=2000)
+_webhook_queue_delay_window_s = deque(maxlen=2000)
+_webhook_handler_duration_window_s = deque(maxlen=2000)
 _scheduler_instance: AsyncIOScheduler | None = None
 _lifespan_heartbeat_task: asyncio.Task | None = None
 _monitor_tasks: list[asyncio.Task] = []
@@ -192,8 +195,18 @@ webhook_slo_alerts_total = Counter(
 )
 webhook_dispatch_latency_seconds = Histogram(
     "signalrankai_webhook_dispatch_latency_seconds",
-    "Latency from webhook enqueue to worker dispatch completion",
+    "End-to-end latency from webhook enqueue to handler completion",
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+)
+webhook_queue_delay_seconds = Histogram(
+    "signalrankai_webhook_queue_delay_seconds",
+    "Latency from durable webhook enqueue to worker start",
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+)
+webhook_handler_duration_seconds = Histogram(
+    "signalrankai_webhook_handler_duration_seconds",
+    "Telegram handler processing duration after worker start",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120),
 )
 webhook_queue_depth_gauge = Gauge(
     "signalrankai_webhook_queue_depth",
@@ -229,12 +242,30 @@ def _emit_slo_alert(kind: str, message: str) -> None:
     logger.warning("[slo] %s", message)
 
 
-def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
-    if started_at is None:
+def _record_dispatch_latency(
+    update_id: str,
+    enqueued_at: float | None,
+    handler_started_at: float,
+) -> None:
+    """Record queue delay, handler time, and end-to-end time separately.
+
+    The historical metric was labelled "webhook dispatch latency" but measured
+    through handler completion, so a legitimate multi-second command produced
+    a false webhook-ACK SLO alert. HTTP request telemetry owns acknowledgement
+    latency; these metrics describe asynchronous processing.
+    """
+    completed_at = time.monotonic()
+    handler_duration = max(0.0, completed_at - handler_started_at)
+    _webhook_handler_duration_window_s.append(handler_duration)
+    webhook_handler_duration_seconds.observe(handler_duration)
+    if enqueued_at is None:
         return
-    elapsed = max(0.0, time.monotonic() - started_at)
-    _webhook_dispatch_latency_window_s.append(elapsed)
-    webhook_dispatch_latency_seconds.observe(elapsed)
+    queue_delay = max(0.0, handler_started_at - enqueued_at)
+    total = max(0.0, completed_at - enqueued_at)
+    _webhook_queue_delay_window_s.append(queue_delay)
+    _webhook_dispatch_latency_window_s.append(total)
+    webhook_queue_delay_seconds.observe(queue_delay)
+    webhook_dispatch_latency_seconds.observe(total)
 
 
 def _extract_chat_id(payload: dict | None) -> int:
@@ -412,6 +443,12 @@ def _production_webhook_contract_errors() -> list[str]:
     if not (_is_running_on_railway() or _production_readiness_required()):
         return []
 
+    # If Telegram is intentionally not configured there is no webhook to
+    # accept or overwrite, so webhook dependencies are not an HTTP readiness
+    # blocker. Telegram certification remains a separate explicit gate.
+    if not str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
+        return []
+
     errors: list[str] = []
     database_url = str(os.getenv("DATABASE_URL") or "").strip()
     state_url = str(
@@ -520,13 +557,9 @@ def _is_db_ready() -> bool:
 
 def _validate_production_runtime_contract() -> None:
     """Fail fast when a production Railway service carries test-only controls."""
-    environment = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    from core.env import runtime_environment_name
+
+    environment = runtime_environment_name("")
     public_testing = str(os.getenv("PUBLIC_TESTING_MODE") or "0").strip().lower() in {
         "1", "true", "yes", "on", "y"
     }
@@ -556,7 +589,7 @@ def _log_railway_env_readiness() -> None:
     has_domain = bool((os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_URL") or "").strip())
 
     logger.info(
-        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s ai_provider=%s openai=%s gemini=%s mt5_token=%s encryption=%s",
+        "[railway] env readiness: telegram_configured=%s webhook_domain=%s owner=%s ai_provider=%s openai_configured=%s gemini_configured=%s metaapi_configured=%s encryption_configured=%s",
         has_telegram_token,
         has_domain,
         has_owner,
@@ -595,9 +628,8 @@ async def _probe_metaapi_startup_authorization() -> None:
         result = await probe_metaapi_authorization()
         if result.get("ok"):
             logger.info(
-                "[metaapi_startup_probe] status=PASS provider_status=%s token_source=%s",
+                "[metaapi_startup_probe] status=PASS provider_status=%s",
                 result.get("provider_status"),
-                result.get("token_source"),
             )
             return
         logger.error(
@@ -1705,11 +1737,20 @@ async def lifespan(_: FastAPI):
                         f"webhook queue utilization high: utilization={queue_util:.2f} size={queue_size}",
                     )
 
-                lat_p99 = _percentile(_webhook_dispatch_latency_window_s, 99.0)
-                if lat_p99 is not None and lat_p99 > 5.0:
+                queue_p99 = _percentile(_webhook_queue_delay_window_s, 99.0)
+                queue_slo = max(0.1, float(os.getenv("WEBHOOK_QUEUE_DELAY_P99_SLO_SECONDS", "1.0") or 1.0))
+                if queue_p99 is not None and queue_p99 > queue_slo:
                     _emit_slo_alert(
-                        "webhook_dispatch_latency",
-                        f"webhook dispatch latency p99 breached: p99_s={lat_p99:.3f}",
+                        "webhook_queue_delay",
+                        f"webhook queue delay p99 breached: p99_s={queue_p99:.3f} slo_s={queue_slo:.3f}",
+                    )
+
+                handler_p99 = _percentile(_webhook_handler_duration_window_s, 99.0)
+                handler_slo = max(1.0, float(os.getenv("WEBHOOK_HANDLER_P99_SLO_SECONDS", "30") or 30.0))
+                if handler_p99 is not None and handler_p99 > handler_slo:
+                    _emit_slo_alert(
+                        "webhook_handler_duration",
+                        f"webhook handler duration p99 breached: p99_s={handler_p99:.3f} slo_s={handler_slo:.3f}",
                     )
 
                 out_p95 = await _sample_outcome_latency_p95_seconds(hours=24, limit=500)
@@ -1832,6 +1873,7 @@ async def lifespan(_: FastAPI):
 
             payload_update_id = (payload or {}).get("update_id", "?")
             started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
+            handler_started_at = time.monotonic()
             try:
                 logger.info(
                     "[webhook] worker=%s start update_id=%s backend=%s",
@@ -1877,7 +1919,7 @@ async def lifespan(_: FastAPI):
                         process_task.cancel()
                         logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
                         raise
-                _record_dispatch_latency(str(payload_update_id), started_at)
+                _record_dispatch_latency(str(payload_update_id), started_at, handler_started_at)
                 if stream_message is not None:
                     acknowledged = await _webhook_stream.ack(stream_message.message_id)
                     if not acknowledged:
@@ -2676,13 +2718,7 @@ def _is_unconfigured_runtime_value(value: object) -> bool:
 
 def _production_cutover_check() -> dict[str, object]:
     """Reject accidental staging, placeholder, or restricted production deployments."""
-    environment = str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    environment = _runtime_environment_name()
     violations: list[str] = []
     if environment not in {"production", "prod"}:
         violations.append("environment_not_production")
@@ -2812,13 +2848,9 @@ def _production_cutover_check() -> dict[str, object]:
 
 
 def _runtime_environment_name() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("")
 
 
 def _production_readiness_required() -> bool:
@@ -3092,21 +3124,65 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
                 "ok": False,
                 "detail": f"health_probe_failed:{type(exc).__name__}",
             }
-    pulse_required = production or _env_bool("WORKER_ENGINE_PULSE_ENABLED", True)
-    if pulse_required:
+    # Traffic readiness depends on the engine's actual cycle heartbeat, not
+    # the hourly owner/admin pulse. The latter is an observability/certification
+    # signal and can legitimately be absent during a fresh deployment.
+    engine_runtime_required = production or _runtime_environment_name() == "staging"
+    if engine_runtime_required:
         try:
-            from engine.admin_pulse import _engine_pulse_health
-            pulse_health = _engine_pulse_health()
-            checks["engine_pulse"] = {
-                "ok": bool(pulse_health.get("proven")),
-                "detail": str(pulse_health.get("status") or "missing"),
-                **pulse_health,
+            raw_cycle = state.get_sync("engine:last_cycle")
+            cycle = raw_cycle if isinstance(raw_cycle, dict) else json.loads(str(raw_cycle or "{}"))
+            stamp_raw = cycle.get("completed_at") or cycle.get("started_at")
+            stamp = datetime.fromisoformat(str(stamp_raw or "").replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            age_seconds = max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
+            max_age = max(60.0, float(os.getenv("ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS", "300") or 300))
+            cycle_sha = str(cycle.get("git_sha") or "")
+            expected_sha = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
+            sha_ok = not cycle_sha or not expected_sha or cycle_sha == expected_sha
+            status_ok = str(cycle.get("status") or "") in {
+                "started",
+                "market_data_fetched",
+                "pipeline_in_progress",
+                "completed",
+            }
+            checks["engine_runtime"] = {
+                "ok": bool(status_ok and age_seconds <= max_age and sha_ok),
+                "detail": str(cycle.get("status") or "missing"),
+                "heartbeat_age_seconds": age_seconds,
+                "maximum_age_seconds": max_age,
+                "cycle": cycle.get("cycle"),
+                "git_sha": cycle_sha or None,
+                "release_match": sha_ok,
             }
         except Exception as exc:
-            checks["engine_pulse"] = {
+            checks["engine_runtime"] = {
                 "ok": False,
                 "detail": f"health_probe_failed:{type(exc).__name__}",
+                "heartbeat_age_seconds": None,
             }
+
+    # Admin pulse stays visible but is non-blocking unless explicitly required
+    # by an operational policy. Its own certification gate remains separate.
+    pulse_required = _env_bool("READINESS_REQUIRE_ENGINE_PULSE", False)
+    try:
+        from engine.admin_pulse import _engine_pulse_health
+        pulse_health = _engine_pulse_health()
+        checks["engine_pulse"] = {
+            "ok": bool(pulse_health.get("proven")) if pulse_required else True,
+            "required": pulse_required,
+            "detail": str(pulse_health.get("status") or "missing"),
+            **pulse_health,
+        }
+        if not pulse_required:
+            checks["engine_pulse"]["ok"] = True
+    except Exception as exc:
+        checks["engine_pulse"] = {
+            "ok": not pulse_required,
+            "required": pulse_required,
+            "detail": f"health_probe_failed:{type(exc).__name__}",
+        }
     if str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
         checks["telegram"] = {
             "ok": bool(_bot_ready and _bot_application is not None),

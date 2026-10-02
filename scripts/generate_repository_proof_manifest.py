@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate a deterministic, secret-safe repository proof manifest."""
+
 from __future__ import annotations
 
 import ast
@@ -13,7 +14,23 @@ import subprocess
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_PARTS = {".git", ".venv", "venv", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache", ".freebuff", ".diagnostics", "artifacts", "logs", "evidence", ".pytest-tmp", "node_modules", ".tox"}
+SKIP_PARTS = {
+    ".git",
+    ".venv",
+    "venv",
+    ".pytest_cache",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".freebuff",
+    ".diagnostics",
+    "artifacts",
+    "logs",
+    "evidence",
+    ".pytest-tmp",
+    "node_modules",
+    ".tox",
+}
 SKIP_FILES = {
     "docs/REPOSITORY_PROOF_MANIFEST.json",
     "docs/REPOSITORY_PROOF_MANIFEST.md",
@@ -24,9 +41,7 @@ ENV_RE = re.compile(r"(?:os\.getenv|os\.environ\.get)\(\s*['\"]([A-Z][A-Z0-9_]*)
 def _repository_files(root: Path) -> list[Path]:
     """Return version-controlled files, excluding local/generated state."""
     try:
-        output = subprocess.check_output(
-            ["git", "ls-files", "-z"], cwd=root, stderr=subprocess.DEVNULL
-        )
+        output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root, stderr=subprocess.DEVNULL)
         paths = [root / item for item in output.decode("utf-8", errors="surrogateescape").split("\0") if item]
         return sorted(path for path in paths if path.is_file())
     except Exception:
@@ -60,7 +75,14 @@ def _category(path: Path) -> str:
         return "migration"
     if first in {"scripts"}:
         return "script"
-    if first in {"configs", "deploy"} or path.name in {"Dockerfile", "Dockerfile.prod", "Procfile", "railway.json", "nixpacks.toml", "start.sh"}:
+    if first in {"configs", "deploy"} or path.name in {
+        "Dockerfile",
+        "Dockerfile.prod",
+        "Procfile",
+        "railway.json",
+        "nixpacks.toml",
+        "start.sh",
+    }:
         return "deployment_configuration"
     if path.suffix == ".py":
         return "production_runtime"
@@ -96,7 +118,18 @@ def generate(root: Path = ROOT) -> dict[str, Any]:
         public: list[str] = []
         envs: list[str] = []
         parse_status = "not_applicable"
-        if path.suffix in {".py", ".md", ".txt", ".toml", ".json", ".yml", ".yaml", ".sh", ".env", ".example"} or path.name in {"Dockerfile", "Procfile"}:
+        if path.suffix in {
+            ".py",
+            ".md",
+            ".txt",
+            ".toml",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".env",
+            ".example",
+        } or path.name in {"Dockerfile", "Procfile"}:
             text = raw.decode("utf-8-sig", errors="replace")
             line_count = len(text.splitlines())
         if path.suffix == ".py" and text is not None:
@@ -149,8 +182,7 @@ def main() -> int:
     json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 
     untested_runtime = [
-        item for item in report["files"]
-        if item["category"] == "production_runtime" and not item["test_references"]
+        item for item in report["files"] if item["category"] == "production_runtime" and not item["test_references"]
     ]
     syntax_errors = [item for item in report["files"] if str(item["parse_status"]).startswith("syntax_error")]
     lines = [

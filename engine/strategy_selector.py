@@ -4,6 +4,7 @@ from strategies.stock import best_stock_strategies
 from strategies.commodity import best_commodity_strategies
 from data.fetcher import is_crypto, is_fx, is_stock, is_commodity, is_index
 
+
 def get_best_strategies_for_asset(asset):
     if is_crypto(asset):
         return best_crypto_strategies

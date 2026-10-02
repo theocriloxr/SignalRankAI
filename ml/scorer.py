@@ -3,6 +3,7 @@
 This module attempts to use the XGBoost-based `MLFilter` from `ml.inference` when
 ML is enabled and available; otherwise falls back to a lightweight heuristic.
 """
+
 from typing import Dict, Any
 
 try:

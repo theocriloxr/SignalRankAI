@@ -3,6 +3,7 @@
 Outputs counts only. It never selects, decrypts, logs, hashes, fingerprints or
 returns credential ciphertext, keys, passwords, logins, servers or account IDs.
 """
+
 from __future__ import annotations
 
 from contextlib import closing
@@ -13,11 +14,7 @@ from typing import Any
 
 
 def _database_url() -> str:
-    return str(
-        os.getenv("DATABASE_MIGRATION_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    ).strip()
+    return str(os.getenv("DATABASE_MIGRATION_URL") or os.getenv("DATABASE_URL") or "").strip()
 
 
 def collect() -> dict[str, Any]:
@@ -41,10 +38,7 @@ def collect() -> dict[str, Any]:
                 ORDER BY 1
                 """
             )
-            format_counts = {
-                str(name): int(count or 0)
-                for name, count in cursor.fetchall()
-            }
+            format_counts = {str(name): int(count or 0) for name, count in cursor.fetchall()}
 
             cursor.execute(
                 """
@@ -127,9 +121,7 @@ def collect() -> dict[str, Any]:
             "duplicate_rows_already_backed_by_envelope": duplicate_password_rows,
             "rows_without_canonical_envelope": unmigrated_mt5_password_rows,
         },
-        "ready_for_live_money_credentials": (
-            legacy_broker_rows == 0 and password_rows_i == 0
-        ),
+        "ready_for_live_money_credentials": (legacy_broker_rows == 0 and password_rows_i == 0),
     }
 
 
@@ -138,30 +130,12 @@ def _emit_safe_log_summary(report: dict[str, Any]) -> None:
     legacy = dict(report.get("legacy_mt5") or {})
     formats = dict(report.get("credential_format_counts") or {})
     print(f"BROKER_INVENTORY_STATUS={report.get('status') or 'UNKNOWN'}")
-    print(
-        "BROKER_CANONICAL_ENVELOPE_V1_ROWS="
-        f"{int(formats.get('envelope_v1') or 0)}"
-    )
-    print(
-        "BROKER_CANONICAL_LEGACY_ROWS="
-        f"{int(report.get('canonical_legacy_fernet_rows') or 0)}"
-    )
-    print(
-        "MT5_LEGACY_SECRET_ROWS="
-        f"{int(legacy.get('rows_with_password_ciphertext') or 0)}"
-    )
-    print(
-        "MT5_DUPLICATE_SECRET_ROWS="
-        f"{int(legacy.get('duplicate_rows_already_backed_by_envelope') or 0)}"
-    )
-    print(
-        "MT5_UNMIGRATED_SECRET_ROWS="
-        f"{int(legacy.get('rows_without_canonical_envelope') or 0)}"
-    )
-    print(
-        "BROKER_LIVE_MONEY_SECRET_READINESS="
-        f"{1 if report.get('ready_for_live_money_credentials') else 0}"
-    )
+    print(f"BROKER_CANONICAL_ENVELOPE_V1_ROWS={int(formats.get('envelope_v1') or 0)}")
+    print(f"BROKER_CANONICAL_LEGACY_ROWS={int(report.get('canonical_legacy_fernet_rows') or 0)}")
+    print(f"MT5_LEGACY_SECRET_ROWS={int(legacy.get('rows_with_password_ciphertext') or 0)}")
+    print(f"MT5_DUPLICATE_SECRET_ROWS={int(legacy.get('duplicate_rows_already_backed_by_envelope') or 0)}")
+    print(f"MT5_UNMIGRATED_SECRET_ROWS={int(legacy.get('rows_without_canonical_envelope') or 0)}")
+    print(f"BROKER_LIVE_MONEY_SECRET_READINESS={1 if report.get('ready_for_live_money_credentials') else 0}")
 
 
 def main() -> int:
@@ -177,9 +151,7 @@ def main() -> int:
         print(json.dumps(report, sort_keys=True))
         return 1
 
-    report["status"] = (
-        "PASS" if report["ready_for_live_money_credentials"] else "ROTATION_REQUIRED"
-    )
+    report["status"] = "PASS" if report["ready_for_live_money_credentials"] else "ROTATION_REQUIRED"
     _emit_safe_log_summary(report)
     print(json.dumps(report, sort_keys=True))
     return 0

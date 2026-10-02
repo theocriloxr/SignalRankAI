@@ -67,7 +67,7 @@ def test_railway_completion_script_enforces_common_db_and_safe_flags():
         assert safe_flag in source
     assert "staging_migrate_and_bootstrap.py" in source
     assert "database_identity.py" in source
-    assert "0045_mt5_credential_retirement" in source
+    assert "0047_event_outbox" in source
     assert "UndefinedTableError" in source
     assert "UndefinedColumnError" in source
 
@@ -149,7 +149,7 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "metrics" in source and "--since" in source
     assert "$proofArguments" in source
     assert "& python @args" not in source
-    assert '"--filter","alembic_current=0045_mt5_credential_retirement"' in source
+    assert '"--filter","alembic_current=0047_event_outbox"' in source
     assert '"--filter","patch=deployment-final-r4"' in source
     assert '@("service","list","--json")' in source
     assert '"service","status"' not in source
@@ -160,10 +160,10 @@ def test_r4_soak_certification_contract():
     assert '"--since", $hoursToken' in text
     assert '"metrics", "--all"' in text
     assert "patch=deployment-final-r4" in text
-    assert "alembic_current=0045_mt5_credential_retirement" in text
+    assert "alembic_current=0047_event_outbox" in text
     assert "AmbiguousParameterError" in text
     assert "staging_soak_summary.json" in text
-    assert '"--filter", "alembic_current=0045_mt5_credential_retirement"' in text
+    assert '"--filter", "alembic_current=0047_event_outbox"' in text
     assert '"--filter", "patch=deployment-final-r4"' in text
     assert '@("service", "list", "--json")' in text
     assert '"service", "status"' not in text
@@ -172,6 +172,38 @@ def test_r4_soak_certification_contract():
     assert "latestDeployment.createdAt" in text
     assert "$ageHours -lt $Hours" in text
     assert '"--filter", $blockerFilter' in text
+
+
+def test_0031_establishes_outcome_truth_columns_before_first_use():
+    source = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "versions"
+        / "0031_performance_paper_reliability.py"
+    ).read_text(encoding="utf-8")
+    upgrade = source[source.index("def upgrade()"):source.index("def downgrade()")]
+    first_use = upgrade.index("COALESCE(canonical_outcome")
+    for statement in (
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_canonical_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_vip_fill_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_sentiment_outcome",
+    ):
+        assert statement in upgrade
+        assert upgrade.index(statement) < first_use
+
+
+def test_controlled_migrate_supports_brand_new_empty_database():
+    source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
+    helper = source[source.index("def _current_revision"):source.index("def migrate()")]
+    migrate = source[source.index("def migrate()"):source.index("def main()")]
+    assert "to_regclass('public.alembic_version')" in helper
+    assert 'SELECT version_num FROM alembic_version LIMIT 1' in helper
+    assert "before = _current_revision(connection)" in migrate
+    assert "after = _current_revision(connection)" in migrate
 
 
 def test_production_migration_fast_path_skips_backup_and_lock_at_head():

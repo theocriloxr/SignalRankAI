@@ -10,7 +10,7 @@ duplicating hardcoded rules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -56,9 +56,7 @@ _DEFAULT_REQUIREMENTS: dict[tuple[str, str], tuple[list[str], list[str]]] = {
 
 
 # Known timeframe strings for validation
-_KNOWN_TIMEFRAMES = frozenset({
-    "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"
-})
+_KNOWN_TIMEFRAMES = frozenset({"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"})
 
 
 # Policy version: bump when the resolution logic changes
@@ -68,6 +66,7 @@ _POLICY_VERSION = "adaptive-v1.1.1"
 @dataclass(frozen=True, slots=True)
 class TimeframeRequirement:
     """Structured result from the canonical resolver."""
+
     required: tuple[str, ...]
     optional: tuple[str, ...]
     reason: str

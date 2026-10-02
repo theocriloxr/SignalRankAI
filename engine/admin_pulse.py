@@ -4,6 +4,7 @@ engine/admin_pulse.py
 Hourly admin pulse that computes engine health summary, including shadow regret
 metrics, and posts to owner/admin Telegram IDs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +25,10 @@ def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
         return "squeeze"
     if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
         return "microstructure"
-    if any(token in text for token in ("adx", "mtf", "regime", "session", "market_intelligence", "news", "volatility", "market_hours")):
+    if any(
+        token in text
+        for token in ("adx", "mtf", "regime", "session", "market_intelligence", "news", "volatility", "market_hours")
+    ):
         return "regime"
     if any(token in text for token in ("score", "threshold", "quality_score")):
         return "score"
@@ -54,6 +58,7 @@ def _decision_bucket(decision: str | None) -> str:
     if value in {"rejected", "skipped", "delayed", "suppressed"}:
         return "rejection"
     return f"decision_{value}" if value else "decision_unclassified"
+
 
 def _profile_from_timeframe(timeframe: str | None) -> str:
     tf = str(timeframe or "").strip().lower()
@@ -140,9 +145,7 @@ def _cycle_signal_drought_summary(stats: dict[str, Any]) -> list[str]:
             lines.append(f"- best pre-threshold score: {float(best_score):.2f}")
         except Exception:
             pass
-    recovery = str(os.getenv("ML_STARVATION_RECOVERY_ENABLED") or "").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    recovery = str(os.getenv("ML_STARVATION_RECOVERY_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
     if recovery:
         lines.append(
             "- starvation recovery: enabled, PAPER-ONLY, broker execution prohibited, max "
@@ -171,22 +174,23 @@ def _cycle_rejection_buckets(cycle: dict[str, Any]) -> dict[str, int]:
         "score": _i("score_rejected"),
         "risk": _i("risk_failed") + _i("skipped_portfolio_exposure"),
         "dedupe": (
-            _i("skipped_open_limit_asset") + _i("skipped_open_limit_class")
-            + _i("skipped_cycle_cooldown") + _i("skipped_cycle_asset_cooldown")
-            + _i("skipped_db_cooldown") + _i("skipped_db_asset_cooldown")
+            _i("skipped_open_limit_asset")
+            + _i("skipped_open_limit_class")
+            + _i("skipped_cycle_cooldown")
+            + _i("skipped_cycle_asset_cooldown")
+            + _i("skipped_db_cooldown")
+            + _i("skipped_db_asset_cooldown")
             + _i("skipped_duplicate_trade")
         ),
         "data_unavailable": _i("no_candles") + _i("stale_data"),
         "generation_empty": _i("no_strategy_signals") + _i("no_consensus"),
         "validation": _i("validation_failed") + _i("invalid_tp"),
         "processing_error": (
-            _i("strategy_exception") + _i("consensus_exception")
-            + _i("scoring_exception") + _i("store_failed")
+            _i("strategy_exception") + _i("consensus_exception") + _i("scoring_exception") + _i("store_failed")
         ),
         "policy_other": _i("quality_rejected"),
     }
     return {name: value for name, value in buckets.items() if value > 0}
-
 
 
 def _reconcile_window(
@@ -200,9 +204,7 @@ def _reconcile_window(
     scanned = max(0, int(scanned or 0))
     delivered = max(0, int(delivered or 0))
     clean = {
-        str(name): max(0, int(value or 0))
-        for name, value in (classifications or {}).items()
-        if int(value or 0) > 0
+        str(name): max(0, int(value or 0)) for name, value in (classifications or {}).items() if int(value or 0) > 0
     }
     classified = sum(clean.values())
     if classified < scanned:
@@ -227,8 +229,7 @@ def _deployment_window(lifetime: dict[str, Any]) -> dict[str, Any]:
         "scanned": int(lifetime.get("scanned") or 0),
         "delivered": int(lifetime.get("delivered") or 0),
         **{
-            f"classification:{name}": int(value or 0)
-            for name, value in (lifetime.get("classifications") or {}).items()
+            f"classification:{name}": int(value or 0) for name, value in (lifetime.get("classifications") or {}).items()
         },
     }
     baseline = dict(numeric)
@@ -280,24 +281,26 @@ def _record_engine_pulse_health(
         "recipients_delivered": int(recipients or 0),
         "recipients_attempted": int(recipients_attempted or 0),
         "notification_complete": bool(
-            int(recipients_attempted or 0) > 0
-            and int(recipients or 0) == int(recipients_attempted or 0)
+            int(recipients_attempted or 0) > 0 and int(recipients or 0) == int(recipients_attempted or 0)
         ),
         "error": str(error or "") or None,
     }
     if isinstance(stats, dict):
-        payload.update({
-            "scanned": int(stats.get("scanned") or 0),
-            "delivered": int(stats.get("delivered") or 0),
-            "accounted": int(stats.get("accounted") or 0),
-            "unaccounted": int(stats.get("unaccounted") or 0),
-            "db_signals": int((stats.get("sources") or {}).get("db_signals") or 0),
-            "db_deliveries": int((stats.get("sources") or {}).get("db_deliveries") or 0),
-            "generated_at": stats.get("generated_at"),
-        })
+        payload.update(
+            {
+                "scanned": int(stats.get("scanned") or 0),
+                "delivered": int(stats.get("delivered") or 0),
+                "accounted": int(stats.get("accounted") or 0),
+                "unaccounted": int(stats.get("unaccounted") or 0),
+                "db_signals": int((stats.get("sources") or {}).get("db_signals") or 0),
+                "db_deliveries": int((stats.get("sources") or {}).get("db_deliveries") or 0),
+                "generated_at": stats.get("generated_at"),
+            }
+        )
         payload["counter_invariant_ok"] = int(payload["unaccounted"]) == 0
     try:
         from core.redis_state import state
+
         state.set_sync("engine:pulse:health", json.dumps(payload, sort_keys=True))
     except Exception:
         logger.debug("[admin_pulse] unable to persist pulse health", exc_info=True)
@@ -306,6 +309,7 @@ def _record_engine_pulse_health(
 def _engine_pulse_health() -> dict[str, Any]:
     try:
         from core.redis_state import state
+
         raw = state.get_sync("engine:pulse:health")
         payload = raw if isinstance(raw, dict) else json.loads(str(raw or "{}"))
         heartbeat = datetime.fromisoformat(str(payload.get("heartbeat_at") or "").replace("Z", "+00:00"))
@@ -337,9 +341,11 @@ def _shadow_tracker_health() -> dict[str, Any]:
         return payload
     except Exception:
         return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
+
+
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
-    
+
     Now uses GlobalStats for real-time engine metrics instead of only DB queries.
     Falls back to DB-only if GlobalStats not available.
     """
@@ -350,9 +356,10 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     global_delivered = 0
     global_vetoed = {}
     use_global_stats = False
-    
+
     try:
         from engine.stats_manager import stats
+
         global_stats = stats.get_stats()
         global_scanned = global_stats.get("scanned", 0)
         global_delivered = global_stats.get("delivered", 0)
@@ -368,7 +375,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         logger.info("[admin_pulse] Using GlobalStats for real-time metrics")
     except ImportError:
         logger.debug("[admin_pulse] GlobalStats not available, using DB fallback")
-    
+
     db_reason_rows = []
     db_top_assets: list[dict[str, Any]] = []
     db_top_strategies: list[dict[str, Any]] = []
@@ -392,7 +399,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
 
         since = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours or 1)))
         params = {"since": since}
-        
+
         async with get_session() as session:
             # Check if created_at column exists in decision_log
             try:
@@ -409,7 +416,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 # microstructure filters do not disappear into "other".
                 rej_rows = (
                     await session.execute(
-                        text("SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"),
+                        text(
+                            "SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"
+                        ),
                         params,
                     )
                 ).fetchall()
@@ -456,9 +465,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 try:
                     delivered_row = (
                         await session.execute(
-                        text(
-                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since AND sent_ok IS TRUE"
-                        ),
+                            text(
+                                "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since AND sent_ok IS TRUE"
+                            ),
                             params,
                         )
                     ).first()
@@ -581,6 +590,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     # Get shadow counters from Redis
     try:
         from core.redis_state import state
+
         total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
         false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
         correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
@@ -599,11 +609,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     if not isinstance(cycle_pipeline, dict):
         cycle_pipeline = {}
     try:
-        cycle_attempted = int(
-            latest_cycle.get("assets_attempted")
-            or cycle_pipeline.get("assets_attempted")
-            or 0
-        )
+        cycle_attempted = int(latest_cycle.get("assets_attempted") or cycle_pipeline.get("assets_attempted") or 0)
     except Exception:
         cycle_attempted = 0
     try:
@@ -612,11 +618,15 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         cycle_delivered = 0
     cycle_rejected_by = _cycle_rejection_buckets(latest_cycle)
 
-    global_total = int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
+    global_total = (
+        int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
+    )
     db_rejected_total = sum(int(v or 0) for v in (db_rejected_by or {}).values())
-    db_scanned_evidence = max(int(db_scanned or 0), int(db_issued or 0), int(db_delivered or 0), int(db_rejected_total or 0))
-    if db_scanned_evidence > 0:
-        scanned = db_scanned_evidence
+    # Decision accounting and recipient delivery are different units. Prefer
+    # the decision_log row count whenever available; signal rows/deliveries are
+    # separate evidence and must never inflate the number of decisions evaluated.
+    if int(db_scanned or 0) > 0:
+        scanned = int(db_scanned or 0)
     elif cycle_attempted > 0:
         scanned = cycle_attempted
     else:
@@ -641,11 +651,13 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         bucket = _rejection_bucket(reason, decision)
         db_rejection_buckets[bucket] = int(db_rejection_buckets.get(bucket, 0) + count)
         if len(top_rejection_reasons) < 8:
-            top_rejection_reasons.append({
-                "bucket": bucket,
-                "reason": reason or decision or "unknown",
-                "count": count,
-            })
+            top_rejection_reasons.append(
+                {
+                    "bucket": bucket,
+                    "reason": reason or decision or "unknown",
+                    "count": count,
+                }
+            )
     if db_rejection_buckets or db_rejected_by:
         rejected_by = db_rejection_buckets or db_rejected_by
     elif cycle_rejected_by:
@@ -655,11 +667,33 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     else:
         rejected_by = {}
 
-    accounted = int(delivered or 0) + sum(int(v or 0) for v in (rejected_by or {}).values())
-    unaccounted = max(0, int(scanned or 0) - int(accounted or 0))
+    # Account decision rows by decision classification, not by recipient fanout.
+    # A generated/accepted/observed decision is still accounted even when zero
+    # recipients were delivered in the window. Conversely one signal may have
+    # many recipient deliveries, which must not over-count decision rows.
+    if int(db_scanned or 0) > 0:
+        accounted = sum(int(v or 0) for v in (db_rejected_by or {}).values())
+        accounting_source = "decision_log"
+    elif cycle_attempted > 0:
+        cycle_generated = int(
+            (latest_cycle or {}).get("generated_signals")
+            or (cycle_pipeline or {}).get("generated_signals")
+            or 0
+        )
+        accounted = cycle_generated + sum(int(v or 0) for v in (cycle_rejected_by or {}).values())
+        accounting_source = "engine_cycle"
+    else:
+        # GlobalStats historically exposes scan attempts and veto counters but
+        # not a complete per-decision classification. Do not manufacture a
+        # missing-row alert from incomplete units.
+        accounted = int(scanned or 0)
+        accounting_source = "global_stats_fallback"
+    accounting_delta = int(scanned or 0) - int(accounted or 0)
+    unaccounted = abs(accounting_delta)
 
     try:
         from data.fetcher import get_provider_health_snapshot
+
         provider_snapshot = get_provider_health_snapshot()
         provider_summary = {
             "total": len(provider_snapshot),
@@ -691,6 +725,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "db_deliveries": int(db_delivered or 0),
             "cycle_attempted": int(cycle_attempted or 0),
             "cycle_status": str(latest_cycle.get("status") or "") if isinstance(latest_cycle, dict) else "",
+            "accounting_source": accounting_source,
+            "accounting_delta": int(accounting_delta),
         },
         "shadow": {
             "total_tracked": total_tracked,
@@ -707,20 +743,35 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
 
 
 async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
-    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not token:
-        logger.debug("[admin_pulse] no telegram token configured")
-        _record_engine_pulse_health(status="degraded", error="telegram_token_missing")
-        return False
     try:
+        # Engine health is an accounting/integrity signal. Telegram is only one
+        # notification transport and must not make healthy engine counters fail
+        # readiness when the channel is intentionally absent (for example
+        # isolated staging).
+        stats = await compute_engine_health(window_hours=window_hours)
+        invariant_ok = int(stats.get("unaccounted") or 0) == 0
+        token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+        if not token:
+            logger.debug("[admin_pulse] no telegram token configured")
+            _record_engine_pulse_health(
+                status="healthy" if invariant_ok else "degraded",
+                stats=stats,
+                error="telegram_token_missing" if invariant_ok else "counter_invariant_failed",
+            )
+            return False
+
         from config import OWNER_IDS, ADMIN_IDS
+
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
         if not recipients:
             logger.debug("[admin_pulse] no recipients configured")
-            _record_engine_pulse_health(status="degraded", error="admin_recipients_missing")
+            _record_engine_pulse_health(
+                status="healthy" if invariant_ok else "degraded",
+                stats=stats,
+                error="admin_recipients_missing" if invariant_ok else "counter_invariant_failed",
+            )
             return False
 
-        stats = await compute_engine_health(window_hours=window_hours)
         txt = (
             f"Engine Pulse ({window_hours}h)\n\n"
             f"Scope: global | Window: trailing {window_hours}h\n\n"
@@ -778,7 +829,9 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             txt += "Top assets: " + ", ".join(f"{x.get('name')}({x.get('count')})" for x in top_assets[:5]) + "\n"
         top_strategies = stats.get("top_strategies") or []
         if top_strategies:
-            txt += "Top strategies: " + ", ".join(f"{x.get('name')}({x.get('count')})" for x in top_strategies[:5]) + "\n"
+            txt += (
+                "Top strategies: " + ", ".join(f"{x.get('name')}({x.get('count')})" for x in top_strategies[:5]) + "\n"
+            )
         top_reasons = stats.get("top_rejection_reasons") or []
         if top_reasons:
             txt += "\nTop rejection reasons:\n"
@@ -802,7 +855,11 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                 f"alerted={int(providers.get('alerted') or 0)}\n"
             )
         src = stats.get("sources") or {}
-        if int(src.get("global_total") or 0) == 0 and int(src.get("db_decisions") or 0) == 0 and int(src.get("db_signals") or 0) == 0:
+        if (
+            int(src.get("global_total") or 0) == 0
+            and int(src.get("db_decisions") or 0) == 0
+            and int(src.get("db_signals") or 0) == 0
+        ):
             txt += "\nNote: no engine/DB activity was observed in this window yet; this may be a cold-start pulse.\n"
 
         import requests
@@ -819,12 +876,11 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                     sent += 1
             except Exception:
                 continue
-        invariant_ok = int(stats.get("unaccounted") or 0) == 0
-        # Engine health and notification fanout are different concerns. A stale
-        # admin chat must not make correct engine counters fail readiness, while
-        # a total Telegram delivery outage still remains a degraded pulse.
+        # Engine integrity and notification reachability are separate concerns.
+        # Readiness consumes the former; this function's boolean return still
+        # reports whether Telegram delivery itself succeeded.
         notification_reachable = sent > 0
-        status = "healthy" if invariant_ok and notification_reachable else "degraded"
+        status = "healthy" if invariant_ok else "degraded"
         error = None
         if not invariant_ok:
             error = "counter_invariant_failed"
@@ -832,8 +888,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             error = f"telegram_unreachable_0_of_{len(recipients)}"
         elif sent < len(recipients):
             logger.warning(
-                "[admin_pulse] partial Telegram fanout delivered=%s attempted=%s; "
-                "engine health remains valid",
+                "[admin_pulse] partial Telegram fanout delivered=%s attempted=%s; engine health remains valid",
                 sent,
                 len(recipients),
             )
@@ -844,7 +899,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             recipients=sent,
             recipients_attempted=len(recipients),
         )
-        return status == "healthy"
+        return bool(invariant_ok and notification_reachable)
     except Exception as exc:
         logger.error("[admin_pulse] send error: %s", exc)
         _record_engine_pulse_health(status="error", error=f"{type(exc).__name__}:{exc}")
@@ -863,6 +918,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         return False
     try:
         from config import OWNER_IDS, ADMIN_IDS
+
         recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
         if not recipients:
             logger.debug("[admin_pulse] no recipients configured for weekly report")
@@ -877,6 +933,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         # run the provider-routed weekly pipeline (it persists results and returns review)
         try:
             from services import gemini_ml
+
             review = await gemini_ml.run_gemini_review_pipeline(trigger="weekly_filter_efficacy", scope="weekly")
         except Exception as exc:
             logger.exception("[admin_pulse] AI weekly review failed: %s", exc)
@@ -891,13 +948,17 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         try:
             from db.session import get_session
             from sqlalchemy import text
+
             since = datetime.now(timezone.utc) - timedelta(days=max(1, int(window_days or 7)))
             async with get_session() as session:
-                row = (await session.execute(
-                    text(
-                        "SELECT COUNT(*) AS total, SUM(CASE WHEN o.status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins, SUM(CASE WHEN o.status = 'sl' THEN 1 ELSE 0 END) AS losses FROM outcomes o WHERE o.closed_at >= :since"
-                    ), {"since": since}
-                )).first()
+                row = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) AS total, SUM(CASE WHEN o.status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins, SUM(CASE WHEN o.status = 'sl' THEN 1 ELSE 0 END) AS losses FROM outcomes o WHERE o.closed_at >= :since"
+                        ),
+                        {"since": since},
+                    )
+                ).first()
                 if row:
                     delivered_total = int(row[0] or 0)
                     delivered_wins = int(row[1] or 0)
@@ -908,6 +969,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         # Shadow outcomes: prefer Redis counters, but also try DB ml_rejected_signals if available
         try:
             from core.redis_state import state
+
             total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
             false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
             correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
@@ -918,7 +980,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         txt = (
             f"Weekly Filter Efficacy Report ({window_days}d)\n\n"
             f"Signals Issued (recent): {stats.get('issued', 0)}  Rejected: {stats.get('rejected_or_skipped', 0)}\n"
-            f"Outcomes (recent): total={stats.get('outcomes_total',0)} wins={stats.get('wins',0)} losses={stats.get('losses',0)}\n\n"
+            f"Outcomes (recent): total={stats.get('outcomes_total', 0)} wins={stats.get('wins', 0)} losses={stats.get('losses', 0)}\n\n"
             "Delivered vs Shadow outcomes (last period):\n"
             f"- Delivered: total={delivered_total} | wins={delivered_wins} | losses={delivered_losses}\n"
             f"- Shadow (tracked rejects): total={total_tracked} | false_negatives={false_neg} | correct_blocks={correct_block} | partial_wins={partial_win}\n\n"
@@ -948,37 +1010,58 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
 
 async def _claim_pulse_slot(interval_seconds: int) -> bool:
     """Allow only one replica to emit an hourly pulse for the current interval."""
-    if str(os.getenv("ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED", "1") or "1").strip().lower() not in {"1", "true", "yes", "on"}:
+    if str(os.getenv("ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED", "1") or "1").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
         return True
 
-    ttl = max(60, int(os.getenv("ENGINE_PULSE_LOCK_TTL_SECONDS", str(max(60, interval_seconds - 30))) or max(60, interval_seconds - 30)))
+    ttl = max(
+        60,
+        int(
+            os.getenv("ENGINE_PULSE_LOCK_TTL_SECONDS", str(max(60, interval_seconds - 30)))
+            or max(60, interval_seconds - 30)
+        ),
+    )
     key = str(os.getenv("ENGINE_PULSE_LOCK_KEY", "signalrank:admin_pulse:hourly") or "signalrank:admin_pulse:hourly")
 
-    require_lock = (
-        str(os.getenv("APP_ENV", "") or "").strip().lower() == "production"
-        or str(os.getenv("ENGINE_PULSE_REQUIRE_DISTRIBUTED_LOCK", "0") or "0").lower()
-        in {"1", "true", "yes", "on"}
-    )
+    require_lock = str(os.getenv("APP_ENV", "") or "").strip().lower() == "production" or str(
+        os.getenv("ENGINE_PULSE_REQUIRE_DISTRIBUTED_LOCK", "0") or "0"
+    ).lower() in {"1", "true", "yes", "on"}
+
     def _claim() -> bool:
         try:
             from core.redis_state import state
+
             client = state._get_redis_sync()
             if client is None:
-                logger.warning("[engine_pulse_leadership] acquired=false reason=lock_unavailable required=%s", require_lock)
+                logger.warning(
+                    "[engine_pulse_leadership] acquired=false reason=lock_unavailable required=%s", require_lock
+                )
                 return not require_lock
             token = f"{os.getpid()}:{datetime.now(timezone.utc).isoformat()}"
             acquired = bool(client.set(key, token, nx=True, ex=ttl))
             logger.info("[engine_pulse_leadership] acquired=%s key=%s ttl=%s", acquired, key, ttl)
             return acquired
         except Exception as exc:
-            logger.warning("[engine_pulse_leadership] acquired=false reason=lock_error required=%s error=%s", require_lock, type(exc).__name__)
+            logger.warning(
+                "[engine_pulse_leadership] acquired=false reason=lock_error required=%s error=%s",
+                require_lock,
+                type(exc).__name__,
+            )
             return not require_lock
 
     return await asyncio.to_thread(_claim)
 
 
 async def start_pulse_loop(interval_seconds: int = None) -> None:
-    interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
+    interval = (
+        int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600)
+        if interval_seconds is None
+        else int(interval_seconds)
+    )
     initial_delay = int(os.getenv("ENGINE_PULSE_INITIAL_DELAY_SECONDS", "300") or 300)
     if initial_delay > 0:
         await asyncio.sleep(min(initial_delay, max(60, int(interval))))
@@ -1002,8 +1085,14 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
                 try:
                     from db.session import get_session
                     from sqlalchemy import text
+
                     async with get_session() as session:
-                        row = (await session.execute(text("SELECT value FROM runtime_state WHERE key = :k"), {"k": "admin_pulse_last_weekly_run"})).first()
+                        row = (
+                            await session.execute(
+                                text("SELECT value FROM runtime_state WHERE key = :k"),
+                                {"k": "admin_pulse_last_weekly_run"},
+                            )
+                        ).first()
                         last = None
                         if row and row[0]:
                             last = str(row[0])
@@ -1018,7 +1107,12 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
                                 logger.exception("[admin_pulse] weekly report failed")
                             # persist last run
                             val = json.dumps(now.isoformat())
-                            await session.execute(text("INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"), {"k": "admin_pulse_last_weekly_run", "v": val})
+                            await session.execute(
+                                text(
+                                    "INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+                                ),
+                                {"k": "admin_pulse_last_weekly_run", "v": val},
+                            )
                             await session.commit()
                 except Exception:
                     logger.debug("[admin_pulse] weekly run check failed", exc_info=True)

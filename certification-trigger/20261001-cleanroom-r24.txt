@@ -1,0 +1,5 @@
+SignalRankAI governance diagnostic trigger r24
+branch=implementation-of-master-blueprint
+head_before_trigger=6f98496497308f7addbd67d1939a61b007479071
+backend_governance_diff=required
+live_execution_authorized=false

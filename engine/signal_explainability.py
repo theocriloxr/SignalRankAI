@@ -90,6 +90,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         rr = _safe_float(signal.get("rr_ratio") or signal.get("rr_estimate"))
 
     drivers = _unique_texts(signal.get("confluence_drivers") or signal.get("drivers") or [])
+
     def _component_value(name: str) -> Optional[float]:
         value = score_components.get(name)
         if isinstance(value, dict):
@@ -155,7 +156,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
     candle_confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "").strip()
     if candle_summary:
         bullets.append(f"Price action: {candle_summary[:180]}")
-    
+
     # Add confidence components from ranking if available
     conf_components = signal.get("confidence_components") or signal.get("score_breakdown") or {}
     if conf_components.get("trend_confidence") is not None:
@@ -183,7 +184,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         why_generated.append("High ML conviction")
     if candle_evidence.get("alignment") == "supportive":
         why_generated.append("Candlestick evidence supports the setup")
-    
+
     # What confirms/invalidates it
     confirms = []
     if confluence and confluence > 50:
@@ -194,7 +195,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         confirms.append(f"Favorable {regime} regime")
     if candle_confirmation == "confirmed":
         confirms.append("Next completed candle followed through")
-    
+
     invalidates = []
     if invalidation_text:
         invalidates.append(invalidation_text[:80])
@@ -207,7 +208,11 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "score": float(score or 0.0),
-        "label": "High-conviction setup" if score >= 85 else "Qualified setup" if score >= 70 else "Lower-conviction setup",
+        "label": "High-conviction setup"
+        if score >= 85
+        else "Qualified setup"
+        if score >= 70
+        else "Lower-conviction setup",
         "summary": ". ".join(summary_parts[:2]),
         "bullets": _unique_texts(bullets, limit=6),
         "technical_reason": technical_reason or None,

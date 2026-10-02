@@ -39,22 +39,22 @@ class ReadinessState(str, Enum):
 
 #: The 17-step certification chain, in dependency order.
 CERTIFICATION_STEPS: tuple[str, ...] = (
-    "symbol_discovery",      # 1  universe populated / configured
-    "canonical_mapping",     # 2  canonical symbol mapping
-    "historical_candles",    # 3  required historical candles
-    "live_bid_ask",          # 4  authoritative live bid/ask or tradable price
-    "fresh_timestamp",       # 5  fresh provider timestamp
-    "signal_generation",     # 6  signal generation
-    "valid_geometry",        # 7  valid geometry
-    "signal_persistence",    # 8  signal persistence
-    "telegram_delivery",     # 9  telegram delivery
-    "delivery_proof",        # 10 delivery proof
-    "paper_open",            # 11 paper-trade opening
-    "outcome_monitoring",    # 12 outcome monitoring
-    "position_close",        # 13 position closing
+    "symbol_discovery",  # 1  universe populated / configured
+    "canonical_mapping",  # 2  canonical symbol mapping
+    "historical_candles",  # 3  required historical candles
+    "live_bid_ask",  # 4  authoritative live bid/ask or tradable price
+    "fresh_timestamp",  # 5  fresh provider timestamp
+    "signal_generation",  # 6  signal generation
+    "valid_geometry",  # 7  valid geometry
+    "signal_persistence",  # 8  signal persistence
+    "telegram_delivery",  # 9  telegram delivery
+    "delivery_proof",  # 10 delivery proof
+    "paper_open",  # 11 paper-trade opening
+    "outcome_monitoring",  # 12 outcome monitoring
+    "position_close",  # 13 position closing
     "performance_projection",  # 14 performance projection
-    "provider_failover",     # 15 provider failover
-    "market_hours",          # 16 market-hours handling
+    "provider_failover",  # 15 provider failover
+    "market_hours",  # 16 market-hours handling
     "production_diagnostics",  # 17 production diagnostics
 )
 
@@ -65,8 +65,16 @@ _PAPER_STEPS = {"paper_open", "outcome_monitoring", "position_close", "performan
 _RELIABILITY_STEPS = {"provider_failover", "market_hours", "production_diagnostics"}
 
 SUPPORTED_ASSET_CLASSES: tuple[str, ...] = (
-    "crypto", "crypto_perpetual", "fx", "index", "commodity", "stock",
-    "macro", "volatility", "bond", "rates",
+    "crypto",
+    "crypto_perpetual",
+    "fx",
+    "index",
+    "commodity",
+    "stock",
+    "macro",
+    "volatility",
+    "bond",
+    "rates",
 )
 
 #: Environment-role macro series that are contextual unless a tradable venue exists.
@@ -129,7 +137,9 @@ def evaluate_certification(
     if cls in CONTEXTUAL_ONLY:
         # Contextual series are only delivery-ready when mapped to a tradable venue.
         if not _evidence_ok(evidence, "canonical_mapping"):
-            return CertificationResult(cls, ReadinessState.CONFIGURED, (), CERTIFICATION_STEPS, notes=("contextual_series_no_tradable_venue",))
+            return CertificationResult(
+                cls, ReadinessState.CONFIGURED, (), CERTIFICATION_STEPS, notes=("contextual_series_no_tradable_venue",)
+            )
 
     ready = tuple(step for step in CERTIFICATION_STEPS if _evidence_ok(evidence, step))
     missing = tuple(step for step in CERTIFICATION_STEPS if step not in ready)
@@ -145,12 +155,18 @@ def evaluate_certification(
         # Distinguish "not yet enabled" from "enabled but failing".
         provider_status = str(evidence.get("provider_status") or "").strip().lower()
         if provider_status and provider_status not in {"", "none", "disabled", "not_configured"}:
-            return CertificationResult(cls, ReadinessState.DEGRADED, ready, missing, notes=("live_quote_route_unreliable",))
+            return CertificationResult(
+                cls, ReadinessState.DEGRADED, ready, missing, notes=("live_quote_route_unreliable",)
+            )
 
     if not (_ANALYSIS_STEPS & ready_set):
         return CertificationResult(cls, ReadinessState.CONFIGURED, ready, missing, notes=tuple(notes))
     if not (_evidence_ok(evidence, "live_bid_ask") and _evidence_ok(evidence, "fresh_timestamp")):
-        state = ReadinessState.MARKET_DATA_PARTIAL if _evidence_ok(evidence, "historical_candles") else ReadinessState.CONFIGURED
+        state = (
+            ReadinessState.MARKET_DATA_PARTIAL
+            if _evidence_ok(evidence, "historical_candles")
+            else ReadinessState.CONFIGURED
+        )
         return CertificationResult(cls, state, ready, missing, notes=tuple(notes))
     if not (_DELIVERY_STEPS & ready_set) or not (_DELIVERY_STEPS <= ready_set):
         return CertificationResult(cls, ReadinessState.ANALYSIS_READY, ready, missing, notes=tuple(notes))

@@ -1,4 +1,5 @@
 """Deterministic signal quality gate shared by delivery and execution paths."""
+
 from __future__ import annotations
 
 import os
@@ -24,6 +25,7 @@ def _targets(value: Any) -> list[float]:
         return []
     if isinstance(value, str):
         import json
+
         try:
             value = json.loads(value)
         except Exception:

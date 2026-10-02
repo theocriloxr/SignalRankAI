@@ -4,9 +4,9 @@ Intraday data is classified as delayed/historical evidence unless the account
 and endpoint certification prove otherwise.  The adapter never labels it as an
 execution quote.
 """
+
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import os
@@ -36,7 +36,9 @@ def _interval(timeframe: str) -> str | None:
     return {"1m": "1m", "5m": "5m", "1h": "1h"}.get(str(timeframe or "").lower())
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     token = str(os.getenv("EODHD_API_KEY") or os.getenv("EODHD_API_TOKEN") or "").strip()
     if not token:
         return []

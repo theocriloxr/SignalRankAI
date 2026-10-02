@@ -4,6 +4,7 @@ Client applications submit only a product identifier. Prices, tier and duration
 are resolved from PostgreSQL so Telegram, web, mobile and API checkouts cannot
 supply or alter monetary values.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -42,29 +43,37 @@ async def resolve_checkout_product(
         raise ProductCatalogueError("product_id_required")
 
     product = (
-        await session.execute(
-            text(
-                "SELECT product_id,tier,display_name,duration_days,active "
-                "FROM subscription_products WHERE product_id=:product_id"
-            ),
-            {"product_id": product_key},
+        (
+            await session.execute(
+                text(
+                    "SELECT product_id,tier,display_name,duration_days,active "
+                    "FROM subscription_products WHERE product_id=:product_id"
+                ),
+                {"product_id": product_key},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not product or not bool(product.get("active")):
         raise ProductCatalogueError("product_unavailable")
 
     price = (
-        await session.execute(
-            text(
-                "SELECT currency,price_kobo FROM subscription_prices "
-                "WHERE product_id=:product_id AND currency=:currency "
-                "AND effective_from<=CURRENT_TIMESTAMP "
-                "AND (effective_until IS NULL OR effective_until>CURRENT_TIMESTAMP) "
-                "ORDER BY effective_from DESC,id DESC LIMIT 1"
-            ),
-            {"product_id": product_key, "currency": currency_code},
+        (
+            await session.execute(
+                text(
+                    "SELECT currency,price_kobo FROM subscription_prices "
+                    "WHERE product_id=:product_id AND currency=:currency "
+                    "AND effective_from<=CURRENT_TIMESTAMP "
+                    "AND (effective_until IS NULL OR effective_until>CURRENT_TIMESTAMP) "
+                    "ORDER BY effective_from DESC,id DESC LIMIT 1"
+                ),
+                {"product_id": product_key, "currency": currency_code},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not price:
         raise ProductCatalogueError("active_price_unavailable")
 

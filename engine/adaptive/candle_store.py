@@ -31,26 +31,21 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _runtime_role() -> str:
-    return str(
-        os.getenv("DB_ROLE")
-        or os.getenv("RUN_MODE")
-        or os.getenv("SERVICE_ROLE")
-        or ""
-    ).strip().lower()
+    return str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "").strip().lower()
 
 
 def _is_decomposed_engine() -> bool:
-    role=_runtime_role()
+    role = _runtime_role()
     return role == "engine" or role.startswith("engine-")
 
 
 def _capture_history_limit() -> int:
     """Keep scanner persistence bounded; offline/analytics capture can stay deeper."""
-    default="60" if _is_decomposed_engine() else "200"
+    default = "60" if _is_decomposed_engine() else "200"
     try:
-        configured=int(os.getenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", default) or default)
+        configured = int(os.getenv("ADAPTIVE_CANDLE_CAPTURE_MAX_PER_TIMEFRAME", default) or default)
     except (TypeError, ValueError):
-        configured=int(default)
+        configured = int(default)
     return max(10, min(500, configured))
 
 
@@ -62,13 +57,11 @@ def _capture_db_priority() -> str:
 
 
 def _local_drain_batch_size() -> int:
-    default = "1" if _is_decomposed_engine() else (
-        os.getenv("ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE", "24") or "24"
-    )
+    default = "1" if _is_decomposed_engine() else (os.getenv("ADAPTIVE_CANDLE_CAPTURE_BATCH_SIZE", "24") or "24")
     try:
-        configured=int(os.getenv("ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE", default) or default)
+        configured = int(os.getenv("ADAPTIVE_CANDLE_LOCAL_DRAIN_BATCH_SIZE", default) or default)
     except (TypeError, ValueError):
-        configured=int(default)
+        configured = int(default)
     return max(1, min(24, configured))
 
 
@@ -94,9 +87,7 @@ def _capture_db_timeout_seconds() -> float:
 def _capture_admission_timeout_seconds() -> float:
     """Short admission budget for noncritical candle persistence."""
     try:
-        configured = float(
-            os.getenv("ADAPTIVE_CANDLE_DB_ADMISSION_TIMEOUT_SECONDS", "0.25") or 0.25
-        )
+        configured = float(os.getenv("ADAPTIVE_CANDLE_DB_ADMISSION_TIMEOUT_SECONDS", "0.25") or 0.25)
     except (TypeError, ValueError):
         configured = 0.25
     return max(0.0, min(2.0, configured))
@@ -112,12 +103,25 @@ def _capture_lock_timeout_ms() -> int:
 
 def _capture_statement_timeout_ms() -> int:
     try:
-        configured = int(
-            os.getenv("ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS", "3000") or 3000
-        )
+        configured = int(os.getenv("ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS", "3000") or 3000)
     except (TypeError, ValueError):
         configured = 3000
     return max(500, min(10000, configured))
+
+
+def _capture_transaction_budget_seconds() -> float:
+    """Hard wall-clock budget for one noncritical candle DB transaction.
+
+    PostgreSQL statement_timeout does not cover every wait/commit path. This
+    outer budget guarantees learning evidence cannot hold a scarce pooled
+    session indefinitely under contention.
+    """
+    default = "4.5" if _is_decomposed_engine() else "6.0"
+    try:
+        configured = float(os.getenv("ADAPTIVE_CANDLE_TRANSACTION_BUDGET_SECONDS", default) or default)
+    except (TypeError, ValueError):
+        configured = float(default)
+    return max(1.0, min(10.0, configured))
 
 
 def _error_text(exc: BaseException) -> str:
@@ -251,11 +255,7 @@ def enqueue_market_snapshot(asset: str, market_data: Mapping[str, Any]) -> int:
                 elif last_ts > previous_ts:
                     # Include the previous open time so the now-final candle is
                     # updated, then include the newly opened bar.
-                    rows_to_queue = [
-                        row
-                        for row in rows
-                        if int(row.get("open_time_ms") or 0) >= previous_ts
-                    ]
+                    rows_to_queue = [row for row in rows if int(row.get("open_time_ms") or 0) >= previous_ts]
                     if not rows_to_queue:
                         rows_to_queue = rows[-2:]
             _LAST_SNAPSHOT[key] = (last_ts, now)
@@ -299,9 +299,7 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
     # One snapshot can contain a first-observation backfill of up to hundreds of
     # candles. Bound snapshots per transaction so noncritical learning writes can
     # never monopolise the tiny Railway staging pool.
-    batch = _take_batch(
-        max(1, min(int(max_items), _transaction_snapshot_limit()))
-    )
+    batch = _take_batch(max(1, min(int(max_items), _transaction_snapshot_limit())))
     if not batch:
         return {"snapshots": 0, "candles": 0}
     records: list[dict[str, Any]] = []
@@ -311,18 +309,20 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
             ts = int(candle.get("open_time_ms") or 0)
             if not ts:
                 continue
-            records.append({
-                "symbol": item["asset"],
-                "timeframe": item["timeframe"],
-                "open_time_ms": ts,
-                "close_time_ms": candle.get("close_time_ms"),
-                "open": float(candle.get("open") or 0),
-                "high": float(candle.get("high") or 0),
-                "low": float(candle.get("low") or 0),
-                "close": float(candle.get("close") or 0),
-                "volume": float(candle.get("volume") or 0),
-                "is_final": bool(candle.get("is_final", index < len(candles) - 1)),
-            })
+            records.append(
+                {
+                    "symbol": item["asset"],
+                    "timeframe": item["timeframe"],
+                    "open_time_ms": ts,
+                    "close_time_ms": candle.get("close_time_ms"),
+                    "open": float(candle.get("open") or 0),
+                    "high": float(candle.get("high") or 0),
+                    "low": float(candle.get("low") or 0),
+                    "close": float(candle.get("close") or 0),
+                    "volume": float(candle.get("volume") or 0),
+                    "is_final": bool(candle.get("is_final", index < len(candles) - 1)),
+                }
+            )
     if not records:
         return {"snapshots": len(batch), "candles": 0}
 
@@ -353,11 +353,7 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
 
     capture_priority = _capture_db_priority()
     noncritical = capture_priority in {"background", "analytics"}
-    admission_timeout = (
-        _capture_admission_timeout_seconds()
-        if noncritical
-        else _capture_db_timeout_seconds()
-    )
+    admission_timeout = _capture_admission_timeout_seconds() if noncritical else _capture_db_timeout_seconds()
     inserted = 0
     try:
         # Commit each bounded upsert chunk independently. Initial history
@@ -384,44 +380,48 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
             chunk = records[offset : offset + chunk_size]
             for read_write_attempt in range(2):
                 try:
-                    async with get_session(
-                        priority=capture_priority,
-                        label="adaptive.candle_capture",
-                        timeout_seconds=admission_timeout,
-                        # Candle snapshots are idempotent learning evidence. Under DB
-                        # pressure they yield immediately to decisions, delivery and
-                        # interactive commands.
-                        drop_if_busy=noncritical,
-                    ) as session:
-                        # This path is intentionally a durable write path. Some pooled
-                        # production connections can inherit a read-only transaction
-                        # characteristic from prior audit/read workloads; declare the
-                        # bounded candle transaction READ WRITE before any SET LOCAL or
-                        # DML so idempotent learning evidence cannot be stranded.
-                        await session.execute(sql_text("SET TRANSACTION READ WRITE"))
-                        await session.execute(
-                            sql_text(f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
-                        )
-                        await session.execute(
-                            sql_text(f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
-                        )
-                        stmt = pg_insert(MarketCandle).values(chunk)
-                        stmt = stmt.on_conflict_do_update(
-                            constraint="uq_market_candles_symbol_tf_open",
-                            set_={
-                                "close_time_ms": stmt.excluded.close_time_ms,
-                                "open": stmt.excluded.open,
-                                "high": stmt.excluded.high,
-                                "low": stmt.excluded.low,
-                                "close": stmt.excluded.close,
-                                "volume": stmt.excluded.volume,
-                                "is_final": stmt.excluded.is_final,
-                                "updated_at": stmt.excluded.updated_at,
-                            },
-                        )
-                        await session.execute(stmt)
-                        await session.commit()
-                        inserted += len(chunk)
+                    transaction_budget = _capture_transaction_budget_seconds()
+                    async with asyncio.timeout(transaction_budget):
+                        async with get_session(
+                            priority=capture_priority,
+                            label="adaptive.candle_capture",
+                            timeout_seconds=admission_timeout,
+                            # Candle snapshots are idempotent learning evidence. Under DB
+                            # pressure they yield immediately to decisions, delivery and
+                            # interactive commands.
+                            drop_if_busy=noncritical,
+                        ) as session:
+                            # This path is intentionally a durable write path. Some pooled
+                            # production connections can inherit a read-only transaction
+                            # characteristic from prior audit/read workloads; declare the
+                            # bounded candle transaction READ WRITE before any SET LOCAL or
+                            # DML so idempotent learning evidence cannot be stranded.
+                            await session.execute(sql_text("SET TRANSACTION READ WRITE"))
+                            await session.execute(
+                                sql_text("SELECT set_config('lock_timeout', :value, true)"),
+                                {"value": f"{lock_timeout_ms}ms"},
+                            )
+                            await session.execute(
+                                sql_text("SELECT set_config('statement_timeout', :value, true)"),
+                                {"value": f"{statement_timeout_ms}ms"},
+                            )
+                            stmt = pg_insert(MarketCandle).values(chunk)
+                            stmt = stmt.on_conflict_do_update(
+                                constraint="uq_market_candles_symbol_tf_open",
+                                set_={
+                                    "close_time_ms": stmt.excluded.close_time_ms,
+                                    "open": stmt.excluded.open,
+                                    "high": stmt.excluded.high,
+                                    "low": stmt.excluded.low,
+                                    "close": stmt.excluded.close,
+                                    "volume": stmt.excluded.volume,
+                                    "is_final": stmt.excluded.is_final,
+                                    "updated_at": stmt.excluded.updated_at,
+                                },
+                            )
+                            await session.execute(stmt)
+                            await session.commit()
+                            inserted += len(chunk)
                     break
                 except Exception as exc:
                     readonly_error = "read-only transaction" in _error_text(exc).lower()
@@ -429,8 +429,7 @@ async def persist_queued_snapshots(max_items: int = 12) -> dict[str, int]:
                         raise
                     evicted = await dispose_engine_for_event_loop()
                     logger.warning(
-                        "[adaptive_candles] evicted read-only DB engine evicted=%s "
-                        "chunk=%s retry=1 queue_depth=%s",
+                        "[adaptive_candles] evicted read-only DB engine evicted=%s chunk=%s retry=1 queue_depth=%s",
                         evicted,
                         offset // chunk_size,
                         queue_depth(),

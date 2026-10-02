@@ -124,6 +124,7 @@ def select_best_per_cluster(signals: List[Dict[str, Any]]) -> List[Dict[str, Any
 # Limits open trades per asset class + direction to prevent over-exposure.
 # E.g., max 2 Crypto Shorts, 2 Crypto Longs, etc.
 
+
 class PortfolioExposureManager:
     """Gatekeeper that limits trades per asset class+direction to prevent correlation risk."""
 
@@ -152,6 +153,7 @@ class PortfolioExposureManager:
                 try:
                     from db.priority import DBPriority
                     from db.session import get_session
+
                     async with get_session(
                         priority=DBPriority.CRITICAL,
                         label="portfolio_exposure_read",
@@ -201,10 +203,7 @@ class PortfolioExposureManager:
                     global_count += 1
                     if self._get_asset_class(trade_asset) == asset_class and trade_direction == direction:
                         sector_direction_count += 1
-                allowed = (
-                    global_count < self.max_global_trades
-                    and sector_direction_count < self.max_sector_direction
-                )
+                allowed = global_count < self.max_global_trades and sector_direction_count < self.max_sector_direction
                 logger.warning(
                     "[exposure] using Redis fallback global=%s/%s sector_direction=%s/%s allowed=%s",
                     global_count,
@@ -257,32 +256,44 @@ class PortfolioExposureManager:
             # legacy Signal.expired/archive projection lags behind. TP1/TP2 remain
             # active; only a genuinely terminal close is excluded.
             terminal_lifecycle_states = (
-                "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+                "TP3_HIT",
+                "SL_HIT",
+                "BREAKEVEN_STOP",
+                "MISSED_ENTRY",
+                "EXPIRED",
             )
             terminal_lifecycle_exists = exists().where(
                 SignalLifecycle.signal_id == Signal.signal_id,
                 or_(
                     SignalLifecycle.closed_at.is_not(None),
                     SignalLifecycle.terminal_event_type.is_not(None),
-                    func.upper(func.coalesce(SignalLifecycle.state, "")).in_(
-                        terminal_lifecycle_states
-                    ),
+                    func.upper(func.coalesce(SignalLifecycle.state, "")).in_(terminal_lifecycle_states),
                 ),
             )
             active_filters.append(~terminal_lifecycle_exists)
 
             terminal_outcome_statuses = (
-                "tp", "tp3", "sl", "partial_win", "partial_win_be",
-                "time_stop", "missed_entry", "expired", "invalid",
-                "invalidated", "cancel", "cancelled", "canceled",
+                "tp",
+                "tp3",
+                "sl",
+                "partial_win",
+                "partial_win_be",
+                "time_stop",
+                "missed_entry",
+                "expired",
+                "invalid",
+                "invalidated",
+                "cancel",
+                "cancelled",
+                "canceled",
             )
             terminal_outcome_exists = exists().where(
                 Outcome.signal_id == Signal.signal_id,
                 or_(
                     Outcome.closed_at.is_not(None),
-                    func.lower(
-                        func.coalesce(Outcome.canonical_outcome, Outcome.status, "")
-                    ).in_(terminal_outcome_statuses),
+                    func.lower(func.coalesce(Outcome.canonical_outcome, Outcome.status, "")).in_(
+                        terminal_outcome_statuses
+                    ),
                 ),
             )
             active_filters.append(~terminal_outcome_exists)
@@ -290,23 +301,35 @@ class PortfolioExposureManager:
             # Generated rows are not positions. Only Telegram-acknowledged signals
             # may consume portfolio capacity.
             if str(os.getenv("PORTFOLIO_EXPOSURE_REQUIRE_DELIVERED", "1")).strip().lower() in {
-                "1", "true", "yes", "on"
+                "1",
+                "true",
+                "yes",
+                "on",
             }:
                 active_filters.append(
                     exists().where(
                         SignalDelivery.signal_id == Signal.signal_id,
                         SignalDelivery.sent_ok.is_(True),
-                        SignalDelivery.delivery_state.in_((
-                            "sent", "delivered", "confirmed", "reconciled",
-                            "SENT", "DELIVERED", "CONFIRMED", "RECONCILED",
-                        )),
+                        SignalDelivery.delivery_state.in_(
+                            (
+                                "sent",
+                                "delivered",
+                                "confirmed",
+                                "reconciled",
+                                "SENT",
+                                "DELIVERED",
+                                "CONFIRMED",
+                                "RECONCILED",
+                            )
+                        ),
                         SignalDelivery.telegram_chat_id.is_not(None),
                         SignalDelivery.telegram_message_id.is_not(None),
                         func.coalesce(
                             SignalDelivery.delivery_confirmed_at,
                             SignalDelivery.delivered_at_utc,
                             SignalDelivery.delivered_at,
-                        ) >= unresolved_cutoff,
+                        )
+                        >= unresolved_cutoff,
                     )
                 )
 

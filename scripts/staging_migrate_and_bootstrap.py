@@ -6,6 +6,7 @@ advisory lock used by production migrations, upgrades to the repository's
 single Alembic head, verifies the unified schema, seeds products/entitlements,
 performs optional instrument discovery and records evidence.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,13 +35,9 @@ def _truthy(name: str) -> bool:
 
 
 def _environment() -> str:
-    return (
-        _value("RAILWAY_ENVIRONMENT_NAME")
-        or _value("RAILWAY_ENVIRONMENT")
-        or _value("APP_ENV")
-        or _value("ENVIRONMENT")
-        or "dev"
-    ).lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("dev")
 
 
 def _expected_head() -> str:
@@ -57,11 +54,7 @@ def _expected_head() -> str:
 def _migration_urls() -> tuple[str, str]:
     from db.database_urls import normalize_psycopg2_dsn, normalize_sync_postgres_url
 
-    raw = (
-        _value("DATABASE_MIGRATION_URL")
-        or _value("DATABASE_DIRECT_URL")
-        or _value("DATABASE_URL")
-    )
+    raw = _value("DATABASE_MIGRATION_URL") or _value("DATABASE_DIRECT_URL") or _value("DATABASE_URL")
     if not raw:
         raise RuntimeError("DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is missing")
     return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
@@ -101,9 +94,7 @@ def migrate_and_bootstrap(*, discover: bool, top: int, run_certification: bool) 
     expected = _expected_head()
     configured_expected = _value("EXPECTED_ALEMBIC_HEAD")
     if configured_expected and configured_expected != expected:
-        raise RuntimeError(
-            f"EXPECTED_ALEMBIC_HEAD={configured_expected} does not match repository head {expected}"
-        )
+        raise RuntimeError(f"EXPECTED_ALEMBIC_HEAD={configured_expected} does not match repository head {expected}")
 
     migration_url, migration_dsn = _migration_urls()
     started_at = datetime.now(timezone.utc)

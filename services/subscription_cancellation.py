@@ -5,6 +5,7 @@ immediately downgrades an active entitlement.  It disables recurring billing
 at the provider when possible and always records the account preference so the
 current paid period can expire naturally.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,10 +48,7 @@ async def _disable_paystack_subscription(code: str) -> tuple[bool, int]:
                 )
                 token = ""
                 if lookup.status_code < 400:
-                    token = str(
-                        (lookup.json().get("data") or {}).get("email_token")
-                        or ""
-                    ).strip()
+                    token = str((lookup.json().get("data") or {}).get("email_token") or "").strip()
                 response = await client.post(
                     "https://api.paystack.co/subscription/disable",
                     json={"code": code, "token": token},
@@ -78,11 +76,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         label="subscription.cancel_snapshot",
         timeout_seconds=8.0,
     ) as session:
-        user = (
-            await session.execute(
-                select(User).where(User.id == canonical_id).limit(1)
-            )
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == canonical_id).limit(1))).scalar_one_or_none()
         if user is None:
             await session.rollback()
             return {
@@ -116,9 +110,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         sub_code = str(user.paystack_subscription_code or "").strip()
         await session.rollback()
 
-    gateway_cancelled, retry_attempts = await _disable_paystack_subscription(
-        sub_code
-    )
+    gateway_cancelled, retry_attempts = await _disable_paystack_subscription(sub_code)
 
     # Re-lock only for the short local mutation.  Access itself is not
     # downgraded here; the active subscription still expires naturally.
@@ -128,9 +120,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         timeout_seconds=8.0,
     ) as session:
         user = (
-            await session.execute(
-                select(User).where(User.id == canonical_id).with_for_update().limit(1)
-            )
+            await session.execute(select(User).where(User.id == canonical_id).with_for_update().limit(1))
         ).scalar_one_or_none()
         if user is None:
             await session.rollback()
@@ -151,10 +141,9 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         "expires_at": expires_at,
         "gateway_cancelled": bool(gateway_cancelled),
         "retry_attempts": int(retry_attempts),
-        "provider_follow_up_required": bool(
-            sub_code and not gateway_cancelled
-        ),
+        "provider_follow_up_required": bool(sub_code and not gateway_cancelled),
     }
+
 
 async def cancel_auto_renew_for_telegram_user(
     telegram_user_id: int,
@@ -166,11 +155,7 @@ async def cancel_auto_renew_for_telegram_user(
         timeout_seconds=8.0,
     ) as session:
         canonical_id = (
-            await session.execute(
-                select(User.id)
-                .where(User.telegram_user_id == int(telegram_user_id))
-                .limit(1)
-            )
+            await session.execute(select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
         ).scalar_one_or_none()
         await session.rollback()
     if canonical_id is None:

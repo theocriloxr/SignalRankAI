@@ -324,7 +324,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if update.message is not None and total_active > 0:
         await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
     
-    from .formatter import format_signal
     for s in filtered_signals:
         try:
             formatted = format_signal(s, user_tier=tier)

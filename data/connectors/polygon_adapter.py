@@ -23,17 +23,11 @@ def _resolved_api_key() -> str:
     One resolved secret: ``MASSIVE_API_KEY`` wins, ``POLYGON_API_KEY`` is the
     backward-compatible alias.  Never require both variables.
     """
-    return (
-        (os.getenv("MASSIVE_API_KEY") or "").strip()
-        or (os.getenv("POLYGON_API_KEY") or "").strip()
-    )
+    return (os.getenv("MASSIVE_API_KEY") or "").strip() or (os.getenv("POLYGON_API_KEY") or "").strip()
 
 
 def _resolved_base_url() -> str:
-    return (
-        (os.getenv("MASSIVE_API_BASE_URL") or "").strip()
-        or "https://api.polygon.io"
-    )
+    return (os.getenv("MASSIVE_API_BASE_URL") or "").strip() or "https://api.polygon.io"
 
 
 def _enabled() -> bool:
@@ -52,7 +46,13 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return []
 
     # Map timeframe
-    tf_map = {"5m": ("5", "minute"), "15m": ("15", "minute"), "1h": ("1", "hour"), "4h": ("4", "hour"), "1d": ("1", "day")}
+    tf_map = {
+        "5m": ("5", "minute"),
+        "15m": ("15", "minute"),
+        "1h": ("1", "hour"),
+        "4h": ("4", "hour"),
+        "1d": ("1", "day"),
+    }
     multiplier, timespan = tf_map.get(timeframe, ("1", "hour"))
 
     # Prefix symbol for asset type heuristic
@@ -61,7 +61,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         pass
 
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=200 if timespan == 'day' else 30)
+    start_date = end_date - timedelta(days=200 if timespan == "day" else 30)
     url = f"{_resolved_base_url()}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
     request_timeout = 2.5
@@ -78,20 +78,22 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
                 return []
             return []
         data = resp.json()
-        results = data.get('results', [])
+        results = data.get("results", [])
         if not results:
             return []
         candles = []
         for bar in results:
             try:
-                candles.append({
-                    'timestamp': int(bar['t']),
-                    'open': float(bar['o']),
-                    'high': float(bar['h']),
-                    'low': float(bar['l']),
-                    'close': float(bar['c']),
-                    'volume': float(bar.get('v', 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(bar["t"]),
+                        "open": float(bar["o"]),
+                        "high": float(bar["h"]),
+                        "low": float(bar["l"]),
+                        "close": float(bar["c"]),
+                        "volume": float(bar.get("v", 0)),
+                    }
+                )
             except Exception:
                 continue
         return candles

@@ -3,16 +3,18 @@
 Signal Quality Analytics Module
 Tracks and logs signal delivery stats, fill rates, and user engagement for analytics and reporting.
 """
+
 import threading
 import time
 from collections import defaultdict, Counter
+
 
 class SignalAnalytics:
     def __init__(self):
         self.lock = threading.Lock()
         self.delivery_stats = Counter()
         self.fill_rates = defaultdict(list)  # symbol -> [filled, missed, ...]
-        self.user_engagement = Counter()    # user_id -> count
+        self.user_engagement = Counter()  # user_id -> count
         self.last_flush = time.time()
 
     def log_delivery(self, symbol, delivered=True):
@@ -31,9 +33,9 @@ class SignalAnalytics:
     def get_stats(self):
         with self.lock:
             return {
-                'delivery_stats': dict(self.delivery_stats),
-                'fill_rates': {k: sum(v)/len(v) if v else 0 for k, v in self.fill_rates.items()},
-                'user_engagement': dict(self.user_engagement),
+                "delivery_stats": dict(self.delivery_stats),
+                "fill_rates": {k: sum(v) / len(v) if v else 0 for k, v in self.fill_rates.items()},
+                "user_engagement": dict(self.user_engagement),
             }
 
     def flush(self):
@@ -45,6 +47,7 @@ class SignalAnalytics:
             self.delivery_stats.clear()
             self.fill_rates.clear()
             self.user_engagement.clear()
+
 
 # Singleton instance
 signal_analytics = SignalAnalytics()
@@ -68,7 +71,7 @@ def calculate_volume_delta(candles: list[dict], window: int = 20) -> dict:
         closes = [float(c.get("close") or 0.0) for c in candles]
 
         last_vol = vols[-1]
-        prev_window = vols[-(window + 1):-1] if len(vols) > 1 else []
+        prev_window = vols[-(window + 1) : -1] if len(vols) > 1 else []
         if not prev_window:
             avg_prev = float(sum(vols[:-1]) / max(1, len(vols[:-1]))) if len(vols) > 1 else 0.0
         else:

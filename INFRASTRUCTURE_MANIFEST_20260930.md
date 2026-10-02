@@ -57,5 +57,5 @@ Ensure bucket credentials are injected into the Railway environment variables (`
 ## 7. Add Scheduled Restore Certification
 To verify backups, configure a GitHub Actions scheduled workflow (`.github/workflows/restore-drill.yml`) that runs weekly:
 - Downloads the latest Postgres dump from the R2 bucket.
-- Instantiates a temporary `postgres:16` Docker container.
+- Instantiates a temporary `postgres:18` Docker container.
 - Loads the dump and runs `scripts/schema_audit.py` to prove database integrity.

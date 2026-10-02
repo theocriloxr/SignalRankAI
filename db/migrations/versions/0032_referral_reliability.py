@@ -6,7 +6,6 @@ Create Date: 2026-08-02
 """
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision = "0032_referral_reliability"

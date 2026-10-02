@@ -75,13 +75,17 @@ async def run_ai_review_audit() -> Dict[str, Any]:
         "gemini_secondary_review": gemini_review,
         "provider_status": {
             "openai": (
-                "completed" if openai_review and openai_review.get("ok")
-                else "failed" if openai_review
+                "completed"
+                if openai_review and openai_review.get("ok")
+                else "failed"
+                if openai_review
                 else "not_configured"
             ),
             "gemini": (
-                "completed" if gemini_review and gemini_review.get("ok")
-                else "failed" if gemini_review
+                "completed"
+                if gemini_review and gemini_review.get("ok")
+                else "failed"
+                if gemini_review
                 else "not_requested"
             ),
         },

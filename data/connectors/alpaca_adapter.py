@@ -1,4 +1,5 @@
 """Alpaca Market Data historical bars adapter (stocks and crypto)."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -14,10 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def _timeframe(value: str) -> str | None:
-    return {"1m": "1Min", "5m": "5Min", "15m": "15Min", "1h": "1Hour", "4h": "4Hour", "1d": "1Day"}.get(str(value or "").lower())
+    return {"1m": "1Min", "5m": "5Min", "15m": "15Min", "1h": "1Hour", "4h": "4Hour", "1d": "1Day"}.get(
+        str(value or "").lower()
+    )
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     key = str(os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or "").strip()
     secret = str(os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or "").strip()
     tf = _timeframe(timeframe)
@@ -35,20 +40,36 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
         if "/" not in canonical:
             for quote in ("USDT", "USDC", "USD"):
                 if canonical.endswith(quote):
-                    canonical = f"{canonical[:-len(quote)]}/USD"
+                    canonical = f"{canonical[: -len(quote)]}/USD"
                     break
         endpoint = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-        params = {"symbols": canonical, "timeframe": tf, "start": start.isoformat(), "end": end.isoformat(), "limit": count, "sort": "asc"}
+        params = {
+            "symbols": canonical,
+            "timeframe": tf,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "limit": count,
+            "sort": "asc",
+        }
     else:
         canonical = raw
         endpoint = f"https://data.alpaca.markets/v2/stocks/{canonical}/bars"
-        params = {"timeframe": tf, "start": start.isoformat(), "end": end.isoformat(), "limit": count, "sort": "asc", "adjustment": "raw"}
+        params = {
+            "timeframe": tf,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "limit": count,
+            "sort": "asc",
+            "adjustment": "raw",
+        }
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     client = httpx_client.get_client("alpaca")
     if client is None:
         return []
     try:
-        response = await client.get(endpoint, params=params, headers=headers, timeout=min(12.0, max(1.0, float(timeout))))
+        response = await client.get(
+            endpoint, params=params, headers=headers, timeout=min(12.0, max(1.0, float(timeout)))
+        )
         if response.status_code != 200:
             return []
         payload = response.json() or {}

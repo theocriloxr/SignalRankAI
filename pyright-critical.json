@@ -1,0 +1,28 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "include": [
+    "core/env.py",
+    "core/financial_activation.py",
+    "core/release_guard.py",
+    "core/account_policy.py",
+    "core/transactional_outbox.py",
+    "core/event_bus.py",
+    "db/session.py",
+    "execution/service.py",
+    "services/delivery_authorization.py",
+    "services/mt5_signal_router.py",
+    "services/bybit_signal_router.py",
+    "services/outcome_reconciliation.py",
+    "services/platform/signal_delivery.py",
+    "engine/realtime_outcome_tracker.py",
+    "engine/adaptive/candle_store.py",
+    "runtime/outcome.py",
+    "scripts/controlled_migrate.py",
+    "scripts/verify_release_chain.py",
+    "scripts/staging_backup_restore_drill.py",
+    "scripts/demo_account_preflight.py"
+  ]
+}

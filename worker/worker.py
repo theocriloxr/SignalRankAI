@@ -1,4 +1,3 @@
-
 #
 # SignalRankAI Async Worker Entrypoint
 #
@@ -18,7 +17,6 @@ from config import config
 import signal
 import threading
 import time
-from typing import Optional
 
 from core.redis_state import state
 from db.session import get_session, run_with_db_retry, is_db_configured, is_transient_db_error
@@ -68,7 +66,6 @@ def _analytics_work_allowed_in_worker() -> bool:
     if run_mode == "analytics":
         return True
     return _env_bool_any(("ALLOW_ANALYTICS_IN_WORKER", "ALLOW_ML_TRAIN_IN_MONOLITH"), False)
-
 
 
 class Worker:
@@ -181,6 +178,8 @@ class Worker:
             logger.info("[worker] DynamicInstrumentDiscovery disabled for decomposed worker")
         if _env_bool("DECISION_LOG_RETRY_ENABLED", True):
             _register_task("decision_log_retry", lambda: self._decision_log_retry_loop(), restart_on_failure=True)
+        if _env_bool("EVENT_OUTBOX_RELAY_ENABLED", True):
+            _register_task("event_outbox_relay", lambda: self._event_outbox_relay_loop(), restart_on_failure=True)
         if _env_bool("WEBHOOK_DELIVERY_ENABLED", True):
             _register_task("webhook_delivery", lambda: self._webhook_delivery_loop(), restart_on_failure=True)
 
@@ -199,11 +198,16 @@ class Worker:
         # that detects when signals hit their targets and notifies users.
         # Default to ON in all deployments so every generated signal is tracked.
         # Override with WORKER_OUTCOME_TRACKER_ENABLED=0 to explicitly disable.
-        _enable_worker_tracker = _env_bool_any(("WORKER_OUTCOME_TRACKER_ENABLED", "REALTIME_OUTCOME_TRACKER_ENABLED"), True)
+        _enable_worker_tracker = _env_bool_any(
+            ("WORKER_OUTCOME_TRACKER_ENABLED", "REALTIME_OUTCOME_TRACKER_ENABLED"), True
+        )
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
-                _register_task("outcome_tracker", lambda: self._outcome_tracker_loop(outcome_tracker), restart_on_failure=True)
+
+                _register_task(
+                    "outcome_tracker", lambda: self._outcome_tracker_loop(outcome_tracker), restart_on_failure=True
+                )
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
@@ -230,7 +234,12 @@ class Worker:
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
-                _register_task("shadow_outcome_tracker", lambda: self._shadow_outcome_tracker_loop(shadow_outcome_worker), restart_on_failure=True)
+
+                _register_task(
+                    "shadow_outcome_tracker",
+                    lambda: self._shadow_outcome_tracker_loop(shadow_outcome_worker),
+                    restart_on_failure=True,
+                )
                 logger.info("[worker] ShadowOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
@@ -241,6 +250,7 @@ class Worker:
         if config.MARKET_MONITOR_ENABLED:
             try:
                 from worker.market_monitor import start_market_monitor
+
                 _register_task("market_monitor", lambda: start_market_monitor(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start market monitor: %s", e)
@@ -250,6 +260,7 @@ class Worker:
         if _enable_pulse:
             try:
                 from engine.admin_pulse import start_pulse_loop
+
                 _register_task("engine_pulse", lambda: start_pulse_loop(), restart_on_failure=True)
                 logger.info("[worker] EnginePulse started")
             except Exception as e:
@@ -258,6 +269,7 @@ class Worker:
         if config.CRYPTO_WS_ENABLED:
             try:
                 from data.ws_ingest import run_ws_ingestor
+
                 _register_task("ws_ingestor", lambda: run_ws_ingestor(self._stop), restart_on_failure=True)
                 logger.info(
                     "[worker] WebSocket ingestor enabled master=%s crypto=%s",
@@ -274,10 +286,7 @@ class Worker:
             )
 
         # Adaptive strategy learning is analytics-only and produces SHADOW candidates.
-        if (
-            _analytics_work_allowed_in_worker()
-            and _env_bool("ADAPTIVE_LEARNING_WORKER_ENABLED", True)
-        ):
+        if _analytics_work_allowed_in_worker() and _env_bool("ADAPTIVE_LEARNING_WORKER_ENABLED", True):
             try:
                 _register_task("adaptive_learning", lambda: self._adaptive_learning_loop(), restart_on_failure=True)
                 logger.info("[worker] AdaptiveStrategyLearning started")
@@ -287,7 +296,10 @@ class Worker:
         if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
             try:
                 from engine.adaptive.candle_store import candle_capture_loop
-                _register_task("adaptive_candle_capture", lambda: candle_capture_loop(self._stop), restart_on_failure=True)
+
+                _register_task(
+                    "adaptive_candle_capture", lambda: candle_capture_loop(self._stop), restart_on_failure=True
+                )
                 logger.info("[worker] AdaptiveCandleCapture started")
             except Exception as e:
                 logger.warning("[worker] Failed to start adaptive candle capture: %s", e)
@@ -295,6 +307,7 @@ class Worker:
         if _env_bool("BYBIT_EXECUTION_ENABLED", False) and _env_bool("BYBIT_RECONCILIATION_ENABLED", False):
             try:
                 from services.bybit_reconciler import bybit_reconciliation_loop
+
                 _register_task(
                     "bybit_reconciliation",
                     lambda: bybit_reconciliation_loop(self._stop),
@@ -304,12 +317,12 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start Bybit reconciliation: %s", e)
 
-        if (
-            _env_bool("MT5_RECONCILIATION_ENABLED", True)
-            and bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip())
+        if _env_bool("MT5_RECONCILIATION_ENABLED", True) and bool(
+            str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()
         ):
             try:
                 from services.mt5_reconciler import mt5_reconciliation_loop
+
                 _register_task(
                     "mt5_reconciliation",
                     lambda: mt5_reconciliation_loop(self._stop),
@@ -319,10 +332,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start MT5 reconciliation: %s", e)
         else:
-            logger.info(
-                "[worker] MT5ExecutionReconciliation disabled token_configured=%s",
-                bool(str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()),
-            )
+            logger.info("[worker] MT5ExecutionReconciliation disabled by configuration")
 
         if _env_bool("PAYMENTS_ENABLED", False) and _env_bool("PAYSTACK_WEBHOOK_RECOVERY_ENABLED", True):
             try:
@@ -330,6 +340,7 @@ class Worker:
                     paystack_recovery_configuration,
                     paystack_webhook_recovery_loop,
                 )
+
                 recovery_ready, recovery_reason = paystack_recovery_configuration()
                 if recovery_ready:
                     _register_task(
@@ -351,6 +362,7 @@ class Worker:
         if _env_bool("PAPER_TRADING_ENABLED", True):
             try:
                 from core.paper_trading_service import paper_trading_service
+
                 _register_task(
                     "paper_trading",
                     lambda: paper_trading_service.loop(self._stop),
@@ -368,18 +380,17 @@ class Worker:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
         # Data drift monitor belongs to the analytics role and is opt-in here.
-        if (
-            _analytics_work_allowed_in_worker()
-            and str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
-        ):
+        if _analytics_work_allowed_in_worker() and str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "0")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start drift monitor loop: %s", e)
-        if (
-            _analytics_work_allowed_in_worker()
-            and _env_bool("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True)
-        ):
+        if _analytics_work_allowed_in_worker() and _env_bool("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
             try:
                 from services.continuous_improvement.scheduler import continuous_improvement_loop
 
@@ -392,6 +403,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start continuous-improvement review loop: %s", e)
         import time
+
         last_heartbeat = time.time()
         try:
             while not self._stop.is_set():
@@ -461,6 +473,7 @@ class Worker:
             if "outcome_tracker" in managed_tasks:
                 try:
                     from engine.realtime_outcome_tracker import outcome_tracker
+
                     await outcome_tracker.stop()
                 except Exception:
                     pass
@@ -543,7 +556,9 @@ class Worker:
                     try:
                         rows = await asyncio.wait_for(
                             asyncio.to_thread(discover, top=top),
-                            timeout=max(5.0, _env_float("INSTRUMENT_DISCOVERY_PROVIDER_TIMEOUT_SECONDS", 20.0, minimum=5.0)),
+                            timeout=max(
+                                5.0, _env_float("INSTRUMENT_DISCOVERY_PROVIDER_TIMEOUT_SECONDS", 20.0, minimum=5.0)
+                            ),
                         )
                         payload = list(rows or [])
                         provider_rows[provider] = payload
@@ -656,8 +671,7 @@ class Worker:
                     ),
                 )
                 logger.info(
-                    "[web_signal_fanout] deferred reason=db_capacity "
-                    "retry_in_s=%.1f err=%s",
+                    "[web_signal_fanout] deferred reason=db_capacity retry_in_s=%.1f err=%s",
                     sleep_for,
                     type(exc).__name__,
                 )
@@ -693,15 +707,22 @@ class Worker:
         while not self._stop.is_set():
             try:
                 if is_db_configured():
+
                     async def _do_expire() -> None:
                         from db.priority import DBPriority
                         from db.session import NoncriticalWriteDropped
+
                         try:
-                            async with get_session(priority=DBPriority.BACKGROUND, label="subscription_expiry") as session:
+                            async with get_session(
+                                priority=DBPriority.BACKGROUND, label="subscription_expiry"
+                            ) as session:
                                 _ = await expire_subscriptions(session)
                                 await session.commit()
                         except NoncriticalWriteDropped:
-                            logger.info("[db_background_deferred] task=subscription_expiry reason=foreground_reserved retry_in_s=3600")
+                            logger.info(
+                                "[db_background_deferred] task=subscription_expiry reason=foreground_reserved retry_in_s=3600"
+                            )
+
                     await run_with_db_retry(_do_expire)
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")
@@ -714,11 +735,59 @@ class Worker:
         while not self._stop.is_set():
             try:
                 from db.repository import flush_decision_log_retry_queue
+
                 flushed = await flush_decision_log_retry_queue(batch_size)
                 if flushed:
                     logger.info("[worker] decision log retry flushed=%s", flushed)
             except Exception as exc:
                 logger.debug("[worker] decision log retry deferred: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _event_outbox_relay_loop(self) -> None:
+        """Replay PostgreSQL-fallback events after the Redis transport recovers."""
+        from core.event_bus import publish_outbox_entry
+        from core.transactional_outbox import (
+            IdempotentInbox,
+            OutboxRelay,
+            PostgresTransactionalOutbox,
+        )
+
+        interval = max(1.0, _env_float("EVENT_OUTBOX_RELAY_INTERVAL_SECONDS", 2.0, minimum=1.0))
+        batch_size = max(1, min(100, int(os.getenv("EVENT_OUTBOX_RELAY_BATCH_SIZE", "20") or 20)))
+        max_attempts = max(1, min(20, int(os.getenv("EVENT_OUTBOX_MAX_ATTEMPTS", "8") or 8)))
+        outbox = PostgresTransactionalOutbox(
+            lease_seconds=max(15, int(os.getenv("EVENT_OUTBOX_CLAIM_LEASE_SECONDS", "60") or 60))
+        )
+        inbox = IdempotentInbox(ttl_seconds=30 * 24 * 3600)
+        relay = OutboxRelay(
+            outbox=outbox,
+            inbox=inbox,
+            processor=publish_outbox_entry,
+            batch_size=batch_size,
+            budget=max(batch_size, batch_size * 5),
+            max_attempts=max_attempts,
+        )
+        while not self._stop.is_set():
+            try:
+                processed = await relay.run_once()
+                if processed:
+                    logger.info(
+                        "[event_outbox_relay] examined=%s processed=%s failed=%s dead_lettered=%s depth=%s",
+                        processed,
+                        relay.metrics["processed"],
+                        relay.metrics["failed"],
+                        relay.metrics["dead_lettered"],
+                        await outbox.depth(),
+                    )
+            except Exception as exc:
+                logger.info(
+                    "[event_outbox_relay] deferred error_type=%s detail=%s",
+                    type(exc).__name__,
+                    str(exc)[:240],
+                )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
@@ -766,6 +835,7 @@ class Worker:
                             lease.scope,
                         )
                     elif is_db_configured():
+
                         async def _run_phase(label: str, operation, *, budget_seconds: float):
                             from db.priority import DBPriority
 
@@ -979,7 +1049,12 @@ class Worker:
         """Compare live feature distributions against baseline and alert admins on drift."""
         interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
         psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
-        retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         initial_delay = _env_float(
             "ML_DRIFT_STARTUP_DELAY_SECONDS",
             180.0 if _is_railway_runtime() else 0.0,
@@ -1030,6 +1105,7 @@ class Worker:
                 result["source"] = drift_source
                 try:
                     from ml.live_drift import load_live_prediction_samples
+
                     live_predictions = load_live_prediction_samples()
                 except Exception:
                     live_predictions = []
@@ -1099,7 +1175,9 @@ class Worker:
                     try:
                         state.set_sync("signalrankai:ml:drift:mode", "penalize", ex=max(1800, interval * 2))
                         state.set_sync("signalrankai:ml:drift:severity", f"{severity:.6f}", ex=max(1800, interval * 2))
-                        state.set_sync("signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2))
+                        state.set_sync(
+                            "signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2)
+                        )
                     except Exception:
                         pass
                     try:

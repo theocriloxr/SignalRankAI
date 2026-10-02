@@ -8,6 +8,7 @@ This module is the boundary between global SignalRank intelligence and an
 individual user's trading-account permissions. It supports multiple accounts
 per canonical user without sharing mutable account state.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -307,11 +308,7 @@ def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[di
             rule["value"] = str(value)
             rule["unit"] = unit
         elif rule_type == "forbid_execution_modes":
-            modes = {
-                str(item).strip().lower()
-                for item in (rule.get("modes") or [])
-                if str(item).strip()
-            }
+            modes = {str(item).strip().lower() for item in (rule.get("modes") or []) if str(item).strip()}
             if not modes or not modes.issubset(_LIVE_MODES):
                 raise ValueError(f"invalid_prop_hard_rule_modes:{rule_id}")
             rule["modes"] = sorted(modes)
@@ -321,8 +318,11 @@ def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[di
                 raise ValueError(f"invalid_prop_hard_rule_values:{rule_id}")
             rule["values"] = list(values)
         elif rule_type == "max_open_positions":
+            raw_value = rule.get("value")
+            if raw_value is None:
+                raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}")
             try:
-                value = int(rule.get("value"))
+                value = int(raw_value)
             except (TypeError, ValueError):
                 raise ValueError(f"invalid_prop_hard_rule_value:{rule_id}") from None
             if value < 0:
@@ -529,7 +529,9 @@ def evaluate_account_policy(
     weekly_limit = _effective_limit(
         policy.max_weekly_loss_pct,
         policy.external_max_weekly_loss_pct if policy.account_mode == "PROP" else None,
-        policy.safety_buffer_pct if policy.account_mode == "PROP" and policy.external_max_weekly_loss_pct is not None else Decimal("0"),
+        policy.safety_buffer_pct
+        if policy.account_mode == "PROP" and policy.external_max_weekly_loss_pct is not None
+        else Decimal("0"),
     )
     drawdown_limit = _effective_limit(
         policy.max_total_drawdown_pct,
@@ -561,11 +563,7 @@ def evaluate_account_policy(
         )
         if daily_limit is not None and daily_loss >= daily_limit:
             reasons.append("daily_loss_limit")
-        if (
-            policy.max_weekly_loss_pct > 0
-            and snapshot.week_start_equity > 0
-            and snapshot.weekly_baseline_verified
-        ):
+        if policy.max_weekly_loss_pct > 0 and snapshot.week_start_equity > 0 and snapshot.weekly_baseline_verified:
             equity_weekly_loss = max(
                 Decimal("0"),
                 (snapshot.week_start_equity - snapshot.current_equity) / snapshot.week_start_equity,
@@ -599,14 +597,10 @@ def evaluate_account_policy(
     asset_class = str(snapshot.asset_class or "").strip().upper()
     if policy.allowed_instruments and (not symbol or symbol not in policy.allowed_instruments):
         reasons.append("instrument_not_allowed")
-    if policy.allowed_asset_classes and (
-        not asset_class or asset_class not in policy.allowed_asset_classes
-    ):
+    if policy.allowed_asset_classes and (not asset_class or asset_class not in policy.allowed_asset_classes):
         reasons.append("asset_class_not_allowed")
     strategy = str(snapshot.strategy or "").strip().upper()
-    if policy.allowed_strategies and (
-        not strategy or strategy not in policy.allowed_strategies
-    ):
+    if policy.allowed_strategies and (not strategy or strategy not in policy.allowed_strategies):
         reasons.append("strategy_not_allowed")
     if not _trading_window_allows(policy, snapshot.evaluated_at_utc):
         reasons.append("outside_trading_window")
@@ -677,9 +671,7 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
             default="0.06",
         ),
         max_open_positions=int(
-            value.get("max_open_positions")
-            if value.get("max_open_positions") is not None
-            else 3
+            value["max_open_positions"] if value.get("max_open_positions") is not None else 3
         ),
         max_leverage=_decimal(
             value.get("max_leverage"),
@@ -743,23 +735,11 @@ def policy_from_mapping(value: Mapping[str, Any]) -> TradingAccountPolicy:
         weekend_holding_allowed=bool(value.get("weekend_holding_allowed", True)),
         prop_firm=(str(value.get("prop_firm")).strip() if value.get("prop_firm") else None),
         prop_phase=(str(value.get("prop_phase")).strip() if value.get("prop_phase") else None),
-        prop_rules_version=(
-            str(value.get("prop_rules_version")).strip()
-            if value.get("prop_rules_version")
-            else None
-        ),
+        prop_rules_version=(str(value.get("prop_rules_version")).strip() if value.get("prop_rules_version") else None),
         certified=bool(value.get("certified", False)),
-        certification_ref=(
-            str(value.get("certification_ref")).strip()
-            if value.get("certification_ref")
-            else None
-        ),
+        certification_ref=(str(value.get("certification_ref")).strip() if value.get("certification_ref") else None),
         frozen=bool(value.get("frozen", False)),
-        frozen_reason=(
-            str(value.get("frozen_reason")).strip()
-            if value.get("frozen_reason")
-            else None
-        ),
+        frozen_reason=(str(value.get("frozen_reason")).strip() if value.get("frozen_reason") else None),
         extra_rules=dict(value.get("extra_rules") or {}),
     )
 

@@ -7,6 +7,7 @@ Examples:
 
 Live mode is intentionally opt-in and never prints credential values.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,7 +17,6 @@ from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path
-import socket
 import sys
 import time
 from typing import Any
@@ -47,6 +47,9 @@ class ProviderCertification:
     candle_count: int = 0
     latency_ms: float | None = None
     validation: dict[str, Any] | None = None
+    freshness_age_seconds: float | None = None
+    freshness_limit_seconds: float | None = None
+    execution_eligible: bool = False
     error: str | None = None
     docs_url: str = ""
     tested_at: str = ""
@@ -70,6 +73,42 @@ def _looks_like_network_failure(exc: BaseException | str) -> bool:
             "timeout",
         )
     )
+
+
+_TIMEFRAME_SECONDS = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+}
+
+
+def _freshness_validation(
+    spec: ProviderSpec,
+    validation: dict[str, Any] | None,
+) -> tuple[bool, float | None, float | None, str | None]:
+    """Require genuinely recent data before a provider is execution-eligible."""
+    if not spec.realtime_capable:
+        return False, None, None, "provider_catalog_not_realtime_capable"
+    payload = dict(validation or {})
+    last = payload.get("last_timestamp")
+    if last is None:
+        return False, None, None, "missing_last_timestamp"
+    try:
+        last_value = float(last)
+    except (TypeError, ValueError):
+        return False, None, None, "invalid_last_timestamp"
+    while last_value > 10_000_000_000:
+        last_value /= 1000.0
+    age = max(0.0, time.time() - last_value)
+    interval = float(_TIMEFRAME_SECONDS.get(str(spec.sample_timeframe).lower(), 3600))
+    limit = max(180.0, interval * 2.5)
+    if age > limit:
+        return False, age, limit, f"stale_live_sample:{age:.0f}s>{limit:.0f}s"
+    return True, age, limit, None
 
 
 def _provider_certification_hint(module: Any) -> dict[str, str] | None:
@@ -137,7 +176,9 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
     )
 
     if not implemented:
-        result.certification_status = CertificationStatus.DISABLED.value if not enabled else CertificationStatus.FAILED.value
+        result.certification_status = (
+            CertificationStatus.DISABLED.value if not enabled else CertificationStatus.FAILED.value
+        )
         result.error = "No canonical connector implementation in this repository snapshot."
         return result
 
@@ -238,6 +279,27 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
             result.certification_status = CertificationStatus.FAILED.value
             result.error = "; ".join(result.validation["errors"][:8])
             return result
+
+        fresh, age, freshness_limit, freshness_error = _freshness_validation(spec, result.validation)
+        result.freshness_age_seconds = round(age, 3) if age is not None else None
+        result.freshness_limit_seconds = round(freshness_limit, 3) if freshness_limit is not None else None
+        result.execution_eligible = bool(fresh)
+        result.validation = {
+            **dict(result.validation or {}),
+            "freshness_valid": bool(fresh),
+            "freshness_age_seconds": result.freshness_age_seconds,
+            "freshness_limit_seconds": result.freshness_limit_seconds,
+            "realtime_capable": bool(spec.realtime_capable),
+        }
+        if not spec.realtime_capable:
+            result.certification_status = CertificationStatus.ANALYSIS_ONLY.value
+            result.error = freshness_error
+            return result
+        if not fresh:
+            result.certification_status = CertificationStatus.FAILED.value
+            result.error = freshness_error
+            return result
+
         if spec.sandbox:
             result.certification_status = CertificationStatus.IMPLEMENTED_AND_SANDBOX_VERIFIED.value
         elif spec.public_endpoint and not spec.required_env:
@@ -280,10 +342,7 @@ def _markdown(results: list[ProviderCertification]) -> str:
 async def _run(args: argparse.Namespace) -> int:
     requested = {item.strip().lower() for item in (args.providers or "").split(",") if item.strip()}
     specs = [spec for spec in list_provider_specs() if not requested or spec.key in requested]
-    results = [
-        await certify_one(spec, live=args.live, timeout=args.timeout, limit=args.limit)
-        for spec in specs
-    ]
+    results = [await certify_one(spec, live=args.live, timeout=args.timeout, limit=args.limit) for spec in specs]
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -296,11 +355,59 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"JSON: {json_path}")
     print(f"Markdown: {md_path}")
 
-    hard_fail = any(
-        item.certification_status == CertificationStatus.FAILED.value
-        and item.enabled
-        for item in results
-    )
+    hard_fail = any(item.certification_status == CertificationStatus.FAILED.value and item.enabled for item in results)
+
+    required_classes = {
+        item.strip().lower()
+        for item in str(args.require_asset_classes or "").split(",")
+        if item.strip()
+    }
+    if required_classes:
+        class_coverage: dict[str, list[str]] = {
+            asset_class: [] for asset_class in sorted(required_classes)
+        }
+        specs_by_key = {spec.key: spec for spec in specs}
+        passing_statuses = {
+            CertificationStatus.IMPLEMENTED_AND_PUBLIC_ENDPOINT_VERIFIED.value,
+            CertificationStatus.IMPLEMENTED_AND_SANDBOX_VERIFIED.value,
+            CertificationStatus.IMPLEMENTED_AND_LIVE_VERIFIED.value,
+        }
+        for item in results:
+            spec = specs_by_key.get(item.provider)
+            if spec is None or not item.execution_eligible:
+                continue
+            if item.certification_status not in passing_statuses:
+                continue
+            spec_classes = {str(value).lower() for value in spec.asset_classes}
+            for asset_class in required_classes.intersection(spec_classes):
+                class_coverage[asset_class].append(item.provider)
+
+        missing_classes = sorted(
+            asset_class
+            for asset_class, providers in class_coverage.items()
+            if not providers
+        )
+        coverage_path = output_dir / "provider_class_coverage.json"
+        coverage_path.write_text(
+            json.dumps(
+                {
+                    "required_asset_classes": sorted(required_classes),
+                    "coverage": class_coverage,
+                    "missing_asset_classes": missing_classes,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        print(f"Class coverage: {coverage_path}")
+        if missing_classes:
+            print(
+                "BLOCKED missing execution-eligible provider coverage: "
+                + ",".join(missing_classes)
+            )
+            hard_fail = True
+
     return 1 if hard_fail else 0
 
 
@@ -311,6 +418,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output-dir", default="artifacts/provider-certification")
+    parser.add_argument(
+        "--require-asset-classes",
+        default="",
+        help=(
+            "comma-separated asset classes that must each have an "
+            "execution-eligible live-certified provider"
+        ),
+    )
     return parser
 
 

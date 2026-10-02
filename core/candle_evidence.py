@@ -222,7 +222,9 @@ def assess_candle_evidence(
     atr = sum(atr_values) / len(atr_values) if atr_values else span
     support, resistance = _past_levels(history[-level_lookback:], close)
     support_distance = min(abs(low - support), abs(close - support)) if support is not None else float("inf")
-    resistance_distance = min(abs(high - resistance), abs(close - resistance)) if resistance is not None else float("inf")
+    resistance_distance = (
+        min(abs(high - resistance), abs(close - resistance)) if resistance is not None else float("inf")
+    )
     support_touched = support is not None and (low <= support <= max(open_, close) or support_distance <= atr * 0.5)
     resistance_touched = resistance is not None and (
         min(open_, close) <= resistance <= high or resistance_distance <= atr * 0.5
@@ -270,9 +272,7 @@ def assess_candle_evidence(
 
     confirmation, follow_through = "pending", "pending"
     following_is_historical = index + 1 < len(candles) - 1
-    if index + 1 < len(candles) and (
-        following_is_historical or _candle_is_final(candles[index + 1], timeframe)
-    ):
+    if index + 1 < len(candles) and (following_is_historical or _candle_is_final(candles[index + 1], timeframe)):
         following_values = _valid_ohlc(candles[index + 1])
         if following_values is not None:
             following_open, _, _, following_close = following_values
@@ -311,9 +311,11 @@ def assess_candle_evidence(
     close_conflicts = (desired == "bullish" and close_control == "sellers") or (
         desired == "bearish" and close_control == "buyers"
     )
-    context_supports = (aligned_rejection and at_key_level) or (
-        desired == "bullish" and breakout == "bullish_breakout"
-    ) or (desired == "bearish" and breakout == "bearish_breakdown")
+    context_supports = (
+        (aligned_rejection and at_key_level)
+        or (desired == "bullish" and breakout == "bullish_breakout")
+        or (desired == "bearish" and breakout == "bearish_breakdown")
+    )
 
     aligned: list[str] = []
     conflicts: list[str] = []
@@ -347,8 +349,10 @@ def assess_candle_evidence(
     positive_count = sum(checks)
     raw_pct = 100.0 * positive_count / max(1, len(checks))
     evidence_score_pct = _clamp(raw_pct - (15.0 * len(conflicts)), 0.0, 100.0)
-    state = "invalidated" if confirmation == "invalidated" else (
-        "confirmed" if confirmation == "confirmed" and evidence_score_pct >= 60.0 else "observed"
+    state = (
+        "invalidated"
+        if confirmation == "invalidated"
+        else ("confirmed" if confirmation == "confirmed" and evidence_score_pct >= 60.0 else "observed")
     )
     volume_text = f"volume {relative_volume:.2f}x" if relative_volume is not None else "volume unavailable"
     summary = (
@@ -422,13 +426,15 @@ def build_candle_intelligence(
     else:
         alignment = "mixed"
     payload = selected.as_dict()
-    payload.update({
-        "alignment": alignment,
-        "selected_focus": selected_focus,
-        "latest": latest.as_dict(),
-        "previous": previous.as_dict() if previous is not None else None,
-        "confirmation_required": selected.confirmation != "confirmed",
-    })
+    payload.update(
+        {
+            "alignment": alignment,
+            "selected_focus": selected_focus,
+            "latest": latest.as_dict(),
+            "previous": previous.as_dict() if previous is not None else None,
+            "confirmation_required": selected.confirmation != "confirmed",
+        }
+    )
     return payload
 
 

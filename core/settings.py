@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import os
 
 try:
     # pydantic v2 separates settings into pydantic_settings
     from pydantic_settings import BaseSettings
+
     _PYDANTIC_V2_SETTINGS = True
 except Exception:
     try:
         from pydantic import BaseSettings
+
         _PYDANTIC_V2_SETTINGS = False
     except Exception:
         raise
@@ -41,7 +42,8 @@ class Settings(BaseSettings):
     TELEGRAM_READ_TIMEOUT: int = 30
     TELEGRAM_WRITE_TIMEOUT: int = 30
 
-    if not globals().get("_PYDANTIC_V2_SETTINGS", False):
+    if not _PYDANTIC_V2_SETTINGS:
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -64,6 +66,7 @@ def get_settings() -> Settings:
     if not _settings.DATABASE_URL:
         try:
             from config import resolve_database_url
+
             resolved = resolve_database_url(async_driver=True)
         except Exception:
             resolved = None
@@ -74,6 +77,9 @@ def get_settings() -> Settings:
 
 def validate_required_settings() -> None:
     import logging as _logging
+    from core.env import validate_alias_conflicts
+
+    validate_alias_conflicts()
     s = get_settings()
     _log = _logging.getLogger(__name__)
     fatal: list[str] = []

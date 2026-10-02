@@ -5,6 +5,7 @@ Prefer Git's tracked-file inventory when available. Railway source builds and
 release ZIPs may not include ``.git`` metadata, so fall back to a deterministic
 filesystem scan with the same deployable-source exclusions.
 """
+
 from __future__ import annotations
 
 import py_compile
@@ -34,8 +35,7 @@ def _filesystem_python_files() -> list[Path]:
     return sorted(
         path
         for path in ROOT.rglob("*.py")
-        if path.is_file()
-        and not any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts)
+        if path.is_file() and not any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts)
     )
 
 

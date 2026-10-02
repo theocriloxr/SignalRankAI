@@ -1,4 +1,5 @@
 """Short-lived DB reads for the provider-discovered engine universe."""
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -25,11 +26,9 @@ async def load_database_universe(
         "indices": "index",
         "futures": "future",
     }
-    wanted = sorted({
-        aliases.get(str(x).strip().lower(), str(x).strip().lower())
-        for x in (asset_classes or ())
-        if str(x).strip()
-    })
+    wanted = sorted(
+        {aliases.get(str(x).strip().lower(), str(x).strip().lower()) for x in (asset_classes or ()) if str(x).strip()}
+    )
     params: dict[str, object] = {"limit": max(1, min(int(limit), 2000))}
     class_clause = ""
     if wanted:
@@ -39,7 +38,8 @@ async def load_database_universe(
             placeholders.append(f":{key}")
             params[key] = asset_class
         class_clause = " AND LOWER(i.asset_class) IN (" + ",".join(placeholders) + ")"
-    statement = text("""
+    statement = text(
+        """
         SELECT DISTINCT i.canonical_symbol
         FROM instruments i
         JOIN provider_instruments pi
@@ -55,6 +55,9 @@ async def load_database_universe(
             'analysis_ready','shadow','paper_certified','delivery_certified',
             'testnet_certified','live_guarded'
           )
-    """ + class_clause + " ORDER BY i.canonical_symbol LIMIT :limit")
+    """
+        + class_clause
+        + " ORDER BY i.canonical_symbol LIMIT :limit"
+    )
     result = await session.execute(statement, params)
     return [str(row[0]).upper() for row in result.all() if row and row[0]]

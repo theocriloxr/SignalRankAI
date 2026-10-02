@@ -8,7 +8,7 @@ import re
 
 from engine.backtest import BacktestRunner
 from engine.risk_manager import RiskManager
-from typing import Callable, Iterable, Dict, Any
+from typing import Callable
 from ml.features import extract_features
 
 try:
@@ -56,11 +56,13 @@ class WalkForwardOptimizer:
         return value
 
     @staticmethod
-    def _average_daily_volume_notional(df: pd.DataFrame | None, timeframe: str | None, price_fallback: float = 1.0) -> float:
-        if df is None or df.empty or 'volume' not in df.columns:
+    def _average_daily_volume_notional(
+        df: pd.DataFrame | None, timeframe: str | None, price_fallback: float = 1.0
+    ) -> float:
+        if df is None or df.empty or "volume" not in df.columns:
             return 0.0
         try:
-            avg_bar_volume = float(pd.to_numeric(df['volume'], errors='coerce').dropna().tail(1000).mean() or 0.0)
+            avg_bar_volume = float(pd.to_numeric(df["volume"], errors="coerce").dropna().tail(1000).mean() or 0.0)
         except Exception:
             avg_bar_volume = 0.0
         if avg_bar_volume <= 0:
@@ -112,15 +114,18 @@ class WalkForwardOptimizer:
             tick_df = df_map.get(f"{asset}|{tf}|ticks")
             if df is None:
                 continue
-            rows = df[(df['timestamp'] >= pd.to_datetime(test_start, utc=True)) & (df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
+            rows = df[
+                (df["timestamp"] >= pd.to_datetime(test_start, utc=True))
+                & (df["timestamp"] <= pd.to_datetime(test_end, utc=True))
+            ]
             if rows.empty:
                 continue
-            entry = float(sig.get('entry') or 0.0)
-            stop = float(sig.get('stop_loss') or 0.0)
-            tps = sig.get('take_profit') or sig.get('targets') or []
+            entry = float(sig.get("entry") or 0.0)
+            stop = float(sig.get("stop_loss") or 0.0)
+            tps = sig.get("take_profit") or sig.get("targets") or []
             if not tps or entry <= 0:
                 continue
-            direction = str(sig.get('direction') or 'long').lower()
+            direction = str(sig.get("direction") or "long").lower()
             # Optionally apply ML predictor to filter signals or weight position
             ml_prob = None
             if train_predictor is not None:
@@ -130,10 +135,10 @@ class WalkForwardOptimizer:
                     ml_prob = None
 
             # Position sizing: use risk manager's dynamic pct or Kelly if provided in signal
-            if 'kelly_win_rate' in sig and 'kelly_win_loss' in sig:
+            if "kelly_win_rate" in sig and "kelly_win_loss" in sig:
                 # Kelly fraction: w - (1-w)/r
-                w = float(sig.get('kelly_win_rate') or 0.0)
-                r = float(sig.get('kelly_win_loss') or 1.0)
+                w = float(sig.get("kelly_win_rate") or 0.0)
+                r = float(sig.get("kelly_win_loss") or 1.0)
                 try:
                     kelly_fraction = max(0.0, w - (1.0 - w) / max(r, 1e-9))
                 except Exception:
@@ -153,8 +158,8 @@ class WalkForwardOptimizer:
             adv_notional = self._average_daily_volume_notional(df, tf, price_fallback=entry)
 
             # simulate per-candle hits, supporting partial TPs
-            tp_prices = [float(tp.get('price') if isinstance(tp, dict) else tp) for tp in tps]
-            tp_alloc = [float(tp.get('exit_percent', 0.0)) / 100.0 if isinstance(tp, dict) else 1.0 for tp in tps]
+            tp_prices = [float(tp.get("price") if isinstance(tp, dict) else tp) for tp in tps]
+            tp_alloc = [float(tp.get("exit_percent", 0.0)) / 100.0 if isinstance(tp, dict) else 1.0 for tp in tps]
             if not tp_alloc or sum(tp_alloc) == 0:
                 tp_alloc = [1.0]
             remaining_units = units
@@ -162,21 +167,24 @@ class WalkForwardOptimizer:
             win_flags = []
             # If tick data exists, prefer tick-level fill simulation
             # Prefer orderbook-based fills when available
-            if orderbook_df is not None and 'bids' in orderbook_df.columns and 'asks' in orderbook_df.columns:
-                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0], utc=True)
-                snaps = orderbook_df[(orderbook_df['timestamp'] >= sig_ts) & (orderbook_df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
+            if orderbook_df is not None and "bids" in orderbook_df.columns and "asks" in orderbook_df.columns:
+                sig_ts = pd.to_datetime(sig.get("timestamp") or rows["timestamp"].iloc[0], utc=True)
+                snaps = orderbook_df[
+                    (orderbook_df["timestamp"] >= sig_ts)
+                    & (orderbook_df["timestamp"] <= pd.to_datetime(test_end, utc=True))
+                ]
                 for _, srow in snaps.iterrows():
-                    asks = [[float(level[0]), float(level[1])] for level in (srow.get('asks') or [])]
-                    bids = [[float(level[0]), float(level[1])] for level in (srow.get('bids') or [])]
+                    asks = [[float(level[0]), float(level[1])] for level in (srow.get("asks") or [])]
+                    bids = [[float(level[0]), float(level[1])] for level in (srow.get("bids") or [])]
                     if not asks and not bids:
                         continue
                     best_ask = float(asks[0][0]) if asks else entry
                     best_bid = float(bids[0][0]) if bids else entry
                     mid = (best_ask + best_bid) / 2.0 if best_ask > 0 and best_bid > 0 else entry
                     spread_pct = abs(best_ask - best_bid) / mid if mid > 0 else 0.0
-                    snapshot_depth = sum(max(0.0, float(level[1])) for level in (asks if direction == 'long' else bids))
+                    snapshot_depth = sum(max(0.0, float(level[1])) for level in (asks if direction == "long" else bids))
                     # For market buy orders we consume asks (lowest price first)
-                    if direction == 'long':
+                    if direction == "long":
                         levels = sorted(asks, key=lambda x: float(x[0]))
                     else:
                         levels = sorted(bids, key=lambda x: -float(x[0]))
@@ -188,9 +196,15 @@ class WalkForwardOptimizer:
                         fill_qty = min(remaining_units, level_size if level_size > 0 else remaining_units)
                         if fill_qty <= 0:
                             continue
-                        impact_pct = self._market_impact_pct(fill_qty, level_price, adv_notional, snapshot_depth, spread_pct=spread_pct)
-                        exec_price = level_price * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
-                        trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
+                        impact_pct = self._market_impact_pct(
+                            fill_qty, level_price, adv_notional, snapshot_depth, spread_pct=spread_pct
+                        )
+                        exec_price = level_price * (
+                            1 + slippage_pct + impact_pct if direction == "long" else 1 - slippage_pct - impact_pct
+                        )
+                        trade_pnl = (
+                            (exec_price - entry) * fill_qty if direction == "long" else (entry - exec_price) * fill_qty
+                        )
                         trade_pnl -= abs(trade_pnl) * commission_pct
                         pnl += trade_pnl
                         remaining_units -= fill_qty
@@ -199,14 +213,16 @@ class WalkForwardOptimizer:
                         win_flags.append(True if fill_qty > 0 else False)
                     if remaining_units <= 0:
                         break
-            elif tick_df is not None and 'price' in tick_df.columns:
-                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0], utc=True)
-                ticks = tick_df[(tick_df['timestamp'] >= sig_ts) & (tick_df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
+            elif tick_df is not None and "price" in tick_df.columns:
+                sig_ts = pd.to_datetime(sig.get("timestamp") or rows["timestamp"].iloc[0], utc=True)
+                ticks = tick_df[
+                    (tick_df["timestamp"] >= sig_ts) & (tick_df["timestamp"] <= pd.to_datetime(test_end, utc=True))
+                ]
                 for _, trow in ticks.iterrows():
-                    price = float(trow.get('price') or trow.get('price'))
+                    price = float(trow.get("price") or trow.get("price"))
                     # available liquidity at this tick (try several common fields)
                     tick_size = None
-                    for key in ('size', 'qty', 'volume'):
+                    for key in ("size", "qty", "volume"):
                         if key in trow and trow.get(key) is not None:
                             try:
                                 tick_size = float(trow.get(key))
@@ -221,7 +237,7 @@ class WalkForwardOptimizer:
                     for j, tp in enumerate(tp_prices):
                         if remaining_units <= 0:
                             break
-                        hit_tp = (price >= tp) if direction == 'long' else (price <= tp)
+                        hit_tp = (price >= tp) if direction == "long" else (price <= tp)
                         if hit_tp:
                             qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
                             target_qty = units * qty_pct
@@ -229,9 +245,17 @@ class WalkForwardOptimizer:
                             fill_qty = min(remaining_units, tick_size, target_qty)
                             if fill_qty <= 0:
                                 continue
-                            impact_pct = self._market_impact_pct(fill_qty, price, adv_notional, tick_size, spread_pct=0.0)
-                            exec_price = price * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
-                            trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
+                            impact_pct = self._market_impact_pct(
+                                fill_qty, price, adv_notional, tick_size, spread_pct=0.0
+                            )
+                            exec_price = price * (
+                                1 + slippage_pct + impact_pct if direction == "long" else 1 - slippage_pct - impact_pct
+                            )
+                            trade_pnl = (
+                                (exec_price - entry) * fill_qty
+                                if direction == "long"
+                                else (entry - exec_price) * fill_qty
+                            )
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
                             remaining_units -= fill_qty
@@ -241,13 +265,23 @@ class WalkForwardOptimizer:
                             win_flags.append(True if fill_qty > 0 else False)
                     # check SL only if still have remaining_units
                     if remaining_units > 0:
-                        hit_sl = (price <= stop) if direction == 'long' else (price >= stop)
+                        hit_sl = (price <= stop) if direction == "long" else (price >= stop)
                         if hit_sl:
                             fill_qty = min(remaining_units, tick_size)
                             if fill_qty > 0:
-                                impact_pct = self._market_impact_pct(fill_qty, price, adv_notional, tick_size, spread_pct=0.0)
-                                exec_price = price * (1 - slippage_pct - impact_pct if direction == 'long' else 1 + slippage_pct + impact_pct)
-                                trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
+                                impact_pct = self._market_impact_pct(
+                                    fill_qty, price, adv_notional, tick_size, spread_pct=0.0
+                                )
+                                exec_price = price * (
+                                    1 - slippage_pct - impact_pct
+                                    if direction == "long"
+                                    else 1 + slippage_pct + impact_pct
+                                )
+                                trade_pnl = (
+                                    (exec_price - entry) * fill_qty
+                                    if direction == "long"
+                                    else (entry - exec_price) * fill_qty
+                                )
                                 trade_pnl -= abs(trade_pnl) * commission_pct
                                 pnl += trade_pnl
                                 win_flags.append(False)
@@ -259,32 +293,50 @@ class WalkForwardOptimizer:
             else:
                 for idx in rows.index:
                     row = rows.loc[idx]
-                    high = float(row['high'])
-                    low = float(row['low'])
-                    bar_depth = max(0.0, float(row.get('volume') or 0.0))
+                    high = float(row["high"])
+                    low = float(row["low"])
+                    bar_depth = max(0.0, float(row.get("volume") or 0.0))
                     # check TP levels
                     for j, tp in enumerate(tp_prices):
                         if remaining_units <= 0:
                             break
-                        hit_tp = (high >= tp) if direction == 'long' else (low <= tp)
+                        hit_tp = (high >= tp) if direction == "long" else (low <= tp)
                         if hit_tp:
                             qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
                             qty = units * qty_pct
                             # apply slippage/commission
-                            impact_pct = self._market_impact_pct(qty, tp, adv_notional, bar_depth, spread_pct=abs(high - low) / max(tp, 1e-9))
-                            exec_price = tp * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
-                            trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
+                            impact_pct = self._market_impact_pct(
+                                qty, tp, adv_notional, bar_depth, spread_pct=abs(high - low) / max(tp, 1e-9)
+                            )
+                            exec_price = tp * (
+                                1 + slippage_pct + impact_pct if direction == "long" else 1 - slippage_pct - impact_pct
+                            )
+                            trade_pnl = (
+                                (exec_price - entry) * qty if direction == "long" else (entry - exec_price) * qty
+                            )
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
                             remaining_units -= qty
                             win_flags.append(True)
                     # check SL only if still have remaining_units
                     if remaining_units > 0:
-                        hit_sl = (low <= stop) if direction == 'long' else (high >= stop)
+                        hit_sl = (low <= stop) if direction == "long" else (high >= stop)
                         if hit_sl:
-                            impact_pct = self._market_impact_pct(remaining_units, stop, adv_notional, bar_depth, spread_pct=abs(high - low) / max(stop, 1e-9))
-                            exec_price = stop * (1 - slippage_pct - impact_pct if direction == 'long' else 1 + slippage_pct + impact_pct)
-                            trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
+                            impact_pct = self._market_impact_pct(
+                                remaining_units,
+                                stop,
+                                adv_notional,
+                                bar_depth,
+                                spread_pct=abs(high - low) / max(stop, 1e-9),
+                            )
+                            exec_price = stop * (
+                                1 - slippage_pct - impact_pct if direction == "long" else 1 + slippage_pct + impact_pct
+                            )
+                            trade_pnl = (
+                                (exec_price - entry) * remaining_units
+                                if direction == "long"
+                                else (entry - exec_price) * remaining_units
+                            )
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
                             win_flags.append(False)
@@ -294,12 +346,21 @@ class WalkForwardOptimizer:
                         break
 
             # normalize returns per-dollar-equity
-            results.append({'n_trades': len(win_flags), 'pnl': pnl, 'win_count': sum(1 for w in win_flags if w), 'loss_count': sum(1 for w in win_flags if not w)})
+            results.append(
+                {
+                    "n_trades": len(win_flags),
+                    "pnl": pnl,
+                    "win_count": sum(1 for w in win_flags if w),
+                    "loss_count": sum(1 for w in win_flags if not w),
+                }
+            )
 
         return results
 
     # ---------------- ML training helpers ----------------
-    def _label_signals(self, signals: Iterable[Dict[str, Any]], df_map: Dict[str, pd.DataFrame], lookahead_minutes: int = 1440) -> Dict[int, int]:
+    def _label_signals(
+        self, signals: Iterable[Dict[str, Any]], df_map: Dict[str, pd.DataFrame], lookahead_minutes: int = 1440
+    ) -> Dict[int, int]:
         """Label signals as win(1) or loss(0) by scanning forward for TP/SL within lookahead window."""
         labeled = {}
         for idx, sig in enumerate(signals):
@@ -310,22 +371,22 @@ class WalkForwardOptimizer:
             if df is None:
                 labeled[idx] = label
                 continue
-            entry = float(sig.get('entry') or 0.0)
-            stop = float(sig.get('stop_loss') or 0.0)
-            tps = sig.get('take_profit') or sig.get('targets') or []
+            entry = float(sig.get("entry") or 0.0)
+            stop = float(sig.get("stop_loss") or 0.0)
+            tps = sig.get("take_profit") or sig.get("targets") or []
             if not tps or entry <= 0:
                 labeled[idx] = label
                 continue
-            tp = float(tps[0].get('price') if isinstance(tps[0], dict) else tps[0])
-            start_ts = pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0], utc=True)
+            tp = float(tps[0].get("price") if isinstance(tps[0], dict) else tps[0])
+            start_ts = pd.to_datetime(sig.get("timestamp") or df["timestamp"].iloc[0], utc=True)
             end_ts = start_ts + pd.Timedelta(minutes=lookahead_minutes)
-            rows = df[(df['timestamp'] >= start_ts) & (df['timestamp'] <= end_ts)]
+            rows = df[(df["timestamp"] >= start_ts) & (df["timestamp"] <= end_ts)]
             for _, row in rows.iterrows():
-                high = float(row['high'])
-                low = float(row['low'])
-                dirn = str(sig.get('direction') or 'long').lower()
-                hit_tp = (high >= tp) if dirn == 'long' else (low <= tp)
-                hit_sl = (low <= stop) if dirn == 'long' else (high >= stop)
+                high = float(row["high"])
+                low = float(row["low"])
+                dirn = str(sig.get("direction") or "long").lower()
+                hit_tp = (high >= tp) if dirn == "long" else (low <= tp)
+                hit_sl = (low <= stop) if dirn == "long" else (high >= stop)
                 if hit_tp and not hit_sl:
                     label = 1
                     break
@@ -344,8 +405,10 @@ class WalkForwardOptimizer:
         Falls back to a constant predictor when xgboost isn't available or training fails.
         """
         if xgb is None:
+
             def _const(sig):
                 return 0.5
+
             return _const
 
         # Build labelled dataset using quick labeling
@@ -386,26 +449,29 @@ class WalkForwardOptimizer:
                     return max(0.0, min(1.0, p))
                 except Exception:
                     return 0.5
+
             # Persist trained model to ML_MODEL_PATH if configured
             try:
                 from ml.model_registry import save_model_payload, compute_model_hash_from_b64
                 import base64
-                model_path = os.getenv('ML_MODEL_PATH') or (Path(__file__).parent.parent / 'ml' / 'model.json')
+
+                model_path = os.getenv("ML_MODEL_PATH") or (Path(__file__).parent.parent / "ml" / "model.json")
                 # serialize booster raw bytes
-                raw = bst.save_raw() if hasattr(bst, 'save_raw') else None
+                raw = bst.save_raw() if hasattr(bst, "save_raw") else None
                 if raw is None:
                     # attempt save to bytes buffer
                     from io import BytesIO
+
                     buf = BytesIO()
                     bst.save_model(buf)
                     raw = buf.getvalue()
-                model_b64 = base64.b64encode(raw).decode('ascii')
+                model_b64 = base64.b64encode(raw).decode("ascii")
                 artifact_hash = compute_model_hash_from_b64(model_b64)
                 meta = {
-                    'version': os.getenv('ML_MODEL_VERSION', 'wfo-trained'),
-                    'trained_at': now_utc_naive().isoformat(),
-                    'xgboost_version': getattr(xgb, '__version__', '') if xgb is not None else '',
-                    'artifact_hash_sha256': artifact_hash,
+                    "version": os.getenv("ML_MODEL_VERSION", "wfo-trained"),
+                    "trained_at": now_utc_naive().isoformat(),
+                    "xgboost_version": getattr(xgb, "__version__", "") if xgb is not None else "",
+                    "artifact_hash_sha256": artifact_hash,
                 }
                 try:
                     save_model_payload(Path(str(model_path)), bst, feat_cols, meta)
@@ -426,7 +492,10 @@ class WalkForwardOptimizer:
         test_months: int = 1,
         start: datetime = None,
         end: datetime = None,
-        train_callback: Callable[[Iterable[Dict[str, Any]], Dict[str, pd.DataFrame]], Callable[[Dict[str, Any]], float] | None] | None = None,
+        train_callback: Callable[
+            [Iterable[Dict[str, Any]], Dict[str, pd.DataFrame]], Callable[[Dict[str, Any]], float] | None
+        ]
+        | None = None,
     ):
         if start is None or end is None:
             raise ValueError("start and end datetimes must be provided")
@@ -469,18 +538,22 @@ class WalkForwardOptimizer:
             for a, lst in test_signals.items():
                 for s in lst:
                     flat.append(s)
-            sim = self._simulate_pnl(flat, df_map, test_start, test_end, account_equity=10000.0, train_predictor=predictor)
-            wins = sum(1 for r in sim if r.get('win'))
+            sim = self._simulate_pnl(
+                flat, df_map, test_start, test_end, account_equity=10000.0, train_predictor=predictor
+            )
+            wins = sum(1 for r in sim if r.get("win"))
             total = len(sim)
-            avg = sum(r.get('return', 0.0) for r in sim) / total if total > 0 else 0.0
+            avg = sum(r.get("return", 0.0) for r in sim) / total if total > 0 else 0.0
             win_rate = wins / total if total > 0 else 0.0
-            results.append({
-                'train_start': train_start,
-                'train_end': train_end,
-                'test_start': test_start,
-                'test_end': test_end,
-                'n_signals': total,
-                'win_rate': win_rate,
-                'avg_return': avg,
-            })
+            results.append(
+                {
+                    "train_start": train_start,
+                    "train_end": train_end,
+                    "test_start": test_start,
+                    "test_end": test_end,
+                    "n_signals": total,
+                    "win_rate": win_rate,
+                    "avg_return": avg,
+                }
+            )
         return results

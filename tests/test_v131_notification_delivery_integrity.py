@@ -42,10 +42,12 @@ def test_lifecycle_updates_never_replace_the_original_signal_card(monkeypatch):
     assert "edit_message_text" not in source
     assert "reply_to_message_id" in source
     assert '"disable_notification": False' in source
-    monkeypatch.delenv("LIFECYCLE_TP_SL_NOTIFICATIONS_ENABLED", raising=False)
+    monkeypatch.delenv("LIFECYCLE_OUTCOME_NOTIFICATIONS_ENABLED", raising=False)
     assert _should_queue_event_notification("entry_touched") is True
     assert _should_queue_event_notification("tp3_hit") is False
     assert _should_queue_event_notification("sl_hit") is False
+    assert _should_queue_event_notification("missed_entry") is False
+    assert _should_queue_event_notification("expired") is False
 
 
 def test_primary_signal_and_outcome_sends_are_explicitly_non_silent():
@@ -78,3 +80,45 @@ def test_production_readiness_rejects_silent_or_duplicate_notification_modes():
     assert "signal_delivery_edit_mode_enabled" in source
     assert "telegram_send_retries_too_low" in source
     assert "unsent_signal_recovery_interval_too_high" in source
+
+
+def test_delayed_short_tp_alert_does_not_call_reversed_later_mark_tp_evidence():
+    message = TierNotificationManager().format_tp_hit_notification(
+        {
+            "signal_id": "0140438f-a1b",
+            "asset": "JNJ",
+            "direction": "short",
+            "timeframe": "1m",
+            "entry": 262.2601,
+            "stop_loss": 262.7518,
+            "take_profit": [260.8439, 259.4277, 258.0116],
+        },
+        "vip",
+        1,
+        0.54,
+        262.45,
+    )
+    assert "TP1 hit level: 260.8439" in message
+    assert "Latest stored price: 262.45 (post-hit mark; not TP evidence)" in message
+    assert "Observed hit price: 262.45" not in message
+    assert "Signal P/L: +0.54%" in message
+
+
+def test_tp_alert_labels_directionally_consistent_price_as_hit_evidence():
+    message = TierNotificationManager().format_tp_hit_notification(
+        {
+            "signal_id": "short-hit",
+            "asset": "JNJ",
+            "direction": "short",
+            "timeframe": "1m",
+            "entry": 262.2601,
+            "stop_loss": 262.7518,
+            "take_profit": [260.8439],
+        },
+        "vip",
+        1,
+        0.54,
+        260.80,
+    )
+    assert "Observed hit price: 260.8" in message
+    assert "post-hit mark" not in message

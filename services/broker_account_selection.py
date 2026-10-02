@@ -5,6 +5,7 @@ module stores a short random opaque handle in RuntimeState and binds it to the
 canonical owner, Telegram identity, signal, and broker connection. Raw broker
 connection IDs are never trusted from callback payloads.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -54,11 +55,7 @@ async def create_account_selection_choices(
 
     async with get_session(label="broker.selection.create", timeout_seconds=8.0) as session:
         user = (
-            await session.execute(
-                select(User).where(
-                    User.telegram_user_id == int(telegram_user_id)
-                ).limit(1)
-            )
+            await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
         ).scalar_one_or_none()
         if user is None:
             return []
@@ -75,9 +72,7 @@ async def create_account_selection_choices(
                 BrokerConnection.execution_enabled.is_(True),
                 BrokerConnection.status.in_(("linked", "ready", "verified")),
                 TradingAccountPolicyRecord.frozen_at.is_(None),
-                TradingAccountPolicyRecord.execution_permission.in_(
-                    ("MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION")
-                ),
+                TradingAccountPolicyRecord.execution_permission.in_(("MANUAL", "ASSISTED_EXECUTION", "AUTO_EXECUTION")),
             )
         )
         if provider not in {"", "auto"}:
@@ -170,19 +165,23 @@ async def consume_account_selection(
 
         connection = (
             await session.execute(
-                select(BrokerConnection).where(
+                select(BrokerConnection)
+                .where(
                     BrokerConnection.connection_id == connection_id,
                     BrokerConnection.user_id == canonical_user_id,
                     BrokerConnection.platform == platform,
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         policy = (
             await session.execute(
-                select(TradingAccountPolicyRecord).where(
+                select(TradingAccountPolicyRecord)
+                .where(
                     TradingAccountPolicyRecord.connection_id == connection_id,
                     TradingAccountPolicyRecord.user_id == canonical_user_id,
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         if connection is None or connection.execution_enabled is not True:

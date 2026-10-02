@@ -4,6 +4,7 @@ This validator never prints secret values. It detects duplicate keys, unsafe
 fail-open flags, contradictory outcome ownership, and Railway pool/OHLC settings
 that caused the observed staging failures.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +32,7 @@ def parse_env(path: Path) -> tuple[dict[str, str], list[str]]:
             continue
         keys.append(key)
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1]
         values[key] = value
     return values, keys
@@ -67,31 +68,30 @@ def validate(path: Path) -> list[str]:
     # Railway raw variables are literal strings; shell substitutions and packed
     # assignments are never evaluated and silently corrupt runtime settings.
     for key, raw_value in values.items():
-        value = raw_value.strip().strip('\"').strip("'")
+        value = raw_value.strip().strip('"').strip("'")
         if "$(" in value or "`" in value:
             errors.append(f"shell expression is not supported in Railway variables: {key}")
         if "," in value and "=" in value:
             errors.append(f"multiple assignments packed into one variable: {key}")
     for key in ("APP_BASE_URL", "WEBHOOK_URL", "WEBHOOK_DOMAIN"):
-        value = values.get(key, "").strip().strip('\"').strip("'")
+        value = values.get(key, "").strip().strip('"').strip("'")
         if value.endswith(":"):
             errors.append(f"URL has a trailing colon: {key}")
-    if values.get("APP_ENV", values.get("ENVIRONMENT", "")).strip().strip('\"').lower() == "production":
-        if not values.get("TELEGRAM_WEBHOOK_SECRET", "").strip().strip('\"'):
+    if values.get("APP_ENV", values.get("ENVIRONMENT", "")).strip().strip('"').lower() == "production":
+        if not values.get("TELEGRAM_WEBHOOK_SECRET", "").strip().strip('"'):
             errors.append("TELEGRAM_WEBHOOK_SECRET is required in production")
-    owner_id = values.get("OWNER_TELEGRAM_ID", "").strip().strip('\"')
+    owner_id = values.get("OWNER_TELEGRAM_ID", "").strip().strip('"')
     if "," in owner_id:
         errors.append("OWNER_TELEGRAM_ID must contain exactly one numeric ID; use OWNER_IDS for a list")
 
-    environment = values.get("APP_ENV", values.get("ENVIRONMENT", "")).strip().strip('\"').lower()
+    environment = values.get("APP_ENV", values.get("ENVIRONMENT", "")).strip().strip('"').lower()
     full_test_profile = bool(
         environment not in {"production", "prod"}
         and is_true(values, "FULL_SYSTEM_STAGING_TEST_MODE")
-        and values.get("FULL_SYSTEM_STAGING_TEST_ACK", "").strip().strip('\"').strip("'")
+        and values.get("FULL_SYSTEM_STAGING_TEST_ACK", "").strip().strip('"').strip("'")
         == "I_UNDERSTAND_STAGING_TESTS_CAN_TRIGGER_EXTERNAL_ACTIONS"
         and bool(
-            values.get("FULL_SYSTEM_TEST_USER_IDS", "").strip()
-            or values.get("DELIVERY_AUDIENCE_ALLOWLIST", "").strip()
+            values.get("FULL_SYSTEM_TEST_USER_IDS", "").strip() or values.get("DELIVERY_AUDIENCE_ALLOWLIST", "").strip()
         )
     )
 
@@ -111,7 +111,7 @@ def validate(path: Path) -> list[str]:
         errors.append("unsafe release flag enabled: MT5_ALLOW_LIVE_ACCOUNTS")
 
     if full_test_profile and is_true(values, "PAYSTACK_LIVE_STAGING_ENABLED"):
-        live_ack = values.get("PAYSTACK_LIVE_STAGING_ACK", "").strip().strip('\"').strip("'")
+        live_ack = values.get("PAYSTACK_LIVE_STAGING_ACK", "").strip().strip('"').strip("'")
         if live_ack != "I_UNDERSTAND_PAYSTACK_LIVE_KEYS_MOVE_REAL_MONEY":
             errors.append("PAYSTACK_LIVE_STAGING_ACK is invalid")
         if not values.get("PAYSTACK_LIVE_STAGING_ALLOWED_USER_IDS", "").strip():

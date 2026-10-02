@@ -96,7 +96,10 @@ def test_threshold_force_uses_boolean_parsing_and_logs_effective_values():
     dedup_source = text("engine/signal_deduplicator.py")
     assert '_env_bool("PREMIUM_SCORE_THRESHOLD_FORCE", False)' in core_source
     assert 'bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE")' not in core_source
-    assert 'in {"1", "true", "yes", "on", "y"}' in dedup_source
+    force_block_start = dedup_source.index('os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE")')
+    force_block = dedup_source[force_block_start:force_block_start + 320]
+    for truthy in ('"1"', '"true"', '"yes"', '"on"', '"y"'):
+        assert truthy in force_block
     assert "preserving env thresholds" in core_source
 
 
@@ -226,3 +229,25 @@ def test_subscription_catalogue_bootstrap_batches_db_round_trips():
     assert 'bindparam("product_id", type_=String(64))' in block
     assert 'bindparam("price_kobo", type_=BigInteger())' in block
 
+
+
+def test_frontdoor_readiness_uses_live_engine_cycle_not_hourly_admin_pulse():
+    railway = text("railway_main.py")
+    engine = text("engine/core.py")
+    assert 'state.get_sync("engine:last_cycle")' in railway
+    assert 'ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS' in railway
+    assert '"engine_runtime"' in railway
+    assert 'READINESS_REQUIRE_ENGINE_PULSE", False' in railway
+    assert '"git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA")' in engine
+    assert '"deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID")' in engine
+
+
+def test_learning_retention_never_mutates_legacy_ml_rejected_view():
+    retention = text("db/storage_maintenance.py")
+    assert "DELETE FROM ml_rejected_signals" not in retention
+    assert "SELECT id FROM ml_rejected_signals" not in retention
+    assert "DELETE FROM decision_log AS target" in retention
+    assert "COALESCE(meta->>'layer', '') = 'ml'" in retention
+    assert "REJECTION_TRACKED_RETENTION_DAYS" in retention
+    assert "REJECTION_UNTRACKED_RETENTION_DAYS" in retention
+    assert "NOT (" in retention

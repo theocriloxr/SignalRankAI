@@ -23,8 +23,7 @@ def upgrade() -> None:
         "WHERE sent_ok IS TRUE"
     )
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_signals_open_expiry "
-        "ON signals(expired, archived, expires_at, asset, direction)"
+        "CREATE INDEX IF NOT EXISTS ix_signals_open_expiry ON signals(expired, archived, expires_at, asset, direction)"
     )
 
 

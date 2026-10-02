@@ -37,8 +37,7 @@ _CACHE_FETCHED_AT: Optional[datetime] = None
 _CACHE_TTL_SECONDS = max(300, int(os.getenv("ECONOMIC_CALENDAR_CACHE_TTL_SECONDS", "3600") or 3600))
 _REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_SECONDS", "8") or 8))
 _FOREX_FACTORY_URL = (
-    os.getenv("FOREX_FACTORY_CALENDAR_URL")
-    or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    os.getenv("FOREX_FACTORY_CALENDAR_URL") or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 ).strip()
 
 # ---------------------------------------------------------------------------
@@ -46,23 +45,47 @@ _FOREX_FACTORY_URL = (
 # Used as a fallback when all APIs are unavailable.
 # ---------------------------------------------------------------------------
 _FALLBACK_EVENTS: list[dict] = [
-    {"title": "Non-Farm Payrolls", "currency": "USD", "impact": "high",
-     "description": "First Friday of each month, 13:30 UTC"},
-    {"title": "CPI", "currency": "USD", "impact": "high",
-     "description": "Usually 2nd–3rd Wednesday, 13:30 UTC"},
-    {"title": "FOMC Rate Decision", "currency": "USD", "impact": "high",
-     "description": "~8 times per year, 19:00 UTC"},
-    {"title": "GDP (Preliminary)", "currency": "USD", "impact": "high",
-     "description": "Last Wednesday of month, 13:30 UTC"},
-    {"title": "Core PCE Price Index", "currency": "USD", "impact": "high",
-     "description": "Last Friday of month, 13:30 UTC"},
+    {
+        "title": "Non-Farm Payrolls",
+        "currency": "USD",
+        "impact": "high",
+        "description": "First Friday of each month, 13:30 UTC",
+    },
+    {"title": "CPI", "currency": "USD", "impact": "high", "description": "Usually 2nd–3rd Wednesday, 13:30 UTC"},
+    {"title": "FOMC Rate Decision", "currency": "USD", "impact": "high", "description": "~8 times per year, 19:00 UTC"},
+    {
+        "title": "GDP (Preliminary)",
+        "currency": "USD",
+        "impact": "high",
+        "description": "Last Wednesday of month, 13:30 UTC",
+    },
+    {
+        "title": "Core PCE Price Index",
+        "currency": "USD",
+        "impact": "high",
+        "description": "Last Friday of month, 13:30 UTC",
+    },
 ]
 
 # Symbols affected by USD macro events
 _USD_SENSITIVE_SYMBOLS = {
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD",
-    "USDCAD", "XAUUSD", "XAGUSD", "BTCUSD", "BTCUSDT",
-    "ETHUSD", "ETHUSDT", "DXY", "US30", "US100", "US500",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "USDCHF",
+    "AUDUSD",
+    "NZDUSD",
+    "USDCAD",
+    "XAUUSD",
+    "XAGUSD",
+    "BTCUSD",
+    "BTCUSDT",
+    "ETHUSD",
+    "ETHUSDT",
+    "DXY",
+    "US30",
+    "US100",
+    "US500",
 }
 
 # Pre-trade buffer: no new signals N minutes before and after a red event
@@ -134,6 +157,7 @@ async def _load_events_from_db() -> list[dict]:
 # Fetch from Finnhub
 # ---------------------------------------------------------------------------
 
+
 async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
     """Fetch economic calendar from Finnhub API.
 
@@ -164,13 +188,15 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
                 event_dt = datetime.fromisoformat(e["time"].replace("Z", "+00:00"))
             except Exception:
                 continue
-            events.append({
-                "title": e.get("event", ""),
-                "currency": e.get("country", "").upper(),
-                "impact": impact,
-                "event_time": event_dt,
-                "source": "finnhub",
-            })
+            events.append(
+                {
+                    "title": e.get("event", ""),
+                    "currency": e.get("country", "").upper(),
+                    "impact": impact,
+                    "event_time": event_dt,
+                    "source": "finnhub",
+                }
+            )
         logger.info(f"[economic_calendar] Finnhub returned {len(events)} high-impact events")
         return events
     except httpx.HTTPStatusError as exc:
@@ -260,6 +286,7 @@ def _store_events_in_redis(events: list[dict]) -> None:
 # Main public API
 # ---------------------------------------------------------------------------
 
+
 async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
     """Return a list of upcoming high-impact economic events.
 
@@ -297,16 +324,11 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
         events = await _fetch_finnhub(from_dt, to_dt)
 
     if not events:
-        logger.warning(
-            "[economic_calendar] All API providers failed; using fallback static list"
-        )
+        logger.warning("[economic_calendar] All API providers failed; using fallback static list")
         # Emit a synthetic "unknown time" warning record so engine can still
         # see there are events — callers check is_no_trade_zone() which will
         # gracefully return False for events without event_time.
-        events = [
-            {**e, "event_time": None, "source": "fallback"}
-            for e in _FALLBACK_EVENTS
-        ]
+        events = [{**e, "event_time": None, "source": "fallback"} for e in _FALLBACK_EVENTS]
 
     _EVENTS_CACHE = events
     _CACHE_FETCHED_AT = now
@@ -417,6 +439,7 @@ def is_no_trade_zone_sync(
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
                     asyncio.run,

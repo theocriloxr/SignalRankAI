@@ -120,10 +120,7 @@ class DBAdmissionController:
             if priority is DBPriority.BACKGROUND:
                 if self._active[DBPriority.ANALYTICS]:
                     return False
-            elif (
-                self._active[DBPriority.BACKGROUND]
-                or self._waiting[DBPriority.BACKGROUND]
-            ):
+            elif self._active[DBPriority.BACKGROUND] or self._waiting[DBPriority.BACKGROUND]:
                 return False
         return True
 
@@ -151,11 +148,7 @@ class DBAdmissionController:
                         return False
                     remaining = deadline - time.monotonic()
                     if nonblocking or remaining <= 0:
-                        metric = (
-                            "deferred"
-                            if priority in (DBPriority.BACKGROUND, DBPriority.ANALYTICS)
-                            else "timeouts"
-                        )
+                        metric = "deferred" if priority in (DBPriority.BACKGROUND, DBPriority.ANALYTICS) else "timeouts"
                         self._metrics[priority][metric] += 1
                         return False
                     self._condition.wait(timeout=min(remaining, 0.05))
@@ -166,9 +159,7 @@ class DBAdmissionController:
                 self._active[priority] += 1
                 self._metrics[priority]["acquired"] += 1
                 self._queues[priority].popleft()
-                self._metrics[priority]["wait_seconds_total"] += max(
-                    0.0, time.monotonic() - started
-                )
+                self._metrics[priority]["wait_seconds_total"] += max(0.0, time.monotonic() - started)
                 return True
             finally:
                 self._waiting[priority] = max(0, self._waiting[priority] - 1)
@@ -183,9 +174,7 @@ class DBAdmissionController:
             if self._active[priority] <= 0:
                 raise RuntimeError(f"DB admission release without acquire: {priority.value}")
             self._active[priority] -= 1
-            self._metrics[priority]["transaction_seconds_total"] += max(
-                0.0, float(held_seconds)
-            )
+            self._metrics[priority]["transaction_seconds_total"] += max(0.0, float(held_seconds))
             self._condition.notify_all()
 
     def record_dropped(self, priority: DBPriority | str) -> None:

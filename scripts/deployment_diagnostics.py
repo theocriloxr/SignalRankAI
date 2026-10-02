@@ -13,6 +13,7 @@ Examples:
   python scripts/deployment_diagnostics.py --phase full --run-full-suite \
       --live-providers --continue-on-failure
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,6 +43,7 @@ if str(ROOT) not in sys.path:
 # different full-system mode than the running application.
 try:
     from runtime_safety import apply_runtime_safety_environment
+
     _DIAGNOSTIC_RUNTIME_SAFETY = apply_runtime_safety_environment()
 except Exception:
     _DIAGNOSTIC_RUNTIME_SAFETY = None
@@ -92,25 +94,18 @@ class Report:
         check.finished_at = check.finished_at or timestamp
         self.checks.append(check)
         print(
-            f"[{check.status}] {check.category}/{check.name} "
-            f"severity={check.severity} detail={check.detail}",
+            f"[{check.status}] {check.category}/{check.name} severity={check.severity} detail={check.detail}",
             flush=True,
         )
 
     def missing(self, *, name: str, purpose: str, env_vars: list[str]) -> None:
-        self.missing_permissions.append(
-            {"name": name, "purpose": purpose, "env_vars": ",".join(env_vars)}
-        )
+        self.missing_permissions.append({"name": name, "purpose": purpose, "env_vars": ",".join(env_vars)})
 
     def payload(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for item in self.checks:
             counts[item.status] = counts.get(item.status, 0) + 1
-        blockers = [
-            item.name
-            for item in self.checks
-            if item.required and item.status in {FAIL, BLOCKED}
-        ]
+        blockers = [item.name for item in self.checks if item.required and item.status in {FAIL, BLOCKED}]
         from core.version import get_version_banner
 
         return {
@@ -234,7 +229,9 @@ def check_environment(report: Report) -> None:
             status=PASS if (not full_test_requested or full_test_ack) else FAIL,
             severity="critical",
             detail=f"requested={int(full_test_requested)} acknowledgement_valid={int(full_test_ack)}",
-            remediation=None if (not full_test_requested or full_test_ack) else "Set the exact FULL_SYSTEM_STAGING_TEST_ACK value from the v1.2.3 profile.",
+            remediation=None
+            if (not full_test_requested or full_test_ack)
+            else "Set the exact FULL_SYSTEM_STAGING_TEST_ACK value from the v1.2.3 profile.",
         )
     )
 
@@ -269,24 +266,13 @@ def check_environment(report: Report) -> None:
 
     paystack_secret = _clean_paystack_key(os.getenv("PAYSTACK_SECRET_KEY"))
     paystack_public = _clean_paystack_key(os.getenv("PAYSTACK_PUBLIC_KEY"))
-    paystack_test_pair = (
-        paystack_secret.startswith("sk_test_")
-        and paystack_public.startswith("pk_test_")
-    )
+    paystack_test_pair = paystack_secret.startswith("sk_test_") and paystack_public.startswith("pk_test_")
     paystack_test_mode = paystack_test_pair and _truthy("PAYMENTS_PUBLIC_TEST_MODE", False)
-    paystack_live_pair = (
-        paystack_secret.startswith("sk_live_")
-        and paystack_public.startswith("pk_live_")
-    )
+    paystack_live_pair = paystack_secret.startswith("sk_live_") and paystack_public.startswith("pk_live_")
     paystack_live_guarded = False
     paystack_key_safe = (not paystack_secret) or paystack_test_mode
-    sandbox_ok = (
-        (not full_test_mode)
-        or (
-            paystack_key_safe
-            and _truthy("BYBIT_TESTNET", False)
-            and not _truthy("MT5_ALLOW_LIVE_ACCOUNTS", False)
-        )
+    sandbox_ok = (not full_test_mode) or (
+        paystack_key_safe and _truthy("BYBIT_TESTNET", False) and not _truthy("MT5_ALLOW_LIVE_ACCOUNTS", False)
     )
     report.add(
         Check(
@@ -303,7 +289,9 @@ def check_environment(report: Report) -> None:
                 f"bybit_testnet={int(_truthy('BYBIT_TESTNET', False))} "
                 f"mt5_live_allowed={int(_truthy('MT5_ALLOW_LIVE_ACCOUNTS', False))}"
             ),
-            remediation=None if sandbox_ok else (
+            remediation=None
+            if sandbox_ok
+            else (
                 "Use Paystack test keys, or enable guarded live staging with the exact second acknowledgement, "
                 "an allowlisted user set and an amount cap; keep BYBIT_TESTNET=1 and MT5_ALLOW_LIVE_ACCOUNTS=0."
             ),
@@ -324,7 +312,9 @@ def check_environment(report: Report) -> None:
                 f"signal_enabled={free_signal_enabled} random_enabled={free_random_enabled} "
                 f"allowlist_configured={bool(allowlist)} full_test_mode={full_test_mode}"
             ),
-            remediation=None if free_ok else (
+            remediation=None
+            if free_ok
+            else (
                 "Enable FREE_SIGNAL_DISTRIBUTION_ENABLED and "
                 "FREE_RANDOM_DISTRIBUTION_ENABLED for full free-tier availability."
             ),
@@ -392,7 +382,9 @@ def run_subprocess_check(
                 detail=f"exit_code={proc.returncode}",
                 duration_ms=int((time.monotonic() - started) * 1000),
                 evidence={"command": shlex.join(command), "output_tail": output[-4000:]},
-                remediation=None if proc.returncode == 0 else "Inspect output_tail and repair the canonical implementation.",
+                remediation=None
+                if proc.returncode == 0
+                else "Inspect output_tail and repair the canonical implementation.",
             )
         )
     except subprocess.TimeoutExpired as exc:
@@ -452,7 +444,14 @@ def static_checks(report: Report) -> None:
         ),
         (
             "repository_proof_manifest",
-            [python, "scripts/generate_repository_proof_manifest.py", "--json", "/tmp/signalrank_repository_proof_manifest.json", "--summary", "/tmp/signalrank_repository_proof_manifest.md"],
+            [
+                python,
+                "scripts/generate_repository_proof_manifest.py",
+                "--json",
+                "/tmp/signalrank_repository_proof_manifest.json",
+                "--summary",
+                "/tmp/signalrank_repository_proof_manifest.md",
+            ],
             "high",
         ),
     ]
@@ -515,7 +514,6 @@ def static_checks(report: Report) -> None:
         report.add(Check("telegram_command_callback_inventory", "static", FAIL, "high", f"{type(exc).__name__}: {exc}"))
 
 
-
 def extended_scan_inventory(report: Report, *, run_scans: bool) -> None:
     """Report advanced scanner availability and optionally execute safe scans.
 
@@ -526,12 +524,35 @@ def extended_scan_inventory(report: Report, *, run_scans: bool) -> None:
     """
     tools: list[tuple[str, list[str] | None, str]] = [
         ("ruff", ["ruff", "check", "."], "Python lint/static analysis"),
-        ("mypy", ["mypy", "core", "db", "engine", "services", "worker", "web", "signalrank_telegram"], "Python type analysis"),
+        (
+            "mypy",
+            ["mypy", "core", "db", "engine", "services", "worker", "web", "signalrank_telegram"],
+            "Python type analysis",
+        ),
         ("pyright", ["pyright"], "Python type analysis"),
-        ("bandit", ["bandit", "-q", "-r", "core", "db", "engine", "services", "worker", "web", "signalrank_telegram"], "Python security analysis"),
+        (
+            "bandit",
+            ["bandit", "-q", "-r", "core", "db", "engine", "services", "worker", "web", "signalrank_telegram"],
+            "Python security analysis",
+        ),
         ("pip-audit", ["pip-audit", "-r", "requirements.txt"], "dependency CVE audit"),
         ("semgrep", ["semgrep", "scan", "--config", "auto", "--error", "--quiet"], "multi-language SAST"),
-        ("vulture", ["vulture", "core", "db", "engine", "services", "worker", "web", "signalrank_telegram", "--min-confidence", "80"], "dead-code analysis"),
+        (
+            "vulture",
+            [
+                "vulture",
+                "core",
+                "db",
+                "engine",
+                "services",
+                "worker",
+                "web",
+                "signalrank_telegram",
+                "--min-confidence",
+                "80",
+            ],
+            "dead-code analysis",
+        ),
         ("shellcheck", ["shellcheck", "start.sh"], "shell analysis"),
         ("hadolint", ["hadolint", "Dockerfile", "Dockerfile.prod"], "container lint"),
     ]
@@ -595,7 +616,15 @@ def extended_scan_inventory(report: Report, *, run_scans: bool) -> None:
     if not mutation_available:
         report.add(Check("mutation_testing", "extended_scans", BLOCKED, "high", "mutmut not installed"))
     elif not _truthy("DEPLOYMENT_MUTATION_TESTS_ENABLED", False):
-        report.add(Check("mutation_testing", "extended_scans", BLOCKED, "high", "set DEPLOYMENT_MUTATION_TESTS_ENABLED=1 in an isolated certification service"))
+        report.add(
+            Check(
+                "mutation_testing",
+                "extended_scans",
+                BLOCKED,
+                "high",
+                "set DEPLOYMENT_MUTATION_TESTS_ENABLED=1 in an isolated certification service",
+            )
+        )
     elif run_scans:
         run_subprocess_check(
             report,
@@ -623,9 +652,7 @@ async def database_check(report: Report) -> None:
             timeout_seconds=10,
         ) as session:
             one = (await session.execute(text("SELECT 1"))).scalar_one()
-            revision = (
-                await session.execute(text("SELECT version_num FROM alembic_version"))
-            ).scalar_one_or_none()
+            revision = (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one_or_none()
             column = (
                 await session.execute(
                     text(
@@ -718,15 +745,16 @@ async def database_check(report: Report) -> None:
                 )
             ).scalar_one()
             max_connections = int((await session.execute(text("SHOW max_connections"))).scalar_one() or 0)
-            current_connections = int((
-                await session.execute(
-                    text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database()")
-                )
-            ).scalar_one() or 0)
+            current_connections = int(
+                (
+                    await session.execute(
+                        text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database()")
+                    )
+                ).scalar_one()
+                or 0
+            )
             queued_free = (
-                await session.execute(
-                    text("SELECT COUNT(*) FROM free_signal_queue WHERE status='queued'")
-                )
+                await session.execute(text("SELECT COUNT(*) FROM free_signal_queue WHERE status='queued'"))
             ).scalar_one()
             oldest_free = (
                 await session.execute(
@@ -793,7 +821,9 @@ async def database_check(report: Report) -> None:
         )
 
         pool_diag = get_pool_diagnostics()
-        local_capacity = int(pool_diag.get("effective_pool_size") or 0) + int(pool_diag.get("effective_max_overflow") or 0)
+        local_capacity = int(pool_diag.get("effective_pool_size") or 0) + int(
+            pool_diag.get("effective_max_overflow") or 0
+        )
         reserve = max(3, int(os.getenv("DB_PRODUCTION_CONNECTION_RESERVE", "5") or 5))
         available_headroom = max(0, int(max_connections or 0) - int(current_connections or 0))
         capacity_ok = bool(max_connections) and available_headroom >= max(1, local_capacity + reserve)
@@ -840,8 +870,7 @@ async def database_check(report: Report) -> None:
                 status=queue_status,
                 severity=queue_severity,
                 detail=(
-                    f"queued={int(queued_free or 0)} distribution_enabled={free_enabled} "
-                    f"oldest={oldest_free or ''}"
+                    f"queued={int(queued_free or 0)} distribution_enabled={free_enabled} oldest={oldest_free or ''}"
                 ),
                 evidence={
                     "queued_free_rows": int(queued_free or 0),
@@ -905,7 +934,6 @@ async def redis_check(report: Report, *, name: str, url: str) -> None:
         report.add(Check(name, "live_dependencies", FAIL, "critical", f"{type(exc).__name__}: {exc}"))
 
 
-
 async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
     """Inspect the known delivery queues without consuming or mutating work."""
     if not url:
@@ -955,9 +983,7 @@ async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
             groups = await asyncio.wait_for(client.xinfo_groups(stream_name), timeout=5)
             for row in groups or []:
                 normalized = {
-                    str(k.decode() if isinstance(k, bytes) else k): (
-                        v.decode() if isinstance(v, bytes) else v
-                    )
+                    str(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
                     for k, v in dict(row).items()
                 }
                 if str(normalized.get("name") or "") == group_name:
@@ -995,17 +1021,10 @@ async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
                 )
                 for row in rows or []:
                     item = {
-                        str(k.decode() if isinstance(k, bytes) else k): (
-                            v.decode() if isinstance(v, bytes) else v
-                        )
+                        str(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
                         for k, v in dict(row).items()
                     }
-                    idle_ms = int(
-                        item.get("time_since_delivered")
-                        or item.get("idle")
-                        or item.get("idle_ms")
-                        or 0
-                    )
+                    idle_ms = int(item.get("time_since_delivered") or item.get("idle") or item.get("idle_ms") or 0)
                     oldest_pending_idle_ms = max(oldest_pending_idle_ms, idle_ms)
                     pending_sample.append(
                         {
@@ -1150,7 +1169,9 @@ async def redis_state_queue_diagnostics(report: Report, *, url: str) -> None:
                 f"depth={depth} threshold={max_depth}",
                 duration_ms=int((time.monotonic() - started) * 1000),
                 evidence={"key": key, "depth": depth, "threshold": max_depth},
-                remediation=None if status == PASS else "Inspect delivery consumers and DB-backed delivery proof before replaying queued items.",
+                remediation=None
+                if status == PASS
+                else "Inspect delivery consumers and DB-backed delivery proof before replaying queued items.",
             )
         )
     except Exception as exc:
@@ -1158,12 +1179,17 @@ async def redis_state_queue_diagnostics(report: Report, *, url: str) -> None:
     finally:
         await client.aclose()
 
+
 async def telegram_check(report: Report) -> None:
     token = _value("TELEGRAM_BOT_TOKEN")
     secret = _value("TELEGRAM_WEBHOOK_SECRET")
     if not token:
         report.add(Check("telegram_api", "live_dependencies", BLOCKED, "critical", "TELEGRAM_BOT_TOKEN missing"))
-        report.missing(name="Telegram staging bot", purpose="getMe/getWebhookInfo and callback delivery proof", env_vars=["TELEGRAM_BOT_TOKEN"])
+        report.missing(
+            name="Telegram staging bot",
+            purpose="getMe/getWebhookInfo and callback delivery proof",
+            env_vars=["TELEGRAM_BOT_TOKEN"],
+        )
         return
 
     async def _run() -> Check:
@@ -1214,13 +1240,17 @@ async def telegram_check(report: Report) -> None:
                     "last_error_message": wh.last_error_message,
                     "send_test": send_evidence,
                 },
-                remediation=None if ok else "Set the webhook secret, correct the URL, and inspect webhook rejection diagnostics.",
+                remediation=None
+                if ok
+                else "Set the webhook secret, correct the URL, and inspect webhook rejection diagnostics.",
             )
 
     try:
         report.add(await _timed_async(_run))
     except Exception as exc:
-        report.add(Check("telegram_api_and_webhook", "live_dependencies", FAIL, "critical", f"{type(exc).__name__}: {exc}"))
+        report.add(
+            Check("telegram_api_and_webhook", "live_dependencies", FAIL, "critical", f"{type(exc).__name__}: {exc}")
+        )
 
 
 def http_check(report: Report, base_url: str) -> None:
@@ -1326,6 +1356,7 @@ def _not_in_scope_approved(name: str) -> bool:
     approval_id = _value("NOT_IN_SCOPE_OWNER_APPROVAL_ID")
     return bool(approval_id and name.lower() in approved)
 
+
 def integration_inventory(report: Report) -> None:
     paystack_secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip().strip('"').strip("'")
     paystack_public = str(os.getenv("PAYSTACK_PUBLIC_KEY") or "").strip().strip('"').strip("'")
@@ -1345,7 +1376,11 @@ def integration_inventory(report: Report) -> None:
         Check(
             name=f"paystack_{paystack_mode}",
             category="optional_integrations",
-            status=PASS if paystack_mode in {"live", "test"} and paystack_proof_ok else FAIL if paystack_mode == "incomplete" else BLOCKED,
+            status=PASS
+            if paystack_mode in {"live", "test"} and paystack_proof_ok
+            else FAIL
+            if paystack_mode == "incomplete"
+            else BLOCKED,
             severity="high" if paystack_mode in {"live", "incomplete"} else "medium",
             detail=(
                 f"key_pair={paystack_mode}; {paystack_proof_detail}"
@@ -1381,9 +1416,7 @@ def integration_inventory(report: Report) -> None:
         "production-live-owner-canary": {"tradingview", "metaapi_demo"},
     }.get(report.profile, set())
     profile_required.update(
-        item.strip().lower()
-        for item in _value("REQUIRED_CERTIFIED_INTEGRATIONS").split(",")
-        if item.strip()
+        item.strip().lower() for item in _value("REQUIRED_CERTIFIED_INTEGRATIONS").split(",") if item.strip()
     )
     for name, envs, purpose in optional:
         configured = all(bool(_value(env)) for env in envs)
@@ -1417,7 +1450,13 @@ def integration_inventory(report: Report) -> None:
 
 
 def run_provider_certification(report: Report, providers: str) -> None:
-    command = [sys.executable, "scripts/certify_providers.py", "--live", "--output-dir", "/tmp/signalrank-provider-certification"]
+    command = [
+        sys.executable,
+        "scripts/certify_providers.py",
+        "--live",
+        "--output-dir",
+        "/tmp/signalrank-provider-certification",
+    ]
     if providers:
         command.extend(["--providers", providers])
     run_subprocess_check(
@@ -1536,7 +1575,11 @@ async def main_async(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=("predeploy", "runtime", "full"), default="runtime")
-    parser.add_argument("--profile", choices=("staging-certification", "production-advisory", "production-live-owner-canary"), default=os.getenv("SIGNALRANK_ENV_PROFILE", "production-advisory"))
+    parser.add_argument(
+        "--profile",
+        choices=("staging-certification", "production-advisory", "production-live-owner-canary"),
+        default=os.getenv("SIGNALRANK_ENV_PROFILE", "production-advisory"),
+    )
     parser.add_argument("--base-url", default="")
     parser.add_argument("--output", default="artifacts/deployment-diagnostics.json")
     parser.add_argument("--strict-core", action="store_true")

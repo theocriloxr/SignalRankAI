@@ -6,15 +6,16 @@ status, aliases) plus pure normalization helpers for symbol aliases, status
 changes and corporate-action price adjustments. No I/O: adapters populate and
 resolve these records from their own discovery/reference sources.
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Iterable, Mapping
+from typing import Mapping
 
-from data.provider_contracts import AssetClass, CanonicalInstrumentId, InstrumentKind
+from data.provider_contracts import AssetClass, CanonicalInstrumentId
 
 
 class InstrumentStatus(str, Enum):

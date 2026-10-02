@@ -47,17 +47,20 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
             return []
         candles = []
         from datetime import datetime
+
         for bar in values:
             try:
                 dt = datetime.fromisoformat(bar["datetime"].replace("Z", ""))
-                candles.append({
-                    "timestamp": int(dt.timestamp() * 1000),
-                    "open": float(bar.get("open", 0)),
-                    "high": float(bar.get("high", 0)),
-                    "low": float(bar.get("low", 0)),
-                    "close": float(bar.get("close", 0)),
-                    "volume": float(bar.get("volume", 0)),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(dt.timestamp() * 1000),
+                        "open": float(bar.get("open", 0)),
+                        "high": float(bar.get("high", 0)),
+                        "low": float(bar.get("low", 0)),
+                        "close": float(bar.get("close", 0)),
+                        "volume": float(bar.get("volume", 0)),
+                    }
+                )
             except Exception:
                 continue
         candles.sort(key=lambda item: int(item.get("timestamp") or 0))

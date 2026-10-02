@@ -6,6 +6,7 @@ schema/environment/provider contracts, and the broad hermetic integration
 suite.  It deliberately labels local/mock evidence separately from live
 Railway/Telegram/provider certification.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -170,9 +171,7 @@ def _run_step(
                     try:
                         _terminate_process_tree(process)
                     except Exception as cleanup_exc:
-                        log_handle.write(
-                            f"PROCESS_TREE_CLEANUP_ERROR type={type(cleanup_exc).__name__}\n"
-                        )
+                        log_handle.write(f"PROCESS_TREE_CLEANUP_ERROR type={type(cleanup_exc).__name__}\n")
         if exit_code == 0:
             break
         if attempt < max_attempts:
@@ -188,7 +187,6 @@ def _run_step(
         log_path=str(log_path.relative_to(ROOT) if log_path.is_relative_to(ROOT) else log_path),
         attempts=attempts_used,
     )
-
 
 
 def _aggregate_pytest_results(results: Sequence[StepResult]) -> dict[str, int]:
@@ -217,6 +215,7 @@ def _aggregate_pytest_results(results: Sequence[StepResult]) -> dict[str, int]:
             if match:
                 totals[key] += int(match.group(1))
     return totals
+
 
 def _partition_pytest_files(batch_count: int) -> list[list[str]]:
     """Partition the complete test-file inventory into deterministic batches.
@@ -299,7 +298,7 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             [
                 python,
                 "scripts/certify_providers.py",
-                *( ["--live"] if args.live_providers else [] ),
+                *(["--live"] if args.live_providers else []),
                 "--output-dir",
                 str(Path(args.output_dir) / "provider-certification"),
             ],
@@ -311,23 +310,29 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             # Pytest discovery has cleaner teardown than passing the entire
             # repository as one extremely long explicit argv on some Railway
             # and container runtimes. It still covers every test_*.py file.
-            steps.append((
-                "full_pytest_batch_01",
-                [python, "scripts/pytest_hard_exit.py", "-q"],
-            ))
+            steps.append(
+                (
+                    "full_pytest_batch_01",
+                    [python, "scripts/pytest_hard_exit.py", "-q"],
+                )
+            )
         else:
             # Run every test file, but isolate teardown into deterministic batches.
             batches = _partition_pytest_files(requested_batches)
             for index, files in enumerate(batches, start=1):
-                steps.append((
-                    f"full_pytest_batch_{index:02d}",
-                    [python, "scripts/pytest_hard_exit.py", "-q", *files],
-                ))
+                steps.append(
+                    (
+                        f"full_pytest_batch_{index:02d}",
+                        [python, "scripts/pytest_hard_exit.py", "-q", *files],
+                    )
+                )
     else:
-        steps.append((
-            "hermetic_system_suite",
-            [python, "scripts/pytest_hard_exit.py", "-q", *HERMETIC_TEST_FILES],
-        ))
+        steps.append(
+            (
+                "hermetic_system_suite",
+                [python, "scripts/pytest_hard_exit.py", "-q", *HERMETIC_TEST_FILES],
+            )
+        )
     return steps
 
 
@@ -402,8 +407,7 @@ def main() -> int:
         results.append(result)
         save_progress()
         print(
-            f"{'PASS' if result.ok else 'FAIL'} {name} "
-            f"({result.duration_seconds:.3f}s) -> {result.log_path}",
+            f"{'PASS' if result.ok else 'FAIL'} {name} ({result.duration_seconds:.3f}s) -> {result.log_path}",
             flush=True,
         )
         if not result.ok and not args.continue_on_failure:

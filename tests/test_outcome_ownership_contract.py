@@ -77,7 +77,11 @@ def test_outcome_reconciliation_is_projection_only_not_market_observation_writer
 
 def test_shadow_outcome_domain_cannot_mutate_canonical_signal_lifecycle():
     source = _source("engine/shadow_outcome_worker.py")
-    assert "MLRejectedSignal" in source
+    assert "DecisionLog" in source
+    assert "MLRejectedSignal" not in source
+    assert 'record.meta = {' in source
+    assert "record.actual_outcome" not in source
+    assert "record.outcome_tracked_at" not in source
     assert "record_lifecycle_event(" not in source
     assert "SignalLifecycle" not in source
 
@@ -90,9 +94,11 @@ def test_runtime_outcome_role_starts_the_canonical_realtime_tracker():
 
 def test_worker_runs_live_writer_and_projection_repair_as_separate_tasks():
     source = _source("worker/worker.py")
-    assert '_register_task("outcome_tracker"' in source
-    assert '_register_task(\n                "outcome_reconciliation"' in source
-    assert "from engine.realtime_outcome_tracker import outcome_tracker" in source
+    run_block = source[source.index("async def run(self)"):source.index("async def _web_signal_fanout_loop")]
+    assert '"outcome_tracker"' in run_block
+    assert '"outcome_reconciliation"' in run_block
+    assert run_block.count("_register_task(") >= 2
+    assert "from engine.realtime_outcome_tracker import outcome_tracker" in run_block
     assert "from services.outcome_reconciliation import (" in source
 
 

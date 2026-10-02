@@ -115,9 +115,7 @@ def main() -> int:
             missing_required += 1
         required = "yes" if spec.required else "no"
         preview = _mask_value(spec.key, value)
-        lines.append(
-            f"| {spec.key} | {required} | {status} | {src} | {preview} | {spec.note} |"
-        )
+        lines.append(f"| {spec.key} | {required} | {status} | {src} | {preview} | {spec.note} |")
 
     lines.append("")
     lines.append("## Group Checks")

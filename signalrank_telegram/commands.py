@@ -19,12 +19,7 @@ from core.command_limits import (
 	FREE_MIN_SCORE,
 	FREE_SIGNAL_DAILY_LIMIT,
 )
-from .admin_commands import admin_dashboard, admin_top_assets_command
-from .user_commands import start_command, status_command, account_command
-from .signal_commands import signals_command, proof_command
-from .account_commands import performance_command, history_command, apikey_command
-from .mt5_commands import mt5_link_command, mt5_status_command
-from .utils import tier_rank, _effective_tier, _public_guard
+from .utils import tier_rank
 from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from core.signal_identity import signal_id_line
 from .command_resilience import safe_command_error
@@ -1025,67 +1020,46 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Alias for /status with dynamic tier menu."""
 	return await status_command(update, context)
-
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
-try:
-	from web.api import generate_api_key
-except Exception:
-	generate_api_key = lambda: "demo-key"
-
-
-async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
-	from datetime import datetime, timedelta
-	from db.session import get_session
-	from db.repository import create_api_token
-	token = generate_api_key()
-	expires = now_utc_naive() + timedelta(days=max(1, min(int(ttl_days), 365)))
-	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-		await create_api_token(
-			session,
-			telegram_user_id=int(user_id),
-			raw_token=str(token),
-			scope="signals:read",
-			expires_at=expires,
-		)
-		await session.commit()
-	return str(token)
-
-
 async def _get_existing_api_token_meta(user_id: int):
 	from db.session import get_session
 	from db.repository import get_latest_active_api_token_meta
 	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
-		await session.commit()
+		await session.rollback()
 	return meta
+
 
 @require_tier("PREMIUM")
 async def apikey_command(update, context) -> None:
+	"""Show API-key metadata only; secrets are created/revealed on the authenticated web app."""
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	args = context.args or []
-	if args and args[0].lower() == "regenerate":
-		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
-		return
-	meta = await _get_existing_api_token_meta(int(user_id))
+	user_id = int(update.effective_user.id)
+	meta = await _get_existing_api_token_meta(user_id)
+	base_url = str(
+		os.getenv("APP_BASE_URL")
+		or os.getenv("WEB_APP_URL")
+		or "https://signalrank.criloxsolutions.com"
+	).rstrip("/")
+	manage_url = f"{base_url}/app/settings"
 	if meta is None:
-		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-		await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
-		return
-	prefix = str(meta.get("token_prefix") or "")
-	exp = str(meta.get("expires_at") or "unknown")
-	await update.message.reply_text(
-		f"🔑 Active API key exists.\n"
-		f"Prefix: <code>{prefix}</code>\n"
-		f"Expires: <code>{exp}</code>\n\n"
-		f"Use /apikey regenerate to rotate and receive a new full key.",
-		parse_mode="HTML",
-	)
+		message = (
+			"🔐 No active API key is registered.\n\n"
+			"API keys are never created or revealed inside Telegram. "
+			f"Open your authenticated SignalRankAI settings to create one: {manage_url}"
+		)
+	else:
+		prefix = str(meta.get("token_prefix") or "")
+		exp = str(meta.get("expires_at") or "unknown")
+		message = (
+			"🔐 Active API key metadata\n"
+			f"Prefix: {prefix}\n"
+			f"Expires: {exp}\n\n"
+			"Rotate, revoke, or create keys only from the authenticated web app: "
+			f"{manage_url}"
+		)
+	await update.message.reply_text(message)
+
 # Basic translation dictionary
 TRANSLATIONS: dict[str, dict[str, str]] = {
 	"en": {
@@ -2368,10 +2342,8 @@ async def reports_command(update, context) -> None:
 	)
 
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
-from db.session import get_session
 from db.pg_features import get_or_create_user
 from db.models import Outcome, ReferralReward, ReferralAttribution, Signal, Subscription, User
-import asyncio
 
 async def referral_leaderboard_command(update, context) -> None:
 	if await _public_guard(update):
@@ -3088,17 +3060,11 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		feedback_store.flush()
 
 # /pricing command
-import os
 import logging
-import inspect
 import socket
 import random
 from datetime import datetime, timezone
 
-from telegram import Update
-from telegram.ext import ContextTypes
-
-from core.redis_state import KillSwitchState, state
 from .access import resolve_user_tier
 
 
@@ -4091,7 +4057,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 	# Postgres-backed lookup (required for per-user delivery protection)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
+		from db.session import get_engine_for_event_loop
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
@@ -4433,7 +4399,6 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			return
 
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
@@ -5251,7 +5216,6 @@ async def recap_command(update, context):
 	user_id = update.effective_user.id
 	# Postgres-first recap (delivery-based)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats
@@ -5573,7 +5537,6 @@ async def start_command(update, context):
 	upgrade_notice = None
 	logger.info("[/start] user_id=%s — opening DB session", user_id)
 	try:
-		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.models import User

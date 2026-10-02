@@ -1,0 +1,434 @@
+{
+  "schema_version": "2.0",
+  "description": "Canonical SignalRankAI release certification manifest. CI, cleanroom, staging and release tooling consume these gates.",
+  "target_runtime": {
+    "python": "3.11",
+    "dependency_lock": "requirements.lock"
+  },
+  "gates": [
+    {
+      "id": "static-ruff",
+      "group": "static",
+      "description": "Ruff release-critical Python correctness",
+      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "local"
+      ]
+    },
+    {
+      "id": "static-pyright-critical",
+      "group": "static",
+      "description": "Zero-error Pyright analysis for release-critical safety boundaries",
+      "command": "pyright --project pyright-critical.json",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "local"
+      ]
+    },
+    {
+      "id": "static-pyright-legacy-budget",
+      "group": "static",
+      "description": "Full-runtime Pyright debt must not exceed certified baseline",
+      "command": "python scripts/pyright_legacy_budget.py",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "security-bandit",
+      "group": "static",
+      "description": "Bandit security scan",
+      "command": "bandit -r -ll -ii core engine web worker db strategies services",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "security-pip-audit",
+      "group": "static",
+      "description": "Python dependency vulnerability audit",
+      "command": "pip-audit -r requirements.lock",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "security-semgrep",
+      "group": "static",
+      "description": "Semgrep SAST across runtime code; migrations are certified by schema/release-chain gates",
+      "command": "semgrep scan --config auto --error --timeout 30 --timeout-threshold 0 --exclude='**/migrations/**' --exclude='**/alembic/**' --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "shellcheck",
+      "group": "static",
+      "description": "Shell entrypoint lint",
+      "command": "shellcheck start.sh",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci"
+      ]
+    },
+    {
+      "id": "backend-compile",
+      "group": "backend",
+      "description": "Compile runtime Python",
+      "command": "python -m compileall -q core engine web worker db data strategies services ml signalrank_telegram runtime execution",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "staging"
+      ]
+    },
+    {
+      "id": "backend-release-chain",
+      "group": "backend",
+      "description": "Offline render and validate complete current Alembic release chain",
+      "command": "python scripts/verify_release_chain.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "backend-migrate",
+      "group": "backend",
+      "description": "Apply migrations to head",
+      "command": "python -m alembic upgrade head",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "staging"
+      ]
+    },
+    {
+      "id": "backend-heads",
+      "group": "backend",
+      "description": "Require one Alembic migration head",
+      "command": "python scripts/assert_single_alembic_head.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "staging"
+      ]
+    },
+    {
+      "id": "backend-governance",
+      "group": "backend",
+      "description": "Governance artifact consistency",
+      "command": "python scripts/build_v7_governance.py --check",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "backend-secret-scan",
+      "group": "backend",
+      "description": "Repository secret scan",
+      "command": "python scripts/secret_scan.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "backend-critical-regressions",
+      "group": "backend",
+      "description": "Release-critical regression contracts",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "backend-system",
+      "group": "backend",
+      "description": "Complete system certification",
+      "command": "python scripts/run_complete_system_test.py --full --pytest-batches 20 --output-dir artifacts/ci-certification",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "frontend-install",
+      "group": "frontend",
+      "description": "Install locked frontend graph",
+      "command": "cd frontend && npm ci",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "frontend-lint",
+      "group": "frontend",
+      "description": "Frontend lint",
+      "command": "cd frontend && npm run lint",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "frontend-types",
+      "group": "frontend",
+      "description": "Frontend TypeScript check",
+      "command": "cd frontend && npx tsc --noEmit",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "frontend-audit",
+      "group": "frontend",
+      "description": "Frontend npm vulnerability gate (high/critical)",
+      "command": "cd frontend && npm audit --audit-level=high",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "frontend-build",
+      "group": "frontend",
+      "description": "Next.js production build",
+      "command": "cd frontend && npm run build",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "mobile-install",
+      "group": "mobile",
+      "description": "Install locked mobile graph",
+      "command": "cd mobile && npm ci",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "mobile-types",
+      "group": "mobile",
+      "description": "Mobile typecheck",
+      "command": "cd mobile && npm run typecheck",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "mobile-audit",
+      "group": "mobile",
+      "description": "Mobile npm vulnerability gate (high/critical)",
+      "command": "cd mobile && npm audit --audit-level=high",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "mobile-export",
+      "group": "mobile",
+      "description": "Expo native Android and iOS bundle export",
+      "command": "cd mobile && npx expo export --platform android --output-dir dist-android && npx expo export --platform ios --output-dir dist-ios",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "staging-postgres-major",
+      "group": "staging",
+      "description": "Staging PostgreSQL major must match production release target",
+      "command": "python scripts/staging_postgres_version_check.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
+      "id": "staging-market-class-certification",
+      "group": "staging",
+      "description": "Fresh execution-eligible provider path for every supported live asset class",
+      "command": "python scripts/certify_market_classes.py --asset-classes crypto_spot,forex,equity,index,commodity_spot --output artifacts/provider-certification/market_class_certification.json",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
+      "id": "staging-soak",
+      "group": "staging",
+      "description": "24-72h immutable-SHA staging soak",
+      "command": "manual:staging_soak",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
+      "id": "backup-restore",
+      "group": "staging",
+      "description": "Restore drill on release schema",
+      "command": "python scripts/staging_backup_restore_drill.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
+      "id": "broker-demo",
+      "group": "staging",
+      "description": "Demo broker preflight/certification",
+      "command": "python scripts/demo_account_preflight.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
+      "id": "image-compile",
+      "group": "image",
+      "description": "Compile production runtime modules",
+      "command": "python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution railway_main.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-release-chain",
+      "group": "image",
+      "description": "Validate current Alembic chain offline",
+      "command": "python scripts/verify_release_chain.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-governance",
+      "group": "image",
+      "description": "Validate generated governance artifacts",
+      "command": "python scripts/build_v7_governance.py --check",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-secret-scan",
+      "group": "image",
+      "description": "Reject committed secrets",
+      "command": "python scripts/secret_scan.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-regressions",
+      "group": "image",
+      "description": "Production image regression selection",
+      "command": "xargs -a release_certification_manifest.txt python -m pytest -q",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-provenance",
+      "group": "image",
+      "description": "Generate and self-verify deterministic release provenance",
+      "command": "python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    },
+    {
+      "id": "image-readiness",
+      "group": "image",
+      "description": "Offline production readiness contract",
+      "command": "python scripts/production_readiness_check.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "image"
+      ]
+    }
+  ]
+}

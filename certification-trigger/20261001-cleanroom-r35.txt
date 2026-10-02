@@ -1,0 +1,14 @@
+SignalRankAI Oct-1 incident certification r35
+branch=implementation-of-master-blueprint
+head_before_trigger=c3c8e1b1f4ee7bfc323c7f8afe6ae1614c6f9310
+backend_cleanroom=required
+backend_cleanroom_pass_marker=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+delivery_receipt_backward_compatibility=required
+oct1_paper_signal_integrity=required
+missed_entry_nontrade=required
+release_manifest_selector_contract=required
+production_image_regressions=required
+live_execution_authorized=false

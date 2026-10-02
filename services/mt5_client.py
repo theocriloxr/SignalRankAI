@@ -17,6 +17,7 @@ Environment variables:
     SLIPPAGE_TOLERANCE   — Max pips/points between signal price and live price
                            (default: 10)
 """
+
 from __future__ import annotations
 
 import math
@@ -76,25 +77,14 @@ def _metaapi_provisioning_error(
     detail_map = details if isinstance(details, dict) else {}
     detail_code = details if isinstance(details, str) else None
     provider_code = str(
-        detail_map.get("code")
-        or detail_code
-        or parsed.get("code")
-        or parsed.get("error")
-        or ""
+        detail_map.get("code") or detail_code or parsed.get("code") or parsed.get("error") or ""
     ).strip()
     provider_message = str(
-        detail_map.get("message")
-        or parsed.get("message")
-        or parsed.get("errorMessage")
-        or ""
+        detail_map.get("message") or parsed.get("message") or parsed.get("errorMessage") or ""
     ).strip()
 
     suggestions: list[str] = []
-    servers_by_brokers = (
-        detail_map.get("serversByBrokers")
-        or parsed.get("serversByBrokers")
-        or {}
-    )
+    servers_by_brokers = detail_map.get("serversByBrokers") or parsed.get("serversByBrokers") or {}
     if isinstance(servers_by_brokers, dict):
         for values in servers_by_brokers.values():
             if isinstance(values, (list, tuple)):
@@ -125,38 +115,53 @@ def _metaapi_provisioning_error(
         stable_code = "provider_permissions_missing"
         message = "SignalRankAI's MetaApi token does not have the permissions required for account provisioning. An administrator must update the MetaApi integration permissions."
         can_use_secure_link = False
-    elif code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"} or "server" in message_lower and "not found" in message_lower:
+    elif (
+        code_upper in {"E_SRV_NOT_FOUND", "E_SERVER_NOT_FOUND"}
+        or "server" in message_lower
+        and "not found" in message_lower
+    ):
         stable_code = "server_not_found"
-        message = (
-            "The broker server was not recognized. Enter the exact server name shown in MetaTrader"
-            + (" or choose one of the suggested servers below." if suggestions else ".")
+        message = "The broker server was not recognized. Enter the exact server name shown in MetaTrader" + (
+            " or choose one of the suggested servers below." if suggestions else "."
         )
     elif code_upper in {"E_AUTH", "E_AUTHENTICATION", "E_INVALID_CREDENTIALS"} or any(
-        token in message_lower for token in ("invalid login", "invalid password", "authorization failed", "authentication failed")
+        token in message_lower
+        for token in ("invalid login", "invalid password", "authorization failed", "authentication failed")
     ):
         stable_code = "authentication_failed"
-        message = "The broker rejected the login/password. Re-enter the MT4/MT5 trading credentials for this exact server."
+        message = (
+            "The broker rejected the login/password. Re-enter the MT4/MT5 trading credentials for this exact server."
+        )
         can_use_secure_link = True
     elif code_upper in {"E_SERVER_TIMEZONE", "E_BROKER_SETTINGS", "E_SETTINGS_DETECTION"} or (
         "timezone" in message_lower or "broker settings" in message_lower
     ):
         stable_code = "broker_settings_detection_failed"
         message = "MetaApi could not automatically detect this broker's terminal settings. Use the secure connection flow or an administrator-provided provisioning profile."
-    elif code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED", "E_TRADING_ACCOUNT_DISABLED"} or "disabled" in message_lower:
+    elif (
+        code_upper in {"E_ACCOUNT_DISABLED", "E_ACCOUNT_BLOCKED", "E_TRADING_ACCOUNT_DISABLED"}
+        or "disabled" in message_lower
+    ):
         stable_code = "account_disabled"
         message = "The broker account is disabled or unavailable. Confirm the account is active in MetaTrader before reconnecting."
         can_use_secure_link = False
     elif code_upper in {"E_NO_SYMBOLS", "E_SYMBOLS"} or "no symbols" in message_lower:
         stable_code = "no_symbols"
-        message = "The broker account connected but exposes no tradable symbols. Check the account/server with the broker."
+        message = (
+            "The broker account connected but exposes no tradable symbols. Check the account/server with the broker."
+        )
         can_use_secure_link = False
     elif code_upper in {"E_PASSWORD_CHANGE", "E_PASSWORD_EXPIRED"} or "change password" in message_lower:
         stable_code = "password_change_required"
-        message = "The broker requires a password change before API access. Change it in MetaTrader first, then reconnect."
+        message = (
+            "The broker requires a password change before API access. Change it in MetaTrader first, then reconnect."
+        )
         can_use_secure_link = False
     elif int(status) == 429 or code_upper in {"E_RATE_LIMIT", "E_TOO_MANY_REQUESTS"}:
         stable_code = "provider_rate_limited"
-        message = "MetaApi temporarily rate-limited provisioning. Do not submit repeatedly; retry after the indicated delay."
+        message = (
+            "MetaApi temporarily rate-limited provisioning. Do not submit repeatedly; retry after the indicated delay."
+        )
     elif code_upper in {"E_RESOURCE_SLOTS", "E_CAPACITY", "E_NO_CAPACITY"} or "slot" in message_lower:
         stable_code = "provider_capacity"
         message = "The MetaApi account has no available provisioning capacity. Free a slot or update the provider plan before adding another account."
@@ -184,17 +189,20 @@ def _metaapi_provisioning_error(
         result["transaction_id"] = str(transaction_id)
     return result
 
+
 # ---------------------------------------------------------------------------
 # URL helpers
 # ---------------------------------------------------------------------------
 
+
 def _metaapi_client_domain() -> str:
     """Return the documented MetaApi regional client/trading API domain."""
-    domain = str(
-        os.getenv("META_API_CLIENT_DOMAIN")
-        or os.getenv("META_API_DOMAIN")
-        or "agiliumtrade.ai"
-    ).strip().lower().strip(".")
+    domain = (
+        str(os.getenv("META_API_CLIENT_DOMAIN") or os.getenv("META_API_DOMAIN") or "agiliumtrade.ai")
+        .strip()
+        .lower()
+        .strip(".")
+    )
     if domain == "agiliumtrade.agiliumtrade.ai":
         domain = "agiliumtrade.ai"
     return domain
@@ -330,11 +338,15 @@ async def probe_metaapi_authorization(*, force: bool = False) -> Dict[str, Any]:
                     )
 
         _METAAPI_ACTIVE_TOKEN_ENV = None
-        primary = failures[0] if failures else {
-            "code": "provider_probe_failed",
-            "provider_status": None,
-            "provider_code": None,
-        }
+        primary = (
+            failures[0]
+            if failures
+            else {
+                "code": "provider_probe_failed",
+                "provider_status": None,
+                "provider_code": None,
+            }
+        )
         result = {
             "ok": False,
             "configured": True,
@@ -371,7 +383,9 @@ async def search_known_metatrader_servers(
         return {
             "success": False,
             "code": str(auth.get("code") or "provider_not_configured"),
-            "error": "MetaApi authorization is unavailable. An administrator must refresh the integration token." if auth.get("configured") else "MetaTrader connection service is not configured",
+            "error": "MetaApi authorization is unavailable. An administrator must refresh the integration token."
+            if auth.get("configured")
+            else "MetaTrader connection service is not configured",
             "provider_status": auth.get("provider_status"),
             "provider_code": auth.get("provider_code"),
             "brokers": [],
@@ -381,7 +395,12 @@ async def search_known_metatrader_servers(
         return {"success": False, "code": "invalid_platform", "error": "platform must be mt4 or mt5", "brokers": []}
     query_n = " ".join(str(query or "").strip().split())[:128]
     if len(query_n) < 2:
-        return {"success": False, "code": "query_too_short", "error": "Enter at least 2 characters of the broker or server name", "brokers": []}
+        return {
+            "success": False,
+            "code": "query_too_short",
+            "error": "Enter at least 2 characters of the broker or server name",
+            "brokers": [],
+        }
 
     version = "5" if platform_n == "mt5" else "4"
     domain = _metaapi_provisioning_domain()
@@ -404,14 +423,16 @@ async def search_known_metatrader_servers(
                     brokers: list[Dict[str, Any]] = []
                     for broker, values in list(groups.items())[:10]:
                         servers = values if isinstance(values, list) else []
-                        cleaned = list(dict.fromkeys(
-                            str(value).strip() for value in servers if str(value).strip()
-                        ))[:10]
+                        cleaned = list(dict.fromkeys(str(value).strip() for value in servers if str(value).strip()))[
+                            :10
+                        ]
                         if cleaned:
-                            brokers.append({
-                                "broker": str(broker).strip()[:160],
-                                "servers": cleaned,
-                            })
+                            brokers.append(
+                                {
+                                    "broker": str(broker).strip()[:160],
+                                    "servers": cleaned,
+                                }
+                            )
                     return {
                         "success": True,
                         "platform": platform_n,
@@ -486,11 +507,7 @@ def _configured_provisioning_profile(server: str, platform: str) -> str | None:
         return None
     server_n = str(server or "").strip().lower()
     platform_n = str(platform or "").strip().lower()
-    candidates = (
-        data.get(f"{platform_n}:{server_n}")
-        or data.get(str(server or "").strip())
-        or data.get(server_n)
-    )
+    candidates = data.get(f"{platform_n}:{server_n}") or data.get(str(server or "").strip()) or data.get(server_n)
     profile_id = str(candidates or "").strip()
     return profile_id or None
 
@@ -537,6 +554,7 @@ def _account_provisioning_payload(
 # ---------------------------------------------------------------------------
 # Low-level HTTP helpers
 # ---------------------------------------------------------------------------
+
 
 async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
     """Authenticated GET → parsed JSON or None."""
@@ -710,9 +728,7 @@ def _account_connection_ready(*payloads: Dict[str, Any]) -> bool:
     if not observed:
         for payload in payloads:
             if isinstance(payload, dict) and (
-                payload.get("accountNumber")
-                or payload.get("login")
-                or payload.get("currency")
+                payload.get("accountNumber") or payload.get("login") or payload.get("currency")
             ):
                 return True
     return False
@@ -721,6 +737,7 @@ def _account_connection_ready(*payloads: Dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def get_account_info(account_id: str) -> Optional[Dict[str, Any]]:
     """Return normalized MetaApi account information used by risk sizing.
@@ -763,11 +780,7 @@ async def get_account_info(account_id: str) -> Optional[Dict[str, Any]]:
 
     normalized["is_demo"] = _classify_demo_account(information, provisioning)
     normalized["connected"] = _account_connection_ready(information, provisioning)
-    normalized["server"] = (
-        information.get("server")
-        or provisioning.get("server")
-        or provisioning.get("broker")
-    )
+    normalized["server"] = information.get("server") or provisioning.get("server") or provisioning.get("broker")
     normalized["provider"] = "metaapi"
     return normalized
 
@@ -782,9 +795,7 @@ async def get_symbol_specification(
     if not account_id or not symbol:
         return None
     await _deploy_account(account_id)
-    data = await _http_get(
-        f"{_client_base(account_id)}/symbols/{symbol}/specification"
-    )
+    data = await _http_get(f"{_client_base(account_id)}/symbols/{symbol}/specification")
     if not isinstance(data, dict):
         return None
     normalized: Dict[str, Any] = dict(data)
@@ -848,13 +859,7 @@ async def get_live_quote(
         ask = float(data.get("ask"))
     except (TypeError, ValueError):
         return None
-    if (
-        not math.isfinite(bid)
-        or not math.isfinite(ask)
-        or bid <= 0
-        or ask <= 0
-        or ask < bid
-    ):
+    if not math.isfinite(bid) or not math.isfinite(ask) or bid <= 0 or ask <= 0 or ask < bid:
         return None
 
     # Require the provider's UTC timestamp. brokerTime may be in an arbitrary
@@ -980,10 +985,7 @@ async def execute_trade(
         stop_loss = float(stop_loss)
         take_profit = float(take_profit)
         if (
-            not all(
-                math.isfinite(value)
-                for value in (volume, signal_entry, stop_loss, take_profit)
-            )
+            not all(math.isfinite(value) for value in (volume, signal_entry, stop_loss, take_profit))
             or volume <= 0
             or signal_entry <= 0
         ):
@@ -995,14 +997,10 @@ async def execute_trade(
         if take_profit <= 0:
             result["error"] = "Take-profit is required for managed execution"
             return result
-        if direction_norm in {"long", "buy"} and not (
-            stop_loss < signal_entry < take_profit
-        ):
+        if direction_norm in {"long", "buy"} and not (stop_loss < signal_entry < take_profit):
             result["error"] = "Invalid long entry/stop/take-profit geometry"
             return result
-        if direction_norm in {"short", "sell"} and not (
-            take_profit < signal_entry < stop_loss
-        ):
+        if direction_norm in {"short", "sell"} and not (take_profit < signal_entry < stop_loss):
             result["error"] = "Invalid short entry/stop/take-profit geometry"
             return result
     except Exception:
@@ -1015,25 +1013,21 @@ async def execute_trade(
     result["slippage"] = slippage
 
     if not ok:
-        result["error"] = (
-            f"Slippage too high: {slippage:.4f} pts "
-            f"(tolerance: {_slippage_tolerance():.0f})"
-        )
+        result["error"] = f"Slippage too high: {slippage:.4f} pts (tolerance: {_slippage_tolerance():.0f})"
         logger.warning(
-            "[mt5_client] execute_trade rejected — slippage=%.4f > tol=%.0f  "
-            "symbol=%s entry=%.5f live=%.5f",
-            slippage, _slippage_tolerance(), symbol, signal_entry, live_price or 0,
+            "[mt5_client] execute_trade rejected — slippage=%.4f > tol=%.0f  symbol=%s entry=%.5f live=%.5f",
+            slippage,
+            _slippage_tolerance(),
+            symbol,
+            signal_entry,
+            live_price or 0,
         )
         return result
 
     # 2. Submit market order via REST
     await _deploy_account(account_id)
     url = f"{_client_base(account_id)}/trade"
-    action = (
-        "ORDER_TYPE_BUY"
-        if direction_norm in {"long", "buy"}
-        else "ORDER_TYPE_SELL"
-    )
+    action = "ORDER_TYPE_BUY" if direction_norm in {"long", "buy"} else "ORDER_TYPE_SELL"
     payload = {
         "actionType": action,
         "symbol": symbol,
@@ -1048,9 +1042,7 @@ async def execute_trade(
         result["error"] = "MetaApi trade request failed (see logs)"
         return result
 
-    result["order_id"] = (
-        data.get("orderId") or data.get("order_id") or data.get("positionId")
-    )
+    result["order_id"] = data.get("orderId") or data.get("order_id") or data.get("positionId")
     if not result["order_id"]:
         result["error"] = "MetaApi acknowledged submission without an order identifier"
         result["status"] = "AMBIGUOUS"
@@ -1058,7 +1050,10 @@ async def execute_trade(
     result["success"] = True
     logger.info(
         "[mt5_client] Order placed: symbol=%s dir=%s vol=%.2f order_id=%s",
-        symbol, direction, volume, result["order_id"],
+        symbol,
+        direction,
+        volume,
+        result["order_id"],
     )
     return result
 
@@ -1137,9 +1132,7 @@ async def get_history_deals_by_ticket(
     if not account or not ref:
         return None
     await _deploy_account(account)
-    data = await _http_get(
-        f"{_client_base(account)}/history-deals/ticket/{quote(ref, safe='')}"
-    )
+    data = await _http_get(f"{_client_base(account)}/history-deals/ticket/{quote(ref, safe='')}")
     if not isinstance(data, list):
         return None
     return [dict(item) for item in data if isinstance(item, dict)]
@@ -1155,9 +1148,7 @@ async def get_history_deals_by_position(
     if not account or not ref:
         return None
     await _deploy_account(account)
-    data = await _http_get(
-        f"{_client_base(account)}/history-deals/position/{quote(ref, safe='')}"
-    )
+    data = await _http_get(f"{_client_base(account)}/history-deals/position/{quote(ref, safe='')}")
     if not isinstance(data, list):
         return None
     return [dict(item) for item in data if isinstance(item, dict)]
@@ -1196,10 +1187,7 @@ async def get_history_deals_by_time_range(
     batch_size = min(1000, limit_total)
     offset = 0
     rows: list[dict[str, Any]] = []
-    url = (
-        f"{_client_base(account)}/history-deals/time/"
-        f"{_metaapi_path_time(start)}/{_metaapi_path_time(end)}"
-    )
+    url = f"{_client_base(account)}/history-deals/time/{_metaapi_path_time(start)}/{_metaapi_path_time(end)}"
     while offset < limit_total:
         page_limit = min(batch_size, limit_total - offset)
         data = await _http_get(
@@ -1259,11 +1247,7 @@ async def get_reconciliation_snapshot(
     """Prove account and position reconciliation endpoints are available."""
     info = account_info if isinstance(account_info, dict) else await get_account_info(account_id)
     positions = await get_open_positions_snapshot(account_id)
-    ready = bool(
-        isinstance(info, dict)
-        and info.get("connected") is True
-        and positions is not None
-    )
+    ready = bool(isinstance(info, dict) and info.get("connected") is True and positions is not None)
     return {
         "ready": ready,
         "checked_at": datetime.now(timezone.utc),
@@ -1294,17 +1278,11 @@ async def refresh_platform_metatrader_reconciliation(
             str(account_id),
             account_info=account_info,
         )
-        info = (
-            dict(snapshot.get("account_info") or {})
-            if isinstance(snapshot.get("account_info"), dict)
-            else {}
-        )
+        info = dict(snapshot.get("account_info") or {}) if isinstance(snapshot.get("account_info"), dict) else {}
         positions = snapshot.get("positions")
         checked_at = snapshot.get("checked_at")
         checked_iso = (
-            checked_at.isoformat()
-            if isinstance(checked_at, datetime)
-            else datetime.now(timezone.utc).isoformat()
+            checked_at.isoformat() if isinstance(checked_at, datetime) else datetime.now(timezone.utc).isoformat()
         )
         ready = bool(snapshot.get("ready"))
         status = "HEALTHY" if ready else "RECONCILING"
@@ -1321,9 +1299,7 @@ async def refresh_platform_metatrader_reconciliation(
             "verification_source": "read_only_provider_snapshot",
         }
         if ready:
-            details["ledger_source_event_id"] = (
-                f"verification_reconciliation:{checked_iso}"[:160]
-            )
+            details["ledger_source_event_id"] = f"verification_reconciliation:{checked_iso}"[:160]
         persisted = await record_reconciliation(
             int(user_id),
             str(connection_id),
@@ -1407,7 +1383,9 @@ async def close_all_positions(account_id: str, comment: str = "SignalRankAI-Kill
             continue
         vol = row.get("volume")
         try:
-            close_res = await close_position(account_id, pid, volume=float(vol) if vol is not None else None, comment=comment)
+            close_res = await close_position(
+                account_id, pid, volume=float(vol) if vol is not None else None, comment=comment
+            )
             if close_res.get("success"):
                 result["closed"] += 1
             else:
@@ -1471,10 +1449,7 @@ async def _sync_mt5_compatibility_metadata(
                 "uid": int(user_id),
                 "login": str(login or "").strip(),
                 "server": str(server or "").strip(),
-                "account_id": (
-                    str(metaapi_account_id).strip()
-                    if metaapi_account_id else None
-                ),
+                "account_id": (str(metaapi_account_id).strip() if metaapi_account_id else None),
             },
         )
         await session.commit()
@@ -1483,6 +1458,7 @@ async def _sync_mt5_compatibility_metadata(
 # ---------------------------------------------------------------------------
 # Credential management (used by /mt5_link command)
 # ---------------------------------------------------------------------------
+
 
 async def link_mt5_account(
     telegram_user_id: int,
@@ -1529,6 +1505,7 @@ async def get_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
     try:
         from db.session import get_session
         from sqlalchemy import text
+
         async with get_session() as session:
             row = await session.execute(
                 text(
@@ -1578,7 +1555,7 @@ async def ensure_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
             return None
         password = decrypt_secret(str(found[1] or ""))
         if not password:
-            logger.warning("[mt5_client] saved MT5 credentials could not be decrypted for user=%s", telegram_user_id)
+            logger.warning("[mt5_client] broker material unavailable after decryption attempt")
             return None
         result = await link_mt5_account(
             telegram_user_id=int(telegram_user_id),
@@ -1604,6 +1581,7 @@ async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
     try:
         from db.session import get_session
         from sqlalchemy import text
+
         async with get_session() as session:
             row = await session.execute(
                 text(
@@ -1637,7 +1615,6 @@ async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
     except Exception:
         logger.debug("[mt5_client] get link status failed", exc_info=True)
     return status
-
 
 
 async def link_platform_mt5_account(
@@ -1677,10 +1654,7 @@ async def get_platform_mt5_account_id(user_id: int) -> Optional[str]:
         async with get_session(label="mt5.platform.account_id", timeout_seconds=5.0) as session:
             value = (
                 await session.execute(
-                    text(
-                        "SELECT metaapi_account_id FROM mt5_credentials "
-                        "WHERE user_id=:uid LIMIT 1"
-                    ),
+                    text("SELECT metaapi_account_id FROM mt5_credentials WHERE user_id=:uid LIMIT 1"),
                     {"uid": int(user_id)},
                 )
             ).scalar_one_or_none()
@@ -1788,6 +1762,7 @@ async def get_platform_mt5_link_status(user_id: int) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Provider-neutral MetaTrader connection helpers (MT4 + MT5)
 # ---------------------------------------------------------------------------
+
 
 async def _provision_metatrader_account(
     payload: Dict[str, Any],
@@ -1979,9 +1954,7 @@ async def link_platform_metatrader_account(
     data = dict(provision.get("data") or {})
     account_id = str(data.get("id") or "").strip() or None
     env = _environment_from_server(server_n, environment)
-    status = "provisioning" if provision.get("pending") else (
-        "linked" if account_id else "credentials_saved"
-    )
+    status = "provisioning" if provision.get("pending") else ("linked" if account_id else "credentials_saved")
     verified_at = None
     info = None
     if account_id and not provision.get("pending"):
@@ -2190,12 +2163,15 @@ async def verify_platform_metatrader_connection(
     async with get_session(label="metatrader.connection.verify", timeout_seconds=8.0) as session:
         row = (
             await session.execute(
-                select(BrokerConnection).where(
+                select(BrokerConnection)
+                .where(
                     BrokerConnection.user_id == int(user_id),
                     BrokerConnection.connection_id == str(connection_id),
                     BrokerConnection.connector == "metaapi",
                     BrokerConnection.platform.in_(("mt4", "mt5")),
-                ).with_for_update().limit(1)
+                )
+                .with_for_update()
+                .limit(1)
             )
         ).scalar_one_or_none()
         if row is None:
@@ -2248,7 +2224,6 @@ async def ensure_platform_metatrader_account_id(
     require_execution_enabled: bool = False,
 ) -> Optional[str]:
     """Resolve or explicitly re-provision a canonical MT4/MT5 connection."""
-    import json as _json
 
     connection = await get_platform_metatrader_connection(
         int(user_id),
@@ -2278,10 +2253,12 @@ async def ensure_platform_metatrader_account_id(
         async with get_session(label="metatrader.reprovision", timeout_seconds=8.0) as session:
             row = (
                 await session.execute(
-                    select(BrokerConnection).where(
+                    select(BrokerConnection)
+                    .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.connection_id == connection_id_value,
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if row is not None:
@@ -2295,11 +2272,7 @@ async def ensure_platform_metatrader_account_id(
                 allow_legacy=True,
             )
         except BrokerCredentialError:
-            logger.warning(
-                "[metatrader] canonical credentials unavailable user=%s connection=%s",
-                user_id,
-                connection_id_value,
-            )
+            logger.warning("[metatrader] canonical broker material unavailable")
             return None
         result = await link_platform_metatrader_account(
             int(user_id),

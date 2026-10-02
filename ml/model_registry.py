@@ -65,7 +65,9 @@ def load_registry(manifest_path: str | Path) -> ModelRegistry:
             path=str(candidate_data.get("path") or "ml/model_candidate.json"),
             version=str(candidate_data.get("version") or "0.0.0"),
             feature_schema_version=str(candidate_data.get("feature_schema_version") or "1"),
-            checksum_sha256=(str(candidate_data.get("checksum_sha256")) if candidate_data.get("checksum_sha256") else None),
+            checksum_sha256=(
+                str(candidate_data.get("checksum_sha256")) if candidate_data.get("checksum_sha256") else None
+            ),
         )
 
     for entry in [primary, candidate]:
@@ -75,16 +77,13 @@ def load_registry(manifest_path: str | Path) -> ModelRegistry:
         if csum:
             fp = _sha256_file(Path(entry.path))
             if fp.lower() != csum.lower():
-                raise RuntimeError(
-                    f"model checksum mismatch for {entry.name}: expected={csum} actual={fp}"
-                )
+                raise RuntimeError(f"model checksum mismatch for {entry.name}: expected={csum} actual={fp}")
 
     return ModelRegistry(primary=primary, candidate=candidate, strict_schema=strict_schema)
+
+
 import base64
-import hashlib
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 
 def compute_model_hash_from_b64(model_bytes_b64: str) -> str:
@@ -130,9 +129,7 @@ def compute_training_dataset_version(
     h.update(label_hashes.tobytes())
 
     if timestamps is not None:
-        timestamp_series = pd.Series(
-            pd.to_datetime(timestamps, errors="coerce", utc=True)
-        ).reset_index(drop=True)
+        timestamp_series = pd.Series(pd.to_datetime(timestamps, errors="coerce", utc=True)).reset_index(drop=True)
         if len(timestamp_series) != len(frame):
             raise ValueError("training_lineage_timestamp_count_mismatch")
         timestamp_hashes = pd.util.hash_pandas_object(
@@ -179,9 +176,7 @@ def evaluate_promotion_lineage(
     if not run_id:
         reasons.append("training_run_id_missing")
 
-    canonical_champion_hash = str(
-        current_champion_hash_sha256 or ""
-    ).strip().lower()
+    canonical_champion_hash = str(current_champion_hash_sha256 or "").strip().lower()
     if canonical_champion_hash:
         # Production may restore/re-serialize the same booster into a local
         # artifact whose byte hash differs from the durable registry identity.
@@ -189,9 +184,7 @@ def evaluate_promotion_lineage(
         champion_hash = canonical_champion_hash
     else:
         try:
-            champion_hash = active_artifact_hash(
-                current_champion_path
-            ).lower()
+            champion_hash = active_artifact_hash(current_champion_path).lower()
         except RuntimeError as exc:
             champion_hash = ""
             reasons.append(str(exc))
@@ -310,7 +303,10 @@ def verify_feature_encoding_contract(payload: Dict[str, Any]) -> tuple[bool, str
     import os
 
     required = str(os.getenv("ML_REQUIRE_FEATURE_ENCODING_CONTRACT") or "0").strip().lower() in {
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     if not required:
         return True, None
@@ -354,42 +350,44 @@ def save_model_payload(path: Path, booster: Any, feature_cols: List[str], metada
     Returns True on success.
     """
     import base64
+
     try:
         # booster.save_raw() returns bytes for xgboost Booster
-        raw = booster.save_raw() if hasattr(booster, 'save_raw') else booster.save_model()
+        raw = booster.save_raw() if hasattr(booster, "save_raw") else booster.save_model()
         if raw is None:
             # fallback: try saving to temporary buffer
             from io import BytesIO
+
             buf = BytesIO()
             booster.save_model(buf)
             raw = buf.getvalue()
-        model_b64 = base64.b64encode(raw).decode('ascii')
+        model_b64 = base64.b64encode(raw).decode("ascii")
         ordered_features = [str(col).strip() for col in (feature_cols or [])]
         artifact_hash = hashlib.sha256(raw).hexdigest()
         feature_schema_hash = compute_feature_schema_hash(ordered_features)
         payload = {
-            'feature_cols': ordered_features,
-            'model_bytes_b64': model_b64,
-            'version': str(metadata.get('version') or ''),
-            'trained_at': str(metadata.get('trained_at') or ''),
-            'xgboost_version': str(metadata.get('xgboost_version') or ''),
+            "feature_cols": ordered_features,
+            "model_bytes_b64": model_b64,
+            "version": str(metadata.get("version") or ""),
+            "trained_at": str(metadata.get("trained_at") or ""),
+            "xgboost_version": str(metadata.get("xgboost_version") or ""),
             # Never trust a caller-supplied checksum for newly persisted bytes.
-            'artifact_hash_sha256': artifact_hash,
-            'feature_schema_hash_sha256': feature_schema_hash,
-            'schema_version': int(metadata.get('schema_version') or 1),
-            'model_format_version': int(metadata.get('model_format_version') or 1),
-            'feature_encoding_version': str(metadata.get('feature_encoding_version') or ''),
-            'dataset_version': str(metadata.get('dataset_version') or ''),
-            'training_run_id': str(metadata.get('training_run_id') or ''),
-            'parent_model_hash_sha256': str(metadata.get('parent_model_hash_sha256') or ''),
-            'calibration_kind': str(metadata.get('calibration_kind') or 'none'),
-            'calibration_x': list(metadata.get('calibration_x') or []),
-            'calibration_y': list(metadata.get('calibration_y') or []),
-            'metrics': dict(metadata.get('metrics') or {}),
-            'calibration_metrics': dict(metadata.get('calibration_metrics') or {}),
-            'training_meta': dict(metadata.get('training_meta') or {}),
+            "artifact_hash_sha256": artifact_hash,
+            "feature_schema_hash_sha256": feature_schema_hash,
+            "schema_version": int(metadata.get("schema_version") or 1),
+            "model_format_version": int(metadata.get("model_format_version") or 1),
+            "feature_encoding_version": str(metadata.get("feature_encoding_version") or ""),
+            "dataset_version": str(metadata.get("dataset_version") or ""),
+            "training_run_id": str(metadata.get("training_run_id") or ""),
+            "parent_model_hash_sha256": str(metadata.get("parent_model_hash_sha256") or ""),
+            "calibration_kind": str(metadata.get("calibration_kind") or "none"),
+            "calibration_x": list(metadata.get("calibration_x") or []),
+            "calibration_y": list(metadata.get("calibration_y") or []),
+            "metrics": dict(metadata.get("metrics") or {}),
+            "calibration_metrics": dict(metadata.get("calibration_metrics") or {}),
+            "training_meta": dict(metadata.get("training_meta") or {}),
         }
-        with open(path, 'w', encoding='utf-8') as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, ensure_ascii=False)
         return True
     except Exception:

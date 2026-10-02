@@ -16,7 +16,7 @@ def test_release_identity_and_single_migration_head() -> None:
     assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
     audit = audit_versions(ROOT)
     assert audit["ok"] is True
-    assert audit["heads"] == ["0045_mt5_credential_retirement"]
+    assert audit["heads"] == ["0047_event_outbox"]
 
 
 def test_outcome_projection_guard_is_in_active_chain_and_orm() -> None:
@@ -70,6 +70,7 @@ def test_staging_dependency_readiness_does_not_require_production_cutover(monkey
     assert check["ok"] is True
     assert check["required"] is False
     assert check["production_detail"]
+    assert check["environment"] == "staging"
 
 
 def test_production_dependency_readiness_keeps_cutover_fail_closed(monkeypatch) -> None:

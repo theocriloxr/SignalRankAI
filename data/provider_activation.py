@@ -18,6 +18,7 @@ Rules (Phase 24 / provider addendum §22):
 This module is pure and side-effect free (no network, no Redis) so every
 service can resolve the same structured answer.
 """
+
 from __future__ import annotations
 
 import os
@@ -103,32 +104,45 @@ def resolve_activation(
     # provider is otherwise disabled).
     if _as_bool(source.get(f"{provider.upper()}_SUSPENDED")):
         return ProviderActivation(
-            provider, ProviderActivationState.SUSPENDED, False, False,
+            provider,
+            ProviderActivationState.SUSPENDED,
+            False,
+            False,
             "provider_suspended_by_configuration",
         )
     if _as_bool(source.get(f"{provider.upper()}_CIRCUIT_OPEN")):
         return ProviderActivation(
-            provider, ProviderActivationState.CIRCUIT_OPEN, False, False,
+            provider,
+            ProviderActivationState.CIRCUIT_OPEN,
+            False,
+            False,
             "provider_circuit_open",
         )
     if _as_bool(source.get(f"{provider.upper()}_RATE_LIMITED")):
         return ProviderActivation(
-            provider, ProviderActivationState.RATE_LIMITED, False, False,
+            provider,
+            ProviderActivationState.RATE_LIMITED,
+            False,
+            False,
             "provider_rate_limit_exhausted",
         )
     if _as_bool(source.get(f"{provider.upper()}_PLAN_INSUFFICIENT")):
         return ProviderActivation(
-            provider, ProviderActivationState.PLAN_INSUFFICIENT, False, False,
+            provider,
+            ProviderActivationState.PLAN_INSUFFICIENT,
+            False,
+            False,
             "provider_plan_insufficient",
         )
 
     # Enabled gate.
-    enabled = _as_bool(
-        source.get(enabled_env or f"{provider.upper()}_ENABLED"), default_enabled
-    )
+    enabled = _as_bool(source.get(enabled_env or f"{provider.upper()}_ENABLED"), default_enabled)
     if not enabled:
         return ProviderActivation(
-            provider, ProviderActivationState.DISABLED, False, False,
+            provider,
+            ProviderActivationState.DISABLED,
+            False,
+            False,
             "provider_disabled_by_feature_flag",
         )
 
@@ -145,9 +159,13 @@ def resolve_activation(
         certified = bool(certified_raw) and certified_raw.lower() not in {"0", "false", "no", "off"}
         if explicit_live and not certified:
             return ProviderActivation(
-                provider, ProviderActivationState.PLAN_INSUFFICIENT, False, False,
+                provider,
+                ProviderActivationState.PLAN_INSUFFICIENT,
+                False,
+                False,
                 "execution_flag_set_without_certification_evidence",
-                required_env, present,
+                required_env,
+                present,
             )
         execution_ready = explicit_live and certified and credentials_present
         # Trading also requires an instrument allowlist when one is configured.
@@ -157,23 +175,37 @@ def resolve_activation(
     if not public_endpoint and required_env and len(present) < len(required_env):
         missing = tuple(name for name in required_env if not str(source.get(name, "")).strip())
         return ProviderActivation(
-            provider, ProviderActivationState.MISSING_CREDENTIALS, False, execution_ready,
+            provider,
+            ProviderActivationState.MISSING_CREDENTIALS,
+            False,
+            execution_ready,
             f"missing_credentials:{','.join(missing)}",
-            required_env, present,
+            required_env,
+            present,
         )
 
     if public_endpoint or present:
         state = ProviderActivationState.PUBLIC_READY if not required_env else ProviderActivationState.HEALTHY
         return ProviderActivation(
-            provider, state, True, execution_ready,
-            "public_endpoint_ready" if state is ProviderActivationState.PUBLIC_READY
+            provider,
+            state,
+            True,
+            execution_ready,
+            "public_endpoint_ready"
+            if state is ProviderActivationState.PUBLIC_READY
             else "credentials_verified_and_healthy",
-            required_env, present,
+            required_env,
+            present,
         )
 
     return ProviderActivation(
-        provider, ProviderActivationState.MISSING_CREDENTIALS, False, execution_ready,
-        "credentials_absent", required_env, present,
+        provider,
+        ProviderActivationState.MISSING_CREDENTIALS,
+        False,
+        execution_ready,
+        "credentials_absent",
+        required_env,
+        present,
     )
 
 

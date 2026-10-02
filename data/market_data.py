@@ -10,6 +10,7 @@ from typing import Iterable
 try:
     import yfinance as yf
 except Exception:  # Optional provider; other market-data routes remain usable.
+
     class _UnavailableYFinance:
         @staticmethod
         def Ticker(*_args, **_kwargs):
@@ -89,9 +90,7 @@ def market_data_usability(asset: str, requested: Iterable[str], market_data: dic
         missing_required = [tf for tf, ok in required_status.items() if not ok]
         is_usable = not missing_required
         final_reason = (
-            "usable_required_timeframes"
-            if is_usable
-            else f"missing_required_timeframe:{missing_required[0]}"
+            "usable_required_timeframes" if is_usable else f"missing_required_timeframe:{missing_required[0]}"
         )
     else:
         is_usable = bool(usable)
@@ -209,19 +208,16 @@ _TV_ENRICHMENT_CACHE: dict[tuple[str, str], dict] = {}
 
 
 def _tradingview_circuit_open() -> bool:
-    import time as _time
-
     return _TV_CIRCUIT_OPEN_UNTIL > _time.monotonic()
 
 
 def _open_tradingview_circuit(reason: str) -> None:
-    import time as _time
-
     global _TV_CIRCUIT_OPEN_UNTIL
     _TV_CIRCUIT_OPEN_UNTIL = _time.monotonic() + float(_TV_CIRCUIT_OPEN_SECONDS)
     logger.info(
         "[tradingview] optional_enrichment_circuit_open reason=%s circuit_open_seconds=%s",
-        reason, _TV_CIRCUIT_OPEN_SECONDS,
+        reason,
+        _TV_CIRCUIT_OPEN_SECONDS,
     )
 
 
@@ -293,6 +289,7 @@ async def _tradingview_indicators(asset: str, tf: str) -> dict:
             logger.debug("[tradingview] optional_enrichment_unavailable: %s", text[:120])
         return {}
     return {}
+
 
 # yfinance can emit noisy symbol-level errors during fallback; keep app logs readable.
 try:
@@ -442,6 +439,7 @@ def format_ticker(symbol: str, provider: str = "yfinance") -> str:
 # Async circuit-breaker waterfall for OHLCV fetching
 # ---------------------------------------------------------------------------
 
+
 async def fetch_candles_with_circuit_breaker(
     symbol: str,
     timeframe: str,
@@ -466,20 +464,23 @@ async def fetch_candles_with_circuit_breaker(
             f"&interval={timeframe}&limit={min(limit, 1000)}"
         )
         import httpx
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             raw = resp.json()
             candles = []
             for k in raw:
-                candles.append({
-                    "timestamp": int(k[0]) // 1000,
-                    "open": float(k[1]),
-                    "high": float(k[2]),
-                    "low": float(k[3]),
-                    "close": float(k[4]),
-                    "volume": float(k[5]),
-                })
+                candles.append(
+                    {
+                        "timestamp": int(k[0]) // 1000,
+                        "open": float(k[1]),
+                        "high": float(k[2]),
+                        "low": float(k[3]),
+                        "close": float(k[4]),
+                        "volume": float(k[5]),
+                    }
+                )
             return candles
 
     async def _try_yfinance() -> list:
@@ -498,22 +499,34 @@ async def fetch_candles_with_circuit_breaker(
         except (asyncio.TimeoutError, Exception) as exc:
             logger.warning(f"[circuit_breaker] Binance failed for {symbol}: {exc}; trying yfinance")
 
-    # 2 — yfinance
+    # 2 — canonical async provider waterfall.
     try:
-        candles = await _try_yfinance()
+        candles = await asyncio.wait_for(async_get_candles(symbol, timeframe), timeout=timeout)
         if candles:
-            logger.debug(f"[circuit_breaker] yfinance OK for {symbol} {timeframe}")
+            logger.debug("[circuit_breaker] certified provider waterfall OK for %s %s", symbol, timeframe)
             return candles
     except (asyncio.TimeoutError, Exception) as exc:
-        logger.warning(f"[circuit_breaker] yfinance failed for {symbol}: {exc}")
+        logger.warning("[circuit_breaker] certified provider waterfall failed for %s: %s", symbol, exc)
 
-    logger.error(f"[circuit_breaker] All providers failed for {symbol} {timeframe}")
+    # 3 — yfinance is analysis/development fallback only. Never allow it to
+    # become staging/production execution-sensitive truth.
+    if not _execution_sensitive_runtime():
+        try:
+            candles = await _try_yfinance()
+            if candles:
+                logger.debug(f"[circuit_breaker] analysis-only yfinance OK for {symbol} {timeframe}")
+                return candles
+        except (asyncio.TimeoutError, Exception) as exc:
+            logger.warning(f"[circuit_breaker] yfinance failed for {symbol}: {exc}")
+
+    logger.error(f"[circuit_breaker] All certified providers failed for {symbol} {timeframe}")
     return []
 
 
 # ---------------------------------------------------------------------------
 # Order-block / FVG detection (appends is_near_order_block flag)
 # ---------------------------------------------------------------------------
+
 
 def detect_order_blocks(candles: list, lookback: int = 100) -> bool:
     """Scan the last ``lookback`` candles for Fair Value Gaps / Imbalances.
@@ -554,9 +567,10 @@ def detect_order_blocks(candles: list, lookback: int = 100) -> bool:
 # Legacy shim — kept for callers that have not been updated yet
 # ---------------------------------------------------------------------------
 
+
 def _convert_to_yfinance_symbol(symbol: str) -> str:
     """Convert symbol to yfinance format using format_ticker.
-    
+
     This is the primary conversion function. Note: For crypto symbols like AAVEUSDT,
     yfinance may not have data - the _fetch_via_yfinance function will try multiple formats as fallback.
     """
@@ -565,27 +579,27 @@ def _convert_to_yfinance_symbol(symbol: str) -> str:
 
 def _get_yfinance_symbol_variants(symbol: str) -> list:
     """Generate multiple yfinance ticker variants to try.
-    
+
     FIX: This is CRITICAL - different crypto symbols need different formats
     and yfinance is inconsistent. We try multiple formats to maximize success.
-    
+
     Returns list of ticker strings in order of likelihood to work.
     """
     if not symbol:
         return [symbol]
-    
+
     s = str(symbol).upper().strip()
     variants = []
-    
+
     # For USDT pairs (crypto), try these formats
     if s.endswith("USDT"):
         base = s[:-4]  # e.g., AAVE from AAVEUSDT
         # Most likely to work (most common crypto tickers on yfinance)
         variants = [
-            f"{base}-USD",      # AAVE-USD (most common format)
-            f"{base}=X",       # AAVE=X 
-            base,              # Just the base (AAVE) - sometimes works
-            s,                 # Original (AAVEUSDT) - rarely works but try anyway
+            f"{base}-USD",  # AAVE-USD (most common format)
+            f"{base}=X",  # AAVE=X
+            base,  # Just the base (AAVE) - sometimes works
+            s,  # Original (AAVEUSDT) - rarely works but try anyway
         ]
     # For BUSD pairs
     elif s.endswith("BUSD"):
@@ -601,7 +615,7 @@ def _get_yfinance_symbol_variants(symbol: str) -> list:
     else:
         # For everything else, start with format_ticker result then try original
         variants = [format_ticker(symbol, "yfinance"), s]
-    
+
     # Dedupe while preserving order
     seen = set()
     unique_variants = []
@@ -610,7 +624,7 @@ def _get_yfinance_symbol_variants(symbol: str) -> list:
         if v_upper and v_upper not in seen:
             seen.add(v_upper)
             unique_variants.append(v)
-    
+
     return unique_variants
 
 
@@ -619,7 +633,7 @@ def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
 
     FIX: Now tries multiple ticker formats to handle yfinance's inconsistent behavior.
     This is the key fix for "No candles found" errors.
-    
+
     Each candle is a dict with keys: open, high, low, close, volume, timestamp
     Timestamp is seconds since epoch.
     """
@@ -633,18 +647,18 @@ def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
         "1d": "1d",
     }
     interval = interval_map.get(str(timeframe), "1h")
-    
+
     # Get all ticker variants to try
     variants = _get_yfinance_symbol_variants(symbol)
-    
+
     # Try each variant until we get data
     for yf_symbol in variants:
         if not yf_symbol:
             continue
-            
+
         try:
             ticker = yf.Ticker(yf_symbol)
-            
+
             # Request history
             df = ticker.history(period=None, interval=interval)
             if df is None or df.empty:
@@ -676,14 +690,16 @@ def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
                 except Exception:
                     ts = None
 
-                out.append({
-                    "open": float(o) if o is not None else 0.0,
-                    "high": float(h) if h is not None else 0.0,
-                    "low": float(l) if l is not None else 0.0,
-                    "close": float(c) if c is not None else 0.0,
-                    "volume": float(v) if v is not None else 0.0,
-                    "timestamp": int(ts) if ts is not None else 0,
-                })
+                out.append(
+                    {
+                        "open": float(o) if o is not None else 0.0,
+                        "high": float(h) if h is not None else 0.0,
+                        "low": float(l) if l is not None else 0.0,
+                        "close": float(c) if c is not None else 0.0,
+                        "volume": float(v) if v is not None else 0.0,
+                        "timestamp": int(ts) if ts is not None else 0,
+                    }
+                )
 
             # If we got here and have data, return it
             if out:
@@ -692,12 +708,12 @@ def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
                 if limit and isinstance(limit, int) and len(out) > limit:
                     out = out[-limit:]
                 return out
-                
+
         except Exception as e:
             # This variant failed with exception, try next
             logger.debug(f"[yfinance] {yf_symbol} failed for {symbol}: {e}, trying next variant")
             continue
-    
+
     # All variants failed
     if _should_log_yf_no_candles(symbol, timeframe):
         logger.warning(f"[yfinance] all variants exhausted for {symbol}, no candles found")
@@ -746,6 +762,18 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _execution_sensitive_runtime() -> bool:
+    """Return True when market data may influence staging/production decisions."""
+    names = (
+        os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE"),
+        os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("APP_ENV"),
+        os.getenv("ENVIRONMENT"),
+    )
+    return any(str(value or "").strip().lower() in {"staging", "production", "prod"} for value in names)
 
 
 def _timeframe_to_seconds(tf: str) -> int:
@@ -897,7 +925,9 @@ def _sanitize_ohlcv(candles: list) -> list:
     return out
 
 
-def _cash_session_reopen_threshold(asset: str | None, timeframe: str, *, now_epoch: float, base_threshold: float) -> float:
+def _cash_session_reopen_threshold(
+    asset: str | None, timeframe: str, *, now_epoch: float, base_threshold: float
+) -> float:
     """Extend candle freshness only before the first cash-session bar can complete.
 
     Cash equities/indices legitimately carry the prior session's last completed
@@ -963,15 +993,17 @@ def _cash_session_reopen_threshold(asset: str | None, timeframe: str, *, now_epo
         return float(base_threshold)
 
 
-def _check_staleness(candles: list, timeframe: str, *, asset: str | None = None, log_stale: bool = False) -> tuple[bool, float]:
+def _check_staleness(
+    candles: list, timeframe: str, *, asset: str | None = None, log_stale: bool = False
+) -> tuple[bool, float]:
     """Check if cached candles are stale.
-    
+
     Returns (is_fresh, data_age_seconds).
     Candles are stale if the latest candle is older than 2× the timeframe interval.
     """
     if not candles:
         return False, 0.0
-    
+
     def _to_epoch_seconds(value) -> int | None:
         if value is None:
             return None
@@ -995,21 +1027,21 @@ def _check_staleness(candles: list, timeframe: str, *, asset: str | None = None,
     # Get the latest candle's timestamp
     latest_candle = candles[-1]
     ts = latest_candle.get("timestamp")
-    
+
     if ts is None:
         if log_stale:
             logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
         return False, 0.0
-    
+
     # Convert timestamp to seconds
     try:
         ts_val = _to_epoch_seconds(ts)
         if ts_val is None or ts_val <= 0:
             raise ValueError(f"invalid timestamp: {ts!r}")
-        
+
         current_time = time.time()
         data_age = current_time - ts_val
-        
+
         # Calculate the strict base threshold (2× timeframe interval). Cash
         # equities/indices get a bounded reopen grace only until the first bar
         # of this timeframe could have completed.
@@ -1022,14 +1054,14 @@ def _check_staleness(candles: list, timeframe: str, *, asset: str | None = None,
             base_threshold=base_threshold,
         )
         is_fresh = data_age <= threshold
-        
+
         if not is_fresh and log_stale:
             logger.warning(
                 f"Staleness check failed for {timeframe}: "
                 f"data age={data_age:.0f}s exceeds threshold={threshold:.0f}s "
                 f"(base={base_threshold}s, timeframe={tf_seconds}s, asset={asset or 'n/a'})"
             )
-        
+
         return is_fresh, data_age
     except (ValueError, TypeError) as e:
         if log_stale:
@@ -1043,12 +1075,16 @@ async def fetch_market_data_cached(
     *,
     diagnostic_scope: str = "full",
 ) -> dict:
-    """Fetch market data from yfinance first, then Postgres cache, then fallback to REST.
+    """Fetch market data through the certified data path.
 
-    Priority order:
-    1. yfinance (primary source for all assets)
-    2. Postgres cache (from WS ingestor)
-    3. REST providers (Binance/Bybit/etc)
+    In staging/production decision scope, yfinance is deliberately excluded
+    because it is an unofficial/best-effort source and is not execution truth.
+    Research/learning scope may still use it as analysis-only context.
+
+    Decision-path priority:
+    1. fresh Postgres cache where applicable
+    2. certified provider waterfall
+    3. no data / no trade when those sources cannot satisfy freshness
 
     FIX: Lowered default minimum candles from 80 to 20 to prevent signal starvation
     when providers return limited data. In degraded mode, accepts 5+ candles.
@@ -1064,13 +1100,18 @@ async def fetch_market_data_cached(
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
     use_yfinance = _env_bool("YFINANCE_ENABLED", True)
     is_crypto_asset = str(get_asset_type(asset) or "").lower() == "crypto"
+    analysis_scope = str(diagnostic_scope or "full").strip().lower() == "analysis"
+    execution_sensitive = _execution_sensitive_runtime() and not analysis_scope
+    if execution_sensitive:
+        use_yfinance = False
     if is_crypto_asset and not _env_bool("YFINANCE_CRYPTO_PRIMARY_ENABLED", False):
         use_yfinance = False
 
     out: dict = {}
-    
+
     # 1. Try yfinance first (primary source)
     if use_yfinance and _yf_available():
+
         async def _fetch_yf(tf: str):
             try:
                 yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
@@ -1080,13 +1121,17 @@ async def fetch_market_data_cached(
                     if not is_fresh and _env_bool("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", True):
                         logger.warning(
                             "[market_data] rejecting stale yfinance payload asset=%s tf=%s age_seconds=%.0f",
-                            asset, tf, data_age,
+                            asset,
+                            tf,
+                            data_age,
                         )
                         return tf, {}
-                    
+
                     return tf, {
                         "candles": yf_candles,
                         "source": "yfinance",
+                        "source_category": "analysis_only",
+                        "execution_eligible": False,
                         "data_age_seconds": int(data_age) if data_age > 0 else None,
                         "stale": not is_fresh,
                     }
@@ -1094,9 +1139,7 @@ async def fetch_market_data_cached(
                     # FIX: Add QUALITY_GATE logging for visibility into data rejection reasons
                     got_candles = len(yf_candles) if yf_candles else 0
                     reason = f"need_{want}" if got_candles > 0 else "no_data"
-                    logger.warning(
-                        f"[QUALITY_GATE] {asset} {tf} candles={got_candles} valid=False reason={reason}"
-                    )
+                    logger.warning(f"[QUALITY_GATE] {asset} {tf} candles={got_candles} valid=False reason={reason}")
                     logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
             except Exception as e:
                 logger.warning(f"yfinance exception for {asset} {tf}: {e}")
@@ -1125,20 +1168,22 @@ async def fetch_market_data_cached(
                     candles = await get_recent_candles(session, symbol=asset, timeframe=tf, limit=limit)
                     if candles:
                         logger.info(f"[market_data] asset={asset} tf={tf} candles_fetched={len(candles)}")
-                    
+
                     if candles and len(candles) >= want:
                         candles = _sanitize_ohlcv(candles)
                         # Validate OHLCV
                         if not _validate_ohlcv(candles):
                             logger.warning(f"Cached candles for {asset} {tf} failed OHLCV validation, skipping cache")
                             continue
-                        
+
                         # Check staleness
                         is_fresh, data_age = _check_staleness(candles, tf, asset=asset, log_stale=True)
                         if not is_fresh:
-                            logger.warning(f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache")
+                            logger.warning(
+                                f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache"
+                            )
                             continue
-                        
+
                         # Cache is valid
                         out[tf] = {
                             "candles": candles,
@@ -1182,19 +1227,19 @@ async def fetch_market_data_cached(
 
         fetched = await asyncio.gather(*[_fetch_one(tf) for tf in missing], return_exceptions=False)
         rest = {tf: payload for tf, payload in fetched if payload}
-        
+
         # Validate and add data_age_seconds for REST data
         for tf, payload in (rest or {}).items():
             candles = (payload or {}).get("candles") or []
             if candles:
                 candles = _sanitize_ohlcv(candles)
                 payload["candles"] = candles
-            
+
             # Validate OHLCV for REST candles
             if candles and not _validate_ohlcv(candles):
                 logger.warning(f"REST candles for {asset} {tf} failed OHLCV validation, skipping")
                 continue
-            
+
             # A provider request can succeed while returning an old historical
             # tail. Never equate HTTP freshness with candle freshness.
             if candles:
@@ -1205,10 +1250,13 @@ async def fetch_market_data_cached(
                 if not is_fresh and _env_bool("MARKET_PROVIDER_STALENESS_HARD_GATE_ENABLED", True):
                     logger.warning(
                         "[market_data] rejecting stale provider payload asset=%s tf=%s source=%s age_seconds=%.0f",
-                        asset, tf, payload.get("source") or "unknown", data_age,
+                        asset,
+                        tf,
+                        payload.get("source") or "unknown",
+                        data_age,
                     )
                     continue
-            
+
             # Never replace an already accepted live/cache payload with a
             # later fallback result.
             out.setdefault(tf, payload)
@@ -1218,6 +1266,7 @@ async def fetch_market_data_cached(
             if tf != next(iter(rest), None) or not _env_bool("MARKET_ALTERNATIVE_SIGNALS_ENABLED", True):
                 continue
             try:
+
                 async def _fetch_alt():
                     try:
                         sym = str(asset or "").upper().strip()
@@ -1272,7 +1321,12 @@ async def fetch_market_data_cached(
                         macro.setdefault("news_sentiment", 0.0)
                         return macro
                     except Exception:
-                        return {"funding_rate": 0.0, "open_interest_change": 0.0, "orderbook_imbalance": 0.0, "news_sentiment": 0.0}
+                        return {
+                            "funding_rate": 0.0,
+                            "open_interest_change": 0.0,
+                            "orderbook_imbalance": 0.0,
+                            "news_sentiment": 0.0,
+                        }
 
                 try:
                     enrichment_timeout = max(
@@ -1283,8 +1337,9 @@ async def fetch_market_data_cached(
                     enrichment_timeout = 3.0
                 macro = await asyncio.wait_for(_fetch_alt(), timeout=enrichment_timeout)
                 try:
+                    asset_str = str(asset or "").upper().strip()
                     onchain = await asyncio.wait_for(
-                        fetch_onchain_context(sym),
+                        fetch_onchain_context(asset_str),
                         timeout=enrichment_timeout,
                     )
                     if isinstance(onchain, dict):
@@ -1394,14 +1449,19 @@ async def fetch_market_data_cached(
                     if not is_fresh:
                         logger.warning(
                             "Cached candles for %s %s are stale (age=%.0fs), skipping cache",
-                            asset, tf, data_age,
+                            asset,
+                            tf,
+                            data_age,
                         )
                         continue
-                    out.setdefault(tf, {
-                        "candles": candles,
-                        "source": "postgres_cache",
-                        "data_age_seconds": data_age,
-                    })
+                    out.setdefault(
+                        tf,
+                        {
+                            "candles": candles,
+                            "source": "postgres_cache",
+                            "data_age_seconds": data_age,
+                        },
+                    )
                 await session.commit()
         except Exception:
             pass
@@ -1436,7 +1496,10 @@ async def fetch_market_data_cached(
         if not validate_price_sanity(asset, latest_close):
             logger.error(
                 "[market_data] GHOST PRICE PAYLOAD REMOVED asset=%s tf=%s close=%s source=%s",
-                asset, tf, latest_close, payload.get("source"),
+                asset,
+                tf,
+                latest_close,
+                payload.get("source"),
             )
             out.pop(tf, None)
 
@@ -1486,8 +1549,7 @@ async def fetch_market_data_cached(
             if isinstance(payload, dict) and payload.get("candles")
         }
         logger.info(
-            "[market_data][phase_result] phase=%s asset=%s requested=%s available=%s "
-            "provider_by_timeframe=%s",
+            "[market_data][phase_result] phase=%s asset=%s requested=%s available=%s provider_by_timeframe=%s",
             scope,
             asset,
             tfs,

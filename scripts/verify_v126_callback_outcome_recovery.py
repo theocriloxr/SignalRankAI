@@ -1,4 +1,5 @@
 """Static/runtime verifier for SignalRankAI v1.2.7."""
+
 from __future__ import annotations
 
 from pathlib import Path

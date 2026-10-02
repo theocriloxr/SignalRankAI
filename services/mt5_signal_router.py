@@ -10,7 +10,7 @@ This module provides:
 
 Usage:
     from services.mt5_signal_router import MT5SignalRouter
-    
+
     router = MT5SignalRouter()
     result = await router.route_signal(signal, user_id, execution_mode="auto")
 """
@@ -19,7 +19,7 @@ import logging
 import os
 import hashlib
 import math
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
@@ -29,18 +29,20 @@ import contextlib
 
 logger = logging.getLogger("MT5SignalRouter")
 
+
 # Execution modes
 class ExecutionMode:
-    MANUAL = "manual"   # User receives instructions and executes outside the bot
+    MANUAL = "manual"  # User receives instructions and executes outside the bot
     MANUAL_CONFIRMED = "manual_confirmed"  # Authenticated one-click request
-    AUTO = "auto"       # Auto-execute via MT5 after persisted opt-in
+    AUTO = "auto"  # Auto-execute via MT5 after persisted opt-in
     COPY_TRADE = "copy_trade"
-    NONE = "none"       # No execution, just signals
+    NONE = "none"  # No execution, just signals
 
 
 @dataclass
 class ExecutionRequest:
     """Signal execution request."""
+
     signal_id: str
     user_id: int
     asset: str
@@ -58,6 +60,7 @@ class ExecutionRequest:
 @dataclass
 class ExecutionResult:
     """Result of execution attempt."""
+
     success: bool
     message: str
     order_id: Optional[str] = None
@@ -68,7 +71,7 @@ class ExecutionResult:
 class MT5SignalRouter:
     """
     Routes signals to MT5 for automated execution.
-    
+
     Features:
     - Tier-based execution control (manual/auto/none)
     - Position sizing based on account equity
@@ -76,7 +79,7 @@ class MT5SignalRouter:
     - Paper ledger sync for non-executed trades
     - Multi-account support (VIP)
     """
-    
+
     def __init__(self, *, execution_gate: Any | None = None):
         from execution.service import ExecutionGate
 
@@ -288,9 +291,7 @@ class MT5SignalRouter:
         try:
             from core.resource_governor import get_resource_governor
 
-            return bool(
-                get_resource_governor().policy.real_execution_allowed
-            )
+            return bool(get_resource_governor().policy.real_execution_allowed)
         except Exception:
             logger.warning(
                 "[SignalRouter] resource governor unavailable; blocking execution",
@@ -323,13 +324,9 @@ class MT5SignalRouter:
             async with get_session(label="mt5.profile_policy", timeout_seconds=8.0) as session:
                 identity = str(user_identity or "telegram").strip().lower()
                 user_filter = (
-                    User.id == int(user_id)
-                    if identity == "platform"
-                    else User.telegram_user_id == int(user_id)
+                    User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id)
                 )
-                user = (await session.execute(
-                    select(User).where(user_filter).limit(1)
-                )).scalar_one_or_none()
+                user = (await session.execute(select(User).where(user_filter).limit(1))).scalar_one_or_none()
                 if user is None:
                     return {**result, "reason": "user_profile_missing"}
                 prefs = await get_platform_user_trading_preferences(session, int(user.id))
@@ -345,41 +342,77 @@ class MT5SignalRouter:
                 if requested in {ExecutionMode.AUTO, "live"} and configured not in {"auto", "live"}:
                     return {**result, "reason": "profile_auto_disabled"}
                 if requested == ExecutionMode.MANUAL_CONFIRMED and configured not in {
-                    "manual", "manual_confirmed", "semi_auto"
+                    "manual",
+                    "manual_confirmed",
+                    "semi_auto",
                 }:
                     return {**result, "reason": "profile_manual_confirmation_disabled"}
                 provider = str(prefs.execution_provider or "auto").strip().lower()
                 if provider not in {"auto", "mt4", "mt5", "metaapi"}:
                     return {**result, "reason": "profile_provider_mismatch"}
 
-                open_statuses = ("pending", "submitted", "confirmed", "open", "submitting", "ambiguous", "reconciliation_pending")
-                mt5_open = int((await session.execute(
-                    select(func.count(MT5Execution.id)).where(
-                        MT5Execution.user_id == int(user.id),
-                        func.lower(MT5Execution.status).in_(open_statuses),
-                    )
-                )).scalar_one() or 0)
-                bybit_open = int((await session.execute(
-                    select(func.count(BrokerExecution.id)).where(
-                        BrokerExecution.user_id == int(user.id),
-                        func.lower(BrokerExecution.status).in_(open_statuses),
-                    )
-                )).scalar_one() or 0)
+                open_statuses = (
+                    "pending",
+                    "submitted",
+                    "confirmed",
+                    "open",
+                    "submitting",
+                    "ambiguous",
+                    "reconciliation_pending",
+                )
+                mt5_open = int(
+                    (
+                        await session.execute(
+                            select(func.count(MT5Execution.id)).where(
+                                MT5Execution.user_id == int(user.id),
+                                func.lower(MT5Execution.status).in_(open_statuses),
+                            )
+                        )
+                    ).scalar_one()
+                    or 0
+                )
+                bybit_open = int(
+                    (
+                        await session.execute(
+                            select(func.count(BrokerExecution.id)).where(
+                                BrokerExecution.user_id == int(user.id),
+                                func.lower(BrokerExecution.status).in_(open_statuses),
+                            )
+                        )
+                    ).scalar_one()
+                    or 0
+                )
                 asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-                duplicate_mt5 = int((await session.execute(
-                    select(func.count(MT5Execution.id)).where(
-                        MT5Execution.user_id == int(user.id),
-                        MT5Execution.symbol == asset,
-                        func.lower(MT5Execution.status).in_(open_statuses),
+                duplicate_mt5 = (
+                    int(
+                        (
+                            await session.execute(
+                                select(func.count(MT5Execution.id)).where(
+                                    MT5Execution.user_id == int(user.id),
+                                    MT5Execution.symbol == asset,
+                                    func.lower(MT5Execution.status).in_(open_statuses),
+                                )
+                            )
+                        ).scalar_one()
+                        or 0
                     )
-                )).scalar_one() or 0) > 0
-                duplicate_bybit = int((await session.execute(
-                    select(func.count(BrokerExecution.id)).where(
-                        BrokerExecution.user_id == int(user.id),
-                        BrokerExecution.symbol == asset,
-                        func.lower(BrokerExecution.status).in_(open_statuses),
+                    > 0
+                )
+                duplicate_bybit = (
+                    int(
+                        (
+                            await session.execute(
+                                select(func.count(BrokerExecution.id)).where(
+                                    BrokerExecution.user_id == int(user.id),
+                                    BrokerExecution.symbol == asset,
+                                    func.lower(BrokerExecution.status).in_(open_statuses),
+                                )
+                            )
+                        ).scalar_one()
+                        or 0
                     )
-                )).scalar_one() or 0) > 0
+                    > 0
+                )
                 if duplicate_mt5 or duplicate_bybit:
                     return {**result, "reason": "duplicate_open_asset"}
                 maximum = max(1, int(prefs.max_concurrent_positions or 1))
@@ -440,32 +473,22 @@ class MT5SignalRouter:
             async with get_session(label="metatrader.execution_policy", timeout_seconds=8.0) as session:
                 identity = str(user_identity or "telegram").strip().lower()
                 user_filter = (
-                    User.id == int(user_id)
-                    if identity == "platform"
-                    else User.telegram_user_id == int(user_id)
+                    User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id)
                 )
-                user = (
-                    await session.execute(
-                        select(User).where(user_filter).limit(1)
-                    )
-                ).scalar_one_or_none()
+                user = (await session.execute(select(User).where(user_filter).limit(1))).scalar_one_or_none()
                 if user is None:
                     return policy
                 canonical_id = int(user.id)
-                telegram_id = (
-                    int(user.telegram_user_id)
-                    if user.telegram_user_id is not None
-                    else None
-                )
+                telegram_id = int(user.telegram_user_id) if user.telegram_user_id is not None else None
                 accepted_terms = bool(user.accepted_terms)
                 stored_mode = str(user.execution_mode or "").strip().lower()
 
                 query = select(BrokerConnection).where(
-                            BrokerConnection.user_id == canonical_id,
-                            BrokerConnection.connector == "metaapi",
-                            BrokerConnection.platform == platform,
-                            BrokerConnection.external_account_id == str(account_id),
-                        )
+                    BrokerConnection.user_id == canonical_id,
+                    BrokerConnection.connector == "metaapi",
+                    BrokerConnection.platform == platform,
+                    BrokerConnection.external_account_id == str(account_id),
+                )
                 if connection_id is not None:
                     query = query.where(BrokerConnection.connection_id == connection_id)
                 connections = (await session.execute(query.limit(2))).scalars().all()
@@ -483,10 +506,12 @@ class MT5SignalRouter:
 
                     account_policy_row = (
                         await session.execute(
-                            select(TradingAccountPolicyRecord).where(
+                            select(TradingAccountPolicyRecord)
+                            .where(
                                 TradingAccountPolicyRecord.user_id == canonical_id,
                                 TradingAccountPolicyRecord.connection_id == str(connection.connection_id),
-                            ).limit(1)
+                            )
+                            .limit(1)
                         )
                     ).scalar_one_or_none()
                     reconciliation_row = await session.get(
@@ -494,15 +519,11 @@ class MT5SignalRouter:
                         str(connection.connection_id),
                     )
                     policy["account_policy"] = (
-                        public_account_policy(account_policy_row)
-                        if account_policy_row is not None
-                        else None
+                        public_account_policy(account_policy_row) if account_policy_row is not None else None
                     )
                     policy["policy_persisted"] = account_policy_row is not None
                     policy["reconciliation_status"] = (
-                        str(reconciliation_row.status).upper()
-                        if reconciliation_row is not None
-                        else "UNKNOWN"
+                        str(reconciliation_row.status).upper() if reconciliation_row is not None else "UNKNOWN"
                     )
 
                     auth_mode = str(connection.auth_mode or "").strip().lower()
@@ -513,8 +534,7 @@ class MT5SignalRouter:
                         and decrypt_secret(str(connection.secret_encrypted))
                     )
                     credentials_valid = bool(
-                        str(connection.external_account_id or "").strip()
-                        == str(account_id).strip()
+                        str(connection.external_account_id or "").strip() == str(account_id).strip()
                         and (provider_managed or locally_encrypted)
                     )
                     connection_execution_enabled = execution_connection_error(connection, canonical_id) is None
@@ -524,17 +544,14 @@ class MT5SignalRouter:
                 if connection is None and platform == "mt5":
                     legacy = (
                         await session.execute(
-                            select(MT5Credentials).where(
-                                MT5Credentials.user_id == canonical_id
-                            ).limit(1)
+                            select(MT5Credentials).where(MT5Credentials.user_id == canonical_id).limit(1)
                         )
                     ).scalar_one_or_none()
                     if legacy is not None:
                         credentials_valid = bool(
                             legacy.password_encrypted
                             and legacy.metaapi_account_id
-                            and str(legacy.metaapi_account_id).strip()
-                            == str(account_id).strip()
+                            and str(legacy.metaapi_account_id).strip() == str(account_id).strip()
                             and is_encryption_available()
                             and decrypt_secret(str(legacy.password_encrypted))
                         )
@@ -555,16 +572,10 @@ class MT5SignalRouter:
                 if optin_keys:
                     rows = (
                         await session.execute(
-                            select(RuntimeState.key, RuntimeState.value).where(
-                                RuntimeState.key.in_(optin_keys)
-                            )
+                            select(RuntimeState.key, RuntimeState.value).where(RuntimeState.key.in_(optin_keys))
                         )
                     ).all()
-                    optins = {
-                        str(item[0]): item[1]
-                        for item in rows
-                        if item and len(item) >= 2
-                    }
+                    optins = {str(item[0]): item[1] for item in rows if item and len(item) >= 2}
 
             if requested == ExecutionMode.COPY_TRADE:
                 optin = optins.get(
@@ -572,32 +583,20 @@ class MT5SignalRouter:
                     if identity == "platform"
                     else f"copyexec_user_optin:{int(user_id)}"
                 )
-                explicit_mode_optin = bool(
-                    isinstance(optin, dict) and optin.get("enabled") is True
-                )
+                explicit_mode_optin = bool(isinstance(optin, dict) and optin.get("enabled") is True)
                 mode_enabled = stored_mode == ExecutionMode.COPY_TRADE
                 user_enabled = bool(mode_enabled and connection_execution_enabled)
-                consent = bool(
-                    accepted_terms
-                    and user_enabled
-                    and explicit_mode_optin
-                )
+                consent = bool(accepted_terms and user_enabled and explicit_mode_optin)
             elif requested in {ExecutionMode.AUTO, "live"}:
                 optin = optins.get(
                     f"autoexec_platform_optin:{canonical_id}"
                     if identity == "platform"
                     else f"autoexec_user_optin:{int(user_id)}"
                 )
-                explicit_mode_optin = bool(
-                    isinstance(optin, dict) and optin.get("enabled") is True
-                )
+                explicit_mode_optin = bool(isinstance(optin, dict) and optin.get("enabled") is True)
                 mode_enabled = stored_mode in {ExecutionMode.AUTO, "live"}
                 user_enabled = bool(mode_enabled and connection_execution_enabled)
-                consent = bool(
-                    accepted_terms
-                    and user_enabled
-                    and explicit_mode_optin
-                )
+                consent = bool(accepted_terms and user_enabled and explicit_mode_optin)
             elif requested == ExecutionMode.MANUAL_CONFIRMED:
                 mode_enabled = stored_mode in {
                     ExecutionMode.MANUAL,
@@ -686,25 +685,12 @@ class MT5SignalRouter:
             order = str(order_id or "").strip()
             if not order:
                 return False
-            signal_id = str(
-                signal.get("signal_id") or signal.get("id") or ""
-            ).strip() or None
-            symbol = str(
-                signal.get("asset") or signal.get("symbol") or ""
-            ).upper().strip()
-            raw_direction = str(
-                signal.get("direction") or signal.get("side") or ""
-            ).lower().strip()
+            signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip() or None
+            symbol = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+            raw_direction = str(signal.get("direction") or signal.get("side") or "").lower().strip()
             direction = "long" if raw_direction in {"long", "buy"} else "short"
-            take_profit = self._parse_take_profit(
-                signal.get("take_profit") or signal.get("targets")
-            )
-            entry = float(
-                broker_result.get("live_price")
-                or broker_result.get("price")
-                or signal.get("entry")
-                or 0
-            )
+            take_profit = self._parse_take_profit(signal.get("take_profit") or signal.get("targets"))
+            entry = float(broker_result.get("live_price") or broker_result.get("price") or signal.get("entry") or 0)
             stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
             identity = str(user_identity or "telegram").strip().lower()
             meta = {
@@ -715,24 +701,14 @@ class MT5SignalRouter:
                 "request_user_id": int(user_id),
                 "connection_id": str(connection_id or "") or None,
                 "idempotency_key": str(idempotency_key),
-                "hard_stop_attached": bool(
-                    broker_result.get("hard_stop_attached", True)
-                ),
-                "broker_response_status": str(
-                    broker_result.get("status") or "submitted"
-                ),
+                "hard_stop_attached": bool(broker_result.get("hard_stop_attached", True)),
+                "broker_response_status": str(broker_result.get("status") or "submitted"),
             }
             async with get_session() as session:
                 user_filter = (
-                    User.id == int(user_id)
-                    if identity == "platform"
-                    else User.telegram_user_id == int(user_id)
+                    User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id)
                 )
-                user = (
-                    await session.execute(
-                        select(User).where(user_filter).limit(1)
-                    )
-                ).scalar_one_or_none()
+                user = (await session.execute(select(User).where(user_filter).limit(1))).scalar_one_or_none()
                 if user is None:
                     return False
                 existing = (
@@ -789,17 +765,13 @@ class MT5SignalRouter:
                             "entry_price": str(entry),
                             "stop_loss": str(stop),
                             "take_profit": [str(value) for value in take_profit],
-                            "provider_status": str(
-                                broker_result.get("status") or "submitted"
-                            ),
+                            "provider_status": str(broker_result.get("status") or "submitted"),
                         },
                     )
                 await session.commit()
                 return True
         except Exception:
-            logger.exception(
-                "[SignalRouter] broker acknowledged but execution ledger persistence failed"
-            )
+            logger.exception("[SignalRouter] broker acknowledged but execution ledger persistence failed")
             return False
 
     async def _has_execution_evidence(
@@ -838,7 +810,7 @@ class MT5SignalRouter:
                 exc_info=True,
             )
             return False
-        
+
     async def initialize(self) -> bool:
         """Initialize one bounded execution worker."""
         if self._processing and self._worker_task and not self._worker_task.done():
@@ -889,7 +861,7 @@ class MT5SignalRouter:
                 message="Broker execution did not complete before timeout",
                 error="execution_result_timeout",
             )
-    
+
     async def route_signal(
         self,
         signal: Dict[str, Any],
@@ -902,12 +874,12 @@ class MT5SignalRouter:
     ) -> ExecutionResult:
         """
         Route signal to appropriate execution handler.
-        
+
         Args:
             signal: Signal dict with asset, direction, entry, stop_loss, take_profit
             user_id: Telegram user ID by default, or canonical users.id for platform identity
             execution_mode: manual, auto, or none
-            
+
         Returns:
             ExecutionResult with success status and details
         """
@@ -963,9 +935,7 @@ class MT5SignalRouter:
                     error=reason,
                 )
 
-            signal_id = str(
-                signal.get("signal_id") or signal.get("id") or ""
-            ).strip()
+            signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
             identity = str(user_identity or "telegram").strip().lower()
             platform = str(broker_platform or "mt5").strip().lower()
             if platform not in {"mt4", "mt5"}:
@@ -981,9 +951,7 @@ class MT5SignalRouter:
                     error="unsupported_execution_identity",
                 )
             tier = (
-                await self._get_platform_user_tier(user_id)
-                if identity == "platform"
-                else self._get_user_tier(user_id)
+                await self._get_platform_user_tier(user_id) if identity == "platform" else self._get_user_tier(user_id)
             )
             mt5_account_id = await self._get_user_mt5_account(
                 user_id,
@@ -1081,35 +1049,26 @@ class MT5SignalRouter:
                 }
             else:
                 user_enabled = requested_mode in {ExecutionMode.AUTO, "live"}
+            account_info_map: Dict[str, Any] = account_info if isinstance(account_info, dict) else {}
+            symbol_spec_map: Dict[str, Any] = symbol_spec if isinstance(symbol_spec, dict) else {}
             account_ready = bool(
-                isinstance(account_info, dict)
-                and account_info.get("connected") is True
-                and isinstance(account_info.get("equity"), (int, float))
-                and float(account_info["equity"]) > 0
-                and isinstance(account_info.get("free_margin"), (int, float))
-                and float(account_info["free_margin"]) > 0
+                account_info_map.get("connected") is True
+                and isinstance(account_info_map.get("equity"), (int, float))
+                and float(account_info_map["equity"]) > 0
+                and isinstance(account_info_map.get("free_margin"), (int, float))
+                and float(account_info_map["free_margin"]) > 0
             )
             account_is_demo = (
-                account_info.get("is_demo")
-                if isinstance(account_info, dict)
-                and isinstance(account_info.get("is_demo"), bool)
+                account_info_map.get("is_demo")
+                if isinstance(account_info_map.get("is_demo"), bool)
                 else None
             )
             quote_trusted = bool(
-                isinstance(quote, dict)
-                and quote.get("provider") == "metaapi"
-                and quote.get("trusted") is True
+                isinstance(quote, dict) and quote.get("provider") == "metaapi" and quote.get("trusted") is True
             )
             quote_age = quote.get("age_seconds") if isinstance(quote, dict) else None
-            max_quote_age = (
-                quote.get("max_age_seconds", 15.0)
-                if isinstance(quote, dict)
-                else 15.0
-            )
-            symbol_ready = bool(
-                isinstance(symbol_spec, dict)
-                and symbol_spec.get("trade_allowed") is True
-            )
+            max_quote_age = quote.get("max_age_seconds", 15.0) if isinstance(quote, dict) else 15.0
+            symbol_ready = bool(symbol_spec_map.get("trade_allowed") is True)
             risk_allowed = bool(volume > 0 and symbol_ready and account_ready)
 
             # Evaluate the immutable per-account policy separately from the
@@ -1145,21 +1104,17 @@ class MT5SignalRouter:
                                 if reconciliation.get("checked_at")
                                 else ""
                             ),
-                            "provider_timestamp": str(
-                                reconciliation.get("checked_at") or ""
-                            ) or None,
-                            "currency": str(
-                                account_info.get("currency") or "USD"
-                            ).upper(),
-                            "balance": account_info.get("balance"),
-                            "equity": account_info.get("equity"),
-                            "margin": account_info.get("margin"),
-                            "free_margin": account_info.get("free_margin"),
-                            "realized_pnl": account_info.get("realized_pnl"),
+                            "provider_timestamp": str(reconciliation.get("checked_at") or "") or None,
+                            "currency": str(account_info_map.get("currency") or "USD").upper(),
+                            "balance": account_info_map.get("balance"),
+                            "equity": account_info_map.get("equity"),
+                            "margin": account_info_map.get("margin"),
+                            "free_margin": account_info_map.get("free_margin"),
+                            "realized_pnl": account_info_map.get("realized_pnl"),
                             "unrealized_pnl": (
-                                account_info.get("unrealized_pnl")
-                                if account_info.get("unrealized_pnl") is not None
-                                else account_info.get("profit")
+                                account_info_map.get("unrealized_pnl")
+                                if account_info_map.get("unrealized_pnl") is not None
+                                else account_info_map.get("profit")
                             ),
                         },
                     )
@@ -1185,10 +1140,10 @@ class MT5SignalRouter:
                     prop_policy_version = str(account_policy.prop_rules_version or "")
                     account_frozen = bool(account_policy.frozen)
 
-                    current_equity = Decimal(str(account_info.get("equity") or 0))
-                    raw_day_start = account_info.get("day_start_equity")
-                    raw_week_start = account_info.get("week_start_equity")
-                    raw_peak = account_info.get("peak_equity")
+                    current_equity = Decimal(str(account_info_map.get("equity") or 0))
+                    raw_day_start = account_info_map.get("day_start_equity")
+                    raw_week_start = account_info_map.get("week_start_equity")
+                    raw_peak = account_info_map.get("peak_equity")
                     baseline_verified = bool(
                         isinstance(raw_day_start, (int, float))
                         and float(raw_day_start) > 0
@@ -1196,36 +1151,19 @@ class MT5SignalRouter:
                         and float(raw_peak) > 0
                     )
                     weekly_baseline_verified = bool(
-                        isinstance(raw_week_start, (int, float))
-                        and float(raw_week_start) > 0
+                        isinstance(raw_week_start, (int, float)) and float(raw_week_start) > 0
                     )
-                    day_start_equity = Decimal(
-                        str(raw_day_start if baseline_verified else current_equity)
-                    )
-                    week_start_equity = Decimal(
-                        str(raw_week_start if weekly_baseline_verified else 0)
-                    )
-                    peak_equity = Decimal(
-                        str(raw_peak if baseline_verified else current_equity)
-                    )
-                    daily_realized_pnl = Decimal(
-                        str(account_info.get("daily_realized_pnl") or 0)
-                    )
-                    weekly_realized_pnl = Decimal(
-                        str(account_info.get("weekly_realized_pnl") or 0)
-                    )
-                    profile_risk_fraction = Decimal(
-                        str(profile_policy.get("risk_per_trade_pct") or 0)
-                    ) / Decimal("100")
-                    contract_size = Decimal(
-                        str(symbol_spec.get("contract_size") or 0)
-                    )
+                    day_start_equity = Decimal(str(raw_day_start if baseline_verified else current_equity))
+                    week_start_equity = Decimal(str(raw_week_start if weekly_baseline_verified else 0))
+                    peak_equity = Decimal(str(raw_peak if baseline_verified else current_equity))
+                    daily_realized_pnl = Decimal(str(account_info_map.get("daily_realized_pnl") or 0))
+                    weekly_realized_pnl = Decimal(str(account_info_map.get("weekly_realized_pnl") or 0))
+                    profile_risk_fraction = Decimal(str(profile_policy.get("risk_per_trade_pct") or 0)) / Decimal("100")
+                    contract_size = Decimal(str(symbol_spec_map.get("contract_size") or 0))
                     entry_decimal = Decimal(str(signal.get("entry") or 0))
                     proposed_leverage = Decimal("0")
                     if current_equity > 0 and contract_size > 0 and entry_decimal > 0:
-                        proposed_leverage = (
-                            Decimal(str(volume)) * contract_size * entry_decimal
-                        ) / current_equity
+                        proposed_leverage = (Decimal(str(volume)) * contract_size * entry_decimal) / current_equity
 
                     bid = Decimal(str(quote.get("bid") or 0)) if isinstance(quote, dict) else Decimal("0")
                     ask = Decimal(str(quote.get("ask") or 0)) if isinstance(quote, dict) else Decimal("0")
@@ -1238,9 +1176,7 @@ class MT5SignalRouter:
                     executable_quote = ask if raw_direction in {"long", "buy"} else bid
                     slippage_bps = Decimal("1000000")
                     if entry_decimal > 0 and executable_quote > 0:
-                        slippage_bps = (
-                            abs(executable_quote - entry_decimal) / entry_decimal
-                        ) * Decimal("10000")
+                        slippage_bps = (abs(executable_quote - entry_decimal) / entry_decimal) * Decimal("10000")
 
                     confidence = Decimal("0")
                     raw_confidence = (
@@ -1260,16 +1196,11 @@ class MT5SignalRouter:
 
                     expected_rr = Decimal("0")
                     stop_decimal = Decimal(str(signal.get("stop_loss") or signal.get("stop") or 0))
-                    targets = self._parse_take_profit(
-                        signal.get("take_profit") or signal.get("targets")
-                    )
+                    targets = self._parse_take_profit(signal.get("take_profit") or signal.get("targets"))
                     if entry_decimal > 0 and stop_decimal > 0 and targets:
                         risk_distance = abs(entry_decimal - stop_decimal)
                         if risk_distance > 0:
-                            expected_rr = (
-                                abs(Decimal(str(targets[0])) - entry_decimal)
-                                / risk_distance
-                            )
+                            expected_rr = abs(Decimal(str(targets[0])) - entry_decimal) / risk_distance
 
                     policy_snapshot = AccountRiskSnapshot(
                         current_equity=current_equity,
@@ -1319,7 +1250,12 @@ class MT5SignalRouter:
                 account_id=str(policy.get("connection_id") or ""),
                 tier=tier,
                 mode=execution_mode,
-                user_enabled=bool(policy.get("found") and policy.get("user_enabled") and user_enabled and profile_policy.get("allowed")),
+                user_enabled=bool(
+                    policy.get("found")
+                    and policy.get("user_enabled")
+                    and user_enabled
+                    and profile_policy.get("allowed")
+                ),
                 consent=bool(policy.get("consent")),
                 account_ready=account_ready,
                 account_is_demo=account_is_demo,
@@ -1437,13 +1373,11 @@ class MT5SignalRouter:
                         "error": "duplicate_or_unavailable_execution_reservation",
                     }
 
-                quota_reserved, quota_error, user_db_id = (
-                    await self._reserve_user_execution_quota(
-                        int(user_id),
-                        tier=tier,
-                        execution_mode=execution_mode,
-                        user_identity=identity,
-                    )
+                quota_reserved, quota_error, user_db_id = await self._reserve_user_execution_quota(
+                    int(user_id),
+                    tier=tier,
+                    execution_mode=execution_mode,
+                    user_identity=identity,
                 )
                 if not quota_reserved:
                     await self._record_execution_reservation(
@@ -1505,9 +1439,7 @@ class MT5SignalRouter:
                     error="execution_in_progress",
                 )
             reasons = ", ".join(gated.decision.reasons)
-            error = gated.error or (
-                reasons if gated.status == "BLOCKED" else gated.status.lower()
-            )
+            error = gated.error or (reasons if gated.status == "BLOCKED" else gated.status.lower())
             return ExecutionResult(
                 success=False,
                 message=f"Execution {gated.status.lower()}: {error}",
@@ -1521,7 +1453,7 @@ class MT5SignalRouter:
                 message=f"Error: {str(e)}",
                 error=str(e),
             )
-    
+
     async def _execute_via_mt5(
         self,
         signal: Dict[str, Any],
@@ -1546,18 +1478,18 @@ class MT5SignalRouter:
             )
         try:
             from services.mt5_client import execute_trade
-            
+
             asset = signal.get("asset", "")
             direction = signal.get("direction", "long")
             entry = signal.get("entry", 0)
             stop_loss = signal.get("stop_loss", 0)
             take_profit = signal.get("take_profit")
-            
+
             tp_list = self._parse_take_profit(take_profit)
-            
+
             # Use first TP for now
             tp_price = float(tp_list[0]) if tp_list else 0
-            
+
             result = await execute_trade(
                 account_id=account_id,
                 symbol=asset,
@@ -1570,7 +1502,7 @@ class MT5SignalRouter:
                 execution_authorized=True,
                 idempotency_key=idempotency_key,
             )
-            
+
             if result.get("success"):
                 order_id = str(result.get("order_id") or "").strip()
                 ledger_ok = await self._record_execution_ledger(
@@ -1597,10 +1529,7 @@ class MT5SignalRouter:
                 message = f"Executed: {asset} {direction}"
                 error = None
                 if not ledger_ok:
-                    message = (
-                        f"Executed: {asset} {direction}; durable execution "
-                        "ledger reconciliation is pending"
-                    )
+                    message = f"Executed: {asset} {direction}; durable execution ledger reconciliation is pending"
                     error = "execution_ledger_pending"
                 return ExecutionResult(
                     success=True,
@@ -1615,7 +1544,7 @@ class MT5SignalRouter:
                     message=f"Failed: {result.get('error', 'Unknown error')}",
                     error=result.get("error"),
                 )
-                
+
         except Exception as e:
             logger.error(f"[SignalRouter] MetaTrader execution error: {e}")
             return ExecutionResult(
@@ -1623,7 +1552,7 @@ class MT5SignalRouter:
                 message=f"Execution error: {str(e)}",
                 error=str(e),
             )
-    
+
     @staticmethod
     def _apply_position_weight(
         volume: float,
@@ -1635,20 +1564,23 @@ class MT5SignalRouter:
             base = float(volume)
             fraction = float(weight)
             spec = symbol_spec if isinstance(symbol_spec, dict) else {}
-            step = float(spec.get("volume_step"))
-            minimum = float(spec.get("min_volume"))
-            maximum = float(spec.get("max_volume"))
+            raw_step = spec.get("volume_step")
+            raw_minimum = spec.get("min_volume")
+            raw_maximum = spec.get("max_volume")
+            if raw_step is None or raw_minimum is None or raw_maximum is None:
+                return 0.0
+            step = float(raw_step)
+            minimum = float(raw_minimum)
+            maximum = float(raw_maximum)
             values = (base, fraction, step, minimum, maximum)
             if not all(math.isfinite(value) for value in values):
                 return 0.0
             if base <= 0 or not 0 < fraction <= 1 or step <= 0 or minimum <= 0 or maximum < minimum:
                 return 0.0
             step_d = Decimal(str(step))
-            scaled = (
-                (Decimal(str(min(base * fraction, maximum))) / step_d)
-                .to_integral_value(rounding=ROUND_DOWN)
-                * step_d
-            )
+            scaled = (Decimal(str(min(base * fraction, maximum))) / step_d).to_integral_value(
+                rounding=ROUND_DOWN
+            ) * step_d
             result = float(scaled)
             return result if minimum <= result <= maximum else 0.0
         except (TypeError, ValueError, ArithmeticError):
@@ -1679,11 +1611,7 @@ class MT5SignalRouter:
                 get_symbol_specification,
             )
 
-            info = (
-                account_info
-                if isinstance(account_info, dict)
-                else await get_account_info(account_id)
-            )
+            info = account_info if isinstance(account_info, dict) else await get_account_info(account_id)
             spec = (
                 symbol_spec
                 if isinstance(symbol_spec, dict)
@@ -1699,16 +1627,37 @@ class MT5SignalRouter:
             if spec.get("trade_allowed") is not True:
                 return 0.0
 
-            equity = float(info.get("equity"))
-            free_margin = float(info.get("free_margin"))
+            raw_equity = info.get("equity")
+            raw_free_margin = info.get("free_margin")
+            raw_tick_size = spec.get("tick_size")
+            raw_tick_value = spec.get("tick_value")
+            raw_contract_size = spec.get("contract_size")
+            raw_min_volume = spec.get("min_volume")
+            raw_max_volume = spec.get("max_volume")
+            raw_volume_step = spec.get("volume_step")
+            required_values = (
+                raw_equity,
+                raw_free_margin,
+                raw_tick_size,
+                raw_tick_value,
+                raw_contract_size,
+                raw_min_volume,
+                raw_max_volume,
+                raw_volume_step,
+            )
+            if any(value is None for value in required_values):
+                return 0.0
+
+            equity = float(str(raw_equity))
+            free_margin = float(str(raw_free_margin))
             entry_f = float(entry)
             stop_f = float(stop_loss)
-            tick_size = float(spec.get("tick_size"))
-            tick_value = float(spec.get("tick_value"))
-            contract_size = float(spec.get("contract_size"))
-            min_volume = float(spec.get("min_volume"))
-            max_volume = float(spec.get("max_volume"))
-            volume_step = float(spec.get("volume_step"))
+            tick_size = float(str(raw_tick_size))
+            tick_value = float(str(raw_tick_value))
+            contract_size = float(str(raw_contract_size))
+            min_volume = float(str(raw_min_volume))
+            max_volume = float(str(raw_max_volume))
+            volume_step = float(str(raw_volume_step))
             values = (
                 equity,
                 free_margin,
@@ -1750,9 +1699,7 @@ class MT5SignalRouter:
             mode = str(execution_mode or "manual").strip().lower()
             if mode in {"auto", "copy", "copy_trade"}:
                 try:
-                    auto_cap = float(
-                        os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0") or 3.0
-                    )
+                    auto_cap = float(os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0") or 3.0)
                 except (TypeError, ValueError):
                     auto_cap = 3.0
                 max_risk_pct = min(max_risk_pct, max(0.0, auto_cap))
@@ -1770,11 +1717,7 @@ class MT5SignalRouter:
                 return 0.0
             raw_volume = min(risk_amount / risk_per_lot, max_volume)
             step = Decimal(str(volume_step))
-            rounded = (
-                (Decimal(str(raw_volume)) / step)
-                .to_integral_value(rounding=ROUND_DOWN)
-                * step
-            )
+            rounded = (Decimal(str(raw_volume)) / step).to_integral_value(rounding=ROUND_DOWN) * step
             volume = float(rounded)
             if not math.isfinite(volume) or volume < min_volume:
                 return 0.0
@@ -1782,7 +1725,7 @@ class MT5SignalRouter:
         except Exception as e:
             logger.error(f"[SignalRouter] Volume calculation error: {e}")
             return 0.0
-    
+
     async def _sync_to_paper_ledger(
         self,
         signal: Dict[str, Any],
@@ -1816,7 +1759,7 @@ class MT5SignalRouter:
             )
         except Exception as e:
             logger.error(f"[SignalRouter] Paper ledger sync error: {e}")
-    
+
     async def _get_user_mt5_account(
         self,
         user_id: int,
@@ -1840,7 +1783,9 @@ class MT5SignalRouter:
             if canonical_id is None:
                 return None
             connection = await resolve_execution_connection(
-                canonical_id, platform=platform, connection_id=connection_id,
+                canonical_id,
+                platform=platform,
+                connection_id=connection_id,
             )
             return await ensure_platform_metatrader_account_id(
                 canonical_id,
@@ -1863,11 +1808,11 @@ class MT5SignalRouter:
 
             identity = str(user_identity or "telegram").strip().lower()
             async with get_session(label="mt5.identity.resolve", timeout_seconds=5.0) as session:
-                query = select(User.id).where(
-                    User.id == int(user_id)
-                    if identity == "platform"
-                    else User.telegram_user_id == int(user_id)
-                ).limit(1)
+                query = (
+                    select(User.id)
+                    .where(User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id))
+                    .limit(1)
+                )
                 value = (await session.execute(query)).scalar_one_or_none()
                 await session.rollback()
             return int(value) if value is not None else None
@@ -1884,9 +1829,7 @@ class MT5SignalRouter:
 
             async with get_session(label="mt5.platform.tier", timeout_seconds=5.0) as session:
                 user = (
-                    await session.execute(
-                        select(User).where(User.id == int(user_id)).limit(1)
-                    )
+                    await session.execute(select(User).where(User.id == int(user_id)).limit(1))
                 ).scalar_one_or_none()
                 if user is None:
                     return "FREE"
@@ -1895,16 +1838,17 @@ class MT5SignalRouter:
             return str(tier or "free").upper()
         except Exception:
             return "FREE"
-    
+
     def _get_user_tier(self, user_id: int) -> str:
         """Get user's current tier."""
         try:
             from signalrank_telegram.access import resolve_user_tier
+
             tier = resolve_user_tier(user_id)
             return str(tier).upper()
         except Exception:
             return "FREE"
-    
+
     async def _get_user_risk_pct(
         self,
         user_id: int,
@@ -1919,15 +1863,9 @@ class MT5SignalRouter:
             async with get_session() as session:
                 identity = str(user_identity or "telegram").strip().lower()
                 user_filter = (
-                    User.id == int(user_id)
-                    if identity == "platform"
-                    else User.telegram_user_id == int(user_id)
+                    User.id == int(user_id) if identity == "platform" else User.telegram_user_id == int(user_id)
                 )
-                result = await session.execute(
-                    select(User.id, User.max_risk_percentage)
-                    .where(user_filter)
-                    .limit(1)
-                )
+                result = await session.execute(select(User.id, User.max_risk_percentage).where(user_filter).limit(1))
                 row = result.fetchone()
                 if not row or row[1] is None:
                     return None
@@ -1935,6 +1873,7 @@ class MT5SignalRouter:
                 value = float(row[1])
                 try:
                     from services.user_intelligence import get_platform_user_trading_preferences
+
                     prefs = await get_platform_user_trading_preferences(
                         session,
                         canonical_id,
@@ -1951,7 +1890,7 @@ class MT5SignalRouter:
                 exc_info=True,
             )
             return None
-    
+
     async def _process_execution_loop(self) -> None:
         """Process queued broker requests without unbounded task creation."""
         while True:
@@ -2041,6 +1980,25 @@ router = MT5SignalRouter()
 
 
 # Convenience functions
+async def route_signal_to_metatrader(
+    signal: Dict[str, Any],
+    user_id: int,
+    *,
+    platform: str = "mt5",
+    execution_mode: str = "manual_confirmed",
+    connection_id: str | None = None,
+) -> ExecutionResult:
+    """Route a Telegram-originated MT4/MT5 signal through the canonical gate."""
+    return await router.route_signal(
+        signal,
+        int(user_id),
+        execution_mode,
+        user_identity="telegram",
+        broker_platform=str(platform or "mt5").lower(),
+        connection_id=connection_id,
+    )
+
+
 async def route_signal_to_mt5(
     signal: Dict[str, Any],
     user_id: int,
@@ -2091,12 +2049,9 @@ async def get_user_execution_mode(user_id: int) -> str:
         from db.session import get_session
         from db.models import User
         from sqlalchemy import select
-        
+
         async with get_session() as session:
-            result = await session.execute(
-                select(User.execution_mode)
-                .where(User.telegram_user_id == user_id)
-            )
+            result = await session.execute(select(User.execution_mode).where(User.telegram_user_id == user_id))
             row = result.fetchone()
             return row[0] if row else "manual"
     except Exception:
@@ -2109,13 +2064,9 @@ async def set_user_execution_mode(user_id: int, mode: str) -> bool:
         from db.session import get_session
         from db.models import User
         from sqlalchemy import update
-        
+
         async with get_session() as session:
-            await session.execute(
-                update(User)
-                .where(User.telegram_user_id == user_id)
-                .values(execution_mode=mode)
-            )
+            await session.execute(update(User).where(User.telegram_user_id == user_id).values(execution_mode=mode))
             await session.commit()
         return True
     except Exception as e:
@@ -2126,11 +2077,11 @@ async def set_user_execution_mode(user_id: int, mode: str) -> bool:
 if __name__ == "__main__":
     # Test
     import asyncio
-    
+
     async def test():
         r = MT5SignalRouter()
         await r.initialize()
         print("Router initialized")
         await r.shutdown()
-    
+
     asyncio.run(test())

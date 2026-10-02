@@ -4,6 +4,7 @@ All endpoints resolve the existing ``users.id`` canonical account. Telegram,
 web, mobile, subscriptions, deliveries and paper positions therefore share one
 identity instead of maintaining parallel user stores.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,7 @@ import secrets
 from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
@@ -485,7 +486,9 @@ class ExecutionTermsAcceptRequest(BaseModel):
 
 class OrganizationInviteRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
-    role: str = Field(default="viewer", pattern=r"^(administrator|trader|analyst|risk_manager|viewer|developer|billing|auditor)$")
+    role: str = Field(
+        default="viewer", pattern=r"^(administrator|trader|analyst|risk_manager|viewer|developer|billing|auditor)$"
+    )
 
 
 class OrganizationInvitationAcceptRequest(BaseModel):
@@ -495,10 +498,11 @@ class OrganizationInvitationAcceptRequest(BaseModel):
 class AlertCreateRequest(BaseModel):
     instrument_id: str | None = Field(default=None, max_length=128)
     asset: str | None = Field(default=None, max_length=32)
-    alert_type: str = Field(pattern=r"^(price_above|price_below|signal_generated|entry_triggered|outcome|provider_status)$")
+    alert_type: str = Field(
+        pattern=r"^(price_above|price_below|signal_generated|entry_triggered|outcome|provider_status)$"
+    )
     condition: dict[str, Any] = Field(default_factory=dict)
     channels: list[str] = Field(default_factory=lambda: ["telegram", "web"], max_length=5)
-
 
 
 def _signal_targets_for_presentation(raw: Any) -> list[float]:
@@ -519,12 +523,7 @@ def _signal_targets_for_presentation(raw: Any) -> list[float]:
     for item in value:
         candidate = item
         if isinstance(item, dict):
-            candidate = (
-                item.get("price")
-                or item.get("tp")
-                or item.get("target")
-                or item.get("value")
-            )
+            candidate = item.get("price") or item.get("tp") or item.get("target") or item.get("value")
         try:
             parsed = float(candidate)
         except (TypeError, ValueError):
@@ -547,6 +546,7 @@ def _present_signal_for_tier(
     # values consistent.
     try:
         from engine.signal_calculations import format_enhanced_signal_data
+
         enhanced = format_enhanced_signal_data(payload)
     except Exception:
         enhanced = {}
@@ -641,6 +641,7 @@ def _assert_feature(user: dict[str, Any], feature: str) -> None:
             },
         )
 
+
 def _assert_command(user: dict[str, Any], command: str) -> None:
     decision = evaluate_command_access(command, str(user.get("tier") or "free"))
     if not decision.allowed:
@@ -683,11 +684,15 @@ def _platform_operator_authority(user: dict[str, Any]) -> str | None:
     return None
 
 
-
 def _normalized_scopes(values: list[str]) -> list[str]:
     allowed = {
-        "signals:read", "instruments:read", "portfolio:read", "paper:read",
-        "journal:read", "webhooks:write", "organization:read",
+        "signals:read",
+        "instruments:read",
+        "portfolio:read",
+        "paper:read",
+        "journal:read",
+        "webhooks:write",
+        "organization:read",
     }
     result = sorted({str(value).strip().lower() for value in values if str(value).strip().lower() in allowed})
     if not result:
@@ -709,15 +714,19 @@ async def professional_api_user(
     secret_hash = __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest()
     async with get_session() as session:
         row = (
-            await session.execute(
-                text(
-                    "SELECT key_id,user_id,scopes,expires_at FROM api_keys "
-                    "WHERE key_prefix=:prefix AND secret_hash=:secret_hash AND active=TRUE "
-                    "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>NOW()) FOR UPDATE"
-                ),
-                {"prefix": key_prefix, "secret_hash": secret_hash},
+            (
+                await session.execute(
+                    text(
+                        "SELECT key_id,user_id,scopes,expires_at FROM api_keys "
+                        "WHERE key_prefix=:prefix AND secret_hash=:secret_hash AND active=TRUE "
+                        "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>NOW()) FOR UPDATE"
+                    ),
+                    {"prefix": key_prefix, "secret_hash": secret_hash},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if not row:
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
         user = await user_snapshot(session, int(row["user_id"]))
@@ -740,6 +749,7 @@ def _require_api_scope(user: dict[str, Any], scope: str) -> None:
     if scope not in scopes and "*" not in scopes:
         raise HTTPException(status_code=403, detail=f"API key scope required: {scope}")
 
+
 def _client_ip(request: Request) -> str | None:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -748,12 +758,11 @@ def _client_ip(request: Request) -> str | None:
 
 
 def _app_base_url_from_env() -> str:
-    configured = str(
-        os.getenv("APP_BASE_URL")
-        or os.getenv("STAGING_APP_BASE_URL")
-        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
-        or ""
-    ).strip().rstrip("/")
+    configured = (
+        str(os.getenv("APP_BASE_URL") or os.getenv("STAGING_APP_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "")
+        .strip()
+        .rstrip("/")
+    )
     if configured and not configured.startswith(("http://", "https://")):
         configured = f"https://{configured}"
     return configured
@@ -778,7 +787,9 @@ def _set_session_cookies(response: Response, *, access: str, refresh: str, sessi
         "path": "/",
     }
     refresh_max_age = max(86400, int(os.getenv("APP_REFRESH_TOKEN_TTL_DAYS", "30")) * 86400)
-    response.set_cookie(ACCESS_COOKIE, access, max_age=max(120, int(os.getenv("APP_ACCESS_TOKEN_TTL_MINUTES", "15")) * 60), **common)
+    response.set_cookie(
+        ACCESS_COOKIE, access, max_age=max(120, int(os.getenv("APP_ACCESS_TOKEN_TTL_MINUTES", "15")) * 60), **common
+    )
     response.set_cookie(REFRESH_COOKIE, refresh, max_age=refresh_max_age, **common)
     response.set_cookie(SESSION_COOKIE, session_id, max_age=refresh_max_age, **common)
     csrf = secrets.token_urlsafe(32)
@@ -856,7 +867,37 @@ async def current_user(
     if not user or user.get("account_status") != "active":
         raise HTTPException(status_code=401, detail="Account unavailable")
     user["session_id"] = claims.get("sid")
+    try:
+        issued_at = int(claims.get("iat"))
+        user["auth_age_seconds"] = max(
+            0.0,
+            datetime.utcnow().timestamp() - float(issued_at),
+        )
+    except (TypeError, ValueError, OverflowError):
+        # Missing/invalid signed issuance time is intentionally fail-closed by
+        # _require_recent_auth for security-sensitive actions.
+        user["auth_age_seconds"] = None
     return user
+
+
+def _require_recent_auth(user: dict[str, Any]) -> None:
+    """Require a freshly issued authenticated session for credential creation."""
+    max_age = max(
+        60.0,
+        min(
+            3600.0,
+            float(os.getenv("SENSITIVE_ACTION_RECENT_AUTH_SECONDS", "900") or 900),
+        ),
+    )
+    try:
+        age = float(user.get("auth_age_seconds"))
+    except (TypeError, ValueError):
+        age = max_age + 1.0
+    if age < 0 or age > max_age:
+        raise HTTPException(
+            status_code=403,
+            detail="Recent authentication is required for this security-sensitive action",
+        )
 
 
 async def _create_login_response(
@@ -892,7 +933,9 @@ async def _create_login_response(
             device_id=device_id,
         )
         await session.commit()
-    csrf = _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
+    csrf = _set_session_cookies(
+        response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
+    )
     payload = {**_token_response(tokens, client_type), "user": user}
     if client_type != "mobile":
         payload["csrf_token"] = csrf
@@ -903,7 +946,14 @@ async def _create_login_response(
 async def capabilities() -> dict[str, Any]:
     return {
         "account_model": "canonical_user_multi_identity",
-        "login_methods": ["email_password", "email_magic_link", "telegram_activation", "telegram_login", "telegram_mini_app", "totp_mfa"],
+        "login_methods": [
+            "email_password",
+            "email_magic_link",
+            "telegram_activation",
+            "telegram_login",
+            "telegram_mini_app",
+            "totp_mfa",
+        ],
         "planned_login_methods": ["google", "apple", "passkey", "institutional_sso"],
         "clients": ["telegram", "web", "pwa", "android", "ios", "api"],
         "live_execution_enabled": False,
@@ -992,14 +1042,16 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         if tier_rank(spec.tier) > effective_rank:
             continue
         view = command_views.get(spec.name) or section_views.get(spec.section) or "tools"
-        items.append({
-            "name": spec.name,
-            "description": spec.description,
-            "minimum_tier": spec.tier,
-            "section": spec.section,
-            "web_view": view,
-            "operator_only": view == "ops",
-        })
+        items.append(
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "minimum_tier": spec.tier,
+                "section": spec.section,
+                "web_view": view,
+                "operator_only": view == "ops",
+            }
+        )
     return {
         "effective_tier": effective_tier,
         "authority": authority,
@@ -1075,15 +1127,19 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
             outcomes = await outcome_projection_health(session, days=30)
             from sqlalchemy import func, select
             from db.models import PaymentEvent, PaymentReceipt, ProcessedWebhookEvent
+
             event_count = int((await session.execute(select(func.count(PaymentEvent.id)))).scalar_one() or 0)
             receipt_count = int((await session.execute(select(func.count(PaymentReceipt.id)))).scalar_one() or 0)
-            pending_hooks = int((
-                await session.execute(
-                    select(func.count(ProcessedWebhookEvent.id)).where(
-                        func.lower(ProcessedWebhookEvent.status).in_(("pending", "failed"))
+            pending_hooks = int(
+                (
+                    await session.execute(
+                        select(func.count(ProcessedWebhookEvent.id)).where(
+                            func.lower(ProcessedWebhookEvent.status).in_(("pending", "failed"))
+                        )
                     )
-                )
-            ).scalar_one() or 0)
+                ).scalar_one()
+                or 0
+            )
             payment = {
                 "payment_events": event_count,
                 "payment_receipts": receipt_count,
@@ -1098,22 +1154,19 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
     engine_cycle: dict[str, Any] = {}
     try:
         import asyncio as _asyncio
+
         raw_cycle = await _asyncio.to_thread(redis_state.get_sync, "engine:last_cycle")
-        parsed_cycle = (
-            raw_cycle
-            if isinstance(raw_cycle, dict)
-            else json.loads(str(raw_cycle))
-            if raw_cycle
-            else {}
-        )
+        parsed_cycle = raw_cycle if isinstance(raw_cycle, dict) else json.loads(str(raw_cycle)) if raw_cycle else {}
         if isinstance(parsed_cycle, dict):
             pipeline = parsed_cycle.get("pipeline_stats")
             pipeline = pipeline if isinstance(pipeline, dict) else {}
+
             def _cycle_value(key: str, default: Any = None) -> Any:
                 value = parsed_cycle.get(key)
                 if value is None:
                     value = pipeline.get(key)
                 return default if value is None else value
+
             engine_cycle = {
                 "status": str(_cycle_value("status", "unknown") or "unknown"),
                 "cycle": _cycle_value("cycle"),
@@ -1178,6 +1231,7 @@ async def operator_ai_test(user: dict[str, Any] = Depends(current_user)) -> dict
     if authority not in {"OWNER", "ADMIN"}:
         raise HTTPException(status_code=403, detail="Operator access required")
     from services.openai_ai import provider_status, test_connection
+
     status = dict(provider_status() or {})
     if not bool(status.get("key_configured")):
         raise HTTPException(status_code=409, detail="OpenAI API key is not configured")
@@ -1194,6 +1248,7 @@ async def operator_kill_switch(
     if authority != "OWNER":
         raise HTTPException(status_code=403, detail="Strict owner access required")
     from core.redis_state import state as redis_state
+
     action = str(payload.action or "status").lower()
     if action in {"on", "off"} and payload.confirm is not True:
         raise HTTPException(status_code=422, detail="Explicit confirmation is required")
@@ -1245,61 +1300,75 @@ async def operator_maintenance(user: dict[str, Any] = Depends(current_user)) -> 
     async with get_session(label="platform.operator.maintenance", timeout_seconds=15.0) as session:
         notification_rows = (
             await session.execute(
-                select(OutcomeNotification.delivery_state, func.count(OutcomeNotification.id))
-                .group_by(OutcomeNotification.delivery_state)
+                select(OutcomeNotification.delivery_state, func.count(OutcomeNotification.id)).group_by(
+                    OutcomeNotification.delivery_state
+                )
             )
         ).all()
-        duplicate_attempts = int((
-            await session.execute(
-                select(func.count(OutcomeNotification.id)).where(
-                    OutcomeNotification.attempt_count > 1
+        duplicate_attempts = int(
+            (
+                await session.execute(
+                    select(func.count(OutcomeNotification.id)).where(OutcomeNotification.attempt_count > 1)
                 )
-            )
-        ).scalar_one() or 0)
-        missing_message_proof = int((
-            await session.execute(
-                select(func.count(SignalDelivery.id)).where(
-                    SignalDelivery.sent_ok.is_(True),
-                    SignalDelivery.telegram_message_id.is_(None),
+            ).scalar_one()
+            or 0
+        )
+        missing_message_proof = int(
+            (
+                await session.execute(
+                    select(func.count(SignalDelivery.id)).where(
+                        SignalDelivery.sent_ok.is_(True),
+                        SignalDelivery.telegram_message_id.is_(None),
+                    )
                 )
-            )
-        ).scalar_one() or 0)
+            ).scalar_one()
+            or 0
+        )
         paper_accounts = int((await session.execute(select(func.count(PaperAccount.id)))).scalar_one() or 0)
-        paper_open = int((
-            await session.execute(
-                select(func.count(PaperPosition.position_id)).where(
-                    func.lower(PaperPosition.status) == "open"
+        paper_open = int(
+            (
+                await session.execute(
+                    select(func.count(PaperPosition.position_id)).where(func.lower(PaperPosition.status) == "open")
                 )
-            )
-        ).scalar_one() or 0)
-        paper_closed = int((
-            await session.execute(
-                select(func.count(PaperPosition.position_id)).where(
-                    func.lower(PaperPosition.status) == "closed"
+            ).scalar_one()
+            or 0
+        )
+        paper_closed = int(
+            (
+                await session.execute(
+                    select(func.count(PaperPosition.position_id)).where(func.lower(PaperPosition.status) == "closed")
                 )
-            )
-        ).scalar_one() or 0)
+            ).scalar_one()
+            or 0
+        )
         paper_attempts = int((await session.execute(select(func.count(PaperTradeAttempt.id)))).scalar_one() or 0)
-        paper_skipped = int((
-            await session.execute(
-                select(func.count(PaperTradeAttempt.id)).where(
-                    func.lower(PaperTradeAttempt.decision).in_(("skip", "rejected", "retry"))
+        paper_skipped = int(
+            (
+                await session.execute(
+                    select(func.count(PaperTradeAttempt.id)).where(
+                        func.lower(PaperTradeAttempt.decision).in_(("skip", "rejected", "retry"))
+                    )
                 )
-            )
-        ).scalar_one() or 0)
+            ).scalar_one()
+            or 0
+        )
         paper_ledger = int((await session.execute(select(func.count(PaperLedgerEntry.id)))).scalar_one() or 0)
 
         adaptive_rows = (
-            await session.execute(
-                text(
-                    "SELECT profile_id,asset,version,state,is_current,sample_size "
-                    "FROM adaptive_asset_profiles ORDER BY is_current DESC,asset,version DESC LIMIT 24"
+            (
+                await session.execute(
+                    text(
+                        "SELECT profile_id,asset,version,state,is_current,sample_size "
+                        "FROM adaptive_asset_profiles ORDER BY is_current DESC,asset,version DESC LIMIT 24"
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
 
-    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1", "true", "yes", "on"}
     return {
         "authority": authority,
         "environment": environment,
@@ -1354,11 +1423,14 @@ async def operator_performance_rebuild(
     if payload.action == "status":
         raw = await asyncio.to_thread(redis_state.get_sync, status_key)
         async with get_session(label="platform.operator.performance.status", timeout_seconds=15.0) as session:
-            health = await performance_ledger_health(
-                session, days=int(payload.days), environment=environment
-            )
+            health = await performance_ledger_health(session, days=int(payload.days), environment=environment)
             await session.rollback()
-        return {"action": "status", "environment": environment, "last_batch": json.loads(raw) if raw else None, "health": health}
+        return {
+            "action": "status",
+            "environment": environment,
+            "last_batch": json.loads(raw) if raw else None,
+            "health": health,
+        }
 
     async with get_session(label="platform.operator.performance.rebuild", timeout_seconds=45.0) as session:
         result = await reconcile_all_performance_ledgers(
@@ -1398,6 +1470,7 @@ async def operator_outcome_rebuild(
         outcome_projection_health,
         repair_outcome_notification_outbox,
     )
+
     if payload.action == "status":
         async with get_session(label="platform.operator.outcome.status", timeout_seconds=15.0) as session:
             health = await outcome_projection_health(session, days=int(payload.days))
@@ -1456,13 +1529,15 @@ async def operator_queue_replay(
         for item in dlq_items:
             if not isinstance(item, dict):
                 continue
-            retry_items.append({
-                "internal_user_id": int(item.get("internal_user_id") or 0),
-                "telegram_user_id": int(item.get("telegram_user_id") or 0),
-                "attempts": 1,
-                "last_error_code": str(item.get("last_error_code") or "replay"),
-                "last_failed_at": datetime.now().isoformat(),
-            })
+            retry_items.append(
+                {
+                    "internal_user_id": int(item.get("internal_user_id") or 0),
+                    "telegram_user_id": int(item.get("telegram_user_id") or 0),
+                    "attempts": 1,
+                    "last_error_code": str(item.get("last_error_code") or "replay"),
+                    "last_failed_at": datetime.now().isoformat(),
+                }
+            )
             moved += 1
         await asyncio.to_thread(redis_state.set_sync, retry_key, json.dumps(retry_items, sort_keys=True))
         await asyncio.to_thread(redis_state.set_sync, dlq_key, json.dumps([], sort_keys=True))
@@ -1472,6 +1547,7 @@ async def operator_queue_replay(
         reconcile_all_performance_ledgers,
         persist_performance_reconciliation_result,
     )
+
     async with get_session(label="platform.operator.queue_replay", timeout_seconds=45.0) as session:
         result = await reconcile_all_performance_ledgers(
             session,
@@ -1504,19 +1580,23 @@ async def operator_adaptive(
     elif action == "resume":
         redis_state.set_sync("adaptive:optimisation:paused", "0")
 
-    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1","true","yes","on"}
+    paused = str(redis_state.get_sync("adaptive:optimisation:paused") or "0").lower() in {"1", "true", "yes", "on"}
     asset = str(payload.asset or "").strip().upper() or None
     async with get_session(label="platform.operator.adaptive", timeout_seconds=10.0) as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,metadata "
-                    "FROM adaptive_asset_profiles WHERE (:asset IS NULL OR asset=:asset) "
-                    "ORDER BY asset,is_current DESC,version DESC LIMIT 24"
-                ),
-                {"asset": asset},
+            (
+                await session.execute(
+                    text(
+                        "SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,metadata "
+                        "FROM adaptive_asset_profiles WHERE (:asset IS NULL OR asset=:asset) "
+                        "ORDER BY asset,is_current DESC,version DESC LIMIT 24"
+                    ),
+                    {"asset": asset},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"action": action, "paused": paused, "profiles": [dict(row) for row in rows]}
 
@@ -1548,8 +1628,7 @@ async def operator_business(user: dict[str, Any] = Depends(current_user)) -> dic
                     PaymentEvent.kind,
                     PaymentEvent.tier,
                     func.coalesce(func.sum(PaymentEvent.amount_ngn), 0),
-                )
-                .group_by(PaymentEvent.kind, PaymentEvent.tier)
+                ).group_by(PaymentEvent.kind, PaymentEvent.tier)
             )
         ).all()
         plan_rows = (
@@ -1634,10 +1713,7 @@ async def operator_market_scan(
         approved = rejected = errors = 0
         for signal_row in signals:
             try:
-                signal_dict = {
-                    column.name: getattr(signal_row, column.name)
-                    for column in signal_row.__table__.columns
-                }
+                signal_dict = {column.name: getattr(signal_row, column.name) for column in signal_row.__table__.columns}
                 features = extract_features(signal_dict, {})
                 ok, _prob = ml_filter.ml_filter(features, threshold=threshold)
                 if ok:
@@ -1709,11 +1785,15 @@ async def operator_force_signal(
 
     requested_asset = str(payload.asset or "").upper().replace("/", "").strip()
     requested_tf = str(payload.timeframe or "").lower().strip()
-    candidate_assets = [requested_asset] if requested_asset else [
-        value.strip().upper().replace("/", "")
-        for value in str(getattr(config, "FORCE_SIGNAL_ASSETS", "BTCUSDT,ETHUSDT,XAUUSD,EURUSD") or "").split(",")
-        if value.strip()
-    ]
+    candidate_assets = (
+        [requested_asset]
+        if requested_asset
+        else [
+            value.strip().upper().replace("/", "")
+            for value in str(getattr(config, "FORCE_SIGNAL_ASSETS", "BTCUSDT,ETHUSDT,XAUUSD,EURUSD") or "").split(",")
+            if value.strip()
+        ]
+    )
     candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
     generator = SignalGenerator()
     best_signal = None
@@ -1777,7 +1857,12 @@ async def operator_force_signal(
         ml_value = None
     min_score = float(getattr(config, "FORCE_SIGNAL_MIN_SCORE", 55.0) or 55.0)
     min_ml = float(getattr(config, "FORCE_SIGNAL_MIN_ML_PROB", 0.0) or 0.0)
-    strict_mode = str(getattr(config, "FORCE_SIGNAL_STRICT_MODE", "1") or "1").strip().lower() in {"1","true","yes","on"}
+    strict_mode = str(getattr(config, "FORCE_SIGNAL_STRICT_MODE", "1") or "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     if strict_mode and not payload.override_quality:
         quality_ok = score_value >= min_score and (ml_value is None or ml_value >= min_ml)
         if not quality_ok:
@@ -1881,6 +1966,7 @@ async def operator_force_signal(
         try:
             from telegram import Bot
             from signalrank_telegram.bot import _deliver_or_update_signal_sync, _require_telegram_token
+
             delivered = bool(
                 await asyncio.to_thread(
                     _deliver_or_update_signal_sync,
@@ -1957,6 +2043,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
             )
             if payload.referral_code:
                 from db.pg_features import process_referral_signup_for_user
+
                 referral_result = await process_referral_signup_for_user(
                     session,
                     referred_user_id=int(user_id),
@@ -2024,7 +2111,9 @@ async def refresh(payload: RefreshRequest, request: Request, response: Response)
         rejected = JSONResponse(status_code=401, content={"detail": str(exc)})
         _clear_session_cookies(rejected)
         return rejected
-    _set_session_cookies(response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id)
+    _set_session_cookies(
+        response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
+    )
     return {**_token_response(tokens, payload.client_type), "user": user}
 
 
@@ -2184,28 +2273,36 @@ async def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
     uid = int(user["id"])
     async with get_session() as session:
         summary = (
-            await session.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM signal_deliveries WHERE user_id=:uid AND sent_ok=TRUE) AS delivered_signals, "
-                    "(SELECT COUNT(*) FROM paper_positions WHERE user_id=:uid AND status='open') AS open_positions, "
-                    "(SELECT COALESCE(SUM(unrealized_pnl),0) FROM paper_positions WHERE user_id=:uid AND status='open') AS unrealized_pnl, "
-                    "(SELECT COALESCE(cash_balance,0) FROM paper_accounts WHERE user_id=:uid LIMIT 1) AS paper_cash, "
-                    "(SELECT COUNT(*) FROM watchlists WHERE user_id=:uid) AS watchlists"
-                ),
-                {"uid": uid},
+            (
+                await session.execute(
+                    text(
+                        "SELECT "
+                        "(SELECT COUNT(*) FROM signal_deliveries WHERE user_id=:uid AND sent_ok=TRUE) AS delivered_signals, "
+                        "(SELECT COUNT(*) FROM paper_positions WHERE user_id=:uid AND status='open') AS open_positions, "
+                        "(SELECT COALESCE(SUM(unrealized_pnl),0) FROM paper_positions WHERE user_id=:uid AND status='open') AS unrealized_pnl, "
+                        "(SELECT COALESCE(cash_balance,0) FROM paper_accounts WHERE user_id=:uid LIMIT 1) AS paper_cash, "
+                        "(SELECT COUNT(*) FROM watchlists WHERE user_id=:uid) AS watchlists"
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         subscription = (
-            await session.execute(
-                text(
-                    "SELECT tier,status,started_at,expires_at FROM subscriptions "
-                    "WHERE user_id=:uid AND status='active' AND (expires_at IS NULL OR expires_at>NOW()) "
-                    "ORDER BY started_at DESC LIMIT 1"
-                ),
-                {"uid": uid},
+            (
+                await session.execute(
+                    text(
+                        "SELECT tier,status,started_at,expires_at FROM subscriptions "
+                        "WHERE user_id=:uid AND status='active' AND (expires_at IS NULL OR expires_at>NOW()) "
+                        "ORDER BY started_at DESC LIMIT 1"
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         await session.rollback()
     return {"user": user, "summary": dict(summary or {}), "subscription": dict(subscription or {})}
 
@@ -2221,26 +2318,28 @@ async def signal_feed(
     status: str | None = Query(default=None, max_length=32),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    filters = ["d.rn=1"]
-    params: dict[str, Any] = {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)}
-    if asset:
-        filters.append("s.asset=:asset")
-        params["asset"] = asset.upper()
+    class_aliases = {
+        "forex": "fx",
+        "equity": "stock",
+        "equities": "stock",
+        "indices": "index",
+        "commodities": "commodity",
+    }
+    normalized_class = None
     if asset_class:
-        class_aliases = {"forex": "fx", "equity": "stock", "equities": "stock", "indices": "index", "commodities": "commodity"}
-        normalized_class = class_aliases.get(asset_class.strip().lower(), asset_class.strip().lower())
-        filters.append("lower(COALESCE(s.asset_class,''))=:asset_class")
-        params["asset_class"] = normalized_class
-    if timeframe:
-        filters.append("lower(COALESCE(s.timeframe,''))=:timeframe")
-        params["timeframe"] = timeframe.strip().lower()
-    if strategy:
-        filters.append("lower(COALESCE(s.strategy_name,'')) LIKE :strategy")
-        params["strategy"] = f"%{strategy.strip().lower()}%"
-    if status:
-        filters.append("COALESCE(o.status,s.status)=:status")
-        params["status"] = status.lower()
-    sql = (
+        requested_class = asset_class.strip().lower()
+        normalized_class = class_aliases.get(requested_class, requested_class)
+    params: dict[str, Any] = {
+        "uid": int(user["id"]),
+        "limit": int(limit),
+        "offset": int(offset),
+        "asset": asset.upper() if asset else None,
+        "asset_class": normalized_class,
+        "timeframe": timeframe.strip().lower() if timeframe else None,
+        "strategy": f"%{strategy.strip().lower()}%" if strategy else None,
+        "status": status.lower() if status else None,
+    }
+    statement = text(
         "WITH receipt_rows AS ("
         " SELECT d.signal_id::text AS signal_id,d.delivered_at,"
         " d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,"
@@ -2266,17 +2365,20 @@ async def signal_feed(
         " d.delivered_at,d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,d.delivery_channel,"
         " o.status AS outcome_status,o.r_multiple,o.pnl_pct"
         " FROM receipts d JOIN signals s ON s.signal_id=d.signal_id"
-        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id WHERE " + " AND ".join(filters) +
+        " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " WHERE d.rn=1"
+        " AND (:asset IS NULL OR s.asset=:asset)"
+        " AND (:asset_class IS NULL OR lower(COALESCE(s.asset_class,''))=:asset_class)"
+        " AND (:timeframe IS NULL OR lower(COALESCE(s.timeframe,''))=:timeframe)"
+        " AND (:strategy IS NULL OR lower(COALESCE(s.strategy_name,'')) LIKE :strategy)"
+        " AND (:status IS NULL OR COALESCE(o.status,s.status)=:status)"
         " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
     )
     async with get_session() as session:
-        rows = (await session.execute(text(sql), params)).mappings().all()
+        rows = (await session.execute(statement, params)).mappings().all()
         await session.rollback()
     return {
-        "signals": [
-            _present_signal_for_tier(row, str(user.get("tier") or "free"))
-            for row in rows
-        ],
+        "signals": [_present_signal_for_tier(row, str(user.get("tier") or "free")) for row in rows],
         "limit": limit,
         "offset": offset,
     }
@@ -2291,57 +2393,73 @@ async def signal_detail(
     if not ref or len(ref) > 64:
         raise HTTPException(status_code=422, detail="Invalid signal reference")
     async with get_session(label="platform.signal_detail", timeout_seconds=10.0) as session:
-        row = (await session.execute(text(
-            "WITH receipt_rows AS ("
-            " SELECT d.signal_id::text AS signal_id,d.delivered_at,d.delivered_at_utc,"
-            " d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
-            " d.signal_age_at_delivery_seconds,d.telegram_message_id,"
-            " 'telegram'::text AS delivery_channel"
-            " FROM signal_deliveries d"
-            " WHERE d.user_id=:uid AND d.sent_ok=TRUE AND d.signal_id=:sid"
-            " UNION ALL"
-            " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at,"
-            " ne.created_at AS delivered_at_utc,ne.created_at AS delivery_confirmed_at,"
-            " 'web_confirmed'::text AS delivery_state,NULL::integer AS delivery_latency_seconds,"
-            " NULL::integer AS signal_age_at_delivery_seconds,NULL::bigint AS telegram_message_id,"
-            " 'web'::text AS delivery_channel"
-            " FROM notification_events ne"
-            " WHERE ne.user_id=:uid AND ne.event_type='signal'"
-            " AND ne.channel_data->>'signal_id'=:sid"
-            "), receipt AS ("
-            " SELECT * FROM receipt_rows ORDER BY delivered_at DESC,delivery_channel LIMIT 1"
-            ")"
-            " SELECT "
-            "s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
-            "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
-            "s.ml_probability,s.ml_probability_calibrated,"
-            "s.ml_recovery_mode,s.ml_recovery_reason,s.ml_recovery_champion_raw_probability,"
-            "s.ml_recovery_certified_threshold,s.ml_recovery_challenger_probability,"
-            "s.ml_recovery_challenger_threshold,s.ml_recovery_challenger_version,"
-            "d.delivered_at,d.delivered_at_utc,d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
-            "d.signal_age_at_delivery_seconds,d.telegram_message_id,d.delivery_channel,"
-            "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,o.opened_at AS outcome_opened_at,"
-            "o.closed_at AS outcome_closed_at,o.duration_seconds,o.provenance AS outcome_provenance,"
-            "l.state AS lifecycle_state,l.entry_touched_at,l.tp1_hit_at,l.tp2_hit_at,l.tp3_hit_at,l.sl_hit_at,"
-            "l.breakeven_at,l.expired_at,l.closed_at AS lifecycle_closed_at,l.last_price,l.last_checked_at,"
-            "l.mfe_pct,l.mae_pct,l.mfe_r,l.mae_r,l.highest_tp_hit,l.terminal_event_type,l.terminal_price "
-            "FROM receipt d JOIN signals s ON s.signal_id=d.signal_id "
-            "LEFT JOIN outcomes o ON o.signal_id=s.signal_id "
-            "LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id "
-            "WHERE s.signal_id=:sid LIMIT 1"
-        ), {"uid": int(user["id"]), "sid": ref})).mappings().first()
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "WITH receipt_rows AS ("
+                        " SELECT d.signal_id::text AS signal_id,d.delivered_at,d.delivered_at_utc,"
+                        " d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
+                        " d.signal_age_at_delivery_seconds,d.telegram_message_id,"
+                        " 'telegram'::text AS delivery_channel"
+                        " FROM signal_deliveries d"
+                        " WHERE d.user_id=:uid AND d.sent_ok=TRUE AND d.signal_id=:sid"
+                        " UNION ALL"
+                        " SELECT ne.channel_data->>'signal_id' AS signal_id,ne.created_at AS delivered_at,"
+                        " ne.created_at AS delivered_at_utc,ne.created_at AS delivery_confirmed_at,"
+                        " 'web_confirmed'::text AS delivery_state,NULL::integer AS delivery_latency_seconds,"
+                        " NULL::integer AS signal_age_at_delivery_seconds,NULL::bigint AS telegram_message_id,"
+                        " 'web'::text AS delivery_channel"
+                        " FROM notification_events ne"
+                        " WHERE ne.user_id=:uid AND ne.event_type='signal'"
+                        " AND ne.channel_data->>'signal_id'=:sid"
+                        "), receipt AS ("
+                        " SELECT * FROM receipt_rows ORDER BY delivered_at DESC,delivery_channel LIMIT 1"
+                        ")"
+                        " SELECT "
+                        "s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,"
+                        "s.rr_estimate,s.score,s.strategy_name,s.strategy_group,s.regime,s.status,s.created_at,s.expires_at,"
+                        "s.ml_probability,s.ml_probability_calibrated,"
+                        "s.ml_recovery_mode,s.ml_recovery_reason,s.ml_recovery_champion_raw_probability,"
+                        "s.ml_recovery_certified_threshold,s.ml_recovery_challenger_probability,"
+                        "s.ml_recovery_challenger_threshold,s.ml_recovery_challenger_version,"
+                        "d.delivered_at,d.delivered_at_utc,d.delivery_confirmed_at,d.delivery_state,d.delivery_latency_seconds,"
+                        "d.signal_age_at_delivery_seconds,d.telegram_message_id,d.delivery_channel,"
+                        "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,o.opened_at AS outcome_opened_at,"
+                        "o.closed_at AS outcome_closed_at,o.duration_seconds,o.provenance AS outcome_provenance,"
+                        "l.state AS lifecycle_state,l.entry_touched_at,l.tp1_hit_at,l.tp2_hit_at,l.tp3_hit_at,l.sl_hit_at,"
+                        "l.breakeven_at,l.expired_at,l.closed_at AS lifecycle_closed_at,l.last_price,l.last_checked_at,"
+                        "l.mfe_pct,l.mae_pct,l.mfe_r,l.mae_r,l.highest_tp_hit,l.terminal_event_type,l.terminal_price "
+                        "FROM receipt d JOIN signals s ON s.signal_id=d.signal_id "
+                        "LEFT JOIN outcomes o ON o.signal_id=s.signal_id "
+                        "LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id "
+                        "WHERE s.signal_id=:sid LIMIT 1"
+                    ),
+                    {"uid": int(user["id"]), "sid": ref},
+                )
+            )
+            .mappings()
+            .first()
+        )
         if not row:
             raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
-        events = (await session.execute(text(
-            "SELECT event_type,event_time,price,r_multiple,meta "
-            "FROM signal_tracking_events WHERE signal_id=:sid ORDER BY event_time,id LIMIT 100"
-        ), {"sid": ref})).mappings().all()
+        events = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT event_type,event_time,price,r_multiple,meta "
+                        "FROM signal_tracking_events WHERE signal_id=:sid ORDER BY event_time,id LIMIT 100"
+                    ),
+                    {"sid": ref},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     channel = str(row.get("delivery_channel") or "telegram")
     telegram_proven = bool(
-        channel == "telegram"
-        and row.get("delivery_confirmed_at")
-        and row.get("telegram_message_id")
+        channel == "telegram" and row.get("delivery_confirmed_at") and row.get("telegram_message_id")
     )
     web_proven = bool(channel == "web" and row.get("delivery_confirmed_at"))
     return {
@@ -2413,11 +2531,15 @@ async def execute_signal_from_platform(
             )
 
         row = (
-            await session.execute(
-                text("SELECT * FROM signals WHERE signal_id=:sid LIMIT 1"),
-                {"sid": ref},
+            (
+                await session.execute(
+                    text("SELECT * FROM signals WHERE signal_id=:sid LIMIT 1"),
+                    {"sid": ref},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         await session.rollback()
 
     if not row:
@@ -2540,6 +2662,7 @@ async def submit_signal_feedback(
         if delivered is None:
             raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
         from db.pg_features import record_user_event
+
         await record_user_event(
             session,
             user_id=int(user["id"]),
@@ -2613,38 +2736,73 @@ async def weekly_recap(user: dict[str, Any] = Depends(current_user)) -> dict[str
     uid = int(user["id"])
     proof_states = "('sent','delivered','confirmed','reconciled')"
     async with get_session(label="platform.weekly_recap", timeout_seconds=10.0) as session:
-        total = int((await session.execute(text(
-            "SELECT COUNT(DISTINCT d.signal_id) FROM signal_deliveries d "
-            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
-            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
-        ), {"uid": uid})).scalar() or 0)
-        assets = (await session.execute(text(
-            "SELECT s.asset,COUNT(DISTINCT d.signal_id) AS n FROM signal_deliveries d "
-            "JOIN signals s ON s.signal_id=d.signal_id "
-            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
-            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
-            "GROUP BY s.asset ORDER BY n DESC,s.asset LIMIT 5"
-        ), {"uid": uid})).mappings().all()
-        strategies = (await session.execute(text(
-            "SELECT COALESCE(s.strategy_name,'Unknown') AS strategy,COUNT(DISTINCT d.signal_id) AS n "
-            "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
-            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
-            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
-            "GROUP BY COALESCE(s.strategy_name,'Unknown') ORDER BY n DESC,strategy LIMIT 5"
-        ), {"uid": uid})).mappings().all()
-        outcomes = (await session.execute(text(
-            "SELECT "
-            "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win','partial_win_be','win')) AS wins,"
-            "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('sl','loss','stop_loss')) AS losses,"
-            "COALESCE(AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL),0) AS average_r "
-            "FROM signal_deliveries d LEFT JOIN outcomes o ON o.signal_id=d.signal_id "
-            "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
-            f"AND lower(COALESCE(d.delivery_state,'')) IN {proof_states} "
-            "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
-        ), {"uid": uid})).mappings().first()
+        total = int(
+            (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(DISTINCT d.signal_id) FROM signal_deliveries d "
+                        "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
+                        "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
+                    ),
+                    {"uid": uid},
+                )
+            ).scalar()
+            or 0
+        )
+        assets = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT s.asset,COUNT(DISTINCT d.signal_id) AS n FROM signal_deliveries d "
+                        "JOIN signals s ON s.signal_id=d.signal_id "
+                        "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
+                        "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
+                        "GROUP BY s.asset ORDER BY n DESC,s.asset LIMIT 5"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        strategies = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT COALESCE(s.strategy_name,'Unknown') AS strategy,COUNT(DISTINCT d.signal_id) AS n "
+                        "FROM signal_deliveries d JOIN signals s ON s.signal_id=d.signal_id "
+                        "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
+                        "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days' "
+                        "GROUP BY COALESCE(s.strategy_name,'Unknown') ORDER BY n DESC,strategy LIMIT 5"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        outcomes = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT "
+                        "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win','partial_win_be','win')) AS wins,"
+                        "COUNT(DISTINCT d.signal_id) FILTER (WHERE lower(COALESCE(o.status,'')) IN ('sl','loss','stop_loss')) AS losses,"
+                        "COALESCE(AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL),0) AS average_r "
+                        "FROM signal_deliveries d LEFT JOIN outcomes o ON o.signal_id=d.signal_id "
+                        "WHERE d.user_id=:uid AND d.sent_ok=TRUE "
+                        "AND lower(COALESCE(d.delivery_state,'')) IN ('sent','delivered','confirmed','reconciled') "
+                        "AND COALESCE(d.delivery_confirmed_at,d.delivered_at_utc,d.delivered_at) >= NOW() - INTERVAL '7 days'"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .first()
+        )
         await session.rollback()
     summary = dict(outcomes or {})
     resolved = int(summary.get("wins") or 0) + int(summary.get("losses") or 0)
@@ -2749,17 +2907,23 @@ async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[st
         raise HTTPException(status_code=404, detail="Paper account is unavailable")
     async with get_session() as session:
         account = (
-            await session.execute(text("SELECT * FROM paper_accounts WHERE user_id=:uid LIMIT 1"), {"uid": uid})
-        ).mappings().first()
+            (await session.execute(text("SELECT * FROM paper_accounts WHERE user_id=:uid LIMIT 1"), {"uid": uid}))
+            .mappings()
+            .first()
+        )
         positions = (
-            await session.execute(
-                text(
-                    "SELECT position_id,signal_id,asset,asset_class,timeframe,direction,status,fill_entry,current_price,stop_loss,take_profits,target_price,quantity,notional,unrealized_pnl,realized_pnl,r_multiple,opened_at,closed_at,exit_reason "
-                    "FROM paper_positions WHERE user_id=:uid ORDER BY opened_at DESC LIMIT 100"
-                ),
-                {"uid": uid},
+            (
+                await session.execute(
+                    text(
+                        "SELECT position_id,signal_id,asset,asset_class,timeframe,direction,status,fill_entry,current_price,stop_loss,take_profits,target_price,quantity,notional,unrealized_pnl,realized_pnl,r_multiple,opened_at,closed_at,exit_reason "
+                        "FROM paper_positions WHERE user_id=:uid ORDER BY opened_at DESC LIMIT 100"
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {
         "account": dict(account or {}),
@@ -2772,11 +2936,7 @@ def _paper_snapshot_dict(snapshot: Any) -> dict[str, Any]:
     if snapshot is None:
         return {}
     return {
-        "telegram_user_id": (
-            int(snapshot.telegram_user_id)
-            if snapshot.telegram_user_id is not None
-            else None
-        ),
+        "telegram_user_id": (int(snapshot.telegram_user_id) if snapshot.telegram_user_id is not None else None),
         "user_id": int(snapshot.user_id),
         "identity": str(snapshot.identity),
         "starting_balance": float(snapshot.starting_balance),
@@ -2842,10 +3002,7 @@ async def paper_detail(user: dict[str, Any] = Depends(current_user)) -> dict[str
         "closed_positions": closed,
         "skipped_positions": skipped,
         "activity": activity,
-        "disclaimer": (
-            "Paper trading uses virtual funds only. "
-            "It does not submit live broker orders."
-        ),
+        "disclaimer": ("Paper trading uses virtual funds only. It does not submit live broker orders."),
     }
 
 
@@ -2913,11 +3070,7 @@ async def paper_close_all(
         uid,
         user_identity="platform",
         allow_last_mark_fallback=bool(payload.allow_last_mark_fallback),
-        reason=(
-            "WEB_MANUAL_CLOSE_ALL_FORCE"
-            if payload.allow_last_mark_fallback
-            else "WEB_MANUAL_CLOSE_ALL"
-        ),
+        reason=("WEB_MANUAL_CLOSE_ALL_FORCE" if payload.allow_last_mark_fallback else "WEB_MANUAL_CLOSE_ALL"),
     )
     snapshot = await paper_trading_service.snapshot(
         uid,
@@ -2979,27 +3132,30 @@ async def instrument_search(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     del user
-    filters = ["i.active=TRUE"]
-    params: dict[str, Any] = {"q": f"%{q.strip()}%", "limit": int(limit)}
-    if q.strip():
-        filters.append("(i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q OR pi.provider_symbol ILIKE :q OR i.underlying ILIKE :q)")
-    if asset_class:
-        filters.append("i.asset_class=:asset_class")
-        params["asset_class"] = asset_class.lower()
-    if instrument_type:
-        filters.append("i.instrument_type=:instrument_type")
-        params["instrument_type"] = instrument_type.lower()
-    if venue:
-        filters.append("pi.venue=:venue")
-        params["venue"] = venue.lower()
-    sql = (
-        "SELECT i.instrument_id,i.canonical_symbol,i.display_symbol,i.asset_class,i.instrument_type,i.market_type,i.base_currency,i.quote_currency,i.settlement_currency,i.underlying,i.tick_size,i.quantity_step,i.minimum_notional,i.tradable,i.discovery_status,"
-        "COUNT(pi.id) AS provider_count,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.provider),NULL) AS providers,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.venue),NULL) AS venues "
+    params: dict[str, Any] = {
+        "q": f"%{q.strip()}%" if q.strip() else None,
+        "asset_class": asset_class.lower() if asset_class else None,
+        "instrument_type": instrument_type.lower() if instrument_type else None,
+        "venue": venue.lower() if venue else None,
+        "limit": int(limit),
+    }
+    statement = text(
+        "SELECT i.instrument_id,i.canonical_symbol,i.display_symbol,i.asset_class,i.instrument_type,i.market_type,"
+        "i.base_currency,i.quote_currency,i.settlement_currency,i.underlying,i.tick_size,i.quantity_step,"
+        "i.minimum_notional,i.tradable,i.discovery_status,"
+        "COUNT(pi.id) AS provider_count,ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.provider),NULL) AS providers,"
+        "ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.venue),NULL) AS venues "
         "FROM instruments i LEFT JOIN provider_instruments pi ON pi.canonical_instrument_id=i.instrument_id "
-        "WHERE " + " AND ".join(filters) + " GROUP BY i.instrument_id ORDER BY i.tradable DESC,provider_count DESC,i.canonical_symbol LIMIT :limit"
+        "WHERE i.active=TRUE "
+        "AND (:q IS NULL OR i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q "
+        "OR pi.provider_symbol ILIKE :q OR i.underlying ILIKE :q) "
+        "AND (:asset_class IS NULL OR i.asset_class=:asset_class) "
+        "AND (:instrument_type IS NULL OR i.instrument_type=:instrument_type) "
+        "AND (:venue IS NULL OR pi.venue=:venue) "
+        "GROUP BY i.instrument_id ORDER BY i.tradable DESC,provider_count DESC,i.canonical_symbol LIMIT :limit"
     )
     async with get_session() as session:
-        rows = (await session.execute(text(sql), params)).mappings().all()
+        rows = (await session.execute(statement, params)).mappings().all()
         await session.rollback()
     return {"instruments": [dict(row) for row in rows]}
 
@@ -3008,22 +3164,28 @@ async def instrument_search(
 async def list_watchlists(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT w.watchlist_id,w.name,w.is_default,w.created_at,w.updated_at,"
-                    "COALESCE(jsonb_agg(jsonb_build_object('instrument_id',wi.instrument_id)) FILTER (WHERE wi.instrument_id IS NOT NULL),'[]'::jsonb) AS items "
-                    "FROM watchlists w LEFT JOIN watchlist_items wi ON wi.watchlist_id=w.watchlist_id "
-                    "WHERE w.user_id=:uid GROUP BY w.watchlist_id ORDER BY w.is_default DESC,w.created_at"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT w.watchlist_id,w.name,w.is_default,w.created_at,w.updated_at,"
+                        "COALESCE(jsonb_agg(jsonb_build_object('instrument_id',wi.instrument_id)) FILTER (WHERE wi.instrument_id IS NOT NULL),'[]'::jsonb) AS items "
+                        "FROM watchlists w LEFT JOIN watchlist_items wi ON wi.watchlist_id=w.watchlist_id "
+                        "WHERE w.user_id=:uid GROUP BY w.watchlist_id ORDER BY w.is_default DESC,w.created_at"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"watchlists": [dict(row) for row in rows]}
 
 
 @router.post("/watchlists", status_code=201)
-async def create_watchlist(payload: WatchlistCreateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+async def create_watchlist(
+    payload: WatchlistCreateRequest, user: dict[str, Any] = Depends(current_user)
+) -> dict[str, Any]:
     watchlist_id = str(uuid4())
     async with get_session() as session:
         try:
@@ -3054,7 +3216,9 @@ async def add_watchlist_item(
         if not owner:
             raise HTTPException(status_code=404, detail="Watchlist not found")
         instrument = (
-            await session.execute(text("SELECT 1 FROM instruments WHERE instrument_id=:iid"), {"iid": payload.instrument_id})
+            await session.execute(
+                text("SELECT 1 FROM instruments WHERE instrument_id=:iid"), {"iid": payload.instrument_id}
+            )
         ).first()
         if not instrument:
             raise HTTPException(status_code=404, detail="Instrument not found")
@@ -3088,10 +3252,7 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
         total = int(
             (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM referrals "
-                        "WHERE referrer_user_id=:uid AND is_successful IS TRUE"
-                    ),
+                    text("SELECT COUNT(*) FROM referrals WHERE referrer_user_id=:uid AND is_successful IS TRUE"),
                     {"uid": int(user["id"])},
                 )
             ).scalar()
@@ -3137,9 +3298,10 @@ async def referral_leaderboard(
     _assert_command(user, "referral_leaderboard")
     async with get_session(label="platform.referral_leaderboard", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT r.referrer_user_id,
                            COUNT(*) AS valid_referrals,
                            u.username,
@@ -3151,16 +3313,16 @@ async def referral_leaderboard(
                     ORDER BY COUNT(*) DESC,r.referrer_user_id
                     LIMIT 10
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         own = int(
             (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM referrals "
-                        "WHERE referrer_user_id=:uid AND is_successful IS TRUE"
-                    ),
+                    text("SELECT COUNT(*) FROM referrals WHERE referrer_user_id=:uid AND is_successful IS TRUE"),
                     {"uid": int(user["id"])},
                 )
             ).scalar()
@@ -3193,7 +3355,10 @@ async def create_telegram_link(
     if user.get("telegram_user_id") is not None:
         raise HTTPException(
             status_code=409,
-            detail={"code": "telegram_already_linked", "message": "Telegram is already linked to this SignalRank account."},
+            detail={
+                "code": "telegram_already_linked",
+                "message": "Telegram is already linked to this SignalRank account.",
+            },
         )
     if str(user.get("telegram_link_status") or "").strip().lower() == "merge_review":
         raise HTTPException(
@@ -3217,7 +3382,9 @@ async def create_telegram_link(
 
 
 @router.post("/push-devices")
-async def register_push_device(payload: PushDeviceRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+async def register_push_device(
+    payload: PushDeviceRequest, user: dict[str, Any] = Depends(current_user)
+) -> dict[str, Any]:
     token_hash = __import__("hashlib").sha256(payload.push_token.encode("utf-8")).hexdigest()
     if not is_encryption_available():
         raise HTTPException(status_code=503, detail="Push registration requires ENCRYPTION_KEY")
@@ -3225,7 +3392,8 @@ async def register_push_device(payload: PushDeviceRequest, user: dict[str, Any] 
     if not encrypted_token:
         raise HTTPException(status_code=503, detail="Push token encryption unavailable")
     async with get_session() as session:
-        await session.execute(text("""
+        await session.execute(
+            text("""
             INSERT INTO push_devices(
               push_device_id,user_id,device_id,provider,push_token_hash,encrypted_push_token,
               platform,app_version,active,last_registered_at
@@ -3237,12 +3405,18 @@ async def register_push_device(payload: PushDeviceRequest, user: dict[str, Any] 
               encrypted_push_token=EXCLUDED.encrypted_push_token,
               platform=EXCLUDED.platform,app_version=EXCLUDED.app_version,
               active=TRUE,last_registered_at=NOW(),revoked_at=NULL
-        """), {
-            "id": str(uuid4()), "uid": int(user["id"]), "device_id": payload.device_id,
-            "provider": payload.provider, "token_hash": token_hash,
-            "token": encrypted_token, "platform": payload.platform,
-            "app_version": payload.app_version,
-        })
+        """),
+            {
+                "id": str(uuid4()),
+                "uid": int(user["id"]),
+                "device_id": payload.device_id,
+                "provider": payload.provider,
+                "token_hash": token_hash,
+                "token": encrypted_token,
+                "platform": payload.platform,
+                "app_version": payload.app_version,
+            },
+        )
         await session.commit()
     return {"registered": True, "provider": payload.provider, "platform": payload.platform}
 
@@ -3250,10 +3424,13 @@ async def register_push_device(payload: PushDeviceRequest, user: dict[str, Any] 
 @router.delete("/push-devices/{push_device_id}")
 async def revoke_push_device(push_device_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
-        result = await session.execute(text("""
+        result = await session.execute(
+            text("""
             UPDATE push_devices SET active=FALSE,revoked_at=NOW()
             WHERE push_device_id=:id AND user_id=:uid
-        """), {"id": push_device_id, "uid": int(user["id"])})
+        """),
+            {"id": push_device_id, "uid": int(user["id"])},
+        )
         await session.commit()
     if not result.rowcount:
         raise HTTPException(status_code=404, detail="Push device not found")
@@ -3264,14 +3441,18 @@ async def revoke_push_device(push_device_id: str, user: dict[str, Any] = Depends
 async def devices(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT session_id,device_id,created_at,last_used_at,expires_at,revoked_at,revoke_reason "
-                    "FROM user_sessions WHERE user_id=:uid ORDER BY created_at DESC LIMIT 100"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT session_id,device_id,created_at,last_used_at,expires_at,revoked_at,revoke_reason "
+                        "FROM user_sessions WHERE user_id=:uid ORDER BY created_at DESC LIMIT 100"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"sessions": [dict(row) for row in rows], "current_session_id": user.get("session_id")}
 
@@ -3280,8 +3461,14 @@ async def devices(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any
 async def get_notification_preferences(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
         row = (
-            await session.execute(text("SELECT * FROM notification_preferences WHERE user_id=:uid"), {"uid": int(user["id"])})
-        ).mappings().first()
+            (
+                await session.execute(
+                    text("SELECT * FROM notification_preferences WHERE user_id=:uid"), {"uid": int(user["id"])}
+                )
+            )
+            .mappings()
+            .first()
+        )
         await session.rollback()
     return {"preferences": dict(row or {})}
 
@@ -3294,20 +3481,43 @@ async def update_notification_preferences(
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
         return await get_notification_preferences(user)
-    assignments = []
+
+    allowed = {
+        "telegram_enabled",
+        "web_enabled",
+        "email_enabled",
+        "push_enabled",
+        "webhook_enabled",
+        "quiet_hours_start",
+        "quiet_hours_end",
+        "timezone",
+    }
+    if not set(fields).issubset(allowed):
+        raise HTTPException(status_code=422, detail="Unsupported notification preference field")
+
     params: dict[str, Any] = {"uid": int(user["id"])}
-    for key, value in fields.items():
-        assignments.append(f"{key}=:{key}")
-        params[key] = value
+    for field in allowed:
+        params[f"has_{field}"] = field in fields
+        params[field] = fields.get(field)
+
     async with get_session() as session:
         await session.execute(
-            text(
-                "INSERT INTO notification_preferences(user_id) VALUES(:uid) ON CONFLICT(user_id) DO NOTHING"
-            ),
+            text("INSERT INTO notification_preferences(user_id) VALUES(:uid) ON CONFLICT(user_id) DO NOTHING"),
             {"uid": int(user["id"])},
         )
         await session.execute(
-            text("UPDATE notification_preferences SET " + ",".join(assignments) + ",updated_at=NOW() WHERE user_id=:uid"),
+            text(
+                "UPDATE notification_preferences SET "
+                "telegram_enabled=CASE WHEN :has_telegram_enabled THEN :telegram_enabled ELSE telegram_enabled END,"
+                "web_enabled=CASE WHEN :has_web_enabled THEN :web_enabled ELSE web_enabled END,"
+                "email_enabled=CASE WHEN :has_email_enabled THEN :email_enabled ELSE email_enabled END,"
+                "push_enabled=CASE WHEN :has_push_enabled THEN :push_enabled ELSE push_enabled END,"
+                "webhook_enabled=CASE WHEN :has_webhook_enabled THEN :webhook_enabled ELSE webhook_enabled END,"
+                "quiet_hours_start=CASE WHEN :has_quiet_hours_start THEN :quiet_hours_start ELSE quiet_hours_start END,"
+                "quiet_hours_end=CASE WHEN :has_quiet_hours_end THEN :quiet_hours_end ELSE quiet_hours_end END,"
+                "timezone=CASE WHEN :has_timezone THEN COALESCE(:timezone,timezone) ELSE timezone END,"
+                "updated_at=NOW() WHERE user_id=:uid"
+            ),
             params,
         )
         await session.commit()
@@ -3322,15 +3532,19 @@ async def journal_entries(
 ) -> dict[str, Any]:
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT journal_entry_id,signal_id,paper_position_id,title,notes,emotion,mistake_category,"
-                    "plan_adherence,result_r,tags,occurred_at,created_at,updated_at "
-                    "FROM journal_entries WHERE user_id=:uid ORDER BY occurred_at DESC LIMIT :limit OFFSET :offset"
-                ),
-                {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
+            (
+                await session.execute(
+                    text(
+                        "SELECT journal_entry_id,signal_id,paper_position_id,title,notes,emotion,mistake_category,"
+                        "plan_adherence,result_r,tags,occurred_at,created_at,updated_at "
+                        "FROM journal_entries WHERE user_id=:uid ORDER BY occurred_at DESC LIMIT :limit OFFSET :offset"
+                    ),
+                    {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"entries": [dict(row) for row in rows]}
 
@@ -3391,14 +3605,18 @@ async def list_api_keys(user: dict[str, Any] = Depends(current_user)) -> dict[st
     _assert_feature(user, "rest_api")
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT key_id,name,key_prefix,scopes,active,expires_at,last_used_at,revoked_at,created_at "
-                    "FROM api_keys WHERE user_id=:uid ORDER BY created_at DESC"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT key_id,name,key_prefix,scopes,active,expires_at,last_used_at,revoked_at,created_at "
+                        "FROM api_keys WHERE user_id=:uid ORDER BY created_at DESC"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"api_keys": [dict(row) for row in rows]}
 
@@ -3409,6 +3627,7 @@ async def create_api_key(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     _assert_feature(user, "rest_api")
+    _require_recent_auth(user)
     scopes = _normalized_scopes(payload.scopes)
     key_id = str(uuid4())
     prefix = "srk_" + key_id.replace("-", "")[:12]
@@ -3501,17 +3720,18 @@ async def professional_signal_feed(
     )
     async with get_session(label="platform.professional_signals", timeout_seconds=10.0) as session:
         rows = (
-            await session.execute(
-                text(sql),
-                {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
+            (
+                await session.execute(
+                    text(sql),
+                    {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {
-        "signals": [
-            _present_signal_for_tier(row, str(user.get("tier") or "professional"))
-            for row in rows
-        ],
+        "signals": [_present_signal_for_tier(row, str(user.get("tier") or "professional")) for row in rows],
         "api_key_id": user.get("api_key_id"),
         "limit": int(limit),
         "offset": int(offset),
@@ -3525,14 +3745,18 @@ async def execution_webhook_status(
     _assert_command(user, "setwebhook")
     async with get_session(label="platform.execution_webhook", timeout_seconds=8.0) as session:
         row = (
-            await session.execute(
-                text(
-                    "SELECT webhook_url,is_active,created_at,updated_at "
-                    "FROM user_webhooks WHERE user_id=:uid LIMIT 1"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT webhook_url,is_active,created_at,updated_at "
+                        "FROM user_webhooks WHERE user_id=:uid LIMIT 1"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         await session.rollback()
     return {"webhook": dict(row) if row else None}
 
@@ -3570,10 +3794,7 @@ async def disable_execution_webhook(
     _assert_command(user, "setwebhook")
     async with get_session(label="platform.execution_webhook.disable", timeout_seconds=8.0) as session:
         await session.execute(
-            text(
-                "UPDATE user_webhooks SET is_active=FALSE,updated_at=NOW() "
-                "WHERE user_id=:uid"
-            ),
+            text("UPDATE user_webhooks SET is_active=FALSE,updated_at=NOW() WHERE user_id=:uid"),
             {"uid": int(user["id"])},
         )
         await session.commit()
@@ -3585,14 +3806,18 @@ async def list_webhooks(user: dict[str, Any] = Depends(current_user)) -> dict[st
     _assert_feature(user, "outbound_webhooks")
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT webhook_endpoint_id,url,subscribed_events,active,created_at,updated_at "
-                    "FROM webhook_endpoints WHERE user_id=:uid ORDER BY created_at DESC"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT webhook_endpoint_id,url,subscribed_events,active,created_at,updated_at "
+                        "FROM webhook_endpoints WHERE user_id=:uid ORDER BY created_at DESC"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"webhooks": [dict(row) for row in rows]}
 
@@ -3667,15 +3892,19 @@ async def organizations(user: dict[str, Any] = Depends(current_user)) -> dict[st
     _assert_feature(user, "team_workspace")
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT o.organization_id,o.name,o.slug,o.tier,o.status,m.role,m.joined_at "
-                    "FROM organizations o JOIN organization_members m ON m.organization_id=o.organization_id "
-                    "WHERE m.user_id=:uid AND m.status='active' ORDER BY o.created_at DESC"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT o.organization_id,o.name,o.slug,o.tier,o.status,m.role,m.joined_at "
+                        "FROM organizations o JOIN organization_members m ON m.organization_id=o.organization_id "
+                        "WHERE m.user_id=:uid AND m.status='active' ORDER BY o.created_at DESC"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"organizations": [dict(row) for row in rows]}
 
@@ -3686,7 +3915,9 @@ async def create_organization(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     _assert_feature(user, "team_workspace")
-    slug = payload.slug or "-".join(filter(None, "".join(ch.lower() if ch.isalnum() else " " for ch in payload.name).split()))
+    slug = payload.slug or "-".join(
+        filter(None, "".join(ch.lower() if ch.isalnum() else " " for ch in payload.name).split())
+    )
     if len(slug) < 2:
         slug = "signalrank-team-" + secrets.token_hex(3)
     organization_id = str(uuid4())
@@ -3723,14 +3954,18 @@ async def create_organization(
 async def support_tickets(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT ticket_id,subject,category,priority,status,created_at,updated_at,closed_at "
-                    "FROM support_tickets WHERE user_id=:uid ORDER BY created_at DESC LIMIT 100"
-                ),
-                {"uid": int(user["id"])},
+            (
+                await session.execute(
+                    text(
+                        "SELECT ticket_id,subject,category,priority,status,created_at,updated_at,closed_at "
+                        "FROM support_tickets WHERE user_id=:uid ORDER BY created_at DESC LIMIT 100"
+                    ),
+                    {"uid": int(user["id"])},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"tickets": [dict(row) for row in rows]}
 
@@ -3742,7 +3977,11 @@ async def create_support_ticket(
 ) -> dict[str, Any]:
     ticket_id = str(uuid4())
     message_id = str(uuid4())
-    priority = "priority" if get_entitlements(str(user.get("tier") or "free")).support_level in {"priority", "professional", "dedicated"} else "normal"
+    priority = (
+        "priority"
+        if get_entitlements(str(user.get("tier") or "free")).support_level in {"priority", "professional", "dedicated"}
+        else "normal"
+    )
     async with get_session() as session:
         await session.execute(
             text(
@@ -3912,7 +4151,11 @@ async def setup_mfa(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"secret": setup.secret, "provisioning_uri": setup.provisioning_uri, "expires_at": setup.expires_at.isoformat()}
+    return {
+        "secret": setup.secret,
+        "provisioning_uri": setup.provisioning_uri,
+        "expires_at": setup.expires_at.isoformat(),
+    }
 
 
 @router.post("/security/mfa/enable")
@@ -3923,7 +4166,11 @@ async def confirm_mfa(payload: MFACodeRequest, user: dict[str, Any] = Depends(cu
             await session.commit()
     except AuthenticationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"enabled": True, "recovery_codes": recovery_codes, "warning": "Store these once-only codes offline. They will not be shown again."}
+    return {
+        "enabled": True,
+        "recovery_codes": recovery_codes,
+        "warning": "Store these once-only codes offline. They will not be shown again.",
+    }
 
 
 @router.post("/security/mfa/disable")
@@ -3945,8 +4192,13 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
     assignments: list[str] = []
     params: dict[str, Any] = {"uid": int(user["id"])}
     allowed = {
-        "display_name", "timezone", "locale", "max_risk_percentage",
-        "max_daily_drawdown_pct", "timezone_auto_update", "marketing_consent",
+        "display_name",
+        "timezone",
+        "locale",
+        "max_risk_percentage",
+        "max_daily_drawdown_pct",
+        "timezone_auto_update",
+        "marketing_consent",
     }
     for key, value in values.items():
         if key not in allowed and key not in {"country", "preferred_currency"}:
@@ -3967,16 +4219,10 @@ async def update_profile(payload: ProfileUpdateRequest, user: dict[str, Any] = D
             ]
         )
     elif "timezone_auto_update" in values:
-        assignments.append(
-            "timezone_updated_at=COALESCE(timezone_updated_at,NOW())"
-        )
+        assignments.append("timezone_updated_at=COALESCE(timezone_updated_at,NOW())")
     async with get_session() as session:
         await session.execute(
-            text(
-                "UPDATE users SET "
-                + ",".join(assignments)
-                + ",updated_at=NOW() WHERE id=:uid"
-            ),
+            text("UPDATE users SET " + ",".join(assignments) + ",updated_at=NOW() WHERE id=:uid"),
             params,
         )
         updated = await user_snapshot(session, int(user["id"]))
@@ -3993,8 +4239,7 @@ async def trading_profile(user: dict[str, Any] = Depends(current_user)) -> dict[
     projected = preferences_to_payload(prefs)
     allowed_classes = set(policy.allowed_asset_classes)
     projected_classes = [
-        value for value in list(projected.get("asset_classes") or [])
-        if str(value).strip().lower() in allowed_classes
+        value for value in list(projected.get("asset_classes") or []) if str(value).strip().lower() in allowed_classes
     ]
     projected["asset_classes"] = projected_classes or list(policy.allowed_asset_classes)
     profile = str(projected.get("trade_profile") or "all").strip().lower()
@@ -4109,7 +4354,9 @@ async def update_trading_profile(
 
     allowed_timeframes = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"}
     if "preferred_timeframes" in values and values["preferred_timeframes"] is not None:
-        normalized_tfs = [str(value or "").strip().lower() for value in values["preferred_timeframes"] if str(value or "").strip()]
+        normalized_tfs = [
+            str(value or "").strip().lower() for value in values["preferred_timeframes"] if str(value or "").strip()
+        ]
         invalid = sorted(set(normalized_tfs) - allowed_timeframes)
         if invalid:
             raise HTTPException(status_code=422, detail=f"Unsupported timeframe(s): {', '.join(invalid)}")
@@ -4117,11 +4364,15 @@ async def update_trading_profile(
 
     for key in ("preferred_assets", "blocked_assets"):
         if key in values and values[key] is not None:
-            values[key] = list(dict.fromkeys(str(value or "").strip().upper() for value in values[key] if str(value or "").strip()))
+            values[key] = list(
+                dict.fromkeys(str(value or "").strip().upper() for value in values[key] if str(value or "").strip())
+            )
 
     for key in ("preferred_strategies", "preferred_regimes", "sessions"):
         if key in values and values[key] is not None:
-            values[key] = list(dict.fromkeys(str(value or "").strip().lower() for value in values[key] if str(value or "").strip()))
+            values[key] = list(
+                dict.fromkeys(str(value or "").strip().lower() for value in values[key] if str(value or "").strip())
+            )
 
     async with get_session() as session:
         current = await get_platform_user_trading_preferences(session, int(user["id"]))
@@ -4190,25 +4441,13 @@ async def delivered_signal_simulation(
             ),
         }
 
-    capital = float(
-        payload.starting_capital
-        if payload.starting_capital is not None
-        else snapshot.equity
-    )
-    risk_pct = float(
-        payload.risk_pct
-        if payload.risk_pct is not None
-        else snapshot.risk_pct
-    )
+    capital = float(payload.starting_capital if payload.starting_capital is not None else snapshot.equity)
+    risk_pct = float(payload.risk_pct if payload.risk_pct is not None else snapshot.risk_pct)
     wins = [value for value in r_values if value > 0]
     losses = [value for value in r_values if value <= 0]
     win_rate = len(wins) / len(r_values)
     avg_win_r = sum(wins) / max(1, len(wins))
-    avg_loss_r = (
-        abs(sum(losses) / max(1, len(losses)))
-        if losses
-        else 1.0
-    )
+    avg_loss_r = abs(sum(losses) / max(1, len(losses))) if losses else 1.0
     first = evidence.get("first")
     last = evidence.get("last")
     days = 30.0
@@ -4288,20 +4527,19 @@ async def elite_signal_feed(
     )
     async with get_session(label="platform.elite_signals", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                text(sql),
-                {"uid": int(user["id"]), "cutoff": cutoff},
+            (
+                await session.execute(
+                    text(sql),
+                    {"uid": int(user["id"]), "cutoff": cutoff},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {
-        "signals": [
-            _present_signal_for_tier(row, str(user.get("tier") or "vip"))
-            for row in rows
-        ],
-        "priority_delivery_active": get_entitlements(
-            str(user.get("tier") or "free")
-        ).has("priority_delivery"),
+        "signals": [_present_signal_for_tier(row, str(user.get("tier") or "vip")) for row in rows],
+        "priority_delivery_active": get_entitlements(str(user.get("tier") or "free")).has("priority_delivery"),
         "window_days": 7,
     }
 
@@ -4316,19 +4554,23 @@ async def quality_report(
     cutoff = datetime.utcnow() - timedelta(hours=int(hours))
     async with get_session(label="platform.quality", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT decision, COALESCE(reason, '') AS reason, COUNT(*) AS rows
                     FROM decision_log
                     WHERE created_at >= :cutoff
                     GROUP BY decision, reason
                     ORDER BY COUNT(*) DESC
                     """
-                ),
-                {"cutoff": cutoff},
+                    ),
+                    {"cutoff": cutoff},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
 
     issued = 0
@@ -4378,9 +4620,10 @@ async def shadow_report(
     cutoff = datetime.utcnow() - timedelta(days=int(days))
     async with get_session(label="platform.shadow_report", timeout_seconds=8.0) as session:
         summary = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COUNT(*) AS samples,
                            COUNT(*) FILTER (WHERE outcome_tracked_at IS NOT NULL) AS tracked,
                            COUNT(*) FILTER (
@@ -4393,14 +4636,18 @@ async def shadow_report(
                     FROM ml_rejected_signals
                     WHERE created_at >= :cutoff
                     """
-                ),
-                {"cutoff": cutoff},
+                    ),
+                    {"cutoff": cutoff},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         by_reason = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT rejection_reason, COUNT(*) AS rows,
                            COUNT(*) FILTER (WHERE outcome_tracked_at IS NOT NULL) AS tracked
                     FROM ml_rejected_signals
@@ -4409,17 +4656,20 @@ async def shadow_report(
                     ORDER BY COUNT(*) DESC
                     LIMIT 12
                     """
-                ),
-                {"cutoff": cutoff},
+                    ),
+                    {"cutoff": cutoff},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     result = dict(summary or {})
     tracked = int(result.get("tracked") or 0)
     wins = int(result.get("wins") or 0)
     losses = int(result.get("losses") or 0)
     resolved = wins + losses
-    result["counterfactual_win_rate"] = (wins / resolved if resolved else None)
+    result["counterfactual_win_rate"] = wins / resolved if resolved else None
     result["resolved"] = resolved
     result["methodology"] = (
         "Rejected/skipped candidates are tracked in shadow only. These observations are "
@@ -4441,9 +4691,10 @@ async def strategy_leaderboard(
     cutoff = datetime.utcnow() - timedelta(days=int(days))
     async with get_session(label="platform.strategy_leaderboard", timeout_seconds=8.0) as session:
         rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COALESCE(strategy_name,'unknown') AS strategy_name, COUNT(*) AS signals
                     FROM signals
                     WHERE created_at >= :cutoff
@@ -4451,10 +4702,13 @@ async def strategy_leaderboard(
                     ORDER BY COUNT(*) DESC
                     LIMIT 20
                     """
-                ),
-                {"cutoff": cutoff},
+                    ),
+                    {"cutoff": cutoff},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"window_days": int(days), "strategies": [dict(row) for row in rows]}
 
@@ -4475,10 +4729,7 @@ async def broker_risk_presets(user: dict[str, Any] = Depends(current_user)) -> d
     return {
         "recommended": "conservative",
         "first_live_canary": "live_canary",
-        "presets": {
-            name: serialise(dict(values))
-            for name, values in RISK_PRESETS.items()
-        },
+        "presets": {name: serialise(dict(values)) for name, values in RISK_PRESETS.items()},
         "rule": "External broker/prop-firm limits may only make these limits stricter.",
     }
 
@@ -4526,20 +4777,21 @@ async def link_broker_exchange(
         assert_connection_capacity,
         register_platform_exchange_connection,
     )
+
     try:
         await assert_connection_capacity(int(user["id"]), str(user.get("tier") or "free"))
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    provider=payload.provider.strip().lower()
-    permissions={
+    provider = payload.provider.strip().lower()
+    permissions = {
         "read": True,
         "trade": True,
         "withdraw": False,
         "internal_transfer": False,
     }
-    permissions_verified=False
-    verification_note="Provider-side permission verification is required before execution can be enabled."
+    permissions_verified = False
+    verification_note = "Provider-side permission verification is required before execution can be enabled."
 
     if provider == "bybit":
         from services.bybit_client import (
@@ -4548,21 +4800,20 @@ async def link_broker_exchange(
             BybitPermissionError,
             BybitV5Client,
         )
+
         try:
-            verifier=BybitV5Client(
-                BybitCredentials(payload.api_key, payload.api_secret, bool(payload.sandbox))
-            )
-            verified=await verifier.verify_trade_only_key(
+            verifier = BybitV5Client(BybitCredentials(payload.api_key, payload.api_secret, bool(payload.sandbox)))
+            verified = await verifier.verify_trade_only_key(
                 require_ip_binding=str(os.getenv("BYBIT_REQUIRE_IP_BINDING") or "1").lower()
-                in {"1","true","yes","on"}
+                in {"1", "true", "yes", "on"}
             )
             permissions.update(dict(verified or {}))
-            permissions_verified=True
-            verification_note="Provider-side read/trade permissions verified; execution remains separately disabled."
+            permissions_verified = True
+            verification_note = "Provider-side read/trade permissions verified; execution remains separately disabled."
         except (BybitPermissionError, BybitError) as exc:
             raise HTTPException(status_code=422, detail=f"Bybit credential verification failed: {exc}") from exc
 
-    credential_payload={
+    credential_payload = {
         "provider": provider,
         "api_key": payload.api_key,
         "api_secret": payload.api_secret,
@@ -4572,7 +4823,7 @@ async def link_broker_exchange(
         "account_label": payload.account_label,
     }
     try:
-        connection=await register_platform_exchange_connection(
+        connection = await register_platform_exchange_connection(
             int(user["id"]),
             provider=provider,
             api_key=payload.api_key,
@@ -4610,7 +4861,15 @@ async def search_broker_metatrader_servers(
     if not result.get("success"):
         code = str(result.get("code") or "server_search_failed")
         raise HTTPException(
-            status_code=503 if code in {"provider_unavailable", "provider_not_configured", "provider_authorization_failed", "provider_permissions_missing"} else 502,
+            status_code=503
+            if code
+            in {
+                "provider_unavailable",
+                "provider_not_configured",
+                "provider_authorization_failed",
+                "provider_permissions_missing",
+            }
+            else 502,
             detail={
                 "code": code,
                 "message": str(result.get("error") or "MetaTrader server search failed"),
@@ -4671,7 +4930,24 @@ async def link_broker_metatrader(
             "can_use_secure_link": bool(result.get("can_use_secure_link")),
             "transaction_id": result.get("transaction_id"),
         }
-        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        status_code = (
+            503
+            if detail["code"]
+            in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"}
+            else 429
+            if detail["code"] == "provider_rate_limited"
+            else 422
+            if detail["code"]
+            in {
+                "server_not_found",
+                "authentication_failed",
+                "account_disabled",
+                "no_symbols",
+                "password_change_required",
+                "broker_settings_detection_failed",
+            }
+            else 502
+        )
         raise HTTPException(status_code=status_code, detail=detail)
     return result
 
@@ -4719,7 +4995,24 @@ async def create_broker_metatrader_secure_link(
             "can_use_secure_link": bool(result.get("can_use_secure_link")),
             "transaction_id": result.get("transaction_id"),
         }
-        status_code = 503 if detail["code"] in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"} else 429 if detail["code"] == "provider_rate_limited" else 422 if detail["code"] in {"server_not_found", "authentication_failed", "account_disabled", "no_symbols", "password_change_required", "broker_settings_detection_failed"} else 502
+        status_code = (
+            503
+            if detail["code"]
+            in {"provider_unavailable", "provider_authorization_failed", "provider_permissions_missing"}
+            else 429
+            if detail["code"] == "provider_rate_limited"
+            else 422
+            if detail["code"]
+            in {
+                "server_not_found",
+                "authentication_failed",
+                "account_disabled",
+                "no_symbols",
+                "password_change_required",
+                "broker_settings_detection_failed",
+            }
+            else 502
+        )
         raise HTTPException(status_code=status_code, detail=detail)
     return result
 
@@ -4819,10 +5112,7 @@ async def update_broker_account_policy(
                 status_code=422,
                 detail="PROP accounts require prop_firm and prop_rules_version",
             )
-        if (
-            payload.external_max_daily_loss_pct is None
-            or payload.external_max_total_drawdown_pct is None
-        ):
+        if payload.external_max_daily_loss_pct is None or payload.external_max_total_drawdown_pct is None:
             raise HTTPException(
                 status_code=422,
                 detail="PROP accounts require the firm's daily-loss and drawdown limits",
@@ -4893,10 +5183,7 @@ async def certify_broker_prop_policy(
     ) as session:
         target_user_id = (
             await session.execute(
-                text(
-                    "SELECT user_id FROM broker_connections "
-                    "WHERE connection_id=:connection_id LIMIT 1"
-                ),
+                text("SELECT user_id FROM broker_connections WHERE connection_id=:connection_id LIMIT 1"),
                 {"connection_id": str(connection_id)},
             )
         ).scalar_one_or_none()
@@ -5131,36 +5418,45 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
     platforms = platform_catalog(str(user.get("tier") or "free"))
     async with get_session(label="platform.broker.status", timeout_seconds=8.0) as session:
         account = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT telegram_user_id,execution_mode,auto_signals_daily_limit,
                            fixed_lot_size,accepted_terms
                     FROM users WHERE id=:uid
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         prefs = await get_platform_user_trading_preferences(session, uid)
         mt5_stats = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT COUNT(*) AS executions,
                            COUNT(*) FILTER (WHERE LOWER(status) IN ('tp','tp1','tp2','tp3')) AS wins,
                            COUNT(*) FILTER (WHERE LOWER(status)='sl') AS losses,
                            COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL),0) AS realized_pnl
                     FROM mt5_executions WHERE user_id=:uid
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         readiness_rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT c.connection_id,
                            p.policy_id,
                            p.policy_version,
@@ -5180,14 +5476,18 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                       ON r.connection_id=c.connection_id AND r.user_id=c.user_id
                     WHERE c.user_id=:uid
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         provider_stats = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT provider,COUNT(*) AS executions,
                            COUNT(*) FILTER (WHERE LOWER(status) IN ('confirmed','open','closed','filled')) AS confirmed
                     FROM broker_executions
@@ -5195,14 +5495,18 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                     GROUP BY provider
                     ORDER BY COUNT(*) DESC
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         mt5_account_stats = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT connection_id,
                            COUNT(*) AS executions,
                            COUNT(*) FILTER (WHERE realized_pnl > 0) AS wins,
@@ -5213,14 +5517,18 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                     WHERE user_id=:uid AND connection_id IS NOT NULL
                     GROUP BY connection_id
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         provider_account_stats = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT connection_id,provider,
                            COUNT(*) AS executions,
                            COUNT(*) FILTER (WHERE LOWER(status)='closed') AS closed,
@@ -5231,17 +5539,16 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                     WHERE user_id=:uid AND connection_id IS NOT NULL
                     GROUP BY connection_id,provider
                     """
-                ),
-                {"uid": uid},
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
     account_payload = dict(account or {})
-    connection_by_id = {
-        str(item.get("connection_id")): item
-        for item in connections
-        if item.get("connection_id")
-    }
+    connection_by_id = {str(item.get("connection_id")): item for item in connections if item.get("connection_id")}
     account_stats: list[dict[str, Any]] = []
     for row in mt5_account_stats:
         item = dict(row)
@@ -5250,9 +5557,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             {
                 **item,
                 "provider": str(connection.get("platform") or "mt5"),
-                "account_mode": str(
-                    connection.get("account_classification") or "UNKNOWN"
-                ),
+                "account_mode": str(connection.get("account_classification") or "UNKNOWN"),
                 "environment": str(connection.get("environment") or "unknown"),
                 "metric_scope": "single_account",
                 "realized_pnl_pct": None,
@@ -5264,24 +5569,15 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
         account_stats.append(
             {
                 **item,
-                "account_mode": str(
-                    connection.get("account_classification") or "UNKNOWN"
-                ),
+                "account_mode": str(connection.get("account_classification") or "UNKNOWN"),
                 "environment": str(connection.get("environment") or "unknown"),
                 "metric_scope": "single_account",
                 "realized_pnl": None,
             }
         )
 
-    readiness_by_id = {
-        str(row.get("connection_id")): dict(row)
-        for row in readiness_rows
-        if row.get("connection_id")
-    }
-    platform_by_name = {
-        str(row.get("platform") or "").strip().lower(): row
-        for row in platforms
-    }
+    readiness_by_id = {str(row.get("connection_id")): dict(row) for row in readiness_rows if row.get("connection_id")}
+    platform_by_name = {str(row.get("platform") or "").strip().lower(): row for row in platforms}
     accepted_terms = bool(account_payload.get("accepted_terms"))
     preflight_entitled = evaluate_feature_access(
         str(user.get("tier") or "free"),
@@ -5297,10 +5593,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             blockers.append({"code": code, "message": message})
 
         platform_name = str(connection.get("platform") or "").strip().lower()
-        adapter = str(
-            (platform_by_name.get(platform_name) or {}).get("execution_adapter")
-            or "custom"
-        )
+        adapter = str((platform_by_name.get(platform_name) or {}).get("execution_adapter") or "custom")
         if adapter != "ready":
             block(
                 "provider_execution_adapter_not_certified",
@@ -5329,16 +5622,13 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
                 )
             account_mode = str(snapshot.get("account_mode") or "").strip().upper()
             if account_mode == "PROP" and (
-                snapshot.get("certified_at") is None
-                or not str(snapshot.get("prop_rules_version") or "").strip()
+                snapshot.get("certified_at") is None or not str(snapshot.get("prop_rules_version") or "").strip()
             ):
                 block(
                     "prop_policy_certification_required",
                     "This exact prop-firm ruleset must be owner/admin certified before execution.",
                 )
-        reconciliation_status = str(
-            snapshot.get("reconciliation_status") or "UNKNOWN"
-        ).strip().upper()
+        reconciliation_status = str(snapshot.get("reconciliation_status") or "UNKNOWN").strip().upper()
         if reconciliation_status != "HEALTHY" or snapshot.get("reconciliation_frozen_at") is not None:
             block(
                 "reconciliation_required",
@@ -5375,49 +5665,42 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
     for connection in enriched_connections:
         connection_id = str(connection.get("connection_id") or "")
         snapshot = readiness_by_id.get(connection_id) or {}
-        account_mode = str(
-            snapshot.get("account_mode")
-            or connection.get("account_classification")
-            or ""
-        ).strip().upper()
+        account_mode = (
+            str(snapshot.get("account_mode") or connection.get("account_classification") or "").strip().upper()
+        )
         if account_mode != "DEMO":
             continue
 
         status = str(connection.get("status") or "").strip().lower()
         permission = str(snapshot.get("execution_permission") or "").strip().upper()
-        reconciliation_status = str(
-            snapshot.get("reconciliation_status") or "UNKNOWN"
-        ).strip().upper()
+        reconciliation_status = str(snapshot.get("reconciliation_status") or "UNKNOWN").strip().upper()
         credential_format = str(connection.get("credential_format") or "").strip().lower()
-        provider_adapter = str(
-            (connection.get("readiness") or {}).get("provider_execution_adapter")
-            or "custom"
-        ).strip().lower()
+        provider_adapter = (
+            str((connection.get("readiness") or {}).get("provider_execution_adapter") or "custom").strip().lower()
+        )
 
         checklist = {
             "connected_as_demo": True,
             "read_only_verified": (
-                status in {"verified", "ready", "linked"}
-                and connection.get("verified_at") is not None
+                status in {"verified", "ready", "linked"} and connection.get("verified_at") is not None
             ),
-            "canonical_credentials_ready": credential_format in {
+            "canonical_credentials_ready": credential_format
+            in {
                 "envelope_v1",
                 "provider_managed",
             },
             "demo_policy_configured": bool(snapshot.get("policy_id")),
-            "explicit_execution_permission": permission in {
+            "explicit_execution_permission": permission
+            in {
                 "MANUAL",
                 "ASSISTED_EXECUTION",
                 "AUTO_EXECUTION",
             },
             "reconciliation_healthy": (
-                reconciliation_status == "HEALTHY"
-                and snapshot.get("reconciliation_frozen_at") is None
+                reconciliation_status == "HEALTHY" and snapshot.get("reconciliation_frozen_at") is None
             ),
             "policy_unfrozen": snapshot.get("policy_frozen_at") is None,
-            "execution_disabled_for_preflight": not bool(
-                connection.get("execution_enabled")
-            ),
+            "execution_disabled_for_preflight": not bool(connection.get("execution_enabled")),
             "execution_terms_accepted": accepted_terms,
             "provider_execution_adapter_ready": provider_adapter == "ready",
         }
@@ -5530,27 +5813,18 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
         },
         "demo_certification": {
             "status": (
-                "PREFLIGHT_READY"
-                if any(row["preflight_ready"] for row in demo_accounts)
-                else "ACTION_REQUIRED"
+                "PREFLIGHT_READY" if any(row["preflight_ready"] for row in demo_accounts) else "ACTION_REQUIRED"
             ),
             "connected_demo_accounts": len(demo_accounts),
-            "preflight_ready_accounts": sum(
-                1 for row in demo_accounts if row["preflight_ready"]
-            ),
-            "bounded_lifecycle_ready_accounts": sum(
-                1 for row in demo_accounts if row["bounded_lifecycle_ready"]
-            ),
+            "preflight_ready_accounts": sum(1 for row in demo_accounts if row["preflight_ready"]),
+            "bounded_lifecycle_ready_accounts": sum(1 for row in demo_accounts if row["bounded_lifecycle_ready"]),
             "accounts": demo_accounts,
             "blockers": demo_summary_blockers,
             "activation_performed": False,
             "orders_placed_by_readiness_check": 0,
             "bounded_demo_lifecycle_required": True,
             "certification_report_required_for_live_activation": True,
-            "note": (
-                "This readiness summary is read-only. It never enables execution "
-                "or places an order."
-            ),
+            "note": ("This readiness summary is read-only. It never enables execution or places an order."),
         },
         "execution": {
             "execution_mode": str(account_payload.get("execution_mode") or prefs.execution_mode or "manual"),
@@ -5575,9 +5849,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             },
         },
         "safety": {
-            "live_execution_requested": bool(
-                str(prefs.trading_mode or "paper").lower() in {"live", "both"}
-            ),
+            "live_execution_requested": bool(str(prefs.trading_mode or "paper").lower() in {"live", "both"}),
             "execution_preflight_entitled": bool(preflight_entitled),
             "global_activation_still_required": True,
         },
@@ -5673,24 +5945,14 @@ async def update_execution_settings(
 
     async with get_session(label="platform.execution_settings", timeout_seconds=10.0) as session:
         current = await get_platform_user_trading_preferences(session, uid)
-        effective_provider = str(
-            values.get("execution_provider")
-            or current.execution_provider
-            or "auto"
-        ).strip().lower()
-        effective_trading_mode = str(
-            trading_mode
-            or current.trading_mode
-            or "paper"
-        ).strip().lower()
+        effective_provider = (
+            str(values.get("execution_provider") or current.execution_provider or "auto").strip().lower()
+        )
+        effective_trading_mode = str(trading_mode or current.trading_mode or "paper").strip().lower()
         if effective_trading_mode in {"live", "both"} and effective_provider != "bybit":
             from services.mt5_client import get_platform_metatrader_connection
 
-            platform_filter = (
-                effective_provider
-                if effective_provider in {"mt4", "mt5"}
-                else None
-            )
+            platform_filter = effective_provider if effective_provider in {"mt4", "mt5"} else None
             broker = await get_platform_metatrader_connection(
                 uid,
                 platform=platform_filter,
@@ -5700,9 +5962,7 @@ async def update_execution_settings(
                     status_code=409,
                     detail="Link a MetaTrader account before enabling broker mode",
                 )
-            if str(broker.get("status") or "").lower() not in {
-                "linked", "ready", "verified"
-            }:
+            if str(broker.get("status") or "").lower() not in {"linked", "ready", "verified"}:
                 raise HTTPException(
                     status_code=409,
                     detail="Verify the MetaTrader connection before enabling broker mode",
@@ -5842,19 +6102,51 @@ async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
     _assert_feature(user, "portfolio_analytics")
     uid = int(user["id"])
     async with get_session() as session:
-        account = (await session.execute(text("SELECT id,cash_balance,realized_pnl,currency FROM paper_accounts WHERE user_id=:uid"), {"uid": uid})).mappings().first()
-        exposures = (await session.execute(text(
-            "SELECT asset,asset_class,direction,COUNT(*) AS positions,COALESCE(SUM(notional),0) AS notional,"
-            "COALESCE(SUM(unrealized_pnl),0) AS unrealized_pnl FROM paper_positions "
-            "WHERE user_id=:uid AND status='open' GROUP BY asset,asset_class,direction ORDER BY ABS(SUM(notional)) DESC"
-        ), {"uid": uid})).mappings().all()
-        equity_curve = (await session.execute(text(
-            "SELECT created_at,balance_after,entry_type,amount FROM paper_ledger_entries WHERE user_id=:uid ORDER BY created_at DESC LIMIT 250"
-        ), {"uid": uid})).mappings().all()
+        account = (
+            (
+                await session.execute(
+                    text("SELECT id,cash_balance,realized_pnl,currency FROM paper_accounts WHERE user_id=:uid"),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        exposures = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT asset,asset_class,direction,COUNT(*) AS positions,COALESCE(SUM(notional),0) AS notional,"
+                        "COALESCE(SUM(unrealized_pnl),0) AS unrealized_pnl FROM paper_positions "
+                        "WHERE user_id=:uid AND status='open' GROUP BY asset,asset_class,direction ORDER BY ABS(SUM(notional)) DESC"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        equity_curve = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT created_at,balance_after,entry_type,amount FROM paper_ledger_entries WHERE user_id=:uid ORDER BY created_at DESC LIMIT 250"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     cash = float((account or {}).get("cash_balance") or 0)
     unrealized = sum(float(row.get("unrealized_pnl") or 0) for row in exposures)
-    return {"account": dict(account or {}), "equity": cash + unrealized, "exposures": [dict(row) for row in exposures], "equity_curve": [dict(row) for row in reversed(equity_curve)]}
+    return {
+        "account": dict(account or {}),
+        "equity": cash + unrealized,
+        "exposures": [dict(row) for row in exposures],
+        "equity_curve": [dict(row) for row in reversed(equity_curve)],
+    }
 
 
 @router.get("/performance")
@@ -5862,19 +6154,37 @@ async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str,
     _assert_feature(user, "performance_analytics")
     uid = int(user["id"])
     async with get_session() as session:
-        summary = (await session.execute(text(
-            "SELECT COUNT(*) FILTER (WHERE included) AS signals,"
-            "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('win','tp1','tp2','tp3','partial_win','partial_win_be')) AS wins,"
-            "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('loss','sl')) AS losses,"
-            "COALESCE(AVG(final_realized_r) FILTER (WHERE included),0) AS average_r,"
-            "COALESCE(SUM(final_realized_r) FILTER (WHERE included),0) AS total_r "
-            "FROM performance_ledger_entries WHERE user_id=:uid"
-        ), {"uid": uid})).mappings().first()
-        breakdown = (await session.execute(text(
-            "SELECT asset,timeframe,COUNT(*) AS signals,COALESCE(AVG(final_realized_r),0) AS average_r,"
-            "COALESCE(SUM(final_realized_r),0) AS total_r FROM performance_ledger_entries "
-            "WHERE user_id=:uid AND included GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
-        ), {"uid": uid})).mappings().all()
+        summary = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FILTER (WHERE included) AS signals,"
+                        "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('win','tp1','tp2','tp3','partial_win','partial_win_be')) AS wins,"
+                        "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('loss','sl')) AS losses,"
+                        "COALESCE(AVG(final_realized_r) FILTER (WHERE included),0) AS average_r,"
+                        "COALESCE(SUM(final_realized_r) FILTER (WHERE included),0) AS total_r "
+                        "FROM performance_ledger_entries WHERE user_id=:uid"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        breakdown = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT asset,timeframe,COUNT(*) AS signals,COALESCE(AVG(final_realized_r),0) AS average_r,"
+                        "COALESCE(SUM(final_realized_r),0) AS total_r FROM performance_ledger_entries "
+                        "WHERE user_id=:uid AND included GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     data = dict(summary or {})
     total = int(data.get("signals") or 0)
@@ -5888,24 +6198,29 @@ async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str,
 async def billing_products(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     """Return current public checkout products from the server catalogue."""
     from payments.catalog import ProductCatalogueError, resolve_checkout_product
+
     products: list[dict[str, Any]] = []
     async with get_session(label="platform.billing.products", timeout_seconds=10.0) as session:
-        rows = (await session.execute(text(
-            "SELECT product_id FROM subscription_products WHERE active=TRUE ORDER BY product_id"
-        ))).all()
+        rows = (
+            await session.execute(
+                text("SELECT product_id FROM subscription_products WHERE active=TRUE ORDER BY product_id")
+            )
+        ).all()
         for row in rows:
             try:
                 product = await resolve_checkout_product(session, str(row[0]), currency="NGN")
             except ProductCatalogueError:
                 continue
-            products.append({
-                "product_id": product.product_id,
-                "tier": product.tier,
-                "display_name": product.display_name,
-                "duration_days": product.duration_days,
-                "currency": product.currency,
-                "price_ngn": product.price_ngn,
-            })
+            products.append(
+                {
+                    "product_id": product.product_id,
+                    "tier": product.tier,
+                    "display_name": product.display_name,
+                    "duration_days": product.duration_days,
+                    "currency": product.currency,
+                    "price_ngn": product.price_ngn,
+                }
+            )
         await session.rollback()
     return {"products": products}
 
@@ -5919,20 +6234,25 @@ async def create_billing_checkout(
     uid = int(user["id"])
     async with get_session(label="platform.billing.checkout.catalog", timeout_seconds=10.0) as session:
         account = (
-            await session.execute(
-                text(
-                    "SELECT id,primary_email,email_verified_at,telegram_user_id,account_status "
-                    "FROM users WHERE id=:uid"
-                ),
-                {"uid": uid},
+            (
+                await session.execute(
+                    text(
+                        "SELECT id,primary_email,email_verified_at,telegram_user_id,account_status "
+                        "FROM users WHERE id=:uid"
+                    ),
+                    {"uid": uid},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if not account or str(account.get("account_status") or "active") != "active":
             raise HTTPException(status_code=403, detail="Account unavailable")
         if not account.get("primary_email") or account.get("email_verified_at") is None:
             raise HTTPException(status_code=409, detail="Verify an email address before checkout")
         try:
             from payments.catalog import ProductCatalogueError, resolve_checkout_product
+
             product = await resolve_checkout_product(session, payload.product_id, currency=payload.currency)
         except ProductCatalogueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -5940,10 +6260,13 @@ async def create_billing_checkout(
 
     try:
         from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout
+
         checkout = await initialize_paystack_checkout(
             product=product,
             canonical_user_id=uid,
-            telegram_user_id=(int(account["telegram_user_id"]) if account.get("telegram_user_id") is not None else None),
+            telegram_user_id=(
+                int(account["telegram_user_id"]) if account.get("telegram_user_id") is not None else None
+            ),
             email=str(account["primary_email"]),
         )
     except CheckoutInitializationError as exc:
@@ -6004,6 +6327,7 @@ async def confirm_billing_checkout(
         raise HTTPException(status_code=403, detail="This payment belongs to a different SignalRank account")
 
     from payments.paystack import process_event
+
     result = await process_event({"event": "charge.success", "data": transaction})
     if not bool((result or {}).get("processed")):
         reason = str((result or {}).get("reason") or "Payment reconciliation is still pending")
@@ -6025,26 +6349,51 @@ async def confirm_billing_checkout(
 async def billing(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     uid = int(user["id"])
     async with get_session() as session:
-        subscriptions = (await session.execute(text(
-            "SELECT id,tier,status,started_at,expires_at,paystack_reference,bonus_days FROM subscriptions "
-            "WHERE user_id=:uid ORDER BY started_at DESC LIMIT 100"
-        ), {"uid": uid})).mappings().all()
-        receipts = (await session.execute(text(
-            "SELECT receipt_number,provider,payment_reference,plan,amount,currency,status,payment_date,subscription_start,subscription_end "
-            "FROM payment_receipts WHERE user_id=:uid ORDER BY payment_date DESC LIMIT 100"
-        ), {"uid": uid})).mappings().all()
-        renewal = (await session.execute(text(
-            "SELECT auto_renew,(paystack_subscription_code IS NOT NULL) AS provider_subscription_linked "
-            "FROM users WHERE id=:uid"
-        ), {"uid": uid})).mappings().first()
+        subscriptions = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT id,tier,status,started_at,expires_at,paystack_reference,bonus_days FROM subscriptions "
+                        "WHERE user_id=:uid ORDER BY started_at DESC LIMIT 100"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        receipts = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT receipt_number,provider,payment_reference,plan,amount,currency,status,payment_date,subscription_start,subscription_end "
+                        "FROM payment_receipts WHERE user_id=:uid ORDER BY payment_date DESC LIMIT 100"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        renewal = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT auto_renew,(paystack_subscription_code IS NOT NULL) AS provider_subscription_linked "
+                        "FROM users WHERE id=:uid"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .first()
+        )
         await session.rollback()
     return {
         "subscriptions": [dict(row) for row in subscriptions],
         "receipts": [dict(row) for row in receipts],
         "auto_renew": bool((renewal or {}).get("auto_renew")),
-        "provider_subscription_linked": bool(
-            (renewal or {}).get("provider_subscription_linked")
-        ),
+        "provider_subscription_linked": bool((renewal or {}).get("provider_subscription_linked")),
     }
 
 
@@ -6088,8 +6437,7 @@ async def cancel_billing_auto_renew(
         **result,
         "support_ticket_id": support_ticket_id,
         "policy": (
-            "Auto-renew is off. Current paid access remains until its expiry. "
-            "This action does not issue a refund."
+            "Auto-renew is off. Current paid access remains until its expiry. This action does not issue a refund."
         ),
     }
 
@@ -6129,8 +6477,7 @@ async def billing_refund_request(
         raise HTTPException(
             status_code=404,
             detail=(
-                "Payment reference was not found on this account. "
-                "Use Billing support if the payment is still pending."
+                "Payment reference was not found on this account. Use Billing support if the payment is still pending."
             ),
         )
     ticket = await create_support_ticket(
@@ -6162,10 +6509,21 @@ async def notification_center(
 ) -> dict[str, Any]:
     condition = " AND read_at IS NULL" if unread_only else ""
     async with get_session() as session:
-        rows = (await session.execute(text(
-            "SELECT notification_id,event_type,title,body,severity,channel_data,read_at,created_at "
-            "FROM notification_events WHERE user_id=:uid" + condition + " ORDER BY created_at DESC LIMIT :limit"
-        ), {"uid": int(user["id"]), "limit": int(limit)})).mappings().all()
+        rows = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT notification_id,event_type,title,body,severity,channel_data,read_at,created_at "
+                        "FROM notification_events WHERE user_id=:uid"
+                        + condition
+                        + " ORDER BY created_at DESC LIMIT :limit"
+                    ),
+                    {"uid": int(user["id"]), "limit": int(limit)},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"notifications": [dict(row) for row in rows]}
 
@@ -6173,9 +6531,12 @@ async def notification_center(
 @router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
-        result = await session.execute(text(
-            "UPDATE notification_events SET read_at=COALESCE(read_at,NOW()) WHERE notification_id=:id AND user_id=:uid"
-        ), {"id": notification_id, "uid": int(user["id"])})
+        result = await session.execute(
+            text(
+                "UPDATE notification_events SET read_at=COALESCE(read_at,NOW()) WHERE notification_id=:id AND user_id=:uid"
+            ),
+            {"id": notification_id, "uid": int(user["id"])},
+        )
         await session.commit()
     if not result.rowcount:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -6183,9 +6544,14 @@ async def mark_notification_read(notification_id: str, user: dict[str, Any] = De
 
 
 async def _organization_role(session: Any, organization_id: str, user_id: int) -> str | None:
-    row = (await session.execute(text(
-        "SELECT role FROM organization_members WHERE organization_id=:org AND user_id=:uid AND status='active'"
-    ), {"org": organization_id, "uid": int(user_id)})).first()
+    row = (
+        await session.execute(
+            text(
+                "SELECT role FROM organization_members WHERE organization_id=:org AND user_id=:uid AND status='active'"
+            ),
+            {"org": organization_id, "uid": int(user_id)},
+        )
+    ).first()
     return str(row[0]) if row else None
 
 
@@ -6195,10 +6561,19 @@ async def organization_members(organization_id: str, user: dict[str, Any] = Depe
         role = await _organization_role(session, organization_id, int(user["id"]))
         if not role:
             raise HTTPException(status_code=404, detail="Organization not found")
-        rows = (await session.execute(text(
-            "SELECT m.user_id,m.role,m.status,m.joined_at,u.public_user_id,u.display_name,u.primary_email "
-            "FROM organization_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=:org ORDER BY m.joined_at"
-        ), {"org": organization_id})).mappings().all()
+        rows = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT m.user_id,m.role,m.status,m.joined_at,u.public_user_id,u.display_name,u.primary_email "
+                        "FROM organization_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=:org ORDER BY m.joined_at"
+                    ),
+                    {"org": organization_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"role": role, "members": [dict(row) for row in rows]}
 
@@ -6212,6 +6587,7 @@ async def create_organization_invitation(
 ) -> dict[str, Any]:
     from services.platform.identity import canonical_email
     from services.platform.email_delivery import queue_account_email
+
     email = canonical_email(payload.email)
     token = "sri_" + secrets.token_urlsafe(40)
     token_hash = __import__("hashlib").sha256(token.encode()).hexdigest()
@@ -6221,16 +6597,40 @@ async def create_organization_invitation(
         role = await _organization_role(session, organization_id, int(user["id"]))
         if role not in {"owner", "administrator"}:
             raise HTTPException(status_code=403, detail="Organization administrator required")
-        await session.execute(text(
-            "INSERT INTO organization_invitations(invitation_id,organization_id,email,role,token_hash,invited_by,expires_at) "
-            "VALUES(:id,:org,:email,:role,:token_hash,:uid,:expires)"
-        ), {"id": invitation_id, "org": organization_id, "email": email, "role": payload.role, "token_hash": token_hash, "uid": int(user["id"]), "expires": expires_at})
+        await session.execute(
+            text(
+                "INSERT INTO organization_invitations(invitation_id,organization_id,email,role,token_hash,invited_by,expires_at) "
+                "VALUES(:id,:org,:email,:role,:token_hash,:uid,:expires)"
+            ),
+            {
+                "id": invitation_id,
+                "org": organization_id,
+                "email": email,
+                "role": payload.role,
+                "token_hash": token_hash,
+                "uid": int(user["id"]),
+                "expires": expires_at,
+            },
+        )
         link = f"{_app_base_url(request)}/app?organization_invite={token}"
-        await queue_account_email(session, recipient=email, template="organization_invite", context={"link": link, "expires_minutes": 10080}, idempotency_key=f"org-invite:{invitation_id}")
-        await session.execute(text(
-            "INSERT INTO organization_audit_events(audit_id,organization_id,actor_user_id,event_type,metadata) "
-            "VALUES(gen_random_uuid()::text,:org,:uid,'member.invited',CAST(:metadata AS JSONB))"
-        ), {"org": organization_id, "uid": int(user["id"]), "metadata": json.dumps({"email": email, "role": payload.role})})
+        await queue_account_email(
+            session,
+            recipient=email,
+            template="organization_invite",
+            context={"link": link, "expires_minutes": 10080},
+            idempotency_key=f"org-invite:{invitation_id}",
+        )
+        await session.execute(
+            text(
+                "INSERT INTO organization_audit_events(audit_id,organization_id,actor_user_id,event_type,metadata) "
+                "VALUES(gen_random_uuid()::text,:org,:uid,'member.invited',CAST(:metadata AS JSONB))"
+            ),
+            {
+                "org": organization_id,
+                "uid": int(user["id"]),
+                "metadata": json.dumps({"email": email, "role": payload.role}),
+            },
+        )
         await session.commit()
     return {"invitation_id": invitation_id, "expires_at": expires_at.isoformat()}
 
@@ -6242,21 +6642,36 @@ async def accept_organization_invitation(
 ) -> dict[str, Any]:
     token_hash = __import__("hashlib").sha256(payload.token.encode()).hexdigest()
     async with get_session() as session:
-        row = (await session.execute(text(
-            "SELECT invitation_id,organization_id,email,role,status,expires_at FROM organization_invitations "
-            "WHERE token_hash=:token_hash FOR UPDATE"
-        ), {"token_hash": token_hash})).mappings().first()
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT invitation_id,organization_id,email,role,status,expires_at FROM organization_invitations "
+                        "WHERE token_hash=:token_hash FOR UPDATE"
+                    ),
+                    {"token_hash": token_hash},
+                )
+            )
+            .mappings()
+            .first()
+        )
         if not row or row["status"] != "pending" or row["expires_at"] <= datetime.utcnow():
             raise HTTPException(status_code=422, detail="Invalid or expired invitation")
         if str(user.get("primary_email") or "").lower() != str(row["email"]).lower():
             raise HTTPException(status_code=403, detail="Invitation email does not match this account")
-        await session.execute(text(
-            "INSERT INTO organization_members(organization_id,user_id,role,status) VALUES(:org,:uid,:role,'active') "
-            "ON CONFLICT(organization_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='active'"
-        ), {"org": row["organization_id"], "uid": int(user["id"]), "role": row["role"]})
-        await session.execute(text(
-            "UPDATE organization_invitations SET status='accepted',accepted_by=:uid,accepted_at=NOW() WHERE invitation_id=:id"
-        ), {"uid": int(user["id"]), "id": row["invitation_id"]})
+        await session.execute(
+            text(
+                "INSERT INTO organization_members(organization_id,user_id,role,status) VALUES(:org,:uid,:role,'active') "
+                "ON CONFLICT(organization_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='active'"
+            ),
+            {"org": row["organization_id"], "uid": int(user["id"]), "role": row["role"]},
+        )
+        await session.execute(
+            text(
+                "UPDATE organization_invitations SET status='accepted',accepted_by=:uid,accepted_at=NOW() WHERE invitation_id=:id"
+            ),
+            {"uid": int(user["id"]), "id": row["invitation_id"]},
+        )
         await session.commit()
     return {"accepted": True, "organization_id": row["organization_id"]}
 
@@ -6264,16 +6679,34 @@ async def accept_organization_invitation(
 @router.get("/support/tickets/{ticket_id}")
 async def support_ticket_detail(ticket_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     async with get_session() as session:
-        ticket = (await session.execute(text(
-            "SELECT ticket_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets "
-            "WHERE ticket_id=:ticket_id AND user_id=:uid"
-        ), {"ticket_id": ticket_id, "uid": int(user["id"])})).mappings().first()
+        ticket = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT ticket_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets "
+                        "WHERE ticket_id=:ticket_id AND user_id=:uid"
+                    ),
+                    {"ticket_id": ticket_id, "uid": int(user["id"])},
+                )
+            )
+            .mappings()
+            .first()
+        )
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")
-        messages = (await session.execute(text(
-            "SELECT message_id,author_user_id,author_role,message,created_at FROM support_messages "
-            "WHERE ticket_id=:ticket_id ORDER BY created_at"
-        ), {"ticket_id": ticket_id})).mappings().all()
+        messages = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT message_id,author_user_id,author_role,message,created_at FROM support_messages "
+                        "WHERE ticket_id=:ticket_id ORDER BY created_at"
+                    ),
+                    {"ticket_id": ticket_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"ticket": dict(ticket), "messages": [dict(row) for row in messages]}
 
@@ -6286,18 +6719,31 @@ async def add_support_message(
 ) -> dict[str, Any]:
     message_id = str(uuid4())
     async with get_session() as session:
-        ticket = (await session.execute(text(
-            "SELECT status FROM support_tickets WHERE ticket_id=:ticket_id AND user_id=:uid FOR UPDATE"
-        ), {"ticket_id": ticket_id, "uid": int(user["id"])})).first()
+        ticket = (
+            await session.execute(
+                text("SELECT status FROM support_tickets WHERE ticket_id=:ticket_id AND user_id=:uid FOR UPDATE"),
+                {"ticket_id": ticket_id, "uid": int(user["id"])},
+            )
+        ).first()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")
         if str(ticket[0]) == "closed":
             raise HTTPException(status_code=409, detail="Ticket is closed")
-        await session.execute(text(
-            "INSERT INTO support_messages(message_id,ticket_id,author_user_id,author_role,message) "
-            "VALUES(:message_id,:ticket_id,:uid,'user',:message)"
-        ), {"message_id": message_id, "ticket_id": ticket_id, "uid": int(user["id"]), "message": payload.message.strip()})
-        await session.execute(text("UPDATE support_tickets SET updated_at=NOW() WHERE ticket_id=:ticket_id"), {"ticket_id": ticket_id})
+        await session.execute(
+            text(
+                "INSERT INTO support_messages(message_id,ticket_id,author_user_id,author_role,message) "
+                "VALUES(:message_id,:ticket_id,:uid,'user',:message)"
+            ),
+            {
+                "message_id": message_id,
+                "ticket_id": ticket_id,
+                "uid": int(user["id"]),
+                "message": payload.message.strip(),
+            },
+        )
+        await session.execute(
+            text("UPDATE support_tickets SET updated_at=NOW() WHERE ticket_id=:ticket_id"), {"ticket_id": ticket_id}
+        )
         await session.commit()
     return {"message_id": message_id}
 
@@ -6306,10 +6752,19 @@ async def add_support_message(
 async def list_alerts(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "custom_alerts")
     async with get_session() as session:
-        rows = (await session.execute(text(
-            "SELECT alert_id,instrument_id,asset,alert_type,condition,channels,active,last_triggered_at,created_at "
-            "FROM user_alerts WHERE user_id=:uid ORDER BY created_at DESC"
-        ), {"uid": int(user["id"])})).mappings().all()
+        rows = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT alert_id,instrument_id,asset,alert_type,condition,channels,active,last_triggered_at,created_at "
+                        "FROM user_alerts WHERE user_id=:uid ORDER BY created_at DESC"
+                    ),
+                    {"uid": int(user["id"])},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
     return {"alerts": [dict(row) for row in rows]}
 
@@ -6317,15 +6772,32 @@ async def list_alerts(user: dict[str, Any] = Depends(current_user)) -> dict[str,
 @router.post("/alerts", status_code=201)
 async def create_alert(payload: AlertCreateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "custom_alerts")
-    channels = sorted({str(channel).lower() for channel in payload.channels if str(channel).lower() in {"telegram", "web", "email", "push", "webhook"}})
+    channels = sorted(
+        {
+            str(channel).lower()
+            for channel in payload.channels
+            if str(channel).lower() in {"telegram", "web", "email", "push", "webhook"}
+        }
+    )
     if not channels:
         raise HTTPException(status_code=422, detail="At least one supported channel is required")
     alert_id = str(uuid4())
     async with get_session() as session:
-        await session.execute(text(
-            "INSERT INTO user_alerts(alert_id,user_id,instrument_id,asset,alert_type,condition,channels) "
-            "VALUES(:id,:uid,:instrument,:asset,:type,CAST(:condition AS JSONB),CAST(:channels AS JSONB))"
-        ), {"id": alert_id, "uid": int(user["id"]), "instrument": payload.instrument_id, "asset": (payload.asset or "").upper() or None, "type": payload.alert_type, "condition": json.dumps(payload.condition), "channels": json.dumps(channels)})
+        await session.execute(
+            text(
+                "INSERT INTO user_alerts(alert_id,user_id,instrument_id,asset,alert_type,condition,channels) "
+                "VALUES(:id,:uid,:instrument,:asset,:type,CAST(:condition AS JSONB),CAST(:channels AS JSONB))"
+            ),
+            {
+                "id": alert_id,
+                "uid": int(user["id"]),
+                "instrument": payload.instrument_id,
+                "asset": (payload.asset or "").upper() or None,
+                "type": payload.alert_type,
+                "condition": json.dumps(payload.condition),
+                "channels": json.dumps(channels),
+            },
+        )
         await session.commit()
     return {"alert_id": alert_id, "active": True}
 
@@ -6334,7 +6806,10 @@ async def create_alert(payload: AlertCreateRequest, user: dict[str, Any] = Depen
 async def delete_alert(alert_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "custom_alerts")
     async with get_session() as session:
-        result = await session.execute(text("UPDATE user_alerts SET active=FALSE,updated_at=NOW() WHERE alert_id=:id AND user_id=:uid"), {"id": alert_id, "uid": int(user["id"])})
+        result = await session.execute(
+            text("UPDATE user_alerts SET active=FALSE,updated_at=NOW() WHERE alert_id=:id AND user_id=:uid"),
+            {"id": alert_id, "uid": int(user["id"])},
+        )
         await session.commit()
     if not result.rowcount:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -6355,10 +6830,18 @@ async def analytics_event(request: Request, user: dict[str, Any] = Depends(curre
     if len(encoded) > 12000:
         raise HTTPException(status_code=413, detail="Analytics payload too large")
     async with get_session() as session:
-        await session.execute(text(
-            "INSERT INTO analytics_events(event_id,user_id,event_name,source,session_id,properties) "
-            "VALUES(gen_random_uuid()::text,:uid,:event_name,'app',:session_id,CAST(:properties AS JSONB))"
-        ), {"uid": int(user["id"]), "event_name": event_name, "session_id": user.get("session_id"), "properties": encoded})
+        await session.execute(
+            text(
+                "INSERT INTO analytics_events(event_id,user_id,event_name,source,session_id,properties) "
+                "VALUES(gen_random_uuid()::text,:uid,:event_name,'app',:session_id,CAST(:properties AS JSONB))"
+            ),
+            {
+                "uid": int(user["id"]),
+                "event_name": event_name,
+                "session_id": user.get("session_id"),
+                "properties": encoded,
+            },
+        )
         await session.commit()
     return {"accepted": True}
 

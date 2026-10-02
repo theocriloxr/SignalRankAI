@@ -4,6 +4,7 @@ Outputs counts and blocker codes only. It never prints broker account IDs,
 credentials, connection IDs, external account references, passwords, tokens or
 other secret material, and it never places or modifies an order.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,39 +23,33 @@ from sqlalchemy import text
 from db.session import get_session
 
 
-EXPECTED_HEAD = "0045_mt5_credential_retirement"
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0047_event_outbox")
 _READY_CONNECTION_STATUSES = {"verified", "ready", "linked"}
 _CREDENTIAL_READY_FORMATS = {"envelope_v1", "provider_managed"}
 
 
 def _environment() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or ""
-    ).strip().lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("")
 
 
 async def collect_demo_account_preflight() -> dict[str, Any]:
     environment = _environment()
     if environment != "staging":
-        raise RuntimeError(
-            f"demo_account_preflight_requires_staging got={environment or 'unknown'}"
-        )
+        raise RuntimeError(f"demo_account_preflight_requires_staging got={environment or 'unknown'}")
 
     async with get_session(
         label="demo_account_preflight",
         timeout_seconds=8.0,
     ) as session:
-        head = (
-            await session.execute(text("SELECT version_num FROM alembic_version"))
-        ).scalar_one_or_none()
+        head = (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one_or_none()
 
         summary = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT
                         COUNT(*)::int AS total_connections,
                         COUNT(*) FILTER (
@@ -97,14 +92,18 @@ async def collect_demo_account_preflight() -> dict[str, Any]:
                       ON r.connection_id = c.connection_id
                      AND r.user_id = c.user_id
                     """
+                    )
                 )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
         providers = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT
                         LOWER(COALESCE(c.platform, 'unknown')) AS platform,
                         LOWER(COALESCE(c.connector, 'unknown')) AS connector,
@@ -117,9 +116,12 @@ async def collect_demo_account_preflight() -> dict[str, Any]:
                     GROUP BY 1, 2
                     ORDER BY 1, 2
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.rollback()
 
     counts = {key: int(value or 0) for key, value in dict(summary).items()}

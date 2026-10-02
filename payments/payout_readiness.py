@@ -57,11 +57,20 @@ def approve_payout(request: PayoutRequest, *, approver_id: int, owner_id: int) -
         raise PermissionError("owner_approval_required")
     if request.status is not PayoutStatus.REQUESTED:
         raise ValueError("payout_not_pending")
-    return PayoutRequest(request.payout_id, request.owner_id, request.amount, request.currency, PayoutStatus.APPROVED, request.requested_at, int(approver_id))
+    return PayoutRequest(
+        request.payout_id,
+        request.owner_id,
+        request.amount,
+        request.currency,
+        PayoutStatus.APPROVED,
+        request.requested_at,
+        int(approver_id),
+    )
 
 
 def payout_readiness_status() -> dict[str, Any]:
     from core.financial_activation import evaluate_financial_activation
+
     report = evaluate_financial_activation()
     return {
         "real_payouts_enabled": bool(report.payouts_requested and report.ok),
@@ -73,4 +82,11 @@ def payout_readiness_status() -> dict[str, Any]:
     }
 
 
-__all__ = ["PayoutAccount", "PayoutRequest", "PayoutStatus", "approve_payout", "create_payout_request", "payout_readiness_status"]
+__all__ = [
+    "PayoutAccount",
+    "PayoutRequest",
+    "PayoutStatus",
+    "approve_payout",
+    "create_payout_request",
+    "payout_readiness_status",
+]

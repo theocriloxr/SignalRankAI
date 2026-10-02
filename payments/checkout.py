@@ -3,6 +3,7 @@
 The server resolves price and entitlement metadata from the database catalogue.
 Credentials never activate execution and clients never provide a trusted amount.
 """
+
 from __future__ import annotations
 
 import os

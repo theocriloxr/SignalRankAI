@@ -8,6 +8,7 @@ Roles (provider addendum §15):
 Public endpoints work without a key.  A demo/pro API key upgrades the base URL
 and rate budget.  A cooldown guard prevents retry storms against the free tier.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,7 +63,7 @@ def _base_symbol(symbol: str) -> str:
     value = str(symbol or "").upper().strip().replace("/", "").replace("_", "").replace("-", "")
     for quote in ("USDT", "USDC", "USD", "EUR", "GBP", "BTC", "ETH"):
         if value.endswith(quote) and len(value) > len(quote):
-            value = value[:-len(quote)]
+            value = value[: -len(quote)]
             break
     if value == "XBT":
         value = "BTC"
@@ -79,9 +80,7 @@ async def _async_resolve_id(symbol: str) -> Optional[str]:
     if _cooldown_active():
         return None
     # Try /coins/markets?ids=... only for exact coin IDs later; first search list.
-    data = await async_http_get_json(
-        f"{base_url()}/coins/list", name="coingecko", headers=_headers(), timeout=6.0
-    )
+    data = await async_http_get_json(f"{base_url()}/coins/list", name="coingecko", headers=_headers(), timeout=6.0)
     if not isinstance(data, list):
         _mark_cooldown()
         return None
@@ -116,20 +115,27 @@ async def _async_get_candles(
     if tf == "1d":
         data = await async_http_get_json(
             f"{base_url()}/coins/{coin_id}/ohlc",
-            name="coingecko", params={"vs_currency": "usd", "days": 30},
-            headers=_headers(), timeout=timeout,
+            name="coingecko",
+            params={"vs_currency": "usd", "days": 30},
+            headers=_headers(),
+            timeout=timeout,
         )
         if not isinstance(data, list):
             return []
         out: List[Dict[str, Any]] = []
-        for row in data[-int(limit or 200):]:
+        for row in data[-int(limit or 200) :]:
             try:
                 ts_ms, o, h, l, c = row
-                out.append({
-                    "timestamp": int(ts_ms) // 1000,
-                    "open": float(o), "high": float(h), "low": float(l), "close": float(c),
-                    "volume": 0.0,
-                })
+                out.append(
+                    {
+                        "timestamp": int(ts_ms) // 1000,
+                        "open": float(o),
+                        "high": float(h),
+                        "low": float(l),
+                        "close": float(c),
+                        "volume": 0.0,
+                    }
+                )
             except Exception:
                 continue
         return out
@@ -137,28 +143,32 @@ async def _async_get_candles(
         f"{base_url()}/coins/{coin_id}/market_chart",
         name="coingecko",
         params={"vs_currency": "usd", "days": 7, "interval": "hourly"},
-        headers=_headers(), timeout=timeout,
+        headers=_headers(),
+        timeout=timeout,
     )
     if not isinstance(data, dict):
         return []
     prices = data.get("prices") or []
     out = []
-    for row in prices[-int(limit or 200):]:
+    for row in prices[-int(limit or 200) :]:
         try:
             ts_ms, price = row
-            out.append({
-                "timestamp": int(ts_ms) // 1000,
-                "open": float(price), "high": float(price),
-                "low": float(price), "close": float(price), "volume": 0.0,
-            })
+            out.append(
+                {
+                    "timestamp": int(ts_ms) // 1000,
+                    "open": float(price),
+                    "high": float(price),
+                    "low": float(price),
+                    "close": float(price),
+                    "volume": 0.0,
+                }
+            )
         except Exception:
             continue
     return out
 
 
-def get_candles(
-    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
-) -> List[Dict[str, Any]]:
+def get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
     return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))
 
 
@@ -173,7 +183,8 @@ async def _async_get_price(symbol: str) -> Optional[float]:
         f"{base_url()}/simple/price",
         name="coingecko",
         params={"ids": coin_id, "vs_currencies": "usd"},
-        headers=_headers(), timeout=6.0,
+        headers=_headers(),
+        timeout=6.0,
     )
     if not isinstance(data, dict):
         return None
@@ -188,7 +199,9 @@ def get_price(symbol: str) -> Optional[float]:
 
 
 async def _async_discover_instruments(
-    *, top: int = 100, active_only: bool = True,
+    *,
+    top: int = 100,
+    active_only: bool = True,
 ) -> List[Dict[str, Any]]:
     """Discovery: top crypto tokens by market cap via public /coins/markets."""
     if not _enabled() or _cooldown_active():
@@ -197,7 +210,8 @@ async def _async_discover_instruments(
         f"{base_url()}/coins/markets",
         name="coingecko",
         params={"vs_currency": "usd", "order": "market_cap_desc", "per_page": min(250, max(1, top)), "page": 1},
-        headers=_headers(), timeout=10.0,
+        headers=_headers(),
+        timeout=10.0,
     )
     if not isinstance(data, list):
         return []
@@ -208,22 +222,24 @@ async def _async_discover_instruments(
             if not symbol:
                 continue
             status = "active" if active_only else str(item.get("status") or "active")
-            out.append({
-                "provider": "coingecko",
-                "venue": "coingecko",
-                "provider_symbol": f"{symbol}USDT",
-                "asset_class": "crypto",
-                "instrument_type": "spot",
-                "base": symbol,
-                "quote": "USDT",
-                "market_status": status,
-                "metadata": {
-                    "coingecko_id": item.get("id"),
-                    "market_cap_usd": item.get("market_cap"),
-                    "total_volume_usd": item.get("total_volume"),
-                    "source": "coins_markets",
-                },
-            })
+            out.append(
+                {
+                    "provider": "coingecko",
+                    "venue": "coingecko",
+                    "provider_symbol": f"{symbol}USDT",
+                    "asset_class": "crypto",
+                    "instrument_type": "spot",
+                    "base": symbol,
+                    "quote": "USDT",
+                    "market_status": status,
+                    "metadata": {
+                        "coingecko_id": item.get("id"),
+                        "market_cap_usd": item.get("market_cap"),
+                        "total_volume_usd": item.get("total_volume"),
+                        "source": "coins_markets",
+                    },
+                }
+            )
         except Exception:
             continue
     return out

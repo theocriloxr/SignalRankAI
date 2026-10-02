@@ -7,6 +7,7 @@ The probe separates two questions that must not be conflated:
 
 It never reserves deliveries, writes signal state, or sends Telegram messages.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -130,10 +131,7 @@ async def main_async() -> int:
         timeout_seconds=30.0,
     ) as session:
         result = await session.execute(
-            select(Signal)
-            .where(Signal.created_at >= start)
-            .order_by(Signal.created_at.desc())
-            .limit(1000)
+            select(Signal).where(Signal.created_at >= start).order_by(Signal.created_at.desc()).limit(1000)
         )
         rows = list(result.scalars().all())
 

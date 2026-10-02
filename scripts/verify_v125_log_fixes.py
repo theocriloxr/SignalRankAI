@@ -1,4 +1,5 @@
 """Static/runtime verifier for the v1.2.5 log-driven release."""
+
 from __future__ import annotations
 
 import importlib
@@ -19,6 +20,7 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     from core.version import APP_VERSION, RELEASE_FINGERPRINT
+
     require(APP_VERSION == "1.3.2", "runtime code version retains v1.2.5 fixes")
     require(RELEASE_FINGERPRINT == "v1.3.2-auto-delivery-callback-monitor-recovery-20260730", "release fingerprint")
 
@@ -27,6 +29,7 @@ def main() -> int:
         require(callable(getattr(helpers, name, None)), f"adaptive helper export {name}")
 
     from runtime_safety import apply_runtime_safety_environment
+
     env = {
         "APP_ENV": "staging",
         "FULL_SYSTEM_STAGING_TEST_MODE": "1",
@@ -45,15 +48,27 @@ def main() -> int:
     require(env.get("PAYMENTS_PUBLIC_TEST_MODE") == "0", "Paystack live-mode marker")
 
     from payments.paystack_policy import evaluate_paystack_operation
-    require(evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56000, environ=env).allowed, "owner live checkout at cap")
-    require(not evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56001, environ=env).allowed, "amount above cap blocked")
-    require(not evaluate_paystack_operation(telegram_user_id=999, amount_ngn=1000, environ=env).allowed, "non-allowlisted user blocked")
+
+    require(
+        evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56000, environ=env).allowed,
+        "owner live checkout at cap",
+    )
+    require(
+        not evaluate_paystack_operation(telegram_user_id=1409578077, amount_ngn=56001, environ=env).allowed,
+        "amount above cap blocked",
+    )
+    require(
+        not evaluate_paystack_operation(telegram_user_id=999, amount_ngn=1000, environ=env).allowed,
+        "non-allowlisted user blocked",
+    )
 
     from data.fetcher import validate_price_sanity
+
     require(validate_price_sanity("WTI", 84.3), "valid WTI price accepted")
     require(not validate_price_sanity("WTI", 3.535), "ghost WTI token price rejected")
 
     from engine.signal_deduplicator import _json_safe, get_ml_rejection_tracker
+
     stamp = datetime(2026, 7, 29, 22, 26, tzinfo=timezone.utc)
     require(_json_safe({"t": stamp})["t"] == stamp.isoformat(), "rejection features are JSON-safe")
     require(get_ml_rejection_tracker() is get_ml_rejection_tracker(), "ML rejection tracker singleton")

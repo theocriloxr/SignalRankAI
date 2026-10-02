@@ -1,4 +1,5 @@
 """Verifier for SignalRankAI v1.2.9 lifecycle/profile/observability hotfix."""
+
 from __future__ import annotations
 
 import inspect
@@ -31,7 +32,9 @@ def main() -> None:
     railway = (ROOT / "railway_main.py").read_text(encoding="utf-8")
     require("BOT_READY_NOTIFICATION_DEDUPE_SECONDS" in railway and "nx=True" in railway, "ready notification dedupe")
     require((ROOT / "SignalRankAI_v1.3.2_Railway_Production_Launch.env.example").exists(), "production profile")
-    require((ROOT / "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile")
+    require(
+        (ROOT / "SignalRankAI_v1.3.2_Railway_Full_System_Live_Paystack_Staging.env.example").exists(), "staging profile"
+    )
     print("PASS v1.2.9 lifecycle/profile/observability verification")
 
 

@@ -295,10 +295,10 @@ def test_ai_review_is_provider_neutral_and_legacy_fields_remain_compatible():
     formatter = Path("signalrank_telegram/tier_signal_formatter.py").read_text(encoding="utf-8")
     intelligence = Path("services/trading_intelligence.py").read_text(encoding="utf-8")
 
-    assert "sig['ai_review_provider']" in engine
-    assert "sig['ai_review_score']" in engine
-    assert "sig['ai_review_reason']" in engine
-    assert "sig['gemini_review_score'] = gemini_score" in engine
+    assert 'signal["ai_review_provider"] = provider' in engine
+    assert 'signal["ai_review_score"] = score' in engine
+    assert 'signal["ai_review_reason"] = summary' in engine
+    assert 'signal["gemini_review_score"] = score' in engine
     assert '"QUALITY_MIN_AI_SCORE"' in engine
     assert '"OpenAI"' in formatter
     assert 'signal.get("ai_review_score") or signal.get("gemini_review_score")' in formatter
@@ -426,11 +426,12 @@ def test_ai_provider_provenance_is_preserved_and_outcome_attributed():
     reviewer = Path("scripts/ai_reviewer.py").read_text(encoding="utf-8")
 
     scoring = engine[engine.index("gemini_ok, gemini_score, gemini_reason"):engine.index("from core.signal_quality_gate", engine.index("gemini_ok, gemini_score, gemini_reason"))]
+    logging_block = engine[engine.index("def _log_decision"):engine.index("def _log_market_observations")]
     assert 'sig.get("ai_review_provider")' in scoring
     assert "provider=consensus" in scoring
-    assert "sig['ai_review_provider'] = ai_provider" in scoring
+    assert 'signal["ai_review_provider"] = provider' in engine
+    assert '"ai_review_provider"' in logging_block
 
-    logging_block = engine[engine.index("def _log_decision"):engine.index("def _log_market_observations")]
     for key in (
         "ai_review_provider",
         "ai_review_model",

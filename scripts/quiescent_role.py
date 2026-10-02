@@ -6,6 +6,7 @@ It proves role identity and safety configuration without starting any SignalRank
 engine, delivery, outcome, analytics, Telegram, scheduler, payment, payout, or
 broker-execution loop.
 """
+
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,40 +59,27 @@ def validate_quiescent_environment(
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     env = dict(os.environ if environ is None else environ)
-    environment = str(
-        env.get("RAILWAY_ENVIRONMENT_NAME")
-        or env.get("RAILWAY_ENVIRONMENT")
-        or env.get("APP_ENV")
-        or ""
-    ).strip().lower()
+    from core.env import resolve_runtime_environment_name
+
+    environment = resolve_runtime_environment_name(env, "")
     profile = str(env.get("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
-    requested = str(
-        env.get("RUN_MODE")
-        or env.get("SERVICE_ROLE")
-        or env.get("DB_ROLE")
-        or ""
-    ).strip().lower()
+    requested = str(env.get("RUN_MODE") or env.get("SERVICE_ROLE") or env.get("DB_ROLE") or "").strip().lower()
 
     if environment != "staging":
         raise RuntimeError(f"quiescent certification requires staging environment, got {environment or 'unknown'}")
     if profile != "staging-certification":
-        raise RuntimeError(
-            "quiescent certification requires SIGNALRANK_ENV_PROFILE=staging-certification"
-        )
+        raise RuntimeError("quiescent certification requires SIGNALRANK_ENV_PROFILE=staging-certification")
 
     ownership = process_ownership(requested, env)
     if ownership.mode not in _ALLOWED_ROLES:
-        raise RuntimeError(
-            f"quiescent certification forbids role={ownership.mode.value}"
-        )
+        raise RuntimeError(f"quiescent certification forbids role={ownership.mode.value}")
     if not _truthy(env.get("GLOBAL_EXECUTION_KILL_SWITCH")):
         raise RuntimeError("GLOBAL_EXECUTION_KILL_SWITCH must be enabled")
 
     enabled = [name for name in _HARD_OFF_FLAGS if _truthy(env.get(name))]
     if enabled:
         raise RuntimeError(
-            "quiescent certification requires financial/execution flags off: "
-            + ",".join(sorted(enabled))
+            "quiescent certification requires financial/execution flags off: " + ",".join(sorted(enabled))
         )
 
     if not _truthy(env.get("DATABASE_SCHEMA_GATE_ENABLED", "1")):
@@ -112,11 +100,7 @@ def validate_quiescent_environment(
         "worker_owned": bool(ownership.worker),
         "execution_kill_switch": True,
         "financial_flags_off": list(_HARD_OFF_FLAGS),
-        "release_commit": str(
-            env.get("RAILWAY_GIT_COMMIT_SHA")
-            or env.get("GIT_COMMIT_SHA")
-            or ""
-        )[:12],
+        "release_commit": str(env.get("RAILWAY_GIT_COMMIT_SHA") or env.get("GIT_COMMIT_SHA") or "")[:12],
     }
 
 
@@ -143,8 +127,7 @@ def main() -> int:
     forced = force_invalid_financial_flags_off(os.environ)
     if forced:
         print(
-            "QUIESCENT_FORCED_FINANCIAL_FLAGS_OFF "
-            + json.dumps({"flags": list(forced)}, sort_keys=True),
+            "QUIESCENT_FORCED_FINANCIAL_FLAGS_OFF " + json.dumps({"flags": list(forced)}, sort_keys=True),
             flush=True,
         )
 

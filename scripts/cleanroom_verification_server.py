@@ -5,6 +5,7 @@ still running" from "process never started". /healthz returns 503 until every
 configured compile/schema/test gate passes, then returns 200. Any failed gate
 stays 503 with a non-secret failure summary available on /.
 """
+
 from __future__ import annotations
 
 import json
@@ -71,6 +72,22 @@ _TESTS = [
     "tests/test_copy_trade_safety_foundation.py",
     "tests/test_final_trading_ecosystem_20260927.py",
     "tests/test_mt5_multiaccount_telegram_ux_20260927.py",
+    "tests/test_web_platform_runtime_contract.py",
+    "tests/test_webhook_latency_semantics.py",
+    "tests/test_ml_learning_runtime_v135.py",
+    "tests/test_v20_event_platform.py",
+    "tests/test_env_alias_conflicts.py",
+    "tests/test_class_fair_scheduler_contract.py",
+    "tests/test_market_data_routing.py",
+    "tests/test_market_class_certification.py",
+    "tests/test_api_key_security_contract.py",
+    "tests/test_pinned_staging_environment.py",
+    "tests/test_migration_0036_clean_install.py",
+    "tests/test_runtime_hardening_contract.py",
+    "tests/test_stale_learning_multiservice.py",
+    "tests/test_20261001_signal_paper_integrity.py",
+    "tests/test_missed_entry_nontrade_semantics.py",
+    "tests/test_release_certification_manifest_contract.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
@@ -95,11 +112,15 @@ _STEPS: list[tuple[str, list[str]]] = [
     ),
     (
         "alembic_release_chain",
-        [sys.executable, "scripts/verify_0045_release_chain.py"],
+        [sys.executable, "scripts/verify_release_chain.py"],
     ),
     (
         "schema_audit",
         [sys.executable, "scripts/schema_audit.py"],
+    ),
+    (
+        "governance_packaged_check",
+        [sys.executable, "scripts/build_v7_governance.py", "--check"],
     ),
     (
         "release_provenance",
@@ -136,22 +157,15 @@ def _set_state(**updates: Any) -> None:
 def _snapshot() -> dict[str, Any]:
     with _state_lock:
         result = dict(_state)
-    result["commit"] = str(
-        os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("GIT_COMMIT_SHA")
-        or ""
-    )
-    result["elapsed_seconds"] = round(
-        max(0.0, time.time() - float(result["started_at_epoch"])), 3
-    )
+    result["commit"] = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
+    result["elapsed_seconds"] = round(max(0.0, time.time() - float(result["started_at_epoch"])), 3)
     return result
 
 
 def _run_step(name: str, command: list[str]) -> int:
     _set_state(stage=name)
     print(
-        "CLEANROOM_STAGE_START "
-        + json.dumps({"stage": name, "command": command}, sort_keys=True),
+        "CLEANROOM_STAGE_START " + json.dumps({"stage": name, "command": command}, sort_keys=True),
         flush=True,
     )
     proc = subprocess.Popen(
@@ -232,6 +246,20 @@ def _verify() -> None:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/governance/environment_registry.yaml":
+            path = ROOT / "requirements" / "environment_registry.yaml"
+            if not path.is_file():
+                self.send_response(404)
+                self.end_headers()
+                return
+            payload = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
         if self.path not in {"/", "/healthz"}:
             self.send_response(404)
             self.end_headers()
@@ -266,8 +294,7 @@ threading.Thread(target=_verify, name="cleanroom-verifier", daemon=True).start()
 
 port = int(os.getenv("PORT") or "8080")
 print(
-    "CLEANROOM_HTTP_LISTEN "
-    + json.dumps({"host": "0.0.0.0", "port": port}, sort_keys=True),
+    "CLEANROOM_HTTP_LISTEN " + json.dumps({"host": "0.0.0.0", "port": port}, sort_keys=True),
     flush=True,
 )
 ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

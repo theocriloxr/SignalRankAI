@@ -1,9 +1,9 @@
 """Provider-neutral signal execution router with one-position evidence."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,14 +67,10 @@ async def route_signal_to_broker(
                 telegram_user_id=int(telegram_user_id),
                 signal_id=signal_id,
                 connection_id=(
-                    str(connection_id).strip()
-                    if connection_id is not None and str(connection_id).strip()
-                    else None
+                    str(connection_id).strip() if connection_id is not None and str(connection_id).strip() else None
                 ),
             )
-        if before.get("position_count") and not (
-            connection_id is not None and str(connection_id).strip()
-        ):
+        if before.get("position_count") and not (connection_id is not None and str(connection_id).strip()):
             return BrokerRouteResult(
                 False,
                 "Select the trading account explicitly before reusing an execution action",
@@ -103,6 +99,7 @@ async def route_signal_to_broker(
 
         async with get_session(label="broker.profile_policy", timeout_seconds=8.0) as session:
             from services.user_intelligence import get_user_trading_preferences
+
             prefs = await get_user_trading_preferences(session, int(telegram_user_id))
         provider = str(getattr(prefs, "execution_provider", "auto") or "auto").strip().lower()
         asset_class = str(signal.get("asset_class") or "").strip().lower()
@@ -114,19 +111,25 @@ async def route_signal_to_broker(
             from services.bybit_signal_router import route_signal_to_bybit
 
             routed = await route_signal_to_bybit(
-                signal, int(telegram_user_id), execution_mode=execution_mode,
+                signal,
+                int(telegram_user_id),
+                execution_mode=execution_mode,
                 connection_id=connection_id,
             )
         elif provider == "mt5":
             from services.mt5_signal_router import route_signal_to_mt5
 
             routed = await route_signal_to_mt5(
-                dict(signal), int(telegram_user_id), execution_mode=execution_mode,
+                dict(signal),
+                int(telegram_user_id),
+                execution_mode=execution_mode,
                 connection_id=connection_id,
             )
         else:
             return BrokerRouteResult(
-                False, "Unsupported execution provider", error="unsupported_execution_provider",
+                False,
+                "Unsupported execution provider",
+                error="unsupported_execution_provider",
             )
 
         order_id = str(getattr(routed, "order_id", None) or "").strip() or None
@@ -146,9 +149,7 @@ async def route_signal_to_broker(
                 signal_id=signal_id,
                 expected_reference=order_id,
                 connection_id=(
-                    str(connection_id).strip()
-                    if connection_id is not None and str(connection_id).strip()
-                    else None
+                    str(connection_id).strip() if connection_id is not None and str(connection_id).strip() else None
                 ),
             )
         if not evidence.get("exactly_one"):

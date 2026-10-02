@@ -2,14 +2,12 @@ from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import numpy as np
 from engine.signal_analytics import calculate_volume_delta
 import os
 import logging
-from .fibonacci_helpers import is_price_in_golden_pocket
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,12 +65,12 @@ def _pivot_mask(values: np.ndarray, window: int = 2, mode: str = "low") -> np.nd
         return np.zeros_like(values, dtype=bool)
     center = values[window:-window]
     if mode == "low":
-        left = np.vstack([values[i: i + center.size] for i in range(window)])
-        right = np.vstack([values[i + window + 1: i + window + 1 + center.size] for i in range(window)])
+        left = np.vstack([values[i : i + center.size] for i in range(window)])
+        right = np.vstack([values[i + window + 1 : i + window + 1 + center.size] for i in range(window)])
         mask = (center <= left.min(axis=0)) & (center <= right.min(axis=0))
     else:
-        left = np.vstack([values[i: i + center.size] for i in range(window)])
-        right = np.vstack([values[i + window + 1: i + window + 1 + center.size] for i in range(window)])
+        left = np.vstack([values[i : i + center.size] for i in range(window)])
+        right = np.vstack([values[i + window + 1 : i + window + 1 + center.size] for i in range(window)])
         mask = (center >= left.max(axis=0)) & (center >= right.max(axis=0))
     out = np.zeros_like(values, dtype=bool)
     out[window:-window] = mask
@@ -137,7 +135,7 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
         if len(candles) < cfg.lookback:
             return []
 
-        _, highs, lows, closes, volumes = _to_arrays(candles[-cfg.lookback:])
+        _, highs, lows, closes, volumes = _to_arrays(candles[-cfg.lookback :])
         if closes.size < cfg.lookback:
             return []
 
@@ -190,8 +188,12 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
             bearish_div = price_higher_high and rsi_lower_high
 
         out: list[dict[str, Any]] = []
-        fresh_demand = bool(low_idx) and abs(last_close - float(lows[low_idx[-1]])) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015)
-        fresh_supply = bool(high_idx) and abs(last_close - float(highs[high_idx[-1]])) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015)
+        fresh_demand = bool(low_idx) and abs(last_close - float(lows[low_idx[-1]])) <= max(
+            atr_val * cfg.atr_tolerance_mult, last_close * 0.0015
+        )
+        fresh_supply = bool(high_idx) and abs(last_close - float(highs[high_idx[-1]])) <= max(
+            atr_val * cfg.atr_tolerance_mult, last_close * 0.0015
+        )
 
         # Tolerance buffer (e.g., 0.01% default) to count boundary touches as inside
         try:
@@ -220,10 +222,15 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
         short_zone_high = float(fib_short_upper)
 
         # Check volume grading
-        vol_stats = calculate_volume_delta(candles[-(cfg.lookback + 5):], window=20)
+        vol_stats = calculate_volume_delta(candles[-(cfg.lookback + 5) :], window=20)
         rvol = float(vol_stats.get("rvol") or 0.0)
 
-        if bias == "LONG" and bullish_div and fresh_demand and _inside_zone(last_close_price, long_zone_low, long_zone_high):
+        if (
+            bias == "LONG"
+            and bullish_div
+            and fresh_demand
+            and _inside_zone(last_close_price, long_zone_low, long_zone_high)
+        ):
             # If running on 5m, require the candle to have closed back inside the pocket (prev outside -> last inside)
             if exec_tf == "5m":
                 prev_outside = not _inside_zone(prev_close, long_zone_low, long_zone_high)
@@ -261,7 +268,12 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
                 }
                 out.append(sig)
 
-        if bias == "SHORT" and bearish_div and fresh_supply and _inside_zone(last_close_price, short_zone_low, short_zone_high):
+        if (
+            bias == "SHORT"
+            and bearish_div
+            and fresh_supply
+            and _inside_zone(last_close_price, short_zone_low, short_zone_high)
+        ):
             if exec_tf == "5m":
                 prev_outside = not _inside_zone(prev_close, short_zone_low, short_zone_high)
                 if not prev_outside:

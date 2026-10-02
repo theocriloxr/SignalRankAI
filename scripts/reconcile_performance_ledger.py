@@ -24,23 +24,26 @@ async def run(args: argparse.Namespace) -> int:
             days=args.days,
             environment=args.environment,
         )
-        audit = await audit_user_performance(
-            session, telegram_user_id=args.telegram_user_id, days=args.days
-        )
+        audit = await audit_user_performance(session, telegram_user_id=args.telegram_user_id, days=args.days)
         if args.apply:
             await session.commit()
         else:
             await session.rollback()
-    print(json.dumps({
-        "mode": "apply" if args.apply else "dry_run",
-        "telegram_user_id": args.telegram_user_id,
-        "days": args.days,
-        "reconciliation_id": report.get("reconciliation_id"),
-        "confirmed_deliveries": report.get("delivered"),
-        "bucket_sum": sum((report.get("buckets") or {}).values()),
-        "invariant_ok": audit.get("invariant_ok"),
-        "warning": "Finalized rows are immutable; this command never performs corrections.",
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "mode": "apply" if args.apply else "dry_run",
+                "telegram_user_id": args.telegram_user_id,
+                "days": args.days,
+                "reconciliation_id": report.get("reconciliation_id"),
+                "confirmed_deliveries": report.get("delivered"),
+                "bucket_sum": sum((report.get("buckets") or {}).values()),
+                "invariant_ok": audit.get("invariant_ok"),
+                "warning": "Finalized rows are immutable; this command never performs corrections.",
+            },
+            indent=2,
+        )
+    )
     return 0 if audit.get("invariant_ok") else 2
 
 

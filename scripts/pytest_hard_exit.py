@@ -10,6 +10,7 @@ from hanging the complete certification orchestrator.
 
 This file is test tooling only and is never imported by the production runtime.
 """
+
 from __future__ import annotations
 
 import os

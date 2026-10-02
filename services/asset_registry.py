@@ -7,15 +7,49 @@ from typing import Any, Iterable
 
 
 INDEX_SYMBOLS = {
-    "US30", "DJI", "DOW", "US500", "SPX", "SPX500", "US100", "NAS100", "NDX",
-    "RUSSELL2000", "RUT", "GER40", "DAX", "UK100", "FTSE", "FRA40", "CAC40",
-    "JPN225", "NIKKEI", "HK50", "AUS200", "VIX",
+    "US30",
+    "DJI",
+    "DOW",
+    "US500",
+    "SPX",
+    "SPX500",
+    "US100",
+    "NAS100",
+    "NDX",
+    "RUSSELL2000",
+    "RUT",
+    "GER40",
+    "DAX",
+    "UK100",
+    "FTSE",
+    "FRA40",
+    "CAC40",
+    "JPN225",
+    "NIKKEI",
+    "HK50",
+    "AUS200",
+    "VIX",
 }
 
 COMMODITY_SYMBOLS = {
-    "GOLD", "SILVER", "XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD", "WTI", "USOIL",
-    "BRENT", "UKOIL", "NATGAS", "CORN", "WHEAT", "SOYBEAN", "COFFEE", "COCOA",
-    "SUGAR", "COTTON",
+    "GOLD",
+    "SILVER",
+    "XAUUSD",
+    "XAGUSD",
+    "XPTUSD",
+    "XPDUSD",
+    "WTI",
+    "USOIL",
+    "BRENT",
+    "UKOIL",
+    "NATGAS",
+    "CORN",
+    "WHEAT",
+    "SOYBEAN",
+    "COFFEE",
+    "COCOA",
+    "SUGAR",
+    "COTTON",
 }
 
 FX_CODES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "SEK", "NOK", "MXN", "ZAR", "TRY"}
@@ -69,7 +103,11 @@ def _subclass(symbol: str, asset_class: str) -> str:
         base = symbol.replace("USDT", "").replace("USDC", "")
         return "large_cap" if base in {"BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"} else "altcoin"
     if asset_class == "fx":
-        return "major" if symbol in {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"} else "minor_or_exotic"
+        return (
+            "major"
+            if symbol in {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"}
+            else "minor_or_exotic"
+        )
     if asset_class == "commodity":
         if symbol in {"XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD"}:
             return "metal"
@@ -125,7 +163,11 @@ def build_asset_profile(symbol: Any, provider_symbols: dict[str, str | None] | N
         preferred_timeframes=_preferred_timeframes(asset_class),
         recommended_profiles=_recommended_profiles(asset_class, canonical),
         provider_symbols=mapped,
-        broker_symbols={"mt5": mapped.get("mt5") or canonical, "binance": mapped.get("binance"), "bybit": canonical if asset_class == "crypto" else None},
+        broker_symbols={
+            "mt5": mapped.get("mt5") or canonical,
+            "binance": mapped.get("binance"),
+            "bybit": canonical if asset_class == "crypto" else None,
+        },
         enabled=canonical not in _disabled_assets(),
     )
 
@@ -160,7 +202,12 @@ def discover_asset_universe(limit_per_class: int = 25) -> list[AssetProfile]:
                 continue
     except Exception:
         pass
-    static_explicit = str(os.getenv("ALLOW_STATIC_ASSET_FALLBACK", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    static_explicit = str(os.getenv("ALLOW_STATIC_ASSET_FALLBACK", "0") or "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     # Never invent a tradable universe merely because the runtime is staging,
     # development or temporarily offline. A deterministic static universe is
     # available only as an explicit diagnostic opt-in and is rejected by the
@@ -168,8 +215,19 @@ def discover_asset_universe(limit_per_class: int = 25) -> list[AssetProfile]:
     # inject provider results or set ALLOW_STATIC_ASSET_FALLBACK=1 themselves.
     if not symbols and static_explicit:
         symbols = [
-            "BTCUSDT", "ETHUSDT", "SOLUSDT", "EURUSD", "GBPUSD", "USDJPY",
-            "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "AAPL", "NVDA",
+            "BTCUSDT",
+            "ETHUSDT",
+            "SOLUSDT",
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "XAUUSD",
+            "XAGUSD",
+            "SPX500",
+            "NAS100",
+            "US30",
+            "AAPL",
+            "NVDA",
         ]
     profiles: list[AssetProfile] = []
     seen: set[str] = set()

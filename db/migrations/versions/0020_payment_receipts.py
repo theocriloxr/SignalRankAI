@@ -10,6 +10,7 @@ deletes receipt rows.  Duplicate legacy identities are retained, marked as
 ``duplicate`` and assigned deterministic archival keys before the canonical
 unique indexes are installed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,9 +27,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 def upgrade() -> None:
     # Serialise reconciliation across overlapping Railway pre-deploy attempts.
-    op.execute(
-        "SELECT pg_advisory_xact_lock(hashtext('signalrank:payment_receipts_schema'))"
-    )
+    op.execute("SELECT pg_advisory_xact_lock(hashtext('signalrank:payment_receipts_schema'))")
 
     # CREATE TABLE IF NOT EXISTS handles clean databases.  The ALTER statements
     # below repair tables that were created by historical bootstrap code.
@@ -65,7 +64,9 @@ def upgrade() -> None:
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS amount DOUBLE PRECISION")
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS currency VARCHAR(8) DEFAULT 'NGN'")
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'paid'")
-    op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS payment_date TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()")
+    op.execute(
+        "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS payment_date TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()"
+    )
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS subscription_start TIMESTAMP WITHOUT TIME ZONE")
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS subscription_end TIMESTAMP WITHOUT TIME ZONE")
     op.execute("ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS text_body TEXT DEFAULT ''")
@@ -202,8 +203,17 @@ def upgrade() -> None:
 
     # Tighten the canonical contract only after data has been validated.
     for column in (
-        "receipt_number", "user_id", "provider", "payment_reference", "plan",
-        "amount", "currency", "status", "payment_date", "text_body", "meta",
+        "receipt_number",
+        "user_id",
+        "provider",
+        "payment_reference",
+        "plan",
+        "amount",
+        "currency",
+        "status",
+        "payment_date",
+        "text_body",
+        "meta",
     ):
         op.execute(f"ALTER TABLE payment_receipts ALTER COLUMN {column} SET NOT NULL")
 
@@ -234,26 +244,15 @@ def upgrade() -> None:
 
     # Named unique indexes satisfy the idempotency contract regardless of
     # whether the legacy table originally used constraints or indexes.
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_receipts_number "
-        "ON payment_receipts(receipt_number)"
-    )
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_receipts_number ON payment_receipts(receipt_number)")
     op.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_receipt_provider_reference "
         "ON payment_receipts(provider, payment_reference)"
     )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_payment_receipts_user_id "
-        "ON payment_receipts(user_id)"
-    )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_payment_receipts_receipt_number "
-        "ON payment_receipts(receipt_number)"
-    )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payment_receipts_user_id ON payment_receipts(user_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payment_receipts_receipt_number ON payment_receipts(receipt_number)")
 
-    logger.warning(
-        "payment_receipts schema reconciled idempotently; historical rows retained."
-    )
+    logger.warning("payment_receipts schema reconciled idempotently; historical rows retained.")
 
 
 def downgrade() -> None:

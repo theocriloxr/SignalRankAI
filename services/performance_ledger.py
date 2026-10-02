@@ -46,10 +46,16 @@ from utils.timeutils import now_utc_naive
 PERFORMANCE_POLICY_VERSION = "proof-ledger-v2-partial-exit"
 PERFORMANCE_DOMAIN = "live_user_delivery"
 COMPLETED_BUCKETS = frozenset({"STOPPED_AT_TP1", "STOPPED_AT_TP2", "TP3", "SL", "BREAKEVEN", "TIME_STOP"})
-NON_TRADE_BUCKETS = frozenset({
-    "MISSED_ENTRY", "EXPIRED", "CANCELLED", "TRACKING_FAILED",
-    "PROVIDER_UNAVAILABLE", "DUPLICATE_EXCLUDED",
-})
+NON_TRADE_BUCKETS = frozenset(
+    {
+        "MISSED_ENTRY",
+        "EXPIRED",
+        "CANCELLED",
+        "TRACKING_FAILED",
+        "PROVIDER_UNAVAILABLE",
+        "DUPLICATE_EXCLUDED",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,8 +182,7 @@ def _classify(
     outcome_meta = dict(getattr(outcome, "meta", {}) or {}) if outcome is not None else {}
     highest_tp = max(lifecycle_highest, int(outcome_meta.get("tp_hit_index") or 0))
     terminal_event_type = _status(
-        getattr(lifecycle, "terminal_event_type", None)
-        or outcome_meta.get("terminal_event_type")
+        getattr(lifecycle, "terminal_event_type", None) or outcome_meta.get("terminal_event_type")
     )
     protected_exit_evidence = terminal_event_type == "breakeven_stop" and highest_tp > 0
 
@@ -185,8 +190,10 @@ def _classify(
     # rows often contain r_multiple=-1 because the tracker persisted the original
     # SL price even though the lifecycle terminal event was breakeven_stop. Rebuild
     # the realized result from the immutable signal plan and highest TP evidence.
-    if protected_exit_evidence or raw_status in {"partial_win_be", "partial_win"} or (
-        canonical_status == "partial_win" and highest_tp > 0
+    if (
+        protected_exit_evidence
+        or raw_status in {"partial_win_be", "partial_win"}
+        or (canonical_status == "partial_win" and highest_tp > 0)
     ):
         stage = 2 if highest_tp >= 2 else (1 if highest_tp >= 1 else 0)
         partial = result_from_signal(signal, stage, residual_exit_r=0.0) if stage else None
@@ -200,14 +207,26 @@ def _classify(
     final_status = canonical_status or raw_status
     final_r = _decimal(getattr(outcome, "r_multiple", None))
     mappings = {
-        "tp": "TP3", "tp3": "TP3", "win": "TP3",
-        "sl": "SL", "loss": "SL", "stop": "SL", "stop_loss": "SL",
-        "be": "BREAKEVEN", "breakeven": "BREAKEVEN", "break_even": "BREAKEVEN",
+        "tp": "TP3",
+        "tp3": "TP3",
+        "win": "TP3",
+        "sl": "SL",
+        "loss": "SL",
+        "stop": "SL",
+        "stop_loss": "SL",
+        "be": "BREAKEVEN",
+        "breakeven": "BREAKEVEN",
+        "break_even": "BREAKEVEN",
         "time_stop": "TIME_STOP",
-        "missed": "MISSED_ENTRY", "missed_entry": "MISSED_ENTRY", "entry_missed": "MISSED_ENTRY",
+        "missed": "MISSED_ENTRY",
+        "missed_entry": "MISSED_ENTRY",
+        "entry_missed": "MISSED_ENTRY",
         "expired": "EXPIRED",
-        "cancelled": "CANCELLED", "canceled": "CANCELLED", "superseded": "CANCELLED",
-        "tracking_failed": "TRACKING_FAILED", "provider_unavailable": "PROVIDER_UNAVAILABLE",
+        "cancelled": "CANCELLED",
+        "canceled": "CANCELLED",
+        "superseded": "CANCELLED",
+        "tracking_failed": "TRACKING_FAILED",
+        "provider_unavailable": "PROVIDER_UNAVAILABLE",
     }
     if final_status in mappings:
         bucket = mappings[final_status]
@@ -219,7 +238,10 @@ def _classify(
     signal_state = _status(getattr(signal, "status", None))
     if lifecycle_state in {"active_trade", "tp1_hit", "tp2_hit"} or signal_state in {"active", "open", "running"}:
         return "ACTIVE", None, "signal_lifecycle", True, None
-    if lifecycle_state in {"tracking_failed", "outcome_failed"} or signal_state in {"tracking_failed", "outcome_failed"}:
+    if lifecycle_state in {"tracking_failed", "outcome_failed"} or signal_state in {
+        "tracking_failed",
+        "outcome_failed",
+    }:
         return "TRACKING_FAILED", None, "signal_lifecycle", True, None
     return "PENDING_ENTRY", None, "signal_lifecycle", True, None
 
@@ -244,35 +266,36 @@ async def repair_partial_exit_outcomes(
     days = max(1, int(days or os.getenv("PARTIAL_EXIT_REPAIR_DAYS", "365") or 365))
     limit = max(1, min(10000, int(limit or os.getenv("PARTIAL_EXIT_REPAIR_LIMIT", "2000") or 2000)))
     cutoff = now_utc_naive() - timedelta(days=days)
-    rows = (await session.execute(
-        select(Outcome, Signal, SignalLifecycle)
-        .join(Signal, Signal.signal_id == Outcome.signal_id)
-        .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Outcome.signal_id)
-        .where(
-            Outcome.closed_at.is_not(None),
-            Outcome.closed_at >= cutoff,
-            Outcome.corrected_at.is_(None),
-            (
-                func.lower(Outcome.status).in_(("partial_win_be", "partial_win"))
-                | (
-                    (func.lower(Outcome.canonical_outcome) == "partial_win")
-                    & (SignalLifecycle.highest_tp_hit > 0)
-                )
-                | (
-                    (func.lower(SignalLifecycle.terminal_event_type) == "breakeven_stop")
-                    & (SignalLifecycle.highest_tp_hit > 0)
-                )
-            ),
+    rows = (
+        await session.execute(
+            select(Outcome, Signal, SignalLifecycle)
+            .join(Signal, Signal.signal_id == Outcome.signal_id)
+            .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Outcome.signal_id)
+            .where(
+                Outcome.closed_at.is_not(None),
+                Outcome.closed_at >= cutoff,
+                Outcome.corrected_at.is_(None),
+                (
+                    func.lower(Outcome.status).in_(("partial_win_be", "partial_win"))
+                    | ((func.lower(Outcome.canonical_outcome) == "partial_win") & (SignalLifecycle.highest_tp_hit > 0))
+                    | (
+                        (func.lower(SignalLifecycle.terminal_event_type) == "breakeven_stop")
+                        & (SignalLifecycle.highest_tp_hit > 0)
+                    )
+                ),
+            )
+            .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
+            .limit(limit)
         )
-        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
-        .limit(limit)
-    )).all()
+    ).all()
     signal_ids = [str(signal.signal_id) for _outcome, signal, _lifecycle in rows]
     training_by_signal: dict[str, MLPastTrainingData] = {}
     if signal_ids:
-        training_rows = list((await session.execute(
-            select(MLPastTrainingData).where(MLPastTrainingData.signal_id.in_(signal_ids))
-        )).scalars().all())
+        training_rows = list(
+            (await session.execute(select(MLPastTrainingData).where(MLPastTrainingData.signal_id.in_(signal_ids))))
+            .scalars()
+            .all()
+        )
         training_by_signal = {str(row.signal_id): row for row in training_rows}
 
     changed = 0
@@ -303,18 +326,20 @@ async def repair_partial_exit_outcomes(
         outcome.pnl_pct = target_pct
         outcome.calculation_policy_version = result.policy_version
         outcome.terminal_version = int(getattr(outcome, "terminal_version", 0) or 0) + 1
-        meta.update({
-            "tp_hit_index": stage,
-            "tp1_hit": True,
-            "tp2_hit": bool(stage >= 2),
-            "reversed_after_tp": True,
-            "partial_exit_policy": result.policy_version,
-            "partial_exit_realized_r": target_r,
-            "partial_exit_realized_percent": target_pct,
-            "partial_exit_fractions": list(result.fractions),
-            "partial_exit_tp_r_multiples": list(result.tp_r_multiples),
-            "systemic_repair": "v1.3.6.7_partial_exit_accounting",
-        })
+        meta.update(
+            {
+                "tp_hit_index": stage,
+                "tp1_hit": True,
+                "tp2_hit": bool(stage >= 2),
+                "reversed_after_tp": True,
+                "partial_exit_policy": result.policy_version,
+                "partial_exit_realized_r": target_r,
+                "partial_exit_realized_percent": target_pct,
+                "partial_exit_fractions": list(result.fractions),
+                "partial_exit_tp_r_multiples": list(result.tp_r_multiples),
+                "systemic_repair": "v1.3.6.7_partial_exit_accounting",
+            }
+        )
         outcome.meta = meta
         training = training_by_signal.get(str(signal.signal_id))
         if training is not None:
@@ -322,12 +347,14 @@ async def repair_partial_exit_outcomes(
             training.outcome_r_multiple = target_r
             training.outcome_percent = target_pct
             training_meta = dict(getattr(training, "outcome_meta", {}) or {})
-            training_meta.update({
-                "raw_r_multiple": target_r,
-                "training_r_multiple": target_r,
-                "partial_exit_policy": result.policy_version,
-                "systemic_repair": "v1.3.6.7_partial_exit_accounting",
-            })
+            training_meta.update(
+                {
+                    "raw_r_multiple": target_r,
+                    "training_r_multiple": target_r,
+                    "partial_exit_policy": result.policy_version,
+                    "systemic_repair": "v1.3.6.7_partial_exit_accounting",
+                }
+            )
             training.outcome_meta = training_meta
         changed += 1
     await session.flush()
@@ -397,7 +424,9 @@ async def reconcile_user_performance_ledger(
                         PerformanceLedgerEntry.environment == env,
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
     existing_by_signal = {str(entry.signal_id): entry for entry in existing_entries}
     upsert_by_signal: dict[str, dict[str, Any]] = {}
@@ -418,7 +447,10 @@ async def reconcile_user_performance_ledger(
             continue
         seen_signal_deliveries.add(canonical_signal_id)
         bucket, final_r, source, included, exclusion = _classify(
-            signal=signal, outcome=outcome, lifecycle=lifecycle, monitoring=monitoring,
+            signal=signal,
+            outcome=outcome,
+            lifecycle=lifecycle,
+            monitoring=monitoring,
         )
         thesis_payload = {
             "asset": signal.asset,
@@ -430,9 +462,7 @@ async def reconcile_user_performance_ledger(
         }
         current_thesis_fingerprint = signal_thesis_fingerprint(thesis_payload)
         delivery_time = (
-            delivery.delivery_confirmed_at
-            or getattr(delivery, "delivered_at_utc", None)
-            or delivery.delivered_at
+            delivery.delivery_confirmed_at or getattr(delivery, "delivered_at_utc", None) or delivery.delivered_at
         )
         if delivery_time is None:
             # Defensive invariant: the SQL proof predicate above must exclude this.
@@ -445,7 +475,9 @@ async def reconcile_user_performance_ledger(
         duplicate_of = None
         duplicate_fingerprint = None
         if delivery_time is not None and signal_entry > 0:
-            for prior_entry, prior_time, prior_signal_id, prior_fingerprint in canonical_thesis_deliveries.get(semantic_key, []):
+            for prior_entry, prior_time, prior_signal_id, prior_fingerprint in canonical_thesis_deliveries.get(
+                semantic_key, []
+            ):
                 delta = delivery_time - prior_time
                 if delta.total_seconds() < 0 or delta > duplicate_window:
                     continue
@@ -474,9 +506,9 @@ async def reconcile_user_performance_ledger(
             "outcome_source": source,
             "highest_tp": int(getattr(lifecycle, "highest_tp_hit", 0) or 0),
             "canonical_outcome": _status(
-                getattr(outcome, "canonical_outcome", None)
-                or getattr(outcome, "status", None)
-            ) or None,
+                getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None)
+            )
+            or None,
             "outcome_id": getattr(outcome, "id", None),
             "monitoring_id": getattr(monitoring, "id", None),
             "policy": PERFORMANCE_POLICY_VERSION,
@@ -517,13 +549,16 @@ async def reconcile_user_performance_ledger(
             "primary_bucket": bucket,
             "entry_status": "entered" if bucket not in {"PENDING_ENTRY", "MISSED_ENTRY", "EXPIRED"} else "not_entered",
             "highest_tp": int(getattr(lifecycle, "highest_tp_hit", 0) or 0),
-            "global_outcome": _status(getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None)) or None,
+            "global_outcome": _status(getattr(outcome, "canonical_outcome", None) or getattr(outcome, "status", None))
+            or None,
             "user_monitoring_outcome": _status(getattr(monitoring, "realized_outcome", None)) or None,
             "final_realized_r": float(final_r) if final_r is not None else None,
             "outcome_completed_at": outcome_completed_at,
             "outcome_source": source,
             "calculation_policy_version": PERFORMANCE_POLICY_VERSION,
-            "signal_plan_version": str((getattr(signal, "meta", {}) or {}).get("signal_plan_version") or "legacy-plan-v1"),
+            "signal_plan_version": str(
+                (getattr(signal, "meta", {}) or {}).get("signal_plan_version") or "legacy-plan-v1"
+            ),
             "included": bool(included),
             "exclusion_reason": exclusion,
             "snapshot_hash": snapshot_hash,
@@ -577,15 +612,17 @@ async def reconcile_user_performance_ledger(
             "calculation_policy_version": existing.calculation_policy_version,
             "row_version": existing.row_version,
         }
-        session.add(PerformanceCorrectionAudit(
-            ledger_id=existing.ledger_id,
-            actor=_SYSTEM_CORRECTION_ACTOR,
-            reason=existing.correction_reason,
-            before_values=before,
-            after_values=after,
-            tool_version="performance-policy-migration-v1",
-            created_at=now,
-        ))
+        session.add(
+            PerformanceCorrectionAudit(
+                ledger_id=existing.ledger_id,
+                actor=_SYSTEM_CORRECTION_ACTOR,
+                reason=existing.correction_reason,
+                before_values=before,
+                after_values=after,
+                tool_version="performance-policy-migration-v1",
+                created_at=now,
+            )
+        )
 
     if pending:
         dialect_name = str(session.get_bind().dialect.name or "").lower()
@@ -593,11 +630,27 @@ async def reconcile_user_performance_ledger(
             insert_stmt = pg_insert(PerformanceLedgerEntry).values(pending)
             excluded = insert_stmt.excluded
             mutable_columns = (
-                "delivery_id", "delivery_confirmed_at", "asset", "thesis_fingerprint", "timeframe", "direction",
-                "primary_bucket", "entry_status", "highest_tp", "global_outcome",
-                "user_monitoring_outcome", "final_realized_r", "outcome_completed_at",
-                "outcome_source", "calculation_policy_version", "signal_plan_version",
-                "included", "exclusion_reason", "snapshot_hash", "finalized_at", "updated_at",
+                "delivery_id",
+                "delivery_confirmed_at",
+                "asset",
+                "thesis_fingerprint",
+                "timeframe",
+                "direction",
+                "primary_bucket",
+                "entry_status",
+                "highest_tp",
+                "global_outcome",
+                "user_monitoring_outcome",
+                "final_realized_r",
+                "outcome_completed_at",
+                "outcome_source",
+                "calculation_policy_version",
+                "signal_plan_version",
+                "included",
+                "exclusion_reason",
+                "snapshot_hash",
+                "finalized_at",
+                "updated_at",
             )
             statement = insert_stmt.on_conflict_do_update(
                 constraint="uq_performance_ledger_scope",
@@ -663,8 +716,14 @@ def calculate_performance_metrics(
         average_r=average.quantize(quant, rounding=ROUND_HALF_UP) if average is not None else None,
         median_r=med.quantize(quant, rounding=ROUND_HALF_UP) if med is not None else None,
         standardized_simple_return_pct=(net * risk_fraction * Decimal("100")).quantize(quant, rounding=ROUND_HALF_UP),
-        average_standardized_return_pct=(average * risk_fraction * Decimal("100")).quantize(quant, rounding=ROUND_HALF_UP) if average is not None else None,
-        standardized_compounded_return_pct=((compounded - Decimal("1")) * Decimal("100")).quantize(quant, rounding=ROUND_HALF_UP),
+        average_standardized_return_pct=(average * risk_fraction * Decimal("100")).quantize(
+            quant, rounding=ROUND_HALF_UP
+        )
+        if average is not None
+        else None,
+        standardized_compounded_return_pct=((compounded - Decimal("1")) * Decimal("100")).quantize(
+            quant, rounding=ROUND_HALF_UP
+        ),
         completed_r_count=count,
         positive_r_count=sum(1 for value in r_values if value > 0),
     )
@@ -689,9 +748,9 @@ async def reconcile_all_performance_ledgers(
     a counter.
     """
     days = max(1, int(days or os.getenv("PERFORMANCE_RECONCILIATION_DAYS", "30") or 30))
-    limit_users = max(1, min(5000, int(
-        limit_users or os.getenv("PERFORMANCE_RECONCILIATION_USER_LIMIT", "500") or 500
-    )))
+    limit_users = max(
+        1, min(5000, int(limit_users or os.getenv("PERFORMANCE_RECONCILIATION_USER_LIMIT", "500") or 500))
+    )
     max_attempts = max(1, min(100, int(os.getenv("PERFORMANCE_RECONCILIATION_MAX_ATTEMPTS", "5") or 5)))
     env = str(environment or runtime_environment_name("development") or "development").lower()
     reconciliation_id = str(uuid4())
@@ -745,21 +804,25 @@ async def reconcile_all_performance_ledgers(
     async def _page(after_user_id: int, page_limit: int) -> list[tuple[int, int]]:
         if page_limit <= 0:
             return []
-        return list((await session.execute(
-            select(User.id, User.telegram_user_id)
-            .join(SignalDelivery, SignalDelivery.user_id == User.id)
-            .where(
-                User.id > int(after_user_id),
-                SignalDelivery.sent_ok.is_(True),
-                func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
-                SignalDelivery.telegram_chat_id.is_not(None),
-                SignalDelivery.telegram_message_id.is_not(None),
-                proof_time >= cutoff,
-            )
-            .distinct()
-            .order_by(User.id.asc())
-            .limit(page_limit)
-        )).all())
+        return list(
+            (
+                await session.execute(
+                    select(User.id, User.telegram_user_id)
+                    .join(SignalDelivery, SignalDelivery.user_id == User.id)
+                    .where(
+                        User.id > int(after_user_id),
+                        SignalDelivery.sent_ok.is_(True),
+                        func.lower(SignalDelivery.delivery_state).in_(tuple(CONFIRMED_DELIVERY_STATES)),
+                        SignalDelivery.telegram_chat_id.is_not(None),
+                        SignalDelivery.telegram_message_id.is_not(None),
+                        proof_time >= cutoff,
+                    )
+                    .distinct()
+                    .order_by(User.id.asc())
+                    .limit(page_limit)
+                )
+            ).all()
+        )
 
     retry_batch = retry_records[:limit_users]
     retry_by_id = {int(r["internal_user_id"]): r for r in retry_records}
@@ -815,12 +878,15 @@ async def reconcile_all_performance_ledgers(
         stage = "reconcile_user_projection"
         try:
             async with session.begin_nested():
-                changed += int(await reconcile_user_performance_ledger(
-                    session,
-                    telegram_user_id=int(telegram_id),
-                    environment=env,
-                    dry_run=bool(dry_run),
-                ) or 0)
+                changed += int(
+                    await reconcile_user_performance_ledger(
+                        session,
+                        telegram_user_id=int(telegram_id),
+                        environment=env,
+                        dry_run=bool(dry_run),
+                    )
+                    or 0
+                )
             if not dry_run:
                 # Commit each successfully reconciled user before moving to the
                 # next one. A timeout/cancellation can invalidate the current
@@ -833,9 +899,8 @@ async def reconcile_all_performance_ledgers(
                 retry_by_id.pop(int(internal_user_id), None)
                 resolved_at = now_utc_naive().isoformat()
                 for record in dead_letter_records:
-                    if (
-                        not record.get("resolved_at")
-                        and int(record.get("internal_user_id") or 0) == int(internal_user_id)
+                    if not record.get("resolved_at") and int(record.get("internal_user_id") or 0) == int(
+                        internal_user_id
                     ):
                         record["resolved_at"] = resolved_at
                         record["resolved_reconciliation_id"] = reconciliation_id
@@ -848,8 +913,7 @@ async def reconcile_all_performance_ledgers(
                 await session.rollback()
             except Exception:
                 logger.warning(
-                    "[performance_reconciliation] session_reset_failed "
-                    "reconciliation_id=%s internal_user_id=%s",
+                    "[performance_reconciliation] session_reset_failed reconciliation_id=%s internal_user_id=%s",
                     reconciliation_id,
                     int(internal_user_id),
                     exc_info=True,
@@ -869,11 +933,13 @@ async def reconcile_all_performance_ledgers(
             if not dry_run:
                 if attempts >= max_attempts:
                     retry_by_id.pop(int(internal_user_id), None)
-                    dead_letter_records.append({
-                        **failure_record,
-                        "reconciliation_id": reconciliation_id,
-                        "dead_lettered_at": now_utc_naive().isoformat(),
-                    })
+                    dead_letter_records.append(
+                        {
+                            **failure_record,
+                            "reconciliation_id": reconciliation_id,
+                            "dead_lettered_at": now_utc_naive().isoformat(),
+                        }
+                    )
                     dead_letter_records = dead_letter_records[-10000:]
                 else:
                     retry_by_id[int(internal_user_id)] = failure_record
@@ -897,7 +963,9 @@ async def reconcile_all_performance_ledgers(
     certification_failed = all_users_failed
     if not dry_run:
         await session.flush()
-    final_retry_records = tuple(sorted(retry_by_id.values(), key=lambda r: (int(r.get("attempts", 0)), int(r.get("internal_user_id", 0)))))
+    final_retry_records = tuple(
+        sorted(retry_by_id.values(), key=lambda r: (int(r.get("attempts", 0)), int(r.get("internal_user_id", 0))))
+    )
     result = PerformanceReconciliationResult(
         users_examined=users_examined,
         rows_changed=changed,
@@ -1012,25 +1080,33 @@ async def performance_ledger_health(
         .distinct()
         .subquery()
     )
-    proof_deliveries = int((await session.execute(
-        select(func.count()).select_from(proof_scope)
-    )).scalar_one() or 0)
-    ledger_rows = int((await session.execute(
-        select(func.count(PerformanceLedgerEntry.ledger_id)).where(
-            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-            PerformanceLedgerEntry.environment == env,
-            PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
-        )
-    )).scalar_one() or 0)
-    malformed_terminal = int((await session.execute(
-        select(func.count(PerformanceLedgerEntry.ledger_id)).where(
-            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-            PerformanceLedgerEntry.environment == env,
-            PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
-            PerformanceLedgerEntry.primary_bucket.in_(tuple(COMPLETED_BUCKETS)),
-            PerformanceLedgerEntry.final_realized_r.is_(None),
-        )
-    )).scalar_one() or 0)
+    proof_deliveries = int((await session.execute(select(func.count()).select_from(proof_scope))).scalar_one() or 0)
+    ledger_rows = int(
+        (
+            await session.execute(
+                select(func.count(PerformanceLedgerEntry.ledger_id)).where(
+                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+                    PerformanceLedgerEntry.environment == env,
+                    PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
+    malformed_terminal = int(
+        (
+            await session.execute(
+                select(func.count(PerformanceLedgerEntry.ledger_id)).where(
+                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+                    PerformanceLedgerEntry.environment == env,
+                    PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
+                    PerformanceLedgerEntry.primary_bucket.in_(tuple(COMPLETED_BUCKETS)),
+                    PerformanceLedgerEntry.final_realized_r.is_(None),
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
 
     # Re-evaluate projected rows through the same canonical classifier. Stream
     # rows so the audit stays bounded in memory at large scale. Deliberately
@@ -1040,9 +1116,7 @@ async def performance_ledger_health(
     mismatch_samples: list[str] = []
     corrected_overrides = 0
     audit_stmt = (
-        select(
-            PerformanceLedgerEntry, Signal, Outcome, SignalLifecycle, UserSignalMonitoring
-        )
+        select(PerformanceLedgerEntry, Signal, Outcome, SignalLifecycle, UserSignalMonitoring)
         .join(Signal, Signal.signal_id == PerformanceLedgerEntry.signal_id)
         .outerjoin(Outcome, Outcome.signal_id == PerformanceLedgerEntry.signal_id)
         .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == PerformanceLedgerEntry.signal_id)
@@ -1069,7 +1143,10 @@ async def performance_ledger_health(
         if str(ledger.primary_bucket or "") == "DUPLICATE_EXCLUDED":
             continue
         expected_bucket, expected_r, _source, expected_included, _exclusion = _classify(
-            signal=signal, outcome=outcome, lifecycle=lifecycle, monitoring=monitoring,
+            signal=signal,
+            outcome=outcome,
+            lifecycle=lifecycle,
+            monitoring=monitoring,
         )
         actual_r = _decimal(ledger.final_realized_r)
         r_mismatch = False
@@ -1089,14 +1166,8 @@ async def performance_ledger_health(
                 mismatch_samples.append(str(ledger.signal_id))
 
     projection_coverage = ledger_rows / proof_deliveries if proof_deliveries else 1.0
-    min_coverage = max(0.0, min(1.0, float(os.getenv(
-        "PERFORMANCE_LEDGER_MIN_PROJECTION_COVERAGE", "0.99"
-    ) or 0.99)))
-    ok = bool(
-        projection_coverage >= min_coverage
-        and malformed_terminal == 0
-        and mismatch_count == 0
-    )
+    min_coverage = max(0.0, min(1.0, float(os.getenv("PERFORMANCE_LEDGER_MIN_PROJECTION_COVERAGE", "0.99") or 0.99)))
+    ok = bool(projection_coverage >= min_coverage and malformed_terminal == 0 and mismatch_count == 0)
     return {
         "ok": ok,
         "environment": env,
@@ -1124,16 +1195,23 @@ async def get_user_performance_report(
     start = end - timedelta(days=max(1, min(3650, int(days))))
     env = str(environment or runtime_environment_name("development") or "development").lower()
     await reconcile_user_performance_ledger(
-        session, telegram_user_id=int(telegram_user_id), environment=env,
+        session,
+        telegram_user_id=int(telegram_user_id),
+        environment=env,
     )
     user = (
         await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None:
-        snapshot_id = _snapshot_hash({
-            "user": int(telegram_user_id), "start": start, "end": end, "rows": [],
-            "policy": PERFORMANCE_POLICY_VERSION,
-        })[:16]
+        snapshot_id = _snapshot_hash(
+            {
+                "user": int(telegram_user_id),
+                "start": start,
+                "end": end,
+                "rows": [],
+                "policy": PERFORMANCE_POLICY_VERSION,
+            }
+        )[:16]
         return {
             "basis": "delivery_cohort",
             "basis_label": f"Confirmed signals delivered during the last {int(days)} days",
@@ -1159,15 +1237,23 @@ async def get_user_performance_report(
             "invariant_ok": True,
             "rows": [],
         }
-    rows = list((await session.execute(
-        select(PerformanceLedgerEntry).where(
-            PerformanceLedgerEntry.user_id == int(user.id),
-            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-            PerformanceLedgerEntry.environment == env,
-            PerformanceLedgerEntry.delivery_confirmed_at >= start,
-            PerformanceLedgerEntry.delivery_confirmed_at < end,
-        ).order_by(PerformanceLedgerEntry.delivery_confirmed_at.asc())
-    )).scalars().all())
+    rows = list(
+        (
+            await session.execute(
+                select(PerformanceLedgerEntry)
+                .where(
+                    PerformanceLedgerEntry.user_id == int(user.id),
+                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+                    PerformanceLedgerEntry.environment == env,
+                    PerformanceLedgerEntry.delivery_confirmed_at >= start,
+                    PerformanceLedgerEntry.delivery_confirmed_at < end,
+                )
+                .order_by(PerformanceLedgerEntry.delivery_confirmed_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     buckets: dict[str, int] = {}
     for row in rows:
         buckets[row.primary_bucket] = buckets.get(row.primary_bucket, 0) + 1
@@ -1199,25 +1285,23 @@ async def get_user_performance_report(
         unique_theses=len(thesis_terminal),
     )
     unresolved_or_invalid = sum(
-        1 for row in rows
-        if row.primary_bucket in COMPLETED_BUCKETS and row.final_realized_r is None
+        1 for row in rows if row.primary_bucket in COMPLETED_BUCKETS and row.final_realized_r is None
     )
-    snapshot_id = _snapshot_hash({
-        "user": user.id,
-        "start": start,
-        "end": end,
-        "policy": PERFORMANCE_POLICY_VERSION,
-        "rows": [row.snapshot_hash for row in rows],
-    })[:16]
+    snapshot_id = _snapshot_hash(
+        {
+            "user": user.id,
+            "start": start,
+            "end": end,
+            "policy": PERFORMANCE_POLICY_VERSION,
+            "rows": [row.snapshot_hash for row in rows],
+        }
+    )[:16]
     terminal_coverage = resolved / delivered if delivered else 0.0
-    min_certified_coverage = max(0.0, min(1.0, float(os.getenv(
-        "PERFORMANCE_CERTIFIED_MIN_TERMINAL_COVERAGE", "0.95"
-    ) or 0.95)))
+    min_certified_coverage = max(
+        0.0, min(1.0, float(os.getenv("PERFORMANCE_CERTIFIED_MIN_TERMINAL_COVERAGE", "0.95") or 0.95))
+    )
     performance_certified = bool(
-        invariant_ok
-        and unresolved_or_invalid == 0
-        and terminal_coverage >= min_certified_coverage
-        and delivered > 0
+        invariant_ok and unresolved_or_invalid == 0 and terminal_coverage >= min_certified_coverage and delivered > 0
     )
     return {
         "basis": "delivery_cohort",
@@ -1254,18 +1338,24 @@ async def get_user_performance_report(
         "avg_r": float(metrics.average_r) if metrics.average_r is not None else None,
         "median_r": float(metrics.median_r) if metrics.median_r is not None else None,
         "standardized_simple_return_pct": float(metrics.standardized_simple_return_pct),
-        "average_standardized_return_pct": float(metrics.average_standardized_return_pct) if metrics.average_standardized_return_pct is not None else None,
+        "average_standardized_return_pct": float(metrics.average_standardized_return_pct)
+        if metrics.average_standardized_return_pct is not None
+        else None,
         "standardized_compounded_return_pct": float(metrics.standardized_compounded_return_pct),
         "profit_loss_pct": float(metrics.standardized_simple_return_pct),
         "strict_win_rate": tp3 / strict_denominator if strict_denominator else 0.0,
         "win_rate": tp3 / strict_denominator if strict_denominator else 0.0,
-        "profitable_result_rate": metrics.positive_r_count / metrics.completed_r_count if metrics.completed_r_count else 0.0,
+        "profitable_result_rate": metrics.positive_r_count / metrics.completed_r_count
+        if metrics.completed_r_count
+        else 0.0,
         "terminal_coverage": terminal_coverage,
         "outcome_coverage": terminal_coverage,
         "performance_certified": performance_certified,
         "performance_certification_reason": (
-            "certified" if performance_certified
-            else "terminal_coverage_below_threshold" if terminal_coverage < min_certified_coverage
+            "certified"
+            if performance_certified
+            else "terminal_coverage_below_threshold"
+            if terminal_coverage < min_certified_coverage
             else "ledger_invariant_or_realized_r_incomplete"
         ),
         "performance_certified_min_terminal_coverage": min_certified_coverage,
@@ -1312,9 +1402,7 @@ async def correct_performance_ledger_entry(
         raise ValueError("final_realized_r must be finite")
     row = (
         await session.execute(
-            select(PerformanceLedgerEntry)
-            .where(PerformanceLedgerEntry.ledger_id == str(ledger_id))
-            .with_for_update()
+            select(PerformanceLedgerEntry).where(PerformanceLedgerEntry.ledger_id == str(ledger_id)).with_for_update()
         )
     ).scalar_one_or_none()
     if row is None:
@@ -1343,22 +1431,30 @@ async def correct_performance_ledger_entry(
         "exclusion_reason": row.exclusion_reason,
         "row_version": row.row_version,
     }
-    row.snapshot_hash = _snapshot_hash({
-        "ledger_id": row.ledger_id, "correction": after, "actor": actor_s,
-        "reason": reason_s, "at": now,
-    })
+    row.snapshot_hash = _snapshot_hash(
+        {
+            "ledger_id": row.ledger_id,
+            "correction": after,
+            "actor": actor_s,
+            "reason": reason_s,
+            "at": now,
+        }
+    )
     after["snapshot_hash"] = row.snapshot_hash
-    session.add(PerformanceCorrectionAudit(
-        ledger_id=row.ledger_id,
-        actor=actor_s[:128],
-        reason=reason_s,
-        before_values=before,
-        after_values=after,
-        tool_version="performance-correction-v1",
-        created_at=now,
-    ))
+    session.add(
+        PerformanceCorrectionAudit(
+            ledger_id=row.ledger_id,
+            actor=actor_s[:128],
+            reason=reason_s,
+            before_values=before,
+            after_values=after,
+            tool_version="performance-correction-v1",
+            created_at=now,
+        )
+    )
     await session.flush()
     return row
+
 
 async def audit_user_performance(
     session,
@@ -1369,9 +1465,15 @@ async def audit_user_performance(
 ) -> dict[str, Any]:
     """Audit the exact canonical snapshot already shown to the user when supplied."""
     report = snapshot or await get_user_performance_report(
-        session, telegram_user_id=telegram_user_id, days=days,
+        session,
+        telegram_user_id=telegram_user_id,
+        days=days,
     )
-    invalid_r = [row.signal_id for row in report.get("rows", []) if row.final_realized_r is not None and not math.isfinite(float(row.final_realized_r))]
+    invalid_r = [
+        row.signal_id
+        for row in report.get("rows", [])
+        if row.final_realized_r is not None and not math.isfinite(float(row.final_realized_r))
+    ]
     return {
         "snapshot_id": report.get("snapshot_id"),
         "snapshot_generated_at": report.get("snapshot_generated_at"),
@@ -1384,7 +1486,8 @@ async def audit_user_performance(
         "invalid_final_r": invalid_r,
         "excluded": [
             {"signal_id": row.signal_id, "reason": row.exclusion_reason}
-            for row in report.get("rows", []) if not row.included
+            for row in report.get("rows", [])
+            if not row.included
         ],
     }
 

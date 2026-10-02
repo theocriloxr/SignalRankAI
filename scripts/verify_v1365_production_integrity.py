@@ -5,6 +5,7 @@ This verifier intentionally does not activate live money or assert a win rate. I
 proves that the release contains the fail-closed controls required before runtime
 certification.
 """
+
 from __future__ import annotations
 
 import ast
@@ -70,11 +71,21 @@ def main() -> int:
         parse(path)
 
     text("engine/core.py", "thesis_fingerprint", "PROFILE_DRIVEN_UNIVERSE_ENABLED", "PROFILE_DRIVEN_TIMEFRAMES_ENABLED")
-    text("core/paper_trading_service.py", "duplicate_open_asset", "PAPER_MAX_ENTRY_DEVIATION_BPS", "PAPER_MAX_TOTAL_EXPOSURE_PCT")
+    text(
+        "core/paper_trading_service.py",
+        "duplicate_open_asset",
+        "PAPER_MAX_ENTRY_DEVIATION_BPS",
+        "PAPER_MAX_TOTAL_EXPOSURE_PCT",
+    )
     text("services/performance_ledger.py", "PERFORMANCE_CERTIFIED_MIN_TERMINAL_COVERAGE", "thesis_fingerprint")
     text("engine/shadow_outcome_worker.py", "created_at", "ambiguous")
     text("engine/admin_pulse.py", "Confirmed recipient deliveries", "Decision rows evaluated")
-    text("core/financial_activation.py", "PRODUCTION_INTEGRITY_CERTIFICATION_ID", "ML_CALIBRATION_ARTIFACT_ID", "ASSET_DISCOVERY_CERTIFICATION_ID")
+    text(
+        "core/financial_activation.py",
+        "PRODUCTION_INTEGRITY_CERTIFICATION_ID",
+        "ML_CALIBRATION_ARTIFACT_ID",
+        "ASSET_DISCOVERY_CERTIFICATION_ID",
+    )
     text("core/release_guard.py", "asset_discovery", "profile_routing", "ml_calibration")
     text("signalrank_telegram/commands.py", "PROVISIONAL", "NOT FOR PUBLIC CLAIMS")
     text("signalrank_telegram/extended_commands.py", "paper_close_all")
@@ -83,8 +94,26 @@ def main() -> int:
     stale = evaluate_signal_freshness(timeframe="1h", generated_at=now - timedelta(hours=2), now=now, purpose="paper")
     require(not stale.ok and stale.reason == "signal_stale", "paper stale signal rejected")
 
-    a = signal_thesis_fingerprint({"asset": "BTCUSDT", "direction": "SELL", "strategy": "EMA Trend", "regime": "trend", "entry": 63000, "timeframe": "15m"})
-    b = signal_thesis_fingerprint({"asset": "BTCUSDT", "direction": "SHORT", "strategy": "EMA Trend", "regime": "trend", "entry": 63020, "timeframe": "1h"})
+    a = signal_thesis_fingerprint(
+        {
+            "asset": "BTCUSDT",
+            "direction": "SELL",
+            "strategy": "EMA Trend",
+            "regime": "trend",
+            "entry": 63000,
+            "timeframe": "15m",
+        }
+    )
+    b = signal_thesis_fingerprint(
+        {
+            "asset": "BTCUSDT",
+            "direction": "SHORT",
+            "strategy": "EMA Trend",
+            "regime": "trend",
+            "entry": 63020,
+            "timeframe": "1h",
+        }
+    )
     require(a == b, "cross-timeframe repricing collapses to one thesis")
 
     unsupported = evaluate_public_win_rate_claim(wins=120, losses=80, delivered=240, resolved=200, unique_theses=120)
@@ -94,7 +123,9 @@ def main() -> int:
 
     for key in ("PRODUCTION_INTEGRITY_CERTIFIED", "LIVE_RUNTIME_CERTIFICATION_ID"):
         os.environ.pop(key, None)
-    live = evaluate_live_signal_admission({"asset": "BTCUSDT", "direction": "long", "timeframe": "1h", "generated_at": now})
+    live = evaluate_live_signal_admission(
+        {"asset": "BTCUSDT", "direction": "long", "timeframe": "1h", "generated_at": now}
+    )
     require(not live.allowed, "live execution fails closed without certification")
 
     railway = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))

@@ -3,6 +3,7 @@
 Live performance is permitted only for signals that have an acknowledged
 Telegram delivery. Paper, shadow, backtest and legacy records remain separate.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -61,13 +62,17 @@ def evaluate_outcome_eligibility(
 ) -> OutcomeEligibility:
     """Return the authoritative outcome category and eligibility decision."""
     meta = _value(signal, "meta", {}) or {}
-    source = str(
-        _value(signal, "outcome_category", None)
-        or _value(signal, "source", None)
-        or (meta.get("outcome_category") if isinstance(meta, Mapping) else None)
-        or (meta.get("source") if isinstance(meta, Mapping) else None)
-        or ""
-    ).upper().strip()
+    source = (
+        str(
+            _value(signal, "outcome_category", None)
+            or _value(signal, "source", None)
+            or (meta.get("outcome_category") if isinstance(meta, Mapping) else None)
+            or (meta.get("source") if isinstance(meta, Mapping) else None)
+            or ""
+        )
+        .upper()
+        .strip()
+    )
 
     if bool(_value(signal, "is_shadow", False)) or source == SHADOW:
         return OutcomeEligibility(False, SHADOW, "shadow_signal")
@@ -98,13 +103,15 @@ def evaluate_outcome_eligibility(
     if confirmed_at is None:
         return OutcomeEligibility(False, INVALIDATED_UNDELIVERED, "missing_delivery_timestamp", delivery_id)
 
-    lifecycle_state = str(
-        _value(lifecycle, "state", None)
-        or _value(signal, "lifecycle_state", None)
-        or "WATCHING_FOR_ENTRY"
-    ).upper().strip()
+    lifecycle_state = (
+        str(_value(lifecycle, "state", None) or _value(signal, "lifecycle_state", None) or "WATCHING_FOR_ENTRY")
+        .upper()
+        .strip()
+    )
     if lifecycle_state not in _VALID_LIVE_STATES:
-        return OutcomeEligibility(False, INVALIDATED_UNDELIVERED, f"invalid_lifecycle_state:{lifecycle_state}", delivery_id)
+        return OutcomeEligibility(
+            False, INVALIDATED_UNDELIVERED, f"invalid_lifecycle_state:{lifecycle_state}", delivery_id
+        )
 
     return OutcomeEligibility(True, LIVE_DELIVERED, "verified_delivery", delivery_id)
 

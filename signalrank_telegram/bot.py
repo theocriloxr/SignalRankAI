@@ -1,3 +1,4 @@
+from typing import Any
 from utils.async_runner import run_sync
 import threading
 from core.redis_state import state, mark_signal_delivered_sync
@@ -930,8 +931,8 @@ import asyncio
 import socket
 import logging
 import time
+import html
 from telegram import Bot
-from telegram.ext import Application, CommandHandler
 from datetime import datetime, timedelta
 
 from core.performance import performance_tracker
@@ -1205,6 +1206,7 @@ async def _send_message_async(
     telemetry_started_at: float | None = None,
     telemetry_tier: str | None = None,
     telemetry_regime: str | None = None,
+    reply_markup: Any = None,
 ) -> object:
     # Global fix: escape text for Markdown/MarkdownV2 parse modes
     try:
@@ -1212,7 +1214,13 @@ async def _send_message_async(
             from telegram.helpers import escape_markdown
             version = 2 if "v2" in parse_mode.lower() else 1
             text = escape_markdown(str(text), version=version)
-        msg = await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
+        msg = await _telegram_send_message_guarded(
+            bot,
+            chat_id=chat_id,
+            text=text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
         if telemetry_started_at is not None:
             observe_signal_dispatch(
                 max(0.0, time.perf_counter() - float(telemetry_started_at)),
@@ -2297,6 +2305,49 @@ async def _persist_delivery_phase(
         return False
 
 
+def _delivery_signal_snapshot(signal: dict) -> dict[str, Any]:
+    """Return the immutable, JSON-safe signal view actually sent to the user."""
+
+    def _safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if hasattr(value, "isoformat"):
+            try:
+                return value.isoformat()
+            except Exception:
+                pass
+        if isinstance(value, (list, tuple)):
+            return [_safe(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): _safe(item) for key, item in value.items()}
+        return str(value)
+
+    generated_at = signal.get("generated_at") or signal.get("created_at")
+    snapshot = {
+        "signal_id": signal.get("signal_id") or signal.get("id"),
+        "display_id": signal.get("display_id"),
+        "asset": signal.get("asset") or signal.get("symbol"),
+        "asset_class": signal.get("asset_class"),
+        "timeframe": signal.get("timeframe"),
+        "direction": signal.get("direction"),
+        "entry": signal.get("entry"),
+        "stop_loss": signal.get("stop_loss"),
+        "take_profit": signal.get("take_profit"),
+        "take_profits": signal.get("take_profits"),
+        "tp1": signal.get("tp1"),
+        "tp2": signal.get("tp2"),
+        "tp3": signal.get("tp3"),
+        "score": signal.get("score"),
+        "strategy_name": signal.get("strategy_name") or signal.get("strategy"),
+        "regime": signal.get("regime") or signal.get("market_regime"),
+        "generated_at": generated_at,
+        "expires_at": signal.get("expires_at"),
+        "ml_recovery_mode": signal.get("ml_recovery_mode"),
+        "ml_recovery_reason": signal.get("ml_recovery_reason"),
+    }
+    return {key: _safe(value) for key, value in snapshot.items() if value is not None}
+
+
 async def _stash_telegram_delivery_receipt(
     *,
     telegram_user_id: int,
@@ -2323,6 +2374,7 @@ async def _stash_telegram_delivery_receipt(
         message_id=int(message_id),
         mode=str(mode or "sent"),
         replaces_signal_id=replaces_signal_id,
+        signal_snapshot=_delivery_signal_snapshot(signal),
     )
     stashed = await receipt_store.stash(receipt)
     proof = {
@@ -2331,6 +2383,7 @@ async def _stash_telegram_delivery_receipt(
         "message_id": int(message_id),
         "delivery_receipt": receipt.as_dict(),
         "receipt_stashed": bool(stashed),
+        "signal_snapshot": dict(receipt.signal_snapshot or {}),
     }
     if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False):
         task = asyncio.create_task(
@@ -2377,7 +2430,7 @@ async def _deliver_or_update_signal_async(
         from db.models import User
         from db.session import get_session
         from sqlalchemy import select
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         async with get_session(priority="background", label="signalrank_telegram_bot") as _tz_session:
             _tz_user = (await _tz_session.execute(
@@ -2834,6 +2887,17 @@ async def _mark_delivery_with_telegram_proof(
                 target_state.value,
                 None if success else str(error or "delivery_not_confirmed"),
             )
+            if success:
+                try:
+                    from signalrank_telegram.command_resilience import command_response_cache
+
+                    command_response_cache.delete_prefix(f"signals:{int(telegram_user_id)}:")
+                except Exception:
+                    logger.debug(
+                        "[signals_cache] invalidation skipped user=%s",
+                        telegram_user_id,
+                        exc_info=True,
+                    )
             return success
 
     try:
@@ -3559,8 +3623,8 @@ async def _send_signal_with_engagement_async(
     and save message_id to ActiveSignalMessage for live-edit support."""
     counts = await _load_signal_engagement_counts(str(signal_id))
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
+    _dispatch_started = time.perf_counter()
     try:
-        _dispatch_started = time.perf_counter()
         rich_html = None
         try:
             if signal:
@@ -3580,9 +3644,12 @@ async def _send_signal_with_engagement_async(
             disable_notification=False,
         )
         try:
-            from web.app import telegram_dispatch_latency_seconds
-            telegram_dispatch_latency_seconds.labels(status="ok").observe(
-                max(0.0, time.perf_counter() - _dispatch_started)
+            from core.telemetry import observe_signal_dispatch
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - _dispatch_started),
+                tier="unknown",
+                regime=str((signal or {}).get("regime") or "unknown"),
+                status="ok",
             )
         except Exception:
             pass
@@ -3610,9 +3677,12 @@ async def _send_signal_with_engagement_async(
             send_exc,
         )
         try:
-            from web.app import telegram_dispatch_latency_seconds
-            telegram_dispatch_latency_seconds.labels(status="fallback").observe(
-                max(0.0, time.perf_counter() - _dispatch_started)
+            from core.telemetry import observe_signal_dispatch
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - _dispatch_started),
+                tier="unknown",
+                regime=str((signal or {}).get("regime") or "unknown"),
+                status="fallback",
             )
         except Exception:
             pass
@@ -3715,7 +3785,13 @@ def _send_signal_with_engagement_sync(
     return None
 
 
-def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+def _send_message_sync(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    reply_markup: Any = None,
+) -> None:
     """Send a Telegram message from sync code.
 
     python-telegram-bot v20+ uses async methods. The engine and APScheduler jobs
@@ -3725,12 +3801,26 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        run_sync(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
+        run_sync(
+            _send_message_async(
+                bot,
+                int(chat_id),
+                str(text),
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+        )
         return
     # If we're already in an event loop, schedule it.
     try:
         task = loop.create_task(
-            _send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode)
+            _send_message_async(
+                bot,
+                int(chat_id),
+                str(text),
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
         )
         task.add_done_callback(_consume_telegram_task_result)
     except Exception as e:
@@ -4920,7 +5010,21 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     f"asset={signal.get('asset') or signal.get('symbol')}"
                                 )
                                 continue
-                            s = await get_or_create_signal(session, signal)
+                            try:
+                                s = await get_or_create_signal(session, signal)
+                            except Exception as _dedup_exc:
+                                try:
+                                    from db.pg_features import SignalDedupBlocked as _SDB
+                                    if isinstance(_dedup_exc, _SDB):
+                                        logger.info(
+                                            "[delivery_reserve] dedup blocked reason=%s asset=%s -- skip delivery",
+                                            getattr(_dedup_exc, "reason", str(_dedup_exc)),
+                                            signal.get("asset"),
+                                        )
+                                        continue
+                                except Exception:
+                                    pass
+                                raise
                             logger.debug(f"[db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}")
                             ok = await record_signal_delivery(
                                 session,
@@ -4982,7 +5086,22 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             label="delivery_reserve_one",
                             timeout_seconds=max(3.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 15.0)),
                         ) as session:
-                            s = await get_or_create_signal(session, _signal)
+                            try:
+                                s = await get_or_create_signal(session, _signal)
+                            except Exception as _dedup_exc:
+                                try:
+                                    from db.pg_features import SignalDedupBlocked as _SDB
+                                    if isinstance(_dedup_exc, _SDB):
+                                        logger.info(
+                                            "[delivery_reserve_one] dedup blocked reason=%s asset=%s -- skip",
+                                            getattr(_dedup_exc, "reason", str(_dedup_exc)),
+                                            _signal.get("asset"),
+                                        )
+                                        await session.rollback()
+                                        return None
+                                except Exception:
+                                    pass
+                                raise
                             ok = await record_signal_delivery(
                                 session,
                                 telegram_user_id=int(user_id),
@@ -6631,13 +6750,11 @@ def run_bot() -> None:
     application.add_handler(_CQH_cancel(cancel_nevermind_callback, pattern="^cancel_nevermind$"))
 
     # \u2500\u2500 Terms gate callbacks (/start disclaimer) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from .commands import agree_terms_callback, decline_terms_callback
     from telegram.ext import CallbackQueryHandler as _CQH_terms
     application.add_handler(_CQH_terms(agree_terms_callback, pattern="^agree_terms$"))
     application.add_handler(_CQH_terms(decline_terms_callback, pattern="^decline_terms$"))
 
     # \u2500\u2500 VIP waitlist join callback (/upgrade when full) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from .commands import vip_waitlist_join_callback
     from telegram.ext import CallbackQueryHandler as _CQH_vip
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
@@ -8011,7 +8128,12 @@ def run_bot() -> None:
                             + timing
                         )
 
-                    def _format_non_price_terminal_message(label: str, explanation: str) -> str:
+                    def _format_non_price_terminal_message(
+                        label: str,
+                        explanation: str,
+                        *,
+                        no_trade: bool = False,
+                    ) -> str:
                         outcome_meta = dict(getattr(oc, "meta", {}) or {})
                         closed_at = getattr(oc, "closed_at", None)
                         event_time = outcome_meta.get("outcome_event_time") or (
@@ -8031,10 +8153,16 @@ def run_bot() -> None:
                             else f"Provider: <b>{provider}</b>\n"
                         )
                         realized_r = getattr(oc, "r_multiple", None)
-                        result_line = (
-                            f"Recorded result: <b>{float(realized_r):+.2f}R</b>\n"
-                            if realized_r is not None else ""
-                        )
+                        if no_trade:
+                            result_line = (
+                                "Trade result: <b>No trade — entry never triggered</b>\n"
+                                "Realized R: <b>N/A</b>\n"
+                            )
+                        else:
+                            result_line = (
+                                f"Recorded result: <b>{float(realized_r):+.2f}R</b>\n"
+                                if realized_r is not None else ""
+                            )
                         highest_tp_text = f"TP{tp_level_num}" if tp_level_num else "None"
                         return (
                             f"{label}\n"
@@ -8069,6 +8197,7 @@ def run_bot() -> None:
                         msg = _format_non_price_terminal_message(
                             "⚪ <b>Entry Not Triggered</b>",
                             "The verified entry zone was not reached before the signal expired.",
+                            no_trade=True,
                         )
                     elif status in {"invalid", "invalidated", "cancel", "cancelled", "canceled"}:
                         notify = True

@@ -7,6 +7,7 @@ actually subscribed plan; heatmaps/options stay off by default.
 Dormant-by-default: without ``COINGLASS_API_KEY`` returns ``None`` and reports
 ``missing_credentials``.  Never fills logs with exceptions.
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,10 +79,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "coinglass",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("COINGLASS_API_KEY",),
         "api_url": API_URL,
         "capabilities": {

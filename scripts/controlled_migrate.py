@@ -5,6 +5,7 @@ This command mutates the database only after the release source and production
 backup evidence are valid. It holds the SignalRankAI PostgreSQL advisory lock
 for the complete Alembic upgrade and proves the deployed revision afterwards.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +36,9 @@ def _truthy(name: str) -> bool:
 
 
 def _environment() -> str:
-    return (_value("RAILWAY_ENVIRONMENT_NAME") or _value("RAILWAY_ENVIRONMENT") or _value("APP_ENV") or "dev").lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("dev")
 
 
 def _parse_utc(value: str) -> datetime | None:
@@ -51,9 +54,12 @@ def _parse_utc(value: str) -> datetime | None:
 def _source_errors() -> list[str]:
     errors: list[str] = []
     railway = bool(_value("RAILWAY_SERVICE_NAME") or _value("RAILWAY_PROJECT_ID"))
-    protected = railway or _environment() in {"production", "prod"} or _value("SIGNALRANK_ENV_PROFILE") in {
-        "staging-certification", "production-advisory", "production-live-owner-canary"
-    }
+    protected = (
+        railway
+        or _environment() in {"production", "prod"}
+        or _value("SIGNALRANK_ENV_PROFILE")
+        in {"staging-certification", "production-advisory", "production-live-owner-canary"}
+    )
     if not protected:
         return errors
 
@@ -113,17 +119,23 @@ def _database_urls() -> tuple[str, str]:
     # verifying another.
     from db.database_urls import normalize_psycopg2_dsn, normalize_sync_postgres_url
 
-    raw = (
-        _value("DATABASE_MIGRATION_URL")
-        or _value("DATABASE_DIRECT_URL")
-        or _value("DATABASE_URL")
-    )
+    raw = _value("DATABASE_MIGRATION_URL") or _value("DATABASE_DIRECT_URL") or _value("DATABASE_URL")
     if not raw:
-        raise RuntimeError(
-            "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured"
-        )
+        raise RuntimeError("DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured")
     return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
 
+
+
+def _current_revision(connection) -> str | None:
+    """Read Alembic revision without failing on a brand-new empty database."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('public.alembic_version')")
+        exists = cursor.fetchone()
+        if not exists or exists[0] is None:
+            return None
+        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
 
 def migrate() -> dict[str, Any]:
     source_errors = _source_errors()
@@ -147,10 +159,7 @@ def migrate() -> dict[str, Any]:
 
         # Fast-path routine deploys: if schema is already at repository head,
         # do not require a fresh backup and do not contend on the migration lock.
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cursor.fetchone()
-            before = str(row[0]) if row else None
+        before = _current_revision(connection)
         if before == expected:
             after = before
         else:
@@ -176,18 +185,13 @@ def migrate() -> dict[str, Any]:
                 if lock_acquired:
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(
-                        f"migration advisory lock busy after {lock_wait_seconds:.1f}s"
-                    )
+                    raise RuntimeError(f"migration advisory lock busy after {lock_wait_seconds:.1f}s")
                 time.sleep(0.5)
 
             try:
                 # Re-read under the lock because another migration owner may
                 # have completed while this deployment was waiting.
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                    row = cursor.fetchone()
-                    before = str(row[0]) if row else None
+                before = _current_revision(connection)
                 if before == expected:
                     after = before
                     migration_required = False
@@ -195,14 +199,9 @@ def migrate() -> dict[str, Any]:
                     config = Config(str(ROOT / "alembic.ini"))
                     config.set_main_option("sqlalchemy.url", db_url)
                     command.upgrade(config, "head")
-                    with connection.cursor() as cursor:
-                        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                        row = cursor.fetchone()
-                        after = str(row[0]) if row else None
+                    after = _current_revision(connection)
                     if after != expected:
-                        raise RuntimeError(
-                            f"migration verification failed: current={after} expected={expected}"
-                        )
+                        raise RuntimeError(f"migration verification failed: current={after} expected={expected}")
             finally:
                 if lock_acquired:
                     with connection.cursor() as cursor:

@@ -65,14 +65,12 @@ def _env_int_limit(name: str, default: int) -> int:
 
 # Tier daily signal limits (DELIVERED signals per user)
 TIER_DAILY_LIMITS: Final[dict[str, float]] = {
-    tier.value.lower(): float(_get_policy_entitlements(tier).daily_signal_limit)
-    for tier in _POLICY_TIER_ORDER
+    tier.value.lower(): float(_get_policy_entitlements(tier).daily_signal_limit) for tier in _POLICY_TIER_ORDER
 }
 
 # Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-    tier.value.lower(): float(_get_policy_entitlements(tier).minimum_signal_score)
-    for tier in _POLICY_TIER_ORDER
+    tier.value.lower(): float(_get_policy_entitlements(tier).minimum_signal_score) for tier in _POLICY_TIER_ORDER
 }
 
 # Signal depth per tier (how many TP levels shown)
@@ -128,25 +126,29 @@ UPGRADE_PROMPT_FREQUENCY_INT: Final[int] = 3  # Every 3rd signal, or based on si
 # Signal freshness: max age in seconds before signal is considered stale.
 # Keep this strict and centralized as the single source for freshness policy.
 MAX_SIGNAL_AGE_SECONDS: Final[dict[str, int]] = {
-    "crypto":    300,    # 5 min
-  "fx":        300,    # 5 min
-  "stock":     300,    # 5 min
-  "commodity": 300,    # 5 min
+    "crypto": 300,  # 5 min
+    "fx": 300,  # 5 min
+    "stock": 300,  # 5 min
+    "commodity": 300,  # 5 min
 }
 
 # Price drift tolerance: max fractional deviation from entry price (not %).
 # These mirror the % values in engine/stale_signal_validator._CLASS_THRESHOLDS.
 PRICE_DRIFT_TOLERANCE: Final[dict[str, float]] = {
-    "crypto":    0.020,  # 2.0 % — volatile 24/7 market; full cycle can take 30-120 s
-    "fx":        0.003,  # 0.3 % — tight spreads; FX moves slowly relative to crypto
-    "stock":     0.010,  # 1.0 % — intraday moves justify 1 % tolerance
+    "crypto": 0.020,  # 2.0 % — volatile 24/7 market; full cycle can take 30-120 s
+    "fx": 0.003,  # 0.3 % — tight spreads; FX moves slowly relative to crypto
+    "stock": 0.010,  # 1.0 % — intraday moves justify 1 % tolerance
     "commodity": 0.008,  # 0.8 % — between FX and stock volatility
 }
 
 # Candle staleness multiplier: max age = timeframe * this value
 # For Railway Hobby tier, use 24x to allow signals even if data is hours behind
-_is_railway = bool((_os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (_os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-CANDLE_STALENESS_MULTIPLIER: Final[float] = float(_os.getenv("CANDLE_STALENESS_MULTIPLIER", "24.0" if _is_railway else "1.5"))
+_is_railway = bool(
+    (_os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (_os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
+)
+CANDLE_STALENESS_MULTIPLIER: Final[float] = float(
+    _os.getenv("CANDLE_STALENESS_MULTIPLIER", "24.0" if _is_railway else "1.5")
+)
 
 # NEW PRODUCTION RISK CONSTANTS
 EXPECTANCY_MIN: Final[float] = 0.15  # Block signals from assets/strategies with expectancy < 0.15
@@ -165,17 +167,13 @@ FREE_SIGNAL_DAILY_LIMIT: Final[int] = _env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
 
 
-TIER_RANK: Final[dict[str, int]] = {
-    tier.value.lower(): _policy_tier_rank(tier)
-    for tier in _POLICY_TIER_ORDER
-}
+TIER_RANK: Final[dict[str, int]] = {tier.value.lower(): _policy_tier_rank(tier) for tier in _POLICY_TIER_ORDER}
 
 TIER_MIN_SCORES: Final[dict[str, float]] = TIER_SCORE_THRESHOLDS
 
 
 TIER_FEATURES: Final[dict[str, set[str]]] = {
-    tier.value.lower(): set(_get_policy_entitlements(tier).features)
-    for tier in _POLICY_TIER_ORDER
+    tier.value.lower(): set(_get_policy_entitlements(tier).features) for tier in _POLICY_TIER_ORDER
 }
 
 TIER_PRICES_NGN: Final[dict[str, int]] = {
@@ -256,4 +254,3 @@ def get_daily_limit(tier: str) -> float:
 def get_min_score(tier: str) -> float:
     """Return the minimum delivery score for a tier."""
     return TIER_SCORE_THRESHOLDS.get(normalize_tier(tier), TIER_SCORE_THRESHOLDS["free"])
-

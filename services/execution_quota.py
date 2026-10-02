@@ -5,6 +5,7 @@ execution counter.  A slot is reserved before broker I/O and released only for
 a definite pre-order rejection; ambiguous submissions remain reserved until
 reconciliation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,9 +43,7 @@ async def _reserve_execution_quota(
                 query = query.where(User.id == int(canonical_user_id))
             else:
                 query = query.where(User.telegram_user_id == int(telegram_user_id))
-            user = (
-                await session.execute(query.with_for_update().limit(1))
-            ).scalar_one_or_none()
+            user = (await session.execute(query.with_for_update().limit(1))).scalar_one_or_none()
             if user is None:
                 await session.rollback()
                 return False, "user_profile_missing", None
@@ -82,10 +81,7 @@ async def _reserve_execution_quota(
             )
             drawdown_cap = float(getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0)
             if profile_prefs is not None:
-                profile_drawdown = float(
-                    getattr(profile_prefs, "max_daily_loss_pct", drawdown_cap)
-                    or drawdown_cap
-                )
+                profile_drawdown = float(getattr(profile_prefs, "max_daily_loss_pct", drawdown_cap) or drawdown_cap)
                 if profile_drawdown > 0:
                     drawdown_cap = min(drawdown_cap, profile_drawdown)
             if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
@@ -97,9 +93,7 @@ async def _reserve_execution_quota(
             if tier_upper == "PREMIUM":
                 limit = max(0, int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3))
                 if profile_prefs is not None:
-                    profile_limit = int(
-                        getattr(profile_prefs, "max_daily_trades", limit) or limit
-                    )
+                    profile_limit = int(getattr(profile_prefs, "max_daily_trades", limit) or limit)
                     if profile_limit > 0:
                         limit = min(limit, profile_limit) if limit > 0 else profile_limit
                 if limit == 0 or current >= limit:
@@ -123,11 +117,7 @@ async def _reserve_execution_quota(
                         )
                     profile_limit = int(profile_limit or 0)
                     if profile_limit > 0:
-                        auto_limit = (
-                            min(auto_limit, profile_limit)
-                            if auto_limit > 0
-                            else profile_limit
-                        )
+                        auto_limit = min(auto_limit, profile_limit) if auto_limit > 0 else profile_limit
                 if auto_limit == 0:
                     await session.rollback()
                     return False, "auto_execution_limit_disabled", int(user.id)
@@ -179,14 +169,10 @@ async def release_user_execution_quota(user_db_id: int | None) -> None:
     try:
         async with get_session(label="execution.quota.release", timeout_seconds=8.0) as session:
             user = (
-                await session.execute(
-                    select(User).where(User.id == int(user_db_id)).with_for_update().limit(1)
-                )
+                await session.execute(select(User).where(User.id == int(user_db_id)).with_for_update().limit(1))
             ).scalar_one_or_none()
             if user is not None:
-                user.daily_executions_today = max(
-                    0, int(getattr(user, "daily_executions_today", 0) or 0) - 1
-                )
+                user.daily_executions_today = max(0, int(getattr(user, "daily_executions_today", 0) or 0) - 1)
             await session.commit()
     except Exception:
         logger.warning("failed to release execution quota; reconciliation required", exc_info=True)

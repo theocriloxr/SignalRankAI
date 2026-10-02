@@ -29,11 +29,7 @@ def scheduler_job_scope(job_name: str) -> str:
     explicit = str(os.getenv(f"{job_name.upper()}_LOCK_SCOPE") or "").strip()
     if explicit:
         return explicit
-    project = str(
-        os.getenv("RAILWAY_PROJECT_ID")
-        or os.getenv("RAILWAY_PROJECT_NAME")
-        or "local"
-    ).strip()
+    project = str(os.getenv("RAILWAY_PROJECT_ID") or os.getenv("RAILWAY_PROJECT_NAME") or "local").strip()
     environment = runtime_environment_name("development")
     return f"{project}:{environment}:{str(job_name).strip().lower()}"
 

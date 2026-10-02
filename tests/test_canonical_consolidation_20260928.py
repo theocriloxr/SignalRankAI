@@ -49,7 +49,11 @@ def test_platform_hardening_survives_canonical_merge() -> None:
     assert "/transaction/verify/" in api
     assert '@app.get("/billing/complete"' in web
     assert '@app.get("/readyz"' in web
-    assert "select(func.count()).select_from(Signal)" in web
+    health = web[web.index('@app.get("/health"'):web.index('@app.get("/ready"')]
+    ready = web[web.index('@app.get("/ready"'):web.index('@app.get("/version"')]
+    assert "get_session(" not in health
+    assert "select(1)" in ready
+    assert "status_code=503" in ready
     assert "SignalRankAI <hello@criloxsolutions.com>" in mail
 
 def test_cross_channel_command_catalog_and_operator_controls_are_real_routes() -> None:

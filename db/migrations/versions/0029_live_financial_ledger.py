@@ -4,6 +4,7 @@ Revision ID: 0029_live_financial_ledger
 Revises: 0028_outcome_projection_guard
 Create Date: 2026-07-30
 """
+
 from __future__ import annotations
 
 from alembic import op

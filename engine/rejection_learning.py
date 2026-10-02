@@ -4,6 +4,7 @@ This module deliberately keeps stale/rejected observations out of live
 performance while retaining enough provenance for the shadow tracker and ML
 training pipeline to evaluate what would have happened.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,13 +59,15 @@ async def persist_rejected_signal_learning(
             "must_not_enter_live_performance": True,
         }
         if quote is not None:
-            features.update({
-                "quote_provider": getattr(quote, "provider", None),
-                "quote_kind": getattr(quote, "quote_kind", None),
-                "quote_request_id": getattr(quote, "request_id", None),
-                "quote_source_age_ms": getattr(quote, "source_age_ms", None),
-                "quote_latency_ms": getattr(quote, "latency_ms", None),
-            })
+            features.update(
+                {
+                    "quote_provider": getattr(quote, "provider", None),
+                    "quote_kind": getattr(quote, "quote_kind", None),
+                    "quote_request_id": getattr(quote, "request_id", None),
+                    "quote_source_age_ms": getattr(quote, "source_age_ms", None),
+                    "quote_latency_ms": getattr(quote, "latency_ms", None),
+                }
+            )
         if extra_features:
             features.update(dict(extra_features))
 
@@ -110,8 +113,12 @@ def schedule_rejected_signal_learning(
         return None
     task = loop.create_task(
         persist_rejected_signal_learning(
-            signal, reason=reason, rejection_type=rejection_type,
-            live_price=live_price, quote=quote, extra_features=extra_features,
+            signal,
+            reason=reason,
+            rejection_type=rejection_type,
+            live_price=live_price,
+            quote=quote,
+            extra_features=extra_features,
         ),
         name=f"rejection-learning:{rejection_type}",
     )

@@ -1,6 +1,7 @@
 """
 Signal deduplication, caching, and ML rejection tracking.
 """
+
 import hashlib
 import logging
 import asyncio
@@ -29,6 +30,7 @@ _REJECTION_LAST_FLUSH_MONO = time.monotonic()
 _REJECTION_LAST_DEFER_LOG_MONO = 0.0
 _REJECTION_FLUSH_TASK: asyncio.Task[None] | None = None
 _REJECTION_FLUSH_TASK_LOCK = threading.Lock()
+
 
 def _json_safe(value: Any) -> Any:
     """Recursively convert telemetry values into JSON-compatible structures."""
@@ -108,7 +110,10 @@ def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
 
         from services.asset_repeat_policy import canonical_delivery_cooldown_key, legacy_delivery_cooldown_keys
 
-        keys = (canonical_delivery_cooldown_key(user_id, asset), *legacy_delivery_cooldown_keys(user_id, asset, direction))
+        keys = (
+            canonical_delivery_cooldown_key(user_id, asset),
+            *legacy_delivery_cooldown_keys(user_id, asset, direction),
+        )
         return any(bool(state.get_sync(key)) for key in keys)
     except Exception:
         return False
@@ -181,15 +186,19 @@ def get_deduplicator() -> "SignalDeduplicator":
 
 class SignalDeduplicator:
     """Prevent duplicate signals with semantic similarity and time decay."""
-    
+
     def __init__(self):
         self.recent_signals: Set[str] = set()
         self._cache_ttl = timedelta(hours=1)
-        self._entry_similarity_pct = max(0.0005, float(os.getenv("SIGNAL_DEDUP_ENTRY_SIMILARITY_PCT", "0.002") or 0.002))
-        self._base_similarity_threshold = max(0.10, min(0.99, float(os.getenv("SIGNAL_DEDUP_SIMILARITY_THRESHOLD", "0.82") or 0.82)))
+        self._entry_similarity_pct = max(
+            0.0005, float(os.getenv("SIGNAL_DEDUP_ENTRY_SIMILARITY_PCT", "0.002") or 0.002)
+        )
+        self._base_similarity_threshold = max(
+            0.10, min(0.99, float(os.getenv("SIGNAL_DEDUP_SIMILARITY_THRESHOLD", "0.82") or 0.82))
+        )
         self._decay_hours = max(1.0, float(os.getenv("SIGNAL_DEDUP_DECAY_HOURS", "24") or 24))
         self._hard_window_hours = max(0.0, float(os.getenv("SIGNAL_DEDUP_HARD_WINDOW_HOURS", "6") or 6))
-    
+
     def make_fingerprint(self, asset: str, timeframe: str, direction: str, entry_price: float) -> str:
         """Create unique signal fingerprint."""
         return f"{asset}_{timeframe}_{direction}_{int(entry_price)}"
@@ -238,7 +247,9 @@ class SignalDeduplicator:
 
             timeframe_left = self._normalize_text(left.get("timeframe") or left.get("tf"))
             timeframe_right = self._normalize_text(right.get("timeframe") or right.get("tf"))
-            timeframe_penalty = 0.0 if not timeframe_left or not timeframe_right or timeframe_left == timeframe_right else 0.12
+            timeframe_penalty = (
+                0.0 if not timeframe_left or not timeframe_right or timeframe_left == timeframe_right else 0.12
+            )
 
             entry_left = self._safe_float(left.get("entry") or left.get("entry_price") or left.get("price"), 0.0)
             entry_right = self._safe_float(right.get("entry") or right.get("entry_price") or right.get("price"), 0.0)
@@ -250,15 +261,25 @@ class SignalDeduplicator:
 
             stop_left = self._safe_float(left.get("stop_loss") or left.get("stop") or left.get("stopLoss"), 0.0)
             stop_right = self._safe_float(right.get("stop_loss") or right.get("stop") or right.get("stopLoss"), 0.0)
-            tp_left = self._safe_float(self._first_take_profit(left.get("take_profit") or left.get("take_profits") or left.get("targets")), 0.0)
-            tp_right = self._safe_float(self._first_take_profit(right.get("take_profit") or right.get("take_profits") or right.get("targets")), 0.0)
+            tp_left = self._safe_float(
+                self._first_take_profit(left.get("take_profit") or left.get("take_profits") or left.get("targets")), 0.0
+            )
+            tp_right = self._safe_float(
+                self._first_take_profit(right.get("take_profit") or right.get("take_profits") or right.get("targets")),
+                0.0,
+            )
 
             stop_sim = 1.0
             tp_sim = 1.0
             if stop_left > 0 and stop_right > 0:
-                stop_sim = max(0.0, 1.0 - self._entry_distance_pct(stop_left, stop_right) / max(self._entry_similarity_pct * 2.0, 1e-9))
+                stop_sim = max(
+                    0.0,
+                    1.0 - self._entry_distance_pct(stop_left, stop_right) / max(self._entry_similarity_pct * 2.0, 1e-9),
+                )
             if tp_left > 0 and tp_right > 0:
-                tp_sim = max(0.0, 1.0 - self._entry_distance_pct(tp_left, tp_right) / max(self._entry_similarity_pct * 2.0, 1e-9))
+                tp_sim = max(
+                    0.0, 1.0 - self._entry_distance_pct(tp_left, tp_right) / max(self._entry_similarity_pct * 2.0, 1e-9)
+                )
 
             # Same asset + same direction should already be highly similar when
             # entries are within the configured band. Entry proximity is the
@@ -271,11 +292,18 @@ class SignalDeduplicator:
     def _decayed_duplicate_threshold(self, age_hours: float) -> float:
         return self._time_decay_threshold(age_hours)
 
-    async def get_recent_signals(self, asset: str, timeframe: str, direction: str, lookback_hours: Optional[float] = None) -> list[Signal]:
+    async def get_recent_signals(
+        self, asset: str, timeframe: str, direction: str, lookback_hours: Optional[float] = None
+    ) -> list[Signal]:
         try:
             lookback = self._cache_ttl if lookback_hours is None else timedelta(hours=max(0.0, float(lookback_hours)))
             cutoff = now_utc_naive() - lookback
-            cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
+            cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             async with get_session() as session:
                 stmt = (
                     select(Signal)
@@ -289,18 +317,24 @@ class SignalDeduplicator:
                     stmt = stmt.where(Signal.timeframe == timeframe)
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())
-                return [cast(Signal, {
-                    "asset": r.asset,
-                    "timeframe": r.timeframe,
-                    "direction": r.direction,
-                    "entry": r.entry,
-                    "stop_loss": r.stop_loss,
-                    "take_profit": r.take_profit,
-                    "created_at": r.created_at,
-                    "strategy_name": getattr(r, "strategy_name", None),
-                    "strategy_group": getattr(r, "strategy_group", None),
-                    "signal_id": getattr(r, "signal_id", None),
-                }) for r in rows]
+                return [
+                    cast(
+                        Signal,
+                        {
+                            "asset": r.asset,
+                            "timeframe": r.timeframe,
+                            "direction": r.direction,
+                            "entry": r.entry,
+                            "stop_loss": r.stop_loss,
+                            "take_profit": r.take_profit,
+                            "created_at": r.created_at,
+                            "strategy_name": getattr(r, "strategy_name", None),
+                            "strategy_group": getattr(r, "strategy_group", None),
+                            "signal_id": getattr(r, "signal_id", None),
+                        },
+                    )
+                    for r in rows
+                ]
         except Exception as e:
             logger.warning(f"Dedup recent-signal load failed: {e}")
             return []
@@ -312,7 +346,9 @@ class SignalDeduplicator:
         if not asset or not timeframe or direction not in {"long", "short"}:
             return []
 
-        recent = await self.get_recent_signals(asset, timeframe, direction, lookback_hours=self._cache_ttl.total_seconds() / 3600.0)
+        recent = await self.get_recent_signals(
+            asset, timeframe, direction, lookback_hours=self._cache_ttl.total_seconds() / 3600.0
+        )
         now = now_utc_naive()
         out: list[tuple[Signal, float, float]] = []
         for candidate in recent:
@@ -327,7 +363,7 @@ class SignalDeduplicator:
             out.append((candidate, similarity, age_hours))
         out.sort(key=lambda item: (item[1], -item[2]), reverse=True)
         return out
-    
+
     async def is_duplicate(self, asset: str, timeframe: str, direction: str, entry_price: float) -> bool:
         """Check if signal is duplicate within dedup window."""
         try:
@@ -339,17 +375,29 @@ class SignalDeduplicator:
                 return False
 
             async with get_session() as session:
-                hard_window = timedelta(hours=self._hard_window_hours) if self._hard_window_hours > 0 else self._cache_ttl
+                hard_window = (
+                    timedelta(hours=self._hard_window_hours) if self._hard_window_hours > 0 else self._cache_ttl
+                )
                 cutoff = now_utc_naive() - hard_window
-                cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
-                stmt = select(Signal).where(
-                    Signal.asset == asset,
-                    Signal.direction == direction,
-                    Signal.created_at >= cutoff,
-                ).order_by(Signal.created_at.desc()).limit(250)
+                cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+                stmt = (
+                    select(Signal)
+                    .where(
+                        Signal.asset == asset,
+                        Signal.direction == direction,
+                        Signal.created_at >= cutoff,
+                    )
+                    .order_by(Signal.created_at.desc())
+                    .limit(250)
+                )
                 if not cross_timeframe:
                     stmt = stmt.where(Signal.timeframe == timeframe)
-                
+
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())
                 if not rows:
@@ -381,7 +429,7 @@ class SignalDeduplicator:
         except Exception as e:
             logger.warning(f"Dedup check failed: {e}")
             return False
-    
+
     async def register_signal(self, asset: str, timeframe: str, direction: str, entry_price: float) -> None:
         """Register signal to prevent future duplication."""
         try:
@@ -427,9 +475,7 @@ class MLRejectionTracker:
 
     def __init__(self) -> None:
         raw_windows = (
-            os.getenv("REJECT_OUTCOME_WINDOWS")
-            or os.getenv("REJECT_OUTCOME_WINDOWS_HOURS")
-            or "5m,15m,1h,4h,1d"
+            os.getenv("REJECT_OUTCOME_WINDOWS") or os.getenv("REJECT_OUTCOME_WINDOWS_HOURS") or "5m,15m,1h,4h,1d"
         )
         self._windows_minutes = self._parse_windows_minutes(raw_windows)
         self._min_track_age_minutes = max(
@@ -588,7 +634,7 @@ class MLRejectionTracker:
                 await self.flush_pending_rejections(force=True)
                 if self.pending_rejection_count() <= 0:
                     return
-                await asyncio.sleep(min(30.0, max(0.5, float(delay_seconds)) * (2 ** attempt)))
+                await asyncio.sleep(min(30.0, max(0.5, float(delay_seconds)) * (2**attempt)))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -628,8 +674,10 @@ class MLRejectionTracker:
         now_mono = time.monotonic()
         with _REJECTION_SPOOL_LOCK:
             pending = len(_REJECTION_SPOOL)
-            due = force or pending >= batch_size or (
-                pending > 0 and now_mono - _REJECTION_LAST_FLUSH_MONO >= flush_seconds
+            due = (
+                force
+                or pending >= batch_size
+                or (pending > 0 and now_mono - _REJECTION_LAST_FLUSH_MONO >= flush_seconds)
             )
             if not due:
                 return 0
@@ -647,25 +695,29 @@ class MLRejectionTracker:
 
             logs = []
             for p in batch:
-                logs.append(DecisionLog(
-                    signal_id=p.get("signal_id"),
-                    asset=p.get("asset"),
-                    timeframe=p.get("timeframe"),
-                    decision="rejected",
-                    reason=p.get("rejection_reason"),
-                    meta={
-                        "layer": "ml",
-                        "direction": p.get("direction"),
-                        "entry": p.get("entry"),
-                        "stop_loss": p.get("stop_loss"),
-                        "take_profit": p.get("take_profit"),
-                        "ml_probability": p.get("ml_probability"),
-                        "features": p.get("features"),
-                        "actual_outcome": p.get("actual_outcome"),
-                        "outcome_tracked_at": p.get("outcome_tracked_at").isoformat() if p.get("outcome_tracked_at") else None,
-                    },
-                    created_at=p.get("created_at") or now_utc_naive()
-                ))
+                logs.append(
+                    DecisionLog(
+                        signal_id=p.get("signal_id"),
+                        asset=p.get("asset"),
+                        timeframe=p.get("timeframe"),
+                        decision="rejected",
+                        reason=p.get("rejection_reason"),
+                        meta={
+                            "layer": "ml",
+                            "direction": p.get("direction"),
+                            "entry": p.get("entry"),
+                            "stop_loss": p.get("stop_loss"),
+                            "take_profit": p.get("take_profit"),
+                            "ml_probability": p.get("ml_probability"),
+                            "features": p.get("features"),
+                            "actual_outcome": p.get("actual_outcome"),
+                            "outcome_tracked_at": p.get("outcome_tracked_at").isoformat()
+                            if p.get("outcome_tracked_at")
+                            else None,
+                        },
+                        created_at=p.get("created_at") or now_utc_naive(),
+                    )
+                )
 
             async with get_session(
                 priority=DBPriority.BACKGROUND,
@@ -722,7 +774,10 @@ class MLRejectionTracker:
     ) -> None:
         """Queue rejection evidence and opportunistically flush it in batches."""
         if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
-            "1", "true", "yes", "on",
+            "1",
+            "true",
+            "yes",
+            "on",
         }:
             return
 
@@ -797,8 +852,6 @@ class MLRejectionTracker:
                 await session.commit()
         except Exception:
             return
-
-
 
     @staticmethod
     def _label_target_window(
@@ -1003,11 +1056,7 @@ class MLRejectionTracker:
         try:
             async with get_session() as session:
                 accepted_total = int(
-                    (
-                        await session.execute(
-                            text("SELECT COUNT(*) FROM outcomes WHERE closed_at IS NOT NULL")
-                        )
-                    ).scalar()
+                    (await session.execute(text("SELECT COUNT(*) FROM outcomes WHERE closed_at IS NOT NULL"))).scalar()
                     or 0
                 )
                 rejected_total = int(
@@ -1033,9 +1082,13 @@ class MLRejectionTracker:
 
                 cfg = await refresh_thresholds(force=True)
                 if cfg is not None:
-                    _force_env_override = str(
-                        os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or ""
-                    ).strip().lower() in {"1", "true", "yes", "on", "y"}
+                    _force_env_override = str(os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip().lower() in {
+                        "1",
+                        "true",
+                        "yes",
+                        "on",
+                        "y",
+                    }
                     os.environ["ML_PROB_THRESHOLD"] = str(float(getattr(cfg, "ml_prob_threshold", 0.55) or 0.55))
                     if not _force_env_override:
                         os.environ["PREMIUM_SCORE_THRESHOLD"] = str(
@@ -1071,6 +1124,7 @@ class MLRejectionTracker:
             news_hint = "n/a"
             try:
                 from data.news import get_news_sentiment
+
                 async with get_session() as session:
                     top_assets = (
                         await session.execute(
@@ -1132,7 +1186,7 @@ class MLRejectionTracker:
             await self._notify_admin_owner(msg)
         except Exception:
             return
-    
+
     async def track_rejection_outcomes(self) -> int:
         """Track all non-issued outcomes across configured windows and trigger adaptive learning."""
         try:
@@ -1141,13 +1195,14 @@ class MLRejectionTracker:
                 # Get rejections still awaiting full window labels
                 stmt = select(MLRejectedSignal).where(
                     MLRejectedSignal.outcome_tracked_at.is_(None),
-                    MLRejectedSignal.created_at >= now_utc_naive() - timedelta(days=7)
+                    MLRejectedSignal.created_at >= now_utc_naive() - timedelta(days=7),
                 )
-                
+
                 result = await session.execute(stmt)
                 rejections = result.scalars().all()
-                
+
                 tracked_count = 0
+                backfilled = 0
                 summary: Dict[str, int] = {}
                 for rejection in rejections:
                     time_since = now_utc_naive() - rejection.created_at
@@ -1196,7 +1251,7 @@ class MLRejectionTracker:
                         rejection.actual_outcome = overall
                         rejection.outcome_tracked_at = now_utc_naive()
                     tracked_count += 1
-                
+
                 if tracked_count > 0:
                     await session.flush()
                     logger.info(f"Tracked {tracked_count} rejection outcomes")
@@ -1204,7 +1259,7 @@ class MLRejectionTracker:
 
             if tracked_count > 0 or backfilled > 0:
                 await self._run_adaptive_learning_if_due()
-                
+
                 return tracked_count + backfilled
         except Exception as e:
             logger.error(f"Failed to track rejection outcomes: {e}")

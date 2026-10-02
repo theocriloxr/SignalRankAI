@@ -316,7 +316,10 @@ def test_metaapi_alias_selection_is_wired_across_runtime_gates() -> None:
     assert 'for env_name in ("META_API_TOKEN", "METAAPI_TOKEN")' in mt5
     assert "for env_name, token in candidates:" in mt5
     assert "_METAAPI_ACTIVE_TOKEN_ENV = env_name" in mt5
-    assert "token_source=%s" in runtime
+    # Runtime readiness may report only whether MetaApi is configured. It must
+    # not reveal which secret alias supplied the active credential.
+    assert "token_source=%s" not in runtime
+    assert "active_token_env" not in runtime
     assert 'os.getenv("METAAPI_TOKEN")' in runtime
     assert 'os.getenv("METAAPI_TOKEN")' in api
     assert 'os.getenv("METAAPI_TOKEN")' in broker

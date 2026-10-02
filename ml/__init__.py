@@ -1,26 +1,31 @@
 """SignalRankAI machine-learning package.
 
 Submodules are loaded lazily so the production bot/engine does not import the
-XGBoost training stack merely because a lightweight ML helper is referenced.
-The analytics role can continue to use ``from ml import train_model`` without
-changing call sites.
+training stack unless a known ML surface is explicitly requested.
 """
 
 from __future__ import annotations
 
-from importlib import import_module
 from types import ModuleType
 
 __all__ = ["train_model", "inference", "features", "scorer"]
 
 
 def __getattr__(name: str) -> ModuleType:
-    if name not in __all__:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module = import_module(f"{__name__}.{name}")
-    globals()[name] = module
-    return module
+    if name == "train_model":
+        import ml.train_model as module
+        return module
+    if name == "inference":
+        import ml.inference as module
+        return module
+    if name == "features":
+        import ml.features as module
+        return module
+    if name == "scorer":
+        import ml.scorer as module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+    return sorted(set(__all__))

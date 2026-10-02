@@ -55,6 +55,7 @@ def _mask_redis_url(url: str | None) -> str:
         return ""
     try:
         from urllib.parse import urlsplit
+
         parsed = urlsplit(text)
         host = parsed.hostname or "unknown"
         port = f":{parsed.port}" if parsed.port else ""
@@ -124,6 +125,7 @@ def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
         except Exception:
             pass
 
+
 def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
     """Check if a signal was delivered to a user. Returns False if Redis unavailable."""
     r = None
@@ -151,6 +153,7 @@ def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
                 r.close()
         except Exception:
             pass
+
 
 def get_delivered_signals_sync(user_id: int) -> set:
     """Get all signal_ids delivered to a user. Returns empty set if Redis unavailable."""
@@ -213,7 +216,9 @@ class RedisState:
         self._flush_thread: Optional[threading.Thread] = None
         self._flush_stop = threading.Event()
         self._flush_interval = max(1, int(os.getenv("STATE_FLUSH_INTERVAL_SECONDS", "3") or 3))
-        self._background_workers_enabled = "pytest" not in sys.modules and str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}
+        self._background_workers_enabled = "pytest" not in sys.modules and str(
+            os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0"
+        ).strip().lower() not in {"1", "true", "yes", "y", "on"}
         if self._background_workers_enabled:
             self._ensure_flush_worker()
 
@@ -225,11 +230,13 @@ class RedisState:
 
     def redis_diagnostics_sync(self) -> dict[str, Any]:
         data = redis_state_diagnostics()
-        data.update({
-            "connected": self._get_redis_sync() is not None,
-            "connected_source": self._redis_source,
-            "connected_url": self._redis_masked_url,
-        })
+        data.update(
+            {
+                "connected": self._get_redis_sync() is not None,
+                "connected_source": self._redis_source,
+                "connected_url": self._redis_masked_url,
+            }
+        )
         return data
 
     def _get_pg_dsn(self) -> Optional[str]:
@@ -238,6 +245,7 @@ class RedisState:
         # Read fresh from env on every first call — never use a stale import-time
         # snapshot from config.DATABASE_URL. Prefer internal/private URL first.
         from config import resolve_database_url
+
         url = resolve_database_url(async_driver=False)
         if not url:
             url = (getattr(config, "DATABASE_URL", None) or "").strip()
@@ -330,6 +338,7 @@ class RedisState:
                 self._flush_pending_once()
             except Exception as exc:
                 import logging
+
                 logging.getLogger(__name__).warning("[state-cache] flush error: %s", exc)
             self._flush_stop.wait(self._flush_interval)
 
@@ -339,6 +348,14 @@ class RedisState:
         self._flush_stop.clear()
         self._flush_thread = threading.Thread(target=self._flush_loop, name="state-flush-worker", daemon=True)
         self._flush_thread.start()
+
+    def get_redis_sync(self):
+        """Return the synchronous Redis client for legacy maintenance workers.
+
+        New code should prefer typed state APIs; this public compatibility
+        wrapper avoids reaching through a private attribute.
+        """
+        return self._get_redis_sync()
 
     def _get_redis_sync(self):
         if self._redis_sync is not None:
@@ -431,6 +448,7 @@ class RedisState:
                         return KillSwitchState(enabled, reason, updated_at)
                     except Exception as e:
                         import logging
+
                         logging.debug(f"[redis_state] Failed to parse killswitch state from Postgres: {e}")
                         pass
             raw = self._memory.get(_KILL_KEY)
@@ -537,6 +555,7 @@ class RedisState:
                 r.delete(key)
             except Exception as e:
                 import logging
+
                 logging.debug(f"[redis_state] Failed to delete legacy temp owner key: {e}")
                 pass
             return False
@@ -549,6 +568,7 @@ class RedisState:
             r.delete(key)
         except Exception as e:
             import logging
+
             logging.debug(f"[redis_state] Failed to delete mismatched temp owner key: {e}")
             pass
         return False
@@ -622,6 +642,7 @@ class RedisState:
             r.set(key, payload, ex=(ttl if isinstance(ttl, int) and ttl > 0 else ttl_seconds))
         except Exception as e:
             import logging
+
             logging.debug(f"[redis_state] Failed to set extra signals in Redis: {e}")
             pass
         return int(total)
@@ -822,7 +843,7 @@ class RedisState:
                         # If it's a dict, try to get a 'value' field, otherwise convert to string
                         data = row[0]
                         if isinstance(data, dict):
-                            out = str(data.get('value', ''))
+                            out = str(data.get("value", ""))
                             self._cache_set(key, out, ex=30)
                             return out
                         out = str(data)
@@ -830,6 +851,7 @@ class RedisState:
                         return out
                     except Exception as e:
                         import logging
+
                         logging.warning(f"[redis_state] Failed to parse value for key {key}: {e}")
                         return None
                 return None
@@ -838,11 +860,12 @@ class RedisState:
         # Redis path (not used in this project)
         try:
             val = r.get(key)
-            out = val.decode('utf-8') if isinstance(val, bytes) else val
+            out = val.decode("utf-8") if isinstance(val, bytes) else val
             self._cache_set(key, out, ex=30)
             return out
         except Exception as e:
             import logging
+
             logging.warning(f"[redis_state] Failed to get key {key} from Redis: {e}")
             return None
 
@@ -867,8 +890,7 @@ class RedisState:
         if r is not None:
             try:
                 deleted = r.eval(
-                    "if redis.call('get', KEYS[1]) == ARGV[1] then "
-                    "return redis.call('del', KEYS[1]) else return 0 end",
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
                     1,
                     full_key,
                     expected,
@@ -919,6 +941,7 @@ class RedisState:
                 r.set(key, str(value))
         except Exception as e:
             import logging
+
             logging.debug(f"[redis_state] Failed to set value in Redis: {e}")
             pass
 
@@ -963,6 +986,7 @@ class RedisState:
             return count
         except Exception as e:
             import logging
+
             logging.debug(f"[redis_state] Failed to increment counter in Redis: {e}")
             return 0
 
@@ -1239,7 +1263,9 @@ class RedisState:
         source: str = "ws",
         extra: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        return await asyncio.to_thread(self.set_latest_tick_sync, symbol, price, event_time_ms, source=source, extra=extra)
+        return await asyncio.to_thread(
+            self.set_latest_tick_sync, symbol, price, event_time_ms, source=source, extra=extra
+        )
 
     async def get_latest_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
         return await asyncio.to_thread(self.get_latest_tick_sync, symbol)

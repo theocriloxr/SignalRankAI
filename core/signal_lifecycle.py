@@ -32,9 +32,7 @@ BREAKEVEN_STOP = SignalLifecycle.BREAKEVEN_STOP.value
 MISSED_ENTRY = SignalLifecycle.MISSED_ENTRY.value
 EXPIRED = SignalLifecycle.EXPIRED.value
 
-TERMINAL_SIGNAL_STATES = frozenset(
-    {TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED}
-)
+TERMINAL_SIGNAL_STATES = frozenset({TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED})
 SAME_CANDLE_AMBIGUITY_POLICY = "stop_loss_first_conservative"
 
 _LEGACY_ALIASES = {
@@ -98,10 +96,10 @@ def normalize_lifecycle_state(value: SignalLifecycle | str | None) -> str:
     return _LEGACY_ALIASES.get(raw, WATCHING_FOR_ENTRY)
 
 
-
 def is_terminal_signal_state(value: SignalLifecycle | str | None) -> bool:
     """Shared terminal predicate used by trackers, commands, and callbacks."""
     return normalize_lifecycle_state(value) in TERMINAL_SIGNAL_STATES
+
 
 def lifecycle_state_for_event(event_type: str | None) -> str:
     return EVENT_TO_STATE.get(str(event_type or "").strip().lower(), WATCHING_FOR_ENTRY)
@@ -168,7 +166,18 @@ _OUTCOME_PROGRESS = {
     "tp": 3,
 }
 _TERMINAL_OUTCOMES = frozenset(
-    {"tp", "tp3", "sl", "partial_win", "partial_win_be", "time_stop", "missed_entry", "expired", "invalid", "invalidated"}
+    {
+        "tp",
+        "tp3",
+        "sl",
+        "partial_win",
+        "partial_win_be",
+        "time_stop",
+        "missed_entry",
+        "expired",
+        "invalid",
+        "invalidated",
+    }
 )
 
 

@@ -72,7 +72,9 @@ class ReceiptService:
             if existing:
                 return existing
             now = datetime.now(timezone.utc).isoformat()
-            receipt_number = "SR-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + str(len(self._by_reference) + 1).zfill(6)
+            receipt_number = (
+                "SR-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + str(len(self._by_reference) + 1).zfill(6)
+            )
             text_body = "\n".join(
                 (
                     "SIGNALRANKAI PAYMENT RECEIPT",
@@ -92,7 +94,22 @@ class ReceiptService:
                 )
             )
             html_body = "<br>".join(html.escape(line) for line in text_body.splitlines())
-            receipt = PaymentReceipt(receipt_number, int(user_id), str(plan), float(amount), str(currency).upper(), reference, str(provider).lower(), now, str(billing_period), subscription_start, subscription_end, "paid", text_body, html_body)
+            receipt = PaymentReceipt(
+                receipt_number,
+                int(user_id),
+                str(plan),
+                float(amount),
+                str(currency).upper(),
+                reference,
+                str(provider).lower(),
+                now,
+                str(billing_period),
+                subscription_start,
+                subscription_end,
+                "paid",
+                text_body,
+                html_body,
+            )
             self._by_reference[key] = receipt
             return receipt
 

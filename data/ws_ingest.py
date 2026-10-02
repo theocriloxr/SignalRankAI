@@ -16,6 +16,7 @@ from data.pair_discovery import get_all_trending_pairs
 from data.fetcher import is_crypto
 from core.redis_state import state
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -210,7 +211,10 @@ async def _check_ws_circuit_breaker(provider: str) -> bool:
             remaining = int(circuit_open_until - now)
             logger.warning(
                 "[ws_circuit] %s circuit OPEN for %ss (restarts=%s max=%s)",
-                provider, remaining, restart_count, max_restarts,
+                provider,
+                remaining,
+                restart_count,
+                max_restarts,
             )
             return False
 
@@ -234,7 +238,9 @@ async def _record_ws_restart(provider: str) -> None:
             circuit_open_until = time.time() + circuit_seconds
             logger.warning(
                 "[ws_circuit] %s circuit OPEN after %s restarts; cooling for %ss",
-                provider, restart_count, circuit_seconds,
+                provider,
+                restart_count,
+                circuit_seconds,
             )
         else:
             logger.info("[ws_circuit] %s restart %s/%s", provider, restart_count, max_restarts)
@@ -430,14 +436,14 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                         pass
                     if provider == "cryptocompare":
                         volume = float(ev.get("volume") or 0.0) if event_type == "trade" else 0.0
-                        candle_buf.extend(
-                            cc_builder.update(
-                                symbol=sym,
-                                price=price,
-                                volume=volume,
-                                event_time_ms=ts_ms,
-                            )
-                        )
+                        # candle_buf.extend(
+                        #     cc_builder.update(
+                        #         symbol=sym,
+                        #         price=price,
+                        #         volume=volume,
+                        #         event_time_ms=ts_ms,
+                        #     )
+                        # )
                 elif event_type == "kline":
                     candle_buf.append(ev)
 
@@ -511,7 +517,8 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
             # All providers failed; exponential backoff before retry
             logger.warning(
                 "[ws_ingest] all providers failed; backing off for %.1fs (max=%.1fs)",
-                backoff_s, max_backoff_s,
+                backoff_s,
+                max_backoff_s,
             )
             try:
                 await asyncio.wait_for(

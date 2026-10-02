@@ -71,12 +71,8 @@ class RecoverableStream:
         self.group = str(group)
         self.dead_letter_name = str(dead_letter_name or f"{name}:dead_letter")
         self.redis_url = str(redis_url or _delivery_redis_url()).strip()
-        self.max_length = max_length or _env_int(
-            "DELIVERY_STREAM_MAX_LENGTH", 10_000, minimum=100, maximum=1_000_000
-        )
-        self.max_attempts = max_attempts or _env_int(
-            "DELIVERY_STREAM_MAX_ATTEMPTS", 5, minimum=1, maximum=100
-        )
+        self.max_length = max_length or _env_int("DELIVERY_STREAM_MAX_LENGTH", 10_000, minimum=100, maximum=1_000_000)
+        self.max_attempts = max_attempts or _env_int("DELIVERY_STREAM_MAX_ATTEMPTS", 5, minimum=1, maximum=100)
         self.claim_idle_ms = claim_idle_ms or _env_int(
             "DELIVERY_STREAM_CLAIM_IDLE_MS", 60_000, minimum=1_000, maximum=86_400_000
         )
@@ -110,9 +106,7 @@ class RecoverableStream:
             socket_connect_timeout=0.75,
             socket_timeout=1.5,
             health_check_interval=30,
-            max_connections=_env_int(
-                "REDIS_MAX_CONNECTIONS", 24, minimum=2, maximum=64
-            ),
+            max_connections=_env_int("REDIS_MAX_CONNECTIONS", 24, minimum=2, maximum=64),
             retry_on_timeout=True,
         )
         return self._client
@@ -372,10 +366,14 @@ class RecoverableStream:
             max=message.message_id,
             count=1,
         )
-        fields = rows[0][1] if rows else {
-            "payload": json.dumps(message.payload, separators=(",", ":")),
-            "enqueued_at_ms": str(message.enqueued_at_ms),
-        }
+        fields = (
+            rows[0][1]
+            if rows
+            else {
+                "payload": json.dumps(message.payload, separators=(",", ":")),
+                "enqueued_at_ms": str(message.enqueued_at_ms),
+            }
+        )
         await self._dead_letter_raw(
             client,
             message.message_id,
@@ -393,11 +391,7 @@ class RecoverableStream:
             return {"depth": 0, "pending": 0, "dead_letter_depth": 0}
         await self.ensure_group()
         pending = await client.xpending(self.name, self.group)
-        pending_count = int(
-            pending.get("pending", 0)
-            if isinstance(pending, dict)
-            else (pending[0] if pending else 0)
-        )
+        pending_count = int(pending.get("pending", 0) if isinstance(pending, dict) else (pending[0] if pending else 0))
         return {
             "depth": int(await client.xlen(self.name)),
             "pending": pending_count,
@@ -424,17 +418,10 @@ def telegram_update_stream() -> RecoverableStream:
     url = _delivery_redis_url()
     if _TELEGRAM_STREAM is None or _TELEGRAM_STREAM.redis_url != url:
         _TELEGRAM_STREAM = RecoverableStream(
-            name=str(
-                os.getenv("TELEGRAM_UPDATES_STREAM")
-                or "signalrank:telegram_updates:v1"
-            ),
-            group=str(
-                os.getenv("TELEGRAM_UPDATES_CONSUMER_GROUP")
-                or "signalrank:telegram"
-            ),
+            name=str(os.getenv("TELEGRAM_UPDATES_STREAM") or "signalrank:telegram_updates:v1"),
+            group=str(os.getenv("TELEGRAM_UPDATES_CONSUMER_GROUP") or "signalrank:telegram"),
             dead_letter_name=str(
-                os.getenv("TELEGRAM_UPDATES_DLQ_STREAM")
-                or "signalrank:telegram_updates:dead_letter:v1"
+                os.getenv("TELEGRAM_UPDATES_DLQ_STREAM") or "signalrank:telegram_updates:dead_letter:v1"
             ),
             redis_url=url,
         )

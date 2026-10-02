@@ -6,6 +6,7 @@ PostgreSQL database is at the repository's single Alembic head and that the
 critical unified-platform tables/columns exist before a worker, engine or web
 process is allowed to start.
 """
+
 from __future__ import annotations
 
 import argparse

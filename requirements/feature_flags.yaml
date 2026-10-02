@@ -1,5 +1,5 @@
 {
-  "count": 146,
+  "count": 156,
   "flags": [
     {
       "dangerous": false,
@@ -60,6 +60,14 @@
     {
       "dangerous": false,
       "name": "ADAPTIVE_STRATEGY_GENERATION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "AI_REVIEW_FALLBACK_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -315,6 +323,14 @@
     },
     {
       "dangerous": false,
+      "name": "DECOMPOSED_TOPOLOGY_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "DELIVERY_SIGNAL_UPDATE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -428,6 +444,22 @@
     {
       "dangerous": false,
       "name": "ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EVENT_BUS_DB_OUTBOX_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EVENT_BUS_MEMORY_FALLBACK_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -611,6 +643,14 @@
     },
     {
       "dangerous": false,
+      "name": "ML_CANDIDATE_FORWARD_AUTO_PROMOTION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ML_DRIFT_MONITOR_ENABLED",
       "production_example_default": "0",
       "required_safe_default": null,
@@ -629,6 +669,14 @@
       "dangerous": false,
       "name": "ML_OFFLINE_BOOTSTRAP_ENABLED",
       "production_example_default": "0",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "ML_STARVATION_RECOVERY_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null
@@ -707,7 +755,31 @@
     },
     {
       "dangerous": false,
+      "name": "OPENAI_AI_CIRCUIT_BREAKER_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OPENAI_AI_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "OPENAI_CODEX_REVIEW_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OPENAI_SIGNAL_REVIEW_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -1092,6 +1164,14 @@
     {
       "dangerous": false,
       "name": "TRADE_PROFILE_ENGINE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "TRADINGVIEW_OHLCV_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

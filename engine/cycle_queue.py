@@ -22,6 +22,7 @@ CYCLE_BATCH_SIZE
 CYCLE_UNIVERSE_REFRESH_INTERVAL
     Seconds between full universe rebuilds from pair-discovery (default 3600).
 """
+
 from __future__ import annotations
 
 import logging
@@ -59,9 +60,8 @@ class AssetCycleQueue:
         self._round_no: int = 0
         self._last_refresh: float = 0.0
         import os
-        self._refresh_interval: float = float(
-            os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600") or "3600"
-        )
+
+        self._refresh_interval: float = float(os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600") or "3600")
         # Round-level stats
         self._round_signals: int = 0
         self._round_assets_done: int = 0
@@ -84,7 +84,7 @@ class AssetCycleQueue:
             # De-duplicate while preserving order.
             ordered: list[str] = []
             seen: set[str] = set()
-            for a in (assets or []):
+            for a in assets or []:
                 a = str(a or "").strip()
                 if a and a not in seen:
                     ordered.append(a)
@@ -106,9 +106,11 @@ class AssetCycleQueue:
 
             self._universe = ordered
             logger.info(
-                "[cycle_queue] universe updated: %d assets total, "
-                "+%d new appended, queue_remaining=%d, round=%d",
-                len(ordered), added, len(self._queue), self._round_no,
+                "[cycle_queue] universe updated: %d assets total, +%d new appended, queue_remaining=%d, round=%d",
+                len(ordered),
+                added,
+                len(self._queue),
+                self._round_no,
             )
 
     def pop_batch(self, size: int = 10) -> List[str]:
@@ -131,7 +133,7 @@ class AssetCycleQueue:
     def mark_done(self, assets: List[str], signals_generated: int = 0) -> None:
         """Record *assets* as processed this round and accumulate stats."""
         with self._lock:
-            for a in (assets or []):
+            for a in assets or []:
                 self._done_this_round.add(str(a or "").strip())
             self._round_assets_done += len(assets)
             self._round_signals += max(0, int(signals_generated))
@@ -173,11 +175,7 @@ class AssetCycleQueue:
         with self._lock:
             total = len(self._universe)
             done = len(self._done_this_round)
-            return (
-                f"round={self._round_no} "
-                f"progress={done}/{total} "
-                f"queue_left={len(self._queue)}"
-            )
+            return f"round={self._round_no} progress={done}/{total} queue_left={len(self._queue)}"
 
     # ─────────────────────────── internals ────────────────────────────
 
@@ -193,5 +191,8 @@ class AssetCycleQueue:
         logger.info(
             "[cycle_queue] ══ Round %d started ══ %d assets queued "
             "(prev round: %d assets processed, %d signals generated)",
-            self._round_no, len(self._queue), prev_done, prev_sigs,
+            self._round_no,
+            len(self._queue),
+            prev_done,
+            prev_sigs,
         )
