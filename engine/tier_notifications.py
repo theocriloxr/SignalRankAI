@@ -243,7 +243,7 @@ class TierNotificationManager:
                     f"Latest stored price: {format_price_level(latest)} "
                     "(post-hit mark; not TP evidence)"
                 )
-        lines.append(f"Signal P/L: {profit_text}")
+        lines.append(f"P/L at TP event: {profit_text}")
 
         if is_premium:
             if level == 1:
