@@ -133,6 +133,48 @@ def check_schema() -> dict[str, Any]:
               AND table_name = 'users'
               AND column_name = 'public_user_id'
           ) AS users_public_user_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND column_name = 'accepted_terms'
+          ) AS users_accepted_terms,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND column_name = 'execution_mode'
+          ) AS users_execution_mode,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signals'
+              AND column_name = 'status'
+          ) AS signals_status,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signals'
+              AND column_name = 'trade_profile'
+          ) AS signals_trade_profile,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signal_deliveries'
+              AND column_name = 'sent_ok'
+          ) AS signal_deliveries_sent_ok,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signal_deliveries'
+              AND column_name = 'generated_at_utc'
+          ) AS signal_deliveries_generated_at_utc,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'outcomes'
+              AND column_name = 'canonical_outcome'
+          ) AS outcomes_canonical_outcome,
           current_database() AS database_name,
           current_user AS database_user,
           inet_server_addr()::text AS server_address,
@@ -173,6 +215,13 @@ def check_schema() -> dict[str, Any]:
             "mt5_executions_connection_id",
             "signals_ml_recovery_mode",
             "users_public_user_id",
+            "users_accepted_terms",
+            "users_execution_mode",
+            "signals_status",
+            "signals_trade_profile",
+            "signal_deliveries_sent_ok",
+            "signal_deliveries_generated_at_utc",
+            "outcomes_canonical_outcome",
         )
     }
     missing = sorted(name for name, present in required.items() if not present)
