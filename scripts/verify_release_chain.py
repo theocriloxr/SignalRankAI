@@ -42,6 +42,7 @@ def main() -> int:
         "trg_trading_account_ledger_immutable",
         "0046_decision_log",
         "CREATE TABLE IF NOT EXISTS decision_log",
+        "0047_event_outbox",
         "0048_runtime_schema_bridge",
         "CREATE TABLE IF NOT EXISTS event_outbox",
         "ix_event_outbox_claim",
