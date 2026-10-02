@@ -15,6 +15,7 @@ It never mutates the source database and refuses to run outside Railway staging.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -84,10 +85,39 @@ def _stage(name: str, **details: object) -> None:
     )
 
 
-def _safe_environment() -> None:
-    from core.env import runtime_environment_name
+def _environment() -> str:
+    """Self-contained staging identity guard for the minimal restore image."""
+    override = str(os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE") or "").strip().lower()
+    railway_name = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    if override and railway_name in {"production", "prod"} and override not in {"production", "prod"}:
+        profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
+        expected_project = str(os.getenv("STAGING_CERTIFICATION_PROJECT_ID") or "").strip()
+        actual_project = str(os.getenv("RAILWAY_PROJECT_ID") or "").strip()
+        pinned = (
+            override in {"staging", "stage", "preview"}
+            and profile == "staging-certification"
+            and bool(expected_project)
+            and bool(actual_project)
+            and hmac.compare_digest(expected_project, actual_project)
+        )
+        if not pinned:
+            override = ""
+    raw = str(
+        override
+        or railway_name
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    return {"prod": "production", "stage": "staging", "preview": "staging"}.get(raw, raw)
 
-    environment = runtime_environment_name("")
+
+def _safe_environment() -> None:
+    environment = _environment()
     profile = str(os.getenv("SIGNALRANK_ENV_PROFILE") or "").strip().lower()
     if environment != "staging":
         raise RuntimeError(f"restore_drill_requires_staging environment={environment or 'unknown'}")
