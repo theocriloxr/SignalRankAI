@@ -27,9 +27,12 @@ def test_restore_drill_uses_consistent_dump_isolated_database_and_cleanup() -> N
     assert "restore_seconds" in text
 
 
-def test_restore_drill_image_uses_postgresql_18_client() -> None:
+def test_restore_drill_image_matches_current_staging_postgresql_major() -> None:
     dockerfile = Path("Dockerfile.restore-drill").read_text(encoding="utf-8")
-    assert "FROM postgres:18-alpine" in dockerfile
+    # The current isolated staging database runs PostgreSQL 16. Newer pg_dump
+    # clients can emit GUCs (for example transaction_timeout) that PG16 cannot
+    # restore, so the drill client must match the staging server major.
+    assert "FROM postgres:16-alpine" in dockerfile
 
 
 def test_restore_drill_cleanup_is_separate_and_final_pass_requires_cleanup() -> None:
