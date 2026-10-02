@@ -92,6 +92,10 @@ class FakeCursor:
                 "mt5_credentials_password_nullable",
                 "broker_executions_connection_id", "mt5_executions_connection_id",
                 "signals_ml_recovery_mode", "users_public_user_id",
+                "users_accepted_terms", "users_execution_mode",
+                "signals_status", "signals_trade_profile",
+                "signal_deliveries_sent_ok", "signal_deliveries_generated_at_utc",
+                "outcomes_canonical_outcome",
             ), True),
         }
         record.update({name: False for name in missing})
@@ -148,6 +152,13 @@ def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, ext
         "mt5_credentials_password_nullable",
         "broker_executions_connection_id",
         "mt5_executions_connection_id",
+        "users_accepted_terms",
+        "users_execution_mode",
+        "signals_status",
+        "signals_trade_profile",
+        "signal_deliveries_sent_ok",
+        "signal_deliveries_generated_at_utc",
+        "outcomes_canonical_outcome",
     ):
         assert key in required
 
