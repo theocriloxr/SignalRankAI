@@ -1,0 +1,10 @@
+SignalRankAI synchronized certification trigger r41
+branch=implementation-of-master-blueprint
+head_before_trigger=f3d8006b67ecaf9bf96e83185d46fdb5e848a3b7
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+restore_drill_pg16_client_contract=required
+staging_postgres_18_parity_gate=required
+live_execution_authorized=false
