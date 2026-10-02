@@ -89,3 +89,4 @@ tests/test_production_quality_guard.py
 
 tests/test_20261001_signal_paper_integrity.py
 tests/test_missed_entry_nontrade_semantics.py
+tests/test_runtime_schema_bridge_0048.py
