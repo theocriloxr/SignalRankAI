@@ -784,7 +784,19 @@ async def get_or_create_signal_impl(
                             except Exception:
                                 pass
                         else:
-                            return existing_active
+                            # Never recycle the identity of an already-active Redis
+                            # trade into a newly generated candidate. Downstream
+                            # delivery still holds the new candidate levels, so
+                            # returning an older Signal row here creates split-brain
+                            # entry/SL/TP and stale-age truth for one signal_id.
+                            logger.info(
+                                "[dedup] redis active trade blocks new candidate asset=%s incoming_tf=%s incoming_dir=%s signal_id=%s",
+                                asset,
+                                timeframe,
+                                direction,
+                                active_signal_id,
+                            )
+                            raise SignalDedupBlocked("active_trade", signal_id=active_signal_id)
                 else:
                     try:
                         state.remove_active_trade_sync(active_signal_id)
@@ -839,7 +851,17 @@ async def get_or_create_signal_impl(
             )
             recent_signal = res_recent.scalars().first()
             if recent_signal is not None:
-                return recent_signal
+                # The minimum-interval gate is suppression, not identity reuse.
+                # Returning the prior row while callers retain the new candidate
+                # payload can make delivery/lifecycle disagree on prices and age.
+                logger.info(
+                    "[dedup] minimum interval blocks new candidate asset=%s tf=%s dir=%s signal_id=%s",
+                    asset,
+                    timeframe,
+                    direction,
+                    recent_signal.signal_id,
+                )
+                raise SignalDedupBlocked("min_interval", signal_id=str(recent_signal.signal_id))
         except Exception:
             pass
 
