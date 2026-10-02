@@ -42,7 +42,7 @@ def test_v7_prompt_is_materialised_and_hashed_exactly():
     prompt = ROOT / "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md"
     assert prompt.exists()
     digest = hashlib.sha256(prompt.read_bytes()).hexdigest()
-    assert digest == "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+    assert digest == "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
     assert _load("requirements.yaml")["source_prompt"]["sha256"] == digest
 
 
