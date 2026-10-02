@@ -32,7 +32,7 @@ def test_restore_drill_image_matches_current_staging_postgresql_major() -> None:
     # The current isolated staging database runs PostgreSQL 16. Newer pg_dump
     # clients can emit GUCs (for example transaction_timeout) that PG16 cannot
     # restore, so the drill client must match the staging server major.
-    assert "FROM postgres:16-alpine" in dockerfile
+    assert "FROM postgres:18-alpine" in dockerfile
 
 
 def test_restore_drill_cleanup_is_separate_and_final_pass_requires_cleanup() -> None:

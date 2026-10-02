@@ -408,9 +408,9 @@
       "canonical_name": "ai_improve",
       "fallback_handlers": [],
       "handler": "ai_improve_command",
-      "minimum_tier": "FREE",
+      "minimum_tier": "ADMIN",
       "registration": "runtime_static",
-      "role_scope": "FREE",
+      "role_scope": "ADMIN",
       "sources": [
         "signalrank_telegram/bot.py:6538"
       ],
@@ -2989,9 +2989,9 @@
       "canonical_name": "verifybroker",
       "fallback_handlers": [],
       "handler": "verifybroker_command",
-      "minimum_tier": "FREE",
+      "minimum_tier": "PREMIUM",
       "registration": "runtime_static",
-      "role_scope": "FREE",
+      "role_scope": "PREMIUM",
       "sources": [
         "signalrank_telegram/bot.py:6707"
       ],
