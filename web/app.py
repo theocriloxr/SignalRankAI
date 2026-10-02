@@ -497,6 +497,8 @@ async def metrics_prometheus():
     """Prometheus scrape endpoint for Grafana/Prometheus."""
     return Response(content=prometheus_metrics_text(), media_type=prometheus_content_type())
 
+from db.pg_features import list_delivered_signals_for_user
+
 
 @app.get("/signals/{user_id}")
 async def get_signals(
@@ -516,18 +518,17 @@ async def get_signals(
             if await _is_admin_user(int(user_id)):
                 tier = "ADMIN"
             tier = str(tier).upper()
-            base_query = select(Signal).where(Signal.archived == False, Signal.expired == False)
-
-            if req.active_only:
-                base_query = base_query.where(Signal.created_at >= now_utc_naive() - timedelta(hours=72))
+            status_filter = "active" if req.active_only else "all"
+            signals = await list_delivered_signals_for_user(
+                session,
+                telegram_user_id=int(user_id),
+                status_filter=status_filter,
+                limit=req.limit
+            )
 
             if tier_rank(tier) < tier_rank("PREMIUM"):
                 # Free: recent proof signals only
-                base_query = base_query.where(Signal.score >= 80)
-
-            signals = (
-                (await session.execute(base_query.order_by(Signal.created_at.desc()).limit(req.limit))).scalars().all()
-            )
+                signals = [s for s in signals if (s.score or 0) >= 80]
 
             signal_list = []
             for sig in signals:

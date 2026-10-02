@@ -365,9 +365,9 @@ async def _upsert_runtime_json(session, key: str, value: Mapping[str, Any]) -> N
         text(
             """
             INSERT INTO runtime_state(key, value, expires_at, updated_at)
-            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+            VALUES (:key, :value, NULL, CURRENT_TIMESTAMP)
             ON CONFLICT (key) DO UPDATE
-            SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+            SET value = EXCLUDED.value, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
             """
         ),
         {"key": key, "value": json.dumps(dict(value))},
@@ -379,7 +379,7 @@ async def _insert_runtime_json_if_absent(session, key: str, value: Mapping[str, 
         text(
             """
             INSERT INTO runtime_state(key, value, expires_at, updated_at)
-            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+            VALUES (:key, :value, NULL, CURRENT_TIMESTAMP)
             ON CONFLICT (key) DO NOTHING
             RETURNING key
             """
@@ -536,11 +536,11 @@ async def set_user_trading_preferences(
         text(
             """
             INSERT INTO runtime_state(key, value, expires_at, updated_at)
-            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+            VALUES (:key, :value, NULL, CURRENT_TIMESTAMP)
             ON CONFLICT (key) DO UPDATE
-            SET value = COALESCE(runtime_state.value, '{}'::jsonb) || EXCLUDED.value,
+            SET value = EXCLUDED.value,
                 expires_at = NULL,
-                updated_at = NOW()
+                updated_at = CURRENT_TIMESTAMP
             """
         ),
         {
@@ -615,11 +615,11 @@ async def set_platform_user_trading_preferences(
             text(
                 """
                 INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+                VALUES (:key, :value, NULL, CURRENT_TIMESTAMP)
                 ON CONFLICT (key) DO UPDATE
-                SET value = COALESCE(runtime_state.value, '{}'::jsonb) || EXCLUDED.value,
+                SET value = EXCLUDED.value,
                     expires_at = NULL,
-                    updated_at = NOW()
+                    updated_at = CURRENT_TIMESTAMP
                 """
             ),
             {

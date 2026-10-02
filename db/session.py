@@ -54,6 +54,11 @@ def _engine_connect_args() -> dict[str, Any]:
         connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
     except Exception:
         connect_timeout = 15.0
+        
+    db_url = os.getenv("DATABASE_URL", "")
+    if "sqlite" in db_url:
+        return {"timeout": connect_timeout}
+        
     try:
         command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
     except Exception:

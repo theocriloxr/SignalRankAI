@@ -341,9 +341,9 @@ async def set_user_trade_profile(session, telegram_user_id: int, profile: str) -
         text(
             """
             INSERT INTO runtime_state(key, value, expires_at, updated_at)
-            VALUES (:key, CAST(:value AS JSONB), NULL, NOW())
+            VALUES (:key, :value, NULL, CURRENT_TIMESTAMP)
             ON CONFLICT (key) DO UPDATE
-            SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+            SET value = EXCLUDED.value, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
             """
         ),
         {"key": f"trade_profile:{int(telegram_user_id)}", "value": payload},
