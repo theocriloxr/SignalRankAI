@@ -4,7 +4,7 @@
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0047-event-outbox-20261001
-Repository Alembic head: 0047_event_outbox
+Repository Alembic head: 0048_runtime_schema_bridge
 Release-candidate branch: implementation-of-master-blueprint
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -22,7 +22,7 @@ The repository schema now extends the previously certified credential-retirement
 chain with:
 
 - `0046_decision_log`: unified decision/rejection evidence;
-- `0047_event_outbox`: durable PostgreSQL fallback for critical events when
+- `0048_runtime_schema_bridge`: durable PostgreSQL fallback for critical events when
   the Redis transport is unavailable.
 
 The current release candidate also includes:
