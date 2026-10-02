@@ -102,3 +102,13 @@ def test_restore_drill_bounds_dump_lock_wait_and_guards_stale_targets() -> None:
     assert '_stage("stale_targets_detected"' in text
     assert '_stage("stale_cleanup_start"' in text
     assert '_stage("stale_cleanup_complete"' in text
+
+
+def test_restore_drill_minimal_image_has_self_contained_pinned_staging_guard() -> None:
+    text = Path("scripts/staging_backup_restore_drill.py").read_text(encoding="utf-8")
+    assert "from core.env import" not in text
+    assert "def _environment()" in text
+    assert "STAGING_CERTIFICATION_PROJECT_ID" in text
+    assert "RAILWAY_PROJECT_ID" in text
+    assert "hmac.compare_digest(expected_project, actual_project)" in text
+    assert 'profile == "staging-certification"' in text
