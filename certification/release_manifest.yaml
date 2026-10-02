@@ -299,6 +299,17 @@
       ]
     },
     {
+      "id": "staging-postgres-major",
+      "group": "staging",
+      "description": "Staging PostgreSQL major must match production release target",
+      "command": "python scripts/staging_postgres_version_check.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ]
+    },
+    {
       "id": "staging-market-class-certification",
       "group": "staging",
       "description": "Fresh execution-eligible provider path for every supported live asset class",
