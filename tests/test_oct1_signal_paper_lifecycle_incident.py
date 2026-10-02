@@ -78,3 +78,21 @@ def test_incident_regression_rejects_same_signal_id_with_changed_generation_trut
     # container for a fresh setup.
     assert "Never recycle the identity of an already-active Redis" in source
     assert "split-brain" in source
+
+
+def test_missed_entry_is_terminal_for_asset_position_locking() -> None:
+    from services.asset_position_manager import _state_from_status
+
+    for status in ("missed", "missed_entry", "entry_missed", "not_triggered"):
+        assert _state_from_status(status) == "EXPIRED"
+
+
+def test_fallback_delivery_asset_gate_releases_missed_entry() -> None:
+    source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    start = source.index("resolved_statuses = {")
+    end = source.index("is_resolved =", start)
+    block = source[start:end]
+    assert '"missed"' in block
+    assert '"missed_entry"' in block
+    assert '"entry_missed"' in block
+    assert '"not_triggered"' in block
