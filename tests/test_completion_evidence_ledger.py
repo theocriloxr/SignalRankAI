@@ -83,7 +83,7 @@ def test_current_release_candidate_uses_truthful_machine_readable_statuses() -> 
     entries = {row["id"]: row for row in candidate["entries"]}
     release = CURRENT_RELEASE.read_text(encoding="utf-8")
 
-    assert "Repository Alembic head: 0047_event_outbox" in release
+    assert "Repository Alembic head: 0048_runtime_schema_bridge" in release
     assert "NOT YET LIVE-CERTIFIED" in release
     assert entries["SR-LIVE-001"]["status"] == "FAILED"
     assert entries["SR-SOAK-001"]["status"] == "BLOCKED_EXTERNAL"
