@@ -71,8 +71,8 @@
     {
       "id": "security-semgrep",
       "group": "static",
-      "description": "Semgrep SAST across runtime code; migrations are certified by schema/release-chain gates",
-      "command": "semgrep scan --config auto --error --timeout 30 --timeout-threshold 0 --exclude='**/migrations/**' --exclude='**/alembic/**' --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py",
+      "description": "Semgrep SAST across runtime and application code; migrations are certified by schema/release-chain gates",
+      "command": "semgrep scan --config p/default --config p/security-audit --metrics off --error --strict --timeout 30 --timeout-threshold 0 --exclude='**/migrations/**' --exclude='**/alembic/**' --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py frontend/src mobile",
       "severity": "high",
       "required": true,
       "environments": [

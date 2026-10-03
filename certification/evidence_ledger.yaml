@@ -168,9 +168,10 @@
       "description": "Real/auto/copy/prop execution disabled during certification",
       "status": "PARTIAL",
       "evidence": [
-        "artifacts/master-audit-20261003/execution_flag_observations.json"
+        "artifacts/master-audit-20261003/execution_flag_observations.json",
+        "artifacts/master-audit-20261003/production-role-execution-flags.json"
       ],
-      "blocker": "Read-only variables confirmed staging four roles and production frontdoor have execution/payouts disabled and kill switch on. Remaining production roles/effective runtime proof remain."
+      "blocker": "Read-only flags confirmed all four staging roles and all four production roles: execution/payout flags 0, global kill switch 1. Effective runtime enforcement/failure drill remains."
     },
     {
       "id": "SR-BROKER-001",
@@ -192,7 +193,10 @@
       "id": "SR-BACKUP-001",
       "description": "Backup restore drill on exact release schema",
       "status": "PARTIAL",
-      "blocker": "Persistent staging resources exist; backup/restore must run against the final candidate schema with measured RPO/RTO."
+      "blocker": "Local PostgreSQL17 synthetic-fixture dump/restore: 124 tables, 262 rows, 435 indexes and row-content/schema fingerprints match. Restore+verify 2.031s. No staging backup/RPO/RTO proof.",
+      "evidence": [
+        "artifacts/master-audit-20261003/local-backup-restore.json"
+      ]
     },
     {
       "id": "SR-SOAK-001",

@@ -358,56 +358,56 @@
       "line_count": 49,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "25e6a342993922219d43a2b265a66c29ea08bdd083e32918431bd4cc9b279d77",
-      "size_bytes": 1689
+      "sha256": "49a6e214f99c3e9fe7f31e38bb79715ce2bbcc09406921beb5e2597ff102d473",
+      "size_bytes": 1640
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.cleanroom",
       "reason": "production/build source",
-      "sha256": "bcb0b768ab0ed2b9943c6e4d5242c52c27471f4f920dea8284a9d19025e7e70e",
-      "size_bytes": 651
+      "sha256": "1b7369b82a28c67bd74976e17c12c4b05faf87e92895703be47ff7692497a4be",
+      "size_bytes": 629
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.frontend.cleanroom",
       "reason": "production/build source",
-      "sha256": "16767ecda7ad2786e07bececf0ce865694d9a0d60cb0cb4bd629a5d81bd91179",
-      "size_bytes": 389
+      "sha256": "ee4c9536364c1a1082074e56ad9d27569b721d91bc98a2bd5e5a6bfd8dad1068",
+      "size_bytes": 378
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.mobile.cleanroom",
       "reason": "production/build source",
-      "sha256": "cb37635e7bff1e8d0277861b4c7fa543742c871771c89a82b8d88e909b67b68c",
-      "size_bytes": 461
+      "sha256": "24f314a504f38a15a2c6613eac5fde4a55f14be7dab9eba4113718dd62807835",
+      "size_bytes": 450
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "f950d255fe3b198a57c305d8313a9d799664647f5722cf6a87fe4327d3f21784",
-      "size_bytes": 1364
+      "sha256": "a48762c82bfec01c872a539a7f20978cba61284bd961b81ab93eb6f7bee0eb87",
+      "size_bytes": 1317
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.restore-drill",
       "reason": "production/build source",
-      "sha256": "b4a12396f6cd5000ef73a2e13e12e38d296c04291c25df70aac2a5fc92572629",
-      "size_bytes": 258
+      "sha256": "527c63b26d82f8660d70506224eb5c8862e2d7b7c619d9cdd14eede629db1f97",
+      "size_bytes": 251
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.static.cleanroom",
       "reason": "production/build source",
-      "sha256": "d91f64269767ae0b0aa79170bccdd2962525ec6c393961377373f9dafd603bca",
-      "size_bytes": 690
+      "sha256": "f58a1f5ecf262cb92dc5b5129696a1ea8ebac2fa76f6479ecca09a84ca68dd50",
+      "size_bytes": 968
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -2579,27 +2579,27 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 227,
+      "line_count": 231,
       "path": "certification/evidence_ledger.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cde85f914bacf1fd7ff8fd6cd4c8803f237f342f42adb075365cef1a4a98d9a5",
-      "size_bytes": 8954
+      "sha256": "3e892b3dad60deb97ff1c36bb9081313ebc99433873c5ecd9c9ae0d412e5d82a",
+      "size_bytes": 9197
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7890,
+      "line_count": 8001,
       "path": "certification/master_requirement_registry.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "65169b6f0bfb4cf6ca8f89e7e33e28f44878a9b0e3e91c9bcdfa36027c652ec9",
-      "size_bytes": 321118
+      "sha256": "24a7a79ffa7ce8ccecc1623d9e62be18827b6b74294ade3fde24058b9b1b8610",
+      "size_bytes": 325971
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 456,
+      "line_count": 472,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a7f7a266c4f11c445c97468ffebcf17e740e72a7c97cbf91c4171e87a988e311",
-      "size_bytes": 14670
+      "sha256": "f7360f00f1ef7511598f32421875fe06f748863965ab516c8d43fbf80612a4ab",
+      "size_bytes": 15148
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5115,11 +5115,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 50,
+      "line_count": 53,
       "path": "docs/MASTER_AUDIT_20261003.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "058dac3fb070528cddc7313ef1b7d68adb7ebba7bf7c9b2d649f1a594a73306d",
-      "size_bytes": 8406
+      "sha256": "3a796da8d74191262de4df82ca6aeec7f7661e567cb2e03ba39ee44b027934bf",
+      "size_bytes": 9580
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9539,11 +9539,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 86,
+      "line_count": 88,
       "path": "scripts/build_master_requirement_registry.py",
       "reason": "production/build source",
-      "sha256": "68feead9b140edc597bee349991de1eb2821853168deed8534c837a46446b7f9",
-      "size_bytes": 4068
+      "sha256": "cdfb69b82f3301b48adf8ee5132a2225223e288d8de140dd59f770ab2abcb475",
+      "size_bytes": 4211
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

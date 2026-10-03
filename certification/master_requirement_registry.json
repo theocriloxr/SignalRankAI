@@ -251,8 +251,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -260,7 +259,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-002",
@@ -277,8 +276,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -286,7 +284,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-003",
@@ -304,8 +302,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -313,7 +310,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-004",
@@ -331,8 +328,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -340,7 +336,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-005",
@@ -358,8 +354,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -367,7 +362,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-006",
@@ -385,8 +380,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -394,7 +388,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-007",
@@ -412,8 +406,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -421,7 +414,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "P0-SIG-008",
@@ -488,8 +481,7 @@
         "tests/test_master_p0_postgres_integration.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
-        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
@@ -497,7 +489,7 @@
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": "tests/test_master_directive_p0_regressions.py",
-      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
+      "evidence_scope": "LOCAL ae49f5bc full-suite report; not staging certification"
     },
     {
       "requirement_id": "SR-MASTER-3-2-001",
@@ -5299,7 +5291,7 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:454",
       "section": "18",
       "severity": "P1",
-      "status": "FAILED",
+      "status": "PARTIAL",
       "code_evidence": [
         "certification/release_manifest.yaml"
       ],
@@ -5309,7 +5301,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Shared branch changes during checks; an isolated immutable local candidate is required.",
+      "blocker": "Isolated immutable local candidate ae49f5bc9e9b5d36850b6361ac486113be657a01 verified with unchanged source. Shared root auto-commits continued through 9b2c8b32. Later container/manifest fixes require a new identity; no current-SHA hosted CI/staging acceptance.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5321,17 +5313,19 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:455",
       "section": "18",
       "severity": "P1",
-      "status": "FAILED",
+      "status": "IMPLEMENTED_UNVERIFIED",
       "code_evidence": [
         "certification/release_manifest.yaml"
       ],
       "test_evidence": [
         "tests/test_release_manifest_validation.py"
       ],
-      "runtime_evidence": [],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Initial locked suite: 2299 passed, 32 failed; source changed during run. Fixes require a fresh complete run.",
+      "blocker": "Frozen candidate ae49f5bc: 2337 passed, zero failed/skipped, source unchanged. Real local PostgreSQL integration included. Exact-SHA hosted CI and staging remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5353,7 +5347,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Lint/type/build passed locally; npm high-severity vulnerabilities remain.",
+      "blocker": "Frozen ae49f5bc frontend lint/type/build pass. Dependency audit remains failed: 5 high advisories. Browser/accessibility/route acceptance remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5375,7 +5369,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Type check and Android/iOS exports passed locally; npm vulnerabilities and native device E2E remain.",
+      "blocker": "Frozen ae49f5bc mobile typecheck and Android/iOS bundle exports pass. Audit remains failed: 16 high, 7 moderate. Native device/E2E acceptance remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5397,7 +5391,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Critical Ruff/Pyright/Bandit/pip-audit/Semgrep local checks passed on intermediate bytes. Full typing debt, ShellCheck/image scanning and immutable rerun remain.",
+      "blocker": "Frozen ae49f5bc critical Pyright (24 files), Ruff, Bandit and runtime pip-audit pass; all five shell scripts pass ShellCheck. Full Pyright retains 1436 errors/6 warnings on prior equivalent Python source. Semgrep has zero findings but parsing/taint-analysis warnings: partial coverage, not a clean gate. Hadolint reports 3 warnings/1 info on Dockerfile; Linux builds/image vulnerability scans absent. Strict Semgrep and explicit container evidence now required.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5441,7 +5435,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Deterministic provenance tests pass locally, including conditional dependency marker metadata; final candidate artifacts remain.",
+      "blocker": "Frozen ae49f5bc deterministic SBOM/provenance self-check passes: 137 components. No production image digest/attestation verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5508,10 +5502,13 @@
       "test_evidence": [
         "tests/test_release_manifest_validation.py"
       ],
-      "runtime_evidence": [],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/execution_flag_observations.json",
+        "artifacts/master-audit-20261003/production-role-execution-flags.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Staging four-role and production frontdoor variables show execution/payout flags 0 and kill switch 1. Remaining production roles and effective runtime checks are unverified.",
+      "blocker": "Read-only flags confirmed all four staging roles and all four production roles: execution/payout flags 0, global kill switch 1. Effective runtime enforcement/failure drill remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5530,10 +5527,12 @@
       "test_evidence": [
         "tests/test_release_manifest_validation.py"
       ],
-      "runtime_evidence": [],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/local-backup-restore.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
+      "blocker": "Local PostgreSQL17 synthetic-fixture dump/restore: 124 tables, 262 rows, 435 indexes and row-content/schema fingerprints match. Restore+verify 2.031s. No staging backup/RPO/RTO proof.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5753,7 +5752,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
+      "blocker": "Webhook ACK/queue/handler SLOs need exact-SHA staging load/runtime acceptance.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -7885,6 +7884,118 @@
       "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
       "last_verified_sha": null,
       "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-020",
+      "severity": "P0",
+      "title": "Notification ORM objects expire before send; snapshot authority/precision/reference/time must survive dispatch",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "engine/signal_lifecycle.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-021",
+      "severity": "P1",
+      "title": "SELL aliases produce inverted MFE/MAE telemetry",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "engine/signal_lifecycle.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-022",
+      "severity": "P1",
+      "title": "CRLF shell entrypoints fail ShellCheck and Linux execution",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        ".gitattributes",
+        "start.sh",
+        "deploy.sh"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-023",
+      "severity": "P1",
+      "title": "Docker context includes local databases, audit environments and generated dependencies",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        ".dockerignore"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-024",
+      "severity": "P1",
+      "title": "Static clean-room security tools contaminate locked runtime dependencies",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "Dockerfile.static.cleanroom"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-025",
+      "severity": "P1",
+      "title": "Docker package reproducibility and image security acceptance remain unproven",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "Dockerfile",
+        "Dockerfile.prod",
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-026",
+      "severity": "P1",
+      "title": "Zero Semgrep findings conceal partial parsing and taint-analysis warnings",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-027",
+      "severity": "P1",
+      "title": "Requirement inventory rebuild loses audit metadata",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "scripts/build_master_requirement_registry.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
     }
-  ]
+  ],
+  "empty_audit_passes": 0,
+  "last_audit_observation": "2026-10-03; 27 material discoveries; no qualifying empty audit pass"
 }
