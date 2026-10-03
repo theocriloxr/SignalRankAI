@@ -179,6 +179,23 @@
       ]
     },
     {
+      "id": "backend-postgres-integrity",
+      "group": "backend",
+      "description": "Real PostgreSQL receipt, paper idempotency, lifecycle concurrency and outcome authority",
+      "command": "python -m pytest -q tests/test_master_p0_postgres_integration.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ],
+      "required_environment": [
+        "DATABASE_URL",
+        "APP_ENV=test",
+        "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"
+      ]
+    },
+    {
       "id": "backend-system",
       "group": "backend",
       "description": "Complete system certification",

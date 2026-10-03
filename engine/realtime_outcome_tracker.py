@@ -8,7 +8,7 @@ using high-frequency REST calls or WebSocket price feeds.
 Key behaviours:
   - Monitors all unresolved signals.
   - Detects TP1/TP2/TP3/SL hits instantly.
-  - On TP1 hit: moves SL to break-even (trailing SL) via MT5 bridge + notifies users.
+  - On TP1 hit: requests a breakeven review; broker amendments require separate confirmation.
   - On final TP/SL: sends branded PnL "flex" card notification.
   - Persists outcome to the `outcomes` table.
 
@@ -1572,16 +1572,25 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 )
 
         async with _session_scope(get_session, priority=DBPriority.CRITICAL) as session:
+            from core.signal_lifecycle import outcome_status_for_lifecycle
+
+            # Lock in the same order as the lifecycle writer. A stale worker
+            # must not project an incompatible terminal outcome after a race.
+            locked_lifecycle = (await session.execute(
+                select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id).with_for_update()
+            )).scalar_one_or_none()
+            expected_status = outcome_status_for_lifecycle(getattr(locked_lifecycle, "state", None))
+            requested_status = "tp3" if status_l == "tp" else status_l
+            if expected_status != requested_status:
+                logger.error("[outcome_lifecycle_mismatch] signal=%s requested=%s expected=%s", signal_id, status_l, expected_status)
+                await session.rollback()
+                return
             # Serialize outcome projection changes. Lifecycle is authoritative,
             # and this guard prevents stale/replayed writers from downgrading it.
-            locked_outcome = None
-            try:
-                locked_result = await session.execute(
-                    select(Outcome).where(Outcome.signal_id == signal_id).with_for_update()
-                )
-                locked_outcome = locked_result.scalar_one_or_none()
-            except Exception:
-                locked_outcome = None
+            locked_result = await session.execute(
+                select(Outcome).where(Outcome.signal_id == signal_id).with_for_update()
+            )
+            locked_outcome = locked_result.scalar_one_or_none()
             current_status = str(getattr(locked_outcome, "status", "") or "").lower()
             if current_status and not outcome_transition_allowed(current_status, status_l):
                 logger.info(

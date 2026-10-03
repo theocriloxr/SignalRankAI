@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from types import SimpleNamespace
 
 from sqlalchemy import and_, case, func, or_, select
 
@@ -113,7 +114,7 @@ def _canonical_outcome(status: str, highest_tp: int) -> str:
 
 
 def _projection_metrics(
-    signal: Signal,
+    signal: Signal | SimpleNamespace,
     lifecycle: SignalLifecycle | None,
     status: str,
     price: float | None,

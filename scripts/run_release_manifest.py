@@ -56,6 +56,11 @@ def main():
     if not selected and (a.group or a.gate): raise RuntimeError("no required gates matched selection")
     for g in selected:
         cmd=str(g["command"])
+        for requirement in g.get("required_environment", []):
+            name, separator, expected = requirement.partition("=")
+            actual = os.getenv(name)
+            if not actual or (separator and actual != expected):
+                raise RuntimeError(f"release gate {g['id']} requires environment setting: {name}")
         if cmd.startswith("manual:"): raise RuntimeError(f"manual gate cannot be auto-certified: {g['id']}")
         print(f"::group::{g['id']} - {g.get('description','')}",flush=True)
         cp=subprocess.run(cmd,cwd=ROOT,shell=True,env=os.environ.copy())

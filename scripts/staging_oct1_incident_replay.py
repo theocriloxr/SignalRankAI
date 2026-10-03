@@ -93,7 +93,11 @@ async def _noop_notification(**_kwargs: Any) -> None:
 
 
 async def run() -> dict[str, Any]:
-    guard = _guard()
+    return await _run_replay(_guard())
+
+
+async def _run_replay(guard: dict[str, Any]) -> dict[str, Any]:
+    """Exercise the scenario after the CLI or isolated test fixture guards it."""
 
     from sqlalchemy import func, select
 

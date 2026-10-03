@@ -69,6 +69,7 @@ jobs:
           --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       APP_ENV: test
+      SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED: "1"
       ENVIRONMENT: test
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/signalrank_test
       DATABASE_MIGRATION_URL: postgresql://postgres:postgres@127.0.0.1:5432/signalrank_test

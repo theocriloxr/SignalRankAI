@@ -6,8 +6,8 @@ import pytest
 import engine.realtime_outcome_tracker as rt
 
 
-def _read_result(statement):
-    from db.models import Signal, SignalTrackingEvent
+def _read_result(statement, lifecycle_state="TP1_HIT"):
+    from db.models import Signal, SignalTrackingEvent, SignalLifecycle
     descriptions = getattr(statement, "column_descriptions", [])
     entity = descriptions[0].get("entity") if descriptions else None
     value = None
@@ -16,6 +16,8 @@ def _read_result(statement):
                                 asset="BTCUSDT", timeframe="1h", ml_probability=None, created_at=None)
     elif entity is SignalTrackingEvent:
         value = 102.0
+    elif entity is SignalLifecycle:
+        value = SimpleNamespace(state=lifecycle_state, highest_tp_hit=1 if lifecycle_state == "TP1_HIT" else 0)
     return SimpleNamespace(scalar_one_or_none=lambda: value, all=lambda: [])
 
 
@@ -40,7 +42,7 @@ async def test_persist_outcome_maps_time_stop_channels(monkeypatch):
 
     class _DummySession:
         async def execute(self, _stmt):
-            return _read_result(_stmt)
+            return _read_result(_stmt, lifecycle_state="CLOSED_TIME_STOP")
 
         async def commit(self):
             return None
