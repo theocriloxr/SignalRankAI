@@ -34,6 +34,45 @@ async def postgres_database():
 
 
 @pytest.mark.asyncio
+async def test_rejection_tracker_writes_jsonb_owner_of_computed_view(postgres_database, monkeypatch):
+    from db.models import DecisionLog
+    from db.session import get_session
+    from engine.signal_deduplicator import MLRejectionTracker
+    from sqlalchemy import delete, text
+
+    monkeypatch.setenv("REJECT_OUTCOME_WINDOWS", "5m")
+    async with get_session() as session:
+        kind = (await session.execute(text("SELECT relkind FROM pg_class WHERE oid=to_regclass('public.ml_rejected_signals')"))).scalar_one()
+        assert kind in {"v", b"v"}, "This regression requires the actual 0046 computed view"
+        row = DecisionLog(asset="AUDIT_VIEW_WRITE", timeframe="5m", decision="rejected", reason="audit",
+                          created_at=datetime.utcnow()-timedelta(hours=1),
+                          meta={"layer":"ml", "features":{}, "direction":"LONG", "audit_marker":"preserve-me"})
+        session.add(row)
+        await session.flush()
+        row_id = row.id
+        await session.commit()
+    tracker = MLRejectionTracker()
+    async def noop(*args, **kwargs): return 0
+    async def evaluate(**kwargs): return "win", {"source":"isolated-regression"}, 101.0
+    monkeypatch.setattr(tracker, "flush_pending_rejections", noop)
+    monkeypatch.setattr(tracker, "_evaluate_window", evaluate)
+    monkeypatch.setattr(tracker, "_notify_rejection_outcomes", noop)
+    monkeypatch.setattr(tracker, "_run_adaptive_learning_if_due", noop)
+    try:
+        assert await tracker.track_rejection_outcomes() >= 1
+        async with get_session() as session:
+            actual = await session.get(DecisionLog, row_id)
+            assert actual.meta["audit_marker"] == "preserve-me"
+            assert actual.meta["actual_outcome"] == "win"
+            assert actual.meta["outcome_tracked_at"]
+            assert actual.meta["features"]["outcome_labels"]["5m"] == "win"
+    finally:
+        async with get_session() as session:
+            await session.execute(delete(DecisionLog).where(DecisionLog.id == row_id))
+            await session.commit()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("filtered", [False, True])
 async def test_nullable_web_search_filters_execute_on_postgres(postgres_database, filtered):
     from web.platform_api import instrument_search, signal_feed

@@ -12,6 +12,7 @@ import argparse
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -137,6 +138,41 @@ def _current_revision(connection) -> str | None:
         row = cursor.fetchone()
         return str(row[0]) if row else None
 
+def _storage_errors(connection, before: str | None) -> list[str]:
+    """Reject production upgrades whose estimated peak use exceeds recent capacity."""
+    if _environment() not in {"production", "prod"}:
+        return []
+    try:
+        capacity_mb = float(_value("PRODUCTION_DB_VOLUME_SIZE_MB"))
+    except ValueError:
+        return ["PRODUCTION_DB_VOLUME_SIZE_MB must match the observed Railway volume capacity"]
+    observed_at = _parse_utc(_value("PRODUCTION_DB_VOLUME_OBSERVED_AT"))
+    now = datetime.now(timezone.utc)
+    if not math.isfinite(capacity_mb) or capacity_mb <= 0:
+        return ["production volume capacity must be a positive finite number"]
+    if observed_at is None or observed_at > now or now - observed_at > timedelta(hours=1):
+        return ["production volume capacity observation must be no more than one hour old"]
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COALESCE(SUM(pg_database_size(oid)), 0) FROM pg_database")
+            data_bytes = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COALESCE(SUM(size), 0) FROM pg_ls_waldir()")
+            wal_bytes = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COALESCE(pg_total_relation_size(to_regclass('public.ml_rejected_signals')), 0)")
+            legacy_bytes = int(cursor.fetchone()[0])
+    except Exception:
+        return ["production migration storage metadata unavailable; verify headroom before upgrade"]
+    # 0046 temporarily holds both the original 1.5-GB rejection relation and
+    # its JSONB copy, plus WAL. Never count the later DROP as available space.
+    copy_bytes = legacy_bytes if before not in {"0046_decision_log", "0047_event_outbox"} else 0
+    reserve_bytes = max(512_000_000, 2 * copy_bytes + 256_000_000)
+    available_bytes = int(capacity_mb * 1_000_000) - data_bytes - wal_bytes
+    if available_bytes < reserve_bytes:
+        return [f"production migration headroom insufficient: estimated_available_bytes={available_bytes} "
+                f"required_reserve_bytes={reserve_bytes}; expand the Railway volume first"]
+    return []
+
+
 def migrate() -> dict[str, Any]:
     source_errors = _source_errors()
     if source_errors:
@@ -196,6 +232,9 @@ def migrate() -> dict[str, Any]:
                     after = before
                     migration_required = False
                 else:
+                    storage_errors = _storage_errors(connection, before)
+                    if storage_errors:
+                        raise RuntimeError("; ".join(storage_errors))
                     config = Config(str(ROOT / "alembic.ini"))
                     config.set_main_option("sqlalchemy.url", db_url)
                     command.upgrade(config, "head")

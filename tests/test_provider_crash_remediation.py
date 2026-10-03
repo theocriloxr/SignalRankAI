@@ -6,6 +6,12 @@ import pytest
 from data import fetcher, connector_registry
 
 
+@pytest.fixture(autouse=True)
+def isolated_provider_cooldowns(monkeypatch):
+    from data import providers
+    monkeypatch.setattr(providers, "_PROVIDER_COOLDOWN", {})
+
+
 def _rows():
     return [{"timestamp": 1_700_000_000 + i * 300, "open": 100, "high": 101,
              "low": 99, "close": 100, "volume": 1} for i in range(25)]
@@ -98,3 +104,63 @@ def test_polygon_requests_recent_bars_and_returns_bounded_chronological_candles(
     requests.clear()
     assert asyncio.run(polygon_adapter._async_get_candles("AAPL", "unsupported", limit=2)) == []
     assert requests == []
+
+
+@pytest.mark.parametrize("symbol,expected", [
+    ("EURUSD", "EUR/USD"), ("EUR/USD", "EUR/USD"), ("XAUUSD", "XAU/USD"),
+    ("BTCUSDT", "BTC/USDT"), ("AAPL", "AAPL"), ("BRK-B", "BRK-B"),
+    ("NAS100", "NAS100"),
+])
+def test_twelvedata_preserves_provider_symbol_semantics(symbol, expected):
+    from data.symbol_formatter import format_symbol_for_twelvedata
+    from data.dynamic_symbol_assign import format_symbol_for_twelvedata as dynamic
+    assert format_symbol_for_twelvedata(symbol) == expected
+    assert dynamic(symbol)[0] == expected
+
+
+def test_twelvedata_requests_utc_and_honors_offset_timestamps(monkeypatch):
+    from data.connectors import twelvedata_adapter as td
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "local-alias-test")
+    calls = []
+    class Response:
+        status_code = 200
+        def json(self):
+            return {"values": [
+                {"datetime": stamp, "open": 1, "high": 2, "low": 0.5, "close": 1}
+                for stamp in ["2026-10-02T12:00:00", "2026-10-02T13:00:00+01:00"]
+            ]}
+    class Client:
+        async def get(self, url, **kwargs):
+            calls.append(kwargs)
+            return Response()
+    monkeypatch.setattr(td.httpx_client, "get_client", lambda _: Client())
+    rows = asyncio.run(td._async_get_candles("EURUSD", "5m"))
+    assert calls[0]["params"]["symbol"] == "EUR/USD"
+    assert calls[0]["params"]["timezone"] == "UTC"
+    assert [row["timestamp"] for row in rows] == [1790942400000, 1790942400000]
+    assert asyncio.run(td._async_get_candles("EURUSD", "3m")) == []
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("http_status", [200, 429])
+def test_twelvedata_quota_stops_adapter_and_legacy_requests(monkeypatch, http_status, caplog):
+    from data import providers
+    from data.connectors import twelvedata_adapter as td
+    monkeypatch.setenv("TWELVEDATA_API_KEY", "secret-must-not-be-logged")
+    calls = []
+    class Response:
+        status_code = http_status
+        def json(self):
+            return {"status": "error", "message": "You have run out of API credits for the day. secret-must-not-be-logged"}
+    class Client:
+        async def get(self, *args, **kwargs):
+            calls.append(1)
+            return Response()
+    monkeypatch.setattr(td.httpx_client, "get_client", lambda _: Client())
+    monkeypatch.setattr(providers.requests, "get", lambda *args, **kwargs: pytest.fail("quota cooldown ignored by legacy provider"))
+    assert asyncio.run(td._async_get_candles("EURUSD", "5m")) == []
+    assert asyncio.run(td._async_get_candles("XAUUSD", "5m")) == []
+    assert providers.fetch_twelvedata_candles("AAPL", "5m") == []
+    assert calls == [1]
+    assert "secret-must-not-be-logged" not in caplog.text

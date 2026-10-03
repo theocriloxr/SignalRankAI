@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ThemeControl } from "../components/ThemeControl";
 
 const markets = ["Crypto", "FX", "Indices", "Equities", "Commodities"];
 const principles = [
@@ -12,10 +13,11 @@ export default function Home() {
     <main>
       <section className="hero">
         <nav className="topbar">
-          <Link className="brand" href="/">SignalRank<span>AI</span></Link>
+          <Link className="brand" href="/"><img src="/brand/icon.svg" alt="" width="32" height="32" />SignalRank<span>AI</span></Link>
           <div className="navlinks">
             <Link href="/methodology">Methodology</Link><Link href="/risk">Risk</Link><Link href="/security">Security</Link><Link href="/providers">Providers</Link><Link href="/docs">Docs</Link>
           </div>
+          <ThemeControl />
           <Link className="button secondary" href="/app">Open platform</Link>
         </nav>
         <div className="heroGrid">
@@ -27,7 +29,7 @@ export default function Home() {
             <div className="marketRow">{markets.map((m)=><span key={m}>{m}</span>)}</div>
           </div>
           <div className="terminalCard">
-            <div className="terminalHead"><span>QUALIFICATION PIPELINE</span><span className="liveDot">● LIVE</span></div>
+            <div className="terminalHead"><span>QUALIFICATION PIPELINE</span><span className="liveDot">METHOD</span></div>
             <div className="metric"><span>Universe</span><strong>Multi-asset</strong></div><div className="metric"><span>Data gate</span><strong>Fresh + certified</strong></div><div className="metric"><span>Strategy</span><strong>Consensus</strong></div><div className="metric"><span>ML</span><strong>Champion-gated</strong></div><div className="metric"><span>Risk</span><strong>Fail-closed</strong></div>
             <div className="decision">NO QUALIFIED SETUP IS A VALID OUTPUT</div>
           </div>

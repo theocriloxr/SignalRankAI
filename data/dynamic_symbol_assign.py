@@ -237,13 +237,12 @@ def format_symbol_for_polygon(symbol: str, asset_type: str = "stocks") -> Tuple[
 
 
 def format_symbol_for_twelvedata(symbol: str) -> Tuple[str, str]:
-    """Convert symbol for Twelve Data API - usually plain format works."""
+    """Use the canonical Twelve Data currency/metal pair formatter."""
     if not symbol:
         return symbol, "empty"
 
-    s = str(symbol).upper().strip()
-    s = s.replace("/", "").replace("-", "").replace("_", "")
-
+    from data.symbol_formatter import format_symbol_for_twelvedata as canonical_format
+    s = canonical_format(symbol)
     return s, f"plain:{symbol}"
 
 

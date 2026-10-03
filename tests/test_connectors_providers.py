@@ -74,6 +74,7 @@ class TestProviderAdapters(unittest.TestCase):
 
         providers._PROVIDER_LAST_CALL.clear()
         providers._PROVIDER_COOLDOWN.clear()
+        self.addCleanup(providers._PROVIDER_COOLDOWN.clear)
 
         with patch("data.providers.requests.get", return_value=_QuotaResp()) as mock_get:
             with patch.dict("os.environ", {"TWELVEDATA_API_KEY": "fake", "TWELVEDATA_RATE_LIMIT_COOLDOWN_SECONDS": "3600"}, clear=False):
