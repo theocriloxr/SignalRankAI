@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,7 +95,7 @@ def test_operator_kill_switch_is_owner_only_and_confirmed() -> None:
 
 def test_pwa_cache_rotated_for_canonical_workstation() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v38" in worker
+    assert validate_shell_assets(ROOT) >= 38
 
 def test_owner_maintenance_web_parity_is_strict_and_confirmed() -> None:
     api = source("web/platform_api.py")
@@ -143,7 +144,7 @@ def test_operator_business_and_market_scan_have_web_parity() -> None:
 
 def test_pwa_cache_rotated_for_operator_business_release() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v38" in worker
+    assert validate_shell_assets(ROOT) >= 38
 
 def test_operator_force_signal_is_operator_only_confirmed_and_never_executes_broker() -> None:
     api = source("web/platform_api.py")
@@ -164,5 +165,5 @@ def test_operator_force_signal_is_operator_only_confirmed_and_never_executes_bro
 
 def test_pwa_cache_rotated_for_operator_force_signal_release() -> None:
     worker = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v38" in worker
+    assert validate_shell_assets(ROOT) >= 38
 

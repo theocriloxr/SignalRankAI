@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,7 +97,7 @@ def test_canonical_frontend_is_a_responsive_workstation_not_a_single_dashboard()
     assert "@media(max-width:700px)" in css
     assert "@media(min-width:1320px)" in css
     assert "initTheme" in app
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38
 
 def test_worker_db_backpressure_is_classified_as_expected_deferral() -> None:
     worker = source("worker/worker.py")
