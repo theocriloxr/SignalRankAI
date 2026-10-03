@@ -1,13 +1,13 @@
 {
-  "file_count": 1895,
+  "file_count": 1897,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": ".dockerignore",
       "reason": "production/build source",
-      "sha256": "6b58a23ae5e067d1148f158f1a1bcec652e1d285fff81af9ac14fe15c63bd6b5",
-      "size_bytes": 745
+      "sha256": "40ab00fd06a779d7792c41e0256f8fca31932200af442723157471afd8d57257",
+      "size_bytes": 957
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -24,6 +24,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "aba334e42d8b273e8056fa6b3f7bdbdb4846565be27774936fbc5c7cb2278a92",
       "size_bytes": 8656
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": ".gitattributes",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "f3eab5333ed9b828e47a6ff49b8ffed289e58a09632d9541b3701ad49cf770e7",
+      "size_bytes": 142
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4350,8 +4358,8 @@
       "line_count": 159,
       "path": "deploy.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ae0c20b54730a9a3e310348c16af4edb03a533915861ac1a76f20414ba037d41",
-      "size_bytes": 5974
+      "sha256": "708e047519275979b6fd40652f0fd6fc74a36249a2994f87e7f241fc88759969",
+      "size_bytes": 5815
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9147,6 +9155,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 6,
+      "path": "requirements-security-tools.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "d7188d433a125dd989e19d5d59698654aeb1eba90d91772782030ba900a26e05",
+      "size_bytes": 151
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "requirements.lock",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
@@ -10014,24 +10030,24 @@
       "line_count": 20,
       "path": "scripts/staging_predeploy_v142.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3657d46c9d116753ee11c452ccdbe423e5261cc775ebfacd906d4846d7161bed",
-      "size_bytes": 798
+      "sha256": "674496387c4d56e7203dcf6402be2f23f7dea7a42d499b0b4bffc136faf60e8f",
+      "size_bytes": 778
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 32,
       "path": "scripts/staging_predeploy_v150.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "63f898768b041c99165ecb0c54ecf5bba1f9a6ed125ebf2cfb820440a6ff4e5f",
-      "size_bytes": 1281
+      "sha256": "05eef575101bb8d09f41cf01328a365358e044b13a6da7f71927bddb5dc2473a",
+      "size_bytes": 1249
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 26,
       "path": "scripts/staging_predeploy_v151.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0a87cd0c3fd214b199b4f7343e209acfade25fbd5e84a055555236282ba6bd31",
-      "size_bytes": 879
+      "sha256": "c20b6d9e9dbe7f973566ef5c8718dce9f8d55765582f0faf83b78a3ec25641f7",
+      "size_bytes": 853
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12094,8 +12110,8 @@
       "line_count": 182,
       "path": "start.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "44fd3d06e28fc6552880c77879f3626ce5f4006c2815a53b0feacbdbeda11635",
-      "size_bytes": 8080
+      "sha256": "bd4e7234d1fe0fecdc517b746aaf16188d85ec5e3200046d0c4e0392af70052c",
+      "size_bytes": 7898
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15175,7 +15191,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 440,
-    "PRESERVE_BEHAVIOUR": 1138,
+    "PRESERVE_BEHAVIOUR": 1140,
     "TEST_ONLY": 316
   }
 }

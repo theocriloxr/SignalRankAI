@@ -84,7 +84,7 @@
       "id": "shellcheck",
       "group": "static",
       "description": "Shell entrypoint lint",
-      "command": "shellcheck start.sh",
+      "command": "shellcheck start.sh deploy.sh scripts/staging_predeploy_v142.sh scripts/staging_predeploy_v150.sh scripts/staging_predeploy_v151.sh",
       "severity": "high",
       "required": true,
       "environments": [
@@ -335,6 +335,22 @@
       "required": true,
       "environments": [
         "staging"
+      ]
+    },
+    {
+      "id": "container-security",
+      "group": "staging",
+      "description": "Build and certify the exact production image before staging acceptance",
+      "command": "manual:container_security",
+      "severity": "critical",
+      "required": true,
+      "environments": ["staging"],
+      "evidence_requirements": [
+        "Exact candidate SHA, Dockerfile identity, immutable base digest and built image digest",
+        "Successful Linux clean-room and production image builds with locked runtime pip check",
+        "Hadolint findings resolved or explicitly dispositioned under the master directive",
+        "Timestamped image OS/runtime vulnerability scan with no unresolved mandatory-severity findings",
+        "Image SBOM and provenance bound to the same SHA and image digest"
       ]
     },
     {

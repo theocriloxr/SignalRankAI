@@ -77,6 +77,8 @@ def build() -> dict:
         "live_readiness_verdict": "NO / NOT YET",
         "inventory_is_verification": False, "entries": entries,
         "audit_discoveries": previous.get("audit_discoveries", []),
+        "empty_audit_passes": previous.get("empty_audit_passes", 0),
+        "last_audit_observation": previous.get("last_audit_observation"),
     }
 
 
