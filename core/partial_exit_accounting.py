@@ -74,6 +74,7 @@ class PartialExitResult:
     tp_r_multiples: tuple[float, ...]
     fractions: tuple[float, float, float]
     policy_version: str = "partial-exit-weighted-v2"
+    accounting_basis: str = "planned_signal_exits"
 
 
 def calculate_partial_exit_result(
@@ -88,7 +89,12 @@ def calculate_partial_exit_result(
     entry_f = _float(entry)
     stop_f = _float(stop_loss)
     levels = parse_take_profit_levels(take_profit)
-    stage = max(0, min(2, int(highest_tp or 0)))
+    try:
+        stage = int(highest_tp)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if stage not in {1, 2}:
+        return None
     if entry_f is None or stop_f is None or entry_f <= 0 or stage <= 0 or len(levels) < stage:
         return None
     risk_distance = abs(entry_f - stop_f)
@@ -96,13 +102,24 @@ def calculate_partial_exit_result(
         return None
 
     direction_s = str(direction or "").strip().lower()
+    if direction_s not in {"long", "buy", "bullish", "short", "sell", "bearish"}:
+        return None
     is_short = direction_s in {"short", "sell", "bearish"}
+    if stop_f <= 0 or (is_short and stop_f <= entry_f) or (not is_short and stop_f >= entry_f):
+        return None
+    residual = _float(residual_exit_r)
+    if residual is None:
+        return None
     tp_r: list[float] = []
     tp_pct: list[float] = []
     for level in levels[:stage]:
         favorable = (entry_f - level) if is_short else (level - entry_f)
-        tp_r.append(max(0.0, favorable / risk_distance))
-        tp_pct.append(max(0.0, (favorable / entry_f) * 100.0))
+        if favorable <= 0:
+            return None
+        tp_r.append(favorable / risk_distance)
+        tp_pct.append((favorable / entry_f) * 100.0)
+    if tp_r != sorted(tp_r) or len(set(tp_r)) != len(tp_r):
+        return None
 
     f1, f2, runner = planned_exit_fractions()
     closed_fractions = [f1, f2]
@@ -115,8 +132,8 @@ def calculate_partial_exit_result(
         realized_pct += fraction * tp_pct[index]
         consumed += fraction
     remaining = max(0.0, 1.0 - consumed)
-    realized_r += remaining * float(residual_exit_r or 0.0)
-    # A protected/breakeven residual contributes 0% by definition.
+    realized_r += remaining * residual
+    realized_pct += remaining * residual * risk_distance / entry_f * 100.0
 
     return PartialExitResult(
         highest_tp=stage,

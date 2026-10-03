@@ -1621,6 +1621,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0)
                 or bool(status_l == "partial_win_be" and tp_hit_index > 0),
                 "partial_exit_policy": getattr(partial_result, "policy_version", None),
+                "partial_exit_accounting_basis": getattr(partial_result, "accounting_basis", None),
                 "partial_exit_realized_r": getattr(partial_result, "realized_r", None),
                 "partial_exit_realized_percent": getattr(partial_result, "realized_percent", None),
                 "partial_exit_fractions": list(getattr(partial_result, "fractions", ()) or ()),
