@@ -260,8 +260,8 @@ async def ensure_telegram_user(
             (
                 await session.execute(
                     text(
-                        "INSERT INTO users(telegram_user_id,username,tier,display_name,public_user_id,created_at,last_active_at,updated_at) "
-                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,NOW(),NOW(),NOW()) RETURNING id"
+                        "INSERT INTO users(telegram_user_id,username,tier,display_name,public_user_id,auto_renew,created_at,last_active_at,updated_at) "
+                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,FALSE,NOW(),NOW(),NOW()) RETURNING id"
                     ),
                     {"telegram_id": int(telegram_user_id), "username": username, "display_name": display_name},
                 )
@@ -290,8 +290,8 @@ async def create_email_account(session: Any, *, email: str, password: str, displ
         (
             await session.execute(
                 text(
-                    "INSERT INTO users(telegram_user_id,username,tier,primary_email,display_name,public_user_id,account_status,onboarding_status,created_at,updated_at) "
-                    "VALUES(NULL,NULL,'free',:email,:display_name,gen_random_uuid()::text,'active','started',NOW(),NOW()) RETURNING id"
+                    "INSERT INTO users(telegram_user_id,username,tier,primary_email,display_name,public_user_id,account_status,onboarding_status,auto_renew,created_at,updated_at) "
+                    "VALUES(NULL,NULL,'free',:email,:display_name,gen_random_uuid()::text,'active','started',FALSE,NOW(),NOW()) RETURNING id"
                 ),
                 {"email": email_value, "display_name": (display_name or email_value.split('@')[0])[:160]},
             )
