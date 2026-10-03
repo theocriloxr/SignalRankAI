@@ -37,6 +37,7 @@ def _is_expected_closure(
     asset_class: AssetClass,
     *,
     symbol: str | None = None,
+    interval_seconds: int = 3600,
 ) -> bool:
     if asset_class is AssetClass.CRYPTO:
         return False
@@ -115,7 +116,7 @@ def _is_expected_closure(
     # CME-style commodity feeds commonly omit the daily 21:00-22:00 UTC
     # maintenance window. Treat only a tightly bounded gap that overlaps that
     # window as expected; arbitrary same-day holes still fail closed.
-    if asset_class is AssetClass.COMMODITY and elapsed_hours <= 2.0:
+    if asset_class is AssetClass.COMMODITY and elapsed_hours <= interval_seconds / 3600.0 + 1.0:
         cursor = previous.date()
         while cursor <= current.date():
             maintenance_start = datetime.combine(cursor, datetime.min.time(), tzinfo=timezone.utc).replace(hour=21)
@@ -162,7 +163,9 @@ def certify_market_candles(
         if (
             previous
             and timestamp - previous > expected_ms * 1.8
-            and not _is_expected_closure(previous, timestamp, canonical, symbol=symbol)
+            and not _is_expected_closure(
+                previous, timestamp, canonical, symbol=symbol, interval_seconds=expected_ms // 1000
+            )
         ):
             session_gap_count += max(1, round((timestamp - previous) / expected_ms) - 1)
         previous = timestamp

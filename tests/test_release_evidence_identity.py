@@ -48,3 +48,15 @@ def test_changed_configuration_invalidates_resume_without_exposing_secrets():
         validate_resume_identity(
             {"release_identity": {}, "invocation": previous_inputs}, {}, changed_inputs
         )
+
+
+def test_governance_and_prompt_changes_invalidate_source_evidence(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                    "commit", "--allow-empty", "-qm", "test"], check=True)
+    for name in ("requirements/feature_flags.yaml", "docs/specs/prompt.md"):
+        previous = capture_release_identity(tmp_path)
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("changed policy", encoding="utf-8")
+        assert capture_release_identity(tmp_path)["source_sha256"] != previous["source_sha256"]

@@ -242,15 +242,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "engine/realtime_outcome_tracker.py",
+        "services/outcome_reconciliation.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Confirmed delivery plans override mutable signal rows; conflicting plan snapshots quarantine accounting. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-002",
@@ -259,15 +269,24 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "engine/signal_lifecycle.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Entry admission checks expiry under the lifecycle lock; paper actionability replay passes locally. Current-SHA temporal/staging races remain uncertified. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-003",
@@ -276,15 +295,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "core/outcome_accounting.py",
+        "engine/signal_lifecycle.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "TP arithmetic requires direction-compatible crossing and durable event price; reversed JNJ mark cannot manufacture positive returns. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-004",
@@ -293,15 +322,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "core/outcome_accounting.py",
+        "engine/realtime_outcome_tracker.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Missed/expired rows have null executed R/P&L; BAC replay passed on local PostgreSQL. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-005",
@@ -310,15 +349,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "engine/signal_lifecycle.py",
+        "services/outcome_reconciliation.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Concurrent PostgreSQL writers accept one lifecycle event. External duplicate-send crash windows and terminal outbox delivery remain uncertified. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-006",
@@ -327,15 +376,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "core/paper_trading_service.py",
+        "scripts/staging_oct1_incident_replay.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Receipt-backed replay checks automatic paper open once and explicit preference mismatch. Full per-class sizing/fill/restart/notification certification remains. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-007",
@@ -344,15 +403,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "services/delivery_authorization.py",
+        "scripts/staging_oct1_incident_replay.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Local receipt/lifecycle visibility replay passes. Complete web/Telegram parity, pagination and current staging acceptance remain. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-008",
@@ -361,15 +430,22 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "engine/core.py",
+        "db/models.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Decision persistence exists; zero-unaccounted crash/restart/soak behavior has not been certified. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-009",
@@ -378,15 +454,23 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "engine/core.py",
+        "execution/service.py",
+        "core/financial_activation.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Recovery and execution safety boundaries exist; per-cohort forward accounting and exact-SHA demo/runtime proof remain. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "P0-SIG-010",
@@ -395,15 +479,25 @@
       "section": "3",
       "severity": "P0",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "core/signal_lifecycle.py",
+        "engine/realtime_outcome_tracker.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/postgres-priority-integrity.xml",
+        "artifacts/master-audit-20261003/followup-regressions-2.xml"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Executed time closure is CLOSED_TIME_STOP; active/TP states cannot become pre-entry expired/missed. Breakeven amendments still need broker confirmation evidence. Local test evidence cannot satisfy exact-SHA staging verification.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": "tests/test_master_directive_p0_regressions.py",
+      "evidence_scope": "LOCAL_ONLY; reports spanning source changes are diagnostic"
     },
     {
       "requirement_id": "SR-MASTER-3-2-001",
@@ -5205,16 +5299,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:454",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Shared branch changes during checks; an isolated immutable local candidate is required.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G02",
@@ -5222,16 +5321,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:455",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Initial locked suite: 2299 passed, 32 failed; source changed during run. Fixes require a fresh complete run.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G03",
@@ -5239,16 +5343,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:456",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Lint/type/build passed locally; npm high-severity vulnerabilities remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G04",
@@ -5256,16 +5365,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:457",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Type check and Android/iOS exports passed locally; npm vulnerabilities and native device E2E remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G05",
@@ -5274,15 +5388,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Critical Ruff/Pyright/Bandit/pip-audit/Semgrep local checks passed on intermediate bytes. Full typing debt, ShellCheck/image scanning and immutable rerun remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G06",
@@ -5290,16 +5409,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:459",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Full chain 0001-0048 rendered/applied to disposable local PostgreSQL. Exact-SHA staging schema acceptance remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G07",
@@ -5307,16 +5431,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:460",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Deterministic provenance tests pass locally, including conditional dependency marker metadata; final candidate artifacts remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G08",
@@ -5325,15 +5454,22 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/runtime_inventory.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Pinned isolated staging project/environment and persistent PostgreSQL/Redis observed via Railway. Fresh comprehensive isolation acceptance remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G09",
@@ -5341,16 +5477,23 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:462",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/runtime_inventory.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Staging frontdoor and worker roles run different historical SHAs; candidate not deployed/certified.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G10",
@@ -5359,15 +5502,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Staging four-role and production frontdoor variables show execution/payout flags 0 and kill switch 1. Remaining production roles and effective runtime checks are unverified.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G11",
@@ -5376,15 +5524,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G12",
@@ -5393,15 +5546,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G13",
@@ -5409,16 +5567,21 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:466",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Historical class certificate failed FX/equity/index/commodity; no current enabled-family certificate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G14",
@@ -5427,15 +5590,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Yahoo execution-provider exception removed; price evidence/calendar guards strengthened. Real feed freshness/lineage must still certify.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G15",
@@ -5444,15 +5612,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G16",
@@ -5461,15 +5634,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Real PostgreSQL receipt/paper open idempotency replay passes locally. Restart/fill/class-sizing coverage remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G17",
@@ -5478,15 +5656,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "US30/JNJ/BAC unit and real PostgreSQL regression checks pass locally; exact-SHA staging remains.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G18",
@@ -5495,15 +5678,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G19",
@@ -5512,15 +5700,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Found/fixed async database thread-pool starvation; 8-writer PostgreSQL concurrency and priority/FIFO/cancellation tests passed. Runtime pool/session SLOs remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G20",
@@ -5529,15 +5722,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G21",
@@ -5546,15 +5744,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G22",
@@ -5562,16 +5765,23 @@
       "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:475",
       "section": "18",
       "severity": "P1",
-      "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
-      "runtime_evidence": [],
+      "status": "FAILED",
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
+      "runtime_evidence": [
+        "artifacts/master-audit-20261003/runtime_inventory.json"
+      ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Production PostgreSQL observed 4.503298048 GB used on 5000 MB volume; capacity/retention/alerts acceptance not complete.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G23",
@@ -5580,15 +5790,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G24",
@@ -5597,15 +5812,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G25",
@@ -5614,15 +5834,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G26",
@@ -5631,15 +5856,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G27",
@@ -5648,15 +5878,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Implementation/evidence audit incomplete; no current-SHA staging acceptance, broker demonstration or soak proof for this gate.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G28",
@@ -5665,15 +5900,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Soak cannot begin while candidate, CI, provider, broker and other prerequisite gates are not green.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G29",
@@ -5682,15 +5922,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Active GitHub ruleset 24410166 requires manifest/release-certification, PR approval, no force push/deletion/bypass. Production source remains historical pending staging.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G30",
@@ -5699,15 +5944,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Production canary intentionally awaits staging and all prerequisite gates; no production deployment made.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G31",
@@ -5716,15 +5966,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Later explicit live-pilot authorization is required after technical gates pass; no live authorization inferred from this directive.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "G32",
@@ -5733,15 +5988,20 @@
       "section": "18",
       "severity": "P1",
       "status": "PARTIAL",
-      "code_evidence": [],
-      "test_evidence": [],
+      "code_evidence": [
+        "certification/release_manifest.yaml"
+      ],
+      "test_evidence": [
+        "tests/test_release_manifest_validation.py"
+      ],
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "blocker": "Execution/recovery remain fail-closed; a future separately authorized pilot is not yet eligible.",
       "last_verified_sha": null,
       "last_verified_at": null,
-      "regression_link": null
+      "regression_link": null,
+      "evidence_scope": "NAMED_LOCAL_CHECKS_OR_HISTORICAL_DEPLOYMENT_OBSERVATIONS_ONLY"
     },
     {
       "requirement_id": "SR-MASTER-18-033",
@@ -7342,5 +7602,289 @@
       "regression_link": null
     }
   ],
-  "audit_discoveries": []
+  "audit_discoveries": [
+    {
+      "requirement_id": "AUDIT-20261003-001",
+      "severity": "P0",
+      "title": "Signed TP accounting / immutable receipt plan authority",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "core/outcome_accounting.py",
+        "engine/realtime_outcome_tracker.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-002",
+      "severity": "P0",
+      "title": "Active trade incorrectly expires as untriggered setup",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "core/signal_lifecycle.py",
+        "engine/signal_lifecycle.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-003",
+      "severity": "P0",
+      "title": "Unknown state/outcome must quarantine instead of becoming active",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "core/signal_lifecycle.py",
+        "core/outcome_accounting.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-004",
+      "severity": "P0",
+      "title": "Rejected CAS or expired outcome writer can diverge from lifecycle truth",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "engine/realtime_outcome_tracker.py",
+        "tests/test_master_p0_postgres_integration.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-005",
+      "severity": "P1",
+      "title": "Blocked async DB admissions exhaust executor and stall admitted work",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "db/priority.py",
+        "db/session.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-006",
+      "severity": "P1",
+      "title": "Optional metadata lookup uses critical DB lane",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "engine/core.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-007",
+      "severity": "P0",
+      "title": "Unconfirmed breakeven claim and invalid legacy broker ownership join",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "engine/realtime_outcome_tracker.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-008",
+      "severity": "P1",
+      "title": "Resumed verification reuses changed source/config/dependency evidence",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "scripts/release_evidence_identity.py",
+        "scripts/run_complete_system_test.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-009",
+      "severity": "P1",
+      "title": "Security tooling changes locked runtime dependency graph",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        ".github/workflows/ci.yml",
+        "requirements-security-tools.txt"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-010",
+      "severity": "P1",
+      "title": "Runtime dependency lock omitted transitive/platform dependencies",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "requirements.lock",
+        "scripts/generate_release_provenance.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-011",
+      "severity": "P1",
+      "title": "Unpatched frontend/mobile high-severity dependency advisories",
+      "status": "FAILED",
+      "code_evidence": [
+        "frontend/package-lock.json",
+        "mobile/package-lock.json"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-012",
+      "severity": "P1",
+      "title": "GitHub Actions billing lock prevents jobs from starting",
+      "status": "BLOCKED_EXTERNAL",
+      "code_evidence": [
+        ".github/workflows/ci.yml"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-013",
+      "severity": "P1",
+      "title": "Branch protection absent; now active with stable aggregate check",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        ".github/workflows/ci.yml"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-014",
+      "severity": "P1",
+      "title": "Copied production URL used by staging app links",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "web/platform_api.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-015",
+      "severity": "P1",
+      "title": "Component percent inflation and fabricated missing ML probability",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "code_evidence": [
+        "engine/signal_explainability.py",
+        "engine/signal_metrics.py"
+      ],
+      "test_evidence": [
+        "tests/test_master_directive_p0_regressions.py"
+      ],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-016",
+      "severity": "P1",
+      "title": "Calendar exemptions can mask unscheduled holes",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "market/data_quality_certification.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-017",
+      "severity": "P1",
+      "title": "Old completion ledger uses VERIFIED for historical/non-staging evidence",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "certification/evidence_ledger.yaml",
+        "docs/architecture/COMPLETION_EVIDENCE_LEDGER.md"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-018",
+      "severity": "P1",
+      "title": "Duplicate terminal notification crash/restart windows need external transport proof",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "services/outcome_reconciliation.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    },
+    {
+      "requirement_id": "AUDIT-20261003-019",
+      "severity": "P0",
+      "title": "Planned partial exits/breakeven cannot substitute for actual broker execution confirmation",
+      "status": "PARTIAL",
+      "code_evidence": [
+        "core/partial_exit_accounting.py",
+        "engine/realtime_outcome_tracker.py"
+      ],
+      "test_evidence": [],
+      "blocker": "Exact-SHA runtime/staging acceptance incomplete; see docs/MASTER_AUDIT_20261003.md.",
+      "last_verified_sha": null,
+      "last_verified_at": null
+    }
+  ]
 }

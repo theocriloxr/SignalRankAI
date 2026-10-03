@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Iterable, List, Optional
 
 from engine.signal_metrics import (
@@ -13,7 +14,8 @@ def _safe_float(value: Any) -> Optional[float]:
     try:
         if value is None:
             return None
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     except Exception:
         return None
 
@@ -100,18 +102,24 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
     metric_drivers: List[str] = []
     if rr is not None:
         metric_drivers.append(f"R/R 1:{rr:.2f}")
-    confluence_component = _component_value("confluence")
+    def _component_percent(name: str) -> Optional[float]:
+        value = _component_value(name)
+        if value is None or not 0 <= value <= 100:
+            return None
+        return value * 100.0 if value <= 1.0 else value
+
+    confluence_component = _component_percent("confluence")
     if confluence_component is not None:
-        metric_drivers.append(f"Confluence component {confluence_component * 100.0:.0f}%")
-    confidence_component = _component_value("confidence")
+        metric_drivers.append(f"Confluence component {confluence_component:.0f}%")
+    confidence_component = _component_percent("confidence")
     if confidence_component is not None:
-        metric_drivers.append(f"Confidence component {confidence_component * 100.0:.0f}%")
-    volatility_component = _component_value("vol")
+        metric_drivers.append(f"Confidence component {confidence_component:.0f}%")
+    volatility_component = _component_percent("vol")
     if volatility_component is not None:
-        metric_drivers.append(f"Volatility quality {volatility_component * 100.0:.0f}%")
-    candle_component = _component_value("candle_evidence")
+        metric_drivers.append(f"Volatility quality {volatility_component:.0f}%")
+    candle_component = _component_percent("candle_evidence")
     if candle_component is not None:
-        metric_drivers.append(f"Candle evidence {candle_component * 100.0:.0f}%")
+        metric_drivers.append(f"Candle evidence {candle_component:.0f}%")
     if score_components.get("regime_bonus") not in (None, 1, 1.0):
         metric_drivers.append(f"Regime bonus x{float(score_components['regime_bonus']):.2f}")
     if score_components.get("ml_boost") not in (None, 1, 1.0):
@@ -147,8 +155,6 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         bullets.append(f"ML probability: {ml_probability * 100.0:.0f}%")
     if rr is not None:
         bullets.append(f"Estimated R/R: 1:{rr:.2f}")
-    if drivers:
-        bullets.extend(drivers[:3])
     if invalidation_text:
         bullets.append(f"Invalidation: {invalidation_text[:120]}")
     candle_evidence = signal.get("candle_evidence") if isinstance(signal.get("candle_evidence"), dict) else {}
@@ -156,6 +162,8 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
     candle_confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "").strip()
     if candle_summary:
         bullets.append(f"Price action: {candle_summary[:180]}")
+    if drivers:
+        bullets.extend(drivers[:3])
 
     # Add confidence components from ranking if available
     conf_components = signal.get("confidence_components") or signal.get("score_breakdown") or {}

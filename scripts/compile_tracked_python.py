@@ -9,6 +9,7 @@ filesystem scan with the same deployable-source exclusions.
 from __future__ import annotations
 
 import py_compile
+import os
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKIP_PARTS = {
     ".git",
     ".venv",
+    ".audit-venv",
+    ".audit-tools-venv",
     "venv",
     "__pycache__",
     ".pytest_cache",
@@ -32,11 +35,11 @@ SKIP_PARTS = {
 
 
 def _filesystem_python_files() -> list[Path]:
-    return sorted(
-        path
-        for path in ROOT.rglob("*.py")
-        if path.is_file() and not any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts)
-    )
+    files = []
+    for directory, subdirectories, filenames in os.walk(ROOT):
+        subdirectories[:] = [name for name in subdirectories if name not in SKIP_PARTS]
+        files.extend(Path(directory) / name for name in filenames if name.endswith(".py"))
+    return sorted(files)
 
 
 def tracked_python_files() -> list[Path]:

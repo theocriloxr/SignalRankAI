@@ -57,6 +57,11 @@ SHA. Required external/runtime evidence includes:
 
 No successful build or deployment by itself changes this boundary.
 
+The [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0
+corrections, local PostgreSQL evidence, the GitHub billing blocker, active
+branch governance and remaining dependency/runtime certification gaps.
+No local result grants exact-SHA staging or live-money certification.
+
 ## Historical evidence retained
 
 The following remain useful historical references but apply only to the older

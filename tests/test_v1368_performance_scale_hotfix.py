@@ -46,8 +46,11 @@ def test_finalized_policy_migration_is_audited_and_human_corrections_survive() -
 
 def test_worker_commits_verified_repairs_before_failing_batch_certification() -> None:
     source = (ROOT / "worker" / "worker.py").read_text("utf-8")
-    block = source[source.index("performance_result = await reconcile_all_performance_ledgers"):source.index("await run_with_db_retry", source.index("performance_result = await reconcile_all_performance_ledgers"))]
-    assert block.index("await session.commit()") < block.index("persist_performance_reconciliation_result")
+    phase = source[source.index("async def _run_phase("):source.index("async def _run()", source.index("async def _run_phase("))]
+    assert phase.index("await session.commit()") < phase.index("return result")
+    block = source[source.index("performance_result = await _run_phase("):source.index("await run_with_db_retry", source.index("performance_result = await _run_phase("))]
+    assert "lambda session: reconcile_all_performance_ledgers(" in block
+    assert block.index("performance_result = await _run_phase(") < block.index("persist_performance_reconciliation_result")
     assert block.index("persist_performance_reconciliation_result") < block.index("performance_result.certification_failed")
 
 

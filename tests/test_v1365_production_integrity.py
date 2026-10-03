@@ -234,17 +234,18 @@ async def test_profile_demand_includes_active_users_without_saved_preferences():
         async def execute(self, statement):
             self.calls += 1
             if self.calls == 1:
-                return Result([])
-            return Result([(1001,), (1002,)])
+                return Result([(1001, None, "free"), (1002, None, "free")])
+            return Result([])
 
     snapshot = await load_profile_demand(Session())
     assert snapshot.active_profiles == 2
-    assert set(snapshot.asset_classes) == {"crypto", "fx", "commodity", "index", "stock"}
+    from core.tier_policy import get_entitlements
+    assert set(snapshot.asset_classes) == set(get_entitlements("free").allowed_asset_classes)
 
 
 def test_pending_outcomes_remain_eligible_for_tracking():
     source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
-    assert 'func.lower(Outcome.status).in_([' in source
+    assert 'func.lower(Outcome.status).in_(' in source
     assert '"pending"' in source
     assert '"active"' in source
     assert '"tp2"' in source
@@ -255,7 +256,15 @@ def test_delivery_integrity_fail_closed_controls_exist():
     assert "DELIVERY_LIMIT_FAIL_CLOSED" in source
     assert "PROFILE_POLICY_FAIL_CLOSED" in source
     assert "DELIVERY_PRICE_VALIDATION_FAIL_CLOSED" in source
-    assert 'continue\n                                # Non-production operators' in source
+    import ast
+
+    tree = ast.parse(source)
+    assert any(
+        isinstance(node, ast.If)
+        and "DELIVERY_PRICE_VALIDATION_FAIL_CLOSED" in ast.unparse(node.test)
+        and any(isinstance(statement, ast.Continue) for statement in node.body)
+        for node in ast.walk(tree)
+    )
 
 
 def test_performance_is_provisional_below_terminal_coverage():

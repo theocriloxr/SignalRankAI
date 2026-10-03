@@ -74,6 +74,29 @@ def test_time_stop_preserves_signed_executed_loss():
     assert outcome_price_metrics(signal, "time_stop", 52) == (-0.4, -4.0)
 
 
+def test_unknown_outcome_cannot_become_active_or_realized():
+    from core.signal_lifecycle import lifecycle_state_for_outcome
+    with pytest.raises(ValueError, match="outcome_status_unknown"):
+        lifecycle_state_for_outcome("unknown-state")
+    with pytest.raises(ValueError, match="outcome_status_unknown"):
+        outcome_price_metrics(_jnj(), "unknown-state", 260)
+
+
+def test_missing_model_prediction_is_not_synthesized_from_technical_scores():
+    from engine.signal_metrics import resolve_ml_probability
+    assert resolve_ml_probability({"score": 95, "confidence": 0.9, "confluence": 88}) is None
+    assert resolve_ml_probability({"ml_probability": float("nan"), "score": 95}) is None
+    assert resolve_ml_probability({"ml_probability": 120}) is None
+
+
+def test_explanation_component_accepts_fraction_or_percent_without_inflation():
+    from engine.signal_explainability import build_signal_explanation
+    for value in (0.82, 82):
+        explanation = build_signal_explanation({"score_components": {"confluence": value}})
+        assert "Confluence component 82%" in explanation["drivers"]
+        assert "8200%" not in str(explanation)
+
+
 def test_snapshot_sell_alias_preserves_short_lifecycle_math():
     from engine.realtime_outcome_tracker import _delivery_snapshot_signature, _tracked_signal_payload
     from engine.signal_lifecycle import evaluate_observation

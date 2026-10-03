@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import html
 import logging
+import math
 import os
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import Iterable, TypedDict
 
 from core.signal_lifecycle import (
     ACTIVE_TRADE,
@@ -82,7 +84,14 @@ _DEFERRED_LIFECYCLE_OBSERVATION_LIMIT = max(
     100,
     min(10000, int(os.getenv("LIFECYCLE_OBSERVATION_RETRY_MAX", "2000") or 2000)),
 )
-_DEFERRED_LIFECYCLE_OBSERVATIONS: dict[str, dict[str, object]] = {}
+class _DeferredObservation(TypedDict):
+    price: float
+    high: float
+    low: float
+    updated_at: datetime
+
+
+_DEFERRED_LIFECYCLE_OBSERVATIONS: dict[str, _DeferredObservation] = {}
 
 
 def _should_queue_event_notification(event_type: str) -> bool:
@@ -201,12 +210,14 @@ def validate_lifecycle_price_evidence(signal: dict, event_type: str, price: floa
     outcome_price_metrics(plan, status, float(price))
 
 
-def _event_message(signal: dict, event_type: str, price: float, timezone_name: str, telegram_user_id: int) -> str:
+def _event_message(signal: dict, event_type: str, price: float, timezone_name: str, telegram_user_id: int,
+                   *, observed_at: datetime | None = None) -> str:
     from signalrank_telegram.timezones import format_user_datetime
+    from utils.trade_levels import format_price_level, parse_price_levels
 
     asset = html.escape(str(signal.get("asset") or "Signal"))
     direction = html.escape(str(signal.get("direction") or "").upper())
-    event_time = format_user_datetime(_utc_now_naive(), timezone_name, telegram_user_id, include_date=False)
+    event_time = format_user_datetime(observed_at or _utc_now_naive(), timezone_name, telegram_user_id, include_date=False)
     labels = {
         "entry_touched": ("Entry Triggered", "Signal is now active."),
         "tp1_hit": ("TP1 Hit", "Secure partial profit and move protection to break-even."),
@@ -219,16 +230,25 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
         "time_stop": ("Trade Closed at Time Limit", "The triggered trade reached its holding-time limit."),
     }
     title, action = labels.get(event_type, (event_type.replace("_", " ").title(), "Lifecycle updated."))
-    ref = html.escape(str(signal.get("signal_id") or signal.get("id") or "")[:12])
-    ref_line = f"\nRef: <code>{ref}</code>" if ref else ""
     from core.signal_identity import public_signal_id
 
     ref = html.escape(public_signal_id(signal))
     ref_line = f"\n\U0001f4cc Signal ID: <code>{ref}</code>" if ref else ""
+    full_ref = html.escape(str(signal.get("signal_id") or signal.get("id") or ""))
+    if full_ref and full_ref != ref:
+        ref_line += f"\nRef: <code>{full_ref}</code>"
+    targets = parse_price_levels(signal.get("take_profit") or signal.get("take_profits"))
+    plan_lines = (
+        f"Planned entry: <code>{format_price_level(signal.get('entry'))}</code>\n"
+        f"Planned stop: <code>{format_price_level(signal.get('stop_loss'))}</code>\n"
+    )
+    if targets:
+        plan_lines += "Targets: " + " | ".join(format_price_level(target) for target in targets) + "\n"
     return (
         f"<b>{html.escape(title)}</b>\n\n"
         f"<b>{asset}</b> {direction}\n"
-        f"Price: <code>{float(price):.6g}</code>\n"
+        f"Observed price: <code>{format_price_level(price)}</code>\n"
+        f"{plan_lines}"
         f"Time: {html.escape(event_time)}{ref_line}\n\n"
         f"{html.escape(action)}"
     )
@@ -253,7 +273,9 @@ async def update_lifecycle_observation(
     now = _utc_now_naive()
     entry = float(signal.get("entry") or 0)
     stop = float(signal.get("stop_loss") or 0)
-    direction = str(signal.get("direction") or "long")
+    direction = canonical_direction(signal.get("direction"))
+    if direction not in {"long", "short"}:
+        raise ValueError("lifecycle_direction_unknown")
     risk = abs(entry - stop)
     observation_high = float(high) if high is not None else float(price)
     observation_low = float(low) if low is not None else float(price)
@@ -326,7 +348,7 @@ async def update_lifecycle_observation(
     except Exception as exc:
         if _transient_lifecycle_db_error(exc):
             previous = _DEFERRED_LIFECYCLE_OBSERVATIONS.get(signal_id)
-            merged = {
+            merged: _DeferredObservation = {
                 "price": float(price),
                 "high": observation_high,
                 "low": observation_low,
@@ -614,8 +636,8 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                         source_message_id=delivery.telegram_message_id,
                     )
                 )
-        await session.commit()
         event_id = int(existing.id)
+        await session.commit()
 
     # Telegram delivery is intentionally owned by the separate notification
     # dispatcher. The critical lifecycle transaction ends before network I/O.
@@ -688,7 +710,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     if not _enabled("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
         return
     from config import config
-    from db.models import AlertPreference, OutcomeNotification, SignalEventNotification, SignalTrackingEvent, User
+    from db.models import AlertPreference, OutcomeNotification, SignalDelivery, SignalEventNotification, SignalTrackingEvent, User
     from db.session import get_session
     from sqlalchemy import and_, or_, select
     from telegram import Bot
@@ -700,9 +722,21 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
         seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
     )
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
+        from engine.realtime_outcome_tracker import _confirmed_delivery_snapshot_map, _tracked_signal_payload
+
+        signal_id = str(signal.get("signal_id") or "")
+        snapshots, conflicts = await _confirmed_delivery_snapshot_map(session, SignalDelivery, [signal_id])
+        if signal_id in conflicts or signal_id not in snapshots:
+            logger.error("[lifecycle_notification_plan_unavailable] signal=%s; notification deferred", signal_id)
+            return
+        signal = _tracked_signal_payload(SimpleNamespace(**signal), None, None, snapshots[signal_id], reason="lifecycle_notification")
         event = await session.get(SignalTrackingEvent, event_id)
-        event_price = float(getattr(event, "price", 0) or signal.get("entry") or 0)
-        rows = (
+        event_price = float(getattr(event, "price", 0) or 0)
+        observed_at = getattr(event, "event_time", None)
+        if not math.isfinite(event_price) or event_price <= 0:
+            logger.error("[lifecycle_notification_price_unavailable] event=%s; notification deferred", event_id)
+            return
+        orm_rows = (
             await session.execute(
                 select(SignalEventNotification, User, AlertPreference)
                 .join(User, User.id == SignalEventNotification.user_id)
@@ -723,11 +757,27 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                 )
             )
         ).all()
+        # Read-only session close can expire ORM state. Retain plain values for
+        # claim/send/receipt processing, which occurs after this transaction.
+        rows = [
+            (
+                SimpleNamespace(**{key: getattr(notification, key) for key in (
+                    "id", "event_type", "signal_id", "chat_id", "source_message_id"
+                )}),
+                SimpleNamespace(timezone=user.timezone, telegram_user_id=user.telegram_user_id),
+                SimpleNamespace(tp_sl_enabled=preference.tp_sl_enabled,
+                                quiet_start_hour=preference.quiet_start_hour,
+                                quiet_end_hour=preference.quiet_end_hour) if preference is not None else None,
+            )
+            for notification, user, preference in orm_rows
+        ]
     if not rows:
         return
 
     bot = Bot(token=token)
     for notification, user, preference in rows:
+        if user.telegram_user_id is None:
+            continue
         if preference is not None and not bool(preference.tp_sl_enabled):
             async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
                 suppressed = await session.get(SignalEventNotification, notification.id)
@@ -766,6 +816,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             event_price,
             str(user.timezone or ""),
             int(user.telegram_user_id),
+            observed_at=observed_at,
         )
         sent_message_id = None
         error = None
@@ -877,7 +928,7 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
         stale_cutoff = _utc_now_naive() - timedelta(
             seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
         )
-        rows = (
+        orm_rows = (
             await session.execute(
                 select(SignalEventNotification.event_id, Signal)
                 .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)
@@ -898,13 +949,16 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
                 .limit(max(1, int(limit)))
             )
         ).all()
+        rows = [
+            (int(event_id), {column.key: getattr(row, column.key, None) for column in row.__table__.columns})
+            for event_id, row in orm_rows
+        ]
     dispatched = 0
     seen: set[int] = set()
-    for event_id, row in rows:
+    for event_id, signal in rows:
         if int(event_id) in seen:
             continue
         seen.add(int(event_id))
-        signal = {column.key: getattr(row, column.key, None) for column in row.__table__.columns}
         await dispatch_event_notifications(int(event_id), signal)
         dispatched += 1
     return dispatched

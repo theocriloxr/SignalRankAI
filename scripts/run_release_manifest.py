@@ -62,6 +62,12 @@ def main():
             if not actual or (separator and actual != expected):
                 raise RuntimeError(f"release gate {g['id']} requires environment setting: {name}")
         if cmd.startswith("manual:"): raise RuntimeError(f"manual gate cannot be auto-certified: {g['id']}")
+        if cmd.startswith("python "):
+            executable = subprocess.list2cmdline([sys.executable]) if os.name == "nt" else shlex.quote(sys.executable)
+            cmd = executable + cmd[len("python"):]
+        elif cmd.startswith("pyright "):
+            executable = subprocess.list2cmdline([sys.executable]) if os.name == "nt" else shlex.quote(sys.executable)
+            cmd += " --pythonpath " + executable
         print(f"::group::{g['id']} - {g.get('description','')}",flush=True)
         cp=subprocess.run(cmd,cwd=ROOT,shell=True,env=os.environ.copy())
         print("::endgroup::",flush=True)

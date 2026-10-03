@@ -14,7 +14,7 @@ SOURCE_ROOTS = {
     "deploy", "engine", "execution", "frontend", "market", "migrations", "ml", "mobile",
     "observability", "payments", "paystack", "runtime", "scripts", "services",
     "signalrank_discord", "signalrank_telegram", "storage", "strategies", "tests",
-    "tools", "utils", "web", "worker", ".github",
+    "tools", "utils", "web", "worker", ".github", "requirements",
 }
 GENERATED_PARTS = {"node_modules", "__pycache__", ".next", "dist", "dist-android", "dist-ios"}
 
@@ -32,7 +32,7 @@ def capture_release_identity(root: Path) -> dict[str, str | bool]:
             continue
         name = raw.decode("utf-8")
         path = Path(name)
-        if len(path.parts) > 1 and path.parts[0] not in SOURCE_ROOTS:
+        if len(path.parts) > 1 and path.parts[0] not in SOURCE_ROOTS and path.parts[:2] != ("docs", "specs"):
             continue
         if GENERATED_PARTS.intersection(path.parts):
             continue

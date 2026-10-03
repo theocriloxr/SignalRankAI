@@ -13,6 +13,8 @@ def outcome_price_metrics(signal: Any, status: str, price: float | None) -> tupl
     status = str(status or "").strip().lower()
     if status in {"missed", "missed_entry", "expired", "pending"}:
         return None, None
+    if status not in {"tp", "tp1", "tp2", "tp3", "sl", "time_stop", "partial_win_be"}:
+        raise ValueError("outcome_status_unknown")
     entry = float(getattr(signal, "entry", 0) or 0)
     stop = float(getattr(signal, "stop_loss", 0) or 0)
     mark = float(price or 0)

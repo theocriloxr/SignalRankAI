@@ -162,7 +162,9 @@ def lifecycle_state_for_outcome(status: str | None) -> str:
         return CLOSED_TIME_STOP
     if status_l in {"expired", "invalid", "invalidated", "cancel", "cancelled"}:
         return EXPIRED
-    return ACTIVE_TRADE
+    if status_l in {"", "pending", "active"}:
+        return ACTIVE_TRADE
+    raise ValueError("outcome_status_unknown")
 
 
 def outcome_status_for_lifecycle(value: SignalLifecycle | str | None) -> str | None:

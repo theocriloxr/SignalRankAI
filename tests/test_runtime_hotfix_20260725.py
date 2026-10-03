@@ -255,10 +255,15 @@ def test_legacy_telegram_package_cannot_shadow_dependency():
 
 
 def test_ml_package_does_not_eagerly_import_training_stack():
-    source = Path("ml/__init__.py").read_text(encoding="utf-8")
-    assert "def __getattr__" in source
-    assert "\nfrom ml import train_model\n" not in source
-    assert 'import_module(f"{__name__}.{name}")' in source
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys, ml; assert 'ml.train_model' not in sys.modules; "
+         "assert 'xgboost' not in sys.modules; assert 'torch' not in sys.modules"],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_xgboost_thread_cap_is_not_hidden_in_error_branch():

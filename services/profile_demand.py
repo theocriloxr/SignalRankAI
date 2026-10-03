@@ -268,6 +268,8 @@ async def load_profile_demand(session) -> ProfileDemandSnapshot:
             key, value = str(row[0]), row[1]
         except Exception:
             mapping = getattr(row, "_mapping", row)
+            if not isinstance(mapping, Mapping):
+                raise ValueError("profile_demand_runtime_state_row_invalid")
             key, value = str(mapping.get("key") or ""), mapping.get("value")
         prefix, _, suffix = key.partition(":")
         try:

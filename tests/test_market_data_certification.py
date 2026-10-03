@@ -48,7 +48,8 @@ def test_commodity_daily_maintenance_gap_is_expected():
 
 def test_commodity_unexplained_intraday_gap_still_quarantines():
     rows = _rows()
-    rows[20]["timestamp"] += 4 * 3600 * 1000
+    for row in rows[20:]:
+        row["timestamp"] += 4 * 3600 * 1000
     result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")
     assert result.quarantined
     assert any(reason.startswith("unexpected_session_gaps") for reason in result.reasons)
@@ -56,7 +57,8 @@ def test_commodity_unexplained_intraday_gap_still_quarantines():
 
 def test_fx_midweek_gap_is_quarantined():
     rows = _rows()
-    rows[20]["timestamp"] += 4 * 3600 * 1000
+    for row in rows[20:]:
+        row["timestamp"] += 4 * 3600 * 1000
     result = certify_market_candles(rows, asset_class="fx", timeframe="1h")
     assert result.quarantined
     assert any(reason.startswith("unexpected_session_gaps") for reason in result.reasons)

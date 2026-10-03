@@ -759,10 +759,15 @@ def _client_ip(request: Request) -> str | None:
 
 def _app_base_url_from_env() -> str:
     configured = (
-        str(os.getenv("APP_BASE_URL") or os.getenv("STAGING_APP_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "")
+        str(os.getenv("APP_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "")
         .strip()
         .rstrip("/")
     )
+    from core.env import runtime_environment_name
+
+    if runtime_environment_name("dev") == "staging":
+        # A copied production APP_BASE_URL must never receive staging auth links.
+        configured = str(os.getenv("STAGING_APP_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip().rstrip("/")
     if configured and not configured.startswith(("http://", "https://")):
         configured = f"https://{configured}"
     return configured

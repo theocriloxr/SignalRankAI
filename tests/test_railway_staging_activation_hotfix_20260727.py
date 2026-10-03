@@ -29,6 +29,7 @@ def _clear_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TELEGRAM_WEBHOOK_SECRET",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "unit-test-placeholder")
 
 
 def test_current_railway_domain_overrides_copied_production_url(monkeypatch: pytest.MonkeyPatch) -> None:

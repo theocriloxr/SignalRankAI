@@ -2790,12 +2790,12 @@ def main_loop(DRY_RUN: bool = False):
             from utils.async_runner import run_sync as _run_sync
 
             async def _fetch_managed():
-                _metadata_timeout = max(3.0, _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0))
+                _metadata_timeout = max(0.1, _env_float("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", 0.75))
                 async with get_session(
-                    priority="critical",
+                    priority="background",
                     label="engine.managed_assets",
                     timeout_seconds=_metadata_timeout,
-                    drop_if_busy=False,
+                    drop_if_busy=True,
                 ) as _session:
                     return await get_active_managed_assets(_session)
 
@@ -2805,10 +2805,7 @@ def main_loop(DRY_RUN: bool = False):
                     list(
                         _run_sync(
                             _fetch_managed(),
-                            timeout=max(
-                                _env_float("ENGINE_METADATA_DB_TIMEOUT_SECONDS", 10.0) + 2.0,
-                                float(os.getenv("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", "12") or 12),
-                            ),
+                            timeout=max(0.1, _env_float("ENGINE_MANAGED_ASSETS_TIMEOUT_SECONDS", 0.75)) + 0.25,
                         )
                         or []
                     )

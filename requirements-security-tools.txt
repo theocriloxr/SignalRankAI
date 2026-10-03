@@ -1,0 +1,6 @@
+# Isolated tooling environment; never install into the locked runtime.
+ruff==0.16.10
+pyright==1.1.414
+bandit==1.9.4
+pip-audit==2.10.1
+semgrep==1.179.0

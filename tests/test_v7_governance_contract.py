@@ -41,8 +41,9 @@ def test_all_v7_machine_readable_registries_exist_and_parse():
 def test_v7_prompt_is_materialised_and_hashed_exactly():
     prompt = ROOT / "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md"
     assert prompt.exists()
-    digest = hashlib.sha256(prompt.read_bytes()).hexdigest()
-    assert digest == "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
+    raw = prompt.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    assert hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest() == "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
     assert _load("requirements.yaml")["source_prompt"]["sha256"] == digest
 
 

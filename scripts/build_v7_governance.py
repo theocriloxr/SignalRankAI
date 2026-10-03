@@ -1425,7 +1425,7 @@ def main() -> int:
                 name for name in set(semantic_before) | set(semantic_after)
                 if semantic_before.get(name) != semantic_after.get(name)
             )
-            diff_dir = Path("/tmp/signalrank-governance-diffs")
+            diff_dir = ROOT / "artifacts" / "signalrank-governance-diffs"
             diff_dir.mkdir(parents=True, exist_ok=True)
             for name in changed:
                 old_text = (before.get(name) or b"").decode("utf-8", errors="replace").splitlines(keepends=True)
@@ -1444,7 +1444,7 @@ def main() -> int:
                 print(f"V7_GOVERNANCE_DIFF_END {name}")
             print("V7 governance artefacts were stale; regenerate and commit them.")
             print("V7_GOVERNANCE_STALE_FILES " + json.dumps(changed, separators=(",", ":")))
-            print("V7_GOVERNANCE_DIFF_DIR /tmp/signalrank-governance-diffs")
+            print(f"V7_GOVERNANCE_DIFF_DIR {diff_dir}")
             return 1
     return 0
 
