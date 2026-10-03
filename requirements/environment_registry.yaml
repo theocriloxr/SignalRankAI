@@ -2329,7 +2329,7 @@
       "name": "BUILD_ID",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:453"
+        "web/app.py:461"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2339,7 +2339,7 @@
       "name": "BUILD_TIMESTAMP",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:454"
+        "web/app.py:462"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5597,7 +5597,7 @@
       "name": "EXPECTED_SCHEMA_HEAD",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:456"
+        "web/app.py:464"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6244,7 +6244,7 @@
       "name": "GIT_BRANCH",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:452",
+        "web/app.py:460",
         "web/platform_api.py:1082"
       ],
       "required_by_code": true,
@@ -6270,7 +6270,7 @@
         "railway_main.py:3098",
         "railway_main.py:3191",
         "services/account_policies.py:666",
-        "web/app.py:451"
+        "web/app.py:459"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6358,7 +6358,7 @@
       "name": "IMAGE_DIGEST",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:455"
+        "web/app.py:463"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10441,7 +10441,7 @@
       "read_locations": [
         "payments/paystack_events.py:34",
         "payments/paystack_webhook.py:107",
-        "web/app.py:819"
+        "web/app.py:827"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10675,8 +10675,8 @@
         "payments/paystack_policy.py:133",
         "railway_main.py:2873",
         "services/subscription_cancellation.py:25",
-        "web/app.py:925",
-        "web/app.py:960",
+        "web/app.py:933",
+        "web/app.py:968",
         "web/platform_api.py:6294"
       ],
       "required_by_code": true,
@@ -10783,7 +10783,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:61",
-        "web/app.py:925"
+        "web/app.py:933"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -11022,7 +11022,7 @@
       "production_example_default": null,
       "read_locations": [
         "railway_main.py:1315",
-        "web/app.py:1277",
+        "web/app.py:1285",
         "web/userdash/app.py:46"
       ],
       "required_by_code": true,
@@ -11727,7 +11727,7 @@
       "name": "RAILWAY_DEPLOYMENT_CREATED_AT",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:454"
+        "web/app.py:462"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11743,7 +11743,7 @@
         "engine/core.py:3145",
         "engine/shadow_outcome_worker.py:54",
         "railway_main.py:1194",
-        "web/app.py:453"
+        "web/app.py:461"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11817,7 +11817,7 @@
       "name": "RAILWAY_GIT_BRANCH",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:452",
+        "web/app.py:460",
         "web/platform_api.py:1082"
       ],
       "required_by_code": true,
@@ -11834,7 +11834,7 @@
         "railway_main.py:3098",
         "railway_main.py:3191",
         "services/account_policies.py:666",
-        "web/app.py:451",
+        "web/app.py:459",
         "web/platform_api.py:1083"
       ],
       "required_by_code": true,
@@ -14218,7 +14218,7 @@
       "name": "START_TS",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:407"
+        "web/app.py:415"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15540,7 +15540,7 @@
         "signalrank_telegram/bot.py:9386",
         "signalrank_telegram/commands.py:271",
         "signalrank_telegram/commands.py:4956",
-        "web/app.py:1169"
+        "web/app.py:1177"
       ],
       "required_by_code": true,
       "sensitive": false
