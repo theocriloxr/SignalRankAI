@@ -150,6 +150,9 @@ class TelegramActivationCompleteRequest(BaseModel):
     token_or_code: str = Field(min_length=6, max_length=256)
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=10, max_length=256)
+    platform_terms_accepted: bool = False
+    privacy_acknowledged: bool = False
+    marketing_consent: bool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
 
@@ -2056,6 +2059,10 @@ async def telegram_activation_complete(
     request: Request,
     response: Response,
 ) -> dict[str, Any]:
+    if payload.platform_terms_accepted is not True:
+        raise HTTPException(status_code=422, detail="Accept the Terms of Use before activating app access")
+    if payload.privacy_acknowledged is not True:
+        raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before activating app access")
     try:
         async with get_session() as session:
             user_id = await complete_telegram_activation(
@@ -2064,6 +2071,17 @@ async def telegram_activation_complete(
                 email=payload.email,
                 password=payload.password,
                 ip_address=_client_ip(request),
+            )
+            await session.execute(
+                text(
+                    "UPDATE users SET marketing_consent=:marketing, privacy_consent_at=NOW(), "
+                    "terms_version=:terms_version, terms_accepted_at=NOW(), updated_at=NOW() WHERE id=:uid"
+                ),
+                {
+                    "uid": int(user_id),
+                    "marketing": bool(payload.marketing_consent),
+                    "terms_version": CURRENT_PLATFORM_TERMS_VERSION,
+                },
             )
             await session.commit()
     except IdentityConflict as exc:
