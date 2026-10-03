@@ -13,6 +13,7 @@ from sqlalchemy import and_, case, func, or_, select
 
 from core.signal_lifecycle import (
     BREAKEVEN_STOP,
+    CLOSED_TIME_STOP,
     EXPIRED,
     MISSED_ENTRY,
     SL_HIT,
@@ -22,7 +23,8 @@ from core.signal_lifecycle import (
     is_terminal_signal_state,
     outcome_status_for_lifecycle,
 )
-from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
+from core.outcome_accounting import outcome_price_metrics
+from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle, SignalTrackingEvent
 from db.pg_features import queue_outcome_notifications_for_outcome, upsert_outcome
 
 _PROOF_STATES = ("sent", "delivered", "confirmed", "reconciled", "updated")
@@ -90,6 +92,7 @@ def _expected_status_expression():
         (state == BREAKEVEN_STOP, "partial_win_be"),
         (state == MISSED_ENTRY, "missed_entry"),
         (state == EXPIRED, "expired"),
+        (state == CLOSED_TIME_STOP, "time_stop"),
         else_=None,
     )
 
@@ -131,17 +134,13 @@ def _projection_metrics(
     stop = float(getattr(signal, "stop_loss", 0) or 0)
     price_f = float(price or 0)
     direction = str(getattr(signal, "direction", "") or "").strip().lower()
-    if entry > 0 and price_f > 0:
+    if status_l not in {"sl", "partial_win_be"} or highest_tp == 0:
+        r_multiple, percent = outcome_price_metrics(signal, status_l, price)
+    elif entry > 0 and price_f > 0:
         signed_move = (entry - price_f) if direction in {"short", "sell", "bearish"} else (price_f - entry)
         percent = (signed_move / entry) * 100.0
         risk_distance = abs(entry - stop) if stop > 0 else 0.0
         r_multiple = signed_move / risk_distance if risk_distance > 0 else None
-        if status_l == "sl" and r_multiple is not None:
-            r_multiple = -abs(r_multiple)
-            percent = -abs(percent)
-        elif status_l in {"tp", "tp1", "tp2", "tp3"} and r_multiple is not None:
-            r_multiple = abs(r_multiple)
-            percent = abs(percent)
 
     missed_entry_observed_r = None
     missed_entry_observed_pct = None
@@ -226,7 +225,7 @@ def build_outcome_reconciliation_query(*, cutoff: datetime, limit: int):
     )
     expected_status = _expected_status_expression()
     lifecycle_terminal = func.upper(func.coalesce(SignalLifecycle.state, "")).in_(
-        (TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED)
+        (TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED, CLOSED_TIME_STOP)
     )
     return (
         select(Signal, SignalLifecycle, Outcome)
@@ -334,7 +333,29 @@ async def ensure_outcome_projections(
                     continue
 
                 terminal_price = _terminal_price(lifecycle, signal)
-                r_multiple, percent, meta = _projection_metrics(signal, lifecycle, status, terminal_price)
+                from types import SimpleNamespace
+                from engine.realtime_outcome_tracker import _confirmed_delivery_snapshot_map, _snapshot_targets
+                from core.production_integrity import canonical_direction
+
+                snapshots, conflicts = await _confirmed_delivery_snapshot_map(session, SignalDelivery, [signal_id])
+                if signal_id in conflicts:
+                    raise ValueError("outcome_delivery_plan_conflict")
+                snapshot = snapshots.get(signal_id, {})
+                plan = SimpleNamespace(
+                    entry=snapshot.get("entry", signal.entry),
+                    stop_loss=snapshot.get("stop_loss", signal.stop_loss),
+                    direction=canonical_direction(snapshot.get("direction") or signal.direction),
+                    take_profit=_snapshot_targets(snapshot, signal.take_profit),
+                )
+                if status in {"tp", "tp1", "tp2", "tp3"}:
+                    event_type = f"{'tp3' if status == 'tp' else status}_hit"
+                    event_price = (await session.execute(select(SignalTrackingEvent.price).where(
+                        SignalTrackingEvent.signal_id == signal_id, SignalTrackingEvent.event_type == event_type,
+                    ))).scalar_one_or_none()
+                    if event_price is None:
+                        raise ValueError("outcome_target_event_evidence_missing")
+                    terminal_price = float(event_price)
+                r_multiple, percent, meta = _projection_metrics(plan, lifecycle, status, terminal_price)
                 highest_tp = int(meta.get("tp_hit_index") or 0)
                 canonical = _canonical_outcome(status, highest_tp)
                 if status == "sl" and highest_tp > 0 and meta.get("partial_exit_policy"):

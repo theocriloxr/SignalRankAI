@@ -1873,7 +1873,7 @@ async def list_delivered_signals_for_user(
         "partial_win_be",
     }
     terminal_lifecycle_states = {
-        "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED",
+        "TP3_HIT", "SL_HIT", "BREAKEVEN_STOP", "MISSED_ENTRY", "EXPIRED", "CLOSED_TIME_STOP",
     }
     winner_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp", "partial_win"}
     loser_statuses = {"sl", "stop_loss"}

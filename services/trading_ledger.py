@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "NONE": {"CANDIDATE"},
     "CANDIDATE": {"ACTIVE", "EXPIRED", "CANCELLED", "SUPERSEDED"},
-    "ACTIVE": {"TP1", "TP2", "TP3", "STOPPED", "EXPIRED", "CANCELLED", "SUPERSEDED"},
-    "TP1": {"TP2", "TP3", "STOPPED", "EXPIRED", "CANCELLED", "SUPERSEDED"},
-    "TP2": {"TP3", "STOPPED", "EXPIRED", "CANCELLED", "SUPERSEDED"},
+    "ACTIVE": {"TP1", "TP2", "TP3", "STOPPED", "CLOSED_TIME_STOP", "CANCELLED", "SUPERSEDED"},
+    "TP1": {"TP2", "TP3", "STOPPED", "CLOSED_TIME_STOP", "CANCELLED", "SUPERSEDED"},
+    "TP2": {"TP3", "STOPPED", "CLOSED_TIME_STOP", "CANCELLED", "SUPERSEDED"},
     "TP3": set(),
     "STOPPED": set(),
     "EXPIRED": set(),
+    "CLOSED_TIME_STOP": set(),
     "CANCELLED": set(),
     "SUPERSEDED": set(),
 }

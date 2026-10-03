@@ -1,8 +1,22 @@
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 
 import engine.realtime_outcome_tracker as rt
+
+
+def _read_result(statement):
+    from db.models import Signal, SignalTrackingEvent
+    descriptions = getattr(statement, "column_descriptions", [])
+    entity = descriptions[0].get("entity") if descriptions else None
+    value = None
+    if entity is Signal:
+        value = SimpleNamespace(direction="long", entry=100, stop_loss=95, take_profit=[102, 104, 106],
+                                asset="BTCUSDT", timeframe="1h", ml_probability=None, created_at=None)
+    elif entity is SignalTrackingEvent:
+        value = 102.0
+    return SimpleNamespace(scalar_one_or_none=lambda: value, all=lambda: [])
 
 
 def test_parse_tp_levels_supports_dict_entries():
@@ -26,7 +40,7 @@ async def test_persist_outcome_maps_time_stop_channels(monkeypatch):
 
     class _DummySession:
         async def execute(self, _stmt):
-            return None
+            return _read_result(_stmt)
 
         async def commit(self):
             return None
@@ -66,7 +80,7 @@ async def test_persist_outcome_counts_tp1_as_partial_win(monkeypatch):
 
     class _DummySession:
         async def execute(self, _stmt):
-            return None
+            return _read_result(_stmt)
 
         async def commit(self):
             return None

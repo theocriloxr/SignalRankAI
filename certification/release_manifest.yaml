@@ -10,7 +10,7 @@
       "id": "static-ruff",
       "group": "static",
       "description": "Ruff release-critical Python correctness",
-      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
+      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py scripts/release_evidence_identity.py scripts/build_master_requirement_registry.py scripts/run_complete_system_test.py scripts/certify_market_classes.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -170,7 +170,7 @@
       "id": "backend-critical-regressions",
       "group": "backend",
       "description": "Release-critical regression contracts",
-      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -329,6 +329,11 @@
       "required": true,
       "environments": [
         "staging"
+      ],
+      "evidence_requirements": [
+        "All roles running one immutable git SHA and image digest",
+        "24-72 hours of timestamped readiness, provider, queue, DB, delivery and accounting observations",
+        "No unresolved P0/P1; source/config changes invalidate the observation window"
       ]
     },
     {

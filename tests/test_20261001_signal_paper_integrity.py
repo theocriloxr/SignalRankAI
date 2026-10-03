@@ -125,13 +125,13 @@ def test_active_signals_are_confirmed_delivery_and_lifecycle_authoritative() -> 
 def test_missed_entry_is_observation_not_realized_loss() -> None:
     source = _source("engine/realtime_outcome_tracker.py")
     block = _function_block(source, "_persist_outcome")
-    assert 'if status_l == "missed_entry":' in block
+    assert 'if status_l in {"missed_entry", "expired"}:' in block
     assert "missed_entry_observed_r = r_mult" in block
     assert "missed_entry_observed_pct = pct" in block
     assert "r_mult = None" in block
     assert "pct = None" in block
     assert '"missed_entry_observed_r"' in block
-    assert '"realized_position_opened": bool(status_l != "missed_entry")' in block
+    assert '"realized_position_opened": bool(status_l not in {"missed_entry", "expired"})' in block
 
 
 def test_outcome_messages_have_one_notification_owner() -> None:

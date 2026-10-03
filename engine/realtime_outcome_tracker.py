@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import func, select
+from core.production_integrity import canonical_direction
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,7 @@ def _delivery_snapshot_signature(snapshot: dict[str, Any]) -> tuple[Any, ...] | 
         return None
     return (
         str(snapshot.get("asset") or "").upper().strip(),
-        str(snapshot.get("direction") or "").lower().strip(),
+        canonical_direction(snapshot.get("direction")),
         str(snapshot.get("timeframe") or "").lower().strip(),
         entry,
         stop,
@@ -204,7 +205,7 @@ def _tracked_signal_payload(
     return {
         "signal_id": str(getattr(signal_row, "signal_id", "") or ""),
         "asset": snapshot.get("asset") or getattr(signal_row, "asset", None),
-        "direction": snapshot.get("direction") or getattr(signal_row, "direction", None),
+        "direction": canonical_direction(snapshot.get("direction") or getattr(signal_row, "direction", None)),
         "entry": snapshot.get("entry") if snapshot.get("entry") not in (None, "") else getattr(signal_row, "entry", None),
         "stop_loss": (
             snapshot.get("stop_loss")
@@ -1433,7 +1434,43 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         try:
             async with _session_scope(get_session, priority=DBPriority.CRITICAL) as _session:
                 result = await _session.execute(select(Signal).where(Signal.signal_id == signal_id))
-                signal_data = result.scalar_one_or_none()
+                signal_row = result.scalar_one_or_none()
+                if signal_row is not None:
+                    # Session close/rollback expires ORM rows. Materialize all
+                    # calculation/learning inputs before leaving the read scope.
+                    from types import SimpleNamespace
+
+                    signal_data = SimpleNamespace(**{
+                        name: getattr(signal_row, name, None)
+                        for name in (
+                            "direction", "entry", "stop_loss", "take_profit", "asset",
+                            "timeframe", "ml_probability", "created_at",
+                        )
+                    })
+                    from db.models import SignalDelivery, SignalTrackingEvent
+
+                    snapshots, conflicts = await _confirmed_delivery_snapshot_map(_session, SignalDelivery, [signal_id])
+                    if signal_id in conflicts:
+                        return
+                    if signal_id in snapshots:
+                        snapshot = snapshots[signal_id]
+                        signal_data.entry = snapshot["entry"]
+                        signal_data.stop_loss = snapshot["stop_loss"]
+                        signal_data.direction = canonical_direction(snapshot.get("direction") or signal_data.direction)
+                        signal_data.take_profit = _snapshot_targets(snapshot, signal_data.take_profit)
+                    entry = float(signal_data.entry or 0)
+                    if status_l in {"tp", "tp1", "tp2", "tp3"}:
+                        event_type = f"{'tp3' if status_l == 'tp' else status_l}_hit"
+                        event_result = await _session.execute(
+                            select(SignalTrackingEvent.price).where(
+                                SignalTrackingEvent.signal_id == signal_id,
+                                SignalTrackingEvent.event_type == event_type,
+                            )
+                        )
+                        event_price = event_result.scalar_one_or_none()
+                        if event_price is None:
+                            raise ValueError("outcome_target_event_evidence_missing")
+                        price = float(event_price)
                 outcome_result = await _session.execute(select(Outcome).where(Outcome.signal_id == signal_id))
                 existing_outcome = outcome_result.scalar_one_or_none()
                 existing_outcome_meta = dict(getattr(existing_outcome, "meta", {}) or {})
@@ -1446,7 +1483,12 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 lifecycle_closed_at = getattr(lifecycle_row, "closed_at", None)
                 lifecycle_terminal_event_type = getattr(lifecycle_row, "terminal_event_type", None)
         except Exception:
-            pass
+            logger.exception("[outcome_tracker] outcome evidence read failed signal=%s status=%s", signal_id, status_l)
+            return
+
+        if signal_data is None:
+            logger.error("[outcome_tracker] outcome signal missing signal=%s", signal_id)
+            return
 
         tp_hit_index = max(
             int(existing_outcome_meta.get("tp_hit_index") or 0),
@@ -1487,12 +1529,6 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     r_mult = signed_move / risk_distance
                 else:
                     r_mult = signed_move / (abs(entry_f) + 1e-9)
-                if status_l == "sl" and r_mult is not None and r_mult > 0:
-                    r_mult = -abs(r_mult)
-                    pct = -abs(float(pct or 0.0))
-                elif status_l in {"tp", "tp1", "tp2", "tp3"} and r_mult is not None and r_mult < 0:
-                    r_mult = abs(r_mult)
-                    pct = abs(float(pct or 0.0))
         except Exception:
             pass
 
@@ -1501,13 +1537,18 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         # or an R-multiple loss/win because no position was opened.
         missed_entry_observed_r = None
         missed_entry_observed_pct = None
-        if status_l == "missed_entry":
+        if status_l in {"missed_entry", "expired"}:
             missed_entry_observed_r = r_mult
             missed_entry_observed_pct = pct
             # No position existed, therefore there is no realized trade P/L.
             # Preserve the counterfactual market excursion only in metadata.
             r_mult = None
             pct = None
+
+        if signal_data is not None and status_l != "partial_win_be":
+            from core.outcome_accounting import outcome_price_metrics
+
+            r_mult, pct = outcome_price_metrics(signal_data, status_l, price)
 
         # Canonical protected-exit accounting. A breakeven_stop after TP1/TP2
         # realizes the planned partial closes and a zero-R remainder; it must not
@@ -1593,7 +1634,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     if missed_entry_observed_pct is not None
                     else existing_outcome_meta.get("missed_entry_observed_pct")
                 ),
-                "realized_position_opened": bool(status_l != "missed_entry"),
+                "realized_position_opened": bool(status_l not in {"missed_entry", "expired"}),
             }
             _outcome = await upsert_outcome(
                 session,
@@ -1608,6 +1649,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 meta=outcome_meta,
                 queue_notifications=False,
             )
+            persisted_outcome_id = int(_outcome.id)
             await session.execute(
                 sa_update(Signal)
                 .where(Signal.signal_id == signal_id)
@@ -1633,7 +1675,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             try:
                 await queue_outcome_notifications_for_outcome(
                     session,
-                    int(getattr(_outcome, "id")),
+                    persisted_outcome_id,
                     str(signal_id),
                     status_l,
                 )
@@ -1647,7 +1689,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     "[outcome_tracker] outbox queue failed after outcome commit signal=%s status=%s outcome_id=%s error=%s",
                     str(signal_id),
                     status_l,
-                    getattr(_outcome, "id", None),
+                    persisted_outcome_id,
                     outbox_error,
                 )
 
@@ -1713,12 +1755,27 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         )
 
 
+async def _confirmed_notification_recipients(signal_id: str) -> list[tuple[int, str]]:
+    """Materialize receipt-authorized recipients before any network I/O."""
+    from db.session import get_session
+    from db.models import SignalDelivery, User
+
+    async with get_session(priority=_outcome_db_priority(), label="outcome.notification_recipients",
+                           timeout_seconds=_outcome_db_timeout()) as session:
+        rows = (await session.execute(
+            select(User.telegram_user_id, SignalDelivery.tier_at_send)
+            .join(SignalDelivery, User.id == SignalDelivery.user_id)
+            .where(SignalDelivery.signal_id == signal_id, SignalDelivery.sent_ok.is_(True),
+                   SignalDelivery.telegram_message_id.is_not(None),
+                   func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES))
+        )).all()
+        return list({int(user_id): str(tier or "free").lower() for user_id, tier in rows
+                     if user_id is not None}.items())
+
+
 async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_idx: int) -> None:
     """Notify recipients that price retraced dangerously near SL after TP progress."""
     try:
-        from db.session import get_session
-        from db.models import SignalDelivery, User
-        from sqlalchemy import select
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -1733,7 +1790,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
         txt = (
             "⚠️ <b>TP Retrace Warning</b>\n\n"
             f"🪙 <b>{asset}</b> {direction}\n"
-            f"📊 Ref: <code>{signal_id[:8]}</code>\n"
+            f"📊 Ref: <code>{signal_id}</code>\n"
             f"✅ Highest TP reached: <b>TP{int(best_tp_idx)}</b>\n"
             f"📉 Price retraced close to SL danger zone\n"
             f"💰 Current: <b>{float(price):.5f}</b> | SL: <b>{float(sl):.5f}</b>"
@@ -1744,26 +1801,13 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(
-            priority=_outcome_db_priority(),
-            label="engine_realtime_outcome_tracker",
-            timeout_seconds=_outcome_db_timeout(),
-        ) as session:
-            rows = (
-                await session.execute(
-                    select(SignalDelivery, User)
-                    .join(User, User.id == SignalDelivery.user_id)
-                    .where(SignalDelivery.signal_id == signal_id)
-                )
-            ).all()
-            for _delivery, user in rows:
-                try:
-                    telegram_user_id = getattr(user, "telegram_user_id", None)
-                    if telegram_user_id is None:
-                        continue
-                    _send_message_sync(bot, chat_id=int(telegram_user_id), text=txt, parse_mode="HTML")
-                except Exception as exc:
-                    logger.debug("[outcome_tracker] retrace warn user notify failed: %s", exc)
+        for user_chat_id, tier in await _confirmed_notification_recipients(signal_id):
+            if tier not in {"premium", "vip", "admin", "owner", "free_fomo"}:
+                continue
+            try:
+                _send_message_sync(bot, chat_id=user_chat_id, text=txt, parse_mode="HTML")
+            except Exception as exc:
+                logger.debug("[outcome_tracker] retrace warn user notify failed: %s", exc)
     except Exception as exc:
         logger.debug("[outcome_tracker] retrace warning send failed: %s", exc)
 
@@ -2150,9 +2194,6 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
 async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None:
     """Broadcast one-time risk-free update when halfway to TP1 is reached."""
     try:
-        from db.session import get_session
-        from db.models import SignalDelivery, User
-        from sqlalchemy import select
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
@@ -2175,11 +2216,12 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             move_pct = 0.0
 
         text = (
-            "🛡️ <b>Risk-Free Update</b>\n\n"
+            "🛡️ <b>Breakeven Review</b>\n\n"
             f"🪙 <b>{asset}</b> {direction} ({timeframe})\n"
-            f"📊 Ref: <code>{signal_id[:8]}</code>\n"
+            f"📊 Ref: <code>{signal_id}</code>\n"
             f"💹 Price moved <b>{move_pct:+.2f}%</b> toward TP1\n\n"
-            "✅ 50% to TP1 reached — stop-loss moved to breakeven (risk-free)."
+            "50% to TP1 reached. Review moving your stop to entry and verify broker confirmation. "
+            "Fees, gaps and slippage can still cause losses."
         )
 
         bot_token = (config.TELEGRAM_BOT_TOKEN or "").strip()
@@ -2187,50 +2229,23 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(
-            priority=_outcome_db_priority(),
-            label="engine_realtime_outcome_tracker",
-            timeout_seconds=_outcome_db_timeout(),
-        ) as session:
-            rows = (
-                await session.execute(
-                    select(SignalDelivery, User)
-                    .join(User, User.id == SignalDelivery.user_id)
-                    .where(SignalDelivery.signal_id == signal_id)
-                )
-            ).all()
-            for _delivery, user in rows:
-                try:
-                    telegram_user_id = getattr(user, "telegram_user_id", None)
-                    if telegram_user_id is None:
-                        continue
-                    user_chat_id = int(telegram_user_id)
-                    _tier_at_send = str(getattr(_delivery, "tier_at_send", "free") or "free").lower()
-                    if _tier_at_send not in {"premium", "vip", "admin", "owner", "free_fomo"}:
-                        continue
-                    if _tier_at_send == "free":
-                        continue
-                    if not await _mark_risk_free_recipient_triggered(user_chat_id, signal):
-                        logger.debug(
-                            "[outcome_tracker] risk-free user cooldown user=%s asset=%s tf=%s direction=%s",
-                            getattr(user, "telegram_user_id", "?"),
-                            asset,
-                            timeframe,
-                            direction,
-                        )
-                        continue
-                    _send_message_sync(bot, chat_id=user_chat_id, text=text, parse_mode="HTML")
-                except Exception as exc:
-                    logger.debug("[outcome_tracker] risk-free notify user=%s error: %s", getattr(user, "id", "?"), exc)
+        for user_chat_id, tier in await _confirmed_notification_recipients(signal_id):
+            if tier not in {"premium", "vip", "admin", "owner", "free_fomo"}:
+                continue
+            try:
+                if not await _mark_risk_free_recipient_triggered(user_chat_id, signal):
+                    continue
+                _send_message_sync(bot, chat_id=user_chat_id, text=text, parse_mode="HTML")
+            except Exception as exc:
+                logger.debug("[outcome_tracker] risk-free notify user=%s error: %s", user_chat_id, exc)
     except Exception as exc:
         logger.debug("[outcome_tracker] risk-free notify failed: %s", exc)
 
 
 async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: float) -> None:
-    """Move SL to break-even when TP1 is hit, via MT5 bridge and DB update."""
+    """Update the legacy trade projection; broker stops require owned execution evidence."""
     signal_id = signal.get("signal_id", "")
     entry = float(signal.get("entry", 0))
-    asset = signal.get("asset", "")
 
     # Update DB trades table SL to break-even
     try:
@@ -2254,39 +2269,10 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
     except Exception as exc:
         logger.debug("[outcome_tracker] DB trailing SL update error: %s", exc)
 
-    # If user has MT5 linked, update via MetaApi
-    try:
-        from db.session import get_session
-        from db.models import Trade, User
-        from sqlalchemy import select
-        from services.mt5_client import update_stop_loss, get_user_mt5_account_id
-
-        async with get_session(
-            priority=_outcome_db_priority(),
-            label="engine_realtime_outcome_tracker",
-            timeout_seconds=_outcome_db_timeout(),
-        ) as session:
-            stmt = (
-                select(Trade, User)
-                .join(User, Trade.symbol == User.telegram_user_id.cast(str))
-                .where(Trade.signal_id == signal_id)
-                .where(Trade.status == "open")
-                .limit(10)
-            )
-            rows = (await session.execute(stmt)).fetchall()
-            for trade, user in rows:
-                telegram_user_id = getattr(user, "telegram_user_id", None)
-                if telegram_user_id is None:
-                    continue
-                acct_id = await get_user_mt5_account_id(int(telegram_user_id))
-                if acct_id and trade.trade_metadata.get("mt5_order_id"):
-                    await update_stop_loss(
-                        acct_id,
-                        trade.trade_metadata["mt5_order_id"],
-                        entry,
-                    )
-    except Exception:
-        pass  # MT5 bridge is optional
+    # Legacy trades have no authoritative account ownership or broker receipt.
+    # The former symbol-to-Telegram-ID join could bypass execution controls and
+    # performed broker I/O inside a DB transaction. Broker stop amendments must
+    # use the provider-neutral execution/reconciliation service after certification.
 
 
 class RealtimeOutcomeTracker:
@@ -2528,7 +2514,11 @@ class RealtimeOutcomeTracker:
 
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
-        direction = signal.get("direction", "long")
+        direction = canonical_direction(signal.get("direction"))
+        if direction not in {"long", "short"}:
+            logger.error("[outcome_tracker] direction rejected signal=%s", signal_id)
+            await publish_snapshot()
+            return
         use_range = _range_is_new_for_signal(signal, observation)
         range_high = observation.high if use_range else None
         range_low = observation.low if use_range else None
@@ -2585,7 +2575,11 @@ class RealtimeOutcomeTracker:
             ):
                 await publish_snapshot()
                 return
-            if await record_lifecycle_event(signal, "entry_touched", price):
+            accepted = await record_lifecycle_event(signal, "entry_touched", price)
+            if not accepted and lifecycle_cas_enabled:
+                await publish_snapshot()
+                return
+            if accepted:
                 logger.info("[outcome_tracker] Entry touched: %s price=%.5f", signal_id[:8], price)
             lifecycle_state = ACTIVE_TRADE
             signal["lifecycle_state"] = lifecycle_state
@@ -2695,6 +2689,7 @@ class RealtimeOutcomeTracker:
                         event_price,
                         {
                             "highest_tp_hit": tp_index,
+                            "observation_price": price,
                             "observation_high": range_high,
                             "observation_low": range_low,
                             "observation_provider": observation.provider,
@@ -2705,9 +2700,13 @@ class RealtimeOutcomeTracker:
                         # record_lifecycle_event repairs stale lifecycle rows when
                         # the event already exists. Cache that durable stage so
                         # repeated scans do not rediscover/log the same target.
-                        await _set_tp_progress(signal_id, tp_index)
-                        prev_tp = max(prev_tp, tp_index)
-                        continue
+                        lifecycle_state = normalize_lifecycle_state(
+                            await update_lifecycle_observation(signal, price)
+                        )
+                        signal["lifecycle_state"] = lifecycle_state
+                        prev_tp = max(prev_tp, highest_tp_for_state(lifecycle_state))
+                        await publish_snapshot()
+                        return
                     await _persist_outcome(signal_id, f"tp{tp_index}", entry, event_price)
                     await _set_tp_progress(signal_id, tp_index)
                     prev_tp = tp_index
@@ -2734,6 +2733,7 @@ class RealtimeOutcomeTracker:
                 sl,
                 {
                     "highest_tp_hit": prev_tp,
+                    "observation_price": price,
                     "observation_high": range_high,
                     "observation_low": range_low,
                     "observation_provider": observation.provider,
@@ -2788,7 +2788,7 @@ class RealtimeOutcomeTracker:
                 signal_id[:8],
                 age_h,
             )
-            event_type = "missed_entry" if lifecycle_state == WATCHING_FOR_ENTRY else "expired"
+            event_type = "missed_entry" if lifecycle_state == WATCHING_FOR_ENTRY else "time_stop"
             persist_status = "missed_entry" if lifecycle_state == WATCHING_FOR_ENTRY else "time_stop"
             accepted = await record_lifecycle_event(signal, event_type, price, {"reason": "time_stop"})
             if accepted or not lifecycle_cas_enabled:

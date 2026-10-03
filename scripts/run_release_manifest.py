@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, os, subprocess, sys
+import argparse, json, os, shlex, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"certification"/"release_manifest.yaml"
@@ -21,6 +21,29 @@ def validate(data):
         seen.add(gid)
         if gate.get("required") and not str(gate.get("command") or "").strip(): raise RuntimeError(f"required gate {gid} has no command")
         if not isinstance(gate.get("environments"),list) or not gate["environments"]: raise RuntimeError(f"gate {gid} requires environments[]")
+        command = str(gate.get("command") or "").strip()
+        if command.startswith("manual:"):
+            if not gate.get("evidence_requirements"):
+                raise RuntimeError(f"manual gate {gid} requires explicit evidence requirements")
+            continue
+        # Validate local command inputs without executing a gate or requiring
+        # every platform-specific tool to be installed on the validation host.
+        current_dir = ROOT
+        tokens = shlex.split(command)
+        for index, token in enumerate(tokens):
+            if token == "cd" and index + 1 < len(tokens):
+                current_dir = (current_dir / tokens[index + 1]).resolve()
+                if not current_dir.is_relative_to(ROOT) or not current_dir.is_dir():
+                    raise RuntimeError(f"gate {gid} has invalid working directory")
+                continue
+            candidate = token.split("::", 1)[0]
+            if candidate.startswith("-") or Path(candidate).suffix not in {".py", ".sh", ".txt", ".json"}:
+                continue
+            if index and tokens[index - 1] in {"--output", "--output-dir"}:
+                continue
+            path = (current_dir / candidate).resolve()
+            if not path.is_relative_to(ROOT) or not path.is_file():
+                raise RuntimeError(f"gate {gid} references missing or external input: {candidate}")
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--environment",default="ci"); p.add_argument("--group"); p.add_argument("--gate",action="append",default=[]); p.add_argument("--validate",action="store_true"); p.add_argument("--list",action="store_true"); a=p.parse_args()
     data=load_manifest(); validate(data)

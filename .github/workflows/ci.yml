@@ -136,3 +136,23 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: python scripts/run_release_manifest.py --environment ci --group mobile
+
+  release-certification:
+    # A single stable required check covers matrix jobs and prevents skipped
+    # downstream jobs from being mistaken for a certified release.
+    if: always()
+    needs: [manifest, static-quality-checks, backend, frontend, mobile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every certification job to succeed
+        env:
+          CERTIFICATION_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['CERTIFICATION_RESULTS'])
+          failures = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+          if failures:
+              raise SystemExit(f'Release certification incomplete: {failures}')
+          print('All release certification jobs succeeded.')
+          PY

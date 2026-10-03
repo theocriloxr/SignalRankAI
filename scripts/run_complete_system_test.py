@@ -24,6 +24,10 @@ import time
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_identity import capture_release_identity, validate_resume_identity, verification_inputs
 
 
 @dataclass(slots=True)
@@ -248,6 +252,12 @@ def _partition_pytest_files(batch_count: int) -> list[list[str]]:
 
 def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
     python = sys.executable
+    from scripts.run_release_manifest import load_manifest
+
+    compile_gate = next(gate for gate in load_manifest()["gates"] if gate["id"] == "backend-compile")
+    compile_command = shlex.split(compile_gate["command"])
+    if not compile_command or compile_command[0] != "python":
+        raise ValueError("backend_compile_gate_requires_python_command")
     env_paths = [
         ".env.example",
         "RAILWAY_ENV_UPDATED.env.example",
@@ -255,7 +265,7 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
         *[str(path.relative_to(ROOT)) for path in sorted((ROOT / "deploy" / "railway_roles").glob("*.env"))],
     ]
     steps: list[tuple[str, list[str]]] = [
-        ("compileall", [python, "-m", "compileall", "-q", "."]),
+        ("compileall", [python, *compile_command[1:]]),
         ("env_contracts", [python, "scripts/validate_env_contract.py", *env_paths]),
         ("schema_audit", [python, "scripts/schema_audit.py"]),
         ("architecture_smoke", [python, "scripts/architecture_smoke.py"]),
@@ -365,14 +375,21 @@ def main() -> int:
     env = dict(os.environ)
     env.setdefault("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "1")
     expected_steps = build_steps(args)
+    release_identity = capture_release_identity(ROOT)
+    invocation = {
+        "profile": args.profile,
+        "full": args.full,
+        "pytest_batches": args.pytest_batches,
+        "live_providers": args.live_providers,
+        "simulation_port": args.simulation_port,
+        "verification_inputs": verification_inputs(env),
+    }
     progress_path = output_dir / "complete_system_test_progress.json"
     results: list[StepResult] = []
     if args.resume and progress_path.exists():
-        try:
-            payload = json.loads(progress_path.read_text(encoding="utf-8"))
-            results = [StepResult(**item) for item in payload.get("steps", [])]
-        except (OSError, ValueError, TypeError):
-            results = []
+        payload = json.loads(progress_path.read_text(encoding="utf-8"))
+        validate_resume_identity(payload, release_identity, invocation)
+        results = [StepResult(**item) for item in payload.get("steps", [])]
     passed_names = {result.name for result in results if result.ok}
 
     def save_progress() -> None:
@@ -380,6 +397,8 @@ def main() -> int:
             json.dumps(
                 {
                     "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "release_identity": release_identity,
+                    "invocation": invocation,
                     "profile": args.profile,
                     "full_suite_requested": args.full,
                     "pytest_batches": args.pytest_batches,
@@ -418,13 +437,17 @@ def main() -> int:
     ordered_results = [result_by_name[name] for name in expected_names if name in result_by_name]
     results = ordered_results
     pytest_results = _aggregate_pytest_results(results)
+    source_unchanged = capture_release_identity(ROOT) == release_identity
     report = {
         "evidence_scope": "LOCAL_WITH_LIVE_PROVIDER_CALLS" if args.live_providers else "HERMETIC_LOCAL_ONLY",
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "release_identity": release_identity,
+        "invocation": invocation,
+        "source_unchanged": source_unchanged,
         "profile": args.profile,
         "full_suite_requested": args.full,
         "live_provider_calls_requested": args.live_providers,
-        "ok": bool(results) and all(result.ok for result in results) and len(results) == len(expected_steps),
+        "ok": source_unchanged and bool(results) and all(result.ok for result in results) and len(results) == len(expected_steps),
         "steps": [asdict(result) for result in results],
         "pytest_results": pytest_results,
         "not_proven_by_this_command": [

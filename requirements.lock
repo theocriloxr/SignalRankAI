@@ -130,7 +130,8 @@ tzdata==2026.4
 tzlocal==5.4.4
 urllib3==2.8.0
 uvicorn==0.54.0
-uvloop==0.22.1
+# Preserve the Linux runtime pin; uvloop has no Windows implementation.
+uvloop==0.22.1; sys_platform != "win32"
 w3lib==2.4.1
 watchfiles==1.3.0
 websockets==14.2

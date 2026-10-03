@@ -34,6 +34,7 @@ _VALID_LIVE_STATES = {
     "SL",
     "SL_HIT",
     "EXPIRED",
+    "CLOSED_TIME_STOP",
     "MISSED_ENTRY",
     "BREAKEVEN_STOP",
 }

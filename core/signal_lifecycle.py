@@ -20,6 +20,7 @@ class SignalLifecycle(StrEnum):
     BREAKEVEN_STOP = "BREAKEVEN_STOP"
     MISSED_ENTRY = "MISSED_ENTRY"
     EXPIRED = "EXPIRED"
+    CLOSED_TIME_STOP = "CLOSED_TIME_STOP"
 
 
 WATCHING_FOR_ENTRY = SignalLifecycle.WATCHING_FOR_ENTRY.value
@@ -31,8 +32,9 @@ SL_HIT = SignalLifecycle.SL_HIT.value
 BREAKEVEN_STOP = SignalLifecycle.BREAKEVEN_STOP.value
 MISSED_ENTRY = SignalLifecycle.MISSED_ENTRY.value
 EXPIRED = SignalLifecycle.EXPIRED.value
+CLOSED_TIME_STOP = SignalLifecycle.CLOSED_TIME_STOP.value
 
-TERMINAL_SIGNAL_STATES = frozenset({TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED})
+TERMINAL_SIGNAL_STATES = frozenset({TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED, CLOSED_TIME_STOP})
 SAME_CANDLE_AMBIGUITY_POLICY = "stop_loss_first_conservative"
 
 _LEGACY_ALIASES = {
@@ -57,7 +59,8 @@ _LEGACY_ALIASES = {
     "PARTIAL_WIN_BE": BREAKEVEN_STOP,
     "MISSED": MISSED_ENTRY,
     "MISSED_ENTRY": MISSED_ENTRY,
-    "TIME_STOP": EXPIRED,
+    "TIME_STOP": CLOSED_TIME_STOP,
+    "CLOSED_TIME_STOP": CLOSED_TIME_STOP,
     "CANCELLED": EXPIRED,
     "CANCELED": EXPIRED,
     "ARCHIVED": EXPIRED,
@@ -76,46 +79,63 @@ EVENT_TO_STATE = {
     "breakeven_stop": BREAKEVEN_STOP,
     "missed_entry": MISSED_ENTRY,
     "expired": EXPIRED,
+    "time_stop": CLOSED_TIME_STOP,
 }
 
 _ALLOWED_TARGETS = {
     WATCHING_FOR_ENTRY: frozenset({WATCHING_FOR_ENTRY, ACTIVE_TRADE, MISSED_ENTRY, EXPIRED}),
-    ACTIVE_TRADE: frozenset({ACTIVE_TRADE, TP1_HIT, TP2_HIT, TP3_HIT, SL_HIT, EXPIRED}),
-    TP1_HIT: frozenset({TP1_HIT, TP2_HIT, TP3_HIT, BREAKEVEN_STOP, EXPIRED}),
-    TP2_HIT: frozenset({TP2_HIT, TP3_HIT, BREAKEVEN_STOP, EXPIRED}),
+    ACTIVE_TRADE: frozenset({ACTIVE_TRADE, TP1_HIT, TP2_HIT, TP3_HIT, SL_HIT, CLOSED_TIME_STOP}),
+    TP1_HIT: frozenset({TP1_HIT, TP2_HIT, TP3_HIT, BREAKEVEN_STOP, CLOSED_TIME_STOP}),
+    TP2_HIT: frozenset({TP2_HIT, TP3_HIT, BREAKEVEN_STOP, CLOSED_TIME_STOP}),
     TP3_HIT: frozenset({TP3_HIT}),
     SL_HIT: frozenset({SL_HIT}),
     BREAKEVEN_STOP: frozenset({BREAKEVEN_STOP}),
     MISSED_ENTRY: frozenset({MISSED_ENTRY}),
     EXPIRED: frozenset({EXPIRED}),
+    CLOSED_TIME_STOP: frozenset({CLOSED_TIME_STOP}),
 }
 
 
 def normalize_lifecycle_state(value: SignalLifecycle | str | None) -> str:
     raw = str(value or "").strip().upper()
-    return _LEGACY_ALIASES.get(raw, WATCHING_FOR_ENTRY)
+    if raw not in _LEGACY_ALIASES:
+        raise ValueError(f"unknown_signal_lifecycle_state:{raw}")
+    return _LEGACY_ALIASES[raw]
 
 
 def is_terminal_signal_state(value: SignalLifecycle | str | None) -> bool:
     """Shared terminal predicate used by trackers, commands, and callbacks."""
-    return normalize_lifecycle_state(value) in TERMINAL_SIGNAL_STATES
+    try:
+        return normalize_lifecycle_state(value) in TERMINAL_SIGNAL_STATES
+    except ValueError:
+        # Corrupt/unsupported states are quarantined, never actionable.
+        return True
 
 
 def lifecycle_state_for_event(event_type: str | None) -> str:
-    return EVENT_TO_STATE.get(str(event_type or "").strip().lower(), WATCHING_FOR_ENTRY)
+    event = str(event_type or "").strip().lower()
+    if event not in EVENT_TO_STATE:
+        raise ValueError(f"unknown_signal_lifecycle_event:{event}")
+    return EVENT_TO_STATE[event]
 
 
 def lifecycle_transition_allowed(
     current: SignalLifecycle | str | None,
     target: SignalLifecycle | str | None,
 ) -> bool:
-    current_state = normalize_lifecycle_state(current)
-    target_state = normalize_lifecycle_state(target)
+    try:
+        current_state = normalize_lifecycle_state(current)
+        target_state = normalize_lifecycle_state(target)
+    except ValueError:
+        return False
     return target_state in _ALLOWED_TARGETS[current_state]
 
 
 def event_transition_allowed(current: SignalLifecycle | str | None, event_type: str) -> bool:
-    return lifecycle_transition_allowed(current, lifecycle_state_for_event(event_type))
+    try:
+        return lifecycle_transition_allowed(current, lifecycle_state_for_event(event_type))
+    except ValueError:
+        return False
 
 
 def highest_tp_for_state(value: SignalLifecycle | str | None) -> int:
@@ -138,7 +158,9 @@ def lifecycle_state_for_outcome(status: str | None) -> str:
         return BREAKEVEN_STOP
     if status_l in {"missed", "missed_entry"}:
         return MISSED_ENTRY
-    if status_l in {"time_stop", "expired", "invalid", "invalidated", "cancel", "cancelled"}:
+    if status_l == "time_stop":
+        return CLOSED_TIME_STOP
+    if status_l in {"expired", "invalid", "invalidated", "cancel", "cancelled"}:
         return EXPIRED
     return ACTIVE_TRADE
 
@@ -154,6 +176,7 @@ def outcome_status_for_lifecycle(value: SignalLifecycle | str | None) -> str | N
         BREAKEVEN_STOP: "partial_win_be",
         MISSED_ENTRY: "missed_entry",
         EXPIRED: "expired",
+        CLOSED_TIME_STOP: "time_stop",
     }.get(state)
 
 
@@ -189,7 +212,8 @@ def outcome_transition_allowed(current: str | None, target: str | None) -> bool:
     """Prevent outcome replay/reordering from downgrading authoritative truth."""
     current_l = str(current or "").strip().lower()
     target_l = str(target or "").strip().lower()
-    if not target_l:
+    known = set(_OUTCOME_PROGRESS) | set(_TERMINAL_OUTCOMES)
+    if not target_l or current_l not in known or target_l not in known:
         return False
     if current_l == target_l:
         return True
@@ -203,6 +227,7 @@ def outcome_transition_allowed(current: str | None, target: str | None) -> bool:
 __all__ = [
     "ACTIVE_TRADE",
     "BREAKEVEN_STOP",
+    "CLOSED_TIME_STOP",
     "EXPIRED",
     "MISSED_ENTRY",
     "SignalLifecycle",

@@ -9,6 +9,7 @@ from typing import Iterable
 from core.signal_lifecycle import (
     ACTIVE_TRADE,
     BREAKEVEN_STOP,
+    CLOSED_TIME_STOP,
     EXPIRED,
     MISSED_ENTRY,
     SL_HIT,
@@ -22,6 +23,7 @@ from core.signal_lifecycle import (
     lifecycle_state_for_event,
     normalize_lifecycle_state,
 )
+from core.production_integrity import canonical_direction
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ NOTIFIABLE_EVENTS = {
     "breakeven_stop",
     "missed_entry",
     "expired",
+    "time_stop",
 }
 
 
@@ -88,7 +91,7 @@ def _should_queue_event_notification(event_type: str) -> bool:
         return False
     if event in {
         "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop",
-        "missed_entry", "expired",
+        "missed_entry", "expired", "time_stop",
     }:
         # The outcome-notification ledger is the single owner of outcome
         # messages. Queueing the same terminal event here races the compatibility
@@ -107,9 +110,12 @@ def entry_was_touched(
 ) -> bool:
     entry_f = float(entry)
     price_f = float(current_price)
+    side = canonical_direction(direction)
+    if side not in {"long", "short"}:
+        return False
     if high is not None and low is not None and float(low) <= entry_f <= float(high):
         return True
-    return price_f >= entry_f if str(direction).lower() == "long" else price_f <= entry_f
+    return price_f >= entry_f if side == "long" else price_f <= entry_f
 
 
 def evaluate_observation(
@@ -138,7 +144,10 @@ def evaluate_observation(
             return []
         events.append("entry_touched")
 
-    long_side = str(direction).lower() == "long"
+    side = canonical_direction(direction)
+    if side not in {"long", "short"}:
+        return []
+    long_side = side == "long"
     observation_high = float(high) if high is not None else float(current_price)
     observation_low = float(low) if low is not None else float(current_price)
     sl_touched = observation_low <= float(stop_loss) if long_side else observation_high >= float(stop_loss)
@@ -165,8 +174,31 @@ def _r_multiple(direction: str, entry: float, stop_loss: float, price: float) ->
     risk = abs(float(entry) - float(stop_loss))
     if risk <= 0:
         return None
-    move = float(entry) - float(price) if str(direction).lower() == "short" else float(price) - float(entry)
+    move = float(entry) - float(price) if str(direction).lower() in {"short", "sell", "bearish"} else float(price) - float(entry)
     return move / risk
+
+
+def validate_lifecycle_price_evidence(signal: dict, event_type: str, price: float, meta: dict | None = None) -> None:
+    """Require crossing evidence independently of the worker's event decision."""
+    if event_type not in {"tp1_hit", "tp2_hit", "tp3_hit", "sl_hit"}:
+        return
+    from types import SimpleNamespace
+    from core.outcome_accounting import outcome_price_metrics
+
+    evidence = dict(meta or {})
+    short = str(signal.get("direction") or "").lower() in {"short", "sell", "bearish"}
+    observed = evidence.get("observation_price", price)
+    range_key = "observation_low" if (event_type.startswith("tp") == short) else "observation_high"
+    if evidence.get(range_key) is not None:
+        observed = evidence[range_key]
+    status = event_type.removesuffix("_hit")
+    plan = SimpleNamespace(
+        entry=signal.get("entry"), stop_loss=signal.get("stop_loss"),
+        direction=signal.get("direction"),
+        take_profit=signal.get("take_profit") or signal.get("take_profits"),
+    )
+    outcome_price_metrics(plan, status, float(observed))
+    outcome_price_metrics(plan, status, float(price))
 
 
 def _event_message(signal: dict, event_type: str, price: float, timezone_name: str, telegram_user_id: int) -> str:
@@ -184,6 +216,7 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
         "breakeven_stop": ("Protected Exit", "TP1 was reached earlier; the remainder exited near break-even."),
         "missed_entry": ("Entry Missed", "The entry was not reached before this setup expired."),
         "expired": ("Signal Expired", "This setup is no longer actionable."),
+        "time_stop": ("Trade Closed at Time Limit", "The triggered trade reached its holding-time limit."),
     }
     title, action = labels.get(event_type, (event_type.replace("_", " ").title(), "Lifecycle updated."))
     ref = html.escape(str(signal.get("signal_id") or signal.get("id") or "")[:12])
@@ -333,6 +366,11 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
     signal_id = str(signal.get("signal_id") or "")
     if not signal_id:
         return False
+    try:
+        validate_lifecycle_price_evidence(signal, event_type, price, meta)
+    except (ValueError, TypeError) as exc:
+        logger.error("[lifecycle_price_evidence_rejected] signal=%s event=%s reason=%s", signal_id, event_type, exc)
+        return False
     now = _utc_now_naive()
     created_at = signal.get("created_at")
     async with get_session(priority=DBPriority.CRITICAL) as session:
@@ -372,7 +410,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             recorded_state = event_state(event_type)
             tp_stage = {"tp1_hit": 1, "tp2_hit": 2, "tp3_hit": 3}.get(event_type, 0)
             current_tp = int(getattr(lifecycle, "highest_tp_hit", 0) or 0)
-            if tp_stage > current_tp:
+            if tp_stage > current_tp and lifecycle.state not in {MISSED_ENTRY, EXPIRED, CLOSED_TIME_STOP}:
                 lifecycle.highest_tp_hit = tp_stage
             current_state = normalize_lifecycle_state(getattr(lifecycle, "state", None))
             current_rank = {
@@ -385,6 +423,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 SL_HIT: 5,
                 MISSED_ENTRY: 5,
                 EXPIRED: 5,
+                CLOSED_TIME_STOP: 5,
             }.get(current_state, 0)
             recorded_rank = {
                 WATCHING_FOR_ENTRY: 0,
@@ -396,8 +435,13 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 SL_HIT: 5,
                 MISSED_ENTRY: 5,
                 EXPIRED: 5,
+                CLOSED_TIME_STOP: 5,
             }.get(recorded_state, 0)
-            if recorded_rank > current_rank and current_state not in TERMINAL_STATES:
+            if (
+                recorded_rank > current_rank
+                and current_state not in TERMINAL_STATES
+                and event_transition_allowed(current_state, event_type)
+            ):
                 lifecycle.state = recorded_state
             timestamp_field = {
                 "entry_touched": "entry_touched_at",
@@ -414,6 +458,14 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             lifecycle.updated_at = now
 
         if existing is None:
+            if event_type == "entry_touched" and lifecycle.state == WATCHING_FOR_ENTRY:
+                expires_at = signal.get("expires_at")
+                if isinstance(expires_at, datetime):
+                    expiry_utc = expires_at.astimezone(timezone.utc).replace(tzinfo=None) if expires_at.tzinfo else expires_at
+                    if _utc_now_naive() >= expiry_utc:
+                        logger.info("[lifecycle_transition_rejected] signal=%s reason=preentry_expired", signal_id)
+                        await session.rollback()
+                        return False
             if not event_transition_allowed(lifecycle.state, event_type):
                 logger.info(
                     "[lifecycle_transition_rejected] signal=%s current=%s event=%s target=%s",
@@ -431,6 +483,9 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 float(price),
             )
             event_meta = dict(meta or {})
+            if event_type in {"missed_entry", "expired"}:
+                event_meta["counterfactual_r"] = r_value
+                r_value = None
             event_meta.setdefault("same_candle_policy", SAME_CANDLE_AMBIGUITY_POLICY)
             try:
                 import os
@@ -772,6 +827,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                     "breakeven_stop": "partial_win_be",
                     "missed_entry": "missed_entry",
                     "expired": "expired",
+                    "time_stop": "time_stop",
                 }.get(row.event_type)
                 if outcome_status:
                     pending = (

@@ -3371,6 +3371,7 @@ def main_loop(DRY_RUN: bool = False):
                     "BREAKEVEN_STOP",
                     "MISSED_ENTRY",
                     "EXPIRED",
+                    "CLOSED_TIME_STOP",
                 )
                 terminal_lifecycle_open_count = _exists_open().where(
                     _OpenLifecycle.signal_id == _OpenSig.signal_id,

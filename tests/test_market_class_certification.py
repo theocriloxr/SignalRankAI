@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import pytest
 
 from scripts import certify_market_classes as certification
 
@@ -40,7 +41,10 @@ def test_market_class_certification_accepts_fresh_named_provider(monkeypatch) ->
     assert result["provider"] == "oanda_connector"
 
 
-def test_market_class_certification_rejects_yfinance(monkeypatch) -> None:
+@pytest.mark.parametrize("environment", ["staging", "production", "test"])
+@pytest.mark.parametrize("provider", ["yfinance", "yfinance_connector", "yahoo_legacy"])
+def test_market_class_certification_rejects_yfinance(monkeypatch, environment, provider) -> None:
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", environment)
     async def fetch(symbol: str, timeframe: str):
         return _fresh_rows()
 
@@ -48,7 +52,7 @@ def test_market_class_certification_rejects_yfinance(monkeypatch) -> None:
     monkeypatch.setattr(
         certification,
         "_get_last_provider_used",
-        lambda symbol, timeframe: "yfinance",
+        lambda symbol, timeframe: provider,
     )
     result = asyncio.run(
         certification._certify("commodity_spot", "XAUUSD", "5m", 2.0)
