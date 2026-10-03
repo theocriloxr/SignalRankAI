@@ -1,5 +1,5 @@
 {
-  "file_count": 1925,
+  "file_count": 1926,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5392,6 +5392,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "386ba64f5f4903ca1a6a460e4c24e11517a31e2f671667973883fa3a264361d3",
       "size_bytes": 2055
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 66,
+      "path": "docs/PRODUCTION_REPAIR_20261003.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "cd6ec1f57f63225c561153030c3e8879327e5dedbb77730d20be242aced23464",
+      "size_bytes": 3917
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15414,7 +15422,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 442,
+    "DOCUMENTATION_ONLY": 443,
     "PRESERVE_BEHAVIOUR": 1158,
     "TEST_ONLY": 324
   }
