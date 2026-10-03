@@ -153,6 +153,7 @@ class TelegramActivationCompleteRequest(BaseModel):
     password: str = Field(min_length=10, max_length=256)
     platform_terms_accepted: bool = False
     privacy_acknowledged: bool = False
+    age_eligibility_confirmed: bool = False
     marketing_consent: bool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
