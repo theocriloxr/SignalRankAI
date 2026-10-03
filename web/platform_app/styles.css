@@ -1111,7 +1111,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   --glass:#f8faf9;--line:#d1dfd6;--line-strong:#a5bdaf;--text:#21362b;--text-strong:#152a21;
   --muted:#52685c;--muted-2:#5a7063;--cyan:#08754e;--cyan-soft:#08754e0d;--blue:#08754e;
   --green:#08754e;--green-soft:#08754e0d;--purple:#52685c;--meter-rest:#d6e4da;
-  --shadow:0 16px 40px #173b2410;--shadow-sm:none;--primary-text:#fff;
+  --shadow:0 16px 40px #173b2410;--shadow-sm:none;--primary-text:#fff;--amber:#805000;--red:#b82b3d;
 }
 @media(prefers-color-scheme:light){
  :root:not([data-theme="dark"]){
@@ -1120,7 +1120,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   --glass:#f8faf9;--line:#d1dfd6;--line-strong:#a5bdaf;--text:#21362b;--text-strong:#152a21;
   --muted:#52685c;--muted-2:#5a7063;--cyan:#08754e;--cyan-soft:#08754e0d;--blue:#08754e;
   --green:#08754e;--green-soft:#08754e0d;--purple:#52685c;--meter-rest:#d6e4da;
-  --shadow:0 16px 40px #173b2410;--shadow-sm:none;--primary-text:#fff;
+  --shadow:0 16px 40px #173b2410;--shadow-sm:none;--primary-text:#fff;--amber:#805000;--red:#b82b3d;
  }
 }
 body{background:var(--bg);font-family:"Segoe UI",Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55}
