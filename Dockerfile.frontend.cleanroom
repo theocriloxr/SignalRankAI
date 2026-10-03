@@ -4,7 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend ./
-RUN npm run lint \
+RUN echo "security-audit-refresh=2026-10-03-r1" \
+    && npm run lint \
     && npx tsc --noEmit \
     && npm audit --audit-level=high \
     && npm run build
