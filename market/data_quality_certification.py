@@ -75,12 +75,6 @@ def _is_expected_closure(
     # bounded overnight gap is expected; an equivalent arbitrary intraday hole
     # is not. FX rollovers can occur before UTC midnight, so explicitly accept
     # a tightly bounded gap overlapping the common 21:00-22:00 UTC rollover.
-    if (
-        asset_class in {AssetClass.FOREX, AssetClass.COMMODITY}
-        and previous.date() != current.date()
-        and elapsed_hours <= 8.0
-    ):
-        return True
     if asset_class is AssetClass.FOREX and elapsed_hours <= 3.0:
         cursor = previous.date()
         while cursor <= current.date():
@@ -121,7 +115,7 @@ def _is_expected_closure(
     # CME-style commodity feeds commonly omit the daily 21:00-22:00 UTC
     # maintenance window. Treat only a tightly bounded gap that overlaps that
     # window as expected; arbitrary same-day holes still fail closed.
-    if asset_class is AssetClass.COMMODITY and elapsed_hours <= 6.0:
+    if asset_class is AssetClass.COMMODITY and elapsed_hours <= 2.0:
         cursor = previous.date()
         while cursor <= current.date():
             maintenance_start = datetime.combine(cursor, datetime.min.time(), tzinfo=timezone.utc).replace(hour=21)

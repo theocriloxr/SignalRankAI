@@ -39,7 +39,7 @@ def test_fx_friday_to_sunday_open_is_not_a_provider_gap():
 
 def test_commodity_daily_maintenance_gap_is_expected():
     start = int(datetime(2026, 9, 22, 18, tzinfo=timezone.utc).timestamp())
-    rows = _rows(4, seconds=3600, start=start)
+    rows = _rows(3, seconds=3600, start=start)
     # Futures-style feed skips the 21:00 maintenance bar: 20:00 -> 22:00.
     rows += _rows(26, seconds=3600, start=int(datetime(2026, 9, 22, 22, tzinfo=timezone.utc).timestamp()))
     result = certify_market_candles(rows, asset_class="commodity", timeframe="1h")

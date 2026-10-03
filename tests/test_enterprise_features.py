@@ -543,7 +543,7 @@ class TestCancellationConfirmationFlow:
                 mock_session.__aenter__ = AsyncMock(return_value=mock_session)
                 mock_session.__aexit__ = AsyncMock(return_value=False)
                 mock_session.execute = AsyncMock(
-                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                    return_value=MagicMock(scalar_one_or_none=lambda: user, scalars=lambda: MagicMock(first=lambda: user))
                 )
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
@@ -627,7 +627,7 @@ class TestCancellationConfirmationFlow:
                 mock_session.__aenter__ = AsyncMock(return_value=mock_session)
                 mock_session.__aexit__ = AsyncMock(return_value=False)
                 mock_session.execute = AsyncMock(
-                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                    return_value=MagicMock(scalar_one_or_none=lambda: user)
                 )
                 mock_session.commit = AsyncMock()
                 mock_gs.return_value = mock_session

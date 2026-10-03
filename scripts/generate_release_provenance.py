@@ -19,6 +19,7 @@ from pathlib import Path
 import re
 import subprocess
 from typing import Any
+from packaging.markers import Marker
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "requirements.lock"
@@ -100,7 +101,8 @@ def locked_components() -> list[dict[str, Any]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        match = REQ_RE.match(line)
+        requirement, separator, marker = line.partition(";")
+        match = REQ_RE.match(requirement.strip())
         if not match:
             raise ValueError(f"unsupported_lock_line:{line[:120]}")
         name, version = match.groups()
@@ -108,14 +110,15 @@ def locked_components() -> list[dict[str, Any]]:
         if key in seen:
             raise ValueError(f"duplicate_locked_component:{key}")
         seen.add(key)
-        components.append(
-            {
+        component = {
                 "type": "library",
                 "name": name,
                 "version": version,
                 "purl": f"pkg:pypi/{key}@{version}",
             }
-        )
+        if separator:
+            component["properties"] = [{"name": "signalrank:environment-marker", "value": str(Marker(marker.strip()))}]
+        components.append(component)
     return sorted(components, key=lambda item: (item["name"].lower(), item["version"]))
 
 
