@@ -27,10 +27,14 @@ def _trusted_callback_url() -> str | None:
     return f"{base}/billing/complete" if base else None
 
 
-def _plan_code(product: CheckoutProduct) -> str | None:
+def plan_code_for_product(product: CheckoutProduct) -> str | None:
     exact = "PAYSTACK_" + product.product_id.upper().replace("-", "_") + "_PLAN_CODE"
     tier = "PAYSTACK_" + product.tier.upper() + "_PLAN_CODE"
     return str(os.getenv(exact) or os.getenv(tier) or "").strip() or None
+
+
+def is_recurring_product(product: CheckoutProduct) -> bool:
+    return bool(plan_code_for_product(product))
 
 
 async def initialize_paystack_checkout(
@@ -40,6 +44,7 @@ async def initialize_paystack_checkout(
     email: str,
     telegram_user_id: int | None = None,
     timeout_seconds: float = 20.0,
+    recurring_acknowledged: bool = False,
 ) -> dict[str, Any]:
     secret = str(os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
     if not secret:
@@ -78,10 +83,16 @@ async def initialize_paystack_checkout(
     callback = _trusted_callback_url()
     if callback:
         payload["callback_url"] = callback
-    plan_code = _plan_code(product)
+    plan_code = plan_code_for_product(product)
     if plan_code:
+        if recurring_acknowledged is not True:
+            raise CheckoutInitializationError("recurring_billing_acknowledgement_required")
         payload["plan"] = plan_code
         metadata["plan_code"] = plan_code
+        metadata["recurring_billing_acknowledged"] = True
+        metadata["billing_terms_version"] = "2026-10-03"
+    else:
+        metadata["recurring_billing_acknowledged"] = False
 
     base_url = str(os.getenv("PAYSTACK_BASE_URL") or "https://api.paystack.co").rstrip("/")
     async with httpx.AsyncClient(timeout=max(3.0, float(timeout_seconds))) as client:
@@ -114,7 +125,8 @@ async def initialize_paystack_checkout(
         "duration_days": product.duration_days,
         "amount_ngn": product.price_ngn,
         "currency": product.currency,
+        "recurring": bool(plan_code),
     }
 
 
-__all__ = ["CheckoutInitializationError", "initialize_paystack_checkout"]
+__all__ = ["CheckoutInitializationError", "initialize_paystack_checkout", "is_recurring_product", "plan_code_for_product"]
