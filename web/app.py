@@ -95,6 +95,30 @@ if os.path.isdir(_PLATFORM_DIR):
     async def platform_application() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "index.html"))
 
+    @app.get("/privacy", include_in_schema=False)
+    async def platform_privacy() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "privacy.html"))
+
+    @app.get("/terms", include_in_schema=False)
+    async def platform_terms() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "terms.html"))
+
+    @app.get("/cookies", include_in_schema=False)
+    async def platform_cookies() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "cookies.html"))
+
+    @app.get("/billing-policy", include_in_schema=False)
+    async def platform_billing_policy() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "billing-policy.html"))
+
+    @app.get("/risk-disclosure", include_in_schema=False)
+    async def platform_risk_disclosure() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "risk-disclosure.html"))
+
+    @app.get("/accessibility", include_in_schema=False)
+    async def platform_accessibility() -> FileResponse:
+        return FileResponse(os.path.join(_PLATFORM_DIR, "accessibility.html"))
+
     @app.get("/app/manifest.webmanifest", include_in_schema=False)
     async def platform_manifest() -> FileResponse:
         return FileResponse(os.path.join(_PLATFORM_DIR, "manifest.webmanifest"), media_type="application/manifest+json")
