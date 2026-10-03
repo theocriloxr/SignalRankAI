@@ -14,7 +14,7 @@ from collections import deque
 from typing import Optional, Dict, Set, Iterable, Any, cast
 from datetime import datetime, timedelta
 
-from db.models import Signal, MLRejectedSignal
+from db.models import Signal, MLRejectedSignal, DecisionLog
 from db.session import get_session
 from sqlalchemy import select, text
 from utils.timeutils import now_utc_naive
@@ -1192,6 +1192,15 @@ class MLRejectionTracker:
         try:
             await self.flush_pending_rejections(force=True)
             async with get_session() as session:
+                # Revision 0046 projects legacy rejection reads from JSONB.
+                # Its computed view columns cannot receive ORM UPDATEs; write
+                # the owning DecisionLog row when that projection is present.
+                rejection_view = False
+                if session.get_bind().dialect.name == "postgresql":
+                    relation_kind = (await session.execute(text(
+                        "SELECT relkind FROM pg_class WHERE oid = to_regclass('public.ml_rejected_signals')"
+                    ))).scalar_one_or_none()
+                    rejection_view = relation_kind in {"v", b"v"}
                 # Get rejections still awaiting full window labels
                 stmt = select(MLRejectedSignal).where(
                     MLRejectedSignal.outcome_tracked_at.is_(None),
@@ -1242,22 +1251,35 @@ class MLRejectionTracker:
                     features["outcome_close_prices"] = outcome_close_prices
                     features["outcome_windows_minutes"] = self._windows_minutes
                     features["evaluation_mode"] = "close_at_each_window"
-                    rejection.features = features
-
+                    overall = None
+                    tracked_at = None
                     # Mark fully tracked only when all windows are labeled.
                     if all(self._window_key(int(w)) in outcome_labels for w in self._windows_minutes):
                         overall = self._resolve_overall_label(outcome_labels)
                         outcome_labels["overall"] = overall
-                        rejection.actual_outcome = overall
-                        rejection.outcome_tracked_at = now_utc_naive()
+                        tracked_at = now_utc_naive()
+                    if rejection_view:
+                        owner = await session.get(DecisionLog, rejection.id)
+                        if owner is None or owner.decision != "rejected" or (owner.meta or {}).get("layer") != "ml":
+                            raise RuntimeError("rejection projection has no matching decision-log owner")
+                        meta = {**(owner.meta or {}), "features": features}
+                        if tracked_at is not None:
+                            meta.update(actual_outcome=overall, outcome_tracked_at=tracked_at.isoformat())
+                        owner.meta = meta
+                    else:
+                        rejection.features = features
+                        if tracked_at is not None:
+                            rejection.actual_outcome = overall
+                            rejection.outcome_tracked_at = tracked_at
                     tracked_count += 1
 
                 if tracked_count > 0:
                     await session.flush()
+                    await session.commit()
                     logger.info(f"Tracked {tracked_count} rejection outcomes")
-                    await self._notify_rejection_outcomes(summary)
 
             if tracked_count > 0 or backfilled > 0:
+                await self._notify_rejection_outcomes(summary)
                 await self._run_adaptive_learning_if_due()
 
                 return tracked_count + backfilled

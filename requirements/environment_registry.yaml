@@ -1118,8 +1118,8 @@
       "read_locations": [
         "config.py:62",
         "data/fetcher.py:2484",
-        "data/providers.py:1074",
-        "data/providers.py:958",
+        "data/providers.py:1082",
+        "data/providers.py:966",
         "data/startup_selfcheck.py:137"
       ],
       "required_by_code": true,
@@ -1140,7 +1140,7 @@
       "name": "ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:971"
+        "data/providers.py:979"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2678,7 +2678,7 @@
       "name": "COINGECKO_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:881"
+        "data/providers.py:889"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -3123,7 +3123,7 @@
       "name": "CRYPTOPANIC_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:332"
+        "data/providers.py:333"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -6336,8 +6336,8 @@
       "name": "HTTPS_PROXY",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:210",
-        "data/providers.py:377"
+        "data/providers.py:211",
+        "data/providers.py:378"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6347,8 +6347,8 @@
       "name": "HTTP_PROXY",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:210",
-        "data/providers.py:377"
+        "data/providers.py:211",
+        "data/providers.py:378"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7242,7 +7242,7 @@
       "name": "MIN_CANDLES_FOR_INDICATORS",
       "production_example_default": null,
       "read_locations": [
-        "data/dynamic_symbol_assign.py:347"
+        "data/dynamic_symbol_assign.py:346"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8757,7 +8757,7 @@
         "config.py:73",
         "data/get_live_price.py:1043",
         "data/get_live_price.py:126",
-        "data/providers.py:751"
+        "data/providers.py:759"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8774,7 +8774,7 @@
         "config.py:72",
         "data/get_live_price.py:1042",
         "data/get_live_price.py:125",
-        "data/providers.py:750"
+        "data/providers.py:758"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -8798,7 +8798,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:1050",
-        "data/providers.py:752"
+        "data/providers.py:760"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10998,7 +10998,7 @@
         "data/get_live_price.py:131",
         "data/get_live_price.py:340",
         "data/pair_discovery.py:1096",
-        "data/providers.py:463"
+        "data/providers.py:464"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -15201,7 +15201,7 @@
       "name": "TRADINGVIEW_OHLCV_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:845"
+        "data/providers.py:853"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15344,11 +15344,11 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:71",
-        "data/connectors/twelvedata_adapter.py:23",
+        "data/connectors/twelvedata_adapter.py:25",
         "data/get_live_price.py:129",
         "data/get_live_price.py:935",
         "data/pair_discovery.py:607",
-        "data/providers.py:545"
+        "data/providers.py:546"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -15382,9 +15382,11 @@
       "name": "TWELVE_DATA_API_KEY",
       "production_example_default": null,
       "read_locations": [
+        "data/connectors/twelvedata_adapter.py:25",
         "data/get_live_price.py:129",
         "data/get_live_price.py:935",
-        "data/pair_discovery.py:607"
+        "data/pair_discovery.py:607",
+        "data/providers.py:546"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -16111,7 +16113,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/market_data.py:153",
-        "data/providers.py:694"
+        "data/providers.py:702"
       ],
       "required_by_code": true,
       "sensitive": false

@@ -243,3 +243,39 @@ def test_current_release_and_railway_profiles_follow_repository_alembic_head():
     ):
         profile = (ROOT / filename).read_text(encoding="utf-8")
         assert f"EXPECTED_ALEMBIC_HEAD={expected}" in profile
+
+
+def test_production_migration_requires_space_for_original_copy_and_wal(monkeypatch):
+    from datetime import datetime, timezone
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "production")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_OBSERVED_AT", datetime.now(timezone.utc).isoformat())
+    class Cursor:
+        def __init__(self): self.values = iter([4_200_000_000, 300_000_000, 1_500_000_000])
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def execute(self, *args): pass
+        def fetchone(self): return (next(self.values),)
+    class Connection:
+        def cursor(self): return Cursor()
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "5000")
+    errors = migration._storage_errors(Connection(), "0045_mt5_credential_retirement")
+    assert len(errors) == 1 and "headroom insufficient" in errors[0]
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "10000")
+    assert migration._storage_errors(Connection(), "0045_mt5_credential_retirement") == []
+
+
+def test_production_migration_rejects_stale_or_invalid_capacity(monkeypatch):
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "production")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "10000")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_OBSERVED_AT", "2020-01-01T00:00:00+00:00")
+    assert "observation" in migration._storage_errors(None, None)[0]
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "nan")
+    assert "finite" in migration._storage_errors(None, None)[0]
+
+
+def test_staging_migration_does_not_accept_production_capacity_evidence(monkeypatch):
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "staging")
+    assert migration._storage_errors(None, None) == []

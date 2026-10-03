@@ -11,12 +11,13 @@ Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
 
 from utils.timeutils import now_utc_naive
+from data.symbol_formatter import format_symbol_for_twelvedata
 
 import os
 import asyncio
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
 import requests
@@ -542,26 +543,31 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
 
 def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "stocks") -> List[Dict]:
     """Fetch OHLCV from Twelve Data API."""
-    api_key = os.getenv("TWELVEDATA_API_KEY", "").strip()
+    api_key = (os.getenv("TWELVEDATA_API_KEY") or os.getenv("TWELVE_DATA_API_KEY") or "").strip()
     if not api_key or _is_cooldown_active("twelvedata"):
         return []
 
     # Map timeframe
     tf_map = {
+        "1m": "1min",
         "5m": "5min",
         "15m": "15min",
+        "30m": "30min",
         "1h": "1h",
         "4h": "4h",
         "1d": "1day",
     }
-    interval = tf_map.get(timeframe, "1h")
+    interval = tf_map.get(timeframe)
+    if interval is None:
+        return []
 
     url = "https://api.twelvedata.com/time_series"
     params = {
-        "symbol": symbol,
+        "symbol": format_symbol_for_twelvedata(symbol),
         "interval": interval,
         "outputsize": 200,
         "apikey": api_key,
+        "timezone": "UTC",
     }
 
     _rate_limit("twelvedata", _env_float("TWELVEDATA_MIN_SECONDS_BETWEEN_CALLS", 1.0))
@@ -571,7 +577,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         data = resp.json() if resp.ok else {}
 
         if not resp.ok or data.get("status") == "error":
-            logger.warning(f"[twelvedata] fetch_failed symbol={symbol} msg={data.get('message', '')}")
+            logger.warning("[twelvedata] fetch_failed symbol=%s status=%s", symbol, resp.status_code)
             _maybe_apply_rate_limit_cooldown(
                 "twelvedata",
                 status_code=resp.status_code,
@@ -587,7 +593,9 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         for bar in values:
             try:
                 # Twelve Data returns datetime string
-                dt = datetime.fromisoformat(bar["datetime"].replace("Z", ""))
+                dt = datetime.fromisoformat(bar["datetime"].replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
                 candles.append(
                     {
                         "timestamp": int(dt.timestamp() * 1000),
@@ -606,7 +614,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         return candles
 
     except Exception as e:
-        logger.error(f"[twelvedata] error symbol={symbol} err={e}")
+        logger.error("[twelvedata] error symbol=%s error_type=%s", symbol, type(e).__name__)
         return []
 
 

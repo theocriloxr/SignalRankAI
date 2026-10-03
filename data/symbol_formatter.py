@@ -232,20 +232,17 @@ def format_symbol_for_polygon(symbol: str, asset_type: str = "stocks") -> str:
 
 
 def format_symbol_for_twelvedata(symbol: str) -> str:
-    """
-    Convert symbol for Twelve Data API.
-
-    Twelve Data generally uses plain format but with some quirks.
-    Most symbols work as-is.
-    """
+    """Use slash-separated currency/metal pairs; preserve equity punctuation."""
     if not symbol:
         return symbol
 
     s = str(symbol).upper().strip()
 
-    # Remove separators for consistency
-    s = s.replace("/", "").replace("-", "").replace("_", "")
-
+    compact = s.replace("/", "").replace("-", "").replace("_", "")
+    pair_bases = FOREX_BASES | CRYPTO_BASES | {"XAU", "XAG", "XPT", "XPD"}
+    for quote in ("USDT", "USDC", *sorted(FOREX_BASES)):
+        if compact.endswith(quote) and compact[:-len(quote)] in pair_bases:
+            return f"{compact[:-len(quote)]}/{quote}"
     return s
 
 
