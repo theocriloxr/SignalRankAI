@@ -1,3 +1,3 @@
-production image certification
-head_before_trigger=864c744cf1f2249c7db0b860b485821b3fee61c4
+production image certification r2
+head_before_trigger=d27c0acaaf23a0c9196bdd0b718c9d06e5195b5e
 live_execution_authorized=false
