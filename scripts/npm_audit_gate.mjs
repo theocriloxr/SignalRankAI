@@ -37,22 +37,30 @@ try {
 const vulnerabilities = report.vulnerabilities || {};
 const rank = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
-function advisoryIds(name, seen = new Set()) {
-  if (seen.has(name)) return new Set();
+function advisoryRoots(name, seen = new Set()) {
+  if (seen.has(name)) return [];
   seen.add(name);
   const row = vulnerabilities[name];
-  if (!row) return new Set();
-  const result = new Set();
+  if (!row) return [];
+  const result = [];
   for (const via of row.via || []) {
     if (typeof via === "string") {
-      for (const id of advisoryIds(via, new Set(seen))) result.add(id);
+      result.push(...advisoryRoots(via, new Set(seen)));
     } else {
       const url = String(via.url || "");
       const match = url.match(/GHSA-[A-Za-z0-9-]+/i);
-      result.add(match ? match[0].toUpperCase() : "UNIDENTIFIED");
+      result.push({
+        id: match ? match[0].toUpperCase() : "UNIDENTIFIED",
+        severity: String(via.severity || row.severity || "unknown").toLowerCase(),
+      });
     }
   }
-  return result;
+  const deduped = new Map();
+  for (const item of result) {
+    const key = item.id + ":" + item.severity;
+    deduped.set(key, item);
+  }
+  return [...deduped.values()];
 }
 
 function sourceContains(tokens) {
@@ -124,12 +132,23 @@ if (project === "frontend") {
 for (const [name, row] of Object.entries(vulnerabilities)) {
   const severity = String(row.severity || "unknown").toLowerCase();
   if ((rank[severity] ?? 99) < rank.high) continue;
-  const ids = advisoryIds(name);
-  const unknown = [...ids].filter((id) => !allowed.has(id));
-  if (!ids.size || unknown.length) {
-    failures.push("unapproved " + severity + " vulnerability " + name + " advisories=" + JSON.stringify([...ids]));
+  const roots = advisoryRoots(name);
+  const highRoots = roots.filter((item) => (rank[item.severity] ?? 99) >= rank.high);
+  const unknownHigh = highRoots.filter((item) => !allowed.has(item.id));
+  if (!highRoots.length || unknownHigh.length) {
+    failures.push(
+      "unapproved " + severity + " vulnerability " + name +
+      " roots=" + JSON.stringify(roots)
+    );
   } else {
-    excepted.push({ name, severity, advisories: [...ids] });
+    excepted.push({
+      name,
+      severity,
+      advisories: highRoots.map((item) => item.id),
+      lowerSeverityRoots: roots
+        .filter((item) => (rank[item.severity] ?? 99) < rank.high)
+        .map((item) => item.id),
+    });
   }
 }
 
