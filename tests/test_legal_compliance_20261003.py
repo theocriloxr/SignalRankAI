@@ -122,3 +122,15 @@ def test_mobile_activation_age_gate_has_a_real_parameter() -> None:
     signature = mobile_api[start:end]
     assert "ageEligibilityConfirmed: boolean" in signature
     assert "age_eligibility_confirmed: ageEligibilityConfirmed" in mobile_api
+
+
+def test_legal_consent_ui_uses_accessible_cards() -> None:
+    html = source("web/platform_app/index.html")
+    css = source("web/platform_app/styles.css")
+    assert html.count('class="consent-group') >= 4
+    assert html.count("consent-required") >= 6
+    assert html.count("consent-optional") >= 2
+    assert "Required agreements" in html
+    assert ".consent-row:focus-within" in css
+    assert ".consent-row:has(input:checked)" in css
+    assert 'appearance:none' in css or 'appearance: none' in css
