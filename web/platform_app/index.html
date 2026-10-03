@@ -134,6 +134,9 @@
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
           <small>Use at least 10 characters and three character types.</small>
+          <label class="consent-row"><input name="platform_terms_accepted" type="checkbox" required /> <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>. General account terms do not enable broker execution.</span></label>
+          <label class="consent-row"><input name="privacy_acknowledged" type="checkbox" required /> <span>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+          <label class="consent-row"><input name="marketing_consent" type="checkbox" /> <span>Optional: send me product news and marketing updates. I can withdraw this later without affecting service or security messages.</span></label>
           <button type="submit" class="primary">Create account</button>
         </form>
 
@@ -738,7 +741,7 @@
     </section>
   </main>
 
-  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
+  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/cookies">Cookies</a> · <a href="/billing-policy">Billing</a> · <a href="/risk-disclosure">Risk</a> · <a href="/accessibility">Accessibility</a> · <a href="/healthz">System status</a></span></footer>
   <script src="/app-assets/app.js?v=38" defer></script>
 </body>
 </html>
