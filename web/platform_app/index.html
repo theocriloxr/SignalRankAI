@@ -134,10 +134,17 @@
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
           <small>Use at least 10 characters and three character types.</small>
-          <label class="consent-row"><input name="platform_terms_accepted" type="checkbox" required /> <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>. General account terms do not enable broker execution.</span></label>
-          <label class="consent-row"><input name="privacy_acknowledged" type="checkbox" required /> <span>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
-          <label class="consent-row"><input name="age_eligibility_confirmed" type="checkbox" required /> <span>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
-          <label class="consent-row"><input name="marketing_consent" type="checkbox" /> <span>Optional: send me product news and marketing updates. I can withdraw this later without affecting service or security messages.</span></label>
+          <fieldset class="consent-group">
+            <legend>Required agreements <span>3 items</span></legend>
+            <p class="consent-intro">Review each item before creating your account. These choices are recorded separately.</p>
+            <label class="consent-row consent-required"><input name="platform_terms_accepted" type="checkbox" required /><span><b>Terms & trading risk</b><small>Required</small>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>. Account terms do not enable broker execution.</span></label>
+            <label class="consent-row consent-required"><input name="privacy_acknowledged" type="checkbox" required /><span><b>Privacy Notice</b><small>Required</small>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+            <label class="consent-row consent-required"><input name="age_eligibility_confirmed" type="checkbox" required /><span><b>Age & legal eligibility</b><small>Required</small>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
+          </fieldset>
+          <fieldset class="consent-group consent-optional-group">
+            <legend>Optional communication</legend>
+            <label class="consent-row consent-optional"><input name="marketing_consent" type="checkbox" /><span><b>Product updates</b><small>Optional</small>Send me product news and marketing updates. I can withdraw this later without affecting service or security messages.</span></label>
+          </fieldset>
           <button type="submit" class="primary">Create account</button>
         </form>
 
@@ -147,10 +154,17 @@
           <label>One-time token or code<input id="activationCredential" name="token_or_code" autocomplete="one-time-code" required /></label>
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
-          <label class="consent-row"><input name="platform_terms_accepted" type="checkbox" required /> <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>.</span></label>
-          <label class="consent-row"><input name="privacy_acknowledged" type="checkbox" required /> <span>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
-          <label class="consent-row"><input name="age_eligibility_confirmed" type="checkbox" required /> <span>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
-          <label class="consent-row"><input name="marketing_consent" type="checkbox" /> <span>Optional: send me product news and marketing updates.</span></label>
+          <fieldset class="consent-group">
+            <legend>Required agreements <span>3 items</span></legend>
+            <p class="consent-intro">Telegram activation uses the same legal and privacy choices as a new web account.</p>
+            <label class="consent-row consent-required"><input name="platform_terms_accepted" type="checkbox" required /><span><b>Terms & trading risk</b><small>Required</small>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>.</span></label>
+            <label class="consent-row consent-required"><input name="privacy_acknowledged" type="checkbox" required /><span><b>Privacy Notice</b><small>Required</small>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+            <label class="consent-row consent-required"><input name="age_eligibility_confirmed" type="checkbox" required /><span><b>Age & legal eligibility</b><small>Required</small>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
+          </fieldset>
+          <fieldset class="consent-group consent-optional-group">
+            <legend>Optional communication</legend>
+            <label class="consent-row consent-optional"><input name="marketing_consent" type="checkbox" /><span><b>Product updates</b><small>Optional</small>Send me product news and marketing updates.</span></label>
+          </fieldset>
           <button type="submit" class="primary">Activate app access</button>
         </form>
 
