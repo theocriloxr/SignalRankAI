@@ -322,9 +322,7 @@ button:disabled{cursor:not-allowed;opacity:.48;transform:none}
   appearance:none;-webkit-appearance:none;width:20px;height:20px;min-height:20px;margin:1px 0 0;border:1.5px solid var(--line-strong);border-radius:6px;
   background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:.15s var(--ease)
 }
-.consent-row input[type="checkbox"]::after{content:"";width:9px;height:5px;border-left:2px solid #031115;border-bottom:2px solid #031115;transform:rotate(-45deg) scale(0);transform-origin:center;transition:transform .12s var(--ease)}
-.consent-row input[type="checkbox"]:checked{border-color:var(--cyan);background:var(--cyan)}
-.consent-row input[type="checkbox"]:checked::after{transform:rotate(-45deg) scale(1)}
+.consent-row input[type="checkbox"]:checked{border-color:var(--cyan);background-color:var(--cyan);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5 6.4 12 13 4.5' fill='none' stroke='%23031115' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-size:14px 14px;background-position:center;background-repeat:no-repeat}
 .consent-row input[type="checkbox"]:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
 .consent-row>span{min-width:0;overflow-wrap:anywhere}
 .consent-row b{display:inline-block;margin:0 7px 2px 0;color:var(--text);font-size:12px}
