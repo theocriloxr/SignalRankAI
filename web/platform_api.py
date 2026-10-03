@@ -82,6 +82,7 @@ class RegisterRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=160)
     platform_terms_accepted: bool = False
     privacy_acknowledged: bool = False
+    age_eligibility_confirmed: bool = False
     marketing_consent: bool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
@@ -1928,6 +1929,8 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
         raise HTTPException(status_code=422, detail="Accept the Terms of Use before creating an account")
     if payload.privacy_acknowledged is not True:
         raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before creating an account")
+    if payload.age_eligibility_confirmed is not True:
+        raise HTTPException(status_code=422, detail="Confirm that you are at least 18 and legally able to use the service")
     try:
         async with get_session() as session:
             user_id = await create_email_account(
@@ -1975,6 +1978,8 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                         {
                             "host": str(request.url.hostname or "")[:255],
                             "web_first": payload.client_type in {"web", "pwa"},
+                            "age_eligibility_confirmed": bool(payload.age_eligibility_confirmed),
+                            "age_eligibility_version": CURRENT_PLATFORM_TERMS_VERSION,
                         },
                         separators=(",", ":"),
                     ),
@@ -2063,6 +2068,8 @@ async def telegram_activation_complete(
         raise HTTPException(status_code=422, detail="Accept the Terms of Use before activating app access")
     if payload.privacy_acknowledged is not True:
         raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before activating app access")
+    if payload.age_eligibility_confirmed is not True:
+        raise HTTPException(status_code=422, detail="Confirm that you are at least 18 and legally able to use the service")
     try:
         async with get_session() as session:
             user_id = await complete_telegram_activation(
@@ -2082,6 +2089,13 @@ async def telegram_activation_complete(
                     "marketing": bool(payload.marketing_consent),
                     "terms_version": CURRENT_PLATFORM_TERMS_VERSION,
                 },
+            )
+            from services.platform.identity import record_security_event
+            await record_security_event(
+                session,
+                user_id=int(user_id),
+                event_type="account.age_eligibility_confirmed",
+                metadata={"version": CURRENT_PLATFORM_TERMS_VERSION, "client_type": payload.client_type},
             )
             await session.commit()
     except IdentityConflict as exc:
