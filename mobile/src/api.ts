@@ -98,6 +98,7 @@ export async function register(
   password: string,
   platformTermsAccepted: boolean,
   privacyAcknowledged: boolean,
+  ageEligibilityConfirmed: boolean,
   marketingConsent: boolean,
 ): Promise<SessionPayload> {
   const response = await fetch(`${API_URL}/api/v1/platform/auth/register`, {
@@ -109,6 +110,7 @@ export async function register(
       client_type: 'mobile',
       platform_terms_accepted: platformTermsAccepted,
       privacy_acknowledged: privacyAcknowledged,
+      age_eligibility_confirmed: ageEligibilityConfirmed,
       marketing_consent: marketingConsent,
     }),
   });
@@ -140,6 +142,7 @@ export async function activateTelegram(
       client_type: 'mobile',
       platform_terms_accepted: platformTermsAccepted,
       privacy_acknowledged: privacyAcknowledged,
+      age_eligibility_confirmed: ageEligibilityConfirmed,
       marketing_consent: marketingConsent,
     }),
   });
