@@ -1134,7 +1134,7 @@ main{outline:none}#appShell{padding:32px;max-width:var(--sr-shell-max)}
 .workspace-nav button{min-height:44px;font-size:14px}.workspace-nav button:hover{transform:none}
 .workspace-nav button.active{background:var(--cyan-soft);border-color:var(--line)}
 .workspace-nav button.active:before{background:var(--cyan);box-shadow:none}
-.locked-nav{opacity:1}.workspace-nav .locked-nav>span:last-child:after{content:" ? Upgrade";font-size:11px;color:var(--muted)}
+.locked-nav{opacity:1}.workspace-nav .locked-nav>span:last-child:after{content:" \00b7 Upgrade";font-size:11px;color:var(--muted)}
 .nav-toggle{border-color:var(--line-strong);color:var(--text);background:var(--panel)}
 .dashboard-header{position:relative;top:auto;margin:0 0 24px;padding:0 0 20px;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;backdrop-filter:none}
 .dashboard-header:after{content:none}.dashboard-header h1{font-size:clamp(26px,3vw,38px);line-height:1.15}
@@ -1194,3 +1194,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 #brokerPlatformCatalog .metric-card strong{font-size:17px;line-height:1.4;margin-top:8px}#brokerPlatformCatalog .metric-card small{font-size:12px}
 #profileDetails,#tradingProfileForm,#brokerPanel,#notificationForm,#billingProducts{scroll-margin-top:130px}
 @media(max-width:700px){.account-profile-panel #profileForm{grid-template-columns:1fr}.account-jump-nav{flex-wrap:nowrap;overflow:auto;max-width:100%;gap:6px}.account-jump-nav a{white-space:nowrap;font-size:13px}}
+
+.data-list>.empty-state{background:transparent;border:0}
