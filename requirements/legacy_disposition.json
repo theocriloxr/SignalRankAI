@@ -1,5 +1,5 @@
 {
-  "file_count": 1926,
+  "file_count": 1930,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5387,11 +5387,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 35,
+      "line_count": 41,
       "path": "docs/PRODUCTION_READINESS_SCORECARD.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "386ba64f5f4903ca1a6a460e4c24e11517a31e2f671667973883fa3a264361d3",
-      "size_bytes": 2055
+      "sha256": "8039c8df994ef7a8230496067e97fb008f146d932e43fecf8032ff1d2b767bca",
+      "size_bytes": 2427
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5632,6 +5632,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "a2bddd2c72956b27a2affc6a5bd18d02ee3a9b9bcad36d508a937b25e6ceaa67",
       "size_bytes": 68346
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 92,
+      "path": "docs/UI_REFRESH_AND_LAUNCH_GATES_20261003.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "03a383734aadd23024500e2fd1ccd0990c9b4036d1e72234737779da8608eba2",
+      "size_bytes": 7152
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8028,6 +8036,14 @@
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
+      "path": "frontend/public/brand/icon.svg",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "d723da45ad658c74343a6af61cb740a29c6e5de2fab3f8a30703a21556c431bb",
+      "size_bytes": 8555
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
       "path": "frontend/public/file.svg",
       "reason": "configuration, data, or product asset retained",
       "sha256": "2b67812c325c199a02536cdbeea0c593a72f707d323b72ee3e08dbab06753bd4",
@@ -8099,35 +8115,43 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1,
+      "line_count": 11,
       "path": "frontend/src/app/globals.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "50a4e0619852277ffb7bfdb3b9b3368985cc27863f311e186aaaf9c53e3bec92",
-      "size_bytes": 4694
+      "sha256": "79495e0c83d94cf8fca05ef8e14a23389067006201f64bd4bdbb92ff94ae3668",
+      "size_bytes": 7336
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 11,
       "path": "frontend/src/app/layout.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1276de8bed0c924bd8d0d8054170fdaf5b5fe164d41b4df752dff162f9f3a99d",
-      "size_bytes": 472
+      "sha256": "2f9d8e129f5be672e66119c704db56869e3de3437ce96dcf74662d4807bbc711",
+      "size_bytes": 705
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 41,
+      "line_count": 44,
       "path": "frontend/src/app/page.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0662337600f10841daccf77206240e352b1db5895c3c53dc43b82b7ed486623c",
-      "size_bytes": 3327
+      "sha256": "d231d327cbbe45048532e2d352122f600aa0f4aa2b9f2d91836f36da4c3090bd",
+      "size_bytes": 3516
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 35,
+      "line_count": 38,
       "path": "frontend/src/components/AppShell.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1f07316565362aa4fd33adb580adea9a284eb8b356d84b493abde20ccbad09c1",
-      "size_bytes": 1102
+      "sha256": "4531e8deff01d529f2bf6d4c48a7c03ceb8d0fe513e44df66c1d7edf15635ade",
+      "size_bytes": 1383
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 36,
+      "path": "frontend/src/components/ThemeControl.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "f4eccf6dc70529eb796fa590713b673e1a8f091a513ea75b7853cd1ba3ebeea5",
+      "size_bytes": 1352
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10248,6 +10272,14 @@
       "reason": "production/build source",
       "sha256": "e510b233253a77290c15fd8900e372084bb7068beb5e2d6ea9dc97e3c75c7dc3",
       "size_bytes": 4327
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": "scripts/test_portal_service_worker.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "41684ccd857b431bb76e155b896bf0fa30c2b8540526e5b5993d7ad2f7cf7d0e",
+      "size_bytes": 3141
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15259,11 +15291,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1128,
+      "line_count": 1134,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f812c76a4e22c7ca44862bc74ad3de65fc1037e8f13e4b8880fe2afb256a18fa",
-      "size_bytes": 140477
+      "sha256": "45b40d05ade7f61557b7ce704b22b4105b408c40d8a1fe2b7660970184857b68",
+      "size_bytes": 141578
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15275,11 +15307,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 744,
+      "line_count": 743,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "27d87e36b5d9c30ce0128cb9629bde7ef4c73b2aa44ade4d038a2d354262fe6d",
-      "size_bytes": 68292
+      "sha256": "6511e162e8fa1001cf2a44ecf45e08d77ab1205fb2d608cd83dc5020335b6558",
+      "size_bytes": 69265
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15299,19 +15331,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 5,
+      "line_count": 36,
       "path": "web/platform_app/service-worker.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3889ce8147296c1344c6f13eac2d4c0b53ac92cf7d1b18dbf11d862ca0369b39",
-      "size_bytes": 955
+      "sha256": "93231d0a736d0bb61a4831ff9782a727c7444cc9ebb4b0a3589c04d5b77715fd",
+      "size_bytes": 1681
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1287,
+      "line_count": 1198,
       "path": "web/platform_app/styles.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "27ab8525755067f7a77eb81d4cefb2e2a4d3a2ea11ce7a14187b7a01ffb5a3d3",
-      "size_bytes": 64879
+      "sha256": "a614192b39f5371cc888a2e66451f74d2d06282de8cd14b8e8d224c7290e7cf8",
+      "size_bytes": 67317
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15422,8 +15454,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 443,
-    "PRESERVE_BEHAVIOUR": 1158,
+    "DOCUMENTATION_ONLY": 444,
+    "PRESERVE_BEHAVIOUR": 1161,
     "TEST_ONLY": 324
   }
 }

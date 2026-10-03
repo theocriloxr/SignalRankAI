@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ThemeControl } from "../components/ThemeControl";
 
 const markets = ["Crypto", "FX", "Indices", "Equities", "Commodities"];
@@ -13,7 +14,7 @@ export default function Home() {
     <main>
       <section className="hero">
         <nav className="topbar">
-          <Link className="brand" href="/"><img src="/brand/icon.svg" alt="" width="32" height="32" />SignalRank<span>AI</span></Link>
+          <Link className="brand" href="/"><Image src="/brand/icon.svg" alt="" width={32} height={32} unoptimized />SignalRank<span>AI</span></Link>
           <div className="navlinks">
             <Link href="/methodology">Methodology</Link><Link href="/risk">Risk</Link><Link href="/security">Security</Link><Link href="/providers">Providers</Link><Link href="/docs">Docs</Link>
           </div>

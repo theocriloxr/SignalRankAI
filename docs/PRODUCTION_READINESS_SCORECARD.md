@@ -1,5 +1,11 @@
 # Production Readiness Scorecard
 
+**Current launch status, 3 October 2026: BLOCKED.** The historical estimates
+below are not current release certificates. See
+[the verified UI changes and outstanding launch gates](UI_REFRESH_AND_LAUNCH_GATES_20261003.md)
+and [production recovery evidence](PRODUCTION_REPAIR_20261003.md). A healthy
+HTTP endpoint and passing local tests do not authorize funded execution.
+
 Last updated: 2026-06-29
 Owner: Engineering
 
