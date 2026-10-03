@@ -84,3 +84,18 @@ def test_compliance_ui_rotates_pwa_cache() -> None:
     assert "app.js?v=39" in worker
     assert "styles.css?v=39" in html
     assert "app.js?v=39" in html
+
+
+def test_authenticated_privacy_rights_requests_are_available_cross_channel() -> None:
+    html = source("web/platform_app/index.html")
+    web = source("web/platform_app/app.js")
+    mobile = source("mobile/App.tsx")
+    assert 'requestDataExportButton' in html
+    assert 'requestAccountDeletionButton' in html
+    assert "category:'privacy'" in web
+    assert "Personal data access / export request" in web
+    assert "Account deletion review" in web
+    assert "do not abandon any active broker position" in web.lower()
+    assert "Request my data export" in mobile
+    assert "Request account deletion review" in mobile
+    assert "category:'privacy'" in mobile
