@@ -85,12 +85,15 @@ DANGEROUS_FLAGS = {
 }
 
 
+def _source_bytes(path: Path) -> bytes:
+    raw = path.read_bytes()
+    if path.suffix.lower() in TEXT_EXTENSIONS or path.name in {"Dockerfile", "Procfile", ".gitattributes", ".gitignore", ".dockerignore"}:
+        return raw.replace(b"\r\n", b"\n")
+    return raw
+
+
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return hashlib.sha256(_source_bytes(path)).hexdigest()
 
 
 def _git(*args: str) -> str:
@@ -100,10 +103,17 @@ def _git(*args: str) -> str:
         return "unknown"
 
 
+_CHECK_OUTPUT: dict[str, bytes] | None = None
+
+
 def _write(name: str, payload: Any) -> None:
+    raw = (json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+    if _CHECK_OUTPUT is not None:
+        _CHECK_OUTPUT[name] = raw
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / name
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_bytes(raw)
 
 
 def _base(kind: str) -> dict[str, Any]:
@@ -1310,7 +1320,7 @@ def build_legacy_disposition() -> dict[str, Any]:
         if path == OUT / "legacy_disposition.json":
             continue
         disposition, reason = _classify(path)
-        size = path.stat().st_size
+        size = len(_source_bytes(path))
         line_count = None
         if path.suffix.lower() in TEXT_EXTENSIONS or path.name in {"Dockerfile", "Procfile"}:
             try:
@@ -1333,7 +1343,7 @@ def build_legacy_disposition() -> dict[str, Any]:
             "file_count": len(entries),
             "summary": dict(Counter(item["disposition"] for item in entries)),
             "files": entries,
-            "scope_note": "Every Git-tracked repository file outside ignored caches/environments is hashed and dispositioned. UNKNOWN_REQUIRES_REVIEW remains a release blocker until explicitly resolved.",
+            "scope_note": "Every Git-tracked repository file outside ignored caches/environments is hashed and dispositioned. Text hashes and byte counts use LF line endings; binary files use original bytes. UNKNOWN_REQUIRES_REVIEW remains a release blocker until explicitly resolved.",
         }
     )
     return payload
@@ -1405,13 +1415,20 @@ def _semantic_check_bytes(name: str, raw: bytes) -> bytes:
 
 
 def main() -> int:
+    global _CHECK_OUTPUT
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="Regenerate and fail if tracked output changes")
     args = parser.parse_args()
     before = {path.name: path.read_bytes() for path in OUT.glob("*") if path.is_file()} if args.check else {}
-    generate()
     if args.check:
-        after = {path.name: path.read_bytes() for path in OUT.glob("*") if path.is_file()}
+        _CHECK_OUTPUT = {}
+    try:
+        generate()
+        generated = dict(_CHECK_OUTPUT or {})
+    finally:
+        _CHECK_OUTPUT = None
+    if args.check:
+        after = {**before, **generated}
         semantic_before = {
             name: _semantic_check_bytes(name, raw)
             for name, raw in before.items()
