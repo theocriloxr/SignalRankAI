@@ -14,19 +14,20 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="manifest" href="/app/manifest.webmanifest?v=38" />
-  <link rel="icon" href="/app-assets/icon.svg?v=38" type="image/svg+xml" />
-  <link rel="shortcut icon" href="/app-assets/icon.svg?v=38" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=38" />
+  <link rel="manifest" href="/app/manifest.webmanifest?v=39" />
+  <link rel="icon" href="/app-assets/icon.svg?v=39" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/app-assets/icon.svg?v=39" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=39" />
   <meta name="msapplication-TileColor" content="#050907" />
-  <link rel="stylesheet" href="/app-assets/styles.css?v=38" />
+  <link rel="stylesheet" href="/app-assets/styles.css?v=39" />
   <title>SignalRankAI · Trading Intelligence</title>
 </head>
 <body class="session-booting">
+  <a class="skip-link" href="#mainContent">Skip to workspace</a>
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="Signal Rank AI home">
-      <span class="brand-logo"><img src="/app-assets/icon.svg?v=38" alt="" width="42" height="42" /></span>
+      <span class="brand-logo"><img src="/app-assets/icon.svg?v=39" alt="" width="42" height="42" /></span>
       <span class="brand-copy"><strong>SignalRankAI</strong><small>Trading Intelligence</small></span>
     </a>
     <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sessionNav" title="Collapse navigation">
@@ -66,8 +67,8 @@
         <span class="nav-group-label">Workspace</span>
         <button data-view="tools"><span class="nav-icon">⌘</span><span>Command center</span></button>
         <button data-view="paper" data-feature="paper_trading"><span class="nav-icon">◫</span><span>Paper desk</span></button>
-        <button data-view="portfolio" data-feature="portfolio_analytics"><span class="nav-icon">◇</span><span>Portfolio</span></button>
-        <button data-view="performance" data-feature="performance_analytics"><span class="nav-icon">∿</span><span>Performance</span></button>
+        <button data-view="portfolio" data-feature="portfolio_analytics" data-entitlement-display="lock"><span class="nav-icon">◇</span><span>Portfolio</span></button>
+        <button data-view="performance" data-feature="performance_analytics" data-entitlement-display="lock"><span class="nav-icon">∿</span><span>Performance</span></button>
         <button data-view="journal"><span class="nav-icon">≡</span><span>Journal</span></button>
       </div>
       <div class="nav-group">
@@ -79,6 +80,7 @@
       <div class="nav-spacer"></div>
       <button id="logoutButton" class="ghost nav-logout"><span class="nav-icon">⇥</span><span>Log out</span></button>
     </nav>
+    <label class="appearance-control">Appearance<select id="themeSelect" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
     <button id="themeToggle" class="theme-toggle ghost" type="button" aria-label="Switch color theme" title="Switch color theme">
       <span id="themeIcon" aria-hidden="true">◐</span>
       <span id="themeLabel">Theme</span>
@@ -88,9 +90,9 @@
     <span aria-hidden="true">☰</span><span class="nav-reopen-label">Menu</span>
   </button>
 
-  <main>
+  <main id="mainContent" tabindex="-1">
     <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
-      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=38" alt="" width="54" height="54" /></div>
+      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=39" alt="" width="54" height="54" /></div>
       <div>
         <p class="eyebrow">SIGNALRANKAI · TRADING INTELLIGENCE</p>
         <h1 id="bootstrapTitle">Restoring your secure session…</h1>
@@ -102,7 +104,7 @@
 
     <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
-        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=38" alt="SignalRankAI" /></div>
+        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=39" alt="SignalRankAI" /></div>
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
         <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and supported connected-account workflows.</p>
@@ -115,10 +117,10 @@
       </div>
 
       <div class="auth-card">
-        <div class="tabs" role="tablist">
-          <button id="loginTab" class="active" role="tab">Log in</button>
-          <button id="registerTab" role="tab">Create account</button>
-          <button id="activateTab" role="tab">Activate from Telegram</button>
+        <div class="tabs" role="tablist" aria-label="Sign-in method">
+          <button id="loginTab" class="active" role="tab" aria-selected="true" aria-controls="loginForm">Log in</button>
+          <button id="registerTab" role="tab" aria-selected="false" aria-controls="registerForm">Create account</button>
+          <button id="activateTab" role="tab" aria-selected="false" aria-controls="activateForm">Activate from Telegram</button>
         </div>
 
         <form id="loginForm" class="stack">
@@ -155,31 +157,18 @@
     <section id="appShell" hidden>
       <div class="dashboard-header">
         <div>
-          <p class="eyebrow">SIGNALRANKAI COMMAND CENTRE</p>
+          <p class="eyebrow">YOUR TRADING WORKSPACE</p>
           <h1 id="welcomeTitle">Dashboard</h1>
           <p id="accountSubtitle"></p>
         </div>
         <span id="tierBadge" class="tier-badge">FREE</span>
       </div>
 
-      <aside class="trust-rail" aria-label="SignalRank operating safeguards">
-        <div class="trust-rail-lead">
-          <span class="trust-pulse" aria-hidden="true"></span>
-          <div><small>OPERATING STANDARD</small><strong>Evidence before execution</strong></div>
-        </div>
-        <div class="trust-rail-item"><small>Coverage</small><strong>Multi-asset</strong></div>
-        <div class="trust-rail-item"><small>Signal state</small><strong>Delivery-proven</strong></div>
-        <div class="trust-rail-item"><small>Risk posture</small><strong>Fail-closed</strong></div>
-        <div class="trust-rail-item trust-rail-emphasis"><small>Live execution</small><strong>Requires certification</strong></div>
+      <aside class="execution-notice" aria-label="Execution requirements">
+        <span aria-hidden="true">?</span>
+        <div><strong>Execution requires certification</strong><p>Live and funded accounts need verified rules, fresh market data and account approval. Your plan does not grant execution permission.</p></div>
       </aside>
-
       <section id="overviewView" class="view">
-        <div class="regime-strip" aria-label="Market operating state">
-          <div><small>Operating mode</small><strong>PAPER</strong></div>
-          <div><small>Decision standard</small><strong>EVIDENCE FIRST</strong></div>
-          <div><small>Confirmation</small><strong>COMPLETED CANDLES</strong></div>
-          <div><small>Execution</small><strong class="cyan">DISABLED</strong></div>
-        </div>
         <div id="summaryCards" class="card-grid"></div>
         <div class="two-column">
           <article class="panel">
@@ -191,6 +180,15 @@
             <div id="overviewPositions" class="data-list"></div>
           </article>
         </div>
+        <section class="getting-started" aria-label="Workspace next steps">
+          <h2>Make this workspace yours</h2>
+          <p class="muted">Set your preferences, link your channels and explore the markets in your plan.</p>
+          <div class="next-step-actions">
+            <button data-view="account" type="button"><strong>Review your profile</strong><span>Trading style, risk and connected accounts <span aria-hidden="true">?</span></span></button>
+            <button data-view="tools" type="button"><strong>Explore your tools</strong><span>Find the commands available to your account <span aria-hidden="true">?</span></span></button>
+            <button data-view="markets" type="button"><strong>Explore markets</strong><span>Search supported symbols and providers <span aria-hidden="true">?</span></span></button>
+          </div>
+        </section>
       </section>
 
       <section id="signalsView" class="view" hidden>
@@ -739,6 +737,6 @@
   </main>
 
   <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
-  <script src="/app-assets/app.js?v=38" defer></script>
+  <script src="/app-assets/app.js?v=39" defer></script>
 </body>
 </html>
