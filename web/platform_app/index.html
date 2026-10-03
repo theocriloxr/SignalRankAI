@@ -165,7 +165,7 @@
       </div>
 
       <aside class="execution-notice" aria-label="Execution requirements">
-        <span aria-hidden="true">?</span>
+        <span aria-hidden="true">&#9651;</span>
         <div><strong>Execution requires certification</strong><p>Live and funded accounts need verified rules, fresh market data and account approval. Your plan does not grant execution permission.</p></div>
       </aside>
       <section id="overviewView" class="view">
@@ -184,9 +184,9 @@
           <h2>Make this workspace yours</h2>
           <p class="muted">Set your preferences, link your channels and explore the markets in your plan.</p>
           <div class="next-step-actions">
-            <button data-view="account" type="button"><strong>Review your profile</strong><span>Trading style, risk and connected accounts <span aria-hidden="true">?</span></span></button>
-            <button data-view="tools" type="button"><strong>Explore your tools</strong><span>Find the commands available to your account <span aria-hidden="true">?</span></span></button>
-            <button data-view="markets" type="button"><strong>Explore markets</strong><span>Search supported symbols and providers <span aria-hidden="true">?</span></span></button>
+            <button data-view="account" type="button"><strong>Review your profile</strong><span>Trading style, risk and connected accounts <span aria-hidden="true">&#8599;</span></span></button>
+            <button data-view="tools" type="button"><strong>Explore your tools</strong><span>Find the commands available to your account <span aria-hidden="true">&#8599;</span></span></button>
+            <button data-view="markets" type="button"><strong>Explore markets</strong><span>Search supported symbols and providers <span aria-hidden="true">&#8599;</span></span></button>
           </div>
         </section>
       </section>
@@ -486,6 +486,7 @@
       </section>
 
       <section id="accountView" class="view" hidden>
+        <nav class="account-jump-nav" aria-label="Account sections"><a href="#profileDetails">Profile &amp; security</a><a href="#tradingProfileForm">Trading preferences</a><a href="#brokerPanel">Connected accounts</a><a href="#notificationForm">Notifications</a><a href="#billingProducts">Plans &amp; billing</a></nav>
         <div class="two-column">
           <article class="panel account-profile-panel">
             <div class="panel-heading"><div><p class="eyebrow">IDENTITY &amp; CHANNELS</p><h2>Account</h2><p>One SignalRank identity across web, Telegram and mobile.</p></div><span id="telegramStatusBadge" class="status-pill">CHECKING</span></div>
@@ -537,7 +538,7 @@
             <div>
               <p class="eyebrow">TRADING CONNECTIONS</p>
               <h2>Multi-platform broker hub</h2>
-              <p>Connect demo or live trading accounts without automatically granting execution. MetaTrader 4/5 are execution-ready through MetaApi; other adapters appear with their current integration state.</p>
+              <p>Connect demo or live trading accounts without automatically granting execution. MetaTrader 4/5 use the MetaApi adapter; provider readiness and execution permission are checked separately for every account.</p>
             </div>
             <span id="brokerReadinessBadge" class="status-pill">CHECKING</span>
           </div>
