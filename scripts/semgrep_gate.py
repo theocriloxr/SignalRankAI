@@ -37,6 +37,10 @@ def _build_command(output: Path, targets: list[str]) -> list[str]:
     return [
         executable,
         "scan",
+        # Serial scans give each taint analysis the host's available CPU and
+        # reduce memory pressure without excluding rules or scan targets.
+        "--jobs",
+        "1",
         "--error",
         "--strict",
         "--config",

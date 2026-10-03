@@ -1,5 +1,5 @@
 {
-  "file_count": 1934,
+  "file_count": 1935,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5643,11 +5643,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 101,
+      "line_count": 115,
       "path": "docs/UI_REFRESH_AND_LAUNCH_GATES_20261003.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0eb0242e55c160ab4e3559e5142952a91e498c59840305a02fd645845ecfcfae",
-      "size_bytes": 7762
+      "sha256": "b3c0cae22385cae96ce7fc8b7179457e5f02e5a2678e3be9073e40f5034c97ab",
+      "size_bytes": 8682
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10155,11 +10155,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 169,
+      "line_count": 173,
       "path": "scripts/semgrep_gate.py",
       "reason": "production/build source",
-      "sha256": "3a852a4d4d63b2e1a9317fbcbc3769806fc6268dbdfd4e71d1e7340ead1f79a3",
-      "size_bytes": 5090
+      "sha256": "be620981e17dc832d5b8fb9d2f374b405e6b39fb6472d7da36e74d4e96d5d892",
+      "size_bytes": 5272
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10187,11 +10187,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 33,
+      "line_count": 110,
       "path": "scripts/soak_report.py",
       "reason": "production/build source",
-      "sha256": "439e12e26391433470520398644c4a16257fd3dbe92bf724f64e1c470291ec2e",
-      "size_bytes": 1241
+      "sha256": "348d612f791c5950b3370764c646778f0b182d716b15db8a3fa7926bbae8cb9c",
+      "size_bytes": 4823
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10294,8 +10294,8 @@
       "line_count": null,
       "path": "scripts/test_portal_service_worker.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "41684ccd857b431bb76e155b896bf0fa30c2b8540526e5b5993d7ad2f7cf7d0e",
-      "size_bytes": 3141
+      "sha256": "72cbcced1d8dd3566c7c0f209155517c7818618316906cf334273060f61b12ec",
+      "size_bytes": 3306
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14475,6 +14475,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 50,
+      "path": "tests/test_soak_evidence_integrity.py",
+      "reason": "automated test evidence",
+      "sha256": "da25f3aa73993624e893657ec61657fc753c6d62fcf184fa0f40d9900316a083",
+      "size_bytes": 2203
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 71,
       "path": "tests/test_staged_release_contracts.py",
       "reason": "automated test evidence",
@@ -15342,7 +15350,7 @@
       "line_count": 743,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "6511e162e8fa1001cf2a44ecf45e08d77ab1205fb2d608cd83dc5020335b6558",
+      "sha256": "5381e58dd2dbbdd6bb679189767f09899529d5db0f326d7276fcddfbf018a15a",
       "size_bytes": 69265
     },
     {
@@ -15366,7 +15374,7 @@
       "line_count": 36,
       "path": "web/platform_app/service-worker.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "277d6defb75f5c365846f4bb107935fc57c9a3dc7b2716188a441d504202ae05",
+      "sha256": "6a3888d521559071f39551450d25c8e61c0ea61974d13b88af53657153d37790",
       "size_bytes": 1715
     },
     {
@@ -15374,8 +15382,8 @@
       "line_count": 1198,
       "path": "web/platform_app/styles.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a614192b39f5371cc888a2e66451f74d2d06282de8cd14b8e8d224c7290e7cf8",
-      "size_bytes": 67317
+      "sha256": "65e2d9e77eafb1461b8e1e9e43145bf34fc93109bd482cc6977febdad5993e3c",
+      "size_bytes": 67295
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15488,6 +15496,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 445,
     "PRESERVE_BEHAVIOUR": 1162,
-    "TEST_ONLY": 326
+    "TEST_ONLY": 327
   }
 }

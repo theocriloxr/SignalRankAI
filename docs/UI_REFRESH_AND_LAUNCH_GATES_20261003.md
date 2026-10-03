@@ -58,6 +58,20 @@ The targeted regression selection passed 75 checks after these changes.
 Full-suite and exact-commit browser reruns are required before release approval;
 the earlier exact 46472b4d browser run exposed this throttling defect.
 
+Commit cf92053a subsequently passed the full local suite: 2,425 tests,
+zero failures/errors/skips, including actual local PostgreSQL integration.
+Its browser run passed all 47 functional checks but reported a transient text
+contrast failure during view entrance. View animation now preserves full text
+opacity; cache generation 40 delivers that correction. Final candidate reruns
+are pending and supersede, rather than borrow, earlier commit certificates.
+
+The soak helper now requires timestamped observations at intervals no greater
+than five minutes, stable source/configuration/schema/deployment identity,
+explicit safety/readiness evidence, and valid zero incident/duplicate counters.
+It rejects a caller's bare `hours` claim, gaps, future/stale observations and
+release changes. Fifteen regressions pass. Inputs still require independent
+provenance review; these tests do not supply actual elapsed soak evidence.
+
 - Actual local HTTP login with synthetic users and a disposable PostgreSQL
   database: 47 browser checks passed, including all seven tiers, server-side
   rejection of Free portfolio access, operator authority, desktop/mobile
