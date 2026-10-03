@@ -46,7 +46,7 @@
         <option value="performance" data-feature="performance_analytics">Performance</option>
         <option value="journal">Journal</option>
         <option value="support">Support</option>
-        <option value="account">Account & brokers</option>
+        <option value="account">Account &amp; brokers</option>
       </select>
     </label>
     <nav id="sessionNav" class="workspace-nav" hidden>
@@ -73,7 +73,7 @@
       <div class="nav-group">
         <span class="nav-group-label">System</span>
         <button data-view="support"><span class="nav-icon">?</span><span>Support</span></button>
-        <button data-view="account"><span class="nav-icon">⚙</span><span>Account & brokers</span></button>
+        <button data-view="account"><span class="nav-icon">⚙</span><span>Account &amp; brokers</span></button>
         <button id="opsNavButton" data-view="ops" hidden><span class="nav-icon">◉</span><span>Operations</span></button>
       </div>
       <div class="nav-spacer"></div>
@@ -198,7 +198,7 @@
         <div class="filters signal-filters"><input id="signalAssetFilter" placeholder="Asset e.g. EURUSD" /><select id="signalClassFilter"><option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="stock">Stocks / equities</option><option value="index">Indices</option><option value="commodity">Commodities</option></select><select id="signalTimeframeFilter"><option value="">All timeframes</option><option>1m</option><option>3m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><input id="signalStrategyFilter" placeholder="Strategy" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
         <div id="signalsTable" class="table-wrap"></div>
         <article id="signalDetailPanel" class="panel signal-detail-panel" hidden>
-          <div class="panel-heading"><div><p class="eyebrow">DELIVERY PROOF & LIFECYCLE</p><h2 id="signalDetailTitle">Signal detail</h2></div><button id="closeSignalDetail" class="ghost" type="button">Close</button></div>
+          <div class="panel-heading"><div><p class="eyebrow">DELIVERY PROOF &amp; LIFECYCLE</p><h2 id="signalDetailTitle">Signal detail</h2></div><button id="closeSignalDetail" class="ghost" type="button">Close</button></div>
           <div id="signalDetailBody"></div>
         </article>
       </section>
@@ -393,7 +393,7 @@
         <div id="operatorSummary" class="card-grid"></div>
         <div class="two-column">
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">RELEASE & SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">RELEASE &amp; SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
             <div id="operatorRuntime" class="detail-list"><p class="muted">Loading operator status…</p></div>
             <div class="operator-actions">
               <button id="operatorKillSwitchOn" class="danger" type="button">Enable kill switch</button>
@@ -411,7 +411,7 @@
         </article>
         <article id="operatorBusinessPanel" class="panel" hidden>
           <div class="panel-heading">
-            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions & verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
+            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions &amp; verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
             <button id="refreshOperatorBusiness" class="ghost" type="button">Refresh</button>
           </div>
           <div id="operatorBusiness" class="operator-business-grid"><p class="muted">Owner business metrics load here.</p></div>
@@ -439,7 +439,7 @@
         </article>
         <article class="panel operator-maintenance-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds & queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
+            <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds &amp; queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
             <button id="refreshOperatorMaintenance" class="ghost" type="button">Refresh</button>
           </div>
           <div id="operatorMaintenance" class="operator-maintenance-summary"><p class="muted">Loading maintenance state…</p></div>
@@ -453,7 +453,7 @@
               </div>
             </section>
             <section class="operator-control-card">
-              <p class="eyebrow">OUTCOMES</p><h4>Projection & outbox repair</h4><p>Rebuild canonical outcomes first, then independently repair notification outbox state.</p>
+              <p class="eyebrow">OUTCOMES</p><h4>Projection &amp; outbox repair</h4><p>Rebuild canonical outcomes first, then independently repair notification outbox state.</p>
               <div class="operator-control-actions">
                 <button data-owner-action="outcome-status" class="ghost" type="button">Status</button>
                 <button data-owner-action="outcome-dry" class="ghost" type="button">Dry run</button>
@@ -482,7 +482,7 @@
           </details>
         </article>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin &amp; owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
           <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
         </article>
       </section>
