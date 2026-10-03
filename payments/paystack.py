@@ -262,6 +262,11 @@ async def process_event(event):
                     "tier": existing_event.tier or str(tier).lower(),
                     "days": existing_event.duration_days or int(duration_days),
                 }
+            provider_plan_code = str(
+                (data.get("plan", {}).get("plan_code") if isinstance(data.get("plan"), dict) else data.get("plan"))
+                or metadata.get("plan_code")
+                or ""
+            ).strip() or None
             await record_payment_event(
                 session,
                 telegram_user_id=telegram_user_id,
@@ -272,12 +277,13 @@ async def process_event(event):
                 kind="subscription",
                 tier=str(tier).lower(),
                 duration_days=int(duration_days),
-                plan_code=str(
-                    (data.get("plan", {}).get("plan_code") if isinstance(data.get("plan"), dict) else data.get("plan"))
-                    or metadata.get("plan_code")
-                    or ""
-                ) or None,
-                meta={"event": event_type, "verified_provider": True},
+                plan_code=provider_plan_code,
+                meta={
+                    "event": event_type,
+                    "verified_provider": True,
+                    "recurring_billing_acknowledged": bool(metadata.get("recurring_billing_acknowledged")),
+                    "billing_terms_version": metadata.get("billing_terms_version"),
+                },
             )
             subscription = await activate_subscription(
                 session,
@@ -299,6 +305,24 @@ async def process_event(event):
                 payment_user = (await session.execute(select(User).where(User.id == int(canonical_user_id)))).scalar_one()
             else:
                 payment_user = (await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))).scalar_one()
+
+            if provider_plan_code:
+                payment_user.auto_renew = True
+                subscription_payload = data.get("subscription")
+                if isinstance(subscription_payload, dict):
+                    provider_subscription_code = str(subscription_payload.get("subscription_code") or "").strip()
+                else:
+                    provider_subscription_code = str(subscription_payload or "").strip()
+                customer_payload = data.get("customer")
+                if isinstance(customer_payload, dict):
+                    provider_customer_code = str(customer_payload.get("customer_code") or "").strip()
+                else:
+                    provider_customer_code = ""
+                if provider_subscription_code:
+                    payment_user.paystack_subscription_code = provider_subscription_code
+                if provider_customer_code:
+                    payment_user.paystack_customer_code = provider_customer_code
+
             from payments.durable_receipts import create_payment_receipt
             await create_payment_receipt(
                 session,
