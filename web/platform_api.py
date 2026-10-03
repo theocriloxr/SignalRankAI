@@ -73,10 +73,16 @@ SESSION_COOKIE = "sr_session"
 CSRF_COOKIE = "sr_csrf"
 
 
+CURRENT_PLATFORM_TERMS_VERSION = "2026-10-03"
+
+
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=10, max_length=256)
     display_name: str | None = Field(default=None, max_length=160)
+    platform_terms_accepted: bool = False
+    privacy_acknowledged: bool = False
+    marketing_consent: bool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
     referral_code: str | None = Field(default=None, max_length=64)
@@ -1914,6 +1920,10 @@ async def operator_force_signal(
 async def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, Any]:
     if not is_db_configured():
         raise HTTPException(status_code=503, detail="Database unavailable")
+    if payload.platform_terms_accepted is not True:
+        raise HTTPException(status_code=422, detail="Accept the Terms of Use before creating an account")
+    if payload.privacy_acknowledged is not True:
+        raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before creating an account")
     try:
         async with get_session() as session:
             user_id = await create_email_account(
@@ -1921,6 +1931,17 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                 email=payload.email,
                 password=payload.password,
                 display_name=payload.display_name,
+            )
+            await session.execute(
+                text(
+                    "UPDATE users SET marketing_consent=:marketing, privacy_consent_at=NOW(), "
+                    "terms_version=:terms_version, terms_accepted_at=NOW(), updated_at=NOW() WHERE id=:uid"
+                ),
+                {
+                    "uid": int(user_id),
+                    "marketing": bool(payload.marketing_consent),
+                    "terms_version": CURRENT_PLATFORM_TERMS_VERSION,
+                },
             )
             signup_origin = str(request.headers.get("origin") or request.base_url).rstrip("/")[:255]
             signup_channel = str(payload.signup_source or payload.client_type or "web").strip().lower()[:32] or "web"
