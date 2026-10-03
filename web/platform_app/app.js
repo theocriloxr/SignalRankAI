@@ -529,6 +529,19 @@ $('#createApiKeyButton').onclick=async()=>{const name=prompt('Name this API key'
 $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Turn off subscription auto-renew? Your current paid access remains active until its expiry, and this does not issue a refund.'))return;try{const result=await request('/billing/cancel-auto-renew',{method:'POST',body:JSON.stringify({confirm:true})});toast(result.provider_follow_up_required?'Auto-renew is off in SignalRankAI, but Paystack needs manual follow-up. A billing review is recommended.':'Auto-renew cancelled. Current access remains until expiry.');await loadAccount()}catch(err){toast(err.message,true)}});
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
+async function createPrivacyRightsTicket(kind){
+  const deletion=kind==='deletion';
+  const subject=deletion?'Account deletion review':'Personal data access / export request';
+  const message=deletion
+    ?'I am requesting review of account deletion and erasure where legally available. Please preserve only records that must be retained for security, payment, tax, dispute, fraud-prevention, regulatory or immutable trading-evidence obligations, and tell me what cannot be deleted and why. Do not abandon any active broker position.'
+    :'I am requesting access to and an export of personal information associated with my authenticated SignalRankAI account, subject to identity/security verification and lawful exclusions.';
+  const result=await request('/support/tickets',{method:'POST',body:JSON.stringify({subject,category:'privacy',message})});
+  toast(`Privacy request created: ${result.ticket_id}`);
+  await loadSupport();
+}
+$('#requestDataExportButton')?.addEventListener('click',async()=>{try{await createPrivacyRightsTicket('export')}catch(err){toast(err.message,true)}});
+$('#requestAccountDeletionButton')?.addEventListener('click',async()=>{if(!window.confirm('Request account deletion review? Active broker positions, paid-period state and legally required records must be handled safely before any erasure.'))return;try{await createPrivacyRightsTicket('deletion')}catch(err){toast(err.message,true)}});
+
 async function loadBillingProducts(){
   const data=await request('/billing/products');
   const products=data.products||[];
