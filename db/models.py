@@ -55,7 +55,7 @@ class User(Base):
     max_risk_percentage: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     paystack_subscription_code: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     paystack_customer_code: Mapped[Optional[str]] = mapped_column(String(128))
-    auto_renew: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     referral_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     premium_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
     accepted_terms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
