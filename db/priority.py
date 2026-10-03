@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 from collections import deque
 import time
@@ -176,6 +177,41 @@ class DBAdmissionController:
             self._active[priority] -= 1
             self._metrics[priority]["transaction_seconds_total"] += max(0.0, float(held_seconds))
             self._condition.notify_all()
+
+    async def acquire_async(self, priority: DBPriority | str, *, timeout_s: float, nonblocking: bool = False) -> bool:
+        """Wait in FIFO order without occupying the loop's worker threads."""
+        priority = self.normalize(priority)
+        token = object()
+        started = time.monotonic()
+        deadline = started + max(0.0, float(timeout_s))
+        with self._condition:
+            self._queues[priority].append(token)
+            self._waiting[priority] += 1
+        try:
+            while True:
+                with self._condition:
+                    if self._can_admit(priority, token):
+                        self._active[priority] += 1
+                        self._metrics[priority]["acquired"] += 1
+                        self._queues[priority].popleft()
+                        self._metrics[priority]["wait_seconds_total"] += max(0.0, time.monotonic() - started)
+                        return True
+                    remaining = deadline - time.monotonic()
+                    if nonblocking or remaining <= 0:
+                        metric = "deferred" if priority in (DBPriority.BACKGROUND, DBPriority.ANALYTICS) else "timeouts"
+                        self._metrics[priority][metric] += 1
+                        return False
+                await asyncio.sleep(min(0.01, remaining))
+        except asyncio.CancelledError:
+            with self._condition:
+                self._metrics[priority]["cancelled"] += 1
+            raise
+        finally:
+            with self._condition:
+                self._waiting[priority] = max(0, self._waiting[priority] - 1)
+                if token in self._queues[priority]:
+                    self._queues[priority].remove(token)
+                self._condition.notify_all()
 
     def record_dropped(self, priority: DBPriority | str) -> None:
         priority = self.normalize(priority)
