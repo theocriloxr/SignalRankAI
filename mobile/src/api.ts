@@ -208,16 +208,18 @@ export type BillingProduct = {
   duration_days: number;
   currency: string;
   price_ngn: number;
+  recurring?: boolean;
+  renewal_disclosure?: string;
 };
 
 export async function getBillingProducts(): Promise<{products: BillingProduct[]}> {
   return api('/billing/products');
 }
 
-export async function createBillingCheckout(productId: string): Promise<{authorization_url: string; reference: string}> {
+export async function createBillingCheckout(productId: string, recurringAcknowledged = false): Promise<{authorization_url: string; reference: string; recurring?: boolean}> {
   return api('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({product_id: productId, currency: 'NGN'}),
+    body: JSON.stringify({product_id: productId, currency: 'NGN', recurring_acknowledged: recurringAcknowledged}),
   });
 }
 
