@@ -27,6 +27,10 @@
     "scripts/controlled_migrate.py",
     "scripts/verify_release_chain.py",
     "scripts/staging_backup_restore_drill.py",
-    "scripts/demo_account_preflight.py"
+    "scripts/demo_account_preflight.py",
+    "core/partial_exit_accounting.py",
+    "scripts/smtp_preflight.py",
+    "scripts/certify_market_classes.py",
+    "scripts/semgrep_gate.py"
   ]
 }

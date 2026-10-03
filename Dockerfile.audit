@@ -1,0 +1,8 @@
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+WORKDIR /audit
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 SEMGREP_SEND_METRICS=off HOME=/tmp
+COPY requirements-security-tools.txt ./
+RUN python -m pip install --requirement requirements-security-tools.txt
+COPY . .
+USER 10001:10001
+CMD ["python", "scripts/semgrep_gate.py", "--output", "/tmp/semgrep.json", "--minimum-scanned", "400"]

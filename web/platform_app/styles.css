@@ -58,7 +58,7 @@
   --green-soft:rgba(19,134,91,.08);
   --red:#cb3949;
   --red-soft:rgba(203,57,73,.08);
-  --amber:#a76d0b;
+  --amber:#965e00;
   --amber-soft:rgba(167,109,11,.08);
   --purple:#6947bd;
   --shadow:0 24px 60px rgba(28,48,61,.10);
@@ -404,7 +404,10 @@ tbody tr:last-child td{border-bottom:0}
 /* Paper / portfolio / performance */
 .paper-workspace{display:grid;gap:12px}
 .volume-track{height:7px;border-radius:99px;background:var(--meter-rest);overflow:hidden}
-.volume-track>span{display:block;height:100%;border-radius:inherit;background:var(--cyan)}
+.volume-track{display:flex;align-items:center;gap:12px;height:auto;min-height:28px;padding:5px 8px}
+.volume-track>span{flex:none;background:transparent;color:var(--text);font-size:11px}
+.volume-track>i{flex:1;height:7px;border-radius:99px;background:var(--meter-rest)}
+.volume-track>strong{flex:none;color:var(--text);font-size:10px}
 .risk-rule{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
 .risk-rule:last-child{border-bottom:0}
 
@@ -534,7 +537,7 @@ tbody tr:last-child td{border-bottom:0}
     --panel-soft:#f7fafb;--glass:rgba(255,255,255,.88);--line:#d9e3e8;--line-strong:#c5d3da;
     --text:#17222b;--text-strong:#071018;--muted:#60717d;--muted-2:#80909b;--cyan:#087e91;
     --cyan-soft:rgba(8,126,145,.08);--blue:#315fd3;--green:#13865b;--green-soft:rgba(19,134,91,.08);
-    --red:#cb3949;--red-soft:rgba(203,57,73,.08);--amber:#a76d0b;--amber-soft:rgba(167,109,11,.08);
+    --red:#cb3949;--red-soft:rgba(203,57,73,.08);--amber:#965e00;--amber-soft:rgba(167,109,11,.08);
     --purple:#6947bd;--shadow:0 24px 60px rgba(28,48,61,.10);--shadow-sm:0 8px 24px rgba(28,48,61,.08);
     --meter-rest:#dfe7eb;
   }
@@ -1149,10 +1152,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   --text-strong:#07150e;
   --muted:#607469;
   --muted-2:#809087;
-  --cyan:#008a59;
+  --cyan:#007d51;
   --cyan-soft:rgba(0,138,89,.08);
   --blue:#087a53;
-  --green:#008a59;
+  --green:#007d51;
   --green-soft:rgba(0,138,89,.08);
   --purple:#68766f;
   --meter-rest:#dce9e1;
@@ -1168,7 +1171,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     --bg:#f3f8f5;--bg-elev:#edf5f0;--panel:#ffffff;--panel-2:#f8fbf9;--panel-3:#eef6f1;
     --panel-soft:#f5faf7;--glass:rgba(255,255,255,.93);--line:#d3e4da;--line-strong:#b9d1c3;
     --text:#1c2b23;--text-strong:#07150e;--muted:#607469;--muted-2:#809087;
-    --cyan:#008a59;--cyan-soft:rgba(0,138,89,.08);--blue:#087a53;--green:#008a59;
+    --cyan:#007d51;--cyan-soft:rgba(0,138,89,.08);--blue:#087a53;--green:#007d51;
     --green-soft:rgba(0,138,89,.08);--purple:#68766f;--meter-rest:#dce9e1;
     --shadow:0 24px 60px rgba(15,47,31,.10);--shadow-sm:0 8px 24px rgba(15,47,31,.08);
     --sr-hairline:color-mix(in srgb,var(--line) 82%,transparent);

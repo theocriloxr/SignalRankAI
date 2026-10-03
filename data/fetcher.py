@@ -426,14 +426,13 @@ def _read_cached_candles(key: tuple[str, str], ttl_seconds: float, *, allow_stal
             return None
         ts, candles = entry
         if (now - ts) > max(0.0, float(ttl_seconds)) and not allow_stale:
-            _CANDLE_CACHE.pop(key, None)
             return None
         # Return a shallow structural copy to avoid accidental mutation by callers.
         return [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
 
 
 def _read_stale_cached_candles(key: tuple[str, str], max_age_seconds: float) -> list | None:
-    return _read_cached_candles(key, max_age_seconds, allow_stale=True)
+    return _read_cached_candles(key, max_age_seconds)
 
 
 def _prune_candle_cache(max_age_seconds: float) -> None:
@@ -1117,7 +1116,7 @@ def get_candles(asset, timeframe):
     candles: list = []
     try:
         asset_type = get_asset_type(asset)
-        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+        use_multi_provider = _env_bool("USE_MULTI_PROVIDER_DATA", True)
         if not use_multi_provider:
             if asset_type == "crypto":
                 candles = get_crypto_candles(asset, timeframe)
@@ -1149,7 +1148,10 @@ def get_candles(asset, timeframe):
                     ff_ttl,
                 )
                 _set_last_provider_used(asset, timeframe, "cache_forward_fill")
-                candles = stale_cached
+                # Preserve the original fetch time. Re-caching on every failed
+                # request would extend an outage fallback indefinitely.
+                inflight.result = list(stale_cached)
+                return list(stale_cached)
 
         _write_cached_candles(_cache_key, candles or [])
         inflight.result = list(candles or [])
@@ -2819,7 +2821,7 @@ async def async_get_candles(asset, timeframe):
     try:
         asset_type = get_asset_type(asset)
 
-        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+        use_multi_provider = _env_bool("USE_MULTI_PROVIDER_DATA", True)
         if not use_multi_provider:
             return await asyncio.to_thread(get_candles, asset, timeframe)
 

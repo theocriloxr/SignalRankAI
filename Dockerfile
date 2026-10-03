@@ -37,15 +37,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system signalrank \
-    && useradd --system --gid signalrank --create-home --home-dir /home/signalrank signalrank
+    && groupadd --system --gid 10001 signalrank \
+    && useradd --system --uid 10001 --gid signalrank --create-home --home-dir /home/signalrank signalrank
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder --chown=signalrank:signalrank /app /app
 
 RUN chmod +x /app/start.sh
-USER signalrank
+USER 10001:10001
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/bash", "/app/start.sh"]

@@ -185,6 +185,7 @@ def _projection_metrics(
         "observation_low": evidence.get("observation_low"),
         "observation_range_time": evidence.get("observation_range_time"),
         "partial_exit_policy": getattr(partial, "policy_version", None),
+        "partial_exit_accounting_basis": getattr(partial, "accounting_basis", None),
         "partial_exit_realized_r": getattr(partial, "realized_r", None),
         "partial_exit_realized_percent": getattr(partial, "realized_percent", None),
         "partial_exit_fractions": list(getattr(partial, "fractions", ()) or ()),

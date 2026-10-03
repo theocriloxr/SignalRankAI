@@ -47,13 +47,20 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     # Map timeframe
     tf_map = {
+        "1m": ("1", "minute"),
+        "3m": ("3", "minute"),
         "5m": ("5", "minute"),
         "15m": ("15", "minute"),
+        "30m": ("30", "minute"),
         "1h": ("1", "hour"),
         "4h": ("4", "hour"),
         "1d": ("1", "day"),
     }
-    multiplier, timespan = tf_map.get(timeframe, ("1", "hour"))
+    interval = tf_map.get(str(timeframe or "").strip().lower())
+    if interval is None:
+        return []
+    multiplier, timespan = interval
+    requested_limit = max(1, min(5000, int(limit)))
 
     # Prefix symbol for asset type heuristic
     if ":" not in symbol and symbol.isupper():
@@ -63,7 +70,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     end_date = datetime.now()
     start_date = end_date - timedelta(days=200 if timespan == "day" else 30)
     url = f"{_resolved_base_url()}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
-    params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
+    # The API limit counts base aggregates, not output candles. Request newest
+    # bars first so a bounded response does not select the start of the month.
+    base_multiplier = int(multiplier) * (60 if timespan == "hour" else 1)
+    params = {"adjusted": "true", "sort": "desc", "limit": min(50000, requested_limit * base_multiplier), "apiKey": api_key}
     request_timeout = 2.5
 
     async def _do():
@@ -96,7 +106,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
                 )
             except Exception:
                 continue
-        return candles
+        return sorted(candles, key=lambda candle: candle["timestamp"])[-requested_limit:]
 
     try:
         return await asyncio.wait_for(
