@@ -29,13 +29,18 @@ def test_signup_and_telegram_activation_require_platform_privacy_acknowledgement
     assert 'CURRENT_PLATFORM_TERMS_VERSION = "2026-10-03"' in api
     assert "platform_terms_accepted: bool = False" in api
     assert "privacy_acknowledged: bool = False" in api
+    assert api.count("age_eligibility_confirmed: bool = False") >= 2
     assert "marketing_consent: bool = False" in api
     assert api.count("payload.platform_terms_accepted is not True") >= 2
     assert api.count("payload.privacy_acknowledged is not True") >= 2
+    assert api.count("payload.age_eligibility_confirmed is not True") >= 2
     assert html.count('name="platform_terms_accepted"') >= 2
     assert html.count('name="privacy_acknowledged"') >= 2
+    assert html.count('name="age_eligibility_confirmed"') >= 2
     assert html.count('name="marketing_consent"') >= 2
     assert "mode==='register'||mode==='activate'" in mobile
+    assert "ageEligibilityConfirmed" in mobile
+    assert "at least 18" in mobile
 
 
 def test_platform_terms_do_not_silently_enable_execution_terms() -> None:
