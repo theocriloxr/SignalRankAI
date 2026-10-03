@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,12 +100,12 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "initNavToggle();" in app
     assert "body.session-active.nav-collapsed{--sidebar:0px}" in css
     assert "transform:translateX(calc(-100% - 20px))" in css
-    assert "--brand-emerald:#00e88f" in css
-    assert "--brand-silver:#dfe7e2" in css
+    assert "--brand-emerald:#4ce0a4" in css
+    assert "--brand-silver:#e6eeea" in css
     assert "--brand-gradient:linear-gradient" in css
     assert ':root[data-theme="light"]' in css
     assert "#00a96e" in manifest
-    assert "signalrank-shell-v38" in worker
+    assert validate_shell_assets(ROOT) >= 38
     assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker
     for asset in (icon, logo):
@@ -174,7 +175,4 @@ def test_pwa_brand_shell_updates_existing_clients_immediately() -> None:
     html = source("web/platform_app/index.html")
     assert "self.skipWaiting()" in worker
     assert "self.clients.claim()" in worker
-    assert "styles.css?v=38" in html
-    assert "app.js?v=38" in html
-    assert "icon.svg?v=38" in html
-    assert "logo.svg?v=38" in html
+    assert validate_shell_assets(ROOT) >= 38

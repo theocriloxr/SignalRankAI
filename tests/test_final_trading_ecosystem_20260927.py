@@ -1,4 +1,5 @@
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 from core.account_risk_presets import get_risk_preset
 from core.tier_policy import evaluate_feature_access
@@ -118,7 +119,7 @@ def test_provider_routers_require_user_delivery_evidence_before_execution():
 def test_pwa_cache_and_execution_contract_copy_are_current():
     sw=(ROOT/"web"/"platform_app"/"service-worker.js").read_text(encoding="utf-8")
     html=(ROOT/"web"/"platform_app"/"index.html").read_text(encoding="utf-8")
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38
     assert "Only signals delivered to your account can execute" in html
 
 
