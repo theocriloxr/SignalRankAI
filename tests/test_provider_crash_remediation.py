@@ -63,3 +63,38 @@ def test_repeated_provider_failure_does_not_extend_forward_fill_lifetime(monkeyp
     assert len(fetcher.get_candles("EURUSD", "5m")) == 25
     clock[0] = 121.0
     assert fetcher.get_candles("EURUSD", "5m") == []
+
+
+@pytest.mark.parametrize("kind", ["fx", "stock", "index", "commodity"])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_disabled_yahoo_is_absent_from_adapters_and_legacy_fallbacks(monkeypatch, kind, asynchronous):
+    monkeypatch.setenv("YFINANCE_ENABLED", "0")
+    get_providers = connector_registry.get_async_providers_for_asset if asynchronous else connector_registry.get_providers_for_asset
+    names = [name for name, _ in get_providers(kind)]
+    assert "yfinance_connector" not in names
+    assert "yahoo_legacy" not in names
+
+
+def test_polygon_requests_recent_bars_and_returns_bounded_chronological_candles(monkeypatch):
+    from data.connectors import polygon_adapter
+    monkeypatch.setenv("POLYGON_API_KEY", "local-test-key")
+    monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
+    monkeypatch.setenv("MASSIVE_MARKET_DATA_ENABLED", "1")
+    requests = []
+    class Response:
+        status_code = 200
+        def json(self):
+            return {"results": [{"t": timestamp, "o": 100, "h": 101, "l": 99, "c": 100, "v": 1} for timestamp in [500000, 100000, 400000]]}
+    class Client:
+        async def get(self, url, **kwargs):
+            requests.append((url, kwargs))
+            return Response()
+    monkeypatch.setattr(polygon_adapter.httpx_client, "get_client", lambda _: Client())
+    rows = asyncio.run(polygon_adapter._async_get_candles("AAPL", "5m", limit=2))
+    assert [row["timestamp"] for row in rows] == [400000, 500000]
+    assert requests[0][1]["params"]["sort"] == "desc"
+    assert requests[0][1]["params"]["limit"] == 10
+    assert "/range/5/minute/" in requests[0][0]
+    requests.clear()
+    assert asyncio.run(polygon_adapter._async_get_candles("AAPL", "unsupported", limit=2)) == []
+    assert requests == []

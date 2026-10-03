@@ -34,6 +34,30 @@ async def postgres_database():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("filtered", [False, True])
+async def test_nullable_web_search_filters_execute_on_postgres(postgres_database, filtered):
+    from web.platform_api import instrument_search, signal_feed
+
+    user = {"id": 2147483647, "tier": "free"}
+    feed = await signal_feed(
+        limit=30, offset=0, asset="BTCUSDT" if filtered else None,
+        asset_class="crypto" if filtered else None, timeframe="5m" if filtered else None,
+        strategy="audit" if filtered else None, status="active" if filtered else None, user=user,
+    )
+    assert feed["signals"] == []
+    assert feed["limit"] == 30
+    instruments = await instrument_search(
+        q="AUDIT_NO_MATCH_20261003" if filtered else "",
+        asset_class="crypto" if filtered else None,
+        instrument_type="spot" if filtered else None,
+        venue="audit-no-match" if filtered else None, limit=30, user=user,
+    )
+    assert isinstance(instruments["instruments"], list)
+    if filtered:
+        assert instruments["instruments"] == []
+
+
+@pytest.mark.asyncio
 async def test_oct1_receipt_paper_idempotency_and_missed_entry_on_postgres(postgres_database):
     from scripts.staging_oct1_incident_replay import _run_replay
 

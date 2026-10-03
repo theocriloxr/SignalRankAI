@@ -59,6 +59,7 @@ def _env_enabled(name: str, default: bool = True) -> bool:
 
 
 _PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
+    "yfinance_connector": ("YFINANCE_ENABLED", True),
     "fmp_connector": ("FMP_ENABLED", False),
     "alphavantage_connector": ("ALPHAVANTAGE_ENABLED", False),
     "oanda_connector": ("OANDA_ENABLED", False),

@@ -3176,7 +3176,7 @@
       "name": "CRYPTO_MARKET_DATA_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/connector_registry.py:164",
+        "data/connector_registry.py:165",
         "data/fetcher.py:2845"
       ],
       "required_by_code": true,
@@ -8592,7 +8592,7 @@
       "name": "NASDAQ_DATA_LINK_API_KEY",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:99",
+        "data/connector_registry.py:100",
         "data/connectors/nasdaq_data_link_adapter.py:37"
       ],
       "required_by_code": true,
@@ -8612,7 +8612,7 @@
       "name": "NASDAQ_DATA_LINK_DATASETS_JSON",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:100",
+        "data/connector_registry.py:101",
         "data/connectors/nasdaq_data_link_adapter.py:22"
       ],
       "required_by_code": true,

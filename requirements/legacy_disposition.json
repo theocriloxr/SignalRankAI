@@ -1,5 +1,5 @@
 {
-  "file_count": 1923,
+  "file_count": 1924,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -30,8 +30,8 @@
       "line_count": null,
       "path": ".gitattributes",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "dc53dbd5fec3a1deb0d268868d53765c3b63e93e29ee3129e3fc997b27f465fd",
-      "size_bytes": 114
+      "sha256": "8041403d52f5b49260cd4d894228cb4efc007bd8c907cd8c568f8ed4486ba6af",
+      "size_bytes": 257
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -78,8 +78,8 @@
       "line_count": null,
       "path": ".gitignore",
       "reason": "production/build source",
-      "sha256": "3e817b1d054df7fb34e880fd4932e59314de2f85d904f6e5e283be3ca26a2ba2",
-      "size_bytes": 560
+      "sha256": "38ca6c3c468eecf38576bb8f7aae39fbb3cbf01411cc281e8ecb088b1dc108f0",
+      "size_bytes": 581
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3299,11 +3299,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 326,
+      "line_count": 327,
       "path": "data/connector_registry.py",
       "reason": "production/build source",
-      "sha256": "91781cb888744ac5577c6be5fed71439bf1409eb812c5aa841712e1f0befc618",
-      "size_bytes": 14533
+      "sha256": "4a76e28c43b4a448ad801da89969e83b81dbeaec100d876ac2580110dc2ee01f",
+      "size_bytes": 14587
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3555,11 +3555,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 112,
+      "line_count": 122,
       "path": "data/connectors/polygon_adapter.py",
       "reason": "production/build source",
-      "sha256": "a652765e0f5f2adf966d250d063289dc16990f94a60021b36015995d8fd8f4c5",
-      "size_bytes": 3712
+      "sha256": "11cea572bf864c79a814fb00889ec9ffa86457f72737df3fdf357b5950d8e26c",
+      "size_bytes": 4280
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9342,8 +9342,8 @@
       "line_count": 16120,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "242008dc6f04da8251f3c29334380c9e086f0e17b16c282c36b342737d1db81c",
-      "size_bytes": 472901
+      "sha256": "f75845e81a83591f9ae3489e1877dee142dff0130fbb9d7bb20e48d1d99bb6e9",
+      "size_bytes": 472902
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13163,6 +13163,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 42,
+      "path": "tests/test_governance_reproducibility.py",
+      "reason": "automated test evidence",
+      "sha256": "bc7afa8310d60b2060eb8721e841f5c135e23f524de6574d1386b9ebf2b2fe5f",
+      "size_bytes": 1615
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 9,
       "path": "tests/test_governance_runtime_exclusions.py",
       "reason": "automated test evidence",
@@ -13187,11 +13195,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 106,
+      "line_count": 111,
       "path": "tests/test_indices_asset_support.py",
       "reason": "automated test evidence",
-      "sha256": "781d861f12ccddfb344bf4ebf22ee8dc6e6ae7ed2adb1c49b8978a3838d3dc5b",
-      "size_bytes": 3612
+      "sha256": "cf5bab831b86ef55fcc2253fc03bc3156846fd465710fd287af5036ebd09707b",
+      "size_bytes": 4038
     },
     {
       "disposition": "TEST_ONLY",
@@ -13283,11 +13291,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 178,
+      "line_count": 202,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "06a418a9613ae645f17602855482002a235e2f827d4bda71d15f7da9e22b9611",
-      "size_bytes": 9324
+      "sha256": "1dc6d4ed972ea82f4ff8b1328df9844becd71d0e4ceee33a7f7e1bb3b79ce102",
+      "size_bytes": 10366
     },
     {
       "disposition": "TEST_ONLY",
@@ -13939,11 +13947,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 65,
+      "line_count": 100,
       "path": "tests/test_provider_crash_remediation.py",
       "reason": "automated test evidence",
-      "sha256": "db79dcdbd5374928991b60dbf959e4f408f7e85ee506da152068fb85f3b039e7",
-      "size_bytes": 2910
+      "sha256": "bc0207dee9b3d88a563f5bcb6da0a086ab5354df3c453eb694d8676b3084af8d",
+      "size_bytes": 4678
     },
     {
       "disposition": "TEST_ONLY",
@@ -15230,16 +15238,16 @@
       "line_count": 6854,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "7f488deca3dc2d8ff3b3483766421d226dc43a85571cf255b588e74d800419c4",
-      "size_bytes": 281641
+      "sha256": "1638090c151800cadf115fba177846dacc502f2b617b6032fc8b204c0a365eed",
+      "size_bytes": 281781
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 1128,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b8310ec1a76eda2f35e6dafe233e604c9e6fa8e9c957b18c5744ec2256c6e30b",
-      "size_bytes": 140449
+      "sha256": "f812c76a4e22c7ca44862bc74ad3de65fc1037e8f13e4b8880fe2afb256a18fa",
+      "size_bytes": 140477
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15254,8 +15262,8 @@
       "line_count": 744,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "95edf7f0eb05f436adcbb560b3039234a653f94dc883b1a92b47c85a667e6470",
-      "size_bytes": 68128
+      "sha256": "27d87e36b5d9c30ce0128cb9629bde7ef4c73b2aa44ade4d038a2d354262fe6d",
+      "size_bytes": 68292
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15283,11 +15291,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1284,
+      "line_count": 1287,
       "path": "web/platform_app/styles.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "35b63e70cf66f6259eb320be84cc28c28a7402d75edb6d0902f73aa5bce82e46",
-      "size_bytes": 64636
+      "sha256": "27ab8525755067f7a77eb81d4cefb2e2a4d3a2ea11ce7a14187b7a01ffb5a3d3",
+      "size_bytes": 64879
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15400,6 +15408,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 441,
     "PRESERVE_BEHAVIOUR": 1158,
-    "TEST_ONLY": 323
+    "TEST_ONLY": 324
   }
 }

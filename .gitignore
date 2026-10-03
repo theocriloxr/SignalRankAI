@@ -39,4 +39,5 @@ Thumbs.db
 .idea/
 .audit-venv/
 .audit-tools-venv/
+.audit-browser-venv/
 node_modules/

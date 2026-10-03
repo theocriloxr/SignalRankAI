@@ -1593,7 +1593,7 @@ async def operator_adaptive(
                 await session.execute(
                     text(
                         "SELECT profile_id,asset,version,state,is_current,sample_size,data_sufficiency_score,metadata "
-                        "FROM adaptive_asset_profiles WHERE (:asset IS NULL OR asset=:asset) "
+                        "FROM adaptive_asset_profiles WHERE (CAST(:asset AS TEXT) IS NULL OR asset=:asset) "
                         "ORDER BY asset,is_current DESC,version DESC LIMIT 24"
                     ),
                     {"asset": asset},
@@ -2372,11 +2372,11 @@ async def signal_feed(
         " FROM receipts d JOIN signals s ON s.signal_id=d.signal_id"
         " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
         " WHERE d.rn=1"
-        " AND (:asset IS NULL OR s.asset=:asset)"
-        " AND (:asset_class IS NULL OR lower(COALESCE(s.asset_class,''))=:asset_class)"
-        " AND (:timeframe IS NULL OR lower(COALESCE(s.timeframe,''))=:timeframe)"
-        " AND (:strategy IS NULL OR lower(COALESCE(s.strategy_name,'')) LIKE :strategy)"
-        " AND (:status IS NULL OR COALESCE(o.status,s.status)=:status)"
+        " AND (CAST(:asset AS TEXT) IS NULL OR s.asset=:asset)"
+        " AND (CAST(:asset_class AS TEXT) IS NULL OR lower(COALESCE(s.asset_class,''))=:asset_class)"
+        " AND (CAST(:timeframe AS TEXT) IS NULL OR lower(COALESCE(s.timeframe,''))=:timeframe)"
+        " AND (CAST(:strategy AS TEXT) IS NULL OR lower(COALESCE(s.strategy_name,'')) LIKE :strategy)"
+        " AND (CAST(:status AS TEXT) IS NULL OR COALESCE(o.status,s.status)=:status)"
         " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
     )
     async with get_session() as session:
@@ -3152,11 +3152,11 @@ async def instrument_search(
         "ARRAY_REMOVE(ARRAY_AGG(DISTINCT pi.venue),NULL) AS venues "
         "FROM instruments i LEFT JOIN provider_instruments pi ON pi.canonical_instrument_id=i.instrument_id "
         "WHERE i.active=TRUE "
-        "AND (:q IS NULL OR i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q "
+        "AND (CAST(:q AS TEXT) IS NULL OR i.canonical_symbol ILIKE :q OR i.display_symbol ILIKE :q "
         "OR pi.provider_symbol ILIKE :q OR i.underlying ILIKE :q) "
-        "AND (:asset_class IS NULL OR i.asset_class=:asset_class) "
-        "AND (:instrument_type IS NULL OR i.instrument_type=:instrument_type) "
-        "AND (:venue IS NULL OR pi.venue=:venue) "
+        "AND (CAST(:asset_class AS TEXT) IS NULL OR i.asset_class=:asset_class) "
+        "AND (CAST(:instrument_type AS TEXT) IS NULL OR i.instrument_type=:instrument_type) "
+        "AND (CAST(:venue AS TEXT) IS NULL OR pi.venue=:venue) "
         "GROUP BY i.instrument_id ORDER BY i.tradable DESC,provider_count DESC,i.canonical_symbol LIMIT :limit"
     )
     async with get_session() as session:
