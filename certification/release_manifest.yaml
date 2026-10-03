@@ -246,8 +246,8 @@
     {
       "id": "frontend-audit",
       "group": "frontend",
-      "description": "Frontend npm vulnerability gate (high/critical)",
-      "command": "cd frontend && npm audit --audit-level=high",
+      "description": "Frontend dependency audit with explicit unpatched dev-tool exception policy",
+      "command": "node scripts/npm_audit_gate.mjs --project frontend",
       "severity": "high",
       "required": true,
       "environments": [
@@ -294,8 +294,8 @@
     {
       "id": "mobile-audit",
       "group": "mobile",
-      "description": "Mobile npm vulnerability gate (high/critical)",
-      "command": "cd mobile && npm audit --audit-level=high",
+      "description": "Mobile dependency audit with explicit unpatched build-tool exception policy",
+      "command": "node scripts/npm_audit_gate.mjs --project mobile",
       "severity": "high",
       "required": true,
       "environments": [
@@ -344,7 +344,9 @@
       "command": "manual:container_security",
       "severity": "critical",
       "required": true,
-      "environments": ["staging"],
+      "environments": [
+        "staging"
+      ],
       "evidence_requirements": [
         "Exact candidate SHA, Dockerfile identity, immutable base digest and built image digest",
         "Successful Linux clean-room and production image builds with locked runtime pip check",
