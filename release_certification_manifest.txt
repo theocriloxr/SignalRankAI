@@ -96,3 +96,4 @@ tests/test_market_class_certification.py
 tests/test_smtp_preflight.py
 tests/test_production_backup_script.py
 tests/test_semgrep_gate.py
+tests/test_partial_exit_safety.py

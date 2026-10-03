@@ -84,7 +84,7 @@
       "id": "shellcheck",
       "group": "static",
       "description": "Shell entrypoint lint",
-      "command": "shellcheck start.sh deploy.sh scripts/staging_predeploy_v142.sh scripts/staging_predeploy_v150.sh scripts/staging_predeploy_v151.sh scripts/production_backup.sh",
+      "command": "shellcheck start.sh deploy.sh scripts/staging_predeploy_v142.sh scripts/staging_predeploy_v150.sh scripts/staging_predeploy_v151.sh scripts/production_backup.sh scripts/staging_pg18_migration.sh",
       "severity": "high",
       "required": true,
       "environments": [
@@ -170,7 +170,7 @@
       "id": "backend-critical-regressions",
       "group": "backend",
       "description": "Release-critical regression contracts",
-      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py tests/test_provider_crash_remediation.py tests/test_smtp_preflight.py tests/test_production_backup_script.py tests/test_semgrep_gate.py",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py tests/test_provider_crash_remediation.py tests/test_smtp_preflight.py tests/test_production_backup_script.py tests/test_semgrep_gate.py tests/test_partial_exit_safety.py",
       "severity": "critical",
       "required": true,
       "environments": [

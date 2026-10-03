@@ -1,5 +1,9 @@
 # .dockerignore
 .git/
+.agents/
+.codex/
+.aws/
+.railway/
 .venv/
 venv/
 .audit-venv/
