@@ -530,9 +530,44 @@ $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Tur
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
 async function loadBillingProducts(){
-  const data=await request('/billing/products');const products=data.products||[];const current=String(state.user?.tier||'free').toLowerCase();
-  $('#billingProducts').innerHTML=products.length?products.map(p=>{const active=String(p.tier||'').toLowerCase()===current;return `<article class="metric-card plan-card ${active?'current-plan':''}"><div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button></article>`}).join(''):'<p>No public checkout products are available right now.</p>';
-  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Opening secure checkout…';try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;button.textContent=original;if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');toast(err.message,true)}})
+  const data=await request('/billing/products');
+  const products=data.products||[];
+  const current=String(state.user?.tier||'free').toLowerCase();
+  $('#billingProducts').innerHTML=products.length?products.map(p=>{
+    const active=String(p.tier||'').toLowerCase()===current;
+    const renewal=p.recurring
+      ?'<small class="warning">Renews automatically until cancelled</small>'
+      :'<small class="muted">One-off paid period · no automatic renewal</small>';
+    return `<article class="metric-card plan-card ${active?'current-plan':''}">
+      <div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div>
+      <strong>${esc(p.display_name)}</strong>
+      <p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p>
+      ${renewal}
+      <p class="muted"><a href="/billing-policy" target="_blank" rel="noopener">Billing, cancellation & refund policy</a></p>
+      <button class="primary billing-checkout" data-product="${esc(p.product_id)}" data-recurring="${p.recurring?'1':'0'}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button>
+    </article>`;
+  }).join(''):'<p>No public checkout products are available right now.</p>';
+  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{
+    if(button.disabled)return;
+    const recurring=button.dataset.recurring==='1';
+    if(recurring&&!window.confirm('This plan renews automatically until you cancel auto-renew from Account. Current paid access continues through the paid period after cancellation. Continue to Paystack?'))return;
+    button.disabled=true;
+    const original=button.textContent;
+    button.textContent='Opening secure checkout…';
+    try{
+      const checkout=await request('/billing/checkout',{
+        method:'POST',
+        body:JSON.stringify({product_id:button.dataset.product,currency:'NGN',recurring_acknowledged:recurring})
+      });
+      if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');
+      location.assign(checkout.authorization_url);
+    }catch(err){
+      button.disabled=false;
+      button.textContent=original;
+      if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');
+      toast(err.message,true);
+    }
+  });
 }
 async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile();const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
