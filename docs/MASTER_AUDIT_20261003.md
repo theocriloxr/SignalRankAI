@@ -1,10 +1,10 @@
-﻿# Master directive audit, 3 October 2026
+# Master directive audit, 3 October 2026
 
 Live-trading verdict: **NO / NOT YET**. Twenty-seven material findings are recorded and zero qualifying empty audit passes have occurred. The requested exhaustive completion is unfinished. No production deployment, live orders, automatic/copy/prop execution or payouts were activated by this audit.
 
 The [frozen directive](SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt), [431-clause registry](../certification/master_requirement_registry.json) and [evidence ledger](../certification/evidence_ledger.yaml) govern completion claims. The inventory includes ten incidents, 27 routes and G01-G32. Unreviewed clauses remain PARTIAL. The current Alembic head is `0048_runtime_schema_bridge`.
 
-The initial root checkout was `implementation-of-master-blueprint` at `d18c109f5304d0716f074bf14048cfc706f1dc32`. An external process committed workspace changes through `9b2c8b321f53b1bae0db3a4c902045f5ad23e258` during this audit. Those shared-root runs are diagnostic. Frozen local candidates were created in `.pytest-tmp/master-candidate-20261003`, without pushing them. Results apply only to their recorded candidate identity. Later source edits require new verification and cannot inherit earlier exact-SHA certification.
+The initial root checkout was `implementation-of-master-blueprint` at `d18c109f5304d0716f074bf14048cfc706f1dc32`. An external process committed workspace changes through `9b2c8b321f53b1bae0db3a4c902045f5ad23e258` (and later commits recorded in freeze artifacts) during this audit. Those shared-root runs are diagnostic. Frozen local candidates were created in `.pytest-tmp/master-candidate-20261003`, without pushing them. Results apply only to their recorded candidate identity. Later source edits require new verification and cannot inherit earlier exact-SHA certification.
 
 ## Corrections
 
@@ -23,14 +23,16 @@ The initial root checkout was `implementation-of-master-blueprint` at `d18c109f5
 
 ## Evidence and its limits
 
+Latest local review candidate: `b8a98cc804ee46e7bd319dbfa954ed5701f2ebd2` (`release/master-audit-20261003-review`), source fingerprint `00b19607b06d1dbc155c59f3d2b6291313377f9fca263b7961d14de6f3ef9193`. Its [verification summary](../artifacts/master-audit-20261003/verification_summary.json) binds all final checks and artifact hashes. The complete suite again passes **2,337 tests, zero failures/skips**, with unchanged source. Critical Pyright, Ruff, five-script ShellCheck, Bandit, runtime pip-audit/pip check, frontend lint/types/build, mobile types/Android/iOS exports and provenance pass on this SHA. Frontend/mobile audits and Hadolint fail; strict Semgrep exits 3 with zero findings, two parsing errors and 437 taint fixpoint timeouts. This candidate is local only and is preserved in a verified Git bundle; it was not pushed or deployed.
+
 Frozen candidate `ae49f5bc9e9b5d36850b6361ac486113be657a01`, branch `release/master-audit-20261003-shell`, has source fingerprint `657fa15eb95a1cd2953e0aafd9c5330d5ea58fa23e9df88b031f90cecf8accf7`.
 
 - [Complete backend report](../artifacts/master-audit-20261003/release-full/complete_system_test_report.json): **2,337 passed, zero failed, zero skipped**, all 20 batches pass, source unchanged. Real disposable PostgreSQL17 integration was enabled. This is local evidence; it does not certify Railway, Redis, provider, broker or Telegram network operation.
 - Frontend locked install, lint, TypeScript and production build passed on this candidate. Mobile locked install, typecheck and Android/iOS bundle exports passed. Authenticated browser E2E, accessibility, native installs and device acceptance remain unverified. Process exit/output checks establish these results; they are not hosted-CI certificates.
-- Critical Pyright: 24 files, zero errors/warnings. Critical Ruff, Bandit and runtime pip-audit passed. All five shell scripts pass ShellCheck. Deterministic SBOM/provenance self-verifies with 137 components.
+- Critical Pyright: 24 files, zero errors/warnings. Critical Ruff, Bandit and runtime pip-audit passed. The earlier ShellCheck report covers start.sh. Expanding to all five scripts found SC2162 in deploy.sh; read -r fixes it, and all five pass on the later root source. Deterministic SBOM/provenance self-verifies with 137 components.
 - Full-runtime Pyright remains **1,436 errors and six warnings** on the prior candidate with equivalent runtime Python sources. Passing a legacy non-regression budget does not establish zero typing debt.
-- Semgrep reports zero findings but partial parsing and taint-analysis warnings. Coverage is incomplete. The manifest now requires strict warning handling; the earlier zero-exit scan is not a clean security gate.
-- Hadolint on `Dockerfile` reports three warnings and one informational finding, including unpinned APT/bootstrap packages. Docker is unavailable locally; Linux image builds and OS/image vulnerability scanning are unverified. The static Docker isolation fix was made after the candidate above and requires a fresh identity and actual image build.
+- Semgrep reports zero findings but partial parsing and taint-analysis warnings. Coverage is incomplete. The manifest now uses explicit default/security-audit rulesets with metrics disabled and requires strict warning handling; the earlier zero-exit scan is not a clean security gate.
+- Hadolint on `Dockerfile` reports three warnings and one informational finding, including unpinned APT/bootstrap packages. Docker is unavailable locally; Linux image builds and OS/image vulnerability scanning are unverified. The static Docker isolation, expanded shell lint and strict explicit Semgrep changes were made after the candidate above; later frozen identities and checks are indexed in artifacts/master-audit-20261003/verification_summary.json. Actual image builds remain absent.
 - [Frontend dependency audit](../artifacts/master-audit-20261003/frontend-npm-audit.json) fails with **five high** advisories; [mobile audit](../artifacts/master-audit-20261003/mobile-npm-audit.json) fails with **16 high and seven moderate**. No scanner suppression or unsafe suggested Expo downgrade was applied.
 - [Local backup/restore](../artifacts/master-audit-20261003/local-backup-restore.json): 124 tables, 262 synthetic fixture rows and 435 indexes; row-content/schema fingerprints match. Restore plus verification took 2.031 seconds. This does not establish staging RPO/RTO or production restore readiness.
 
@@ -51,3 +53,5 @@ Reports are retained under `artifacts/master-audit-20261003/`. Intermediate over
 Complete exact-SHA hosted CI, security/dependency/typing/image acceptance and comprehensive product E2E. Deploy one certified candidate to isolated staging with execution/payouts disabled; verify every role's source, schema and readiness. Complete provider-family, paper/lifecycle/parity, broker-demo, Redis/queue/retry/crash, backup/restore and failure-injection acceptance. Address production storage headroom and alerts. Run a stable 24-72 hour soak, then two complete audits with no new material gaps.
 
 Production canary and any tiny live-money pilot require later explicit authorization after mandatory gates pass. Current evidence cannot support a YES verdict or a profit/win-rate guarantee.
+
+Automatic approval review rejected a metrics-enabled auto-configured Semgrep retry because it could transmit project metadata. A safer explicit-rules scan with metrics disabled was approved and run; it still fails strict parsing coverage. No metadata-enabled retry bypassed that rejection.

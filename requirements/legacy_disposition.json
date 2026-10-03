@@ -2590,16 +2590,16 @@
       "line_count": 8001,
       "path": "certification/master_requirement_registry.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "24a7a79ffa7ce8ccecc1623d9e62be18827b6b74294ade3fde24058b9b1b8610",
-      "size_bytes": 325971
+      "sha256": "4fadce8fdf21bbc4a7d294fc1f110aedb67ad8ea976a569cef32e151d4fa8df6",
+      "size_bytes": 317898
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 472,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f7360f00f1ef7511598f32421875fe06f748863965ab516c8d43fbf80612a4ab",
-      "size_bytes": 15148
+      "sha256": "095bc271f60f622f9ee6558743786ac2fb55dd24c6f6117a98683a4dbd62578f",
+      "size_bytes": 15229
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4358,8 +4358,8 @@
       "line_count": 159,
       "path": "deploy.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "708e047519275979b6fd40652f0fd6fc74a36249a2994f87e7f241fc88759969",
-      "size_bytes": 5815
+      "sha256": "5a5fa790046c38b471a756f818bd7563d59ea08bb056a0c54fd41cc721be8ac7",
+      "size_bytes": 5818
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5115,11 +5115,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 53,
+      "line_count": 57,
       "path": "docs/MASTER_AUDIT_20261003.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "3a796da8d74191262de4df82ca6aeec7f7661e567cb2e03ba39ee44b027934bf",
-      "size_bytes": 9580
+      "sha256": "2570c491396330bbe92f60d032ac65add945dc461c9ff8c82f4dad21fff14132",
+      "size_bytes": 11107
     },
     {
       "disposition": "DOCUMENTATION_ONLY",

@@ -5321,11 +5321,11 @@
         "tests/test_release_manifest_validation.py"
       ],
       "runtime_evidence": [
-        "artifacts/master-audit-20261003/release-full/complete_system_test_report.json"
+        "artifacts/master-audit-20261003/review-full/complete_system_test_report.json"
       ],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Frozen candidate ae49f5bc: 2337 passed, zero failed/skipped, source unchanged. Real local PostgreSQL integration included. Exact-SHA hosted CI and staging remain.",
+      "blocker": "Frozen b8a98cc8 local full suite: 2337 passed, zero failed/skipped, source unchanged; real local PostgreSQL integration enabled. Hosted CI, Linux clean-room and exact-SHA staging remain.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
@@ -5391,7 +5391,7 @@
       "runtime_evidence": [],
       "staging_evidence": [],
       "production_evidence": [],
-      "blocker": "Frozen ae49f5bc critical Pyright (24 files), Ruff, Bandit and runtime pip-audit pass; all five shell scripts pass ShellCheck. Full Pyright retains 1436 errors/6 warnings on prior equivalent Python source. Semgrep has zero findings but parsing/taint-analysis warnings: partial coverage, not a clean gate. Hadolint reports 3 warnings/1 info on Dockerfile; Linux builds/image vulnerability scans absent. Strict Semgrep and explicit container evidence now required.",
+      "blocker": "Critical Pyright/Ruff/Bandit/runtime pip-audit pass locally; typing debt remains 1436 errors/6 warnings. Five-script ShellCheck expansion found SC2162; fixed with read -r. Strict explicit Semgrep with metrics off fails on partial parsing despite zero findings. Hadolint: 3 warnings/1 info; Linux builds/image scanning absent. Current release gate remains incomplete.",
       "last_verified_sha": null,
       "last_verified_at": null,
       "regression_link": null,
