@@ -84,11 +84,11 @@ def test_auto_renew_is_opt_in_for_new_accounts_and_verified_recurring_payments()
 def test_compliance_ui_rotates_pwa_cache() -> None:
     worker = source("web/platform_app/service-worker.js")
     html = source("web/platform_app/index.html")
-    assert "signalrank-shell-v40" in worker
-    assert "styles.css?v=40" in worker
-    assert "app.js?v=40" in worker
-    assert "styles.css?v=40" in html
-    assert "app.js?v=40" in html
+    assert "signalrank-shell-v41" in worker
+    assert "styles.css?v=41" in worker
+    assert "app.js?v=41" in worker
+    assert "styles.css?v=41" in html
+    assert "app.js?v=41" in html
 
 
 def test_authenticated_privacy_rights_requests_are_available_cross_channel() -> None:
