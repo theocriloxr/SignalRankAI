@@ -18,14 +18,14 @@ type AuthMode = 'login'|'register'|'activate'|'mfa'|'reset';
 export default function App() {
   const [loading,setLoading]=useState(true); const [user,setUser]=useState<any>(null);
   const [screen,setScreen]=useState<Screen>('overview'); const [authMode,setAuthMode]=useState<AuthMode>('login');
-  const [form,setForm]=useState({displayName:'',email:'',password:'',code:'',mfaToken:'',resetToken:'',termsAccepted:false,privacyAcknowledged:false,marketingConsent:false}); const [error,setError]=useState('');
+  const [form,setForm]=useState({displayName:'',email:'',password:'',code:'',mfaToken:'',resetToken:'',termsAccepted:false,privacyAcknowledged:false,ageEligibilityConfirmed:false,marketingConsent:false}); const [error,setError]=useState('');
   const loadMe=async()=>{try{const result=await api<any>('/me');setUser(result.user)}catch{setUser(null)}finally{setLoading(false)}};
   useEffect(()=>{loadMe()},[]);
   useEffect(()=>{const handle=async({url}:{url:string})=>{const parsed=Linking.parse(url);const q:any=parsed.queryParams||{};try{if(q.magic_login){setLoading(true);const result=await completeMagicLogin(String(q.magic_login));if(result.mfa_required){setForm(v=>({...v,mfaToken:String(result.mfa_token||'')}));setAuthMode('mfa')}else setUser(result.user)}else if(q.password_reset){setForm(v=>({...v,resetToken:String(q.password_reset)}));setAuthMode('reset')}else if(q.token){setForm(v=>({...v,code:String(q.token)}));setAuthMode('activate')}}catch(e){setError(e instanceof Error?e.message:'Link failed')}finally{setLoading(false)}};Linking.getInitialURL().then(url=>{if(url)handle({url})});const sub=Linking.addEventListener('url',handle);return()=>sub.remove()},[]);
   useEffect(()=>{if(!user||!Device.isDevice||!['android','ios'].includes(Platform.OS))return;void(async()=>{try{const current=await Notifications.getPermissionsAsync();const permission=current.status==='granted'?current:await Notifications.requestPermissionsAsync();if(permission.status!=='granted')return;if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('signals',{name:'Signal updates',importance:Notifications.AndroidImportance.HIGH});const projectId=process.env.EXPO_PUBLIC_EAS_PROJECT_ID||Constants.expoConfig?.extra?.eas?.projectId;if(!projectId)return;const token=await Notifications.getExpoPushTokenAsync({projectId});await registerPushDevice({pushToken:token.data,platform:Platform.OS as 'android'|'ios',deviceId:`${Device.osName||Platform.OS}:${Device.modelName||'device'}`,appVersion:Constants.expoConfig?.version})}catch{}})()},[user]);
   const authenticate=async()=>{
     setError('');
-    if((authMode==='register'||authMode==='activate')&&(!form.termsAccepted||!form.privacyAcknowledged)){
+    if((authMode==='register'||authMode==='activate')&&(!form.termsAccepted||!form.privacyAcknowledged||!form.ageEligibilityConfirmed)){
       setError('Accept the Terms of Use and acknowledge the Privacy Notice to continue.');
       return;
     }
@@ -40,9 +40,9 @@ export default function App() {
       const result=authMode==='login'
         ?await login(form.email,form.password)
         :authMode==='register'
-          ?await register(form.displayName,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.marketingConsent)
+          ?await register(form.displayName,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.ageEligibilityConfirmed,form.marketingConsent)
           :authMode==='activate'
-            ?await activateTelegram(form.code,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.marketingConsent)
+            ?await activateTelegram(form.code,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.ageEligibilityConfirmed,form.marketingConsent)
             :await completeMfa(form.mfaToken,form.code);
       if(result.mfa_required){
         setForm(v=>({...v,mfaToken:String(result.mfa_token||''),code:''}));
@@ -88,6 +88,7 @@ function Auth({mode,setMode,form,setForm,error,submit}:any){
     {(mode==='register'||mode==='activate')?<View style={styles.legalBox}>
       <ToggleRow checked={form.termsAccepted} onPress={()=>setForm({...form,termsAccepted:!form.termsAccepted})} label="I agree to the Terms of Use and acknowledge the trading risk disclosure. This does not enable broker execution."/>
       <ToggleRow checked={form.privacyAcknowledged} onPress={()=>setForm({...form,privacyAcknowledged:!form.privacyAcknowledged})} label="I have read the Privacy Notice."/>
+      <ToggleRow checked={form.ageEligibilityConfirmed} onPress={()=>setForm({...form,ageEligibilityConfirmed:!form.ageEligibilityConfirmed})} label="I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction."/>
       <ToggleRow checked={form.marketingConsent} onPress={()=>setForm({...form,marketingConsent:!form.marketingConsent})} label="Optional: send me product news and marketing updates."/>
       <View style={styles.inline}><Pressable onPress={()=>Linking.openURL(legalUrl('/terms'))}><Text style={styles.link}>Terms</Text></Pressable><Pressable onPress={()=>Linking.openURL(legalUrl('/privacy'))}><Text style={styles.link}>Privacy</Text></Pressable><Pressable onPress={()=>Linking.openURL(legalUrl('/risk-disclosure'))}><Text style={styles.link}>Risk</Text></Pressable></View>
     </View>:null}
