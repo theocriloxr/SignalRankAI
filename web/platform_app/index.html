@@ -169,6 +169,7 @@
         </form>
 
         <div class="auth-links"><button id="magicLinkButton" class="link-button" type="button">Email me a sign-in link</button><button id="forgotPasswordButton" class="link-button" type="button">Reset password</button></div>
+        <nav class="auth-legal-links" aria-label="Legal and accessibility information"><a href="/privacy" target="_blank" rel="noopener">Privacy</a><a href="/terms" target="_blank" rel="noopener">Terms</a><a href="/risk-disclosure" target="_blank" rel="noopener">Trading risk</a><a href="/accessibility" target="_blank" rel="noopener">Accessibility</a></nav>
         <form id="mfaForm" class="stack" hidden><h2>Two-factor authentication</h2><p>Enter your authenticator code or a recovery code.</p><input type="hidden" name="token" /><label>Security code<input name="code" autocomplete="one-time-code" required /></label><button class="primary">Complete sign in</button></form>
         <form id="passwordResetForm" class="stack" hidden><h2>Choose a new password</h2><input type="hidden" name="token" /><label>New password<input name="new_password" type="password" minlength="10" autocomplete="new-password" required /></label><button class="primary">Reset password</button></form>
       </div>
