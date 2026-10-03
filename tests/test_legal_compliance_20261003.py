@@ -84,11 +84,11 @@ def test_auto_renew_is_opt_in_for_new_accounts_and_verified_recurring_payments()
 def test_compliance_ui_rotates_pwa_cache() -> None:
     worker = source("web/platform_app/service-worker.js")
     html = source("web/platform_app/index.html")
-    assert "signalrank-shell-v39" in worker
-    assert "styles.css?v=39" in worker
-    assert "app.js?v=39" in worker
-    assert "styles.css?v=39" in html
-    assert "app.js?v=39" in html
+    assert "signalrank-shell-v40" in worker
+    assert "styles.css?v=40" in worker
+    assert "app.js?v=40" in worker
+    assert "styles.css?v=40" in html
+    assert "app.js?v=40" in html
 
 
 def test_authenticated_privacy_rights_requests_are_available_cross_channel() -> None:
@@ -104,3 +104,21 @@ def test_authenticated_privacy_rights_requests_are_available_cross_channel() -> 
     assert "Request my data export" in mobile
     assert "Request account deletion review" in mobile
     assert "category:'privacy'" in mobile
+
+
+def test_active_frontends_do_not_load_google_fonts() -> None:
+    next_layout = source("frontend/src/app/layout.tsx")
+    next_css = source("frontend/src/app/globals.css")
+    assert "next/font/google" not in next_layout
+    assert "fonts.googleapis.com" not in next_layout
+    assert "fonts.gstatic.com" not in next_layout
+    assert "ui-sans-serif" in next_css
+
+
+def test_mobile_activation_age_gate_has_a_real_parameter() -> None:
+    mobile_api = source("mobile/src/api.ts")
+    start = mobile_api.index("export async function activateTelegram(")
+    end = mobile_api.index("): Promise<SessionPayload>", start)
+    signature = mobile_api[start:end]
+    assert "ageEligibilityConfirmed: boolean" in signature
+    assert "age_eligibility_confirmed: ageEligibilityConfirmed" in mobile_api
