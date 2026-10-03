@@ -181,6 +181,7 @@ class PushDeviceRequest(BaseModel):
 class CheckoutCreateRequest(BaseModel):
     product_id: str = Field(min_length=3, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]+$")
     currency: str = Field(default="NGN", pattern=r"^NGN$")
+    recurring_acknowledged: bool = False
 
 
 class BillingConfirmRequest(BaseModel):
@@ -5919,6 +5920,8 @@ async def billing_products(user: dict[str, Any] = Depends(current_user)) -> dict
                 product = await resolve_checkout_product(session, str(row[0]), currency="NGN")
             except ProductCatalogueError:
                 continue
+            from payments.checkout import is_recurring_product
+            recurring = is_recurring_product(product)
             products.append({
                 "product_id": product.product_id,
                 "tier": product.tier,
@@ -5926,6 +5929,12 @@ async def billing_products(user: dict[str, Any] = Depends(current_user)) -> dict
                 "duration_days": product.duration_days,
                 "currency": product.currency,
                 "price_ngn": product.price_ngn,
+                "recurring": recurring,
+                "renewal_disclosure": (
+                    "Renews automatically until cancelled. Cancel auto-renew from Account."
+                    if recurring else
+                    "One-off paid period. No automatic renewal is configured for this product."
+                ),
             })
         await session.rollback()
     return {"products": products}
@@ -5960,12 +5969,18 @@ async def create_billing_checkout(
         await session.rollback()
 
     try:
-        from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout
+        from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout, is_recurring_product
+        if is_recurring_product(product) and payload.recurring_acknowledged is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm recurring billing before opening checkout for this plan",
+            )
         checkout = await initialize_paystack_checkout(
             product=product,
             canonical_user_id=uid,
             telegram_user_id=(int(account["telegram_user_id"]) if account.get("telegram_user_id") is not None else None),
             email=str(account["primary_email"]),
+            recurring_acknowledged=bool(payload.recurring_acknowledged),
         )
     except CheckoutInitializationError as exc:
         logger.warning("[billing_checkout] user=%s product=%s blocked=%s", uid, payload.product_id, exc)
