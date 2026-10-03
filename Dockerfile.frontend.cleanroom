@@ -4,9 +4,10 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend ./
+COPY scripts/npm_audit_gate.mjs /app/scripts/npm_audit_gate.mjs
 RUN echo "security-audit-refresh=2026-10-03-r1" \
     && npm run lint \
     && npx tsc --noEmit \
-    && npm audit --audit-level=high \
+    && node /app/scripts/npm_audit_gate.mjs --project frontend \
     && npm run build
 CMD ["node","-e","console.log('SIGNALRANK_FRONTEND_CLEANROOM_PASS'); setInterval(()=>{}, 60000)"]
