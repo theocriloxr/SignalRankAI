@@ -146,6 +146,9 @@
           <label>One-time token or code<input id="activationCredential" name="token_or_code" autocomplete="one-time-code" required /></label>
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <label class="consent-row"><input name="platform_terms_accepted" type="checkbox" required /> <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>.</span></label>
+          <label class="consent-row"><input name="privacy_acknowledged" type="checkbox" required /> <span>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+          <label class="consent-row"><input name="marketing_consent" type="checkbox" /> <span>Optional: send me product news and marketing updates.</span></label>
           <button type="submit" class="primary">Activate app access</button>
         </form>
 
