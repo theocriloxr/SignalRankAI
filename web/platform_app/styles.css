@@ -302,6 +302,9 @@ button:disabled{cursor:not-allowed;opacity:.48;transform:none}
 .auth-card{align-self:center;box-shadow:var(--shadow)}
 .auth-card h2{margin:2px 0 5px;font-size:24px;letter-spacing:-.035em}
 .auth-links{display:flex;justify-content:space-between;gap:8px;margin-top:14px}
+.auth-legal-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+.auth-legal-links a{padding:4px 7px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:9px;font-weight:800;text-decoration:none;letter-spacing:.02em}
+.auth-legal-links a:hover,.auth-legal-links a:focus-visible{border-color:var(--line-strong);background:var(--panel-2);color:var(--text);outline:none}
 .consent-group{display:grid;gap:8px;margin:5px 0 2px;padding:0;border:0;min-inline-size:0}
 .consent-group legend{display:flex;align-items:center;gap:8px;padding:0;color:var(--text);font-size:12px;font-weight:800;letter-spacing:.01em}
 .consent-group legend span{padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
