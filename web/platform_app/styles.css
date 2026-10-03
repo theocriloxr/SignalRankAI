@@ -184,7 +184,7 @@ main{min-height:100vh;margin-left:var(--sidebar);padding:0}
 
 /* Common surfaces */
 .view{animation:view-in .22s var(--ease)}
-@keyframes view-in{from{opacity:.45;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes view-in{from{transform:translateY(5px)}to{transform:none}}
 .panel,.hero-card,.auth-card,.metric-card,.market-card,.tool-card,.subpanel,.warning-panel{
   border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),color-mix(in srgb,var(--panel) 96%,var(--bg)));
   border-radius:var(--radius);box-shadow:var(--shadow-sm)

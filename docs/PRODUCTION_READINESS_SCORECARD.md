@@ -5,6 +5,8 @@ below are not current release certificates. See
 [the verified UI changes and outstanding launch gates](UI_REFRESH_AND_LAUNCH_GATES_20261003.md)
 and [production recovery evidence](PRODUCTION_REPAIR_20261003.md). A healthy
 HTTP endpoint and passing local tests do not authorize funded execution.
+The requested October targets are governed by the
+[release acceptance and scoring criteria](READINESS_ACCEPTANCE_CRITERIA_20261003.md).
 
 Last updated: 2026-06-29
 Owner: Engineering
