@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const projectIndex = process.argv.indexOf("--project");
 const project = projectIndex >= 0 ? process.argv[projectIndex + 1] : "";
@@ -10,10 +11,11 @@ if (!["frontend", "mobile"].includes(project)) {
   process.exit(2);
 }
 
-const root = process.cwd();
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(scriptDir, "..");
 const projectDir = path.join(root, project);
 const lockPath = path.join(projectDir, "package-lock.json");
-const sourceDir = path.join(projectDir, "src");
+const sourceDir = projectDir;
 const lockText = fs.readFileSync(lockPath, "utf8");
 const lock = JSON.parse(lockText);
 const packages = lock.packages || {};
@@ -62,7 +64,9 @@ function sourceContains(tokens) {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        stack.push(full);
+        if (!["node_modules", ".expo", ".next", "dist", "dist-android", "dist-ios"].includes(entry.name)) {
+          stack.push(full);
+        }
       } else if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(entry.name)) {
         const body = fs.readFileSync(full, "utf8");
         for (const token of tokens) {
