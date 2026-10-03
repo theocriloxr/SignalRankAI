@@ -25,8 +25,8 @@ export default function App() {
   useEffect(()=>{if(!user||!Device.isDevice||!['android','ios'].includes(Platform.OS))return;void(async()=>{try{const current=await Notifications.getPermissionsAsync();const permission=current.status==='granted'?current:await Notifications.requestPermissionsAsync();if(permission.status!=='granted')return;if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('signals',{name:'Signal updates',importance:Notifications.AndroidImportance.HIGH});const projectId=process.env.EXPO_PUBLIC_EAS_PROJECT_ID||Constants.expoConfig?.extra?.eas?.projectId;if(!projectId)return;const token=await Notifications.getExpoPushTokenAsync({projectId});await registerPushDevice({pushToken:token.data,platform:Platform.OS as 'android'|'ios',deviceId:`${Device.osName||Platform.OS}:${Device.modelName||'device'}`,appVersion:Constants.expoConfig?.version})}catch{}})()},[user]);
   const authenticate=async()=>{
     setError('');
-    if(authMode==='register'&&(!form.termsAccepted||!form.privacyAcknowledged)){
-      setError('Accept the Terms of Use and acknowledge the Privacy Notice to create an account.');
+    if((authMode==='register'||authMode==='activate')&&(!form.termsAccepted||!form.privacyAcknowledged)){
+      setError('Accept the Terms of Use and acknowledge the Privacy Notice to continue.');
       return;
     }
     setLoading(true);
@@ -42,7 +42,7 @@ export default function App() {
         :authMode==='register'
           ?await register(form.displayName,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.marketingConsent)
           :authMode==='activate'
-            ?await activateTelegram(form.code,form.email,form.password)
+            ?await activateTelegram(form.code,form.email,form.password,form.termsAccepted,form.privacyAcknowledged,form.marketingConsent)
             :await completeMfa(form.mfaToken,form.code);
       if(result.mfa_required){
         setForm(v=>({...v,mfaToken:String(result.mfa_token||''),code:''}));
@@ -73,7 +73,7 @@ function ToggleRow({checked,onPress,label}:any){
 function Auth({mode,setMode,form,setForm,error,submit}:any){
   const magic=async()=>{if(!form.email)return setForm({...form});try{await requestMagicLink(form.email);Alert.alert('Check your email','If the account exists, a sign-in link was queued.')}catch(e){Alert.alert('Error',e instanceof Error?e.message:'Could not request link')}};
   const reset=async()=>{if(!form.email)return;try{await requestPasswordReset(form.email);Alert.alert('Check your email','If the account exists, reset instructions were queued.')}catch(e){Alert.alert('Error',e instanceof Error?e.message:'Could not request reset')}};
-  const registerBlocked=mode==='register'&&(!form.termsAccepted||!form.privacyAcknowledged);
+  const legalBlocked=(mode==='register'||mode==='activate')&&(!form.termsAccepted||!form.privacyAcknowledged);
   return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.auth}>
     <Text style={styles.eyebrow}>ONE ACCOUNT. EVERY CHANNEL.</Text>
     <Text style={styles.hero}>SignalRankAI follows you.</Text>
@@ -85,14 +85,14 @@ function Auth({mode,setMode,form,setForm,error,submit}:any){
     {mode==='reset'&&<Text style={styles.rowTitle}>Choose a new password</Text>}
     {!['mfa'].includes(mode)&&<TextInput style={styles.input} placeholder="Email" placeholderTextColor="#75869a" autoCapitalize="none" keyboardType="email-address" value={form.email} onChangeText={(v)=>setForm({...form,email:v})}/>}
     {!['mfa'].includes(mode)&&<TextInput style={styles.input} placeholder={mode==='reset'?'New password':'Password'} placeholderTextColor="#75869a" secureTextEntry value={form.password} onChangeText={(v)=>setForm({...form,password:v})}/>}
-    {mode==='register'?<View style={styles.legalBox}>
+    {(mode==='register'||mode==='activate')?<View style={styles.legalBox}>
       <ToggleRow checked={form.termsAccepted} onPress={()=>setForm({...form,termsAccepted:!form.termsAccepted})} label="I agree to the Terms of Use and acknowledge the trading risk disclosure. This does not enable broker execution."/>
       <ToggleRow checked={form.privacyAcknowledged} onPress={()=>setForm({...form,privacyAcknowledged:!form.privacyAcknowledged})} label="I have read the Privacy Notice."/>
       <ToggleRow checked={form.marketingConsent} onPress={()=>setForm({...form,marketingConsent:!form.marketingConsent})} label="Optional: send me product news and marketing updates."/>
       <View style={styles.inline}><Pressable onPress={()=>Linking.openURL(legalUrl('/terms'))}><Text style={styles.link}>Terms</Text></Pressable><Pressable onPress={()=>Linking.openURL(legalUrl('/privacy'))}><Text style={styles.link}>Privacy</Text></Pressable><Pressable onPress={()=>Linking.openURL(legalUrl('/risk-disclosure'))}><Text style={styles.link}>Risk</Text></Pressable></View>
     </View>:null}
     {error?<Text style={styles.error}>{error}</Text>:null}
-    <Pressable style={[styles.primary,registerBlocked&&styles.disabled]} disabled={registerBlocked} onPress={submit}><Text style={styles.primaryText}>{mode==='login'?'Log in':mode==='register'?'Create account':mode==='activate'?'Activate Telegram account':mode==='mfa'?'Verify code':'Reset password'}</Text></Pressable>
+    <Pressable style={[styles.primary,registerBlocked&&styles.disabled]} disabled={legalBlocked} onPress={submit}><Text style={styles.primaryText}>{mode==='login'?'Log in':mode==='register'?'Create account':mode==='activate'?'Activate Telegram account':mode==='mfa'?'Verify code':'Reset password'}</Text></Pressable>
     {mode==='login'&&<View style={styles.inline}><Pressable onPress={magic}><Text style={styles.link}>Email sign-in link</Text></Pressable><Pressable onPress={reset}><Text style={styles.link}>Reset password</Text></Pressable></View>}
   </ScrollView><StatusBar style="light"/></SafeAreaView>;
 }
