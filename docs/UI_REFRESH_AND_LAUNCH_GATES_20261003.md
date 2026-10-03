@@ -49,6 +49,15 @@ Preview references and actual browser screenshots are in the ignored
 
 ## Verification scope
 
+HTTP throttling now returns the intended 429 JSON response and Retry-After
+header rather than propagating a middleware exception as HTTP 500. Three
+actual TestClient regressions cover page/API throttling and available liveness.
+Cache-generation validation rejects mixed HTML/worker assets, obsolete caches
+and missing files; historical asset checks now permit coherent newer releases.
+The targeted regression selection passed 75 checks after these changes.
+Full-suite and exact-commit browser reruns are required before release approval;
+the earlier exact 46472b4d browser run exposed this throttling defect.
+
 - Actual local HTTP login with synthetic users and a disposable PostgreSQL
   database: 47 browser checks passed, including all seven tiers, server-side
   rejection of Free portfolio access, operator authority, desktop/mobile
