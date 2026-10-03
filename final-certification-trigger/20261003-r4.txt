@@ -1,0 +1,11 @@
+SignalRankAI final unified certification r4
+branch=implementation-of-master-blueprint
+head_before_trigger=8fe6ea0f6498c3e0dac282c0d693bd420cbf1950
+backend=required
+frontend=required
+mobile=required
+static_security=required
+semgrep_zero_findings_zero_errors=required
+strict_html_parse=required
+oct1_paper_signal_incident_regressions=required
+live_execution_authorized=false
