@@ -131,6 +131,7 @@ export async function activateTelegram(
   password: string,
   platformTermsAccepted: boolean,
   privacyAcknowledged: boolean,
+  ageEligibilityConfirmed: boolean,
   marketingConsent: boolean,
 ): Promise<SessionPayload> {
   const response = await fetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
