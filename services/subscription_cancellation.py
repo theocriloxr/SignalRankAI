@@ -114,6 +114,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         tier = str(subscription.tier or user.tier or "free").strip().lower()
         expires_at = subscription.expires_at
         sub_code = str(user.paystack_subscription_code or "").strip()
+        was_auto_renew = bool(user.auto_renew)
         await session.rollback()
 
     gateway_cancelled, retry_attempts = await _disable_paystack_subscription(
@@ -152,7 +153,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         "gateway_cancelled": bool(gateway_cancelled),
         "retry_attempts": int(retry_attempts),
         "provider_follow_up_required": bool(
-            sub_code and not gateway_cancelled
+            (was_auto_renew or sub_code) and not gateway_cancelled
         ),
     }
 
