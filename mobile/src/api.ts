@@ -123,10 +123,25 @@ export function legalUrl(path: string): string {
   return `${root}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-export async function activateTelegram(tokenOrCode: string, email: string, password: string): Promise<SessionPayload> {
+export async function activateTelegram(
+  tokenOrCode: string,
+  email: string,
+  password: string,
+  platformTermsAccepted: boolean,
+  privacyAcknowledged: boolean,
+  marketingConsent: boolean,
+): Promise<SessionPayload> {
   const response = await fetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({token_or_code: tokenOrCode, email, password, client_type: 'mobile'}),
+    body: JSON.stringify({
+      token_or_code: tokenOrCode,
+      email,
+      password,
+      client_type: 'mobile',
+      platform_terms_accepted: platformTermsAccepted,
+      privacy_acknowledged: privacyAcknowledged,
+      marketing_consent: marketingConsent,
+    }),
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.detail || 'Activation failed');
