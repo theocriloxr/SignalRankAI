@@ -14,7 +14,7 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 })()));
 self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
-  if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
+  if(event.request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/'))return;
   const navigation=event.request.mode==='navigate'&&isWorkspacePath(url.pathname);
   const publicAsset=SHELL_ASSETS.has(url.pathname+url.search);
   // Never intercept API, authentication, diagnostic, third-party or user data.

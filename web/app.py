@@ -391,8 +391,16 @@ async def rate_limit_middleware(request: Request, call_next):
     try:
         started = time.perf_counter()
         await rate_limit(request, user_id=0)  # IP-only for unauth
-    except HTTPException:
-        raise
+    except HTTPException as exc:
+        # Middleware sits outside FastAPI's route exception handlers. Return
+        # the intended response here so throttling never becomes a 500.
+        response = JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
+        )
+        observe_http_request(request.method, request.url.path, exc.status_code, time.perf_counter() - started)
+        return response
     response = await call_next(request)
     route_obj = request.scope.get("route")
     route = getattr(route_obj, "path", None) or request.url.path
