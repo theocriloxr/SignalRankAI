@@ -92,15 +92,35 @@ export async function requestPasswordReset(email: string): Promise<void> {
   if (!response.ok) throw new Error('Could not request password reset');
 }
 
-export async function register(displayName: string, email: string, password: string): Promise<SessionPayload> {
+export async function register(
+  displayName: string,
+  email: string,
+  password: string,
+  platformTermsAccepted: boolean,
+  privacyAcknowledged: boolean,
+  marketingConsent: boolean,
+): Promise<SessionPayload> {
   const response = await fetch(`${API_URL}/api/v1/platform/auth/register`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({display_name: displayName, email, password, client_type: 'mobile'}),
+    body: JSON.stringify({
+      display_name: displayName,
+      email,
+      password,
+      client_type: 'mobile',
+      platform_terms_accepted: platformTermsAccepted,
+      privacy_acknowledged: privacyAcknowledged,
+      marketing_consent: marketingConsent,
+    }),
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.detail || 'Registration failed');
   await storeSession(payload);
   return payload;
+}
+
+export function legalUrl(path: string): string {
+  const root = API_URL.replace(/\/api(?:\/.*)?$/, '');
+  return `${root}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 export async function activateTelegram(tokenOrCode: string, email: string, password: string): Promise<SessionPayload> {
@@ -201,6 +221,20 @@ export async function createBillingCheckout(productId: string): Promise<{authori
   });
 }
 
-export async function getBilling(): Promise<{subscriptions: any[]; receipts: any[]}> {
+export async function getBilling(): Promise<{subscriptions: any[]; receipts: any[]; auto_renew?: boolean; provider_subscription_linked?: boolean}> {
   return api('/billing');
+}
+
+export async function cancelAutoRenew(): Promise<{success: boolean; policy?: string; support_ticket_id?: string | null}> {
+  return api('/billing/cancel-auto-renew', {
+    method: 'POST',
+    body: JSON.stringify({confirm: true}),
+  });
+}
+
+export async function requestRefundReview(paymentReference: string, reason: string): Promise<{ticket_id?: string; message?: string}> {
+  return api('/billing/refund-request', {
+    method: 'POST',
+    body: JSON.stringify({payment_reference: paymentReference, reason}),
+  });
 }
