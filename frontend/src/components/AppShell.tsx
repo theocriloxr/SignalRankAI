@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ThemeControl } from "./ThemeControl";
 
 const items = [
   ["Overview", "/app"],
@@ -22,12 +23,13 @@ export function AppShell({ active, children }: { active: string; children: React
   return (
     <div className="appShell">
       <aside className="sidebar">
-        <Link className="brand" href="/">SignalRank<span>AI</span></Link>
-        <nav className="sideNav">
+        <Link className="brand" href="/"><img src="/brand/icon.svg" alt="" width="32" height="32" />SignalRank<span>AI</span></Link>
+        <nav className="sideNav" aria-label="Workspace">
           {items.map(([label, href]) => (
-            <Link key={href} href={href} className={label.toLowerCase() === active.toLowerCase() ? "active" : ""}>{label}</Link>
+            <Link key={href} href={href} aria-current={label.toLowerCase() === active.toLowerCase() ? "page" : undefined} className={label.toLowerCase() === active.toLowerCase() ? "active" : ""}>{label}</Link>
           ))}
         </nav>
+        <ThemeControl />
       </aside>
       <section className="workspace">{children}</section>
     </div>
