@@ -8,13 +8,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements.lock release_certification_manifest.txt ./
+COPY requirements.txt requirements.lock requirements-build-tools.txt release_certification_manifest.txt ./
 RUN python -m venv "$VIRTUAL_ENV" \
-    && python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install --requirement requirements-build-tools.txt \
     && pip install --no-deps -r requirements.lock \
     && pip check
 
@@ -32,6 +33,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
