@@ -302,6 +302,12 @@ button:disabled{cursor:not-allowed;opacity:.48;transform:none}
 .auth-card{align-self:center;box-shadow:var(--shadow)}
 .auth-card h2{margin:2px 0 5px;font-size:24px;letter-spacing:-.035em}
 .auth-links{display:flex;justify-content:space-between;gap:8px;margin-top:14px}
+.consent-row{
+  display:grid;grid-template-columns:auto 1fr;align-items:flex-start;gap:10px;padding:10px 11px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel-soft);color:var(--muted);line-height:1.5
+}
+.consent-row input[type="checkbox"]{width:auto;min-height:0;margin-top:3px;accent-color:var(--cyan)}
+.consent-row a{font-weight:700}
 .bootstrap-shell{
   width:min(680px,100%);display:grid;grid-template-columns:auto 1fr;gap:20px 22px;align-items:center;
   padding:32px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow)
