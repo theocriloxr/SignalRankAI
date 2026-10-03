@@ -71,7 +71,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     class _Mappings:
         def one(self):
             return {
-                "deployed_revision": "0047_event_outbox",
+                "deployed_revision": "0048_runtime_schema_bridge",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -94,6 +94,13 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "mt5_credentials_password_nullable": True,
                 "broker_executions_connection_id": True,
                 "mt5_executions_connection_id": True,
+                "users_accepted_terms": True,
+                "users_execution_mode": True,
+                "signals_status": True,
+                "signals_trade_profile": True,
+                "signal_deliveries_sent_ok": True,
+                "signal_deliveries_generated_at_utc": True,
+                "outcomes_canonical_outcome": True,
                 "trading_account_ledger_immutable": True,
                 "active_guard_present": True,
                 "outcome_duplicate_groups": 0,
@@ -124,7 +131,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     result = await railway_main._database_readiness_check()
 
     assert result["ok"] is True
-    assert result["revision"] == "0047_event_outbox"
+    assert result["revision"] == "0048_runtime_schema_bridge"
     assert result["probe_timeout_seconds"] == 8.0
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"
@@ -137,4 +144,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     assert "credential_revision" in captured["statement"]
     assert "mt5_credentials" in captured["statement"]
     assert "is_nullable" in captured["statement"]
+    assert "accepted_terms" in captured["statement"]
+    assert "generated_at_utc" in captured["statement"]
+    assert "canonical_outcome" in captured["statement"]
     assert "trg_trading_account_ledger_immutable" in captured["statement"]

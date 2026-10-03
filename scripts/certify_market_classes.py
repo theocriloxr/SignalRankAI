@@ -90,6 +90,8 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
     age = _latest_age(validation)
     freshness_limit = max(180.0, float(TF_SECONDS.get(timeframe, 3600)) * 2.5)
     source_lower = provider.lower()
+    # Certification must enforce the same authority boundary in staging and
+    # production. An isolated environment does not certify an analysis feed.
     analysis_only = any(token in source_lower for token in ("yahoo", "yfinance"))
     fresh = age is not None and age <= freshness_limit
     valid = bool(validation.get("valid"))

@@ -10,7 +10,7 @@ import pytest
 from core.signal_lifecycle import (
     ACTIVE_TRADE,
     BREAKEVEN_STOP,
-    EXPIRED,
+    CLOSED_TIME_STOP,
     MISSED_ENTRY,
     SL_HIT,
     TP1_HIT,
@@ -74,7 +74,7 @@ def test_canonical_lifecycle_normalizes_all_legacy_vocabularies():
     assert normalize_lifecycle_state("sl") == SL_HIT
     assert normalize_lifecycle_state("partial_win_be") == BREAKEVEN_STOP
     assert normalize_lifecycle_state("missed") == MISSED_ENTRY
-    assert normalize_lifecycle_state("time_stop") == EXPIRED
+    assert normalize_lifecycle_state("time_stop") == CLOSED_TIME_STOP
 
 
 def test_lifecycle_graph_allows_forward_progress_and_blocks_downgrade():

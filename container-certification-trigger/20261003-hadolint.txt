@@ -1,0 +1,2 @@
+hadolint refresh r2
+head_before_trigger=5f7d8dd03789915254091f586d791bbf422d3393

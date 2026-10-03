@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_missed_entry_is_never_persisted_as_realized_trade_r() -> None:
     tracker = (ROOT / "engine" / "realtime_outcome_tracker.py").read_text(encoding="utf-8")
     block = tracker[
-        tracker.index('if status_l == "missed_entry":'):
+        tracker.index('if status_l in {"missed_entry", "expired"}:'):
         tracker.index("# Canonical protected-exit accounting")
     ]
     assert "missed_entry_observed_r = r_mult" in block

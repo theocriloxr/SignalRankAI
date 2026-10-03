@@ -54,6 +54,11 @@ def _engine_connect_args() -> dict[str, Any]:
         connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
     except Exception:
         connect_timeout = 15.0
+        
+    db_url = os.getenv("DATABASE_URL", "")
+    if "sqlite" in db_url:
+        return {"timeout": connect_timeout}
+        
     try:
         command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
     except Exception:
@@ -974,30 +979,7 @@ async def _acquire_priority_cancellation_safe(
     timeout_s: float,
     nonblocking: bool,
 ) -> bool:
-    cancel_event = threading.Event()
-    worker = asyncio.create_task(
-        asyncio.to_thread(
-            _priority_admission.acquire,
-            priority,
-            timeout_s=timeout_s,
-            nonblocking=nonblocking,
-            cancel_event=cancel_event,
-        )
-    )
-    try:
-        return bool(await asyncio.shield(worker))
-    except asyncio.CancelledError:
-        cancel_event.set()
-
-        def _release_late_acquire(task: asyncio.Task[bool]) -> None:
-            try:
-                if task.result():
-                    _priority_admission.release(priority)
-            except Exception:
-                pass
-
-        worker.add_done_callback(_release_late_acquire)
-        raise
+    return await _priority_admission.acquire_async(priority, timeout_s=timeout_s, nonblocking=nonblocking)
 
 
 async def _acquire_semaphore_cancellation_safe(
@@ -1006,22 +988,14 @@ async def _acquire_semaphore_cancellation_safe(
     timeout_s: float,
     nonblocking: bool,
 ) -> bool:
-    if nonblocking:
-        return bool(gate.acquire(blocking=False))
-    worker = asyncio.create_task(asyncio.to_thread(gate.acquire, True, max(0.0, timeout_s)))
-    try:
-        return bool(await asyncio.shield(worker))
-    except asyncio.CancelledError:
-
-        def _release_late_acquire(task: asyncio.Task[bool]) -> None:
-            try:
-                if task.result():
-                    gate.release()
-            except Exception:
-                pass
-
-        worker.add_done_callback(_release_late_acquire)
-        raise
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    while True:
+        if gate.acquire(blocking=False):
+            return True
+        remaining = deadline - time.monotonic()
+        if nonblocking or remaining <= 0:
+            return False
+        await asyncio.sleep(min(0.01, remaining))
 
 
 @asynccontextmanager

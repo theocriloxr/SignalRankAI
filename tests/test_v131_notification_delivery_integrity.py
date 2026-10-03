@@ -34,7 +34,7 @@ def test_json_encoded_targets_are_not_iterated_character_by_character():
     assert "TP3: 73.9134" in message
     assert "TP4:" not in message
     assert "Remaining:" not in message
-    assert "Signal P/L: +1.39%" in message
+    assert "P/L at TP event: +1.39%" in message
 
 
 def test_lifecycle_updates_never_replace_the_original_signal_card(monkeypatch):
@@ -101,7 +101,7 @@ def test_delayed_short_tp_alert_does_not_call_reversed_later_mark_tp_evidence():
     assert "TP1 hit level: 260.8439" in message
     assert "Latest stored price: 262.45 (post-hit mark; not TP evidence)" in message
     assert "Observed hit price: 262.45" not in message
-    assert "Signal P/L: +0.54%" in message
+    assert "P/L at TP event: +0.54%" in message
 
 
 def test_tp_alert_labels_directionally_consistent_price_as_hit_evidence():

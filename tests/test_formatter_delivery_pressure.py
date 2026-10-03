@@ -138,24 +138,27 @@ async def test_configured_crypto_order_beats_health_reordering(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gemini_429_is_fail_open_degraded(monkeypatch):
-    import urllib.error
+    from unittest.mock import AsyncMock
     from engine import core
+    from services import ai_review_router
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_ENABLED", "1")
 
-    def rate_limited(*args, **kwargs):
-        raise urllib.error.HTTPError("https://example.invalid", 429, "rate limited", {}, None)
-
-    monkeypatch.setattr(core.urllib.request, "urlopen", rate_limited)
+    review = AsyncMock(return_value={"ok": False, "error": "rate_limited_degraded"})
+    monkeypatch.setattr(ai_review_router, "review_signal", review)
+    signal = _valid_signal(ml_probability=0.7, confidence=0.8)
+    expected = core._local_ai_review_signal(signal, [])
     ok, score, reason = await core._gemini_review_signal(
-        _valid_signal(ml_probability=0.7, confidence=0.8),
+        signal,
         [],
         0.0,
     )
 
-    assert ok is True
+    assert (ok, score) == expected[:2]
+    assert ok is False  # A provider failure cannot approve this weak setup.
     assert "ai_review_status=rate_limited_degraded" in reason
+    review.assert_awaited_once()
 
 
 def test_cycle_progress_and_scheduler_stagger_are_observable():

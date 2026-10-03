@@ -20,7 +20,7 @@ TARGETS = [
 
 def main() -> int:
     proc = subprocess.run(
-        ["pyright", "--outputjson", *TARGETS],
+        ["pyright", "--pythonpath", sys.executable, "--outputjson", *TARGETS],
         text=True,
         capture_output=True,
         check=False,
@@ -28,6 +28,8 @@ def main() -> int:
     try:
         payload = json.loads(proc.stdout or "{}")
         summary = payload.get("summary") or {}
+        if "errorCount" not in summary or proc.returncode not in {0, 1}:
+            raise ValueError("pyright_missing_summary_or_tool_failure")
         errors = int(summary.get("errorCount") or 0)
         warnings = int(summary.get("warningCount") or 0)
     except Exception as exc:

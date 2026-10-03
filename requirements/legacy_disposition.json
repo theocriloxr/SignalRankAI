@@ -1,13 +1,13 @@
 {
-  "file_count": 1862,
+  "file_count": 1897,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": ".dockerignore",
       "reason": "production/build source",
-      "sha256": "6b58a23ae5e067d1148f158f1a1bcec652e1d285fff81af9ac14fe15c63bd6b5",
-      "size_bytes": 745
+      "sha256": "40ab00fd06a779d7792c41e0256f8fca31932200af442723157471afd8d57257",
+      "size_bytes": 957
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -27,6 +27,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": ".gitattributes",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "f3eab5333ed9b828e47a6ff49b8ffed289e58a09632d9541b3701ad49cf770e7",
+      "size_bytes": 142
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 48,
       "path": ".github/workflows/apply-staging-storage-hotfix.yml",
       "reason": "configuration, data, or product asset retained",
@@ -35,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 138,
+      "line_count": 165,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0e3abd071f2a86b3d6f823665297b12561be150ae39172237dd78cb40b2b8e3a",
-      "size_bytes": 4260
+      "sha256": "f0672c9c0fc2862a9d427bc3b1c5df74666f6a2e3a25ad3d6ebd73fdc4d41e86",
+      "size_bytes": 5556
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -70,8 +78,8 @@
       "line_count": null,
       "path": ".gitignore",
       "reason": "production/build source",
-      "sha256": "3a00994cc0de8d31b9e3eda94d8fe077a1cdcb25aad50c9ab797291d545cd022",
-      "size_bytes": 582
+      "sha256": "ee933a919878fe554a3e8498bd2177facbbe857d7c600ef4bb080763bb2bac47",
+      "size_bytes": 602
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -299,11 +307,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 75,
+      "line_count": 80,
       "path": "CURRENT_RELEASE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "8c41893b7dc51131beb20ed8982d04a433d4c574c44b5d3df1f002d3088d35fc",
-      "size_bytes": 3333
+      "sha256": "0a8861e19793f6ebe4a654fb44a4a7c9660eeff70d5bd4def755e9c162bfb47a",
+      "size_bytes": 3820
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -350,56 +358,56 @@
       "line_count": 49,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "25e6a342993922219d43a2b265a66c29ea08bdd083e32918431bd4cc9b279d77",
-      "size_bytes": 1689
+      "sha256": "49a6e214f99c3e9fe7f31e38bb79715ce2bbcc09406921beb5e2597ff102d473",
+      "size_bytes": 1640
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.cleanroom",
       "reason": "production/build source",
-      "sha256": "bcb0b768ab0ed2b9943c6e4d5242c52c27471f4f920dea8284a9d19025e7e70e",
-      "size_bytes": 651
+      "sha256": "1b7369b82a28c67bd74976e17c12c4b05faf87e92895703be47ff7692497a4be",
+      "size_bytes": 629
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.frontend.cleanroom",
       "reason": "production/build source",
-      "sha256": "16767ecda7ad2786e07bececf0ce865694d9a0d60cb0cb4bd629a5d81bd91179",
-      "size_bytes": 389
+      "sha256": "ee4c9536364c1a1082074e56ad9d27569b721d91bc98a2bd5e5a6bfd8dad1068",
+      "size_bytes": 378
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.mobile.cleanroom",
       "reason": "production/build source",
-      "sha256": "cb37635e7bff1e8d0277861b4c7fa543742c871771c89a82b8d88e909b67b68c",
-      "size_bytes": 461
+      "sha256": "24f314a504f38a15a2c6613eac5fde4a55f14be7dab9eba4113718dd62807835",
+      "size_bytes": 450
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "f950d255fe3b198a57c305d8313a9d799664647f5722cf6a87fe4327d3f21784",
-      "size_bytes": 1364
+      "sha256": "a48762c82bfec01c872a539a7f20978cba61284bd961b81ab93eb6f7bee0eb87",
+      "size_bytes": 1317
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.restore-drill",
       "reason": "production/build source",
-      "sha256": "7baee0f3ed8883266b1c401c77ebf869b8d784df3484f7aac69870902aa087c1",
-      "size_bytes": 258
+      "sha256": "527c63b26d82f8660d70506224eb5c8862e2d7b7c619d9cdd14eede629db1f97",
+      "size_bytes": 251
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.static.cleanroom",
       "reason": "production/build source",
-      "sha256": "d91f64269767ae0b0aa79170bccdd2962525ec6c393961377373f9dafd603bca",
-      "size_bytes": 690
+      "sha256": "f58a1f5ecf262cb92dc5b5129696a1ea8ebac2fa76f6479ecca09a84ca68dd50",
+      "size_bytes": 968
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -582,7 +590,7 @@
       "line_count": 61,
       "path": "INFRASTRUCTURE_MANIFEST_20260930.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "697353de15fa1c220b3f2e28f22f0f36d1666a76d9a2c207ec1c7a2fb7849852",
+      "sha256": "0d99c178beadb87c02e5b3a86c1cf9d6083cea4eea8d469a5cac3c96bdff66c8",
       "size_bytes": 3273
     },
     {
@@ -750,8 +758,8 @@
       "line_count": 75,
       "path": "README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f7a1e35c0eb3b78f0f59245780adad3089be42c79d18c9a0a1b6e07c0e8c3da8",
-      "size_bytes": 3218
+      "sha256": "3b6a265a9f14daa158f42be7cb9420c27c5d939103c5f0aedd36523e680cecc1",
+      "size_bytes": 3227
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -1382,24 +1390,24 @@
       "line_count": 310,
       "path": "SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "358959dad436a2a3c15069051587d58986cf4cc39d98a9b0a815851fd1983ade",
-      "size_bytes": 12263
+      "sha256": "a03f90119fb7476d46c922ff053fbed04385b26d3541e63c37f7ab883dfef539",
+      "size_bytes": 12272
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 266,
       "path": "SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0debcada103f8cc48d1739464103f089fce7d5331ae9f6a17a9a3267a78d3c2d",
-      "size_bytes": 10100
+      "sha256": "70b967f2b0426176ee1d2d68a673bd6070cdaded5bc3338b5e238c157f2a134b",
+      "size_bytes": 10109
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 211,
       "path": "SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0f1326596b8aa130bc514ce6e4bb6fff587ba65cf82ed649245c6ddc9903ef72",
-      "size_bytes": 8122
+      "sha256": "893a7e58710516ba71714482a31a1fce4756a67d45821566782f5686d9df9380",
+      "size_bytes": 8131
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2499,19 +2507,99 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 203,
-      "path": "certification/evidence_ledger.yaml",
+      "line_count": 10,
+      "path": "certification-trigger/20261002-cleanroom-r43.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "03bf99059d2b5e15e237aff6e58e78be5f8efb92ab58d81d5705b13cfa0bd058",
-      "size_bytes": 7332
+      "sha256": "c0929f854eb8f581945e86853ccf96ebb9fa93642b9cfa2672129e9d9533d684",
+      "size_bytes": 392
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 434,
+      "line_count": 10,
+      "path": "certification-trigger/20261002-cleanroom-r44.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "65f757595f3f0b6ffde3fa58762e3d5015bcced5fa2aa4e2d9a15cd689e4c243",
+      "size_bytes": 396
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 10,
+      "path": "certification-trigger/20261002-cleanroom-r45.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "4f1c29de2977e55a3a3bbf4902f0985f5ca52efffa3cdad70adb9660266e9755",
+      "size_bytes": 374
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 11,
+      "path": "certification-trigger/20261002-cleanroom-r46.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "addd6138e257f60f0f069a0c1593d9ed30c7383ab72176f95ee4bb0ed12bde8c",
+      "size_bytes": 401
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 10,
+      "path": "certification-trigger/20261002-cleanroom-r47.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "9cbff5e4e7977d78644a6184dd6ee1efabac5c625d589183c53b4de7db29c1cd",
+      "size_bytes": 405
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 11,
+      "path": "certification-trigger/20261002-cleanroom-r48.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "08adc9e78e10508596e0298880dc061ea66c328cab80d5f225232a274ef85617",
+      "size_bytes": 440
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 12,
+      "path": "certification-trigger/20261002-cleanroom-r49.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "1c064799a40584b4c633ce6ff8d17780ae5f93002afd9470b002498412f71dbf",
+      "size_bytes": 481
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 13,
+      "path": "certification-trigger/20261002-cleanroom-r50.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "9d300a3fc9f1ab0be58720c542a2e718287bef8ae09b29034a042a2ff40db6ef",
+      "size_bytes": 553
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 14,
+      "path": "certification-trigger/20261002-cleanroom-r51.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "cd6e6d81b557967c10e831f59478e7c9617c05c3f72dab92fb093b37cfca76c0",
+      "size_bytes": 597
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 231,
+      "path": "certification/evidence_ledger.yaml",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "3e892b3dad60deb97ff1c36bb9081313ebc99433873c5ecd9c9ae0d412e5d82a",
+      "size_bytes": 9197
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 8001,
+      "path": "certification/master_requirement_registry.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "4fadce8fdf21bbc4a7d294fc1f110aedb67ad8ea976a569cef32e151d4fa8df6",
+      "size_bytes": 317898
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 472,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c88106772d1da1006071bb8a682325035d2603cad504389848f12ffdda1bb702",
-      "size_bytes": 13441
+      "sha256": "095bc271f60f622f9ee6558743786ac2fb55dd24c6f6117a98683a4dbd62578f",
+      "size_bytes": 15229
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2867,6 +2955,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 42,
+      "path": "core/outcome_accounting.py",
+      "reason": "production/build source",
+      "sha256": "54a0a28a89d3ea4868772056f2da491cba6a06428ff4becfb3ac0e8b3cb43c7c",
+      "size_bytes": 2231
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 76,
       "path": "core/outcome_ordering.py",
       "reason": "production/build source",
@@ -3027,11 +3123,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 226,
+      "line_count": 253,
       "path": "core/signal_lifecycle.py",
       "reason": "production/build source",
-      "sha256": "83a90c7e7a15adb0db80edd46dc342a905347712f0c07e0d72aeae2e2dbf87bb",
-      "size_bytes": 7043
+      "sha256": "35d4c75ddedd8f7300e3a692c2644716bc603910e158e0fa99518f608f987df1",
+      "size_bytes": 8098
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3491,11 +3587,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2939,
+      "line_count": 2944,
       "path": "data/fetcher.py",
       "reason": "production/build source",
-      "sha256": "829cb286b2eb74a07987caf190c6b07a0ade06ec721982e6bea5e2d1c8e649ff",
-      "size_bytes": 114951
+      "sha256": "4ba6753f7ba40a856c7c835971a7299fecdceb1f459de42cf44d53e1845c4062",
+      "size_bytes": 115348
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4115,6 +4211,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 127,
+      "path": "db/migrations/versions/0048_runtime_schema_bridge.py",
+      "reason": "database migration history",
+      "sha256": "52a17c980cdfe518dc1f52d0f35e341e78dda17b87f97d07bde6226b3279cba4",
+      "size_bytes": 5242
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 1457,
       "path": "db/models.py",
       "reason": "production/build source",
@@ -4139,19 +4243,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 4763,
+      "line_count": 4767,
       "path": "db/pg_features.py",
       "reason": "production/build source",
-      "sha256": "a06c634fc6be457c4b75e2c9bdb16bb0690853241ce5af9e46f4c2b62c54062e",
-      "size_bytes": 190730
+      "sha256": "d1314aa4cdb29840b87eff1f759c0ea626eaabf2bae08f5575e5a6c8df16f1b2",
+      "size_bytes": 190893
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 211,
+      "line_count": 247,
       "path": "db/priority.py",
       "reason": "production/build source",
-      "sha256": "bb3d7d952a67e19b10205139f506f69ec50121d714b69ba851a53e7d194bec08",
-      "size_bytes": 9734
+      "sha256": "1c902cd492710a691f410b1512c5a33380229b38d51fc1c8758d24472e9298b8",
+      "size_bytes": 11538
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4163,11 +4267,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1480,
+      "line_count": 1454,
       "path": "db/session.py",
       "reason": "production/build source",
-      "sha256": "fc0b20accb8c572cc47e06579d24338a36757dded887106f718b86531a8e6955",
-      "size_bytes": 58022
+      "sha256": "d4a72c2c8c4f8a2e366af741dbeb3ee90eecf79dff47be0b78e6afd69a972ade",
+      "size_bytes": 57292
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4254,8 +4358,8 @@
       "line_count": 159,
       "path": "deploy.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ae0c20b54730a9a3e310348c16af4edb03a533915861ac1a76f20414ba037d41",
-      "size_bytes": 5974
+      "sha256": "5a5fa790046c38b471a756f818bd7563d59ea08bb056a0c54fd41cc721be8ac7",
+      "size_bytes": 5818
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5011,6 +5115,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 57,
+      "path": "docs/MASTER_AUDIT_20261003.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "2570c491396330bbe92f60d032ac65add945dc461c9ff8c82f4dad21fff14132",
+      "size_bytes": 11107
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 135,
       "path": "docs/MASTER_PROMPT_IMPLEMENTATION_MATRIX.md",
       "reason": "documentation/specification/evidence",
@@ -5395,6 +5507,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 646,
+      "path": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt",
+      "reason": "documentation/specification/evidence",
+      "sha256": "dc2ce4a1683a7a5ec619128213e5c2ff2fea6e69831bf678ea68d789c746964a",
+      "size_bytes": 66128
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 589,
       "path": "docs/SIGNALRANK_V1.3.6.8_IMPLEMENTATION_100K_ARCHITECTURE_AND_CERTIFICATION.md",
       "reason": "documentation/specification/evidence",
@@ -5563,11 +5683,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 202,
+      "line_count": 209,
       "path": "docs/architecture/COMPLETION_EVIDENCE_LEDGER.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "226c6cb34f9436ba99e081ee146aa72ff8de16603d975033db58314774298bfd",
-      "size_bytes": 35141
+      "sha256": "02aee799c7b28161ca0c1e76b81661950158981ddb6e8214683a601bd0bf6757",
+      "size_bytes": 35563
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7027,11 +7147,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6797,
+      "line_count": 6795,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "23be991bbe293274c04e433c17852e3e1d78ef81b3325f8c9aef4655bd807d64",
-      "size_bytes": 343608
+      "sha256": "a2e0551660b427215f18f0c2bd538fa3dea87fcae3b24af969a1b2aecb01065c",
+      "size_bytes": 343493
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7043,11 +7163,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 418,
+      "line_count": 419,
       "path": "engine/correlation_filter.py",
       "reason": "production/build source",
-      "sha256": "93d1773bd5b114a1ef5c3e7600c45201796493848037cae5b3b02871cfba6609",
-      "size_bytes": 16414
+      "sha256": "77c1a0ad9971e13f51fb2719028eafe22d24e3b54318f536776457ae6032275d",
+      "size_bytes": 16451
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7243,11 +7363,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 129,
+      "line_count": 130,
       "path": "engine/outcome_eligibility.py",
       "reason": "production/build source",
-      "sha256": "1e2f54d2e1697e547a313192e963c9203dfe8017045a94be1a0f5c0480f465ea",
-      "size_bytes": 4189
+      "sha256": "f88a38a73666d8dba4b06b87b1739a962e8518c4ef986e3b721fdf58f563fd7e",
+      "size_bytes": 4214
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7307,11 +7427,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2830,
+      "line_count": 2839,
       "path": "engine/realtime_outcome_tracker.py",
       "reason": "production/build source",
-      "sha256": "0582e6c23c99e68c21d0052284efbe46cb3981cf1b2a2d3f7755138b173f0d24",
-      "size_bytes": 120244
+      "sha256": "324557ad8ccdd15de73618f0a9df1c575a23e6ed94095841a571c9ef98ced077",
+      "size_bytes": 122072
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7467,19 +7587,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 230,
+      "line_count": 238,
       "path": "engine/signal_explainability.py",
       "reason": "production/build source",
-      "sha256": "28254218eaafb0501aad44a3e7771faebb92095b1ba0caaa35ada45745ffa272",
-      "size_bytes": 9675
+      "sha256": "e8edd4f654f2698e32377e0c1d5d04fc1876d9449038e59ed5a35e3b3a0d39dc",
+      "size_bytes": 9959
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 854,
+      "line_count": 964,
       "path": "engine/signal_lifecycle.py",
       "reason": "production/build source",
-      "sha256": "8397c44b58f4059bf240a3097c092ddb028166db164ae2360b2fbaaff4214063",
-      "size_bytes": 36752
+      "sha256": "df8b142bf9c44f9f5f431c96e9bc9d1d56e3ffddd592a1af5f212c63786cf70b",
+      "size_bytes": 42475
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7491,11 +7611,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 168,
+      "line_count": 158,
       "path": "engine/signal_metrics.py",
       "reason": "production/build source",
-      "sha256": "04b33a0e5ef82955323810d2fb91215b06c8bd827b373c35bc3bf4061d88340f",
-      "size_bytes": 6575
+      "sha256": "236d9d66c3755e7117517a604d90a1ecc5a4a66d3823fc49106d9c427aae8ff1",
+      "size_bytes": 6309
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7622,8 +7742,8 @@
       "line_count": 422,
       "path": "engine/tier_notifications.py",
       "reason": "production/build source",
-      "sha256": "b207ac5155e8d9c38d72e1e8086f240e67839e64b73505fde6aabd51d57aa464",
-      "size_bytes": 15944
+      "sha256": "cd34a1484a6f68188b994fd14e4b4e33dc7b7a24697af8f997632021ce6708df",
+      "size_bytes": 15949
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7931,6 +8051,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 34,
+      "path": "init_db.py",
+      "reason": "production/build source",
+      "sha256": "356b9b301c0b2b0b0561bda97937af1adfd196139591b976663a11b0b400b319",
+      "size_bytes": 1284
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 6,
       "path": "legacy_telegram/__init__.py",
       "reason": "production/build source",
@@ -7971,6 +8099,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 4,
+      "path": "list_tables.py",
+      "reason": "production/build source",
+      "sha256": "5d5bbccc800807c9339cca54e18bb74c44710864d9b01867a07c890a5d026b23",
+      "size_bytes": 201
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 153,
       "path": "main.py",
       "reason": "production/build source",
@@ -8003,11 +8139,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 241,
+      "line_count": 238,
       "path": "market/data_quality_certification.py",
       "reason": "production/build source",
-      "sha256": "3a318afd4f4f7c7481edfd201494367b3e400102b280573af9d13a1f9881f104",
-      "size_bytes": 10264
+      "sha256": "da7fd20ff11489fd56df2b2b3b9925043833f16cb17a5e7a4f3f715ceb74cfb8",
+      "size_bytes": 10212
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8240,6 +8376,38 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "9d3a00cbf77d9df06eac4df639a7811606af9d4097532fe21acedc3672174a11",
       "size_bytes": 950
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": "mobile/dist-android/_expo/static/js/android/AppEntry-265203b74996b1bedcb61a8e3c1bcd58.hbc",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "9ac2971d89e7ac11fd6a3c27d40dd525ed4fbb368b41f8136d82e943daaa9a48",
+      "size_bytes": 1614360
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 1,
+      "path": "mobile/dist-android/metadata.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "19f067d08594201ff7e342991cc55348922bde807d7e55a7c710a57e7350e6df",
+      "size_bytes": 153
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": "mobile/dist-ios/_expo/static/js/ios/AppEntry-a5c1e86bc51ed8018ccfe4fa2084c901.hbc",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "b3883bd34c516bcefada17135b4f5251cd801c1f7a22fca82327cb623b5b2888",
+      "size_bytes": 1605046
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 1,
+      "path": "mobile/dist-ios/metadata.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "f7ae9c2c62c5dec34467c8a0b55cab23a5b36e4c80d0fa185419e4458113886a",
+      "size_bytes": 145
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8923,11 +9091,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 28,
+      "line_count": 32,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8abc1dc6b1790e9c4925d8582ec98ac72658a0fb432f64cf2a99669a9a05139b",
-      "size_bytes": 875
+      "sha256": "be5a167ad8e5078b2cc5dd4883b794cb4c36d1d910feb32bcb17b06fa229903c",
+      "size_bytes": 1001
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8955,19 +9123,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3731,
+      "line_count": 3780,
       "path": "railway_main.py",
       "reason": "production/build source",
-      "sha256": "8953d13fa765e022a10d2a435c23c69aab2d089e375b2ac55f3f61d24f8bc2b6",
-      "size_bytes": 167702
+      "sha256": "d6d2a1796121216c72f861c18d0f8b75a4bcd0a2d8b548244c03945e12dba1e4",
+      "size_bytes": 170897
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 91,
+      "line_count": 92,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f82b1fed8358445c7f0e52de58360b78beec2df069dbe4d40fdb71aad6446258",
-      "size_bytes": 6327
+      "sha256": "4d20b85f3f38e07b76d93fe7dc916560561c9129b965e990a73d287121fc9559",
+      "size_bytes": 6369
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8987,11 +9155,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 6,
+      "path": "requirements-security-tools.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "d7188d433a125dd989e19d5d59698654aeb1eba90d91772782030ba900a26e05",
+      "size_bytes": 151
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "requirements.lock",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "c76eaddd0de380fe976649894e24d267d7dcc108fac28fd0b130b26c07cde1cd",
-      "size_bytes": 3152
+      "sha256": "26d602b0c08a9033c6215520a6e6f52e28de787c912067ab1b928b8d87ad94f2",
+      "size_bytes": 3363
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9051,11 +9227,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16126,
+      "line_count": 16131,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "edc98da53f2f8cae21bb31656ee76c6054159622b755f661b5cc6d05bb0787f6",
-      "size_bytes": 489121
+      "sha256": "71bfbad72ab1b0c3c3e37e95ec22fe728e452b8c79e54366a580ef73ba47f6a1",
+      "size_bytes": 489314
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9291,11 +9467,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 225,
+      "line_count": 274,
       "path": "scripts/assert_database_schema.py",
       "reason": "production/build source",
-      "sha256": "1cba57aa6cd689ef248d491539f8f8f20e3f6082287cff1fda8f272f09fdc216",
-      "size_bytes": 9137
+      "sha256": "38f1ba028ccd95cd61d6382078dc358e5c9d8073ba8e072950292eaed2cf11c8",
+      "size_bytes": 11227
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9363,19 +9539,27 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1453,
-      "path": "scripts/build_v7_governance.py",
+      "line_count": 88,
+      "path": "scripts/build_master_requirement_registry.py",
       "reason": "production/build source",
-      "sha256": "460e88859ed27c503b9c4b158c9437fca4f35352c507e7def32cea9f9012edbb",
-      "size_bytes": 59580
+      "sha256": "cdfb69b82f3301b48adf8ee5132a2225223e288d8de140dd59f770ab2abcb475",
+      "size_bytes": 4211
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 179,
+      "line_count": 1453,
+      "path": "scripts/build_v7_governance.py",
+      "reason": "production/build source",
+      "sha256": "5dc6d05b5fdfbdb7b8966cb4aad230cf8acd20b4343af4baca882a7ee04714f6",
+      "size_bytes": 59569
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 181,
       "path": "scripts/certify_market_classes.py",
       "reason": "production/build source",
-      "sha256": "042c43d2e43667999462fbe8b88b17ecb23dfb7ac76c9dd1bde6a6a998d7ad0c",
-      "size_bytes": 6432
+      "sha256": "2da1bdecd323bc32f6752c192759d94cceba9370c7ad925f964e7414de0adc13",
+      "size_bytes": 6587
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9395,27 +9579,27 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 300,
+      "line_count": 302,
       "path": "scripts/cleanroom_verification_server.py",
       "reason": "production/build source",
-      "sha256": "2026505aaeabe4782815e59143ee1c0ee4aaf6cc4407cff295aca1f4342bc3d6",
-      "size_bytes": 10076
+      "sha256": "7ad0229b482a90180c170b57ad66a3eb6a373a956f6b807e2548b458d97218a1",
+      "size_bytes": 10184
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 74,
+      "line_count": 77,
       "path": "scripts/compile_tracked_python.py",
       "reason": "production/build source",
-      "sha256": "23429ae78ead511e6fcdd22e6cd65830889e13c60ea4735bc05d8e967c513ebc",
-      "size_bytes": 2031
+      "sha256": "3c4947caac8929a51714950a5ee67573053e8172fce7e051279d510486dd5e90",
+      "size_bytes": 2194
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 251,
       "path": "scripts/controlled_migrate.py",
       "reason": "production/build source",
-      "sha256": "671d1fb5922b0e911f6d261d0f6d0ed1af414234ccf5f31678a497fc371b2783",
-      "size_bytes": 9710
+      "sha256": "897b397d6113ea31f1bcf38403b14a70644355d9e37278111ff78581f848ec9a",
+      "size_bytes": 9716
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9430,8 +9614,8 @@
       "line_count": 177,
       "path": "scripts/demo_account_preflight.py",
       "reason": "production/build source",
-      "sha256": "57fd82a08f9be64db2a43b2b2eff84f90aabf2b298682e4e408086099da659eb",
-      "size_bytes": 7240
+      "sha256": "d0d803754d8a216142cdfe50944e4075a3a3ecca6b323b23a6e09e2b44de527e",
+      "size_bytes": 7249
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9515,19 +9699,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 285,
+      "line_count": 288,
       "path": "scripts/generate_release_provenance.py",
       "reason": "production/build source",
-      "sha256": "72058f434e2e00d283d7e396d48f4835f1e2b5c5823e6ea575b21e75e9e08fd6",
-      "size_bytes": 9967
+      "sha256": "9d99d9a4c7a9fb75b216536054814da76e05fed08837a2dca42463f1b5f4259c",
+      "size_bytes": 10233
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 220,
+      "line_count": 230,
       "path": "scripts/generate_repository_proof_manifest.py",
       "reason": "production/build source",
-      "sha256": "f2573dc22a80f9ca62a146923cc07a173f53a59fbc04df1d67f1eb1ebb1d7b0d",
-      "size_bytes": 7509
+      "sha256": "6c2be63c602b3ce04a31424ce0c4b4af54856deacc7971b9fc7e8bcc8834b849",
+      "size_bytes": 8045
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9603,11 +9787,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 50,
+      "line_count": 52,
       "path": "scripts/pyright_legacy_budget.py",
       "reason": "production/build source",
-      "sha256": "bd674ea14b74a6cd5c52612f6d6b32a56a1cc8dafc9e3d1b87b93f1bc186dda1",
-      "size_bytes": 1637
+      "sha256": "2454067e72aec3552eb93891caf766ec41c443e630b237fca9b5fdb180896b6e",
+      "size_bytes": 1816
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9638,24 +9822,24 @@
       "line_count": 139,
       "path": "scripts/railway_certify_staging_runtime.ps1",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bada337d287a7a261c81b457ed9ff782b718dd322324ec3af2d2600676336d04",
-      "size_bytes": 6738
+      "sha256": "12c242a9d6e8495298ea840c4ec1f31e5dcb0e16d935982c7feae4bd2f0661cc",
+      "size_bytes": 6756
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 154,
       "path": "scripts/railway_certify_staging_soak.ps1",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b2c82b8903aef6082dcc0547a48918c3111ceda670a113137aa61f0be78a9318",
-      "size_bytes": 6323
+      "sha256": "797f043c559af8d1d751b5a2ee1432a179eeb15634404dd8770af2bba1a74842",
+      "size_bytes": 6341
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 390,
       "path": "scripts/railway_finish_staging.ps1",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "7259af89c9be8f4cb9b5eec9dd57afff1c331dbb89c3d0f5d9c3da6cafe2129e",
-      "size_bytes": 16609
+      "sha256": "82e41b61ed3f1de0948bef5230d83143595535d35b5aef65bd57972a6f61a405",
+      "size_bytes": 16672
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9683,11 +9867,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 386,
+      "line_count": 396,
       "path": "scripts/reconcile_signal_lifecycle.py",
       "reason": "production/build source",
-      "sha256": "beb96fe007614c586fa6e9a835d076e9c97e53e881cbcf99b2b3e0595bd94946",
-      "size_bytes": 13830
+      "sha256": "9cd7de8a3a99776ba194feaae311231b61857b321424c0efb8fa1333c765ed6c",
+      "size_bytes": 14163
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 67,
+      "path": "scripts/release_evidence_identity.py",
+      "reason": "production/build source",
+      "sha256": "40acc5c1c36723f261a704c171a832de51eee932c281ba9c7e048fdbff92fde6",
+      "size_bytes": 3005
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9715,11 +9907,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 449,
+      "line_count": 472,
       "path": "scripts/run_complete_system_test.py",
       "reason": "production/build source",
-      "sha256": "e2b6c815127d528f02f8374042e04143e408e6ce8bcfe8ea16a1fa8d383a8e7c",
-      "size_bytes": 18305
+      "sha256": "acca13cf5814fe5d112b85c008410e73026235b692e23543bf6a343bf03574fe",
+      "size_bytes": 19499
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9731,11 +9923,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 42,
+      "line_count": 76,
       "path": "scripts/run_release_manifest.py",
       "reason": "production/build source",
-      "sha256": "98297ec04bc911fe07eeb11e08c2d1e5fa57eb74499826517c728db75c71cf4d",
-      "size_bytes": 2634
+      "sha256": "01ceb9d9f814d7bf8791a22e6bd478ff6eebc12d67203085ecc19484c0678711",
+      "size_bytes": 4792
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9771,11 +9963,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 118,
+      "line_count": 121,
       "path": "scripts/secret_scan.py",
       "reason": "production/build source",
-      "sha256": "467a05a018b2f22846bee1e411a8d8049e73da28a55083384333dc107f8898a9",
-      "size_bytes": 3889
+      "sha256": "0c4c8599eaa5692b0ed351f9c48d705b5ee011f03ca7a8c5d0d6a1af3ab7d3ff",
+      "size_bytes": 4006
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9806,8 +9998,8 @@
       "line_count": 373,
       "path": "scripts/staging_backup_restore_drill.py",
       "reason": "production/build source",
-      "sha256": "edaf9c7f22120044f671d0a8f30224327b5d20b5efc63c191af72351a6e49565",
-      "size_bytes": 14485
+      "sha256": "71d1ff07d898c2d0247ee6bb2b23c73cd4ed019fb636483cbe212632597df770",
+      "size_bytes": 14494
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9819,11 +10011,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 574,
+      "line_count": 578,
       "path": "scripts/staging_oct1_incident_replay.py",
       "reason": "production/build source",
-      "sha256": "e4311ed3cbac753642a9452f82c6e5a09f851b37b2349f2155c1880af655988d",
-      "size_bytes": 22056
+      "sha256": "a157783a95b61e33d5b9911abfac807c7305d1daf583f754fb94187364f0d3df",
+      "size_bytes": 22226
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9838,24 +10030,24 @@
       "line_count": 20,
       "path": "scripts/staging_predeploy_v142.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3657d46c9d116753ee11c452ccdbe423e5261cc775ebfacd906d4846d7161bed",
-      "size_bytes": 798
+      "sha256": "674496387c4d56e7203dcf6402be2f23f7dea7a42d499b0b4bffc136faf60e8f",
+      "size_bytes": 778
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 32,
       "path": "scripts/staging_predeploy_v150.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9dec1ba599326db6ac092cf243c357ff146797408337f1483e54a1392d07daaf",
-      "size_bytes": 1272
+      "sha256": "05eef575101bb8d09f41cf01328a365358e044b13a6da7f71927bddb5dc2473a",
+      "size_bytes": 1249
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 26,
       "path": "scripts/staging_predeploy_v151.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0a87cd0c3fd214b199b4f7343e209acfade25fbd5e84a055555236282ba6bd31",
-      "size_bytes": 879
+      "sha256": "c20b6d9e9dbe7f973566ef5c8718dce9f8d55765582f0faf83b78a3ec25641f7",
+      "size_bytes": 853
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9963,11 +10155,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 58,
+      "line_count": 59,
       "path": "scripts/verify_release_chain.py",
       "reason": "production/build source",
-      "sha256": "0dad6c3fdd37c4f9343039b5bed2bf2d0d09755968855679941ba03491e5b0ae",
-      "size_bytes": 1914
+      "sha256": "b5135116f98e241d4ab99e2b16a638c8e8b2692fdc91e0b72d2e0eea1f50cdcd",
+      "size_bytes": 1962
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10147,11 +10339,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 207,
+      "line_count": 215,
       "path": "services/asset_position_manager.py",
       "reason": "production/build source",
-      "sha256": "4cb1d6309074a3ebdb0b6985f05b3e4b3e2258de701af1f41c5c8fbc6f13fee9",
-      "size_bytes": 6587
+      "sha256": "7602fac9e0c9da4c114b67b104937311363416d1e077770637bc7ad5f32635a6",
+      "size_bytes": 6767
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10539,11 +10731,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 536,
+      "line_count": 558,
       "path": "services/outcome_reconciliation.py",
       "reason": "production/build source",
-      "sha256": "a6872c59894af37a1ea997d6c1294592b744b755a5513a99da415d75824f2aa1",
-      "size_bytes": 22523
+      "sha256": "44d35f23e8e25701e817369630727281336ff51c50790354e15ac9ff93e4de0b",
+      "size_bytes": 24093
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10595,11 +10787,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 324,
+      "line_count": 326,
       "path": "services/profile_demand.py",
       "reason": "production/build source",
-      "sha256": "1085de0de4bb215bdeb84721fdc37aa33856023d1c153f0addd4d0dc53987dee",
-      "size_bytes": 12971
+      "sha256": "8f559251703b7db5fb649c79fb26385808d3c631c6b13a5094d483db52bcb150",
+      "size_bytes": 13099
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10662,8 +10854,8 @@
       "line_count": 367,
       "path": "services/trade_profiles.py",
       "reason": "production/build source",
-      "sha256": "e623d0cc00d57b26d1b82af4f54c337d401191739b16fe19f5bb170b4b1bce05",
-      "size_bytes": 14004
+      "sha256": "e1f585ec0f88bd9e2dfb5fd74725f7bfc114346ac8132fe2e414e2140fb2d9df",
+      "size_bytes": 14013
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10683,11 +10875,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 96,
+      "line_count": 97,
       "path": "services/trading_ledger.py",
       "reason": "production/build source",
-      "sha256": "04f63dc65b99b23ca83eb340d6c973bda0d7d51cca9ff29fe6c79939f2b3e3e5",
-      "size_bytes": 3450
+      "sha256": "4ec21e8b382fb9db272d2fd96cebd9c629ed8086f3bb40d5ef7b849fa3007bbe",
+      "size_bytes": 3509
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10710,8 +10902,8 @@
       "line_count": 841,
       "path": "services/user_intelligence.py",
       "reason": "production/build source",
-      "sha256": "39abec9dafe34544c08ad46f9f8d5fe3c774c54c41549ec2cf0b55f2c01ec272",
-      "size_bytes": 33999
+      "sha256": "82fa27e225154ffbfa48a5ab5faef4b5135a492e7cf5a130aa79b26c83d71509",
+      "size_bytes": 33931
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10846,8 +11038,8 @@
       "line_count": 8631,
       "path": "signalrank_telegram/commands.py",
       "reason": "production/build source",
-      "sha256": "8768eedb0d38ed36b5a19fa51df6967379e5ae91b46a24ed48e3fb42e46a2d1d",
-      "size_bytes": 338478
+      "sha256": "046c67e4cb5cc125b1bf3de59703ce5e425da839858a501c1b8d1b03f33d87ef",
+      "size_bytes": 338574
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10971,11 +11163,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 418,
+      "line_count": 420,
       "path": "signalrank_telegram/signal_commands.py",
       "reason": "production/build source",
-      "sha256": "c7aba6f845a6a5537c91ec5ade2b78f8143ce74f01014c6334d2ffde253811db",
-      "size_bytes": 18373
+      "sha256": "a596517e909444714044771eed40444e7a8f593ddf3771a8f8088ddb0aea3b87",
+      "size_bytes": 18460
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11072,6 +11264,30 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "6bc1ae378be645c5280438dfeff9859dcb4b1116b5d97b54813405807ce597b0",
       "size_bytes": 16346
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 4,
+      "path": "staging-bootstrap-trigger/20261002-r44.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "a358860967ccce53bce029f9a339a7c1614b94f6dc3c28c96f719e9e2506c327",
+      "size_bytes": 199
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 5,
+      "path": "staging-bootstrap-trigger/20261002-r45.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "8e6c33bac5be1823e3c3bc5b99460c93f71269d6bd5af38c89ff606c7c6e60c2",
+      "size_bytes": 262
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 5,
+      "path": "staging-bootstrap-trigger/20261002-r46.txt",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "2eee2fca9009644a863d7a58ab04cf713389f029db65497af29cdf485d459c13",
+      "size_bytes": 253
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11894,8 +12110,8 @@
       "line_count": 182,
       "path": "start.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "44fd3d06e28fc6552880c77879f3626ce5f4006c2815a53b0feacbdbeda11635",
-      "size_bytes": 8080
+      "sha256": "bd4e7234d1fe0fecdc517b746aaf16188d85ec5e3200046d0c4e0392af70052c",
+      "size_bytes": 7898
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12067,6 +12283,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 19,
+      "path": "test_pwd.py",
+      "reason": "production/build source",
+      "sha256": "3324a941a609b65953da0b91a47c254b4c1993e2715177182cd1c9c798a0f7ec",
+      "size_bytes": 649
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 737,
       "path": "test_summary.txt",
       "reason": "configuration, data, or product asset retained",
@@ -12110,8 +12334,8 @@
       "line_count": 369,
       "path": "tests/test_20261001_signal_paper_integrity.py",
       "reason": "automated test evidence",
-      "sha256": "c2063762adb118c72ee87caea49f1f6e38917474b9bd3bd859666efea5d45e5e",
-      "size_bytes": 15550
+      "sha256": "bcaeff31bc1a481263c8dfd98e110e736ead4dd677ec70467b09cd2089222d68",
+      "size_bytes": 15580
     },
     {
       "disposition": "TEST_ONLY",
@@ -12227,11 +12451,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 193,
+      "line_count": 204,
       "path": "tests/test_blueprint_certification_safety.py",
       "reason": "automated test evidence",
-      "sha256": "38ad50f6294f1f01b755d864495dfc85df6dcc2f528dab0528ed01417675c665",
-      "size_bytes": 8093
+      "sha256": "02382330d8b7fc06fa558f95ad30d3cb1b4b7f5982a1852ed54a34c023af45ee",
+      "size_bytes": 8600
     },
     {
       "disposition": "TEST_ONLY",
@@ -12267,11 +12491,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 140,
+      "line_count": 145,
       "path": "tests/test_broker_permission_validation.py",
       "reason": "automated test evidence",
-      "sha256": "7a91d229c6705ee0de988e23a9a0fa793efcfb276c4bff5951e9ffea4bb35758",
-      "size_bytes": 4535
+      "sha256": "d3502d13c14ec8623ad73bb2a611daa1c6fa4cc1b76ed0dbb6f3aa104592139d",
+      "size_bytes": 4887
     },
     {
       "disposition": "TEST_ONLY",
@@ -12395,19 +12619,19 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 85,
+      "line_count": 87,
       "path": "tests/test_complete_system_orchestrator_contract.py",
       "reason": "automated test evidence",
-      "sha256": "cef2d7435dd581340f0dc7a8713515b651aa33200a982df5bf22c97d581cb294",
-      "size_bytes": 2829
+      "sha256": "1615f91f7be9be380f1e9a5029b313a5a6bbdffe6213ad65f57bfc271b0f6abb",
+      "size_bytes": 2887
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 99,
+      "line_count": 101,
       "path": "tests/test_completion_evidence_ledger.py",
       "reason": "automated test evidence",
-      "sha256": "3fecd8bb54920c353d180aed45968d6e4b51cbf23a9495bf431bca54aaf5caad",
-      "size_bytes": 3727
+      "sha256": "a1c26d37779ff3e69418cbc2343228af405499b246f8943952541424a92ee0a8",
+      "size_bytes": 3860
     },
     {
       "disposition": "TEST_ONLY",
@@ -12470,8 +12694,8 @@
       "line_count": 232,
       "path": "tests/test_cross_channel_paper_parity.py",
       "reason": "automated test evidence",
-      "sha256": "aac157247bce37da446696b48387ebe0fcfb1f5af8ab2e9c0bd9a4b258bbb20d",
-      "size_bytes": 9960
+      "sha256": "ab3f8843309157521f5e0f9c521c3f070984a0db3cf227d32c9e4acd1690f5a0",
+      "size_bytes": 9969
     },
     {
       "disposition": "TEST_ONLY",
@@ -12566,16 +12790,16 @@
       "line_count": 245,
       "path": "tests/test_deployment_schema_completion_v151.py",
       "reason": "automated test evidence",
-      "sha256": "77e8b35397af53e1ada508b64f7573c7091fb3cce7218c45a750cf783fc524e7",
-      "size_bytes": 10846
+      "sha256": "dfab1286fe2f9e8ca5143ee7ece9968f3c0fe22dcaf8bc6a147d6a39d8fb41f5",
+      "size_bytes": 10882
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 43,
       "path": "tests/test_diagnostics_source_scope.py",
       "reason": "automated test evidence",
-      "sha256": "7419728191f93a3933cbc499fcf32866b608096d44e255c1b9fe65f2673a095f",
-      "size_bytes": 1693
+      "sha256": "700d13efe3ccb19734d90bd0de74d99f906aadb75b8b200fa92e913af7cf4982",
+      "size_bytes": 1720
     },
     {
       "disposition": "TEST_ONLY",
@@ -12611,11 +12835,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 17,
+      "line_count": 26,
       "path": "tests/test_engine_critical_fallbacks_fail_closed.py",
       "reason": "automated test evidence",
-      "sha256": "668c521df1be7f8e2c9914f1851446b42c72058ba0f7fd9b2cca15625d5006e1",
-      "size_bytes": 855
+      "sha256": "1f6329c04f539e26515cb3f119b9523f2df412c0635ff45bd7247af0b76ccb18",
+      "size_bytes": 1391
     },
     {
       "disposition": "TEST_ONLY",
@@ -12646,8 +12870,8 @@
       "line_count": 1021,
       "path": "tests/test_enterprise_features.py",
       "reason": "automated test evidence",
-      "sha256": "00b9281541007cd6164bea622c05083a92b0b60edb3fcdf487b525700c5c76a4",
-      "size_bytes": 48087
+      "sha256": "22403e24e35f90d0547b1f37d7236e734f29cc79df444525ecc6f351de64e0db",
+      "size_bytes": 48106
     },
     {
       "disposition": "TEST_ONLY",
@@ -12734,8 +12958,8 @@
       "line_count": 478,
       "path": "tests/test_final_cross_channel_parity_20260925.py",
       "reason": "automated test evidence",
-      "sha256": "504d9ffef48b00906292c251722bb8aaf5fdd1d49381a238aa4ea15d17c51c33",
-      "size_bytes": 20634
+      "sha256": "3fe5f5684680148f6218bda3c2ef0a20e02bc03b2032766ae60f04a0b3dcb0da",
+      "size_bytes": 20643
     },
     {
       "disposition": "TEST_ONLY",
@@ -12747,11 +12971,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 170,
+      "line_count": 173,
       "path": "tests/test_formatter_delivery_pressure.py",
       "reason": "automated test evidence",
-      "sha256": "a6b82a5e0d5ae4655e9bfc715ce300ed07d417d5226cbaec63d189ecb931fe59",
-      "size_bytes": 6228
+      "sha256": "d135fdd5d09c360486bfc6da18d72b54dd52f7a2fca6ed778aa9d53a810da08c",
+      "size_bytes": 6439
     },
     {
       "disposition": "TEST_ONLY",
@@ -12851,19 +13075,19 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 92,
+      "line_count": 96,
       "path": "tests/test_market_class_certification.py",
       "reason": "automated test evidence",
-      "sha256": "b70c492eeb285313c84a461718a2d4b7257f74974cf088c012cfeee69f604d59",
-      "size_bytes": 2914
+      "sha256": "edacef0c9a0181497f3afb23925cbd5604a44d233c026e75cbcf20d53ceb360e",
+      "size_bytes": 3188
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 98,
+      "line_count": 100,
       "path": "tests/test_market_data_certification.py",
       "reason": "automated test evidence",
-      "sha256": "b6531315f27730db57c278afca8521dee71006a1bbfb41ae635c555d4cd2a0eb",
-      "size_bytes": 4017
+      "sha256": "923c4f1c5f027d12d26686b11e2a124e777a0c74ba94f12b7c2c0adb1508592d",
+      "size_bytes": 4069
     },
     {
       "disposition": "TEST_ONLY",
@@ -12896,6 +13120,30 @@
       "reason": "automated test evidence",
       "sha256": "5e115d68922680d4dafab6040ce79989fda533652a9017d51b3170403007fd71",
       "size_bytes": 2052
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 224,
+      "path": "tests/test_master_directive_p0_regressions.py",
+      "reason": "automated test evidence",
+      "sha256": "956c8343526f07e4c3b41987483009c86283d837453a2df6f34cd3e93ef25b91",
+      "size_bytes": 11549
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 178,
+      "path": "tests/test_master_p0_postgres_integration.py",
+      "reason": "automated test evidence",
+      "sha256": "06a418a9613ae645f17602855482002a235e2f827d4bda71d15f7da9e22b9611",
+      "size_bytes": 9324
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 14,
+      "path": "tests/test_master_requirement_registry.py",
+      "reason": "automated test evidence",
+      "sha256": "cda2abe13c53a85c31c9b60fbf51eaee1cb5bffc75e2f099afad83360562610f",
+      "size_bytes": 784
     },
     {
       "disposition": "TEST_ONLY",
@@ -12942,8 +13190,8 @@
       "line_count": 52,
       "path": "tests/test_missed_entry_nontrade_semantics.py",
       "reason": "automated test evidence",
-      "sha256": "edd6955521f5c337aa924c48ca2a1bf8630ab25dbf027b9b3b15d94937e8e85d",
-      "size_bytes": 2086
+      "sha256": "8d220e3365c18eea4517a7600c622655d5cfab1c0c1fd18ce07d58c1bfce274d",
+      "size_bytes": 2099
     },
     {
       "disposition": "TEST_ONLY",
@@ -13171,6 +13419,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 132,
+      "path": "tests/test_oct1_signal_paper_lifecycle_incident.py",
+      "reason": "automated test evidence",
+      "sha256": "5dfb4b14ec51910a96e03bdaa8ab34649a19f31c97b2da41c2c1c9810ae920f7",
+      "size_bytes": 6069
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 72,
       "path": "tests/test_onchain_providers.py",
       "reason": "automated test evidence",
@@ -13339,11 +13595,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 429,
+      "line_count": 425,
       "path": "tests/test_phase4_pass2_db_priority_and_command_speed.py",
       "reason": "automated test evidence",
-      "sha256": "f823e7455e5dd5ff4280a5a9029455dc520a237bef35f151e27d3d097b1e08bb",
-      "size_bytes": 16192
+      "sha256": "d2b9d8ada90dec330ce721491fbff6d30c321224f65d255c658fdfc223e5617a",
+      "size_bytes": 16597
     },
     {
       "disposition": "TEST_ONLY",
@@ -13358,8 +13614,8 @@
       "line_count": 341,
       "path": "tests/test_phase4_pass4_outcome_tracker_redesign.py",
       "reason": "automated test evidence",
-      "sha256": "9e056b30f6caa199b4d052f959553bd6ed05e701172cccc4ae05d996ef346b52",
-      "size_bytes": 11920
+      "sha256": "640375a647d10035a2fb4b9729cdf78c1f8d5e315b83eb0d404bf44c68e09e4b",
+      "size_bytes": 11938
     },
     {
       "disposition": "TEST_ONLY",
@@ -13443,11 +13699,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 509,
+      "line_count": 518,
       "path": "tests/test_production_endgame_20260725.py",
       "reason": "automated test evidence",
-      "sha256": "b20616e4be99ce5ad7bcd5f59f181f8d66635f26adc5280f9b2f94fe2acefeae",
-      "size_bytes": 19074
+      "sha256": "31d6ea6c982516e2ef9162ff6a41a53435ad550221ffd0be795cfc61ced4f7ce",
+      "size_bytes": 19441
     },
     {
       "disposition": "TEST_ONLY",
@@ -13603,11 +13859,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 247,
+      "line_count": 256,
       "path": "tests/test_railway_runtime_incident_fixes.py",
       "reason": "automated test evidence",
-      "sha256": "0ef013bc263a2d5ef77d92f2b32ebae61b1650054c2fb325908aa7cf94b2c6a1",
-      "size_bytes": 12356
+      "sha256": "2909d9f1be9e7ff03fdc7b444c8a717a148255fe1de39f7986700dfe7fa2555e",
+      "size_bytes": 12892
     },
     {
       "disposition": "TEST_ONLY",
@@ -13619,11 +13875,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 75,
+      "line_count": 76,
       "path": "tests/test_railway_staging_activation_hotfix_20260727.py",
       "reason": "automated test evidence",
-      "sha256": "3571c3f966b48036c405c6c7edf3784d74ce53cadcf430de65e7c1ac8b42c72c",
-      "size_bytes": 3077
+      "sha256": "a89d704b17e1277412f73d3fdd3b9c07b9c8b7e4d6f1f6ad4e1ab1f9f3042dc6",
+      "size_bytes": 3148
     },
     {
       "disposition": "TEST_ONLY",
@@ -13699,11 +13955,27 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 83,
+      "line_count": 62,
+      "path": "tests/test_release_evidence_identity.py",
+      "reason": "automated test evidence",
+      "sha256": "09e110d989e6bbc8a555d92a6f0346742cf29cfc51a83eae17ef489aaf132818",
+      "size_bytes": 3230
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 31,
+      "path": "tests/test_release_manifest_validation.py",
+      "reason": "automated test evidence",
+      "sha256": "998a22137edfd3cbd8d4f07cf237d2c4002432dac771d1e4e89a2a925813869c",
+      "size_bytes": 1019
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 91,
       "path": "tests/test_release_provenance.py",
       "reason": "automated test evidence",
-      "sha256": "bda1b372df2c0d8f75f53a2cc2b7f025bb2db0b2adc97e23f9eab429c9ecb334",
-      "size_bytes": 3677
+      "sha256": "0bdeffdb540613d7984e4317d7e0ed780ca2f07a4e1e04d52fad296491bdbe76",
+      "size_bytes": 4091
     },
     {
       "disposition": "TEST_ONLY",
@@ -13763,11 +14035,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 284,
+      "line_count": 289,
       "path": "tests/test_runtime_hotfix_20260725.py",
       "reason": "automated test evidence",
-      "sha256": "e0f3c43ca56634392f9618d9750684a8bf9b03522169fa8012154e8b092a4e78",
-      "size_bytes": 10174
+      "sha256": "be827988745c8d3b19e9f537ca7ef56091f6c4ffd49bbbb9e90c91967c1316ef",
+      "size_bytes": 10311
     },
     {
       "disposition": "TEST_ONLY",
@@ -13784,6 +14056,14 @@
       "reason": "automated test evidence",
       "sha256": "b5b748596b5ec1a47f178aa61751777f094bd1d42c9048c4970ce54379c925c1",
       "size_bytes": 8249
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 49,
+      "path": "tests/test_runtime_schema_bridge_0048.py",
+      "reason": "automated test evidence",
+      "sha256": "a2e1d5cb77a44f1936025ede1eaaa506d52dcd49e73b0c0fb4fb018ff40ad6f7",
+      "size_bytes": 2075
     },
     {
       "disposition": "TEST_ONLY",
@@ -13926,7 +14206,7 @@
       "line_count": 117,
       "path": "tests/test_staging_backup_restore_drill.py",
       "reason": "automated test evidence",
-      "sha256": "f7532e9c7bb90d10b43e5cd7cdf569d70302d803948cfaa8e47b8ca9a49f552c",
+      "sha256": "a9a962d37e80778193e64bf7efd411bbe1f7a2d1ddc323e587b6e678d90131fa",
       "size_bytes": 5101
     },
     {
@@ -14043,11 +14323,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 94,
+      "line_count": 110,
       "path": "tests/test_time_stop_outcome_persistence.py",
       "reason": "automated test evidence",
-      "sha256": "e362f5e8c096494d26df62308e1e75c06ab1fc8ab1262996252dcff70ca5aeb6",
-      "size_bytes": 3044
+      "sha256": "5c9a9fa7d49d7b7472f6642bb6c6d1429dcf6485dc46c4d91c1a7c6b92c2d461",
+      "size_bytes": 3959
     },
     {
       "disposition": "TEST_ONLY",
@@ -14070,8 +14350,8 @@
       "line_count": 80,
       "path": "tests/test_traceability_completion_boundary.py",
       "reason": "automated test evidence",
-      "sha256": "9841e768cd2ba72f716954caad39097613ae60a264e4a5b6ee74e8910d56fe89",
-      "size_bytes": 3040
+      "sha256": "a6e8e085a15a2bbd927227d67654e2b814ed39b99f5398b6e341ad2d69742416",
+      "size_bytes": 3049
     },
     {
       "disposition": "TEST_ONLY",
@@ -14134,8 +14414,8 @@
       "line_count": 113,
       "path": "tests/test_unified_platform_completion_v150.py",
       "reason": "automated test evidence",
-      "sha256": "f0c2c0761ca75d0b898d7736679a4e585396e3ccb3be6425f03580ce70283e99",
-      "size_bytes": 4108
+      "sha256": "c15929077f74cda65919f97fba1bbfc1709d0d1a825b73f6cca29eee3d7d4cdc",
+      "size_bytes": 4140
     },
     {
       "disposition": "TEST_ONLY",
@@ -14155,27 +14435,27 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 64,
+      "line_count": 65,
       "path": "tests/test_v104_runtime_schema_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "2425f3fc1a50824ed918eb927d86fdf1b23e4e214cc37725aa0a13883551b01c",
-      "size_bytes": 2324
+      "sha256": "4174c84b35e7e354075e6a19f55cb6497f0e0a0ed5b6e084b861f2bb3dc43d61",
+      "size_bytes": 2432
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 140,
+      "line_count": 150,
       "path": "tests/test_v105_railway_readiness_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "fb234960ffcb2ba0740279f124e6b59b5ef91a22242f2d4feffb256544c6dc3d",
-      "size_bytes": 5439
+      "sha256": "29f6be20690044143bf2eb720b92549577da76646820c701953770737edba5c8",
+      "size_bytes": 5973
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 99,
       "path": "tests/test_v106_delivery_db_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "4ec0df1455f19b383caa6d7711cb2c38bebed433326618bf3b41a723ad2a65aa",
-      "size_bytes": 3836
+      "sha256": "b1aa166e528d2d6f3ea4a03e489bdc84348eaca811a30f4e85322dc8d86af250",
+      "size_bytes": 3845
     },
     {
       "disposition": "TEST_ONLY",
@@ -14219,27 +14499,27 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 182,
+      "line_count": 183,
       "path": "tests/test_v122_full_system_staging.py",
       "reason": "automated test evidence",
-      "sha256": "8f37e3fdd0947e94f1b7ae351612fa6d0af1cbf05bcb9928a0551f59dbb876aa",
-      "size_bytes": 7379
+      "sha256": "c37db04fad236614d42d8b4e782c43be365fe5556fefde78f33de42986724a21",
+      "size_bytes": 7441
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 120,
       "path": "tests/test_v123_log_driven_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "d724c49ef1d6af16bd17a9d85366c903f40fc001cc6cde57f25e95cfc6734bcc",
+      "sha256": "8dbf0722d8b5f3a9fd7f6b41cb29f917a290c92c4c823de0013bca96e41d59a2",
       "size_bytes": 4237
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 78,
+      "line_count": 85,
       "path": "tests/test_v124_runtime_log_fixes.py",
       "reason": "automated test evidence",
-      "sha256": "758fa8e3b7064c13fa7d2abfa97515a8ef281f9a67fc8d1bda53f1fa9f7d4b56",
-      "size_bytes": 3229
+      "sha256": "7abc3f817f029266e5af009eeca40e56b8f7349d55be68c27b6c6252a79df154",
+      "size_bytes": 3436
     },
     {
       "disposition": "TEST_ONLY",
@@ -14286,24 +14566,24 @@
       "line_count": 181,
       "path": "tests/test_v130_production_cutover_outcome_recovery.py",
       "reason": "automated test evidence",
-      "sha256": "451c8cffd87c3dc4682d8fbe06782ee0f34adcbf398826845c8ea668416ac8d9",
-      "size_bytes": 7413
+      "sha256": "237db2a05cb106bda7de57c1bc9f07207abf2bc0a67d97ba73edf917dfabb05e",
+      "size_bytes": 7422
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 356,
       "path": "tests/test_v131_live_financial_activation.py",
       "reason": "automated test evidence",
-      "sha256": "c0d19bec666192b2a6c6b97bc43493656a3f07253a014104e85058ef85b9b653",
-      "size_bytes": 15930
+      "sha256": "791e104209f47cf5d40cedcdb38e82c7f4a66b3fc7a71676bf59e89aaa461f54",
+      "size_bytes": 15939
     },
     {
       "disposition": "TEST_ONLY",
       "line_count": 124,
       "path": "tests/test_v131_notification_delivery_integrity.py",
       "reason": "automated test evidence",
-      "sha256": "a482dadb1ddd8421a8b33664b8c538ee88663ddbfe1ff7ef4cc24bfef74a9c13",
-      "size_bytes": 4654
+      "sha256": "7ad91aeb139db027275b88817a475b56accef0ef47c773fd6391ba85cc89cdb5",
+      "size_bytes": 4664
     },
     {
       "disposition": "TEST_ONLY",
@@ -14331,11 +14611,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 485,
+      "line_count": 494,
       "path": "tests/test_v1365_production_integrity.py",
       "reason": "automated test evidence",
-      "sha256": "d7ea01684405f863d72a85df19ed02a00e3760e8cca46f1a3e56ab49221ce2dd",
-      "size_bytes": 21120
+      "sha256": "11d218b7b09842913ad3cc351489548b380cd7ebd5e67941dcdce38928d96381",
+      "size_bytes": 21409
     },
     {
       "disposition": "TEST_ONLY",
@@ -14363,19 +14643,19 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 112,
+      "line_count": 115,
       "path": "tests/test_v1368_performance_scale_hotfix.py",
       "reason": "automated test evidence",
-      "sha256": "24a7b4fa55ca4f4b1ced28f7ed3b76142757ecb99d6ce2bb2de9da95aaf5bb86",
-      "size_bytes": 5603
+      "sha256": "7e57685741b9ab97b6fb4ab86fa2cfc99b6bf05c0e35e9264cda177527005f81",
+      "size_bytes": 5861
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 141,
+      "line_count": 143,
       "path": "tests/test_v1369_outcome_delivery_recovery.py",
       "reason": "automated test evidence",
-      "sha256": "039584849221836a2ac305e02b2550cc1f8aea7a7b3ac5264222465a5a85767c",
-      "size_bytes": 6609
+      "sha256": "baa6694b2b1ad2c68f3b4197daf6b32c6828c1e0312b561911f85c15d6eb59db",
+      "size_bytes": 6690
     },
     {
       "disposition": "TEST_ONLY",
@@ -14443,11 +14723,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 122,
+      "line_count": 123,
       "path": "tests/test_v7_governance_contract.py",
       "reason": "automated test evidence",
-      "sha256": "703d9fc4f2d64aed0d6bc638045d6dba18315192c6c3eb61952d26174dc9fe7e",
-      "size_bytes": 4744
+      "sha256": "0f548909484464eb78be8b8180dd675b7bfa5dba0a1d3d6e7f8b9be25c292466",
+      "size_bytes": 4808
     },
     {
       "disposition": "TEST_ONLY",
@@ -14494,8 +14774,8 @@
       "line_count": 97,
       "path": "tests/test_web_first_signup_contract.py",
       "reason": "automated test evidence",
-      "sha256": "50f266181b1146c5e6025e73e364a273f35cf800edc897db39917a6d4e7f519f",
-      "size_bytes": 4461
+      "sha256": "1aabc4edb7282b1bd10725387081d3bd8ff7e8cfb17164f65ada230b7a5e94e7",
+      "size_bytes": 4479
     },
     {
       "disposition": "TEST_ONLY",
@@ -14731,19 +15011,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1276,
+      "line_count": 1277,
       "path": "web/app.py",
       "reason": "production/build source",
-      "sha256": "0a836bfa0c57e090b758bb73943b84772cbfde07b76a8f4fa32169c042643d88",
-      "size_bytes": 50744
+      "sha256": "f15c1146c9bd7072cd41a391770d1ef10a4fa42337467047a04b73bd1ac0cc1e",
+      "size_bytes": 50706
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6849,
+      "line_count": 6854,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "c0178e3fa0a88d9cd7aeeecefaf662b44a0dd18d3c5e2edbc1c85e8845d25b49",
-      "size_bytes": 288217
+      "sha256": "e0b9a8b6ac20fac997654a97c74913632e6c8d9fda029419a9a82a12cbfbefa6",
+      "size_bytes": 288495
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14910,8 +15190,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 438,
-    "PRESERVE_BEHAVIOUR": 1114,
-    "TEST_ONLY": 309
+    "DOCUMENTATION_ONLY": 440,
+    "PRESERVE_BEHAVIOUR": 1140,
+    "TEST_ONLY": 316
   }
 }

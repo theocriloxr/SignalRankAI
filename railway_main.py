@@ -2505,6 +2505,48 @@ async def _database_readiness_check() -> dict[str, object]:
                                   AND column_name = 'connection_id'
                             ) AS mt5_executions_connection_id,
                             EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'users'
+                                  AND column_name = 'accepted_terms'
+                            ) AS users_accepted_terms,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'users'
+                                  AND column_name = 'execution_mode'
+                            ) AS users_execution_mode,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signals'
+                                  AND column_name = 'status'
+                            ) AS signals_status,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signals'
+                                  AND column_name = 'trade_profile'
+                            ) AS signals_trade_profile,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signal_deliveries'
+                                  AND column_name = 'sent_ok'
+                            ) AS signal_deliveries_sent_ok,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'signal_deliveries'
+                                  AND column_name = 'generated_at_utc'
+                            ) AS signal_deliveries_generated_at_utc,
+                            EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = current_schema()
+                                  AND table_name = 'outcomes'
+                                  AND column_name = 'canonical_outcome'
+                            ) AS outcomes_canonical_outcome,
+                            EXISTS (
                                 SELECT 1
                                 FROM pg_trigger t
                                 JOIN pg_class c ON c.oid = t.tgrelid
@@ -2577,6 +2619,13 @@ async def _database_readiness_check() -> dict[str, object]:
             "mt5_credentials.password_encrypted_nullable": bool(row.get("mt5_credentials_password_nullable")),
             "broker_executions.connection_id": bool(row.get("broker_executions_connection_id")),
             "mt5_executions.connection_id": bool(row.get("mt5_executions_connection_id")),
+            "users.accepted_terms": bool(row.get("users_accepted_terms")),
+            "users.execution_mode": bool(row.get("users_execution_mode")),
+            "signals.status": bool(row.get("signals_status")),
+            "signals.trade_profile": bool(row.get("signals_trade_profile")),
+            "signal_deliveries.sent_ok": bool(row.get("signal_deliveries_sent_ok")),
+            "signal_deliveries.generated_at_utc": bool(row.get("signal_deliveries_generated_at_utc")),
+            "outcomes.canonical_outcome": bool(row.get("outcomes_canonical_outcome")),
         }
         missing_columns = sorted(name for name, present in column_flags.items() if not present)
         if missing_columns:

@@ -80,8 +80,8 @@ def test_worker_owns_transactional_email_outbox() -> None:
 
 
 def test_web_client_escapes_server_data_and_supports_new_views() -> None:
-    js = (ROOT / "web/platform_app/app.js").read_text()
-    html = (ROOT / "web/platform_app/index.html").read_text()
+    js = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
+    html = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
     assert "const esc=" in js
     for view in ("portfolioView", "performanceView", "supportView"):
         assert view in html

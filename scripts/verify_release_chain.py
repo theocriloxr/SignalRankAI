@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0047_event_outbox")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0048_runtime_schema_bridge")
 
 
 def main() -> int:
@@ -43,6 +43,7 @@ def main() -> int:
         "0046_decision_log",
         "CREATE TABLE IF NOT EXISTS decision_log",
         "0047_event_outbox",
+        "0048_runtime_schema_bridge",
         "CREATE TABLE IF NOT EXISTS event_outbox",
         "ix_event_outbox_claim",
     )

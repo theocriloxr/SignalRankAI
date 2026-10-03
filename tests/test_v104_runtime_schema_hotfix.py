@@ -29,7 +29,8 @@ def _render_upgrade_sql() -> str:
 
 def test_unified_platform_is_the_sole_migration_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0047_event_outbox"]
+    assert script.get_heads() == ["0048_runtime_schema_bridge"]
+    assert script.get_revision("0048_runtime_schema_bridge").down_revision == "0047_event_outbox"
 
 
 def test_clean_upgrade_contains_all_signal_runtime_columns_before_head() -> None:

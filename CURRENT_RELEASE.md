@@ -3,8 +3,8 @@
 ```text
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
-Fingerprint: signalrank-blueprint-0047-event-outbox-20261001
-Repository Alembic head: 0047_event_outbox
+Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
+Repository Alembic head: 0048_runtime_schema_bridge
 Release-candidate branch: implementation-of-master-blueprint
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -22,8 +22,8 @@ The repository schema now extends the previously certified credential-retirement
 chain with:
 
 - `0046_decision_log`: unified decision/rejection evidence;
-- `0047_event_outbox`: durable PostgreSQL fallback for critical events when
-  the Redis transport is unavailable.
+- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;
+- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair.
 
 The current release candidate also includes:
 
@@ -56,6 +56,11 @@ SHA. Required external/runtime evidence includes:
 10. explicit human approval for any controlled live-money pilot.
 
 No successful build or deployment by itself changes this boundary.
+
+The [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0
+corrections, local PostgreSQL evidence, the GitHub billing blocker, active
+branch governance and remaining dependency/runtime certification gaps.
+No local result grants exact-SHA staging or live-money certification.
 
 ## Historical evidence retained
 

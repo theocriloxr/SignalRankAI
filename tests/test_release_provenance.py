@@ -29,6 +29,14 @@ def test_release_identity_requires_exact_sha():
         provenance.release_identity("abc", BRANCH)
 
 
+def test_platform_markers_are_preserved_without_polluting_versions():
+    components = {item["name"]: item for item in provenance.locked_components()}
+    uvloop = components["uvloop"]
+    assert uvloop["version"] == "0.22.1"
+    assert uvloop["purl"] == "pkg:pypi/uvloop@0.22.1"
+    assert uvloop["properties"] == [{"name": "signalrank:environment-marker", "value": 'sys_platform != "win32"'}]
+
+
 def test_sbom_and_provenance_are_deterministic(tmp_path: Path):
     first = tmp_path / "first"
     second = tmp_path / "second"
@@ -47,7 +55,7 @@ def test_provenance_binds_current_release_lock_and_dockerfile(tmp_path: Path):
 
     assert report["release"]["git_commit"] == COMMIT
     assert report["release"]["git_branch"] == BRANCH
-    assert report["release"]["alembic_head"] == "0047_event_outbox"
+    assert report["release"]["alembic_head"] == "0048_runtime_schema_bridge"
     assert report["inputs"]["requirements.lock"]["sha256"] == provenance.sha256_file(
         provenance.LOCK
     )

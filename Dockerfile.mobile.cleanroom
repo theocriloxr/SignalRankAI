@@ -4,8 +4,10 @@ WORKDIR /app/mobile
 COPY mobile/package.json mobile/package-lock.json ./
 RUN npm ci
 COPY mobile ./
-RUN npm run typecheck \
-    && npm audit --audit-level=high \
+COPY scripts/npm_audit_gate.mjs /app/scripts/npm_audit_gate.mjs
+RUN echo "security-audit-refresh=2026-10-03-r1" \
+    && npm run typecheck \
+    && node /app/scripts/npm_audit_gate.mjs --project mobile \
     && npx expo export --platform android --output-dir dist-android \
     && npx expo export --platform ios --output-dir dist-ios
 CMD ["node","-e","console.log('SIGNALRANK_MOBILE_CLEANROOM_PASS'); setInterval(()=>{}, 60000)"]

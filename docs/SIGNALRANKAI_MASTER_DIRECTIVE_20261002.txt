@@ -1,0 +1,646 @@
+SIGNALRANKAI
+Exhaustive Completion, Audit &
+Live-Trading Readiness Master Directive
+A single implementation brief for the AI/engineering agent to continue auditing, building, testing, correcting, re-auditing and expanding until nothing material remains to add.
+TARGET BRANCH: implementation-of-master-blueprint. Work on this branch unless an immutable release-candidate branch is deliberately created from it for certification. Never silently switch to an older or abandoned branch.
+
+FINAL RULE: Do not declare the project complete because code compiles, Railway deploys, a ledger says VERIFIED, or a single cleanroom passes. Completion requires source, tests, exact-SHA staging evidence, runtime evidence, broker/demo evidence, data-quality evidence, security evidence, restore evidence, and a stable soak with no unresolved P0/P1 issues.
+
+LIVE-TRADING MEANING: A future “YES” means the software, infrastructure, data, broker, accounting and release controls are technically ready for a tightly controlled live pilot. It can never mean profit is guaranteed, losses are impossible, or a >70% win rate is guaranteed.
+
+Prepared: 02 October 2026 • Based on the latest implementation/audit work and observed production Telegram/runtime behavior
+ 
+1. Master instruction to the implementing AI
+Treat this document as the controlling completion directive for SignalRankAI. Your job is not to implement only the items explicitly listed here. Your job is to implement these items, independently audit the repository and runtime for anything omitted, add every justified missing requirement, implement those additions, test them, re-audit, and repeat until two consecutive full-system audits produce no new material engineering, safety, product, security, data, ML, broker, UX, release or operational gaps.
+1.1 Non-stop audit/implementation loop
+1. Inventory the exact current branch head, merge ancestry, active Railway services, environments, data stores, domains, variables, migrations and release artifacts. Never rely on a previous SHA as current evidence.
+2. Build or refresh a machine-readable requirement registry that maps every product requirement to code, tests, runtime evidence and current status.
+3. Implement the highest-severity unresolved requirements first, preserving fail-closed safety and existing verified behavior.
+4. Run deterministic local/cleanroom CI, static/security scans, backend tests, frontend build, mobile build and migration-chain checks on one immutable SHA.
+5. Deploy that same immutable SHA to isolated staging with separate persistent PostgreSQL/Redis and execution/payout switches disabled.
+6. Run behavioral certification: market data, Telegram/web parity, paper trading, lifecycle/outcome tracking, broker demo, queues, retries, idempotency, crash recovery, backup/restore and failure injection.
+7. Run a 24–72 hour staging soak on the exact SHA. Any source change invalidates the soak and starts a new candidate.
+8. Re-audit repository code, tests, logs, metrics, UX, security, dependencies, TODO/FIXME/dead code, stale documentation, legacy modules and external configuration. Add any new work discovered.
+9. Repeat implementation + certification until the audit delta is empty twice in succession and all mandatory gates are green.
+10. Only then prepare a controlled production canary and a tiny manual live-money pilot with automatic/copy/prop execution still disabled until separately authorized and certified.
+1.2 Completion claims are evidence claims
+Status	Allowed meaning
+IMPLEMENTED_VERIFIED	Code exists, relevant tests pass, exact-SHA runtime/staging evidence exists, and observed behavior matches the requirement.
+IMPLEMENTED_UNVERIFIED	Code exists but exact-SHA test/runtime evidence is incomplete. Must not be counted as done.
+PARTIAL	Some code/evidence exists, but important subrequirements remain.
+BLOCKED_EXTERNAL	The implementation is ready but an external account/provider/platform action is genuinely unavailable to the agent. State the exact action required.
+FAILED	The requirement currently fails and is a release blocker.
+DEFERRED	Only allowed for explicitly out-of-scope future features that do not affect current safety, parity, correctness or release readiness.
+NOT_APPLICABLE	Must include a rationale and cannot hide a missing requirement.
+
+1.3 Forbidden shortcuts
+☐ Do not lower ML/risk/quality thresholds merely to increase signal frequency or satisfy a daily-signal target.
+☐ Do not fabricate signals, outcomes, fills, prices, provider health, calibration, win rate or test evidence.
+☐ Do not mark a requirement VERIFIED because a runbook, placeholder, wrapper, scaffold or checklist exists.
+☐ Do not enable real, automatic, copy, prop or payout execution during certification unless the user explicitly authorizes a controlled pilot after all gates are green.
+☐ Do not treat recovery/starvation signals as equivalent to champion-approved live signals. They require a separately labeled cohort and certification.
+☐ Do not blend paper, shadow, replay, legacy archive and live-delivery outcomes into one misleading performance number.
+☐ Do not let stale, synthetic, ambiguous, ghost-priced or uncertified data become execution-authoritative.
+☐ Do not silence security scanners broadly to make CI green. Fix true issues and narrowly justify known false positives.
+☐ Do not perform network/provider/ML work while holding database transactions open.
+☐ Do not permit a process to report healthy/ready while a required dependency or schema/provenance gate is broken.
+☐ Do not reuse certification evidence from an older SHA after any source/config/migration change that affects the release candidate.
+2. Current known baseline and evidence boundary
+The implementation history has already corrected substantial issues: canonical release manifests, cleanroom certification services, web fan-out ORM materialization, durable event outbox work, database transaction budgets, Telegram queue/handler latency separation, Next.js product shell, API-key secret-boundary hardening, pinned staging identity, static/security cleanrooms, persistent staging PostgreSQL/Redis volumes, and exact-SHA cleanroom passes on earlier candidates. However, the branch has continued to evolve after some of those passes. Therefore, no older cleanroom, staging or production evidence may automatically certify the current branch head.
+Known area	Last-known state / directive
+Target branch	implementation-of-master-blueprint
+Production runtime	Keep existing production isolated from ongoing release-candidate work until staging certification succeeds.
+Execution posture	Real/auto/copy/prop execution and real payouts must remain fail-closed during implementation and staging.
+Staging topology	Isolated staging project exists with separate frontdoor, engine, delivery, analytics, PostgreSQL and Redis. Persistent volumes were attached to staging PostgreSQL and Redis.
+CI/cleanroom	Backend, frontend, mobile and static/security cleanrooms have reached green on prior exact SHAs; re-run on the final current SHA.
+Schema	Current intended repository head is 0047_event_outbox or later if further migrations are added. Always compute actual current Alembic head; never hard-code historical 0045/0046 assumptions.
+Production Postgres	Previously observed near 90% of a 5-GB volume. Re-check current headroom and expand/retention-plan before production migration/cutover.
+Market-data/runtime	Production previously showed stale FX/index/commodity/crypto data and long DB session holds. These require fresh exact-SHA verification after fixes.
+ML	Champion/challenger was correctly fail-closed in prior evidence; drift and limited forward live-delivery evidence remained. Re-certify by segment.
+Web frontend	Default Next.js starter was replaced, but full feature parity, route-specific live data, auth flows and E2E must be certified.
+GitHub protection	Historically main/staging protection was not enabled. Re-check and enforce rulesets/required checks externally if not controllable from the connected tool.
+
+IMPORTANT: The AI must begin by re-reading the current exact branch head and runtime. This document is a requirements and audit directive, not a substitute for current evidence.
+
+ 
+3. P0 signal integrity, lifecycle, paper-trading and outcome defects
+The Telegram messages supplied on 01 October 2026 expose several state-integrity failures that must be treated as P0 because they can make a signal appear profitable, active, stale, expired or missed using mutually inconsistent facts. These must be reproduced in tests and fixed before any live-trading verdict can be YES.
+ID	Problem	Required resolution
+P0-SIG-001	US30 canonical price mutation / lifecycle inconsistency	Original VIP signal shows entry 50,686.17 and stop 50,877.72. Later TP1 notification for the same signal ID shows entry 51,321.24 and stop 51,484.80. A single signal ID must never silently mutate canonical entry/SL/TP values. Separate observed market price from planned levels and preserve immutable signal-plan fields.
+P0-SIG-002	Immediate “signal stale” paper rejection followed by entry trigger	US30 paper trade was rejected as stale at 15:15, then the same signal became entry-triggered at 15:16. Staleness, actionability, entry-trigger logic and paper-open logic are racing or using different clocks/evidence. One canonical actionability evaluator must gate both.
+P0-SIG-003	TP1 false/contradictory evidence	JNJ SHORT has entry 262.2601 and TP1 260.8439, but the TP1 alert at 20:02 states current price 262.45 and +0.54%. For a short, 262.45 is above entry and far above TP1. Outcome tracking must never declare a TP from incompatible price evidence.
+P0-SIG-004	Missed-entry signal assigned -3.69R	BAC expired with “Entry Not Triggered” yet the outcome reports -3.69R. If the entry never triggered, trading R/P&L must be N/A/0 according to an explicit missed-entry accounting policy, not a losing trade.
+P0-SIG-005	Duplicate terminal notifications	US30 “Signal Expired” was sent more than once after prior activity/TP/risk-free updates. Terminal-state transitions and notifications require idempotency keys and a single legal terminal transition.
+P0-SIG-006	Paper trades repeatedly not opening	US30 rejected as stale; JNJ/BAC rejected for profile preference mismatch; BAC rejection duplicated. Verify owner/user paper settings, matching rules, default profile behavior, signal eligibility and notification idempotency so eligible delivered signals automatically open exactly once when paper auto-open is enabled.
+P0-SIG-007	Delivered signal missing from /signals	JNJ was delivered and entry-triggered, but /signals displayed US30 only. Later BAC appeared while JNJ remained omitted. Delivered/active list must be derived from canonical delivery + lifecycle state, not an inconsistent cache or paper eligibility state.
+P0-SIG-008	Engine pulse accounting gap	Pulse reports 5 decision rows, 3 accounted, 2 unaccounted. Every decision row must terminate in an auditable generated/delivered/rejected/deferred/failed reason. Unaccounted must be zero or a release alert.
+P0-SIG-009	Recovery-signal semantics	US30/JNJ/BAC were explicitly “PAPER ONLY — serving-model recovery signal” while raw model scores were below the certified 84% cutoff. Recovery signals must remain a separate cohort, owner/paper/demo-only by default, with separate outcome statistics and never contaminate champion performance.
+P0-SIG-010	Expiry vs active/risk-free state	US30 became active and reached a risk-free update, then later expired as “setup no longer actionable.” Define whether an active triggered trade can expire; usually expiry applies only before entry. After entry, lifecycle should move through ACTIVE/TP/SL/CLOSED, not pre-entry EXPIRED.
+
+3.1 Required canonical signal state machine
+Implement or verify one authoritative state machine, with database constraints or transition guards, that all Telegram, web, paper, outcome and broker flows consume. Suggested states may be adapted, but illegal transitions must be impossible.
+Phase	Legal examples	Forbidden examples
+Candidate	SCANNED → STRICT_CANDIDATE → ML_REJECTED / RISK_REJECTED / APPROVED	Rejected candidate becoming delivered without a new decision event.
+Approved/pre-entry	APPROVED → DELIVERED → WAITING_ENTRY → ENTRY_TRIGGERED or EXPIRED/MISSED_ENTRY	EXPIRED then ENTRY_TRIGGERED; mutable canonical entry/SL/TP.
+Triggered	ENTRY_TRIGGERED → ACTIVE → TP1/TP2/TP3/SL/BE/CLOSED	ACTIVE → pre-entry EXPIRED; TP hit without price crossing target in direction.
+Paper execution	ELIGIBLE → PAPER_OPEN_PENDING → PAPER_OPENED → PAPER_CLOSED or PAPER_REJECTED(reason)	Duplicate opens; “profile mismatch” without explaining which preference mismatched.
+Broker execution	ELIGIBLE → ORDER_SUBMITTING → ACKNOWLEDGED → FILLED/PARTIAL/REJECTED → RECONCILED	Assuming fill because API request returned 200; no reconciliation receipt.
+Terminal	MISSED_ENTRY, PREENTRY_EXPIRED, SL, BE, TP1_PARTIAL, TP2_PARTIAL, TP3/CLOSED, MANUAL_CLOSE, CANCELLED	Multiple incompatible terminal outcomes for same canonical lifecycle version.
+
+3.2 Canonical immutable plan vs observations
+☐ Persist immutable plan version: signal_id, plan_version, asset identity, side, timeframe, strategy, created_at, entry zone/trigger rule, stop, targets, risk assumptions, expiry rule, provider lineage and release/model IDs.
+☐ Persist observations separately: observed price, provider, observed_at, event type, confidence/freshness, raw payload hash.
+☐ Every lifecycle transition stores evidence IDs and the exact observation that caused the transition.
+☐ Notifications render from the canonical plan + the transition observation; they must never recompute entry/stop/targets from a new price snapshot.
+☐ If a plan is amended, create a new version with an explicit amendment event; never mutate history silently.
+☐ Outcome R uses actual triggered entry/fill basis according to policy; missed entries have no trade P&L.
+☐ All clocks use UTC internally; WAT/localized times are display-only. Expiry comparisons use one canonical server time source.
+3.3 Paper trading acceptance policy
+☐ Create a paper eligibility decision object with explicit fields: enabled, account/profile, asset class allowed, symbols allowed/denied, timeframe allowed, recovery-signal policy, max open positions, risk budget, stale/actionable result, duplicate result and final reason code.
+☐ Default owner demo profile should not silently reject equities/indices if the product claims multi-asset paper support. If a preference intentionally rejects a signal, Telegram/web must show exactly which setting caused it and provide a one-click route to change it.
+☐ Auto-open only after entry trigger if that is the product policy; otherwise clearly distinguish “queued paper intent” from an opened paper position.
+☐ Use a unique key such as (paper_account_id, signal_id, plan_version) to guarantee exactly-once opening.
+☐ Duplicate “Paper Trade Not Opened” messages are prohibited; notification event idempotency is required.
+☐ Paper fills must use realistic spread/slippage/lot-step/tick-size/market-session rules per asset class. Do not assume crypto-style sizing for US30/JNJ/BAC.
+☐ Paper ledger, position ledger and outcome ledger must reconcile after restart and be reconstructible from durable events.
+ 
+4. Decision accounting, delivery parity and recipient truth
+4.1 Zero unaccounted decisions
+☐ Every engine decision row receives a terminal decision_status and reason_code.
+☐ Engine pulse “Accounted” must equal evaluated decisions; “Unaccounted” must be zero in normal operation.
+☐ If a decision is interrupted by process crash, a recovery worker must finalize it as deferred/failed with an explicit reason, then retry if safe.
+☐ Build an invariant check and alert: evaluated = generated + all rejection buckets + deferred + failed.
+☐ Expose funnel counts by asset class, timeframe, strategy, provider, regime and model cohort.
+☐ Ensure “generated in latest cycle” and “generated in trailing hour” use clearly labeled windows so the pulse cannot look contradictory.
+4.2 One delivery truth across Telegram and web
+☐ Telegram and web must read the same canonical delivered-signal set and lifecycle status.
+☐ /signals and web /app/signals must include all confirmed recipient deliveries that remain active/actionable according to lifecycle, regardless of paper-open preference.
+☐ Delivery eligibility and paper eligibility are separate decisions. A paper preference mismatch must not hide a delivered signal.
+☐ Every channel stores receipt_id, channel, user, signal_id, sent_at, confirmed_at if available, latency, failure reason, retry count and terminal delivery status.
+☐ Web fan-out must continue materializing ORM data inside active sessions and must have a real PostgreSQL regression test for detached/expired rows.
+☐ Delivery retry is idempotent; dead-letter queues are observable; duplicate user-facing messages are prevented by notification idempotency keys.
+☐ Reconcile Telegram delivery counts, web notification counts, recipient entitlements and /signals list membership continuously.
+4.3 Notification lifecycle correctness
+☐ Notification templates are generated only after state transition commit or via a transactional outbox tied to that commit.
+☐ Risk-free/breakeven messages require a valid active position and a price path that actually reached the configured threshold.
+☐ TP alerts require target crossing or fill evidence appropriate to the asset and side; never infer TP from unrelated current/stored values.
+☐ Expired/missed-entry notifications cannot fire after entry-triggered/active unless there is a distinct “order intent expired before fill” state.
+☐ Terminal notifications are exactly-once per user/channel/event version.
+☐ All replies/references resolve to full signal IDs, not ambiguous shortened IDs.
+ 
+5. Market data, instrument identity and provider certification
+The system has correctly rejected stale data in prior production observations; preserve that fail-closed behavior. The goal is not to make stale warnings disappear by weakening limits, but to make certified fresh feeds available for each enabled asset class.
+5.1 Provider matrix by asset class
+Asset class	Execution-authoritative requirements	Fallback policy
+Crypto	Certified exchange/aggregator OHLCV + quote, symbol/venue identity, clock/freshness, tick/lot metadata.	Fallback may support research only unless independently certified for execution-sensitive decisions.
+FX	Broker-grade or certified FX feed with session/calendar, quote freshness, spreads and symbol mapping.	Do not rely on Yahoo/yfinance as execution-authoritative primary feed.
+Indices	Broker/provider feed matching the actual index/CFD instrument identity and session.	Legacy Yahoo may be analysis-only if explicitly labeled and never used for entries/execution.
+Equities	Exchange/market-data source with market hours, corporate actions, splits and symbol metadata.	Delayed data must be labeled and blocked from time-sensitive signal execution.
+Commodities	Certified underlying/CFD/futures source with contract identity, session and roll logic.	Do not mix spot/futures/CFD prices under one symbol without explicit normalization.
+
+5.2 Mandatory data-quality gates
+☐ Freshness thresholds by timeframe and provider capability; source timestamp and receive timestamp both recorded.
+☐ Ghost-price / plausible-range checks by instrument using dynamic reference bands rather than brittle hard-coded values.
+☐ OHLC consistency: low <= open/close <= high; nonzero/valid price; monotonic timestamps; expected interval continuity.
+☐ Cross-provider sanity for execution-sensitive quotes when practical; record disagreement and fail closed beyond tolerance.
+☐ Symbol alias registry with canonical instrument ID. Eliminate synthetic leakage such as malformed symbols that produce zero data.
+☐ Market calendar/session gate: stocks, indices, futures/commodities only trade when the selected instrument/venue is actually open or the strategy explicitly supports extended hours.
+☐ Provider health is capability-specific. “Provider healthy” for crypto does not prove it is healthy for indices/commodities.
+☐ Provider certification artifacts must include tested symbols, timeframes, timestamps, freshness distribution, missing-candle rate, error rate, latency, fallback use and exact release SHA.
+5.3 Class-fair opportunity scheduling
+☐ Preserve persistent round-robin/interleaving across open asset classes, not a crypto-first list truncated by cycle caps.
+☐ Guarantee each enabled/open asset class receives bounded scan opportunities even under a large crypto universe.
+☐ Weight by market-open state, data-provider health, user demand, historical opportunity density and compute budget without starving low-count classes.
+☐ Expose per-class attempted/scanned/qualified/delivered counts and maximum scan age.
+☐ Add invariant/alert when an enabled open class receives no scan within its SLO.
+ 
+6. ML, calibration, learning and recovery signals
+6.1 Preserve fail-closed champion/challenger governance
+☐ Candidate models must never auto-promote solely because they trained successfully.
+☐ Promotion requires non-inferiority or defined improvement across discrimination, calibration, expectancy and risk metrics on chronological/purged forward-style validation.
+☐ Feature schema hash and training-serving parity are mandatory.
+☐ Model registry must record data window, features, label policy, code SHA, model artifact hash, calibration method, threshold, metrics and authorization.
+☐ Schema-version migration requires explicit authorization and compatibility proof.
+☐ If drift is detected but candidate regresses, keep champion and enter monitor/research mode rather than weakening criteria.
+6.2 Segmented validation
+☐ Report calibration, pass rate, win/loss/partial/missed-entry, expected R, drawdown and coverage by asset class × strategy × timeframe × regime × provider cohort.
+☐ Do not infer broad multi-asset readiness from a few hundred mixed live-delivery rows.
+☐ Use chronological/purged walk-forward validation where overlapping labels/time horizons could leak future information.
+☐ Monitor ECE/Brier/reliability plots, PR-AUC/ROC-AUC where appropriate, positive precision/recall and coverage. A high precision at extremely low recall must be interpreted with signal frequency and evidence size.
+☐ Separate market regime drift from provider/data-pipeline drift and feature-engineering drift.
+6.3 Recovery/starvation cohort
+☐ Recovery/starvation signals are a separate model_policy_cohort with explicit reason, champion raw score, challenger score if any, certified threshold and recovery threshold.
+☐ By default deliver recovery signals only to owner/admin paper/demo/advisory surfaces, never public live execution.
+☐ Calculate recovery-cohort outcomes separately from champion-approved outcomes.
+☐ Do not label a recovery signal “high-conviction” solely from a composite heuristic when the certified model score is well below threshold. UI must explain that it is an experimental recovery observation.
+☐ Require a minimum forward sample, calibration/expectancy evidence and explicit promotion decision before recovery logic can influence live-money execution.
+6.4 Learning from outcomes
+☐ Outcome labels must be lifecycle-correct; missed-entry and no-trade examples are not losing fills.
+☐ TP/SL labels must be supported by canonical price-path evidence and ordered event timestamps.
+☐ Shadow rejects require enough post-decision market data to determine counterfactual outcome without look-ahead leakage.
+☐ Archive/replay/shadow examples receive lower or separate weighting from true forward delivered outcomes.
+☐ Learning jobs cannot run network or heavy ML operations inside DB sessions; use short reads/writes and bounded queues.
+☐ No model training result may overwrite champion artifacts without atomic registry update and rollback capability.
+ 
+7. Paper trading, portfolio accounting and performance truth
+7.1 Transactional paper ledger
+☐ All cash, reserved margin, positions, fills, fees, realized/unrealized P&L and adjustments are durable SQL ledger entries.
+☐ No in-memory-only financial state is authoritative.
+☐ Ledger entries are append-only/immutable where appropriate and idempotent under retries.
+☐ Paper order open/close is transactionally reconciled with position state and signal lifecycle.
+☐ Restart/replay reconstructs the same account balances and positions.
+☐ Concurrency tests cover duplicate opens, simultaneous exits, partial targets and process crashes.
+7.2 Asset-specific sizing
+☐ Risk sizing uses account equity × configured risk percentage divided by monetary loss per unit at stop, not a generic “units” formula.
+☐ For FX use contract size/pip value/quote conversion; for indices use point value/contract specs; for equities use share granularity; for crypto use step/min-notional; for commodities use contract/tick specs.
+☐ Enforce provider/broker lot step, minimum, maximum and margin constraints.
+☐ Paper UI and Telegram make clear whether a displayed size is shares, lots, contracts, units or notional.
+☐ If instrument metadata is missing, do not suggest a precise live size; return “cannot size safely” with reason.
+7.3 Performance reporting
+☐ Separate forward delivered, paper executed, shadow, replay/backtest and legacy archive performance.
+☐ Do not count missed entries as executed wins/losses.
+☐ Show sample size, confidence interval/uncertainty, expectancy, average R, profit factor, max drawdown, win/loss/BE/partial/missed-entry rates and coverage.
+☐ Outcome coverage must approach 100% for eligible delivered signals; unresolved/stale outcomes are an SLO.
+☐ Performance must be reproducible from canonical ledgers and outcome events.
+ 
+8. Broker/demo/live execution architecture
+8.1 Broker connection and demo certification
+☐ Broker credentials are encrypted/secret-managed, never logged, never stored in Telegram chat, and withdrawal permissions are unnecessary/prohibited.
+☐ Connection wizard validates account type, currency, leverage where relevant, server/venue, symbol mapping, quote access and trading permissions.
+☐ Demo certification must test: authenticate, account snapshot, symbol lookup, quote, contract metadata, market/limit order if supported, SL/TP, partial close, full close, cancel, reconnect, duplicate request/idempotency and reconciliation receipts.
+☐ Every broker request has client_order_id/idempotency key and immutable request/response audit metadata excluding secrets.
+☐ Order acknowledgement is not fill. Reconcile actual broker order/fill/position state after timeout/restart.
+☐ If broker/API state is ambiguous, freeze further execution for that order/account and reconcile before new risk is added.
+8.2 Live eligibility gates
+☐ Exact release SHA certified and provenance endpoint matches deployed SHA/image/schema.
+☐ Provider feed certified for that exact instrument/asset class and currently fresh.
+☐ Broker demo certification current for the same adapter/account capability set.
+☐ Global and account-level kill switches functional and drill-tested.
+☐ Portfolio daily-loss, max-open-risk, per-symbol, per-class, correlation/concentration and news/session limits configured.
+☐ No unresolved delivery/outcome/reconciliation queue backlog.
+☐ No active critical security, DB, provider, model-drift or stale-data incident.
+☐ User explicitly enables a controlled pilot after reviewing limits; automatic/copy/prop features remain separately gated.
+8.3 Controlled live pilot
+☐ Start with tiny manual-money exposure and one broker/account; do not jump directly to prop capital.
+☐ Keep auto execution off initially. Use SignalRank as decision support and manually verify broker quote, spread, market session, news, entry, SL and TP.
+☐ Exclude recovery signals from initial live pilot.
+☐ Set hard daily loss, max concurrent risk, max order count and max notional/contract limits that cannot be bypassed by UI.
+☐ Require canary period and explicit post-trade reconciliation. Any mismatch pauses the pilot automatically.
+☐ Advance automation only after separate forward evidence and execution-reconciliation evidence.
+ 
+9. Database, event durability and concurrency
+9.1 Database session SLO
+☐ No provider network call, broker call, AI/LLM call, sleep, heavy feature computation or long loop while an SQLAlchemy session/transaction is open.
+☐ Adaptive candle persistence is batch-buffered and wall-clock bounded; dropped/deferred noncritical evidence is visible and replayable where required.
+☐ Critical decision/signal/financial writes use short prioritized transactions with explicit timeouts.
+☐ Observe session-hold duration by label and priority; alert on p95/p99 and critical holds beyond target.
+☐ Analytics/training workloads are isolated from trading-critical DB pools/roles where practical.
+☐ Use proper indexes, query plans and retention/partitioning for large decision, candle, event and outcome tables.
+9.2 Production storage headroom
+☐ Re-check production PostgreSQL volume utilization before any migration or increased telemetry rollout.
+☐ Expand production storage if headroom is below policy; recommended alert thresholds 60/75/85% with action runbooks.
+☐ Report per-table/index growth and retention policy for candles, decisions, rejected/shadow events, logs and delivery/outcome evidence.
+☐ Vacuum/analyze/bloat monitoring must be operational.
+☐ Backup retention and restore capacity must account for the expanded schema/data volume.
+9.3 Durable event/outbox
+☐ Critical events use Redis-first plus PostgreSQL transactional outbox fallback or an equivalently durable design.
+☐ Outbox insert is tied to the authoritative DB transition where possible; no gap between state commit and event persistence.
+☐ Claim uses short transactions / SKIP LOCKED; network publish happens after claim transaction.
+☐ Retry uses bounded backoff, attempt counters, dead-letter state and metrics.
+☐ After Redis recovery, worker replays exactly once semantically using idempotency/inbox protection.
+☐ Health/readiness must not report healthy merely because an in-memory fallback exists.
+ 
+10. Telegram, web, mobile and product parity
+10.1 Telegram
+☐ Webhook HTTP acknowledgement must be fast and separate from async queue delay and handler duration SLOs.
+☐ Commands are idempotent and do not block the webhook on network/DB-heavy work.
+☐ /signals, /signal, paper controls, watchlists, alerts, settings and account actions resolve to canonical platform APIs/state.
+☐ /apikey never creates or reveals a persistent secret in chat. Telegram may show metadata and direct the user to authenticated web settings.
+☐ Reply buttons and callbacks carry stable IDs and reject stale/ambiguous actions safely.
+☐ Duplicate lifecycle/paper rejection messages are prevented.
+10.2 Web product
+☐ Complete public routes: home, pricing, methodology, risk, security, status, docs and providers with production content, accessibility and responsive design.
+☐ Complete authenticated routes: overview, signals, signal detail/evidence, markets, research, watchlists, alerts, notifications, paper, portfolio, performance, journal, brokers, billing, referrals, support, settings, developer/API, and owner operations.
+☐ No production hard-coded localhost API base. Same-origin or environment-configured API only.
+☐ Authentication, session expiry, MFA/recent-auth for sensitive actions, API-key one-time reveal, device/session management and logout are complete.
+☐ Signal detail visually distinguishes plan, observations, model cohort, delivery receipts, paper state, lifecycle transitions and outcome evidence.
+☐ Owner operations shows provider health, queue depth/age, DB saturation, model/drift state, release SHA/schema, dead letters, backup status and execution switches.
+☐ Use Playwright E2E and axe accessibility tests for critical flows and mobile breakpoints.
+10.3 Mobile
+☐ Native Android/iOS build/type/security gates pass from lockfile.
+☐ Mobile consumes canonical API contracts rather than duplicating business logic.
+☐ Critical UX supports signal viewing, alerts, watchlists, paper state, broker status and account/security workflows as intended by product scope.
+☐ Push notification tokens, deep links and auth/session lifecycle are secure and idempotent.
+☐ No web-export requirement unless the project intentionally supports Expo web; Next.js remains the primary web client.
+ 
+11. Security, authentication and secrets
+11.1 Security gates
+☐ Ruff, critical Pyright, Bandit, pip-audit, Semgrep and ShellCheck are hard release gates with explicit severity policy.
+☐ Semgrep scans runtime code comprehensively; migrations are covered by migration/schema certification. Narrow false-positive exclusions only.
+☐ Frontend/mobile npm audit gates block high/critical vulnerabilities unless an explicit reviewed exception exists.
+☐ Generate SBOM and image/dependency provenance for the release artifact.
+☐ Runtime image is minimal, non-root, multi-stage; compilers/git/build tools remain builder-only unless runtime truly needs them.
+☐ Container/image scan must be added if available and high/critical findings resolved before production.
+11.2 Auth/session controls
+☐ Password/session/MFA flows are rate-limited and auditable.
+☐ Sensitive operations (API key creation, broker credential changes, execution enablement, payouts, MFA changes) require recent authentication and MFA when configured.
+☐ Session inactivity/absolute expiry and revocation are enforced server-side.
+☐ CSRF/session-cookie/security headers/CORS are correctly configured for the deployment model.
+☐ No secret values or secret-source aliases appear in logs, diagnostics, error messages, analytics or client bundles.
+☐ API keys are hashed at rest, scoped, expiring, revocable, last-used tracked; raw secret shown only once in authenticated web flow.
+☐ Broker secrets and API keys are never entered through or echoed by Telegram.
+11.3 Config alias safety
+☐ Canonical environment variables have documented aliases, precedence and deprecation timeline.
+☐ True boolean aliases with contradictory values fail closed in staging/production.
+☐ Separate safety layers (e.g., AUTO_EXECUTION_ENABLED vs AUTO_TRADE_ENABLED) are not misclassified as aliases; validate dependency invariants instead.
+☐ Secret aliases may coexist for rotation but must not be logged/compared in a way that leaks values.
+☐ Emit a sanitized configuration fingerprint with no secrets to prove deployed roles share the intended release profile.
+ 
+12. CI, release manifest, Docker, provenance and branch governance
+12.1 One executable source of release truth
+☐ certification/release_manifest.yaml (or successor) is the canonical gate registry.
+☐ GitHub CI, cleanroom Docker, staging certification and production release tooling consume that manifest rather than re-declaring divergent commands.
+☐ Every required command exists and runs. Missing scripts in a manifest are a failing gate, not documentation debt.
+☐ Release manifest validates unique gate IDs, environments, commands and manual-gate semantics.
+☐ Python 3.11 production-lock path is canonical; Python 3.12 compatibility may be tested but does not replace the production dependency lock unless intentionally promoted.
+12.2 Exact-SHA evidence
+☐ Each evidence artifact names git SHA, branch, build/deployment ID, schema head, model version, environment/project identity and timestamp.
+☐ /version exposes immutable release provenance without secrets.
+☐ /healthz is process liveness only; /readyz validates bounded critical dependencies and returns 503 if not ready.
+☐ Railway expected branch/SHA gates block wrong-source deployments.
+☐ Any source change after certification requires a new SHA and new certification/soak.
+12.3 Branch protection
+☐ Protect main and staging/release branches with required PR review/checks and prevent direct force pushes/deletions.
+☐ Require the canonical CI/cleanroom checks for merges to main.
+☐ Ensure production services source the canonical release branch/immutable image, not an old fix branch.
+☐ Do not repoint production until staging exact-SHA certification is complete.
+12.4 Repository hygiene
+☐ Remove/archive stale generated artifacts such as old Ruff reports after fresh exact-SHA scans prove current status.
+☐ Classify TODO/FIXME/placeholders as active requirement, intentional future work, legacy/dead code or test fixture; no ambiguous TODO remains in active runtime.
+☐ Archive obsolete fix documents and old release instructions into a historical evidence area so operators cannot follow stale steps accidentally.
+☐ Keep historical migrations/evidence intact; do not rewrite history to make current tests pass.
+☐ Reduce giant monolithic modules into domain services where it materially improves testability, ownership, startup isolation and failure containment. Thin wrappers alone do not satisfy decomposition.
+ 
+13. Staging, migration, backup/restore and failure injection
+13.1 Isolated staging requirements
+☐ Separate Railway project/environment identity from production, with separate PostgreSQL, Redis, Telegram/test bot or safe channel, broker demo credentials and payment test mode.
+☐ Persistent volumes attached and verified by actual disk usage/restart persistence.
+☐ Pinned staging identity cannot be spoofed by copying environment overrides into production; exact project ID/profile/override controls must agree.
+☐ All live-money execution/payout variables hard-off in staging. Global kill switch on.
+☐ Frontdoor/migration owner runs guarded migration first; other roles boot only after schema gate passes.
+☐ Every role verifies exact expected SHA, schema head and environment profile.
+13.2 Migration and restore
+☐ Alembic has one head and complete offline-render chain.
+☐ Run upgrade from representative previous production schema to current head on staging copy/fixture.
+☐ Validate decision log, event outbox, paper ledger and critical constraints/indexes after migration.
+☐ Perform backup/restore drill on exact release schema and prove restored application boots/reads/writes safely.
+☐ Production migration requires verified backup evidence and rollback/forward-repair plan.
+☐ Never run production backup policy against isolated staging simply because Railway’s default environment label says “production”; canonical pinned identity decides semantics.
+13.3 Failure injection
+☐ Restart each role during active queues; verify no duplicated deliveries, paper opens or lifecycle transitions.
+☐ Kill Redis; prove critical events persist to DB outbox and replay after recovery.
+☐ Introduce DB saturation/lock contention; critical decisions should remain bounded and noncritical candle/analytics writes should yield/defer safely.
+☐ Feed stale/ghost/malformed provider data; verify no tradable signal can pass.
+☐ Simulate broker timeout/ambiguous acknowledgement; prove reconciliation and duplicate-order protection.
+☐ Send duplicate Telegram webhook/payment events; prove idempotency.
+☐ Crash between state transition and notification; prove transactional outbox recovers without losing or duplicating the event.
+☐ Corrupt/mismatch expected SHA/schema/environment; readiness/release gates must block startup/cutover.
+ 
+14. Observability and operations cockpit
+14.1 Required dashboards/metrics
+☐ Engine funnel: scanned → strategy ideas → strict candidates → model pass → advanced/risk pass → generated → delivered, segmented by class/strategy/timeframe/provider.
+☐ Decision accounting: evaluated, accounted, unaccounted; unaccounted alert > 0.
+☐ Provider: latency, freshness age, missing candles, error rate, fallback rate, symbol mapping failures and health by capability/class.
+☐ DB: pool utilization, wait time, session-hold p95/p99 by label/priority, slow query, deadlocks, disk growth/headroom.
+☐ Queues: depth, oldest age, retries, dead letters, replay rate for delivery, outbox, outcomes, webhooks and paper execution.
+☐ Telegram: HTTP ACK latency, durable enqueue delay, handler duration separately.
+☐ ML: threshold, pass rate, score distribution, drift, calibration, champion/challenger, promotion state and segmented metrics.
+☐ Paper/broker: open positions, reconciliation backlog, orphan orders/positions, duplicate prevention, P&L and risk-at-stop.
+☐ Release: SHA, image, schema head, config fingerprint, service role, environment identity and deployment age.
+☐ Security: auth failures/rate limits, session revocations, sensitive-action recent-auth failures and security scan status.
+14.2 Incident/autopsy tooling
+☐ Given a signal ID, produce one timeline: candidate/decision evidence, provider candles/quotes, model/risk decisions, delivery receipts, entry/price observations, paper/broker state, lifecycle events, notifications and outcome.
+☐ Given a user complaint (“paper trade did not open”), report exact reason code and setting value that blocked it.
+☐ Given an impossible TP/SL/outcome, compare canonical plan to observation evidence and identify the first violating event.
+☐ Owner UI can replay a signal timeline without mutating production state.
+☐ Every P0 incident creates a regression test and is linked in the evidence ledger.
+ 
+15. Payments, subscriptions, entitlements and user profiles
+☐ Entitlements derive from canonical subscription state, not Telegram-specific flags.
+☐ Payment webhooks are signed, idempotent, replay-safe and reconciled to invoices/subscriptions.
+☐ Test and live payment environments never share secrets or webhook endpoints ambiguously.
+☐ Plan changes, expiry, grace period and failed renewals update web/Telegram entitlements consistently.
+☐ Owner/admin override actions are audited and time-bounded where appropriate.
+☐ Paper profile settings are visible/editable on web and Telegram surfaces as intended; rejection reasons identify the exact mismatching preference.
+☐ Unified user identity maps Telegram, web/mobile, subscription, paper account and broker connections without duplicate shadow users.
+ 
+16. Frontend UX completion checklist
+The UI must not only exist; each route must be functional, data-backed, responsive, accessible and consistent with canonical platform state. The AI should independently review every route at desktop, tablet and small-mobile widths.
+Route	Definition of functional completion
+/	Public value proposition, current product safety language, clear CTA, no misleading win-rate guarantee.
+/pricing	Plans/entitlements, billing states, clear live-execution separation.
+/methodology	Signal qualification funnel, model/recovery explanation, no marketing overclaim.
+/risk	Risk disclosures, no-trade behavior, sizing/kill-switch concepts.
+/security	Account/broker/API key security practices.
+/status	Live service/provider/release status from safe public aggregate data.
+/docs	Product/API docs and lifecycle terminology.
+/providers	Provider capability/freshness/source-lineage policy.
+/app	Operational overview, current readiness and no-trade state.
+/app/signals	Delivered/active/history filters with canonical lifecycle.
+/app/signals/:id	Immutable plan + observations + model/risk + delivery + paper/broker + outcome timeline.
+/app/markets	Coverage, sessions, provider health, freshness, instrument metadata.
+/app/research	Research distinct from execution-authoritative signals.
+/app/watchlists	Persistent watchlists across channels.
+/app/alerts	Alert CRUD, status and notification receipts.
+/app/notifications	Notification history, preferences, quiet hours and retry visibility.
+/app/paper	Accounts, settings, eligible/rejected signals, positions, fills, ledger, P&L and reconciliation.
+/app/portfolio	Exposure, correlation/concentration, risk-at-stop, daily loss budget.
+/app/performance	Segmented forward vs paper vs shadow/replay metrics.
+/app/journal	Notes linked to signal/trade lifecycle.
+/app/brokers	Connections, demo certification, account status, reconciliation and execution eligibility.
+/app/billing	Subscription, invoices, receipts, entitlements.
+/app/referrals	Only if in scope; otherwise remove dead navigation.
+/app/support	Support tickets/contact with authenticated context.
+/app/settings	Profile, signal/paper preferences, notification preferences, sessions, MFA, API keys.
+/app/developer	API keys/scopes/docs if developer access is a product feature.
+/app/operations	Owner-only release, provider, DB, queue, ML, incident, outbox, migration and execution control cockpit.
+
+ 
+17. Test strategy and mandatory regression matrix
+17.1 Unit/contract tests
+☐ Lifecycle transition legality and immutable plan values.
+☐ Short/long TP/SL crossing math and R calculations.
+☐ Missed entry => no executed P&L.
+☐ Paper eligibility preference reason codes.
+☐ Exactly-once paper open and notifications.
+☐ Environment identity pinned staging vs real production.
+☐ Execution safety flag invariants and alias conflicts.
+☐ API key secret boundary and recent-auth gate.
+☐ Provider freshness/ghost/symbol/session validation.
+☐ Event outbox enqueue/claim/retry/dead-letter/replay.
+☐ Database transaction timeouts and noncritical yielding.
+☐ Model cohort labeling and recovery restrictions.
+☐ Delivery list parity: delivered active signal appears on Telegram/web regardless of paper eligibility.
+17.2 Integration tests with real PostgreSQL/Redis
+☐ SQLAlchemy session expiry/rollback fan-out regression.
+☐ Concurrent paper open/update/close.
+☐ Outbox survives Redis outage and worker restart.
+☐ Notification idempotency under duplicate events.
+☐ Migration 0047+ against clean DB and representative prior schema.
+☐ Outcome tracker replays stored observations correctly.
+☐ Recipient delivery reconciliation after process crash.
+☐ API/auth session revocation and recent-auth aging.
+☐ Provider cache does not turn stale data into fresh evidence.
+17.3 End-to-end tests
+☐ Web signup/login/MFA → preferences → receive signal → view evidence → paper open → outcome → performance.
+☐ Telegram onboarding/link → receive same signal → /signals parity → /signal details → paper controls.
+☐ Broker demo connect → certification → order lifecycle → restart → reconciliation.
+☐ Payment/subscription → entitlement update across web/Telegram.
+☐ Mobile login → signal deep link → alert → settings/session behavior.
+☐ Owner incident autopsy for a seeded contradictory lifecycle fixture.
+☐ Small-screen responsiveness and accessibility for all critical routes.
+17.4 Explicit regressions for the 01 October message sequence
+☐ US30 fixture: signal plan values remain unchanged from initial delivery through TP/risk-free/close notifications.
+☐ US30 fixture: cannot be “stale” then entry-triggered unless a new explicit lifecycle version/event resolves the stale state.
+☐ JNJ fixture: short TP1 cannot be hit while observed price remains above entry/target.
+☐ BAC fixture: entry not triggered => MISSED_ENTRY/PREENTRY_EXPIRED with no negative executed R.
+☐ BAC fixture: duplicate paper-rejection event emits one user notification.
+☐ JNJ/BAC delivered fixtures appear in /signals if active, even when paper profile rejects them.
+☐ Active triggered trade cannot later transition to pre-entry expiration.
+☐ Engine pulse fixture: unaccounted decisions must equal zero after recovery.
+ 
+18. Live-trading release gates — every item mandatory
+Gate	Mandatory evidence
+G01	Exact release SHA frozen and branch ancestry clean.
+G02	Backend cleanroom green on exact SHA.
+G03	Frontend lint/type/build/audit green on exact SHA.
+G04	Mobile native type/build/audit green on exact SHA.
+G05	Ruff/Pyright/Bandit/pip-audit/Semgrep/ShellCheck/image security gates green.
+G06	Single Alembic head; full release chain renders/applies; schema audit green.
+G07	Deterministic provenance/SBOM generated and self-verifies.
+G08	Isolated persistent staging state stores and exact project identity verified.
+G09	All staging roles run exact SHA and pass source/schema/environment readiness gates.
+G10	Real/auto/copy/prop execution and payouts confirmed disabled in staging and production before canary.
+G11	Backup/restore drill passes on exact release schema.
+G12	Failure-injection suite passes.
+G13	Provider certification passes for every enabled live-money asset class/instrument family.
+G14	No stale/ghost/ambiguous data can become execution-authoritative.
+G15	Decision accounting unaccounted = 0 under normal/soak conditions.
+G16	Paper trading automatically opens eligible signals exactly once and reconciles correctly.
+G17	Lifecycle/outcome regression suite including US30/JNJ/BAC contradictions passes.
+G18	Telegram/web delivered-signal parity passes.
+G19	DB session-hold SLO and pool saturation within limits.
+G20	Queue depth/age/dead-letter SLOs within limits.
+G21	Webhook ACK/queue/handler SLOs within limits.
+G22	Production Postgres has safe storage headroom plus alerts/retention plan.
+G23	ML champion/challenger/drift/calibration gates green; no unsafe auto-promotion.
+G24	Recovery signals remain excluded from live execution unless separately certified.
+G25	Forward evidence by asset class/strategy/timeframe is sufficient for the intended rollout; uncertainty explicitly documented.
+G26	Broker demo full lifecycle/reconciliation certification passes.
+G27	Kill-switch and reconciliation drill passes.
+G28	24–72h exact-SHA staging soak completes with no P0/P1 unresolved incident.
+G29	Main/release branch governance and production source mapping are correct.
+G30	Production canary exact SHA/image passes readiness/provenance/schema/provider/delivery checks.
+G31	User explicitly authorizes tiny controlled live pilot with defined risk limits.
+G32	Initial live pilot excludes automation/recovery signals unless separately approved.
+
+VERDICT POLICY: If any mandatory gate is false, unknown, stale, based on another SHA, or supported only by a document rather than behavior, the live-trading verdict remains NO / NOT YET. There is no partial-credit path to “sure yes.”
+
+ 
+19. Evidence ledger and requirement traceability format
+Maintain a machine-readable registry. Every meaningful requirement in this directive and every new item discovered during audit must have a stable ID. Suggested fields:
+Field	Purpose
+requirement_id	Stable unique ID, e.g. SR-LIFECYCLE-001.
+title	Human-readable requirement.
+source	This directive section, discovered audit, incident, user request or security finding.
+severity	P0/P1/P2/P3 with defined release impact.
+status	IMPLEMENTED_VERIFIED / IMPLEMENTED_UNVERIFIED / PARTIAL / BLOCKED_EXTERNAL / FAILED / etc.
+code_evidence	Files/functions/migrations/commits.
+test_evidence	Exact test names and results.
+runtime_evidence	Deployment ID, SHA, logs/metrics/artifact path.
+staging_evidence	Exact staging deployment + timestamp + result.
+production_evidence	Only after controlled canary/pilot.
+blocker	Exact unresolved condition and owner/action.
+last_verified_sha	Never imply evidence applies after SHA changes.
+last_verified_at	Timestamp/timezone.
+regression_link	Incident/test mapping where applicable.
+
+19.1 Never allow “verified by runbook”
+☐ A runbook proves documentation exists, not that infrastructure exists.
+☐ A config file proves intended configuration, not the active Railway state.
+☐ A test file proves tests exist, not that they passed on the release SHA.
+☐ A deployment success proves build/start, not signal correctness, data freshness, broker fill correctness or profitability.
+☐ A green health endpoint proves only what the endpoint actually checks.
+☐ A historical staging report proves only its named SHA/schema/environment.
+ 
+20. Recursive final audit: the AI must add anything this document missed
+After implementing all explicit work above, perform a fresh independent audit as if this document did not exist. The objective is to discover blind spots. Do not stop because the written checklist has been exhausted.
+20.1 Repository discovery pass
+☐ Search all active code for TODO, FIXME, HACK, XXX, pass, NotImplementedError, placeholder, stub, “not yet implemented”, broad except/pass, disabled security check, hard-coded localhost/test URL, deprecated provider, debug/admin bypass and temporary feature flag.
+☐ Find dead/duplicate modules and determine which runtime path is canonical.
+☐ Inspect the largest modules for hidden second implementations of signals, lifecycle, delivery, outcomes, auth, broker or paper logic that can diverge.
+☐ Check every migration and current schema assumptions for stale head references.
+☐ Check environment-variable usage for undeclared names, conflicting semantics and secret leakage.
+☐ Check all scheduled/background jobs for duplicate ownership across roles.
+☐ Check all retries for idempotency and all queues for dead-letter handling.
+☐ Check all SQL for unsafe interpolation, missing indexes and network work inside sessions.
+☐ Check all provider adapters for stale/synthetic fallback leakage.
+☐ Check all user-facing messages for claims not supported by canonical evidence.
+20.2 Runtime discovery pass
+☐ Inspect current production/staging logs for ERROR/WARN patterns, repeated retries, long DB sessions, stale data, detached sessions, queue delays, reconciliation failures and false-positive SLOs.
+☐ Compare active Railway service source branches/SHAs/configs against intended release topology.
+☐ Check storage, CPU, RAM, restart counts and volume mounts.
+☐ Check Telegram webhook status/pending/error and delivery latency.
+☐ Check provider health by class and current market sessions.
+☐ Check decision funnel, outcome coverage, shadow/recovery metrics and model drift.
+☐ Check paper ledger/reconciliation and any orphan signals/trades.
+☐ Check broker adapter state without placing live orders.
+☐ Check backup recency and restore evidence.
+☐ Check security/auth logs for suspicious failures or configuration gaps.
+20.3 UX/product discovery pass
+☐ Navigate every web route and major mobile screen at common screen sizes.
+☐ Look for dead buttons, placeholder text, inconsistent terminology, inaccessible contrast/focus, overflow, loading/error states, stale data and missing empty states.
+☐ Compare Telegram actions to web/mobile equivalents; document intentional differences only.
+☐ Attempt realistic new-user onboarding, subscription, paper setup, broker demo connection, signal review and support flow.
+☐ Check owner/admin operations are powerful enough to diagnose incidents without shell/DB access where practical.
+20.4 External best-practice pass
+☐ Compare current architecture against current official documentation for Railway/PostgreSQL/Redis/FastAPI/Next.js/Expo/OpenAI/broker/provider SDKs actually used.
+☐ Review dependency advisories and deprecations.
+☐ Review security best practices for session auth, secret storage, webhooks and broker integrations.
+☐ Add justified improvements discovered here to the requirement registry, then implement and certify them.
+20.5 Stop condition
+ONLY STOP WHEN: Two consecutive complete audits on the same immutable release candidate produce no new P0/P1/P2 material requirement, all mandatory release gates are green, all known incidents have regression tests, evidence is exact-SHA and current, staging soak is complete, production canary is clean, and there is no unresolved contradiction between code, tests, docs, UI and runtime behavior.
+
+ 
+21. Final handoff the AI must produce before live pilot
+☐ Exact release SHA, branch and immutable image/artifact digest.
+☐ One-page release verdict with every gate G01–G32 PASS and links/references to evidence.
+☐ Full evidence ledger with no FAILED/PARTIAL/IMPLEMENTED_UNVERIFIED mandatory item.
+☐ Migration/backup/restore report.
+☐ Provider certification report by asset class.
+☐ ML model/calibration/drift/forward-evidence report.
+☐ Paper trading reconciliation report and the seeded US30/JNJ/BAC regression report.
+☐ Telegram/web/mobile parity report.
+☐ Broker demo certification and reconciliation report.
+☐ Security scan/SBOM/dependency report.
+☐ DB/storage/queue/SLO soak report.
+☐ 24–72h staging soak report with exact start/end times and no source changes.
+☐ Production canary checklist and rollback command/procedure.
+☐ Controlled live-pilot risk limits and explicit list of features still disabled.
+☐ Post-pilot observation/reconciliation checklist.
+21.1 Final wording rules
+Do not say “safe for live trading” if what you have proven is only “the software starts” or “paper trading works.” If all mandatory gates truly pass, use precise language such as: “The exact release candidate has passed the defined engineering, data, security, staging, broker-demo and operational readiness gates for a tightly controlled live-money pilot under the specified risk limits. Market losses remain possible and profitability is not guaranteed.”
+ 
+22. Copy/paste master prompt for the coding/audit agent
+Work on the SignalRankAI repository using branch implementation-of-master-blueprint. Treat the attached “SignalRankAI Exhaustive Completion, Audit & Live-Trading Readiness Master Directive” as the controlling requirements specification.
+
+Your assignment is not to implement a finite checklist and stop. You must:
+1) Re-audit the exact current branch and connected runtime first.
+2) Implement every unresolved item in the directive, highest severity first.
+3) Preserve every verified fail-closed safety behavior; never lower quality/ML/risk/data thresholds just to create more signals.
+4) Reproduce and fix the 01-Oct-2026 signal/lifecycle/paper-trading contradictions, especially immutable signal-plan prices, stale-vs-entry races, false TP evidence, missed-entry -R accounting, duplicate terminal notifications, paper auto-open failures, /signals omissions and nonzero unaccounted decisions.
+5) Maintain one canonical signal/lifecycle/delivery/paper/outcome truth shared by Telegram, web and mobile.
+6) Keep real/auto/copy/prop execution and real payouts disabled throughout implementation, cleanroom and staging. Never enable them without explicit user approval after all mandatory gates are green.
+7) Run backend, frontend, mobile and static/security certification on one immutable SHA. Any source change invalidates that SHA’s certification.
+8) Deploy the exact certified SHA to isolated persistent staging, run migrations, backup/restore, provider certification, paper/lifecycle parity, broker demo certification, failure injection and a 24–72 hour soak.
+9) Maintain a machine-readable evidence ledger. Never mark VERIFIED because a file, runbook, scaffold or test exists; VERIFIED requires passing exact-SHA evidence and, where relevant, runtime/staging evidence.
+10) After all written requirements are implemented, perform a fresh independent audit of code, runtime, UX, security, providers, DB, ML, broker, payments, docs, dependencies, TODO/FIXME/placeholders and external best practices. Add every justified missing requirement you discover, implement it, test it, and repeat.
+11) Continue the audit → implement → certify → re-audit loop until two consecutive complete audits produce no new material work and every mandatory live-readiness gate is green.
+12) Do not merge/promote to production or claim a YES live-trading verdict until the exact release candidate has passed all mandatory gates and a controlled production canary. A YES means engineering readiness for a tightly controlled live-money pilot, never guaranteed profit or guaranteed win rate.
+
+Important evidence discipline:
+- Always name exact SHA, deployment ID, schema head, environment/project identity and timestamp.
+- Historical evidence applies only to the SHA/environment it names.
+- A successful Railway deployment is not trading certification.
+- Recovery/starvation signals remain a separate paper/demo/advisory cohort unless independently certified for live use.
+- Missed entries are not losing executed trades.
+- TP/SL/outcome states require canonical price-path evidence.
+- Paper eligibility must not determine whether a delivered active signal appears in /signals.
+- No critical event may be lost because Redis is down; durable outbox/replay and idempotency are mandatory.
+- No network/provider/AI work inside DB transactions.
+- No broad security-scan suppression to achieve a green build.
+
+Do not stop at the last numbered item in the directive. The final task is to find what the directive and previous agents missed. Only stop when there is genuinely nothing material left to add, every required evidence item is current and green, staging soak/canary are clean, and the release verdict can be stated precisely and defensibly.
+22.1 Required progress reporting while the agent works
+☐ After each major batch, report: exact branch/SHA, files changed, tests/gates run, what passed, what failed, new findings and next actions.
+☐ If an external action is impossible through available tools, state the exact UI/API action needed and continue every other possible task instead of stopping.
+☐ When a failure appears, diagnose and fix it before moving on; do not bury failures in an ever-growing backlog.
+☐ If a previous “VERIFIED” claim is contradicted by code/runtime evidence, downgrade it immediately and fix the underlying issue.
+☐ Never ask the user to repeat information already present in the project context or directive.
+ 
+Appendix A. Severity policy
+Severity	Definition	Release effect
+P0	Can create wrong trade state, wrong price/outcome, duplicate financial action, secret exposure, wrong environment, corrupted accounting, unsafe execution, unrecoverable data loss or false live-readiness.	Immediate blocker; fix before any further live certification.
+P1	Major reliability/security/data/provider/broker/parity issue that can materially affect decisions or operations.	Blocks live pilot and normally blocks staging soak completion.
+P2	Important product/UX/observability/maintainability issue that can cause user confusion, operational mistakes or future reliability risk.	Must be resolved unless explicitly justified and proven non-impacting.
+P3	Polish/documentation/low-risk cleanup.	Can be completed before final release; may be deferred only with rationale if truly non-material.
+
+Appendix B. Definition of “nothing left to add”
+“Nothing left to add” does not mean no imaginable future feature exists. It means there is no remaining material requirement for the stated product vision and current release scope: no known correctness, lifecycle, data, ML, security, broker, accounting, parity, UX, observability, infrastructure, deployment, documentation or operational gap that would reasonably block or undermine the controlled live-trading pilot. Future product ideas may remain, but they must be clearly nonessential to correctness/safety and cannot be used to hide unfinished core work.
+Appendix C. Final self-challenge questions
+• Can one signal ID ever display two different canonical entries/stops/targets without an explicit versioned amendment?
+• Can a short TP alert fire when price has not crossed the target?
+• Can a missed entry record a negative executed R?
+• Can an active triggered trade become pre-entry expired?
+• Can a paper preference hide an otherwise active delivered signal from /signals?
+• Can the same paper rejection/terminal event notify twice?
+• Can any engine decision remain unaccounted after recovery?
+• Can stale or analysis-only data become execution-authoritative?
+• Can recovery signals enter live execution without separate certification?
+• Can a Redis outage lose a critical event?
+• Can a DB transaction remain open during network/AI work?
+• Can production be misclassified as staging by copied environment overrides?
+• Can staging be misclassified as production because of a cosmetic Railway environment label?
+• Can a raw API key or broker credential appear in Telegram/logs/client bundles?
+• Can a deployment report healthy/ready with wrong schema/SHA or unavailable required state stores?
+• Can a broker timeout cause a duplicate live order?
+• Can performance blend paper/shadow/replay/live cohorts misleadingly?
+• Can a branch/source change reuse an old soak or certification?
+• Can a runbook or ledger claim VERIFIED without behavior evidence?
+• Can the AI find any TODO/FIXME/placeholder/legacy path that still affects active runtime?
+• Can a new user complete web + Telegram + paper + broker-demo flows without operator DB edits?
+• Can an owner diagnose the 01-Oct signal contradictions from one incident timeline?
+• Can every enabled asset class receive fair scan opportunities with fresh certified data?
+• Can the system say “no trade” for an entire day without degrading quality gates—and clearly explain why?
+• If real money were enabled for one tiny manually approved pilot trade, is every price, size, state transition, order receipt and reconciliation step independently auditable?
+END OF MASTER DIRECTIVE — RE-AUDIT THE CURRENT SHA BEFORE EXECUTION

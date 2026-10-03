@@ -1,5 +1,12 @@
 # SignalRank Completion Evidence Ledger
 
+> Historical evidence only. This ledger's VERIFIED vocabulary describes older
+> repository/unit or staging scopes and does not satisfy the 2 October master
+> directive's exact-SHA completion definition. Current status is governed by
+> [CURRENT_RELEASE.md](../../CURRENT_RELEASE.md),
+> [the candidate ledger](../../certification/evidence_ledger.yaml), and
+> [the current master audit](../MASTER_AUDIT_20261003.md).
+
 Generated from `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md` and maintained as the release-facing completion boundary.
 
 ## Status vocabulary

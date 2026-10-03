@@ -14,10 +14,11 @@
     {
       "id": "SR-REPO-001",
       "description": "Reconcile implementation branch with current main ancestry",
-      "status": "IMPLEMENTED_VERIFIED",
+      "status": "IMPLEMENTED_UNVERIFIED",
       "evidence": [
         "merge commit e55e103f3ce86ed5b23b1185ce5be3cdadeb5429"
-      ]
+      ],
+      "blocker": "Historical merge ancestry evidence retained; current immutable candidate checks remain."
     },
     {
       "id": "SR-CI-001",
@@ -65,7 +66,7 @@
       "id": "SR-EVENT-002",
       "description": "Durable database outbox fallback and automatic replay if Redis fails",
       "status": "PARTIAL",
-      "blocker": "Current patch fails closed in production/staging; persistent DB fallback relay still required."
+      "blocker": "Durable PostgreSQL fallback/replay implementation exists; real Redis outage/crash/ack failure injection on final SHA remains."
     },
     {
       "id": "SR-WEB-001",
@@ -104,14 +105,18 @@
     {
       "id": "SR-GITHUB-001",
       "description": "Protect main and staging branches",
-      "status": "BLOCKED_EXTERNAL",
-      "blocker": "GitHub admin branch-protection action is not exposed by the connected GitHub tool."
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "blocker": "Active GitHub ruleset 24410166 read back successfully; current required CI checks cannot run while account billing is locked.",
+      "evidence": [
+        "artifacts/master-audit-20261003/branch_ruleset_observed.json",
+        ".github/workflows/ci.yml"
+      ]
     },
     {
       "id": "SR-RAILWAY-001",
       "description": "Persistent isolated Railway staging topology",
-      "status": "BLOCKED_EXTERNAL",
-      "blocker": "Current Railway connector can create a separate project but cannot clone all production service source/settings atomically without selecting credentials and secrets."
+      "status": "PARTIAL",
+      "blocker": "Pinned persistent staging stores and role topology exist; roles are on different historical SHAs and current identity/readiness proof remains."
     },
     {
       "id": "SR-RAILWAY-002",
@@ -122,8 +127,8 @@
     {
       "id": "SR-STORAGE-001",
       "description": "Production PostgreSQL capacity headroom and alerts",
-      "status": "BLOCKED_EXTERNAL",
-      "blocker": "Volume resize control is not available in connected Railway tool; current production volume is near 90% used."
+      "status": "FAILED",
+      "blocker": "Production volume has approximately 10% headroom. Current backup, approved capacity change, alert/retention and post-change acceptance remain."
     },
     {
       "id": "SR-DATA-001",
@@ -146,10 +151,11 @@
     {
       "id": "SR-ML-001",
       "description": "Champion/challenger fail-closed governance",
-      "status": "IMPLEMENTED_VERIFIED",
+      "status": "IMPLEMENTED_UNVERIFIED",
       "evidence": [
         "Current production analytics kept regressing challenger candidate-only; no forced promotion observed."
-      ]
+      ],
+      "blocker": "Historical analytics observations do not certify current model/release bytes."
     },
     {
       "id": "SR-ML-002",
@@ -160,10 +166,12 @@
     {
       "id": "SR-EXEC-001",
       "description": "Real/auto/copy/prop execution disabled during certification",
-      "status": "IMPLEMENTED_UNVERIFIED",
+      "status": "PARTIAL",
       "evidence": [
-        "CI environment forces switches off; production values must be runtime-verified before any pilot."
-      ]
+        "artifacts/master-audit-20261003/execution_flag_observations.json",
+        "artifacts/master-audit-20261003/production-role-execution-flags.json"
+      ],
+      "blocker": "Read-only flags confirmed all four staging roles and all four production roles: execution/payout flags 0, global kill switch 1. Effective runtime enforcement/failure drill remains."
     },
     {
       "id": "SR-BROKER-001",
@@ -184,20 +192,40 @@
     {
       "id": "SR-BACKUP-001",
       "description": "Backup restore drill on exact release schema",
-      "status": "BLOCKED_EXTERNAL",
-      "blocker": "Must execute against isolated staging resources after staging is provisioned."
+      "status": "PARTIAL",
+      "blocker": "Local PostgreSQL17 synthetic-fixture dump/restore: 124 tables, 262 rows, 435 indexes and row-content/schema fingerprints match. Restore+verify 2.031s. No staging backup/RPO/RTO proof.",
+      "evidence": [
+        "artifacts/master-audit-20261003/local-backup-restore.json"
+      ]
     },
     {
       "id": "SR-SOAK-001",
       "description": "24-72 hour immutable release-candidate staging soak",
-      "status": "BLOCKED_EXTERNAL",
-      "blocker": "Cannot begin until CI is green and isolated staging is provisioned."
+      "status": "PARTIAL",
+      "blocker": "Cannot start before source, CI, provider, broker and runtime prerequisites pass; no qualifying soak exists."
     },
     {
       "id": "SR-LIVE-001",
       "description": "Controlled live-money readiness",
       "status": "FAILED",
       "blocker": "Not eligible until every required release, staging, provider, broker, storage, data and runtime gate is green."
+    },
+    {
+      "id": "SR-CI-BILLING-001",
+      "description": "GitHub-hosted jobs can start",
+      "status": "BLOCKED_EXTERNAL",
+      "blocker": "Repository account owner must resolve GitHub billing lock. Check annotation: The job was not started because your account is locked due to a billing issue. No code change can pay/restore this account."
+    },
+    {
+      "id": "SR-JS-SECURITY-001",
+      "description": "Frontend/mobile dependency advisories resolved",
+      "status": "FAILED",
+      "evidence": [
+        "artifacts/master-audit-20261003/frontend-npm-audit.json",
+        "artifacts/master-audit-20261003/mobile-npm-audit.json"
+      ],
+      "blocker": "High-severity advisories remain, including braces advisory with no published patched version observed. Do not suppress or relabel a failed audit."
     }
-  ]
+  ],
+  "evidence_scope": "Current completion claims require exact-SHA staging; historical/local results remain scoped to their own reports."
 }

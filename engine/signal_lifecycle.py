@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import html
 import logging
+import math
 import os
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import Iterable, TypedDict
 
 from core.signal_lifecycle import (
     ACTIVE_TRADE,
     BREAKEVEN_STOP,
+    CLOSED_TIME_STOP,
     EXPIRED,
     MISSED_ENTRY,
     SL_HIT,
@@ -22,6 +25,7 @@ from core.signal_lifecycle import (
     lifecycle_state_for_event,
     normalize_lifecycle_state,
 )
+from core.production_integrity import canonical_direction
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,7 @@ NOTIFIABLE_EVENTS = {
     "breakeven_stop",
     "missed_entry",
     "expired",
+    "time_stop",
 }
 
 
@@ -79,7 +84,14 @@ _DEFERRED_LIFECYCLE_OBSERVATION_LIMIT = max(
     100,
     min(10000, int(os.getenv("LIFECYCLE_OBSERVATION_RETRY_MAX", "2000") or 2000)),
 )
-_DEFERRED_LIFECYCLE_OBSERVATIONS: dict[str, dict[str, object]] = {}
+class _DeferredObservation(TypedDict):
+    price: float
+    high: float
+    low: float
+    updated_at: datetime
+
+
+_DEFERRED_LIFECYCLE_OBSERVATIONS: dict[str, _DeferredObservation] = {}
 
 
 def _should_queue_event_notification(event_type: str) -> bool:
@@ -88,7 +100,7 @@ def _should_queue_event_notification(event_type: str) -> bool:
         return False
     if event in {
         "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit", "breakeven_stop",
-        "missed_entry", "expired",
+        "missed_entry", "expired", "time_stop",
     }:
         # The outcome-notification ledger is the single owner of outcome
         # messages. Queueing the same terminal event here races the compatibility
@@ -107,9 +119,12 @@ def entry_was_touched(
 ) -> bool:
     entry_f = float(entry)
     price_f = float(current_price)
+    side = canonical_direction(direction)
+    if side not in {"long", "short"}:
+        return False
     if high is not None and low is not None and float(low) <= entry_f <= float(high):
         return True
-    return price_f >= entry_f if str(direction).lower() == "long" else price_f <= entry_f
+    return price_f >= entry_f if side == "long" else price_f <= entry_f
 
 
 def evaluate_observation(
@@ -138,7 +153,10 @@ def evaluate_observation(
             return []
         events.append("entry_touched")
 
-    long_side = str(direction).lower() == "long"
+    side = canonical_direction(direction)
+    if side not in {"long", "short"}:
+        return []
+    long_side = side == "long"
     observation_high = float(high) if high is not None else float(current_price)
     observation_low = float(low) if low is not None else float(current_price)
     sl_touched = observation_low <= float(stop_loss) if long_side else observation_high >= float(stop_loss)
@@ -165,16 +183,41 @@ def _r_multiple(direction: str, entry: float, stop_loss: float, price: float) ->
     risk = abs(float(entry) - float(stop_loss))
     if risk <= 0:
         return None
-    move = float(entry) - float(price) if str(direction).lower() == "short" else float(price) - float(entry)
+    move = float(entry) - float(price) if str(direction).lower() in {"short", "sell", "bearish"} else float(price) - float(entry)
     return move / risk
 
 
-def _event_message(signal: dict, event_type: str, price: float, timezone_name: str, telegram_user_id: int) -> str:
+def validate_lifecycle_price_evidence(signal: dict, event_type: str, price: float, meta: dict | None = None) -> None:
+    """Require crossing evidence independently of the worker's event decision."""
+    if event_type not in {"tp1_hit", "tp2_hit", "tp3_hit", "sl_hit"}:
+        return
+    from types import SimpleNamespace
+    from core.outcome_accounting import outcome_price_metrics
+
+    evidence = dict(meta or {})
+    short = str(signal.get("direction") or "").lower() in {"short", "sell", "bearish"}
+    observed = evidence.get("observation_price", price)
+    range_key = "observation_low" if (event_type.startswith("tp") == short) else "observation_high"
+    if evidence.get(range_key) is not None:
+        observed = evidence[range_key]
+    status = event_type.removesuffix("_hit")
+    plan = SimpleNamespace(
+        entry=signal.get("entry"), stop_loss=signal.get("stop_loss"),
+        direction=signal.get("direction"),
+        take_profit=signal.get("take_profit") or signal.get("take_profits"),
+    )
+    outcome_price_metrics(plan, status, float(observed))
+    outcome_price_metrics(plan, status, float(price))
+
+
+def _event_message(signal: dict, event_type: str, price: float, timezone_name: str, telegram_user_id: int,
+                   *, observed_at: datetime | None = None) -> str:
     from signalrank_telegram.timezones import format_user_datetime
+    from utils.trade_levels import format_price_level, parse_price_levels
 
     asset = html.escape(str(signal.get("asset") or "Signal"))
     direction = html.escape(str(signal.get("direction") or "").upper())
-    event_time = format_user_datetime(_utc_now_naive(), timezone_name, telegram_user_id, include_date=False)
+    event_time = format_user_datetime(observed_at or _utc_now_naive(), timezone_name, telegram_user_id, include_date=False)
     labels = {
         "entry_touched": ("Entry Triggered", "Signal is now active."),
         "tp1_hit": ("TP1 Hit", "Secure partial profit and move protection to break-even."),
@@ -184,18 +227,28 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
         "breakeven_stop": ("Protected Exit", "TP1 was reached earlier; the remainder exited near break-even."),
         "missed_entry": ("Entry Missed", "The entry was not reached before this setup expired."),
         "expired": ("Signal Expired", "This setup is no longer actionable."),
+        "time_stop": ("Trade Closed at Time Limit", "The triggered trade reached its holding-time limit."),
     }
     title, action = labels.get(event_type, (event_type.replace("_", " ").title(), "Lifecycle updated."))
-    ref = html.escape(str(signal.get("signal_id") or signal.get("id") or "")[:12])
-    ref_line = f"\nRef: <code>{ref}</code>" if ref else ""
     from core.signal_identity import public_signal_id
 
     ref = html.escape(public_signal_id(signal))
     ref_line = f"\n\U0001f4cc Signal ID: <code>{ref}</code>" if ref else ""
+    full_ref = html.escape(str(signal.get("signal_id") or signal.get("id") or ""))
+    if full_ref and full_ref != ref:
+        ref_line += f"\nRef: <code>{full_ref}</code>"
+    targets = parse_price_levels(signal.get("take_profit") or signal.get("take_profits"))
+    plan_lines = (
+        f"Planned entry: <code>{format_price_level(signal.get('entry'))}</code>\n"
+        f"Planned stop: <code>{format_price_level(signal.get('stop_loss'))}</code>\n"
+    )
+    if targets:
+        plan_lines += "Targets: " + " | ".join(format_price_level(target) for target in targets) + "\n"
     return (
         f"<b>{html.escape(title)}</b>\n\n"
         f"<b>{asset}</b> {direction}\n"
-        f"Price: <code>{float(price):.6g}</code>\n"
+        f"Observed price: <code>{format_price_level(price)}</code>\n"
+        f"{plan_lines}"
         f"Time: {html.escape(event_time)}{ref_line}\n\n"
         f"{html.escape(action)}"
     )
@@ -220,7 +273,9 @@ async def update_lifecycle_observation(
     now = _utc_now_naive()
     entry = float(signal.get("entry") or 0)
     stop = float(signal.get("stop_loss") or 0)
-    direction = str(signal.get("direction") or "long")
+    direction = canonical_direction(signal.get("direction"))
+    if direction not in {"long", "short"}:
+        raise ValueError("lifecycle_direction_unknown")
     risk = abs(entry - stop)
     observation_high = float(high) if high is not None else float(price)
     observation_low = float(low) if low is not None else float(price)
@@ -293,7 +348,7 @@ async def update_lifecycle_observation(
     except Exception as exc:
         if _transient_lifecycle_db_error(exc):
             previous = _DEFERRED_LIFECYCLE_OBSERVATIONS.get(signal_id)
-            merged = {
+            merged: _DeferredObservation = {
                 "price": float(price),
                 "high": observation_high,
                 "low": observation_low,
@@ -332,6 +387,11 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
 
     signal_id = str(signal.get("signal_id") or "")
     if not signal_id:
+        return False
+    try:
+        validate_lifecycle_price_evidence(signal, event_type, price, meta)
+    except (ValueError, TypeError) as exc:
+        logger.error("[lifecycle_price_evidence_rejected] signal=%s event=%s reason=%s", signal_id, event_type, exc)
         return False
     now = _utc_now_naive()
     created_at = signal.get("created_at")
@@ -372,7 +432,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             recorded_state = event_state(event_type)
             tp_stage = {"tp1_hit": 1, "tp2_hit": 2, "tp3_hit": 3}.get(event_type, 0)
             current_tp = int(getattr(lifecycle, "highest_tp_hit", 0) or 0)
-            if tp_stage > current_tp:
+            if tp_stage > current_tp and lifecycle.state not in {MISSED_ENTRY, EXPIRED, CLOSED_TIME_STOP}:
                 lifecycle.highest_tp_hit = tp_stage
             current_state = normalize_lifecycle_state(getattr(lifecycle, "state", None))
             current_rank = {
@@ -385,6 +445,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 SL_HIT: 5,
                 MISSED_ENTRY: 5,
                 EXPIRED: 5,
+                CLOSED_TIME_STOP: 5,
             }.get(current_state, 0)
             recorded_rank = {
                 WATCHING_FOR_ENTRY: 0,
@@ -396,8 +457,13 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 SL_HIT: 5,
                 MISSED_ENTRY: 5,
                 EXPIRED: 5,
+                CLOSED_TIME_STOP: 5,
             }.get(recorded_state, 0)
-            if recorded_rank > current_rank and current_state not in TERMINAL_STATES:
+            if (
+                recorded_rank > current_rank
+                and current_state not in TERMINAL_STATES
+                and event_transition_allowed(current_state, event_type)
+            ):
                 lifecycle.state = recorded_state
             timestamp_field = {
                 "entry_touched": "entry_touched_at",
@@ -414,6 +480,14 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             lifecycle.updated_at = now
 
         if existing is None:
+            if event_type == "entry_touched" and lifecycle.state == WATCHING_FOR_ENTRY:
+                expires_at = signal.get("expires_at")
+                if isinstance(expires_at, datetime):
+                    expiry_utc = expires_at.astimezone(timezone.utc).replace(tzinfo=None) if expires_at.tzinfo else expires_at
+                    if _utc_now_naive() >= expiry_utc:
+                        logger.info("[lifecycle_transition_rejected] signal=%s reason=preentry_expired", signal_id)
+                        await session.rollback()
+                        return False
             if not event_transition_allowed(lifecycle.state, event_type):
                 logger.info(
                     "[lifecycle_transition_rejected] signal=%s current=%s event=%s target=%s",
@@ -431,6 +505,9 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 float(price),
             )
             event_meta = dict(meta or {})
+            if event_type in {"missed_entry", "expired"}:
+                event_meta["counterfactual_r"] = r_value
+                r_value = None
             event_meta.setdefault("same_candle_policy", SAME_CANDLE_AMBIGUITY_POLICY)
             try:
                 import os
@@ -559,8 +636,8 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                         source_message_id=delivery.telegram_message_id,
                     )
                 )
-        await session.commit()
         event_id = int(existing.id)
+        await session.commit()
 
     # Telegram delivery is intentionally owned by the separate notification
     # dispatcher. The critical lifecycle transaction ends before network I/O.
@@ -633,7 +710,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
     if not _enabled("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
         return
     from config import config
-    from db.models import AlertPreference, OutcomeNotification, SignalEventNotification, SignalTrackingEvent, User
+    from db.models import AlertPreference, OutcomeNotification, SignalDelivery, SignalEventNotification, SignalTrackingEvent, User
     from db.session import get_session
     from sqlalchemy import and_, or_, select
     from telegram import Bot
@@ -645,9 +722,21 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
         seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
     )
     async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
+        from engine.realtime_outcome_tracker import _confirmed_delivery_snapshot_map, _tracked_signal_payload
+
+        signal_id = str(signal.get("signal_id") or "")
+        snapshots, conflicts = await _confirmed_delivery_snapshot_map(session, SignalDelivery, [signal_id])
+        if signal_id in conflicts or signal_id not in snapshots:
+            logger.error("[lifecycle_notification_plan_unavailable] signal=%s; notification deferred", signal_id)
+            return
+        signal = _tracked_signal_payload(SimpleNamespace(**signal), None, None, snapshots[signal_id], reason="lifecycle_notification")
         event = await session.get(SignalTrackingEvent, event_id)
-        event_price = float(getattr(event, "price", 0) or signal.get("entry") or 0)
-        rows = (
+        event_price = float(getattr(event, "price", 0) or 0)
+        observed_at = getattr(event, "event_time", None)
+        if not math.isfinite(event_price) or event_price <= 0:
+            logger.error("[lifecycle_notification_price_unavailable] event=%s; notification deferred", event_id)
+            return
+        orm_rows = (
             await session.execute(
                 select(SignalEventNotification, User, AlertPreference)
                 .join(User, User.id == SignalEventNotification.user_id)
@@ -668,11 +757,27 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                 )
             )
         ).all()
+        # Read-only session close can expire ORM state. Retain plain values for
+        # claim/send/receipt processing, which occurs after this transaction.
+        rows = [
+            (
+                SimpleNamespace(**{key: getattr(notification, key) for key in (
+                    "id", "event_type", "signal_id", "chat_id", "source_message_id"
+                )}),
+                SimpleNamespace(timezone=user.timezone, telegram_user_id=user.telegram_user_id),
+                SimpleNamespace(tp_sl_enabled=preference.tp_sl_enabled,
+                                quiet_start_hour=preference.quiet_start_hour,
+                                quiet_end_hour=preference.quiet_end_hour) if preference is not None else None,
+            )
+            for notification, user, preference in orm_rows
+        ]
     if not rows:
         return
 
     bot = Bot(token=token)
     for notification, user, preference in rows:
+        if user.telegram_user_id is None:
+            continue
         if preference is not None and not bool(preference.tp_sl_enabled):
             async with get_session(priority="critical", label="lifecycle.notification", timeout_seconds=12) as session:
                 suppressed = await session.get(SignalEventNotification, notification.id)
@@ -711,6 +816,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
             event_price,
             str(user.timezone or ""),
             int(user.telegram_user_id),
+            observed_at=observed_at,
         )
         sent_message_id = None
         error = None
@@ -772,6 +878,7 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                     "breakeven_stop": "partial_win_be",
                     "missed_entry": "missed_entry",
                     "expired": "expired",
+                    "time_stop": "time_stop",
                 }.get(row.event_type)
                 if outcome_status:
                     pending = (
@@ -821,7 +928,7 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
         stale_cutoff = _utc_now_naive() - timedelta(
             seconds=int(os.getenv("LIFECYCLE_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300)
         )
-        rows = (
+        orm_rows = (
             await session.execute(
                 select(SignalEventNotification.event_id, Signal)
                 .join(Signal, Signal.signal_id == SignalEventNotification.signal_id)
@@ -842,13 +949,16 @@ async def dispatch_pending_event_notifications(limit: int = 100) -> int:
                 .limit(max(1, int(limit)))
             )
         ).all()
+        rows = [
+            (int(event_id), {column.key: getattr(row, column.key, None) for column in row.__table__.columns})
+            for event_id, row in orm_rows
+        ]
     dispatched = 0
     seen: set[int] = set()
-    for event_id, row in rows:
+    for event_id, signal in rows:
         if int(event_id) in seen:
             continue
         seen.add(int(event_id))
-        signal = {column.key: getattr(row, column.key, None) for column in row.__table__.columns}
         await dispatch_event_notifications(int(event_id), signal)
         dispatched += 1
     return dispatched

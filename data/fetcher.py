@@ -1204,6 +1204,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
         fetch_tradingview_candles,
     )
     from data.connectors.tiingo_adapter import get_candles as fetch_tiingo_candles
+    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
 
     # Convert to formats needed by different providers
     oanda_format = asset.replace("/", "_").replace("-", "_").upper()
@@ -1215,13 +1216,17 @@ def _fetch_fx_multi_provider(asset, timeframe):
     providers = [
         ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
         ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
+        ("fmp", lambda timeout=10: fetch_fmp_candles(yahoo_format, timeframe, timeout=timeout)),
         ("tiingo", lambda timeout=10: fetch_tiingo_candles(asset, timeframe, timeout=timeout)),
         ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
         ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
         ("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="FX_IDC")),
     ]
     if alpha_enabled:
-        providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
+        is_intraday = timeframe in {"1m", "5m", "15m", "30m", "1h", "4h"}
+        is_premium = os.getenv("ALPHAVANTAGE_PREMIUM", "0").lower() in ("1", "true", "yes", "on")
+        if not is_intraday or is_premium:
+            providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
 
     # Allow explicit FX preferred provider via env var (e.g., FX_PREFERRED_PROVIDER=alphavantage)
     fx_pref = (os.getenv("FX_PREFERRED_PROVIDER") or "").strip().lower()

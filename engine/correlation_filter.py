@@ -261,6 +261,7 @@ class PortfolioExposureManager:
                 "BREAKEVEN_STOP",
                 "MISSED_ENTRY",
                 "EXPIRED",
+                "CLOSED_TIME_STOP",
             )
             terminal_lifecycle_exists = exists().where(
                 SignalLifecycle.signal_id == Signal.signal_id,

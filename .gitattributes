@@ -1,0 +1,4 @@
+# Deployment entrypoints must retain Unix line endings on Windows checkouts.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf

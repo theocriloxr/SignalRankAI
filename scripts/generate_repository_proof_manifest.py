@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -17,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKIP_PARTS = {
     ".git",
     ".venv",
+    ".audit-venv",
+    ".audit-tools-venv",
     "venv",
     ".pytest_cache",
     "__pycache__",
@@ -41,15 +44,22 @@ ENV_RE = re.compile(r"(?:os\.getenv|os\.environ\.get)\(\s*['\"]([A-Z][A-Z0-9_]*)
 def _repository_files(root: Path) -> list[Path]:
     """Return version-controlled files, excluding local/generated state."""
     try:
+        git_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], cwd=root, stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+        if Path(git_root).resolve() != root.resolve():
+            raise ValueError("proof root is not the repository root")
         output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root, stderr=subprocess.DEVNULL)
         paths = [root / item for item in output.decode("utf-8", errors="surrogateescape").split("\0") if item]
-        return sorted(path for path in paths if path.is_file())
+        return sorted(path for path in paths if path.is_file() and not any(
+            part in SKIP_PARTS for part in path.relative_to(root).parts
+        ))
     except Exception:
-        return sorted(
-            path
-            for path in root.rglob("*")
-            if path.is_file() and not any(part in SKIP_PARTS for part in path.relative_to(root).parts)
-        )
+        paths = []
+        for directory, subdirectories, filenames in os.walk(root):
+            subdirectories[:] = [name for name in subdirectories if name not in SKIP_PARTS]
+            paths.extend(Path(directory) / name for name in filenames)
+        return sorted(paths)
 
 
 @dataclass(slots=True)

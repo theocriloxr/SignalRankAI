@@ -1,0 +1,8 @@
+SignalRankAI fresh security certification
+branch=implementation-of-master-blueprint
+head_before_trigger=1cf8567f9f54a7dffd7495be9035a52848eac4b8
+backend_cleanroom=required
+frontend_cleanroom=fresh-audit
+mobile_cleanroom=fresh-audit
+static_security_cleanroom=required
+live_execution_authorized=false

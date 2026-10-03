@@ -38,4 +38,5 @@ Thumbs.db
 .vscode/
 .idea/
 .audit-venv/
+.audit-tools-venv/
 node_modules/

@@ -27,7 +27,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 
 
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0047_event_outbox")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0048_runtime_schema_bridge")
 ACK = "I_UNDERSTAND_THIS_CREATES_AND_DROPS_AN_ISOLATED_STAGING_DATABASE"
 SAFE_DB_RE = re.compile(r"^signalrank_restore_drill_[0-9]{8}_[0-9]{6}_[0-9]+$")
 

@@ -143,7 +143,7 @@ def migrate() -> dict[str, Any]:
         raise RuntimeError("; ".join(source_errors))
 
     import psycopg2
-    from alembic import command
+    import alembic.command as command
     from alembic.config import Config
 
     expected = _expected_head()

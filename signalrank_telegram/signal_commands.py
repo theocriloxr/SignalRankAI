@@ -101,7 +101,9 @@ def _get_signal_status_display(signal_row, outcome_status: str = None) -> str:
             return "STOP LOSS"
         if status in {"INVALID", "INVALIDATED"}:
             return "INVALIDATED"
-        if status in {"MISSED", "TIME_STOP"}:
+        if status == "TIME_STOP":
+            return "TRADE CLOSED AT TIME LIMIT"
+        if status in {"MISSED", "MISSED_ENTRY"}:
             return "MISSED"
         return status
     if getattr(signal_row, "expired", False):

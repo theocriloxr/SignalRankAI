@@ -302,7 +302,7 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			if vip_link:
 				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
 				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
-		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
 		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 		prem_month = generate_paystack_link(user_id=user_id, price=prem_month_price, tier="PREMIUM", duration="MONTHLY", duration_days=30)
@@ -330,7 +330,7 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
-	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	free_limit = get_entitlements("FREE").daily_signal_limit
@@ -351,7 +351,7 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
-	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	msg = upgrade_message(

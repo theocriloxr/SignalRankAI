@@ -1,0 +1,178 @@
+"""Real PostgreSQL regression flows; hermetic/mock results cannot satisfy these."""
+import asyncio
+from datetime import datetime, timedelta
+import json
+import os
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
+
+
+@pytest_asyncio.fixture
+async def postgres_database():
+    from db.session import dispose_engine_for_event_loop, get_session
+
+    url = os.getenv("DATABASE_URL", "")
+    required = os.getenv("SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED") == "1"
+    if not url:
+        if required:
+            pytest.fail("real PostgreSQL integration required but DATABASE_URL is missing")
+        pytest.skip("requires an isolated PostgreSQL test database")
+    parsed = make_url(url)
+    assert parsed.get_backend_name() == "postgresql", "SQLite cannot certify PostgreSQL flows"
+    assert os.getenv("APP_ENV") == "test", "integration mutations require APP_ENV=test"
+    assert parsed.host in {"127.0.0.1", "localhost"}, "integration mutations require a local isolated database"
+    assert "test" in (parsed.database or "") or parsed.database == "signalrank_master_audit"
+    async with get_session() as session:
+        from sqlalchemy import text
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0048_runtime_schema_bridge"
+    yield
+    await dispose_engine_for_event_loop()
+
+
+@pytest.mark.asyncio
+async def test_oct1_receipt_paper_idempotency_and_missed_entry_on_postgres(postgres_database):
+    from scripts.staging_oct1_incident_replay import _run_replay
+
+    result = await _run_replay({"environment": "test", "scope": "LOCAL_REAL_POSTGRES"})
+    assert result["status"] == "PASS"
+    assert result["external_notifications_sent"] is False
+    assert result["broker_orders_submitted"] is False
+    assert all(result["assertions"].values())
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_notification_materializes_plan_and_sends_once(postgres_database, monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from config import config
+    from db.models import Signal, SignalDelivery, SignalEventNotification, SignalTrackingEvent, User
+    from db.session import get_session
+    from engine.signal_lifecycle import dispatch_event_notifications
+
+    signal_id = str(uuid4())
+    telegram_id = 8000000000 + int(uuid4().hex[:8], 16)
+    now = datetime.utcnow()
+    plan = {"signal_id": signal_id, "asset": "US30", "timeframe": "15m", "direction": "SELL",
+            "entry": 50686.17, "stop_loss": 50877.72, "take_profits": [50494.62, 50303.07, 50111.52]}
+    mutable = {**plan, "entry": 51321.24, "stop_loss": 51484.8}
+    async with get_session() as session:
+        user = User(telegram_user_id=telegram_id, username="audit-notification", tier="vip", timezone="Africa/Lagos")
+        session.add(user)
+        session.add(Signal(signal_id=signal_id, asset="US30", direction="short", timeframe="15m",
+                           entry=mutable["entry"], stop_loss=mutable["stop_loss"], take_profit=json.dumps(plan["take_profits"]),
+                           score=90, strategy_name="audit", strategy_group="audit", strength=1, created_at=now))
+        await session.flush()
+        delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send="vip", sent_ok=True,
+                                  delivery_state="confirmed", telegram_chat_id=telegram_id, telegram_message_id=990005,
+                                  delivery_confirmed_at=now, telegram_api_result={"ok": True, "signal_snapshot": plan})
+        event = SignalTrackingEvent(signal_id=signal_id, event_type="entry_touched", event_time=now,
+                                    price=plan["entry"], meta={})
+        session.add_all([delivery, event])
+        await session.flush()
+        notification = SignalEventNotification(event_id=event.id, signal_id=signal_id, event_type="entry_touched",
+                                              user_id=user.id, telegram_user_id=telegram_id, delivery_id=delivery.id,
+                                              chat_id=telegram_id, source_message_id=990005)
+        session.add(notification)
+        await session.flush()
+        event_id, notification_id = event.id, notification.id
+        await session.commit()
+
+    active_sessions = 0
+    messages = []
+    @asynccontextmanager
+    async def scope(**kwargs):
+        nonlocal active_sessions
+        async with get_session(**kwargs) as session:
+            active_sessions += 1
+            try:
+                yield session
+            finally:
+                active_sessions -= 1
+
+    class Bot:
+        def __init__(self, **kwargs):
+            pass
+        async def send_message(self, **kwargs):
+            assert active_sessions == 0
+            messages.append(kwargs)
+            return SimpleNamespace(message_id=990006)
+
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "unit-test-placeholder")
+    monkeypatch.setenv("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", "1")
+    monkeypatch.setattr("db.session.get_session", scope)
+    monkeypatch.setattr("telegram.Bot", Bot)
+    await dispatch_event_notifications(event_id, mutable)
+    await dispatch_event_notifications(event_id, mutable)
+    assert len(messages) == 1
+    assert messages[0]["chat_id"] == telegram_id
+    assert "50,686.17" in messages[0]["text"]
+    assert "Planned entry: <code>50,686.17</code>" in messages[0]["text"]
+    assert "Planned stop: <code>50,877.72</code>" in messages[0]["text"]
+    assert "51,321.24" not in messages[0]["text"]
+    assert signal_id in messages[0]["text"]
+    async with get_session() as session:
+        persisted = await session.get(SignalEventNotification, notification_id)
+        assert persisted.sent_ok
+        assert persisted.sent_message_id == 990006
+
+
+@pytest.mark.asyncio
+async def test_concurrent_tp_writers_cannot_expire_or_duplicate_terminal_trade(postgres_database, monkeypatch):
+    from db.models import Signal, SignalLifecycle, SignalTrackingEvent
+    from db.session import get_session
+    from engine.signal_lifecycle import record_lifecycle_event
+
+    monkeypatch.setenv("OUTCOME_LIFECYCLE_ENABLED", "1")
+    now = datetime.utcnow()
+    signal_id = str(uuid4())
+    plan = {"signal_id": signal_id, "asset": "JNJ", "entry": 262.2601, "stop_loss": 262.7518,
+            "take_profit": [260.8439, 259.4277, 258.0116], "direction": "short",
+            "created_at": now, "expires_at": now + timedelta(hours=1)}
+    async with get_session() as session:
+        session.add(Signal(signal_id=signal_id, asset="JNJ", timeframe="1m", direction="short",
+                           entry=plan["entry"], stop_loss=plan["stop_loss"], take_profit=json.dumps(plan["take_profit"]),
+                           score=90, strategy_name="audit", strategy_group="audit", strength=1,
+                           created_at=now, expires_at=plan["expires_at"]))
+        session.add(SignalLifecycle(signal_id=signal_id, state="ACTIVE_TRADE", entry_touched_at=now))
+        await session.commit()
+    from engine.signal_lifecycle import update_lifecycle_observation
+    assert await update_lifecycle_observation({**plan, "direction": "SELL"}, 261.0) == "ACTIVE_TRADE"
+    async with get_session() as session:
+        observed = (await session.execute(select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id))).scalar_one()
+        assert observed.mfe_r > 0
+        assert observed.mae_r == 0
+    results = await asyncio.gather(*[
+        record_lifecycle_event(plan, "tp1_hit", 260.8439, {"observation_price": 260.8}) for _ in range(8)
+    ])
+    assert sum(results) == 1
+    assert not await record_lifecycle_event(plan, "expired", 262.45)
+    assert await record_lifecycle_event(plan, "time_stop", 262.45)
+    assert not await record_lifecycle_event(plan, "time_stop", 262.45)
+    async with get_session() as session:
+        lifecycle = (await session.execute(select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id))).scalar_one()
+        assert lifecycle.state == "CLOSED_TIME_STOP"
+        count = (await session.execute(select(func.count()).select_from(SignalTrackingEvent).where(
+            SignalTrackingEvent.signal_id == signal_id, SignalTrackingEvent.event_type == "tp1_hit"))).scalar_one()
+        assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_outcome_writer_cannot_override_active_lifecycle(postgres_database):
+    from db.models import Outcome, Signal, SignalLifecycle
+    from db.session import get_session
+    from engine.realtime_outcome_tracker import _persist_outcome
+
+    signal_id = str(uuid4())
+    async with get_session() as session:
+        session.add(Signal(signal_id=signal_id, asset="AUDIT", timeframe="1m", direction="long", entry=100,
+                           stop_loss=95, take_profit="[102,104,106]", score=90, strategy_name="audit",
+                           strategy_group="audit", strength=1))
+        session.add(SignalLifecycle(signal_id=signal_id, state="ACTIVE_TRADE", entry_touched_at=datetime.utcnow()))
+        await session.commit()
+    await _persist_outcome(signal_id, "expired", 100, 99)
+    async with get_session() as session:
+        assert (await session.execute(select(Outcome).where(Outcome.signal_id == signal_id))).scalar_one_or_none() is None

@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED_PARTS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules", ".pytest-tmp"}
+EXCLUDED_PARTS = {".git", ".venv", "venv", ".audit-venv", ".audit-tools-venv", "__pycache__", ".pytest_cache", "node_modules", ".pytest-tmp"}
 ALLOWED_SUFFIXES = {
     ".py",
     ".toml",
@@ -60,11 +60,14 @@ PATTERNS = [
 
 
 def iter_files(root: Path):
-    for path in root.rglob("*"):
-        if not path.is_file() or any(part in EXCLUDED_PARTS for part in path.parts):
-            continue
-        if path.suffix.lower() in ALLOWED_SUFFIXES or path.name in {"Dockerfile", "Procfile", "start.sh"}:
-            yield path
+    import os
+
+    for directory, subdirs, names in os.walk(root):
+        subdirs[:] = [name for name in subdirs if name not in EXCLUDED_PARTS]
+        for name in names:
+            path = Path(directory) / name
+            if path.suffix.lower() in ALLOWED_SUFFIXES or name in {"Dockerfile", "Procfile", "start.sh"}:
+                yield path
 
 
 def main() -> int:

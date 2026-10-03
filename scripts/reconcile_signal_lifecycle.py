@@ -163,14 +163,16 @@ async def find_signals(
 
     query = text(f"""
         SELECT s.signal_id, s.asset, s.timeframe, s.direction, s.status,
-               s.lifecycle_state, s.delivery_state, s.sent_ok,
-               s.created_at, s.proof_ok, s.delivery_proof_id,
+               sl.state AS lifecycle_state, sd.delivery_state, sd.sent_ok,
+               s.created_at, NULL AS proof_ok, NULL AS delivery_proof_id,
                s.score, s.entry, s.stop_loss
         FROM signals s
+        LEFT JOIN signal_lifecycles sl ON sl.signal_id = s.signal_id
+        LEFT JOIN signal_deliveries sd ON sd.signal_id = s.signal_id
         WHERE {where}
           AND s.status NOT IN ('EXPIRED', 'MISSED_ENTRY', 'SL_HIT', 'TP1_HIT', 'TP2_HIT', 'TP3_HIT', 'BREAKEVEN_STOP')
-          AND (s.lifecycle_state IS NULL
-               OR s.lifecycle_state IN ('', 'NEW', 'WATCHING_FOR_ENTRY', 'ACTIVE_TRADE', 'STORED', 'CANDIDATE'))
+          AND (sl.state IS NULL
+               OR sl.state IN ('', 'NEW', 'WATCHING_FOR_ENTRY', 'ACTIVE_TRADE', 'STORED', 'CANDIDATE'))
         ORDER BY s.created_at DESC
         LIMIT :limit
     """)
@@ -211,17 +213,25 @@ async def reconcile(session: Any, record: dict[str, Any], *, dry_run: bool = Tru
         await session.execute(
             sa_text("""
                 UPDATE signals
-                SET status = :status,
-                    lifecycle_state = :lifecycle,
-                    updated_at = :now,
-                    provenance_note = :reason
+                SET status = :status
                 WHERE signal_id = :signal_id
             """),
             {
                 "status": new_status,
+                "signal_id": signal_id,
+            },
+        )
+        # Update lifecycle state
+        await session.execute(
+            sa_text("""
+                UPDATE signal_lifecycles
+                SET state = :lifecycle,
+                    updated_at = :now
+                WHERE signal_id = :signal_id
+            """),
+            {
                 "lifecycle": new_lifecycle,
                 "now": _utcnow(),
-                "reason": reason,
                 "signal_id": signal_id,
             },
         )

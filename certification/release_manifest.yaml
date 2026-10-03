@@ -10,7 +10,7 @@
       "id": "static-ruff",
       "group": "static",
       "description": "Ruff release-critical Python correctness",
-      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py",
+      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py scripts/release_evidence_identity.py scripts/build_master_requirement_registry.py scripts/run_complete_system_test.py scripts/certify_market_classes.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -71,8 +71,8 @@
     {
       "id": "security-semgrep",
       "group": "static",
-      "description": "Semgrep SAST across runtime code; migrations are certified by schema/release-chain gates",
-      "command": "semgrep scan --config auto --error --timeout 30 --timeout-threshold 0 --exclude='**/migrations/**' --exclude='**/alembic/**' --exclude-rule python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py",
+      "description": "Semgrep SAST: require zero findings, zero scan errors, and complete runtime/application scan evidence",
+      "command": "python scripts/semgrep_gate.py --minimum-scanned 400",
       "severity": "high",
       "required": true,
       "environments": [
@@ -84,7 +84,7 @@
       "id": "shellcheck",
       "group": "static",
       "description": "Shell entrypoint lint",
-      "command": "shellcheck start.sh",
+      "command": "shellcheck start.sh deploy.sh scripts/staging_predeploy_v142.sh scripts/staging_predeploy_v150.sh scripts/staging_predeploy_v151.sh",
       "severity": "high",
       "required": true,
       "environments": [
@@ -170,12 +170,29 @@
       "id": "backend-critical-regressions",
       "group": "backend",
       "description": "Release-critical regression contracts",
-      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py",
       "severity": "critical",
       "required": true,
       "environments": [
         "ci",
         "cleanroom"
+      ]
+    },
+    {
+      "id": "backend-postgres-integrity",
+      "group": "backend",
+      "description": "Real PostgreSQL receipt, paper idempotency, lifecycle concurrency and outcome authority",
+      "command": "python -m pytest -q tests/test_master_p0_postgres_integration.py",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ],
+      "required_environment": [
+        "DATABASE_URL",
+        "APP_ENV=test",
+        "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"
       ]
     },
     {
@@ -229,8 +246,8 @@
     {
       "id": "frontend-audit",
       "group": "frontend",
-      "description": "Frontend npm vulnerability gate (high/critical)",
-      "command": "cd frontend && npm audit --audit-level=high",
+      "description": "Frontend dependency audit with explicit unpatched dev-tool exception policy",
+      "command": "node scripts/npm_audit_gate.mjs --project frontend",
       "severity": "high",
       "required": true,
       "environments": [
@@ -277,8 +294,8 @@
     {
       "id": "mobile-audit",
       "group": "mobile",
-      "description": "Mobile npm vulnerability gate (high/critical)",
-      "command": "cd mobile && npm audit --audit-level=high",
+      "description": "Mobile dependency audit with explicit unpatched build-tool exception policy",
+      "command": "node scripts/npm_audit_gate.mjs --project mobile",
       "severity": "high",
       "required": true,
       "environments": [
@@ -321,6 +338,24 @@
       ]
     },
     {
+      "id": "container-security",
+      "group": "staging",
+      "description": "Build and certify the exact production image before staging acceptance",
+      "command": "manual:container_security",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "staging"
+      ],
+      "evidence_requirements": [
+        "Exact candidate SHA, Dockerfile identity, immutable base digest and built image digest",
+        "Successful Linux clean-room and production image builds with locked runtime pip check",
+        "Hadolint findings resolved or explicitly dispositioned under the master directive",
+        "Timestamped image OS/runtime vulnerability scan with no unresolved mandatory-severity findings",
+        "Image SBOM and provenance bound to the same SHA and image digest"
+      ]
+    },
+    {
       "id": "staging-soak",
       "group": "staging",
       "description": "24-72h immutable-SHA staging soak",
@@ -329,6 +364,11 @@
       "required": true,
       "environments": [
         "staging"
+      ],
+      "evidence_requirements": [
+        "All roles running one immutable git SHA and image digest",
+        "24-72 hours of timestamped readiness, provider, queue, DB, delivery and accounting observations",
+        "No unresolved P0/P1; source/config changes invalidate the observation window"
       ]
     },
     {

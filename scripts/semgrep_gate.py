@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Fail-closed Semgrep gate with machine-readable result validation.
+
+Semgrep 1.179.0 can emit a successful zero-finding scan summary yet return a
+non-zero CLI status in some registry/strict-mode combinations. Release safety
+must depend on the scan evidence itself, not a contradictory wrapper status.
+
+This gate:
+- runs the exact approved community rule packs;
+- emits JSON to a temporary file;
+- fails on any finding;
+- fails on any Semgrep-reported scan error;
+- fails if the result is missing/malformed or the scan surface is implausibly
+  small;
+- records the raw Semgrep return code for diagnostics without allowing a
+  zero-finding, zero-error, full-surface result to become a false release block.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TARGETS = [
+    "core",
+    "engine",
+    "web",
+    "worker",
+    "db",
+    "data",
+    "strategies",
+    "services",
+    "ml",
+    "signalrank_telegram",
+    "runtime",
+    "execution",
+    "railway_main.py",
+    "frontend/src",
+    "mobile",
+]
+
+
+def _build_command(output: Path, targets: list[str]) -> list[str]:
+    executable = shutil.which("semgrep")
+    if not executable:
+        raise RuntimeError("semgrep executable is unavailable")
+    return [
+        executable,
+        "scan",
+        "--config",
+        "p/default",
+        "--config",
+        "p/security-audit",
+        "--metrics",
+        "off",
+        "--json",
+        "--output",
+        str(output),
+        "--timeout",
+        "30",
+        "--timeout-threshold",
+        "0",
+        "--exclude=**/migrations/**",
+        "--exclude=**/alembic/**",
+        "--exclude-rule",
+        "python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text",
+        *targets,
+    ]
+
+
+def _validate_report(report: object, *, minimum_scanned: int) -> dict[str, int]:
+    if not isinstance(report, dict):
+        raise RuntimeError("semgrep_report_not_object")
+
+    results = report.get("results")
+    errors = report.get("errors")
+    paths = report.get("paths")
+    if not isinstance(results, list):
+        raise RuntimeError("semgrep_report_missing_results")
+    if not isinstance(errors, list):
+        raise RuntimeError("semgrep_report_missing_errors")
+
+    scanned: list[object] = []
+    if isinstance(paths, dict) and isinstance(paths.get("scanned"), list):
+        scanned = list(paths["scanned"])
+
+    if len(scanned) < int(minimum_scanned):
+        raise RuntimeError(
+            f"semgrep_scan_surface_too_small:{len(scanned)}<{int(minimum_scanned)}"
+        )
+    if errors:
+        first = errors[0]
+        raise RuntimeError(
+            "semgrep_scan_errors:"
+            + json.dumps(first, sort_keys=True, default=str)[:1200]
+        )
+    if results:
+        compact = [
+            {
+                "check_id": row.get("check_id"),
+                "path": row.get("path"),
+                "start": (row.get("start") or {}).get("line")
+                if isinstance(row, dict)
+                else None,
+            }
+            for row in results[:20]
+            if isinstance(row, dict)
+        ]
+        raise RuntimeError(
+            "semgrep_findings:"
+            + json.dumps(compact, sort_keys=True, default=str)
+        )
+    return {"findings": 0, "errors": 0, "scanned": len(scanned)}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--minimum-scanned", type=int, default=400)
+    parser.add_argument("targets", nargs="*")
+    args = parser.parse_args()
+    targets = args.targets or list(DEFAULT_TARGETS)
+
+    with tempfile.TemporaryDirectory(prefix="signalrank-semgrep-") as td:
+        output = Path(td) / "semgrep.json"
+        command = _build_command(output, targets)
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if completed.stdout:
+            print(completed.stdout, end="" if completed.stdout.endswith("\n") else "\n")
+
+        if not output.is_file():
+            print(
+                f"SEMGREP_GATE_FAIL raw_exit={completed.returncode} reason=missing_json_report",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            report = json.loads(output.read_text(encoding="utf-8"))
+            evidence = _validate_report(report, minimum_scanned=args.minimum_scanned)
+        except Exception as exc:
+            print(
+                f"SEMGREP_GATE_FAIL raw_exit={completed.returncode} reason={exc}",
+                file=sys.stderr,
+            )
+            return 2
+
+        print(
+            "SEMGREP_GATE_PASS "
+            + json.dumps(
+                {
+                    **evidence,
+                    "raw_exit": int(completed.returncode),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
