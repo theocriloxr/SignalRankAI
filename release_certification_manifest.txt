@@ -91,3 +91,8 @@ tests/test_20261001_signal_paper_integrity.py
 tests/test_missed_entry_nontrade_semantics.py
 tests/test_runtime_schema_bridge_0048.py
 tests/test_userdash_template_contract.py
+tests/test_provider_crash_remediation.py
+tests/test_market_class_certification.py
+tests/test_smtp_preflight.py
+tests/test_production_backup_script.py
+tests/test_semgrep_gate.py

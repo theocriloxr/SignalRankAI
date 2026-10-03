@@ -174,7 +174,9 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     sw = source("web/platform_app/service-worker.js")
     assert 'id="compactNav"' in html
     assert 'id="viewSwitcher"' in html
-    assert "Account & brokers" in html
+    from html import unescape
+
+    assert "Account & brokers" in unescape(html)
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css

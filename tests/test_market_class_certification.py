@@ -94,3 +94,32 @@ def test_release_environment_is_required(monkeypatch) -> None:
     ):
         monkeypatch.delenv(name, raising=False)
     assert certification._environment() == ""
+
+
+@pytest.mark.parametrize("provider,reason", [
+    ("invented_connector", "provider_not_in_catalog"),
+    ("cache_forward_fill", "provider_not_in_catalog"),
+    ("ecb_connector", "provider_capability_mismatch"),
+    ("binance_connector", "provider_capability_mismatch"),
+])
+def test_certification_rejects_unqualified_forex_sources(monkeypatch, provider, reason):
+    async def fetch(*args):
+        return _fresh_rows()
+    monkeypatch.setattr(certification, "async_get_candles", fetch)
+    monkeypatch.setattr(certification, "_get_last_provider_used", lambda *args: provider)
+    result = asyncio.run(certification._certify("forex", "EURUSD", "5m", 2.0))
+    assert result["execution_eligible"] is False
+    assert reason in result["reasons"]
+
+
+def test_certification_rejects_future_dated_candles(monkeypatch):
+    async def fetch(*args):
+        rows = _fresh_rows()
+        for row in rows:
+            row["timestamp"] += 3600 * 1000
+        return rows
+    monkeypatch.setattr(certification, "async_get_candles", fetch)
+    monkeypatch.setattr(certification, "_get_last_provider_used", lambda *args: "oanda_connector")
+    result = asyncio.run(certification._certify("forex", "EURUSD", "5m", 2.0))
+    assert result["execution_eligible"] is False
+    assert "future_timestamp" in result["reasons"]

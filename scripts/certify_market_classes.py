@@ -12,6 +12,7 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -23,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from data.fetcher import async_get_candles, _get_last_provider_used
-from data.provider_catalog import validate_candles
+from data.provider_catalog import get_provider_spec, validate_candles
 
 CLASS_SAMPLES: dict[str, tuple[str, str]] = {
     "crypto_spot": ("BTCUSDT", "5m"),
@@ -56,7 +57,7 @@ def _latest_age(validation: dict[str, Any]) -> float | None:
         return None
     while value > 10_000_000_000:
         value /= 1000.0
-    return max(0.0, time.time() - value)
+    return time.time() - value if math.isfinite(value) else None
 
 
 async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float) -> dict[str, Any]:
@@ -93,21 +94,33 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
     # Certification must enforce the same authority boundary in staging and
     # production. An isolated environment does not certify an analysis feed.
     analysis_only = any(token in source_lower for token in ("yahoo", "yfinance"))
-    fresh = age is not None and age <= freshness_limit
+    try:
+        spec = get_provider_spec(source_lower.removesuffix("_connector"))
+    except KeyError:
+        spec = None
+    capability_ok = bool(spec and spec.realtime_capable and asset_class in spec.asset_classes
+                         and timeframe in spec.timeframes)
+    fresh = age is not None and -30.0 <= age <= freshness_limit
     valid = bool(validation.get("valid"))
-    eligible = bool(valid and fresh and not analysis_only and provider != "unknown")
+    eligible = bool(valid and fresh and not analysis_only and capability_ok)
 
     reasons: list[str] = []
     if not valid:
         reasons.extend(str(v) for v in validation.get("errors") or [])
     if age is None:
         reasons.append("missing_freshness_timestamp")
+    elif age < -30.0:
+        reasons.append("future_timestamp")
     elif not fresh:
         reasons.append(f"stale:{age:.0f}s>{freshness_limit:.0f}s")
     if analysis_only:
         reasons.append("analysis_only_provider")
     if provider == "unknown":
         reasons.append("provider_identity_unknown")
+    elif spec is None:
+        reasons.append("provider_not_in_catalog")
+    elif not capability_ok:
+        reasons.append("provider_capability_mismatch")
 
     return {
         "asset_class": asset_class,

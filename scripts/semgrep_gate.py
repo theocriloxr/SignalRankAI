@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed Semgrep gate with machine-readable result validation.
-
-Semgrep 1.179.0 can emit a successful zero-finding scan summary yet return a
-non-zero CLI status in some registry/strict-mode combinations. Release safety
-must depend on the scan evidence itself, not a contradictory wrapper status.
-
-This gate:
-- runs the exact approved community rule packs;
-- emits JSON to a temporary file;
-- fails on any finding;
-- fails on any Semgrep-reported scan error;
-- fails if the result is missing/malformed or the scan surface is implausibly
-  small;
-- records the raw Semgrep return code for diagnostics without allowing a
-  zero-finding, zero-error, full-surface result to become a false release block.
-"""
+"""Fail closed on findings, incomplete analysis, malformed evidence or tool failure."""
 from __future__ import annotations
 
 import argparse
@@ -52,6 +37,8 @@ def _build_command(output: Path, targets: list[str]) -> list[str]:
     return [
         executable,
         "scan",
+        "--error",
+        "--strict",
         "--config",
         "p/default",
         "--config",
@@ -73,7 +60,7 @@ def _build_command(output: Path, targets: list[str]) -> list[str]:
     ]
 
 
-def _validate_report(report: object, *, minimum_scanned: int) -> dict[str, int]:
+def _validate_report(report: object, *, minimum_scanned: int, raw_exit: int = 0) -> dict[str, int]:
     if not isinstance(report, dict):
         raise RuntimeError("semgrep_report_not_object")
 
@@ -99,6 +86,9 @@ def _validate_report(report: object, *, minimum_scanned: int) -> dict[str, int]:
             "semgrep_scan_errors:"
             + json.dumps(first, sort_keys=True, default=str)[:1200]
         )
+    timing = report.get("time")
+    if isinstance(timing, dict) and timing.get("fixpoint_timeouts"):
+        raise RuntimeError("semgrep_incomplete_taint_analysis")
     if results:
         compact = [
             {
@@ -115,16 +105,20 @@ def _validate_report(report: object, *, minimum_scanned: int) -> dict[str, int]:
             "semgrep_findings:"
             + json.dumps(compact, sort_keys=True, default=str)
         )
+    if raw_exit != 0:
+        raise RuntimeError(f"semgrep_nonzero_exit:{raw_exit}")
     return {"findings": 0, "errors": 0, "scanned": len(scanned)}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--minimum-scanned", type=int, default=400)
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/security/semgrep.json")
     parser.add_argument("targets", nargs="*")
     args = parser.parse_args()
     targets = args.targets or list(DEFAULT_TARGETS)
 
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="signalrank-semgrep-") as td:
         output = Path(td) / "semgrep.json"
         command = _build_command(output, targets)
@@ -132,6 +126,8 @@ def main() -> int:
             command,
             cwd=ROOT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
@@ -145,9 +141,10 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        shutil.copyfile(output, args.output)
         try:
             report = json.loads(output.read_text(encoding="utf-8"))
-            evidence = _validate_report(report, minimum_scanned=args.minimum_scanned)
+            evidence = _validate_report(report, minimum_scanned=args.minimum_scanned, raw_exit=completed.returncode)
         except Exception as exc:
             print(
                 f"SEMGREP_GATE_FAIL raw_exit={completed.returncode} reason={exc}",
