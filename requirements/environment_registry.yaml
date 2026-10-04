@@ -38,7 +38,7 @@
       "name": "ACTIVE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1327",
+        "services/performance_ledger.py:1345",
         "signalrank_telegram/commands.py:5990"
       ],
       "required_by_code": true,
@@ -2168,7 +2168,7 @@
       "name": "BREAKEVEN",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1326",
+        "services/performance_ledger.py:1344",
         "signalrank_telegram/commands.py:5989"
       ],
       "required_by_code": true,
@@ -2496,7 +2496,7 @@
       "name": "CANCELLED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1331",
+        "services/performance_ledger.py:1349",
         "signalrank_telegram/commands.py:5991"
       ],
       "required_by_code": true,
@@ -4865,7 +4865,7 @@
       "name": "DUPLICATE_EXCLUDED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1334",
+        "services/performance_ledger.py:1352",
         "signalrank_telegram/commands.py:5993"
       ],
       "required_by_code": true,
@@ -5607,7 +5607,7 @@
       "name": "EXPIRED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1329",
+        "services/performance_ledger.py:1347",
         "signalrank_telegram/commands.py:5991"
       ],
       "required_by_code": true,
@@ -7312,7 +7312,7 @@
       "name": "MISSED_ENTRY",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1330",
+        "services/performance_ledger.py:1348",
         "signalrank_telegram/commands.py:5991"
       ],
       "required_by_code": true,
@@ -10415,7 +10415,7 @@
       "name": "PARTIAL_EXIT_REPAIR_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:266"
+        "services/performance_ledger.py:267"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10427,7 +10427,7 @@
       "name": "PARTIAL_EXIT_REPAIR_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:267"
+        "services/performance_ledger.py:268"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10793,7 +10793,7 @@
       "name": "PENDING_ENTRY",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1328",
+        "services/performance_ledger.py:1346",
         "signalrank_telegram/commands.py:5990"
       ],
       "required_by_code": true,
@@ -10820,7 +10820,7 @@
       "name": "PERFORMANCE_CERTIFIED_MIN_TERMINAL_COVERAGE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1301"
+        "services/performance_ledger.py:1319"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10830,7 +10830,7 @@
       "name": "PERFORMANCE_LEDGER_MIN_PROJECTION_COVERAGE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1169"
+        "services/performance_ledger.py:1186"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10840,7 +10840,7 @@
       "name": "PERFORMANCE_RECONCILIATION_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:750"
+        "services/performance_ledger.py:751"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10850,7 +10850,7 @@
       "name": "PERFORMANCE_RECONCILIATION_MAX_ATTEMPTS",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:754"
+        "services/performance_ledger.py:755"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10860,7 +10860,7 @@
       "name": "PERFORMANCE_RECONCILIATION_USER_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:752"
+        "services/performance_ledger.py:753"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11569,7 +11569,7 @@
       "name": "PROVIDER_UNAVAILABLE",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1333",
+        "services/performance_ledger.py:1351",
         "signalrank_telegram/commands.py:5992"
       ],
       "required_by_code": true,
@@ -13777,7 +13777,7 @@
       "read_locations": [
         "db/pg_features.py:2834",
         "db/pg_features.py:954",
-        "services/performance_ledger.py:435"
+        "services/performance_ledger.py:436"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13900,7 +13900,7 @@
       "name": "SL",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1266",
+        "services/performance_ledger.py:1284",
         "signalrank_telegram/commands.py:5987"
       ],
       "required_by_code": true,
@@ -14342,8 +14342,8 @@
       "name": "STOPPED_AT_TP1",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1325",
-        "services/performance_ledger.py:1335",
+        "services/performance_ledger.py:1343",
+        "services/performance_ledger.py:1353",
         "signalrank_telegram/commands.py:5988"
       ],
       "required_by_code": true,
@@ -14354,8 +14354,8 @@
       "name": "STOPPED_AT_TP2",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1325",
-        "services/performance_ledger.py:1336",
+        "services/performance_ledger.py:1343",
+        "services/performance_ledger.py:1354",
         "signalrank_telegram/commands.py:5988"
       ],
       "required_by_code": true,
@@ -14969,7 +14969,7 @@
       "name": "TP3",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1265",
+        "services/performance_ledger.py:1283",
         "signalrank_telegram/commands.py:5987"
       ],
       "required_by_code": true,
@@ -15000,8 +15000,8 @@
       "name": "TRACKING_FAILED",
       "production_example_default": null,
       "read_locations": [
-        "services/performance_ledger.py:1332",
-        "services/performance_ledger.py:1362",
+        "services/performance_ledger.py:1350",
+        "services/performance_ledger.py:1380",
         "signalrank_telegram/commands.py:5992"
       ],
       "required_by_code": true,

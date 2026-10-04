@@ -204,6 +204,124 @@ async def test_web_only_users_are_excluded_from_telegram_queues(postgres_databas
         await session.rollback()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["matched", "missing_signal", "wrong_user", "wrong_environment", "wrong_domain"])
+async def test_performance_health_counts_exact_proof_pairs(postgres_database, monkeypatch, mode):
+    from db.models import User, Signal, SignalDelivery, PerformanceLedgerEntry
+    from db.session import get_session
+    from services import performance_ledger as ledger
+
+    now = datetime(2040, 1, 15)
+    monkeypatch.setattr(ledger, "now_utc_naive", lambda: now)
+    env = "audit_" + uuid4().hex[:12]
+    async with get_session() as session:
+        users = [User(username="health-" + uuid4().hex[:16], tier="free") for _ in range(2)]
+        signals = [Signal(signal_id=str(uuid4()), asset="AUDITHEALTH", timeframe="1h",
+                          direction="long", entry=100, stop_loss=95, take_profit="[105,110,115]",
+                          score=90, strategy_name="audit", strategy_group="audit", strength=1,
+                          status="watching", created_at=now) for _ in range(2)]
+        session.add_all(users + signals)
+        await session.flush()
+        deliveries = [SignalDelivery(user_id=users[0].id, signal_id=signal.signal_id,
+                                     sent_ok=index == 0, delivery_state="confirmed" if index == 0 else "failed",
+                                     telegram_chat_id=123, telegram_message_id=100 + index,
+                                     delivery_confirmed_at=now) for index, signal in enumerate(signals)]
+        session.add_all(deliveries)
+        await session.flush()
+        signal_index = 1 if mode == "missing_signal" else 0
+        session.add(PerformanceLedgerEntry(
+            user_id=users[1 if mode == "wrong_user" else 0].id,
+            signal_id=signals[signal_index].signal_id, delivery_id=deliveries[signal_index].id,
+            domain="other" if mode == "wrong_domain" else ledger.PERFORMANCE_DOMAIN,
+            environment="other" if mode == "wrong_environment" else env,
+            delivery_confirmed_at=now, asset="AUDITHEALTH", timeframe="1h", direction="long",
+            primary_bucket="PENDING_ENTRY", entry_status="pending", included=True,
+            outcome_source="signal_lifecycle", calculation_policy_version=ledger.PERFORMANCE_POLICY_VERSION,
+            signal_plan_version="audit", snapshot_hash="audit",
+        ))
+        await session.flush()
+        session.expunge_all()
+        result = await ledger.performance_ledger_health(session, days=1, environment=env)
+        assert result["proof_backed_deliveries"] == 1
+        assert result["matched_projections"] == (1 if mode == "matched" else 0)
+        assert result["missing_ledger_rows"] == (0 if mode == "matched" else 1)
+        assert result["projection_coverage"] == (1.0 if mode == "matched" else 0.0)
+        assert result["ok"] is (mode == "matched")
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["partial", "monitoring_stop", "mismatch", "malformed", "human", "duplicate"])
+async def test_narrow_performance_health_keeps_canonical_checks(postgres_database, monkeypatch, mode):
+    from sqlalchemy import event
+    from db.models import User, Signal, Outcome, SignalDelivery, SignalLifecycle, UserSignalMonitoring, PerformanceLedgerEntry
+    from db.session import get_session
+    from services import performance_ledger as ledger
+
+    now = datetime(2040, 1, 15)
+    monkeypatch.setattr(ledger, "now_utc_naive", lambda: now)
+    env = "audit_" + uuid4().hex[:12]
+    async with get_session() as session:
+        user = User(username="health-" + uuid4().hex[:16], tier="free")
+        signal = Signal(signal_id=str(uuid4()), asset="AUDITHEALTH", timeframe="1h",
+                        direction="long", entry=100, stop_loss=95, take_profit="[105,110,115]",
+                        score=90, strategy_name="audit", strategy_group="audit", strength=1,
+                        status="active", created_at=now)
+        session.add_all([user, signal])
+        await session.flush()
+        delivery = SignalDelivery(user_id=user.id, signal_id=signal.signal_id, sent_ok=True,
+                                  delivery_state="confirmed", telegram_chat_id=123,
+                                  telegram_message_id=100, delivery_confirmed_at=now)
+        session.add(delivery)
+        session.add(Outcome(signal_id=signal.signal_id, status="partial_win_be", canonical_outcome="partial_win",
+                            r_multiple=-1, meta={"tp_hit_index": 1}))
+        session.add(SignalLifecycle(signal_id=signal.signal_id, state="BREAKEVEN_STOP", highest_tp_hit=1,
+                                    terminal_event_type="breakeven_stop", terminal_evidence={"large": "x" * 10000}))
+        await session.flush()
+        partial = ledger.result_from_signal(signal, 1)
+        assert partial is not None
+        realized = partial.realized_r
+        bucket = "STOPPED_AT_TP1"
+        if mode == "monitoring_stop":
+            session.add(UserSignalMonitoring(user_id=user.id, signal_id=signal.signal_id, delivery_id=delivery.id,
+                                            status="stopped", stopped_at_stage=2, realized_r=0.7))
+            bucket, realized = "STOPPED_AT_TP2", 0.7
+        elif mode in {"mismatch", "human"}:
+            realized = -1.0
+        elif mode == "malformed":
+            realized = None
+        elif mode == "duplicate":
+            bucket, realized = "DUPLICATE_EXCLUDED", None
+        session.add(PerformanceLedgerEntry(
+            user_id=user.id, signal_id=signal.signal_id, delivery_id=delivery.id,
+            domain=ledger.PERFORMANCE_DOMAIN, environment=env, delivery_confirmed_at=now,
+            asset="AUDITHEALTH", timeframe="1h", direction="long", primary_bucket=bucket,
+            entry_status="entered", included=mode != "duplicate", final_realized_r=realized,
+            outcome_source="audit", calculation_policy_version=ledger.PERFORMANCE_POLICY_VERSION,
+            signal_plan_version="audit", snapshot_hash="audit", correction_reason="x" * 10000,
+            corrected_at=now if mode == "human" else None, corrected_by="owner" if mode == "human" else None,
+        ))
+        await session.flush()
+        session.expunge_all()  # Fully loaded fixture objects must not mask a missing selected field.
+        statements = []
+        connection = await session.connection()
+        def capture(_connection, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+        event.listen(connection.sync_connection, "before_cursor_execute", capture)
+        try:
+            result = await ledger.performance_ledger_health(session, days=1, environment=env)
+        finally:
+            event.remove(connection.sync_connection, "before_cursor_execute", capture)
+        assert result["ok"] is (mode not in {"mismatch", "malformed"})
+        assert result["outcome_to_ledger_mismatch"] == (1 if mode in {"mismatch", "malformed"} else 0)
+        assert result["malformed_terminal_rows"] == (1 if mode == "malformed" else 0)
+        assert result["human_corrected_overrides"] == (1 if mode == "human" else 0)
+        assert len(statements) == 4  # Counts plus one stream, with no deferred per-row reads.
+        audit_sql = statements[-1].lower()
+        assert "terminal_evidence" not in audit_sql and "correction_reason" not in audit_sql
+        await session.rollback()
+
+
 @pytest_asyncio.fixture
 async def postgres_database():
     from db.session import dispose_engine_for_event_loop, get_session

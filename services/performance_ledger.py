@@ -18,6 +18,7 @@ from uuid import uuid4
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DataError, IntegrityError, InvalidRequestError, StatementError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import load_only
 
 from core.delivery_state import CONFIRMED_DELIVERY_STATES
 from core.redis_state import state
@@ -1081,32 +1082,33 @@ async def performance_ledger_health(
         .subquery()
     )
     proof_deliveries = int((await session.execute(select(func.count()).select_from(proof_scope))).scalar_one() or 0)
-    ledger_rows = int(
-        (
-            await session.execute(
-                select(func.count(PerformanceLedgerEntry.ledger_id)).where(
-                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-                    PerformanceLedgerEntry.environment == env,
-                    PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
-                )
-            )
-        ).scalar_one()
-        or 0
+    # Match the actual recipient/signal pairs. An unrelated ledger row must not
+    # conceal a missing projection merely because the aggregate counts agree.
+    ledger_scope = (
+        PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
+        PerformanceLedgerEntry.environment == env,
+        PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
     )
-    malformed_terminal = int(
-        (
-            await session.execute(
-                select(func.count(PerformanceLedgerEntry.ledger_id)).where(
-                    PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-                    PerformanceLedgerEntry.environment == env,
-                    PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
-                    PerformanceLedgerEntry.primary_bucket.in_(tuple(COMPLETED_BUCKETS)),
-                    PerformanceLedgerEntry.final_realized_r.is_(None),
-                )
-            )
-        ).scalar_one()
-        or 0
-    )
+    matched_projections = int((await session.execute(
+        select(func.count()).select_from(proof_scope).join(
+            PerformanceLedgerEntry,
+            and_(
+                PerformanceLedgerEntry.user_id == proof_scope.c.user_id,
+                PerformanceLedgerEntry.signal_id == proof_scope.c.signal_id,
+                *ledger_scope,
+            ),
+        )
+    )).scalar_one() or 0)
+    totals = (await session.execute(
+        select(
+            func.count(PerformanceLedgerEntry.ledger_id),
+            func.count(PerformanceLedgerEntry.ledger_id).filter(
+                PerformanceLedgerEntry.primary_bucket.in_(tuple(COMPLETED_BUCKETS)),
+                PerformanceLedgerEntry.final_realized_r.is_(None),
+            ),
+        ).where(*ledger_scope)
+    )).one()
+    ledger_rows, malformed_terminal = int(totals[0]), int(totals[1])
 
     # Re-evaluate projected rows through the same canonical classifier. Stream
     # rows so the audit stays bounded in memory at large scale. Deliberately
@@ -1127,10 +1129,25 @@ async def performance_ledger_health(
                 UserSignalMonitoring.signal_id == PerformanceLedgerEntry.signal_id,
             ),
         )
-        .where(
-            PerformanceLedgerEntry.domain == PERFORMANCE_DOMAIN,
-            PerformanceLedgerEntry.environment == env,
-            PerformanceLedgerEntry.delivery_confirmed_at >= cutoff,
+        .where(*ledger_scope)
+        # Keep the full cohort and canonical classifier, but avoid fetching
+        # unrelated signal features, lifecycle evidence and ledger audit text
+        # on each readiness request. Raise on an undeclared classifier input.
+        .options(
+            load_only(
+                PerformanceLedgerEntry.signal_id, PerformanceLedgerEntry.primary_bucket,
+                PerformanceLedgerEntry.included, PerformanceLedgerEntry.final_realized_r,
+                PerformanceLedgerEntry.corrected_at, PerformanceLedgerEntry.corrected_by,
+                raiseload=True,
+            ),
+            load_only(Signal.status, Signal.entry, Signal.stop_loss, Signal.take_profit,
+                      Signal.direction, raiseload=True),
+            load_only(Outcome.status, Outcome.canonical_outcome, Outcome.meta,
+                      Outcome.r_multiple, raiseload=True),
+            load_only(SignalLifecycle.state, SignalLifecycle.highest_tp_hit,
+                      SignalLifecycle.terminal_event_type, raiseload=True),
+            load_only(UserSignalMonitoring.status, UserSignalMonitoring.stopped_at_stage,
+                      UserSignalMonitoring.realized_r, raiseload=True),
         )
         .execution_options(yield_per=500)
     )
@@ -1165,7 +1182,7 @@ async def performance_ledger_health(
             if len(mismatch_samples) < 20:
                 mismatch_samples.append(str(ledger.signal_id))
 
-    projection_coverage = ledger_rows / proof_deliveries if proof_deliveries else 1.0
+    projection_coverage = matched_projections / proof_deliveries if proof_deliveries else 1.0
     min_coverage = max(0.0, min(1.0, float(os.getenv("PERFORMANCE_LEDGER_MIN_PROJECTION_COVERAGE", "0.99") or 0.99)))
     ok = bool(projection_coverage >= min_coverage and malformed_terminal == 0 and mismatch_count == 0)
     return {
@@ -1173,7 +1190,8 @@ async def performance_ledger_health(
         "environment": env,
         "proof_backed_deliveries": proof_deliveries,
         "ledger_rows": ledger_rows,
-        "missing_ledger_rows": max(0, proof_deliveries - ledger_rows),
+        "matched_projections": matched_projections,
+        "missing_ledger_rows": max(0, proof_deliveries - matched_projections),
         "projection_coverage": projection_coverage,
         "minimum_projection_coverage": min_coverage,
         "malformed_terminal_rows": malformed_terminal,

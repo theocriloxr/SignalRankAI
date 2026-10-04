@@ -9430,7 +9430,7 @@
       "line_count": 16122,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "f6c2e79814c27d7082a4edfcb34584364020bea75011358c2a3e5c6e0a0c494c",
+      "sha256": "4fa0a673e1a84a3c663d50c428055da62bfbd622cebfbeb54499b5a81ee657a3",
       "size_bytes": 472988
     },
     {
@@ -11019,11 +11019,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1508,
+      "line_count": 1526,
       "path": "services/performance_ledger.py",
       "reason": "production/build source",
-      "sha256": "ea24a18f52be876336d1525b0cf396260a6ecaf70cc003984fac988cc94f5e9c",
-      "size_bytes": 63941
+      "sha256": "cb4e93d9f1cb27d1316c6eb51e4e840d5f1ac113b5b563b804d8113c3fc91e2f",
+      "size_bytes": 65250
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13435,11 +13435,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 499,
+      "line_count": 617,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "f1ce146f2c93e6f3ad2438cb9000c5e832e393ed6df1a1a996fca81094203992",
-      "size_bytes": 28149
+      "sha256": "debb2bd08e4135195ac8b7c043efaa14bb60dd8e900026bc90a3158a7a301a62",
+      "size_bytes": 35537
     },
     {
       "disposition": "TEST_ONLY",
