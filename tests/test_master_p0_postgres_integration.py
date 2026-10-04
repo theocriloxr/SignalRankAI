@@ -12,6 +12,94 @@ from sqlalchemy.engine import make_url
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status,eligible", [
+    (None, True), ("pending", True), ("tp1", True), ("tp2", True),
+    ("tp3", False), ("sl", False), ("stop", False), ("stopped", False),
+    ("partial_win", False), ("partial_win_be", False), ("breakeven", False),
+    ("be", False), ("missed", False), ("expired", False), ("cancelled", False),
+    ("closed", False), (" PARTIAL-WIN-BE ", False), ("\tSL\n", False),
+])
+async def test_available_signal_query_preserves_terminal_policy_in_postgres(postgres_database, status, eligible):
+    from db.models import User, Signal, Outcome
+    from db.pg_features import _available_signal_query
+    from db.session import get_session
+    now, signal_id = datetime.utcnow(), str(uuid4())
+    async with get_session() as session:
+        user = User(username="available-" + uuid4().hex[:16], tier="free")
+        signal = Signal(signal_id=signal_id, asset="AUDITAVAILABLE", direction="long", timeframe="1h",
+                        entry=100, stop_loss=99, take_profit="[101]", score=90,
+                        strategy_name="audit", strategy_group="audit", strength=1, created_at=now)
+        session.add_all([user, signal])
+        await session.flush()
+        if status is not None:
+            session.add(Outcome(signal_id=signal_id, status=status, meta={}))
+            await session.flush()
+        for ranked in (False, True):
+            query = _available_signal_query(user_id=user.id, cutoff=now - timedelta(minutes=1),
+                                            locked_assets=set(), min_score=80, ranked=ranked)
+            rows = list((await session.execute(query.where(Signal.signal_id == signal_id))).scalars().all())
+            assert bool(rows) is eligible
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_available_signal_query_excludes_unavailable_and_other_user_delivery_is_scoped(postgres_database):
+    from db.models import User, Signal, SignalDelivery
+    from db.pg_features import _available_signal_query
+    from db.session import get_session
+    now = datetime.utcnow()
+    async with get_session() as session:
+        users = [User(username="available-" + uuid4().hex[:16], tier="free") for _ in range(2)]
+        session.add_all(users)
+        signals = {}
+        for name in ("eligible", "delivered", "other_user", "archived", "expired", "old", "low_score", "asset_locked"):
+            signal = Signal(signal_id=str(uuid4()), asset=" lockedasset " if name == "asset_locked" else "AUDITAVAILABLE",
+                            direction="long", timeframe="1h", entry=100, stop_loss=99, take_profit="[101]",
+                            score=79 if name == "low_score" else 90, strategy_name="audit", strategy_group="audit",
+                            strength=1, created_at=now - timedelta(days=2) if name == "old" else now,
+                            archived=name == "archived", expired=name == "expired")
+            signals[name] = signal
+            session.add(signal)
+        await session.flush()
+        session.add_all([
+            SignalDelivery(user_id=users[0].id, signal_id=signals["delivered"].signal_id, sent_ok=False),
+            SignalDelivery(user_id=users[1].id, signal_id=signals["other_user"].signal_id, sent_ok=True),
+        ])
+        await session.flush()
+        query = _available_signal_query(user_id=users[0].id, cutoff=now - timedelta(days=1),
+                                        locked_assets={"LOCKEDASSET"}, min_score=80)
+        rows = list((await session.execute(query.where(Signal.signal_id.in_([s.signal_id for s in signals.values()])))).scalars().all())
+        assert {row.signal_id for row in rows} == {signals["eligible"].signal_id, signals["other_user"].signal_id}
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_available_signal_query_bounds_results_and_preserves_ranking_in_postgres(postgres_database):
+    from db.models import User, Signal
+    from db.pg_features import _available_signal_query
+    from db.session import get_session
+    now = datetime.utcnow()
+    async with get_session() as session:
+        user = User(username="available-" + uuid4().hex[:16], tier="free")
+        session.add(user)
+        signals = [Signal(signal_id=str(uuid4()), asset="AUDITAVAILABLE", direction="long", timeframe="1h",
+                          entry=100, stop_loss=99, take_profit="[101]", score=80 + i % 20,
+                          strategy_name="audit", strategy_group="audit", strength=1,
+                          created_at=now - timedelta(seconds=i)) for i in range(270)]
+        session.add_all(signals)
+        await session.flush()
+        ids = [signal.signal_id for signal in signals]
+        recent = _available_signal_query(user_id=user.id, cutoff=now - timedelta(hours=1), locked_assets=set())
+        rows = list((await session.execute(recent.where(Signal.signal_id.in_(ids)))).scalars().all())
+        assert len(rows) == 250 and [row.signal_id for row in rows] == ids[:250]
+        ranked = _available_signal_query(user_id=user.id, cutoff=now - timedelta(hours=1), locked_assets=set(), ranked=True)
+        rows = list((await session.execute(ranked.where(Signal.signal_id.in_(ids)))).scalars().all())
+        expected = sorted(signals, key=lambda signal: (-signal.score, -signal.created_at.timestamp(), signal.signal_id))[:100]
+        assert len(rows) == 100 and [row.signal_id for row in rows] == [signal.signal_id for signal in expected]
+        await session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_dedup_queries_actual_postgres_and_canonical_side_aliases(postgres_database):
     from db.models import Signal
     from db.session import get_session

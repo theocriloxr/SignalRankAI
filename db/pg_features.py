@@ -4035,6 +4035,44 @@ async def _profile_and_integrity_filter_available_signals(
     return eligible
 
 
+def _available_signal_query(
+    *, user_id: int, cutoff: datetime, locked_assets: set[str],
+    min_score: int | None = None, ranked: bool = False,
+) -> Select[Signal]:
+    """Bound candidate reads without loading global outcome/delivery history.
+
+    Each anti-existence check uses the indexed signal identity. The outcome
+    normalization matches the notification policy, including terminal aliases;
+    a pending projection remains eligible. Profile/integrity checks still run
+    after this query and before any queue or delivery operation.
+    """
+    from core.outcome_ordering import TERMINAL_OUTCOME_STATUSES
+
+    delivered = select(SignalDelivery.id).where(
+        SignalDelivery.user_id == user_id,
+        SignalDelivery.signal_id == Signal.signal_id,
+    ).correlate(Signal).exists()
+    status = func.substr(func.replace(func.lower(func.btrim(
+        func.coalesce(Outcome.status, ""), " \t\n\r\v\f",
+    )), "-", "_"), 1, 16)
+    resolved = select(Outcome.id).where(
+        Outcome.signal_id == Signal.signal_id,
+        status.in_(sorted(TERMINAL_OUTCOME_STATUSES)),
+    ).correlate(Signal).exists()
+    query = select(Signal).where(
+        Signal.created_at >= cutoff,
+        Signal.archived.is_(False), Signal.expired.is_(False),
+        ~delivered, ~resolved,
+        func.upper(func.trim(Signal.asset)).notin_(locked_assets) if locked_assets else true(),
+    )
+    if min_score is not None:
+        query = query.where(Signal.score >= min_score)
+    ordering = (Signal.score.desc(), Signal.created_at.desc(), Signal.signal_id.asc()) if ranked else (
+        Signal.created_at.desc(), Signal.signal_id.asc(),
+    )
+    return query.order_by(*ordering).limit(100 if ranked else 250)
+
+
 async def get_random_available_signals_for_free_user(
     session: AsyncSession,
     telegram_user_id: int,
@@ -4057,12 +4095,6 @@ async def get_random_available_signals_for_free_user(
     cutoff: datetime = now - timedelta(hours=24)
     min_score = _env_int("FREE_RANDOM_MIN_SCORE", 80)
 
-    # Get signals this user already received
-    res_delivered: Result[str] = await session.execute(
-        select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
-    )
-    already_received: set[Any] = set(row[0] for row in res_delivered.all())
-
     try:
         asset_lock_hours = max(0, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
     except Exception:
@@ -4081,40 +4113,10 @@ async def get_random_available_signals_for_free_user(
     )
     locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
 
-    # Pending outcome projections are active signals, not resolved trades.
-    res_resolved = await session.execute(select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None)))
-    from core.outcome_ordering import outcome_is_terminal
-
-    def test_outcome_terminal_import_for_available_signal_queries() -> None:
-        assert outcome_is_terminal("tp3") is True
-        assert outcome_is_terminal("sl") is True
-        assert outcome_is_terminal("partial_win_be") is True
-        assert outcome_is_terminal("pending") is False
-
-    resolved_signals: set[Any] = {row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])}
-
-    # Get all recent signals (not yet archived)
-    # Note: archived filtering will be applied once migration 0009 runs
-    res_signals: Result[Signal] = await session.execute(
-        select(Signal)
-        .where(
-            Signal.created_at >= cutoff,
-        )
-        .order_by(Signal.created_at.desc())
-    )
-    all_recent: list[Signal] = list(res_signals.scalars().all())
-
-    # Filter out already received and resolved trades
-    prefiltered: list[Signal] = [
-        s
-        for s in all_recent
-        if (
-            s.signal_id not in already_received
-            and s.signal_id not in resolved_signals
-            and str(getattr(s, "asset", "") or "").upper().strip() not in locked_assets
-            and float(getattr(s, "score", 0) or 0) >= float(min_score)
-        )
-    ]
+    res_signals = await session.execute(_available_signal_query(
+        user_id=user.id, cutoff=cutoff, locked_assets=locked_assets, min_score=min_score,
+    ))
+    prefiltered = list(res_signals.scalars().all())
     policy_filtered = await _profile_and_integrity_filter_available_signals(
         session,
         int(telegram_user_id),
@@ -4142,12 +4144,6 @@ async def get_highest_scoring_available_signal_for_user(
     now: datetime = _utcnow()
     cutoff: datetime = now - timedelta(hours=24)
 
-    # Get signals this user already received
-    res_delivered: Result[str] = await session.execute(
-        select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
-    )
-    already_received: set[Any] = set(row[0] for row in res_delivered.all())
-
     try:
         asset_lock_hours = max(0, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
     except Exception:
@@ -4166,31 +4162,9 @@ async def get_highest_scoring_available_signal_for_user(
     )
     locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
 
-    # Pending outcome projections are active signals, not resolved trades.
-    res_resolved = await session.execute(select(Outcome.signal_id, Outcome.status).where(Outcome.signal_id.isnot(None)))
-    from core.outcome_ordering import outcome_is_terminal
-
-    def test_outcome_terminal_import_for_available_signal_queries() -> None:
-        assert outcome_is_terminal("tp3") is True
-        assert outcome_is_terminal("sl") is True
-        assert outcome_is_terminal("partial_win_be") is True
-        assert outcome_is_terminal("pending") is False
-
-    resolved_signals: set[Any] = {row[0] for row in res_resolved.all() if outcome_is_terminal(row[1])}
-
-    # Get highest scoring recent signal not yet delivered to user and still ongoing
-    # Note: archived filtering will be applied once migration 0009 runs
-    res_signal: Result[Signal] = await session.execute(
-        select(Signal)
-        .where(
-            Signal.created_at >= cutoff,
-            Signal.signal_id.notin_(already_received) if already_received else true(),
-            Signal.signal_id.notin_(resolved_signals) if resolved_signals else true(),
-            ~Signal.asset.in_(locked_assets) if locked_assets else true(),
-        )
-        .order_by(Signal.score.desc(), Signal.created_at.desc())
-        .limit(100)
-    )
+    res_signal = await session.execute(_available_signal_query(
+        user_id=user.id, cutoff=cutoff, locked_assets=locked_assets, ranked=True,
+    ))
     candidates = list(res_signal.scalars().all())
     policy_filtered = await _profile_and_integrity_filter_available_signals(
         session,

@@ -24,7 +24,7 @@ _STAGE_RANKS = {
     "cancelled": 30,
     "closed": 30,
 }
-_TERMINAL = {
+TERMINAL_OUTCOME_STATUSES = frozenset({
     "tp3",
     "sl",
     "stop",
@@ -37,7 +37,7 @@ _TERMINAL = {
     "expired",
     "cancelled",
     "closed",
-}
+})
 
 
 def canonical_outcome_status(value: Any) -> str:
@@ -49,7 +49,7 @@ def outcome_stage_rank(value: Any) -> int:
 
 
 def outcome_is_terminal(value: Any) -> bool:
-    return canonical_outcome_status(value) in _TERMINAL
+    return canonical_outcome_status(value) in TERMINAL_OUTCOME_STATUSES
 
 
 @dataclass(frozen=True, slots=True)

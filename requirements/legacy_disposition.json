@@ -3014,8 +3014,8 @@
       "line_count": 76,
       "path": "core/outcome_ordering.py",
       "reason": "production/build source",
-      "sha256": "2c2d951066f2b47a7bc196748120dac3c0145c2a0b826a05aed9629eedbfd407",
-      "size_bytes": 1870
+      "sha256": "6d72724931c98767d3de7e99ac8505206378688936257bb31673483c81e22e73",
+      "size_bytes": 1913
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4291,11 +4291,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 4730,
+      "line_count": 4704,
       "path": "db/pg_features.py",
       "reason": "production/build source",
-      "sha256": "48d672f3a6e982fa041cfc7861e78183178d749756e53bc53d8188f5bdeea4bf",
-      "size_bytes": 185371
+      "sha256": "5161c15dbdcc97e1f9cef9578c56fa78ec27529915e880b4f68bfe502b23d3f5",
+      "size_bytes": 184172
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4795,11 +4795,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 53,
+      "line_count": 74,
       "path": "docs/CERTIFICATION_BOUNDARIES_AND_SOAK_20261004.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "561e4655a4604a10c5352207688ecf7d0bbc2cef8bc199cc5188c1896ccda0ab",
-      "size_bytes": 3117
+      "sha256": "9e118cabc4668fb0fa0e211b0cc85a183a639454bf765a67d1f6d24313c3008b",
+      "size_bytes": 4428
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9414,7 +9414,7 @@
       "line_count": 16122,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "8b0466dacb932c883be51ca302c321c7d475c0947bc43fb0d42f7f42a3f62d91",
+      "sha256": "119f9b8c587545c1a929eb320f706661cf87c29f990a81d3da8f8f0ab41515bb",
       "size_bytes": 472988
     },
     {
@@ -13411,11 +13411,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 346,
+      "line_count": 434,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "6c41607d32851b5c0b01223f6cf525c1ad37c40b884c762a312099795e6db70f",
-      "size_bytes": 18792
+      "sha256": "77ced6bebfdcbba3106547b1dcf0f07f77f5cff9543f56b882c1bafc84a17866",
+      "size_bytes": 24272
     },
     {
       "disposition": "TEST_ONLY",

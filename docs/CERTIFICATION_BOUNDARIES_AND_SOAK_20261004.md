@@ -51,3 +51,24 @@ overall coverage and typing debt, each funded tester's firm policy, actual
 broker fills and reconciled exits, native devices and complete audits. A
 successful HTTP response or observational availability window cannot satisfy
 those separate requirements.
+
+## Additional runtime finding: availability-query scans
+
+The approved production frontdoor logged a 16-second database session hold and
+an error in random free-signal distribution at 2026-10-04 04:29 UTC. Source
+inspection found that both free and paid availability selectors fetched global
+outcome history and user delivery history before selecting recent signals.
+
+The candidate replaces those history reads with correlated `NOT EXISTS` checks
+against signal and user identities. It limits recent candidates to 250 and paid
+ranked candidates to 100. Archived, expired, delivered, asset-locked and terminal
+signals are excluded in SQL; pending and intermediate outcomes remain eligible.
+The existing profile and integrity checks still precede queueing or delivery.
+Terminal aliases share the canonical outcome policy rather than a copied list.
+
+Real local PostgreSQL tests cover every terminal status, whitespace/hyphen
+aliases, pending and intermediate statuses, other-user delivery isolation,
+availability exclusions, result caps and ranking. This establishes candidate
+behavior; production performance has not been proven until the candidate can
+pass promotion gates and run with production traffic. A separate worker outcome
+reconciliation timeout and actionable ML drift/starvation remain open findings.
