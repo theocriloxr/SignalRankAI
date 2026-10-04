@@ -10065,8 +10065,8 @@
       "name": "PAPER_CASH_TOLERANCE",
       "production_example_default": "0.00000001",
       "read_locations": [
-        "core/paper_trading_service.py:1995",
-        "core/paper_trading_service.py:2148"
+        "core/paper_trading_service.py:2004",
+        "core/paper_trading_service.py:2157"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10162,7 +10162,7 @@
       "name": "PAPER_DEFAULT_TARGET_MODE",
       "production_example_default": "TP1",
       "read_locations": [
-        "core/paper_trading_service.py:301"
+        "core/paper_trading_service.py:307"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10185,7 +10185,7 @@
       "name": "PAPER_ENTRY_RETRY_SECONDS",
       "production_example_default": "15",
       "read_locations": [
-        "core/paper_trading_service.py:1313"
+        "core/paper_trading_service.py:1319"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10301,7 +10301,7 @@
       "name": "PAPER_POSITION_MAX_AGE_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "core/paper_trading_service.py:191"
+        "core/paper_trading_service.py:195"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10321,7 +10321,7 @@
       "name": "PAPER_REQUIRE_USER_PROFILE",
       "production_example_default": null,
       "read_locations": [
-        "core/paper_trading_service.py:1759"
+        "core/paper_trading_service.py:1764"
       ],
       "required_by_code": true,
       "sensitive": false

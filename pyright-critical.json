@@ -10,6 +10,7 @@
     "core/financial_activation.py",
     "core/release_guard.py",
     "core/asset_certification.py",
+    "core/paper_trading_service.py",
     "core/account_policy.py",
     "core/transactional_outbox.py",
     "core/event_bus.py",

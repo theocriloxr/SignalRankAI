@@ -301,6 +301,71 @@ async def test_oct1_receipt_paper_idempotency_and_missed_entry_on_postgres(postg
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("direction,quantity,fill,error", [
+    ("long", 2.0, 100.0, None), ("short", 2.0, 100.0, None),
+    ("sideways", 2.0, 100.0, "paper_position_direction_invalid"),
+    ("long", 0.0, 100.0, "paper_position_geometry_invalid"),
+    ("long", -2.0, 100.0, "paper_position_geometry_invalid"),
+    ("long", float("inf"), 100.0, "paper_position_geometry_invalid"),
+    ("long", 2.0, 0.0, "paper_position_geometry_invalid"),
+    ("long", 2.0, float("nan"), "paper_position_geometry_invalid"),
+])
+async def test_paper_exit_ledger_rejects_bad_geometry_and_closes_once_on_postgres(
+    postgres_database, direction, quantity, fill, error,
+):
+    from core.paper_trading_service import PaperTradingService
+    from db.models import User, Signal, PaperAccount, PaperPosition, PaperLedgerEntry
+    from db.session import get_session
+    from sqlalchemy import delete
+    signal_id, position_id = str(uuid4()), str(uuid4())
+    async with get_session() as session:
+        user = User(username="paper-boundary-" + uuid4().hex[:12], tier="vip")
+        signal = Signal(signal_id=signal_id, asset="AUDITPAPER", direction="long", timeframe="1h",
+                        entry=100, stop_loss=90, take_profit="[110]", score=90,
+                        strategy_name="audit", strategy_group="audit", strength=1)
+        session.add_all([user, signal])
+        await session.flush()
+        user_id = user.id
+        account = PaperAccount(user_id=user_id, starting_balance=1000, cash_balance=800, fee_bps=0)
+        session.add(account)
+        await session.flush()
+        account_id = account.id
+        position = PaperPosition(position_id=position_id, account_id=account_id, user_id=user_id,
+                                 signal_id=signal_id, asset="AUDITPAPER", direction=direction,
+                                 signal_entry=100, fill_entry=fill, current_price=100, quantity=quantity,
+                                 stop_loss=110 if direction == "short" else 90,
+                                 target_price=90 if direction == "short" else 110,
+                                 reserved_cash=200, notional=200, entry_fee=0)
+        session.add(position)
+        await session.commit()
+    try:
+        service = PaperTradingService()
+        price = 90.0 if direction == "short" else 110.0
+        if error:
+            with pytest.raises(ValueError, match=error):
+                await service._mark_one(position_id, price)
+        else:
+            assert await service._mark_one(position_id, price) is True
+            assert await service._mark_one(position_id, price) is False
+        async with get_session() as session:
+            stored = (await session.execute(select(PaperPosition).where(PaperPosition.position_id == position_id))).scalar_one()
+            balance = (await session.execute(select(PaperAccount.cash_balance).where(PaperAccount.id == account_id))).scalar_one()
+            entries = (await session.execute(select(func.count(PaperLedgerEntry.id)).where(PaperLedgerEntry.position_id == position_id))).scalar_one()
+            assert stored.status == ("open" if error else "closed")
+            assert balance == (800 if error else 1020)
+            assert entries == (0 if error else 1)
+            assert stored.realized_pnl == (0 if error else 20)
+    finally:
+        async with get_session() as session:
+            await session.execute(delete(PaperLedgerEntry).where(PaperLedgerEntry.position_id == position_id))
+            await session.execute(delete(PaperPosition).where(PaperPosition.position_id == position_id))
+            await session.execute(delete(PaperAccount).where(PaperAccount.id == account_id))
+            await session.execute(delete(Signal).where(Signal.signal_id == signal_id))
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+
+
+@pytest.mark.asyncio
 async def test_lifecycle_notification_materializes_plan_and_sends_once(postgres_database, monkeypatch):
     from contextlib import asynccontextmanager
     from types import SimpleNamespace

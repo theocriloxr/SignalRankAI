@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 
 from db.models import (
@@ -178,7 +178,11 @@ def parse_targets(raw: Any) -> list[float]:
 
 def canonical_direction(value: Any) -> str:
     text = str(value or "").strip().lower()
-    return "long" if text in {"long", "buy", "bull", "bullish"} else "short"
+    if text in {"long", "buy", "bull", "bullish"}:
+        return "long"
+    if text in {"short", "sell", "bear", "bearish"}:
+        return "short"
+    return ""
 
 
 def position_max_age_hours(timeframe: str | None = None) -> float:
@@ -191,7 +195,9 @@ def position_max_age_hours(timeframe: str | None = None) -> float:
     explicit = os.getenv("PAPER_POSITION_MAX_AGE_HOURS")
     if explicit:
         try:
-            return max(1.0, float(explicit))
+            hours = float(explicit)
+            if math.isfinite(hours):
+                return max(1.0, hours)
         except (TypeError, ValueError):
             pass
     tf = str(timeframe or "").lower().strip()
@@ -567,7 +573,7 @@ class PaperTradingService:
             )
             if open_count:
                 raise ValueError("Close or wait for all paper positions before resetting the account")
-            await session.execute(PaperPosition.__table__.delete().where(PaperPosition.user_id == int(user.id)))
+            await session.execute(delete(PaperPosition).where(PaperPosition.user_id == int(user.id)))
             account.starting_balance = balance
             account.cash_balance = balance
             account.realized_pnl = 0.0
@@ -1720,12 +1726,11 @@ class PaperTradingService:
                         evidence_before,
                     )
                     return "skipped"
+                from services.user_intelligence import (
+                    get_platform_user_trading_preferences,
+                    signal_matches_preferences,
+                )
                 try:
-                    from services.user_intelligence import (
-                        get_platform_user_trading_preferences,
-                        signal_matches_preferences,
-                    )
-
                     profile_prefs = await get_platform_user_trading_preferences(
                         session,
                         int(user.id),
@@ -1846,11 +1851,15 @@ class PaperTradingService:
                 if _safe_float(candidate.get("score")) < _safe_float(account.min_signal_score):
                     skip_reason = skip_reason or "score_below_paper_minimum"
                 direction = canonical_direction(candidate.get("direction"))
+                if not direction:
+                    skip_reason = skip_reason or "invalid_signal_direction"
                 allowed_direction = str(account.allowed_directions or "both").lower()
                 if allowed_direction not in {"both", direction}:
                     skip_reason = skip_reason or "direction_not_allowed"
-                asset_class = canonical_asset_class(candidate.get("asset"), candidate.get("asset_class"))
                 asset = str(candidate.get("asset") or "").upper().strip()
+                asset_class = canonical_asset_class(asset, candidate.get("asset_class"))
+                if not asset:
+                    skip_reason = skip_reason or "missing_signal_asset"
                 if any(str(row.asset or "").upper().strip() == asset for row in open_rows):
                     skip_reason = skip_reason or "duplicate_open_asset"
                 max_per_class = _env_int("PAPER_MAX_OPEN_POSITIONS_PER_ASSET_CLASS", 2, 1, 20)
@@ -1950,52 +1959,10 @@ class PaperTradingService:
                                 valid_geometry = (
                                     (stop < fill < target) if direction == "long" else (target < fill < stop)
                                 )
-                            if live > 0 and (risk_per_unit <= 0 or not valid_geometry):
-                                reason = (
-                                    "invalid_risk_distance" if risk_per_unit <= 0 else "paper_entry_no_longer_valid"
-                                )
-                                await self._record_attempt(
-                                    session,
-                                    account=account,
-                                    user=user,
-                                    candidate=candidate,
-                                    decision="SKIPPED",
-                                    reason=reason,
-                                    retryable=False,
-                                    market_price=market_price,
-                                    finalized=True,
-                                )
-                                await session.commit()
-                                notify = {"decision": "SKIPPED", "reason": reason}
-                                result_status = "skipped"
-                            elif live > 0:
-                                from core.paper_sizing import calculate_paper_position_size
-
-                                cash = _safe_float(account.cash_balance)
-                                max_notional_pct = _env_float("PAPER_MAX_NOTIONAL_PCT", 20.0, 1.0, 50.0)
-                                try:
-                                    effective_risk_pct = _safe_float(account.risk_pct)
-                                    if profile_prefs is not None:
-                                        effective_risk_pct = min(
-                                            effective_risk_pct,
-                                            max(
-                                                0.01,
-                                                _safe_float(
-                                                    getattr(profile_prefs, "risk_per_trade_pct", effective_risk_pct)
-                                                ),
-                                            ),
-                                        )
-                                    sizing = calculate_paper_position_size(
-                                        cash=cash,
-                                        risk_pct=effective_risk_pct,
-                                        risk_per_unit=risk_per_unit,
-                                        fill=fill,
-                                        max_notional_pct=max_notional_pct,
-                                        fee_bps=account.fee_bps,
-                                        tolerance=os.getenv("PAPER_CASH_TOLERANCE", "0.00000001"),
+                                if risk_per_unit <= 0 or not valid_geometry:
+                                    reason = (
+                                        "invalid_risk_distance" if risk_per_unit <= 0 else "paper_entry_no_longer_valid"
                                     )
-                                except ValueError as exc:
-                                    reason = str(exc)
                                     await self._record_attempt(
                                         session,
                                         account=account,
@@ -2011,229 +1978,271 @@ class PaperTradingService:
                                     notify = {"decision": "SKIPPED", "reason": reason}
                                     result_status = "skipped"
                                 else:
-                                    quantity = float(sizing.quantity)
-                                    notional = float(sizing.notional)
-                                    entry_fee = float(sizing.entry_fee)
-                                    starting_balance = max(_safe_float(account.starting_balance), 1e-9)
-                                    existing_exposure = sum(_safe_float(row.notional) for row in open_rows)
-                                    max_total_exposure_pct = _env_float(
-                                        "PAPER_MAX_TOTAL_EXPOSURE_PCT", 80.0, 5.0, 100.0
-                                    )
-                                    projected_exposure_pct = (existing_exposure + notional) / starting_balance * 100.0
-                                    if projected_exposure_pct > max_total_exposure_pct:
+                                    from core.paper_sizing import calculate_paper_position_size
+
+                                    cash = _safe_float(account.cash_balance)
+                                    max_notional_pct = _env_float("PAPER_MAX_NOTIONAL_PCT", 20.0, 1.0, 50.0)
+                                    try:
+                                        effective_risk_pct = _safe_float(account.risk_pct)
+                                        if profile_prefs is not None:
+                                            effective_risk_pct = min(
+                                                effective_risk_pct,
+                                                max(
+                                                    0.01,
+                                                    _safe_float(
+                                                        getattr(profile_prefs, "risk_per_trade_pct", effective_risk_pct)
+                                                    ),
+                                                ),
+                                            )
+                                        sizing = calculate_paper_position_size(
+                                            cash=cash,
+                                            risk_pct=effective_risk_pct,
+                                            risk_per_unit=risk_per_unit,
+                                            fill=fill,
+                                            max_notional_pct=max_notional_pct,
+                                            fee_bps=account.fee_bps,
+                                            tolerance=os.getenv("PAPER_CASH_TOLERANCE", "0.00000001"),
+                                        )
+                                    except ValueError as exc:
+                                        reason = str(exc)
                                         await self._record_attempt(
                                             session,
                                             account=account,
                                             user=user,
                                             candidate=candidate,
                                             decision="SKIPPED",
-                                            reason="max_total_exposure",
+                                            reason=reason,
                                             retryable=False,
                                             market_price=market_price,
-                                            sizing=sizing,
                                             finalized=True,
-                                            meta={
-                                                "projected_exposure_pct": projected_exposure_pct,
-                                                "maximum_pct": max_total_exposure_pct,
-                                            },
                                         )
                                         await session.commit()
-                                        notify = {"decision": "SKIPPED", "reason": "max_total_exposure"}
+                                        notify = {"decision": "SKIPPED", "reason": reason}
                                         result_status = "skipped"
-                                        quantity = 0.0
-                                    existing_open_risk = sum(
-                                        abs(_safe_float(row.fill_entry) - _safe_float(row.stop_loss))
-                                        * _safe_float(row.quantity)
-                                        for row in open_rows
-                                    )
-                                    projected_open_risk_pct = (
-                                        (existing_open_risk + (risk_per_unit * quantity)) / starting_balance * 100.0
-                                    )
-                                    max_open_risk_pct = _env_float("PAPER_MAX_OPEN_RISK_PCT", 3.0, 0.1, 25.0)
-                                    if quantity > 0 and projected_open_risk_pct > max_open_risk_pct:
-                                        await self._record_attempt(
-                                            session,
-                                            account=account,
-                                            user=user,
-                                            candidate=candidate,
-                                            decision="SKIPPED",
-                                            reason="max_open_risk",
-                                            retryable=False,
-                                            market_price=market_price,
-                                            sizing=sizing,
-                                            finalized=True,
-                                            meta={
-                                                "projected_open_risk_pct": projected_open_risk_pct,
-                                                "maximum_pct": max_open_risk_pct,
-                                            },
+                                    else:
+                                        quantity = float(sizing.quantity)
+                                        notional = float(sizing.notional)
+                                        entry_fee = float(sizing.entry_fee)
+                                        starting_balance = max(_safe_float(account.starting_balance), 1e-9)
+                                        existing_exposure = sum(_safe_float(row.notional) for row in open_rows)
+                                        max_total_exposure_pct = _env_float(
+                                            "PAPER_MAX_TOTAL_EXPOSURE_PCT", 80.0, 5.0, 100.0
                                         )
-                                        await session.commit()
-                                        notify = {"decision": "SKIPPED", "reason": "max_open_risk"}
-                                        result_status = "skipped"
-                                        quantity = 0.0
-                                    if quantity > 0:
-                                        position = PaperPosition(
-                                            position_id=str(uuid4()),
-                                            account_id=int(account.id),
-                                            user_id=int(user.id),
-                                            signal_id=str(candidate["signal_id"]),
-                                            delivery_id=(
-                                                int(candidate["delivery_id"])
-                                                if candidate.get("delivery_id") is not None
-                                                else None
-                                            ),
-                                            asset=str(candidate["asset"]),
-                                            asset_class=asset_class,
-                                            timeframe=str(candidate.get("timeframe") or ""),
-                                            direction=direction,
-                                            status="open",
-                                            signal_entry=entry,
-                                            fill_entry=fill,
-                                            current_price=live,
-                                            stop_loss=stop,
-                                            take_profits=targets,
-                                            target_price=target,
-                                            quantity=quantity,
-                                            notional=notional,
-                                            reserved_cash=notional,
-                                            entry_fee=entry_fee,
-                                            exit_fee=0.0,
-                                            unrealized_pnl=0.0,
-                                            realized_pnl=0.0,
-                                            opened_at=now_utc_naive(),
-                                            source=(
-                                                "web_signal_receipt"
-                                                if str(candidate.get("receipt_channel") or "") == "web"
-                                                else "delivered_signal"
-                                            ),
-                                            meta={
-                                                "score": candidate.get("score"),
-                                                "price_source": "live",
-                                                "receipt_channel": candidate.get("receipt_channel") or "telegram",
-                                                "receipt_reference": candidate.get("receipt_reference"),
-                                                "confirmed_at": str(candidate.get("confirmed_at") or ""),
-                                                "risk_pct": float(effective_risk_pct),
-                                                "requested_risk_pct": float(sizing.requested_risk_pct),
-                                                "requested_risk_amount": float(sizing.risk_amount),
-                                                "actual_risk_pct": float(sizing.actual_risk_pct),
-                                                "actual_risk_amount": float(sizing.actual_risk_amount),
-                                                "risk_per_unit": float(sizing.risk_per_unit),
-                                                "uncapped_quantity": float(sizing.uncapped_quantity),
-                                                "size_cap_applied": bool(sizing.size_cap_applied),
-                                                "size_cap_reason": sizing.size_cap_reason,
-                                                "available_cash_before": float(sizing.available_cash_before),
-                                                "available_cash_after": float(sizing.available_cash_after),
-                                                "margin_required": float(sizing.margin_required),
-                                                "leverage": 1.0,
-                                                "fees": float(sizing.fees),
-                                                "slippage": float(_safe_float(account.slippage_bps) / 10000.0 * live),
-                                                "user_trade_profile": getattr(profile_prefs, "trade_profile", "all")
-                                                if profile_prefs is not None
-                                                else "all",
-                                                "user_risk_profile": getattr(profile_prefs, "risk_profile", "balanced")
-                                                if profile_prefs is not None
-                                                else "balanced",
-                                                "profile_verified": profile_prefs is not None,
-                                                "target_mode": str(account.target_mode or "TP1").upper(),
-                                                "sizing_policy_version": sizing.policy_version,
-                                                "max_notional_pct": max_notional_pct,
-                                                "thesis_fingerprint": candidate.get("thesis_fingerprint"),
-                                                "freshness_age_seconds": freshness.age_seconds,
-                                                "freshness_max_age_seconds": freshness.max_age_seconds,
-                                                "exit_fee_accounting": "deducted_from_final_proceeds",
-                                            },
-                                        )
-                                        account.cash_balance = cash - float(sizing.total_required)
-                                        if account.cash_balance < -float(
-                                            os.getenv("PAPER_CASH_TOLERANCE", "0.00000001")
-                                        ):
-                                            raise RuntimeError("paper_cash_balance_would_be_negative")
-                                        account.updated_at = now_utc_naive()
-                                        session.add(position)
-                                        await session.flush()
-                                        session.add(
-                                            PaperLedgerEntry(
-                                                account_id=int(account.id),
-                                                user_id=int(user.id),
-                                                position_id=position.position_id,
-                                                entry_type="POSITION_OPENED",
-                                                amount=-float(sizing.total_required),
-                                                balance_after=_safe_float(account.cash_balance),
-                                                description=f"Opened paper {direction.upper()} {candidate['asset']}",
+                                        projected_exposure_pct = (existing_exposure + notional) / starting_balance * 100.0
+                                        if projected_exposure_pct > max_total_exposure_pct:
+                                            await self._record_attempt(
+                                                session,
+                                                account=account,
+                                                user=user,
+                                                candidate=candidate,
+                                                decision="SKIPPED",
+                                                reason="max_total_exposure",
+                                                retryable=False,
+                                                market_price=market_price,
+                                                sizing=sizing,
+                                                finalized=True,
                                                 meta={
-                                                    "fill": fill,
-                                                    "quantity": quantity,
-                                                    "entry_fee": entry_fee,
-                                                    "sizing_policy_version": sizing.policy_version,
+                                                    "projected_exposure_pct": projected_exposure_pct,
+                                                    "maximum_pct": max_total_exposure_pct,
                                                 },
                                             )
-                                        )
-                                        attempt = await self._record_attempt(
-                                            session,
-                                            account=account,
-                                            user=user,
-                                            candidate=candidate,
-                                            decision="OPENED",
-                                            reason="eligible_confirmed_delivery",
-                                            retryable=False,
-                                            market_price=market_price,
-                                            sizing=sizing,
-                                            finalized=True,
-                                            meta={
-                                                "position_id": position.position_id,
-                                                "requested_risk_pct": float(sizing.requested_risk_pct),
-                                                "actual_risk_pct": float(sizing.actual_risk_pct),
-                                                "actual_risk_amount": float(sizing.actual_risk_amount),
-                                                "risk_per_unit": float(sizing.risk_per_unit),
-                                                "size_cap_applied": bool(sizing.size_cap_applied),
-                                                "size_cap_reason": sizing.size_cap_reason,
-                                            },
-                                        )
-                                        execution_evidence = await get_platform_execution_evidence(
-                                            session,
-                                            user_id=int(user.id),
-                                            signal_id=str(candidate["signal_id"]),
-                                            expected_reference=str(position.position_id),
-                                        )
-                                        if not execution_evidence.get("exactly_one"):
-                                            raise RuntimeError("paper_execution_evidence_not_exactly_one")
-                                        try:
                                             await session.commit()
-                                        except IntegrityError:
-                                            await session.rollback()
-                                            return "skipped"
-                                        result_status = "opened"
-                                        notify = {
-                                            "decision": "OPENED",
-                                            "reason": "eligible_confirmed_delivery",
-                                            "fill": fill,
-                                            "sizing": sizing,
-                                            "risk_pct": float(effective_risk_pct),
-                                            "stop": stop,
-                                            "target": target,
-                                            "remaining_cash": account.cash_balance,
-                                            "position_id": str(position.position_id),
-                                            "attempt_id": str(attempt.attempt_id),
-                                            "execution_evidence": execution_evidence,
-                                        }
-                                        logger.info(
-                                            "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s "
-                                            "decision=OPENED cash=%.4f risk_pct=%.4f risk_amount=%.4f fill=%.8f "
-                                            "stop=%.8f quantity=%.10f notional=%.4f entry_fee=%.4f target=%.8f",
-                                            user.telegram_user_id,
-                                            candidate["signal_id"],
-                                            candidate["delivery_id"],
-                                            candidate["asset"],
-                                            cash,
-                                            _safe_float(account.risk_pct),
-                                            float(sizing.risk_amount),
-                                            fill,
-                                            stop,
-                                            quantity,
-                                            notional,
-                                            entry_fee,
-                                            target,
+                                            notify = {"decision": "SKIPPED", "reason": "max_total_exposure"}
+                                            result_status = "skipped"
+                                            quantity = 0.0
+                                        existing_open_risk = sum(
+                                            abs(_safe_float(row.fill_entry) - _safe_float(row.stop_loss))
+                                            * _safe_float(row.quantity)
+                                            for row in open_rows
                                         )
+                                        projected_open_risk_pct = (
+                                            (existing_open_risk + (risk_per_unit * quantity)) / starting_balance * 100.0
+                                        )
+                                        max_open_risk_pct = _env_float("PAPER_MAX_OPEN_RISK_PCT", 3.0, 0.1, 25.0)
+                                        if quantity > 0 and projected_open_risk_pct > max_open_risk_pct:
+                                            await self._record_attempt(
+                                                session,
+                                                account=account,
+                                                user=user,
+                                                candidate=candidate,
+                                                decision="SKIPPED",
+                                                reason="max_open_risk",
+                                                retryable=False,
+                                                market_price=market_price,
+                                                sizing=sizing,
+                                                finalized=True,
+                                                meta={
+                                                    "projected_open_risk_pct": projected_open_risk_pct,
+                                                    "maximum_pct": max_open_risk_pct,
+                                                },
+                                            )
+                                            await session.commit()
+                                            notify = {"decision": "SKIPPED", "reason": "max_open_risk"}
+                                            result_status = "skipped"
+                                            quantity = 0.0
+                                        if quantity > 0:
+                                            position = PaperPosition(
+                                                position_id=str(uuid4()),
+                                                account_id=int(account.id),
+                                                user_id=int(user.id),
+                                                signal_id=str(candidate["signal_id"]),
+                                                delivery_id=(
+                                                    int(candidate["delivery_id"])
+                                                    if candidate.get("delivery_id") is not None
+                                                    else None
+                                                ),
+                                                asset=str(candidate["asset"]),
+                                                asset_class=asset_class,
+                                                timeframe=str(candidate.get("timeframe") or ""),
+                                                direction=direction,
+                                                status="open",
+                                                signal_entry=entry,
+                                                fill_entry=fill,
+                                                current_price=live,
+                                                stop_loss=stop,
+                                                take_profits=targets,
+                                                target_price=target,
+                                                quantity=quantity,
+                                                notional=notional,
+                                                reserved_cash=notional,
+                                                entry_fee=entry_fee,
+                                                exit_fee=0.0,
+                                                unrealized_pnl=0.0,
+                                                realized_pnl=0.0,
+                                                opened_at=now_utc_naive(),
+                                                source=(
+                                                    "web_signal_receipt"
+                                                    if str(candidate.get("receipt_channel") or "") == "web"
+                                                    else "delivered_signal"
+                                                ),
+                                                meta={
+                                                    "score": candidate.get("score"),
+                                                    "price_source": "live",
+                                                    "receipt_channel": candidate.get("receipt_channel") or "telegram",
+                                                    "receipt_reference": candidate.get("receipt_reference"),
+                                                    "confirmed_at": str(candidate.get("confirmed_at") or ""),
+                                                    "risk_pct": float(effective_risk_pct),
+                                                    "requested_risk_pct": float(sizing.requested_risk_pct),
+                                                    "requested_risk_amount": float(sizing.risk_amount),
+                                                    "actual_risk_pct": float(sizing.actual_risk_pct),
+                                                    "actual_risk_amount": float(sizing.actual_risk_amount),
+                                                    "risk_per_unit": float(sizing.risk_per_unit),
+                                                    "uncapped_quantity": float(sizing.uncapped_quantity),
+                                                    "size_cap_applied": bool(sizing.size_cap_applied),
+                                                    "size_cap_reason": sizing.size_cap_reason,
+                                                    "available_cash_before": float(sizing.available_cash_before),
+                                                    "available_cash_after": float(sizing.available_cash_after),
+                                                    "margin_required": float(sizing.margin_required),
+                                                    "leverage": 1.0,
+                                                    "fees": float(sizing.fees),
+                                                    "slippage": float(_safe_float(account.slippage_bps) / 10000.0 * live),
+                                                    "user_trade_profile": getattr(profile_prefs, "trade_profile", "all")
+                                                    if profile_prefs is not None
+                                                    else "all",
+                                                    "user_risk_profile": getattr(profile_prefs, "risk_profile", "balanced")
+                                                    if profile_prefs is not None
+                                                    else "balanced",
+                                                    "profile_verified": profile_prefs is not None,
+                                                    "target_mode": str(account.target_mode or "TP1").upper(),
+                                                    "sizing_policy_version": sizing.policy_version,
+                                                    "max_notional_pct": max_notional_pct,
+                                                    "thesis_fingerprint": candidate.get("thesis_fingerprint"),
+                                                    "freshness_age_seconds": freshness.age_seconds,
+                                                    "freshness_max_age_seconds": freshness.max_age_seconds,
+                                                    "exit_fee_accounting": "deducted_from_final_proceeds",
+                                                },
+                                            )
+                                            account.cash_balance = cash - float(sizing.total_required)
+                                            if account.cash_balance < -float(
+                                                os.getenv("PAPER_CASH_TOLERANCE", "0.00000001")
+                                            ):
+                                                raise RuntimeError("paper_cash_balance_would_be_negative")
+                                            account.updated_at = now_utc_naive()
+                                            session.add(position)
+                                            await session.flush()
+                                            session.add(
+                                                PaperLedgerEntry(
+                                                    account_id=int(account.id),
+                                                    user_id=int(user.id),
+                                                    position_id=position.position_id,
+                                                    entry_type="POSITION_OPENED",
+                                                    amount=-float(sizing.total_required),
+                                                    balance_after=_safe_float(account.cash_balance),
+                                                    description=f"Opened paper {direction.upper()} {candidate['asset']}",
+                                                    meta={
+                                                        "fill": fill,
+                                                        "quantity": quantity,
+                                                        "entry_fee": entry_fee,
+                                                        "sizing_policy_version": sizing.policy_version,
+                                                    },
+                                                )
+                                            )
+                                            attempt = await self._record_attempt(
+                                                session,
+                                                account=account,
+                                                user=user,
+                                                candidate=candidate,
+                                                decision="OPENED",
+                                                reason="eligible_confirmed_delivery",
+                                                retryable=False,
+                                                market_price=market_price,
+                                                sizing=sizing,
+                                                finalized=True,
+                                                meta={
+                                                    "position_id": position.position_id,
+                                                    "requested_risk_pct": float(sizing.requested_risk_pct),
+                                                    "actual_risk_pct": float(sizing.actual_risk_pct),
+                                                    "actual_risk_amount": float(sizing.actual_risk_amount),
+                                                    "risk_per_unit": float(sizing.risk_per_unit),
+                                                    "size_cap_applied": bool(sizing.size_cap_applied),
+                                                    "size_cap_reason": sizing.size_cap_reason,
+                                                },
+                                            )
+                                            execution_evidence = await get_platform_execution_evidence(
+                                                session,
+                                                user_id=int(user.id),
+                                                signal_id=str(candidate["signal_id"]),
+                                                expected_reference=str(position.position_id),
+                                            )
+                                            if not execution_evidence.get("exactly_one"):
+                                                raise RuntimeError("paper_execution_evidence_not_exactly_one")
+                                            try:
+                                                await session.commit()
+                                            except IntegrityError:
+                                                await session.rollback()
+                                                return "skipped"
+                                            result_status = "opened"
+                                            notify = {
+                                                "decision": "OPENED",
+                                                "reason": "eligible_confirmed_delivery",
+                                                "fill": fill,
+                                                "sizing": sizing,
+                                                "risk_pct": float(effective_risk_pct),
+                                                "stop": stop,
+                                                "target": target,
+                                                "remaining_cash": account.cash_balance,
+                                                "position_id": str(position.position_id),
+                                                "attempt_id": str(attempt.attempt_id),
+                                                "execution_evidence": execution_evidence,
+                                            }
+                                            logger.info(
+                                                "[paper_candidate] user_id=%s signal_id=%s delivery_id=%s asset=%s "
+                                                "decision=OPENED cash=%.4f risk_pct=%.4f risk_amount=%.4f fill=%.8f "
+                                                "stop=%.8f quantity=%.10f notional=%.4f entry_fee=%.4f target=%.8f",
+                                                user.telegram_user_id,
+                                                candidate["signal_id"],
+                                                candidate["delivery_id"],
+                                                candidate["asset"],
+                                                cash,
+                                                _safe_float(account.risk_pct),
+                                                float(sizing.risk_amount),
+                                                fill,
+                                                stop,
+                                                quantity,
+                                                notional,
+                                                entry_fee,
+                                                target,
+                                            )
         if notify is not None:
             await self._notify_paper_decision(
                 telegram_user_id=(
@@ -2574,6 +2583,11 @@ class PaperTradingService:
         *,
         force_exit_reason: str | None = None,
     ) -> bool:
+        if isinstance(current_price, bool):
+            raise ValueError("paper_mark_price_invalid")
+        current_price = _safe_float(current_price)
+        if current_price <= 0:
+            raise ValueError("paper_mark_price_invalid")
         async with get_session(
             priority=_paper_worker_priority(), label="paper.mark_one", timeout_seconds=_paper_db_timeout(10.0)
         ) as session:
@@ -2592,8 +2606,12 @@ class PaperTradingService:
             if account is None:
                 return False
             direction = canonical_direction(position.direction)
+            if not direction:
+                raise ValueError("paper_position_direction_invalid")
             quantity = _safe_float(position.quantity)
             fill = _safe_float(position.fill_entry)
+            if quantity <= 0 or fill <= 0:
+                raise ValueError("paper_position_geometry_invalid")
             gross = (current_price - fill) * quantity if direction == "long" else (fill - current_price) * quantity
             position.current_price = current_price
             position.unrealized_pnl = gross

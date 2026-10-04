@@ -3043,11 +3043,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2827,
+      "line_count": 2845,
       "path": "core/paper_trading_service.py",
       "reason": "production/build source",
-      "sha256": "9363c9c4165bbbfffefa2b7f10a208bfab40156913be2e0fed5867a32c12207f",
-      "size_bytes": 128333
+      "sha256": "292233181763228e284f6fbb5ad463aa2cc17e9a7bbe879e866e5ae679c4ae08",
+      "size_bytes": 130219
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9267,11 +9267,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 44,
+      "line_count": 45,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "043c2effae6d8722a5ec4a3d88ec14f21c5023453d84057bef6780f7851231b1",
-      "size_bytes": 1370
+      "sha256": "8b08837d40e51ae9496d6441016fea5c319f516c18874ea34ffa9147511542fd",
+      "size_bytes": 1407
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9414,7 +9414,7 @@
       "line_count": 16122,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "119f9b8c587545c1a929eb320f706661cf87c29f990a81d3da8f8f0ab41515bb",
+      "sha256": "f6c2e79814c27d7082a4edfcb34584364020bea75011358c2a3e5c6e0a0c494c",
       "size_bytes": 472988
     },
     {
@@ -9779,11 +9779,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 315,
+      "line_count": 318,
       "path": "scripts/cleanroom_verification_server.py",
       "reason": "production/build source",
-      "sha256": "9f88cec0e5d875bf1a77e449c77efb0bbf1eed470e0e14c2016c2b16e453cbca",
-      "size_bytes": 10464
+      "sha256": "08e53112c1112b82a5ed0479d8e6d471a97d632250b2a9e8076c364e19344e3f",
+      "size_bytes": 10612
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13411,11 +13411,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 434,
+      "line_count": 499,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "77ced6bebfdcbba3106547b1dcf0f07f77f5cff9543f56b882c1bafc84a17866",
-      "size_bytes": 24272
+      "sha256": "f1ce146f2c93e6f3ad2438cb9000c5e832e393ed6df1a1a996fca81094203992",
+      "size_bytes": 28149
     },
     {
       "disposition": "TEST_ONLY",
