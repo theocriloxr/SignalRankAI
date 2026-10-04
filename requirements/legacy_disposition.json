@@ -1,5 +1,5 @@
 {
-  "file_count": 1947,
+  "file_count": 1951,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6715,6 +6715,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 36,
+      "path": "docs/operations/disposable_backup_restore.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "e5f6080c53323e0fc513ad3649b62b6694822f4bde7ea23d18f66d5bfd0cdb83",
+      "size_bytes": 2224
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 78,
       "path": "docs/providers/DYNAMIC_INSTRUMENT_REGISTRY.md",
       "reason": "documentation/specification/evidence",
@@ -9976,6 +9984,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "051730ee3288b09f2e3a055453ef45225838c8640eb0f6ac55fe3909ab2c40f7",
       "size_bytes": 3071
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 96,
+      "path": "scripts/production_backup_restore.sh",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "0d0c3a93d09967f25d6c8955c20d077727ffb0010754fe51e85ec499d8a07024",
+      "size_bytes": 5319
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13811,6 +13827,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 34,
+      "path": "tests/test_paper_execution_boundaries.py",
+      "reason": "automated test evidence",
+      "sha256": "ec199e5cb605f04299fd23a7d02802d3a7085134e4a08881fbed1c95ca895b2e",
+      "size_bytes": 1487
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 83,
       "path": "tests/test_paper_ledger_exits.py",
       "reason": "automated test evidence",
@@ -14000,6 +14024,14 @@
       "reason": "automated test evidence",
       "sha256": "94796f1f5038a61783f95d45a145d63f4b3df03d912437ae0aaed18ea32ff537",
       "size_bytes": 2573
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 103,
+      "path": "tests/test_production_backup_restore_script.py",
+      "reason": "automated test evidence",
+      "sha256": "b29e4b08d25b308662689ca9d4447b2d42acf5b98c976454d858b4374970559c",
+      "size_bytes": 5546
     },
     {
       "disposition": "TEST_ONLY",
@@ -15590,8 +15622,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 448,
-    "PRESERVE_BEHAVIOUR": 1164,
-    "TEST_ONLY": 334
+    "DOCUMENTATION_ONLY": 449,
+    "PRESERVE_BEHAVIOUR": 1165,
+    "TEST_ONLY": 336
   }
 }
