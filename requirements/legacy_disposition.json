@@ -9987,11 +9987,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 96,
+      "line_count": 114,
       "path": "scripts/production_backup_restore.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0d0c3a93d09967f25d6c8955c20d077727ffb0010754fe51e85ec499d8a07024",
-      "size_bytes": 5319
+      "sha256": "85b719e030f7887755cd35080b46d2a919e374db9d317ea88d3cf6fc558816c7",
+      "size_bytes": 5989
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14030,8 +14030,8 @@
       "line_count": 103,
       "path": "tests/test_production_backup_restore_script.py",
       "reason": "automated test evidence",
-      "sha256": "b29e4b08d25b308662689ca9d4447b2d42acf5b98c976454d858b4374970559c",
-      "size_bytes": 5546
+      "sha256": "4b749c202f9622421cee9a9682b3d475084af0368e9c7001c09eb04c57294984",
+      "size_bytes": 5711
     },
     {
       "disposition": "TEST_ONLY",

@@ -38,8 +38,8 @@ printf '%s %s\\n' "${{0##*/}}" "$*" >>'{audit}'
         "df": "printf 'Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 50000000 1000 " + ("1000" if failure == "space" else "49999000") + " 1%% /backup\\n'\n",
         "chown": "exit 0\n",
         "gosu": "shift; exec \"$@\"\n",
-        "initdb": "test \"$1\" = -D; mkdir -p \"$2\"; touch \"$2/postgresql.conf\"\n",
-        "pg_ctl": "case \"$*\" in *stop*) " + ("exit 1" if failure == "cleanup" else "exit 0") + ";; esac\n",
+        "initdb": "test \"$1\" = -D; mkdir -p \"$2\"; touch \"$2/postgresql.conf\"; " + ("exit 1" if failure == "init" else "exit 0") + "\n",
+        "pg_ctl": "case \"$*\" in *stop*) " + ("exit 1" if failure == "cleanup" else "exit 0") + ";; *start*) " + ("exit 1" if failure == "start" else "exit 0") + ";; esac\n",
         "createdb": "test \"$PGHOST\" != remote-production; test \"$PGDATABASE\" = signalrank_restore\n",
         "pg_restore": "case \"$*\" in *--list*) exit 0;; esac; test \"$PGHOST\" != remote-production; test \"$PGDATABASE\" = signalrank_restore; " + ("echo private-error >&2; exit 1" if failure == "restore" else "exit 0") + "\n",
         "psql": '''case "$*" in
@@ -59,7 +59,7 @@ printf '%s %s\\n' "${{0##*/}}" "$*" >>'{audit}'
     # Only redirect the fixed filesystem root and executable search path in this
     # harness. The actual environment-clearing wrapper executes unchanged.
     source = source.replace("backup_dir=/backup", f"backup_dir='{posix_path(backups)}'")
-    source = source.replace("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", f"PATH='{posix_path(binary)}:/usr/bin:/bin'")
+    source = source.replace("PATH=/usr/lib/postgresql/18/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", f"PATH='{posix_path(binary)}:/usr/bin:/bin'")
     script = tmp_path / "restore.sh"
     script.write_text(source, encoding="utf-8", newline="\n")
     env = dict(os.environ)
@@ -84,7 +84,7 @@ def test_restore_publishes_only_after_isolated_restore_and_cleanup(tmp_path):
     assert "remote-production" not in commands
 
 
-@pytest.mark.parametrize("failure", ["hash", "path", "space", "restore", "revision", "index", "constraint", "cleanup"])
+@pytest.mark.parametrize("failure", ["hash", "path", "space", "init", "start", "restore", "revision", "index", "constraint", "cleanup"])
 def test_restore_never_certifies_failed_checks_or_deletes_backup(tmp_path, failure):
     result, dump, commands = run_restore(tmp_path, failure)
     assert result.returncode != 0

@@ -2,9 +2,14 @@
 # Restore only our own backup into a disposable, socket-only PostgreSQL instance.
 # Inherited production credentials and connection options never reach this phase.
 set -eu
-exec env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp LANG=C.UTF-8 /bin/sh -s <<'RESTORE_ISOLATED'
+exec env -i PATH=/usr/lib/postgresql/18/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp LANG=C.UTF-8 /bin/sh -s <<'RESTORE_ISOLATED'
 set -eu
 umask 077
+phase=preflight
+trap 'code=$?; if [ "$code" != 0 ]; then echo "[restore] failed phase=$phase code=$code" >&2; fi' EXIT
+for client in pg_restore initdb pg_ctl psql createdb gosu timeout; do
+    command -v "$client" >/dev/null || { echo "[restore] missing client=$client" >&2; exit 2; }
+done
 backup_dir=/backup
 test "$(id -u)" = 0
 test -d "$backup_dir" && test ! -L "$backup_dir"
@@ -33,6 +38,7 @@ started=0
 cleanup() {
     code=$?
     trap - EXIT HUP INT TERM
+    if [ "$code" != 0 ]; then echo "[restore] failed phase=$phase code=$code" >&2; fi
     # Never remove an arbitrary path, a symlink, a backup, or a running cluster.
     case "$scratch" in "$backup_dir"/restore-drill-*) ;; *) exit 2 ;; esac
     if [ -L "$scratch" ] || [ "$(realpath "$scratch")" != "$scratch" ] ||
@@ -50,7 +56,12 @@ trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 mkdir "$scratch/socket"
 chown postgres:postgres "$scratch" "$scratch/socket"
-gosu postgres initdb -D "$scratch/data" --username=restore_audit --auth-local=trust --auth-host=reject --no-locale --encoding=UTF8 >"$scratch/init.log" 2>&1
+phase=initialize
+if ! gosu postgres initdb -D "$scratch/data" --username=restore_audit --auth-local=trust --auth-host=reject --no-locale --encoding=UTF8 >"$scratch/init.log" 2>&1; then
+    # This is an empty cluster; initialization diagnostics contain no restored rows.
+    cat "$scratch/init.log" >&2
+    exit 1
+fi
 # No network listener; the only connection path is inside the owned 0700 dir.
 cat >>"$scratch/data/postgresql.conf" <<CONFIG
 listen_addresses = ''
@@ -63,9 +74,14 @@ max_parallel_workers = 0
 statement_timeout = '15min'
 CONFIG
 started=1
-gosu postgres pg_ctl -D "$scratch/data" -l "$scratch/server.log" -t 60 -w start >"$scratch/start.log" 2>&1
+phase=start
+if ! gosu postgres pg_ctl -D "$scratch/data" -l "$scratch/server.log" -t 60 -w start >"$scratch/start.log" 2>&1; then
+    cat "$scratch/start.log" >&2
+    exit 1
+fi
 export PGHOST="$scratch/socket" PGPORT=55432 PGUSER=restore_audit PGDATABASE=signalrank_restore PGCONNECT_TIMEOUT=5
 createdb --host="$PGHOST" --port="$PGPORT" --username="$PGUSER" --maintenance-db=postgres signalrank_restore
+phase=restore
 echo "[restore] restoring digest=$digest into disposable socket-only database"
 if ! timeout --kill-after=30s 1200s pg_restore --host="$PGHOST" --port="$PGPORT" --username="$PGUSER" --dbname=signalrank_restore --no-owner --no-acl --exit-on-error "$file" >"$scratch/restore.log" 2>&1; then
     cp "$scratch/restore.log" "$file.restore-error.log"
@@ -73,6 +89,7 @@ if ! timeout --kill-after=30s 1200s pg_restore --host="$PGHOST" --port="$PGPORT"
     exit 1
 fi
 sql() { psql -X -v ON_ERROR_STOP=1 -Atqc "$1"; }
+phase=verify
 test "$(sql 'SELECT version_num FROM alembic_version')" = "$revision"
 test "$(sql 'SELECT count(*) FROM pg_index WHERE NOT indisvalid OR NOT indisready')" = 0
 test "$(sql 'SELECT count(*) FROM pg_constraint WHERE NOT convalidated')" = 0
@@ -80,6 +97,7 @@ test "$(sql 'SELECT count(*) FROM pg_constraint WHERE NOT convalidated')" = 0
 counts=$(sql "SELECT json_build_object('users', (SELECT count(*) FROM users), 'signals', (SELECT count(*) FROM signals), 'outcomes', (SELECT count(*) FROM outcomes), 'signal_deliveries', (SELECT count(*) FROM signal_deliveries))")
 server_version=$(sql 'SHOW server_version_num')
 case "$server_version" in ''|*[!0-9]*) exit 2 ;; esac
+phase=stop
 gosu postgres pg_ctl -D "$scratch/data" -m fast -t 60 -w stop >"$scratch/stop.log" 2>&1
 started=0
 # Cleanup before success publication, with the same containment/ownership checks.
