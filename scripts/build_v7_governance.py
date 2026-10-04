@@ -66,6 +66,8 @@ TEXT_EXTENSIONS = {
     ".html",
     ".css",
     ".js",
+    ".mjs",
+    ".cjs",
     ".ts",
     ".tsx",
     ".jsx",

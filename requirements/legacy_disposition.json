@@ -1,5 +1,5 @@
 {
-  "file_count": 1939,
+  "file_count": 1940,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7699,11 +7699,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 254,
+      "line_count": 252,
       "path": "engine/signal_lock.py",
       "reason": "production/build source",
-      "sha256": "88e0ad5cc2405c4bfaf6a5a18f619e78f7c26c63e7f12f3d121dc87fe1446f4d",
-      "size_bytes": 9792
+      "sha256": "4853652a5777cd3f02f6b47074ebfea152bd50fb95d1c492f869766dfe9e3786",
+      "size_bytes": 9790
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8011,7 +8011,7 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 18,
       "path": "frontend/eslint.config.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "870f1adccecf3051cbcd9fd307cef51d7633cf510979c181a81f4b1797273493",
@@ -8043,7 +8043,7 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 7,
       "path": "frontend/postcss.config.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "dfac7ac2d86d326a0e5adb024e7943c181393ed17a5fcb8f0315b24c7da6ddde",
@@ -9723,11 +9723,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1470,
+      "line_count": 1472,
       "path": "scripts/build_v7_governance.py",
       "reason": "production/build source",
-      "sha256": "5524d16cec5a4b0b2aebfe3c30c0dffb31e3355ff0a6ae4a9e67a6c17b0d5a75",
-      "size_bytes": 58601
+      "sha256": "7042736527952435c525d338c7519755657255abf92c521fdc4d0996659c1e83",
+      "size_bytes": 58625
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9939,7 +9939,7 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 49,
       "path": "scripts/npm_audit_gate.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "9dbb57340463c9663ae5d2659bfc8ff907df299879e96c7d5f3bed7df1e22749",
@@ -10307,7 +10307,7 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 57,
       "path": "scripts/test_portal_service_worker.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "db8b3201fad14a1d95adce66827b29e545191648c367276ca4a5ff32017df98a",
@@ -13235,6 +13235,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 25,
+      "path": "tests/test_governance_checkout_portability.py",
+      "reason": "automated test evidence",
+      "sha256": "e50d58967fed216ae23da0f990b0c7f1cbe6273cc3483b684a124bf6e54701a5",
+      "size_bytes": 1024
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 33,
       "path": "tests/test_governance_docs.py",
       "reason": "automated test evidence",
@@ -13651,7 +13659,7 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": null,
+      "line_count": 42,
       "path": "tests/test_npm_audit_gate.mjs",
       "reason": "automated test evidence",
       "sha256": "7113052bf35106bf39014871cbe46036a3ab6d85dcc8018f630a342107beb854",
@@ -15528,6 +15536,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 446,
     "PRESERVE_BEHAVIOUR": 1163,
-    "TEST_ONLY": 329
+    "TEST_ONLY": 330
   }
 }
