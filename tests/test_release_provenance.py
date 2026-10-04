@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
+import shlex
 
 import pytest
 
@@ -82,8 +84,13 @@ def test_docker_image_governance_does_not_require_git_metadata():
     dockerfile = provenance.DOCKERFILE.read_text(encoding="utf-8")
     builder, runtime = dockerfile.split(" AS runtime", 1)
     governance = (provenance.ROOT / "scripts" / "build_v7_governance.py").read_text(encoding="utf-8")
-    assert "apt-get install -y --no-install-recommends gcc libpq-dev" in builder
-    assert " gcc git libpq-dev" not in builder
+    install_lines = re.findall(
+        r"apt-get install -y --no-install-recommends\s+([^&;\n]+)",
+        builder.replace("\\\n", " "),
+    )
+    packages = {word.split("=", 1)[0] for line in install_lines for word in shlex.split(line)}
+    assert {"gcc", "libpq-dev"} <= packages
+    assert "git" not in packages
     assert " git " not in runtime.replace("\n", " ")
     assert "python scripts/run_release_manifest.py --environment image --group image" in builder
     assert "def _packaged_legacy_disposition()" in governance

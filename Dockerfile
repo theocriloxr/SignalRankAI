@@ -8,9 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.lock requirements-build-tools.txt release_certification_manifest.txt ./
@@ -33,9 +32,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
-# hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 ca-certificates \
+    && apt-get install -y --no-install-recommends libpq5=17.11-0+deb13u1 ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 signalrank \
     && useradd --system --uid 10001 --gid signalrank --create-home --home-dir /home/signalrank signalrank

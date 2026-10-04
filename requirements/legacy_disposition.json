@@ -1,5 +1,5 @@
 {
-  "file_count": 1951,
+  "file_count": 1952,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -355,11 +355,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 51,
+      "line_count": 49,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "f5d09c8171cf05d55c2b00373e6000b4c1c232aaabe9ce38bcc3f0f4f650d267",
-      "size_bytes": 1756
+      "sha256": "0d0a0328615315078a8be61167359037b153f96352e6e7f4fbe034a4c37725d5",
+      "size_bytes": 1758
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -374,8 +374,8 @@
       "line_count": null,
       "path": "Dockerfile.cleanroom",
       "reason": "production/build source",
-      "sha256": "c52fd0f92becb405effccea83b11ae71e0a99d7fc74050e41f0a87847faa743d",
-      "size_bytes": 778
+      "sha256": "bbd848b55466392072fa7936692718f044f542f1403eeb5e0e16ad6d7bcf15f1",
+      "size_bytes": 823
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -406,24 +406,24 @@
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "f5d09c8171cf05d55c2b00373e6000b4c1c232aaabe9ce38bcc3f0f4f650d267",
-      "size_bytes": 1756
+      "sha256": "0d0a0328615315078a8be61167359037b153f96352e6e7f4fbe034a4c37725d5",
+      "size_bytes": 1758
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.restore-drill",
       "reason": "production/build source",
-      "sha256": "e96c734ae4deadae353b92083e513c925e8d67f61c8a7e22b6a0f8340e099d62",
-      "size_bytes": 323
+      "sha256": "d1c4457824d344256e2c0f29c7ecd8e4af335a1dbd79edae9b8d9dbeb98548f7",
+      "size_bytes": 354
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.static.cleanroom",
       "reason": "production/build source",
-      "sha256": "f98bb6680840c43f6bfcd7cd21628e7dbdd814416f1e2735472ac34011dfb374",
-      "size_bytes": 1132
+      "sha256": "9938ecc60ed8e2984bd009bbf7370dd4e1b17f9e75786ca317c0557c68f80874",
+      "size_bytes": 1168
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6712,6 +6712,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "edf2dba8ba0e96d2e1756b2b294591c6a0a8af9faa81dd111c59b5cefd3050b0",
       "size_bytes": 3000
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 41,
+      "path": "docs/operations/container_inputs.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "fc8518e7dda1a21101071b157816cd65616005ad1a423be49afe742279bca3e0",
+      "size_bytes": 2446
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14347,11 +14355,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 91,
+      "line_count": 98,
       "path": "tests/test_release_provenance.py",
       "reason": "automated test evidence",
-      "sha256": "4bc1a1b7f3adb47b1fb4befba161c8daf323fa1723f94fa252ce38872eee72ad",
-      "size_bytes": 4000
+      "sha256": "c4fb04104ff573190856440c9c093acf94b0579dd294ffa4d0270ea35d3c1599",
+      "size_bytes": 4211
     },
     {
       "disposition": "TEST_ONLY",
@@ -15622,7 +15630,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 449,
+    "DOCUMENTATION_ONLY": 450,
     "PRESERVE_BEHAVIOUR": 1165,
     "TEST_ONLY": 336
   }

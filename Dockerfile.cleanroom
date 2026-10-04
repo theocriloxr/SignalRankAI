@@ -8,7 +8,7 @@ ENV PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev redis-server \
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 redis-server=5:8.0.2-3+deb13u3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock requirements-build-tools.txt ./

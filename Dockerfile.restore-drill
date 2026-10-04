@@ -1,6 +1,6 @@
 FROM postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
 
-RUN apk add --no-cache python3 bash ca-certificates
+RUN apk add --no-cache python3=3.14.8-r0 bash=5.3.9-r1 ca-certificates=20260909-r0
 WORKDIR /app
 COPY scripts/staging_backup_restore_drill.py /app/scripts/staging_backup_restore_drill.py
 

@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev shellcheck \
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 shellcheck=0.10.0-1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock requirements-security-tools.txt requirements-build-tools.txt ./
